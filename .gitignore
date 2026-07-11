@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+.vscode/
+.DS_Store
+
+08 Backups/
+09 Archive/
+
+*.sqlite
+*.db
+*.bak
