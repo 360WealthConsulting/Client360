@@ -13,3 +13,10 @@ __pycache__/
 01 Raw Imports/
 
 01 Raw Imports/
+
+02 Working Data/
+03 Database/
+06 Reports/private/
+*.sqlite3
+*.db
+*.bak
