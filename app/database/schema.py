@@ -163,6 +163,55 @@ accounts = Table(
 )
 
 
+import_jobs = Table(
+    "import_jobs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("source_system", String(100), nullable=False),
+    Column("source_file", String(500)),
+    Column("file_hash", String(64), index=True),
+    Column("status", String(50), nullable=False, server_default="started"),
+    Column("started_at", DateTime(timezone=True), server_default=func.now()),
+    Column("completed_at", DateTime(timezone=True)),
+    Column("rows_read", Integer, nullable=False, server_default="0"),
+    Column("rows_inserted", Integer, nullable=False, server_default="0"),
+    Column("rows_updated", Integer, nullable=False, server_default="0"),
+    Column("rows_skipped", Integer, nullable=False, server_default="0"),
+    Column("error_message", Text),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+
+
+match_queue = Table(
+    "match_queue",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "source_contact_id",
+        Integer,
+        ForeignKey("source_contacts.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "candidate_person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+    ),
+    Column("match_score", Numeric(5, 2), nullable=False),
+    Column("match_method", String(100)),
+    Column("status", String(50), nullable=False, server_default="pending"),
+    Column("reviewed_at", DateTime(timezone=True)),
+    Column("reviewed_by", String(255)),
+    Column("decision_notes", Text),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    UniqueConstraint(
+        "source_contact_id",
+        "candidate_person_id",
+        name="uq_match_queue_candidate",
+    ),
+)
+
+
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")
