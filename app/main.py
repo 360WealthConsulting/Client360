@@ -1234,3 +1234,176 @@ def dashboard():
     </body>
     </html>
     """
+
+
+@app.get("/people", response_class=HTMLResponse)
+def people_directory():
+    source_count = func.count(
+        func.distinct(person_source_links.c.source_contact_id)
+    ).label("source_count")
+
+    account_count = func.count(
+        func.distinct(accounts.c.id)
+    ).label("account_count")
+
+    statement = (
+        select(
+            people.c.id,
+            people.c.full_name,
+            people.c.primary_email,
+            people.c.primary_phone,
+            people.c.city,
+            people.c.state,
+            source_count,
+            account_count,
+        )
+        .select_from(
+            people
+            .outerjoin(
+                person_source_links,
+                person_source_links.c.person_id == people.c.id,
+            )
+            .outerjoin(
+                accounts,
+                accounts.c.person_id == people.c.id,
+            )
+        )
+        .group_by(
+            people.c.id,
+            people.c.full_name,
+            people.c.primary_email,
+            people.c.primary_phone,
+            people.c.city,
+            people.c.state,
+        )
+        .order_by(
+            people.c.last_name,
+            people.c.first_name,
+            people.c.id,
+        )
+    )
+
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+
+    table_rows = ""
+
+    for row in rows:
+        name = row["full_name"] or f"Person {row['id']}"
+        location = ", ".join(
+            value
+            for value in [row["city"], row["state"]]
+            if value
+        )
+
+        table_rows += f"""
+            <tr>
+                <td>
+                    <a href="/people/{row['id']}">
+                        {escape(name)}
+                    </a>
+                </td>
+                <td>{escape(row["primary_email"] or "")}</td>
+                <td>{escape(row["primary_phone"] or "")}</td>
+                <td>{escape(location)}</td>
+                <td>{row["source_count"]}</td>
+                <td>{row["account_count"]}</td>
+            </tr>
+        """
+
+    if not table_rows:
+        table_rows = """
+            <tr>
+                <td colspan="6">No canonical people found.</td>
+            </tr>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Client360 People</title>
+        <style>
+            body {{
+                margin: 0;
+                font-family: Arial, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }}
+
+            header {{
+                background: #111827;
+                color: white;
+                padding: 28px 40px;
+            }}
+
+            main {{
+                padding: 32px 40px;
+            }}
+
+            a {{
+                color: #2563eb;
+                text-decoration: none;
+                font-weight: bold;
+            }}
+
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }}
+
+            th, td {{
+                text-align: left;
+                padding: 14px 16px;
+                border-bottom: 1px solid #e5e7eb;
+            }}
+
+            th {{
+                background: #f9fafb;
+            }}
+
+            tr:last-child td {{
+                border-bottom: none;
+            }}
+
+            .top-link {{
+                display: inline-block;
+                margin-bottom: 20px;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <header>
+            <h1>Canonical People</h1>
+            <p>{len(rows)} unified client records</p>
+        </header>
+
+        <main>
+            <a class="top-link" href="/">← Back to dashboard</a>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Location</th>
+                        <th>Sources</th>
+                        <th>Accounts</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {table_rows}
+                </tbody>
+            </table>
+        </main>
+    </body>
+    </html>
+    """
