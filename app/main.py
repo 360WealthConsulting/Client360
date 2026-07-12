@@ -1,5 +1,8 @@
+import csv
 import os
 from html import escape
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
@@ -173,6 +176,169 @@ def source_contact_page(source_contact_id: int):
     </body>
     </html>
     """
+@app.get("/matches", response_class=HTMLResponse)
+def match_review_page():
+    report_file = Path(
+        "06 Reports/private/exact_match_merge_plan.csv"
+    )
+
+    if not report_file.exists():
+        return HTMLResponse(
+            """
+            <h1>Match report not found</h1>
+            <p>Run <code>python app/matching/plan_matches.py</code> first.</p>
+            <p><a href="/">Back to dashboard</a></p>
+            """,
+            status_code=404,
+        )
+
+    review_groups = []
+
+    with report_file.open(
+        "r",
+        encoding="utf-8-sig",
+        newline="",
+    ) as file_handle:
+        reader = csv.DictReader(file_handle)
+
+        for row in reader:
+            if row.get("decision") == "REVIEW":
+                review_groups.append(row)
+
+    cards = ""
+
+    for index, row in enumerate(review_groups, start=1):
+        record_ids = [
+            value.strip()
+            for value in row.get("record_ids", "").split("|")
+            if value.strip()
+        ]
+
+        record_links = " | ".join(
+            f'<a href="/source/{escape(record_id)}">'
+            f'Record {escape(record_id)}</a>'
+            for record_id in record_ids
+        )
+
+        cards += f"""
+        <div class="match-card">
+            <div class="match-number">Review group {index}</div>
+
+            <div class="field">
+                <strong>Names:</strong>
+                {escape(row.get("names", "") or "—")}
+            </div>
+
+            <div class="field">
+                <strong>Sources:</strong>
+                {escape(row.get("source_systems", "") or "—")}
+            </div>
+
+            <div class="field">
+                <strong>Email:</strong>
+                {escape(row.get("email", "") or "—")}
+            </div>
+
+            <div class="field">
+                <strong>Phone:</strong>
+                {escape(row.get("phone", "") or "—")}
+            </div>
+
+            <div class="field">
+                <strong>Reason for review:</strong>
+                {escape(row.get("review_reason", "") or "—")}
+            </div>
+
+            <div class="field">
+                <strong>Source records:</strong>
+                {record_links or "—"}
+            </div>
+        </div>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Client360 Match Review</title>
+
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 0;
+                background: #f4f6f8;
+                color: #1f2937;
+            }}
+
+            header {{
+                background: #111827;
+                color: white;
+                padding: 24px 40px;
+            }}
+
+            main {{
+                padding: 40px;
+                max-width: 1100px;
+            }}
+
+            .summary {{
+                background: #fff7ed;
+                border-left: 4px solid #f97316;
+                padding: 18px;
+                margin-bottom: 24px;
+            }}
+
+            .match-card {{
+                background: white;
+                padding: 22px;
+                margin-bottom: 18px;
+                border-radius: 10px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }}
+
+            .match-number {{
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 14px;
+            }}
+
+            .field {{
+                margin: 9px 0;
+                line-height: 1.5;
+            }}
+
+            a {{
+                color: #2563eb;
+                text-decoration: none;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <header>
+            <h1>Client360 Match Review</h1>
+            <p>Potential duplicate records requiring manual review</p>
+        </header>
+
+        <main>
+            <p>
+                <a href="/">Dashboard</a>
+                &nbsp;|&nbsp;
+                <a href="/search">Search</a>
+            </p>
+
+            <div class="summary">
+                <strong>{len(review_groups):,} review groups</strong><br>
+                This page is read-only. No records will be merged or changed.
+            </div>
+
+            {cards}
+        </main>
+    </body>
+    </html>
+    """
+
+
 @app.get("/search", response_class=HTMLResponse)
 def search_page(q: str = ""):
     rows = []
