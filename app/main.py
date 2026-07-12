@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from app.services.person_merge import merge_source_contacts
 from sqlalchemy import (
     MetaData,
     create_engine,
@@ -541,6 +542,15 @@ def save_match_decision(group_number: int, decision: str):
             },
         )
     )
+
+    if decision == "approved":
+        try:
+            merge_source_contacts(record_ids)
+        except ValueError as exc:
+            return HTMLResponse(
+                f"<h1>Merge failed</h1><p>{escape(str(exc))}</p>",
+                status_code=400,
+            )
 
     with engine.begin() as connection:
         connection.execute(statement)
