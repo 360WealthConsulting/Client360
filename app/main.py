@@ -556,7 +556,7 @@ def save_match_decision(group_number: int, decision: str):
     )
 
 @app.get("/matches", response_class=HTMLResponse)
-def match_review_page():
+def match_review_page(status: str = "all"):
     report_file = Path(
         "06 Reports/private/exact_match_merge_plan.csv"
     )
@@ -655,9 +655,48 @@ def match_review_page():
         if review_groups
         else 0
     )
+    allowed_statuses = {
+        "all",
+        "pending",
+        "approved",
+        "rejected",
+        "skipped",
+    }
+
+    if status not in allowed_statuses:
+        status = "all"
+
+    filtered_review_groups = []
+
+    for group_number, row in enumerate(review_groups, start=1):
+        filter_record_ids = sorted(
+            int(value.strip())
+            for value in row.get("record_ids", "").split("|")
+            if value.strip().isdigit()
+        )
+
+        filter_key_source = "|".join(
+            str(record_id)
+            for record_id in filter_record_ids
+        )
+
+        filter_group_key = hashlib.sha256(
+            filter_key_source.encode("utf-8")
+        ).hexdigest()
+
+        filter_decision = decision_by_key.get(
+            filter_group_key,
+            "pending",
+        )
+
+        if status == "all" or filter_decision == status:
+            filtered_review_groups.append(
+                (group_number, row)
+            )
+
     cards = ""
 
-    for index, row in enumerate(review_groups, start=1):
+    for group_number, row in filtered_review_groups:
         record_ids = [
             value.strip()
             for value in row.get("record_ids", "").split("|")
@@ -703,9 +742,9 @@ def match_review_page():
                 {escape(card_status)}
             </div>
                     <div class="match-number">
-            <a href="/matches/{index}">
-                Review group {index}
-            </a>
+            <a href="/matches/{group_number}">
+    Review group {group_number}
+</a>
         </div>
 
             <div class="field">
@@ -763,6 +802,27 @@ def match_review_page():
             main {{
                 padding: 40px;
                 max-width: 1100px;
+            }}
+
+                        .filters {{
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin: 20px 0;
+            }}
+
+            .filters a {{
+                background: white;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 9px 14px;
+                color: #1f2937;
+                font-weight: bold;
+                text-decoration: none;
+            }}
+
+            .filters a:hover {{
+                background: #f3f4f6;
             }}
 
             .summary {{
@@ -838,6 +898,14 @@ def match_review_page():
                 &nbsp;|&nbsp;
                 <a href="/search">Search</a>
             </p>
+
+            <div class="filters">
+    <a href="/matches?status=all">All</a>
+    <a href="/matches?status=pending">Pending</a>
+    <a href="/matches?status=approved">Approved</a>
+    <a href="/matches?status=rejected">Not a Duplicate</a>
+    <a href="/matches?status=skipped">Skipped</a>
+</div>
 
                         <div class="summary">
                 <strong>{len(review_groups):,} total review groups</strong><br>
