@@ -5,7 +5,8 @@ from html import escape
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
+from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.services.person_merge import merge_source_contacts
@@ -35,7 +36,7 @@ person_source_links = metadata.tables["person_source_links"]
 match_review_decisions = metadata.tables["match_review_decisions"]
 
 app = FastAPI(title="Client360")
-
+templates = Jinja2Templates(directory="app/templates")
 
 def get_database_stats():
     with engine.connect() as connection:
@@ -1407,3 +1408,302 @@ def people_directory():
     </body>
     </html>
     """
+
+
+@app.get("/people/{person_id}", response_class=HTMLResponse)
+def person_profile(person_id: int):
+    person_statement = select(people).where(
+        people.c.id == person_id
+    )
+
+    source_statement = (
+        select(
+            source_contacts.c.id,
+            source_contacts.c.source_system,
+            source_contacts.c.full_name,
+            source_contacts.c.email,
+            source_contacts.c.phone,
+            source_contacts.c.city,
+            source_contacts.c.state,
+            person_source_links.c.match_method,
+            person_source_links.c.confirmed,
+        )
+        .select_from(
+            person_source_links.join(
+                source_contacts,
+                source_contacts.c.id
+                == person_source_links.c.source_contact_id,
+            )
+        )
+        .where(person_source_links.c.person_id == person_id)
+        .order_by(
+            source_contacts.c.source_system,
+            source_contacts.c.id,
+        )
+    )
+
+    account_statement = (
+        select(accounts)
+        .where(accounts.c.person_id == person_id)
+        .order_by(
+            accounts.c.custodian,
+            accounts.c.account_name,
+            accounts.c.id,
+        )
+    )
+
+    with engine.connect() as connection:
+        person = connection.execute(
+            person_statement
+        ).mappings().one_or_none()
+
+        if person is None:
+            return HTMLResponse(
+                "<h1>Person not found</h1>",
+                status_code=404,
+            )
+
+        source_rows = connection.execute(
+            source_statement
+        ).mappings().all()
+
+        account_rows = connection.execute(
+            account_statement
+        ).mappings().all()
+
+    name = person["full_name"] or f"Person {person_id}"
+
+    address_lines = [
+        person["address_line_1"],
+        person["address_line_2"],
+        ", ".join(
+            value
+            for value in [
+                person["city"],
+                person["state"],
+                person["postal_code"],
+            ]
+            if value
+        ),
+    ]
+
+    address = "<br>".join(
+        escape(value)
+        for value in address_lines
+        if value
+    ) or "Not available"
+
+    source_cards = ""
+
+    for row in source_rows:
+        source_location = ", ".join(
+            value
+            for value in [row["city"], row["state"]]
+            if value
+        )
+
+        source_cards += f"""
+            <div class="card">
+                <h3>{escape(row["source_system"])}</h3>
+                <p><strong>Name:</strong> {escape(row["full_name"] or "")}</p>
+                <p><strong>Email:</strong> {escape(row["email"] or "")}</p>
+                <p><strong>Phone:</strong> {escape(row["phone"] or "")}</p>
+                <p><strong>Location:</strong> {escape(source_location)}</p>
+                <p><strong>Match method:</strong> {escape(row["match_method"] or "")}</p>
+                <p><strong>Confirmed:</strong> {"Yes" if row["confirmed"] else "No"}</p>
+                <a href="/source/{row['id']}">View source record</a>
+            </div>
+        """
+
+    if not source_cards:
+        source_cards = """
+            <div class="card">
+                <p>No linked source records.</p>
+            </div>
+        """
+
+    account_rows_html = ""
+
+    for row in account_rows:
+        total_value = (
+            f"${row['total_value']:,.2f}"
+            if row["total_value"] is not None
+            else ""
+        )
+
+        account_rows_html += f"""
+            <tr>
+                <td>{escape(row["custodian"] or "")}</td>
+                <td>{escape(row["account_name"] or "")}</td>
+                <td>{escape(row["registration_type"] or "")}</td>
+                <td>{escape(row["status"] or "")}</td>
+                <td>{total_value}</td>
+            </tr>
+        """
+
+    if not account_rows_html:
+        account_rows_html = """
+            <tr>
+                <td colspan="5">No linked accounts.</td>
+            </tr>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{escape(name)} - Client360</title>
+        <style>
+            body {{
+                margin: 0;
+                font-family: Arial, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }}
+
+            header {{
+                background: #111827;
+                color: white;
+                padding: 28px 40px;
+            }}
+
+            main {{
+                padding: 32px 40px;
+            }}
+
+            a {{
+                color: #2563eb;
+                text-decoration: none;
+                font-weight: bold;
+            }}
+
+            .top-link {{
+                display: inline-block;
+                margin-bottom: 20px;
+            }}
+
+            .profile-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 20px;
+                margin-bottom: 32px;
+            }}
+
+            .card {{
+                background: white;
+                padding: 22px;
+                border-radius: 10px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }}
+
+            .sources {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 20px;
+                margin-bottom: 32px;
+            }}
+
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }}
+
+            th, td {{
+                text-align: left;
+                padding: 14px 16px;
+                border-bottom: 1px solid #e5e7eb;
+            }}
+
+            th {{
+                background: #f9fafb;
+            }}
+
+            tr:last-child td {{
+                border-bottom: none;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <header>
+            <h1>{escape(name)}</h1>
+            <p>Canonical person record #{person_id}</p>
+        </header>
+
+        <main>
+            <a class="top-link" href="/people">← Back to people</a>
+
+            <div class="profile-grid">
+                <div class="card">
+                    <h2>Contact</h2>
+                    <p><strong>Email:</strong> {escape(person["primary_email"] or "Not available")}</p>
+                    <p><strong>Phone:</strong> {escape(person["primary_phone"] or "Not available")}</p>
+                    <p><strong>Preferred name:</strong> {escape(person["preferred_name"] or "Not available")}</p>
+                </div>
+
+                <div class="card">
+                    <h2>Address</h2>
+                    <p>{address}</p>
+                </div>
+
+                <div class="card">
+                    <h2>Details</h2>
+                    <p><strong>Birth date:</strong> {escape(str(person["birth_date"] or "Not available"))}</p>
+                    <p><strong>Contact type:</strong> {escape(person["contact_type"] or "Not available")}</p>
+                    <p><strong>Active:</strong> {"Yes" if person["active"] else "No"}</p>
+                </div>
+            </div>
+
+            <h2>Linked Source Records</h2>
+            <div class="sources">
+                {source_cards}
+            </div>
+
+            <h2>Accounts</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Custodian</th>
+                        <th>Account</th>
+                        <th>Registration</th>
+                        <th>Status</th>
+                        <th>Total Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {account_rows_html}
+                </tbody>
+            </table>
+        </main>
+    </body>
+    </html>
+    """
+
+
+@app.get("/people/{person_id}/notes", response_class=HTMLResponse)
+def person_notes(request: Request, person_id: int):
+    with engine.connect() as connection:
+        person = connection.execute(
+            select(people).where(people.c.id == person_id)
+        ).mappings().one_or_none()
+
+    if person is None:
+        return HTMLResponse(
+            "<h1>Person not found</h1>",
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="people/notes.html",
+        context={
+            "person": person,
+            "notes": [],
+        },
+    )
