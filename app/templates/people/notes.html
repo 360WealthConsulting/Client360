@@ -1,38 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Notes for {{ person.full_name }}</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; }
-    h1 { margin-bottom: 16px; }
-    .note { border: 1px solid #ccc; border-radius: 6px; padding: 16px; margin-bottom: 12px; }
-    .note-meta { color: #555; font-size: 0.95rem; margin-bottom: 8px; }
-    .empty-state { color: #666; }
-    a { color: #0078d4; text-decoration: none; }
-  </style>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Notes for {{ person.full_name }}</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 28px 40px;
+        }
+
+        main {
+            max-width: 900px;
+            padding: 32px 40px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 360px;
+            box-sizing: border-box;
+            padding: 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.5;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 12px 20px;
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .saved {
+            margin: 18px 0;
+            padding: 14px;
+            border-left: 4px solid #15803d;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .navigation {
+            margin-bottom: 22px;
+        }
+    </style>
 </head>
+
 <body>
-  <h1>Notes for {{ person.full_name }}</h1>
+    <header>
+        <h1>Notes for {{ person.full_name }}</h1>
+        <p>Canonical person record #{{ person.id }}</p>
+    </header>
 
-  {% if notes %}
-    {% for note in notes %}
-      <article class="note">
-        <div class="note-meta">
-          {% if note.created_at %}
-            {{ note.created_at.strftime("%Y-%m-%d %H:%M") }}
-          {% endif %}
-          {% if note.author %}
-            &ndash; {{ note.author }}
-          {% endif %}
+    <main>
+        <div class="navigation">
+            <a href="/people/{{ person.id }}">
+                ← Back to profile
+            </a>
         </div>
-        <div>{{ note.content }}</div>
-      </article>
-    {% endfor %}
-  {% else %}
-    <p class="empty-state">No notes found for this person.</p>
-  {% endif %}
 
-  <p><a href="/people/{{ person.id }}">Back to person details</a></p>
+        {% if saved %}
+        <div class="saved">
+            Notes saved successfully.
+        </div>
+        {% endif %}
+
+        <form
+            method="post"
+            action="/people/{{ person.id }}/notes"
+        >
+            <textarea
+                name="notes"
+                placeholder="Enter client notes here..."
+            >{{ notes }}</textarea>
+
+            <button type="submit">Save Notes</button>
+        </form>
+    </main>
 </body>
 </html>
