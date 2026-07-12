@@ -10,6 +10,8 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.services.person_merge import merge_source_contacts
+from app.services.timeline import get_person_timeline
+
 from sqlalchemy import (
     MetaData,
     create_engine,
@@ -1471,6 +1473,11 @@ def person_profile(person_id: int):
             account_statement
         ).mappings().all()
 
+        timeline_events = get_person_timeline(
+            connection,
+            person_id,
+        )
+
     name = person["full_name"] or f"Person {person_id}"
 
     address_lines = [
@@ -1542,6 +1549,30 @@ def person_profile(person_id: int):
         """
 
     if not account_rows_html:
+            timeline_html = ""
+
+    for event in timeline_events:
+        occurred_at = event["occurred_at"]
+        occurred_text = (
+            occurred_at.strftime("%B %-d, %Y at %-I:%M %p")
+            if occurred_at
+            else "Date unavailable"
+        )
+
+        timeline_html += f"""
+            <div class="card">
+                <h3>{escape(event["title"])}</h3>
+                <p><strong>{escape(occurred_text)}</strong></p>
+                <p>{escape(event["details"])}</p>
+            </div>
+        """
+
+    if not timeline_html:
+        timeline_html = """
+            <div class="card">
+                <p>No timeline events found.</p>
+            </div>
+        """
         account_rows_html = """
             <tr>
                 <td colspan="5">No linked accounts.</td>
@@ -1680,6 +1711,15 @@ def person_profile(person_id: int):
                     {account_rows_html}
                 </tbody>
             </table>
+                        <h2>Accounts</h2>
+            <table>
+                ...
+            </table>
+
+            <h2>Timeline</h2>
+            <div class="sources">
+                {timeline_html}
+            </div>
         </main>
     </body>
     </html>
