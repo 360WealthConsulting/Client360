@@ -211,7 +211,35 @@ match_queue = Table(
     ),
 )
 
-
+match_review_decisions = Table(
+    "match_review_decisions",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("group_key", String(64), nullable=False, unique=True),
+    Column("record_ids", JSON, nullable=False),
+    Column("decision", String(50), nullable=False),
+    Column("reviewed_by", String(255)),
+    Column("decision_notes", Text),
+    Column(
+        "reviewed_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    ),
+)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")
