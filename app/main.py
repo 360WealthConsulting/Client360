@@ -523,6 +523,22 @@ def save_match_decision(group_number: int, decision: str):
         group_key_source.encode("utf-8")
     ).hexdigest()
 
+    with engine.connect() as connection:
+        existing_decision = connection.execute(
+            select(match_review_decisions.c.decision).where(
+                match_review_decisions.c.group_key == group_key
+            )
+        ).scalar_one_or_none()
+
+    if existing_decision == "approved" and decision != "approved":
+        return HTMLResponse(
+            "<h1>Approved merge is locked</h1>"
+            "<p>This group has already been merged into a canonical "
+            "person. An unmerge workflow is required before changing "
+            "the decision.</p>",
+            status_code=409,
+        )
+
     statement = (
         pg_insert(match_review_decisions)
         .values(
