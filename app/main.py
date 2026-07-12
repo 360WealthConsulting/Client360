@@ -1,11 +1,13 @@
 import csv
 import os
+import hashlib
 from html import escape
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import (
     MetaData,
     create_engine,
@@ -29,6 +31,7 @@ people = metadata.tables["people"]
 accounts = metadata.tables["accounts"]
 households = metadata.tables["households"]
 person_source_links = metadata.tables["person_source_links"]
+match_review_decisions = metadata.tables["match_review_decisions"]
 
 app = FastAPI(title="Client360")
 
@@ -216,6 +219,30 @@ def match_group_page(group_number: int):
         if value.strip().isdigit()
     ]
 
+    sorted_record_ids = sorted(record_ids)
+
+    group_key_source = "|".join(
+        str(record_id)
+        for record_id in sorted_record_ids
+    )
+
+    group_key = hashlib.sha256(
+        group_key_source.encode("utf-8")
+    ).hexdigest()
+
+    with engine.connect() as connection:
+        saved_decision = connection.execute(
+            select(match_review_decisions).where(
+                match_review_decisions.c.group_key == group_key
+            )
+        ).mappings().first()
+
+    decision_label = (
+        saved_decision["decision"].replace("_", " ").title()
+        if saved_decision
+        else "Pending Review"
+    )
+
     with engine.connect() as connection:
         records = connection.execute(
             select(source_contacts)
@@ -338,6 +365,38 @@ def match_group_page(group_number: int):
                 border-bottom: 1px solid #e5e7eb;
             }}
 
+                        .actions {{
+                display: flex;
+                gap: 12px;
+                margin: 0 0 28px;
+                flex-wrap: wrap;
+            }}
+
+            .actions form {{
+                margin: 0;
+            }}
+
+            .actions button {{
+                border: 0;
+                border-radius: 6px;
+                padding: 12px 18px;
+                color: white;
+                font-size: 15px;
+                cursor: pointer;
+            }}
+
+            .approve {{
+                background: #15803d;
+            }}
+
+            .reject {{
+                background: #b91c1c;
+            }}
+
+            .skip {{
+                background: #6b7280;
+            }}
+
             a {{
                 color: #2563eb;
                 text-decoration: none;
@@ -354,7 +413,10 @@ def match_group_page(group_number: int):
         <main>
             <p><a href="/matches">← Back to all matches</a></p>
 
-            <div class="summary">
+             <div class="summary">
+    <strong>Current decision:</strong>
+    {escape(decision_label)}<br><br>
+
                 <strong>Names:</strong>
                 {escape(group.get("names", "") or "—")}<br>
 
@@ -365,6 +427,35 @@ def match_group_page(group_number: int):
                 {escape(group.get("review_reason", "") or "—")}
             </div>
 
+                        <div class="actions">
+                <form
+                    method="post"
+                    action="/matches/{group_number}/decision/approved"
+                >
+                    <button class="approve" type="submit">
+                        Approve Match
+                    </button>
+                </form>
+
+                <form
+                    method="post"
+                    action="/matches/{group_number}/decision/rejected"
+                >
+                    <button class="reject" type="submit">
+                        Not a Duplicate
+                    </button>
+                </form>
+
+                <form
+                    method="post"
+                    action="/matches/{group_number}/decision/skipped"
+                >
+                    <button class="skip" type="submit">
+                        Skip
+                    </button>
+                </form>
+            </div>
+
             <div class="records">
                 {record_cards}
             </div>
@@ -372,6 +463,98 @@ def match_group_page(group_number: int):
     </body>
     </html>
     """
+
+@app.post("/matches/{group_number}/decision/{decision}")
+def save_match_decision(group_number: int, decision: str):
+    allowed_decisions = {
+        "approved",
+        "rejected",
+        "skipped",
+    }
+
+    if decision not in allowed_decisions:
+        return HTMLResponse(
+            "<h1>Invalid match decision</h1>",
+            status_code=400,
+        )
+
+    report_path = Path(
+        "06 Reports/private/exact_match_merge_plan.csv"
+    )
+
+    if not report_path.exists():
+        return HTMLResponse(
+            "<h1>Match report not found</h1>",
+            status_code=404,
+        )
+
+    with report_path.open(
+        "r",
+        encoding="utf-8-sig",
+        newline="",
+    ) as file_handle:
+        review_groups = [
+            row
+            for row in csv.DictReader(file_handle)
+            if row.get("decision") == "REVIEW"
+        ]
+
+    if group_number < 1 or group_number > len(review_groups):
+        return HTMLResponse(
+            "<h1>Review group not found</h1>",
+            status_code=404,
+        )
+
+    group = review_groups[group_number - 1]
+
+    record_ids = sorted(
+        int(value.strip())
+        for value in group.get("record_ids", "").split("|")
+        if value.strip().isdigit()
+    )
+
+    group_key_source = "|".join(
+        str(record_id)
+        for record_id in record_ids
+    )
+
+    group_key = hashlib.sha256(
+        group_key_source.encode("utf-8")
+    ).hexdigest()
+
+    statement = (
+        pg_insert(match_review_decisions)
+        .values(
+            group_key=group_key,
+            record_ids=record_ids,
+            decision=decision,
+            reviewed_by="Michael Shelton",
+        )
+        .on_conflict_do_update(
+            index_elements=["group_key"],
+            set_={
+                "record_ids": record_ids,
+                "decision": decision,
+                "reviewed_by": "Michael Shelton",
+                "reviewed_at": func.now(),
+                "updated_at": func.now(),
+            },
+        )
+    )
+
+    with engine.begin() as connection:
+        connection.execute(statement)
+
+    next_group = min(
+        group_number + 1,
+        len(review_groups),
+    )
+
+    return RedirectResponse(
+        url=f"/matches/{next_group}",
+        status_code=303,
+    )
+
 @app.get("/matches", response_class=HTMLResponse)
 def match_review_page():
     report_file = Path(
@@ -401,6 +584,77 @@ def match_review_page():
             if row.get("decision") == "REVIEW":
                 review_groups.append(row)
 
+            current_group_keys = []
+
+    for row in review_groups:
+        current_record_ids = sorted(
+            int(value.strip())
+            for value in row.get("record_ids", "").split("|")
+            if value.strip().isdigit()
+        )
+
+        key_source = "|".join(
+            str(record_id)
+            for record_id in current_record_ids
+        )
+
+        current_group_keys.append(
+            hashlib.sha256(
+                key_source.encode("utf-8")
+            ).hexdigest()
+        )
+
+    if current_group_keys:
+        with engine.connect() as connection:
+            saved_decisions = connection.execute(
+                select(
+                    match_review_decisions.c.group_key,
+                    match_review_decisions.c.decision,
+                ).where(
+                    match_review_decisions.c.group_key.in_(
+                        current_group_keys
+                    )
+                )
+            ).mappings().all()
+    else:
+        saved_decisions = []
+
+    decision_by_key = {
+        row["group_key"]: row["decision"]
+        for row in saved_decisions
+    }
+
+    approved_count = sum(
+        decision == "approved"
+        for decision in decision_by_key.values()
+    )
+
+    rejected_count = sum(
+        decision == "rejected"
+        for decision in decision_by_key.values()
+    )
+
+    skipped_count = sum(
+        decision == "skipped"
+        for decision in decision_by_key.values()
+    )
+
+    decided_count = (
+        approved_count
+        + rejected_count
+        + skipped_count
+    )
+
+    remaining_count = max(
+        len(review_groups) - decided_count,
+        0,
+    )
+
+    completion_percent = (
+        decided_count / len(review_groups) * 100
+        if review_groups
+        else 0
+    )
     cards = ""
 
     for index, row in enumerate(review_groups, start=1):
@@ -410,6 +664,33 @@ def match_review_page():
             if value.strip()
         ]
 
+        card_record_ids = sorted(
+            int(record_id)
+            for record_id in record_ids
+            if record_id.isdigit()
+        )
+
+        card_key_source = "|".join(
+            str(record_id)
+            for record_id in card_record_ids
+        )
+
+        card_group_key = hashlib.sha256(
+            card_key_source.encode("utf-8")
+        ).hexdigest()
+
+        card_decision = decision_by_key.get(
+            card_group_key,
+            "pending",
+        )
+
+        card_status = {
+            "approved": "Approved",
+            "rejected": "Not a Duplicate",
+            "skipped": "Skipped",
+            "pending": "Pending Review",
+        }.get(card_decision, "Pending Review")
+
         record_links = " | ".join(
             f'<a href="/source/{escape(record_id)}">'
             f'Record {escape(record_id)}</a>'
@@ -418,6 +699,9 @@ def match_review_page():
 
         cards += f"""
         <div class="match-card">
+                    <div class="status status-{card_decision}">
+                {escape(card_status)}
+            </div>
                     <div class="match-number">
             <a href="/matches/{index}">
                 Review group {index}
@@ -487,6 +771,34 @@ def match_review_page():
                 padding: 18px;
                 margin-bottom: 24px;
             }}
+            .status {{
+                display: inline-block;
+                padding: 6px 10px;
+                margin-bottom: 12px;
+                border-radius: 999px;
+                font-size: 13px;
+                font-weight: bold;
+            }}
+
+            .status-approved {{
+                background: #dcfce7;
+                color: #166534;
+            }}
+
+            .status-rejected {{
+                background: #fee2e2;
+                color: #991b1b;
+            }}
+
+            .status-skipped {{
+                background: #e5e7eb;
+                color: #374151;
+            }}
+
+            .status-pending {{
+                background: #fef3c7;
+                color: #92400e;
+            }}
 
             .match-card {{
                 background: white;
@@ -527,9 +839,16 @@ def match_review_page():
                 <a href="/search">Search</a>
             </p>
 
-            <div class="summary">
-                <strong>{len(review_groups):,} review groups</strong><br>
-                This page is read-only. No records will be merged or changed.
+                        <div class="summary">
+                <strong>{len(review_groups):,} total review groups</strong><br>
+                Approved: {approved_count:,}<br>
+                Not duplicates: {rejected_count:,}<br>
+                Skipped: {skipped_count:,}<br>
+                Remaining: {remaining_count:,}<br>
+                Progress: {completion_percent:.1f}%<br><br>
+
+                Review decisions are saved. Client records are not
+                merged or changed by this page.
             </div>
 
             {cards}
