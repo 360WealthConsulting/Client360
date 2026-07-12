@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.services.person_merge import merge_source_contacts
 from app.services.timeline import get_person_timeline
+from app.services.documents import get_person_documents
 
 from sqlalchemy import (
     MetaData,
@@ -1478,6 +1479,8 @@ def person_profile(person_id: int):
             person_id,
         )
 
+        documents = get_person_documents(person_id)
+
     name = person["full_name"] or f"Person {person_id}"
 
     address_lines = [
@@ -1549,7 +1552,33 @@ def person_profile(person_id: int):
         """
 
     if not account_rows_html:
-            timeline_html = ""
+        account_rows_html = """
+        <tr>
+            <td colspan="5">No accounts linked.</td>
+        </tr>
+    """
+
+    documents_html = ""
+
+    for document in documents:
+        size_kb = document["size"] / 1024
+
+        documents_html += f"""
+            <div class="card">
+                <h3>{escape(document["name"])}</h3>
+                <p><strong>Size:</strong> {size_kb:,.1f} KB</p>
+                <p><strong>Path:</strong> {escape(document["path"])}</p>
+            </div>
+        """
+
+    if not documents_html:
+        documents_html = """
+            <div class="card">
+                <p>No documents found for this person.</p>
+            </div>
+        """
+
+    timeline_html = ""
 
     for event in timeline_events:
         occurred_at = event["occurred_at"]
@@ -1572,11 +1601,6 @@ def person_profile(person_id: int):
             <div class="card">
                 <p>No timeline events found.</p>
             </div>
-        """
-        account_rows_html = """
-            <tr>
-                <td colspan="5">No linked accounts.</td>
-            </tr>
         """
 
     return f"""
@@ -1696,25 +1720,27 @@ def person_profile(person_id: int):
                 {source_cards}
             </div>
 
-            <h2>Accounts</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Custodian</th>
-                        <th>Account</th>
-                        <th>Registration</th>
-                        <th>Status</th>
-                        <th>Total Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {account_rows_html}
-                </tbody>
-            </table>
+    
                         <h2>Accounts</h2>
             <table>
-                ...
-            </table>
+    <thead>
+        <tr>
+            <th>Custodian</th>
+            <th>Account</th>
+            <th>Registration</th>
+            <th>Status</th>
+            <th>Total Value</th>
+        </tr>
+    </thead>
+    <tbody>
+        {account_rows_html}
+    </tbody>
+</table>
+
+            <h2>Documents</h2>
+<div class="sources">
+    {documents_html}
+</div>
 
             <h2>Timeline</h2>
             <div class="sources">
