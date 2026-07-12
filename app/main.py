@@ -176,6 +176,202 @@ def source_contact_page(source_contact_id: int):
     </body>
     </html>
     """
+@app.get("/matches/{group_number}", response_class=HTMLResponse)
+def match_group_page(group_number: int):
+    report_path = Path(
+        "06 Reports/private/exact_match_merge_plan.csv"
+    )
+
+    if not report_path.exists():
+        return HTMLResponse(
+            "<h1>Match report not found</h1>",
+            status_code=404,
+        )
+
+    with report_path.open(
+        "r",
+        encoding="utf-8-sig",
+        newline="",
+    ) as file_handle:
+        review_groups = [
+            row
+            for row in csv.DictReader(file_handle)
+            if row.get("decision") == "REVIEW"
+        ]
+
+    if group_number < 1 or group_number > len(review_groups):
+        return HTMLResponse(
+            """
+            <h1>Review group not found</h1>
+            <p><a href="/matches">← Back to matches</a></p>
+            """,
+            status_code=404,
+        )
+
+    group = review_groups[group_number - 1]
+
+    record_ids = [
+        int(value.strip())
+        for value in group.get("record_ids", "").split("|")
+        if value.strip().isdigit()
+    ]
+
+    with engine.connect() as connection:
+        records = connection.execute(
+            select(source_contacts)
+            .where(source_contacts.c.id.in_(record_ids))
+            .order_by(source_contacts.c.source_system)
+        ).mappings().all()
+
+    record_cards = ""
+
+    for record in records:
+        def show(value):
+            if value is None or value == "":
+                return "—"
+            return escape(str(value))
+
+        address = ", ".join(
+            show(record.get(field))
+            for field in [
+                "address_line_1",
+                "address_line_2",
+                "city",
+                "state",
+                "postal_code",
+            ]
+            if record.get(field)
+        ) or "—"
+
+        record_cards += f"""
+        <div class="record-card">
+            <h2>{show(record.get("source_system"))}</h2>
+
+            <p>
+                <a href="/source/{record["id"]}">
+                    Open full source record
+                </a>
+            </p>
+
+            <div class="row">
+                <strong>Name</strong>
+                <span>{show(record.get("full_name"))}</span>
+            </div>
+
+            <div class="row">
+                <strong>Email</strong>
+                <span>{show(record.get("email"))}</span>
+            </div>
+
+            <div class="row">
+                <strong>Phone</strong>
+                <span>{show(record.get("phone"))}</span>
+            </div>
+
+            <div class="row">
+                <strong>Address</strong>
+                <span>{address}</span>
+            </div>
+
+            <div class="row">
+                <strong>Territory</strong>
+                <span>{show(record.get("territory"))}</span>
+            </div>
+
+            <div class="row">
+                <strong>Source file</strong>
+                <span>{show(record.get("source_file"))}</span>
+            </div>
+        </div>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Review Group {group_number} — Client360</title>
+
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 0;
+                background: #f4f6f8;
+                color: #1f2937;
+            }}
+
+            header {{
+                background: #111827;
+                color: white;
+                padding: 24px 40px;
+            }}
+
+            main {{
+                padding: 40px;
+            }}
+
+            .summary {{
+                background: #fff7ed;
+                border-left: 4px solid #f97316;
+                padding: 18px;
+                margin: 20px 0 28px;
+            }}
+
+            .records {{
+                display: grid;
+                grid-template-columns:
+                    repeat(auto-fit, minmax(320px, 1fr));
+                gap: 20px;
+            }}
+
+            .record-card {{
+                background: white;
+                padding: 24px;
+                border-radius: 10px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }}
+
+            .row {{
+                display: grid;
+                grid-template-columns: 110px 1fr;
+                gap: 12px;
+                padding: 11px 0;
+                border-bottom: 1px solid #e5e7eb;
+            }}
+
+            a {{
+                color: #2563eb;
+                text-decoration: none;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <header>
+            <h1>Review Group {group_number}</h1>
+            <p>Compare potential duplicate records</p>
+        </header>
+
+        <main>
+            <p><a href="/matches">← Back to all matches</a></p>
+
+            <div class="summary">
+                <strong>Names:</strong>
+                {escape(group.get("names", "") or "—")}<br>
+
+                <strong>Sources:</strong>
+                {escape(group.get("source_systems", "") or "—")}<br>
+
+                <strong>Reason for review:</strong>
+                {escape(group.get("review_reason", "") or "—")}
+            </div>
+
+            <div class="records">
+                {record_cards}
+            </div>
+        </main>
+    </body>
+    </html>
+    """
 @app.get("/matches", response_class=HTMLResponse)
 def match_review_page():
     report_file = Path(
@@ -222,7 +418,11 @@ def match_review_page():
 
         cards += f"""
         <div class="match-card">
-            <div class="match-number">Review group {index}</div>
+                    <div class="match-number">
+            <a href="/matches/{index}">
+                Review group {index}
+            </a>
+        </div>
 
             <div class="field">
                 <strong>Names:</strong>
