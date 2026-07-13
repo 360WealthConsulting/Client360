@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import insert, select, update
 
 from app.db import engine, people, tasks
+from app.services.timeline import add_timeline_event
 
 
 router = APIRouter()
@@ -88,8 +89,9 @@ async def create_person_task(
                 status_code=404,
             )
 
-        connection.execute(
-            insert(tasks).values(
+        task_id = connection.execute(
+            insert(tasks)
+            .values(
                 person_id=person_id,
                 title=title,
                 description=description or None,
@@ -98,7 +100,23 @@ async def create_person_task(
                 assigned_to=assigned_to or None,
                 due_date=due_date,
             )
-        )
+            .returning(tasks.c.id)
+        ).scalar_one()
+
+    add_timeline_event(
+        person_id=person_id,
+        source="client360",
+        event_type="task_created",
+        title="Task Created",
+        summary=title,
+        external_id=f"task-created-{task_id}",
+        event_metadata={
+            "task_id": task_id,
+            "priority": priority,
+            "assigned_to": assigned_to or None,
+            "due_date": due_date.isoformat() if due_date else None,
+        },
+    )
 
     return RedirectResponse(
         url=f"/people/{person_id}/tasks?created=1",
@@ -113,8 +131,23 @@ def complete_person_task(
     person_id: int,
     task_id: int,
 ):
+    completed_at = datetime.now(timezone.utc)
+
     with engine.begin() as connection:
-        result = connection.execute(
+        task = connection.execute(
+            select(tasks).where(
+                tasks.c.id == task_id,
+                tasks.c.person_id == person_id,
+            )
+        ).mappings().one_or_none()
+
+        if task is None:
+            return HTMLResponse(
+                "<h1>Task not found</h1>",
+                status_code=404,
+            )
+
+        connection.execute(
             update(tasks)
             .where(
                 tasks.c.id == task_id,
@@ -122,16 +155,30 @@ def complete_person_task(
             )
             .values(
                 status="complete",
-                completed_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                completed_at=completed_at,
+                updated_at=completed_at,
             )
         )
 
-    if result.rowcount == 0:
-        return HTMLResponse(
-            "<h1>Task not found</h1>",
-            status_code=404,
-        )
+    add_timeline_event(
+        person_id=person_id,
+        source="client360",
+        event_type="task_completed",
+        title="Task Completed",
+        summary=task["title"],
+        external_id=f"task-completed-{task_id}",
+        event_time=completed_at,
+        event_metadata={
+            "task_id": task_id,
+            "priority": task["priority"],
+            "assigned_to": task["assigned_to"],
+            "due_date": (
+                task["due_date"].isoformat()
+                if task["due_date"]
+                else None
+            ),
+        },
+    )
 
     return RedirectResponse(
         url=f"/people/{person_id}/tasks?completed=1",
