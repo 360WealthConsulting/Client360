@@ -19,6 +19,7 @@ from app.routes.activities import router as activities_router
 from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.households import router as households_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
+from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_review_router
 from app.routes.timeline import router as timeline_router
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 
@@ -45,5 +46,6 @@ app.include_router(households_router)
 app.include_router(documents_router)
 app.include_router(microsoft365_router)
 app.include_router(microsoft365_oauth_router)
+app.include_router(microsoft365_inbox_review_router)
 app.include_router(microsoft365_mail_router)
 app.include_router(timeline_router)
