@@ -245,6 +245,36 @@ tasks = Table(
 
 
 
+activities = Table(
+    "activities",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("activity_type", String(100), nullable=False),
+    Column("title", String(255), nullable=False),
+    Column("details", Text),
+    Column(
+        "occurred_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column("created_by", String(255)),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+)
+
+
+
 match_review_decisions = Table(
     "match_review_decisions",
     metadata,

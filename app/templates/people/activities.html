@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Activities for {{ person.full_name }}</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 28px 40px;
+        }
+
+        main {
+            max-width: 1000px;
+            padding: 32px 40px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            margin-bottom: 18px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        label {
+            display: block;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 11px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 15px;
+        }
+
+        textarea {
+            min-height: 110px;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 11px 18px;
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        .success {
+            padding: 14px;
+            margin-bottom: 18px;
+            border-left: 4px solid #15803d;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .meta {
+            color: #6b7280;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Activities for {{ person.full_name }}</h1>
+        <p>Canonical person record #{{ person.id }}</p>
+    </header>
+
+    <main>
+        <p>
+            <a href="/people/{{ person.id }}">
+                ← Back to profile
+            </a>
+        </p>
+
+        {% if created %}
+        <div class="success">
+            Activity added successfully.
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h2>Add Activity</h2>
+
+            <form
+                method="post"
+                action="/people/{{ person.id }}/activities"
+            >
+                <label for="activity_type">Type</label>
+                <select
+                    id="activity_type"
+                    name="activity_type"
+                >
+                    <option value="note">Note</option>
+                    <option value="phone_call">Phone Call</option>
+                    <option value="email">Email</option>
+                    <option value="meeting">Meeting</option>
+                    <option value="document">Document</option>
+                    <option value="account">Account Activity</option>
+                    <option value="tax">Tax Activity</option>
+                    <option value="other">Other</option>
+                </select>
+
+                <label for="title">Title</label>
+                <input id="title" name="title" required>
+
+                <label for="details">Details</label>
+                <textarea
+                    id="details"
+                    name="details"
+                ></textarea>
+
+                <label for="occurred_at">Occurred At</label>
+                <input
+                    id="occurred_at"
+                    name="occurred_at"
+                    type="datetime-local"
+                >
+
+                <label for="created_by">Created By</label>
+                <input
+                    id="created_by"
+                    name="created_by"
+                    placeholder="Michael, Lauren, Sarah, Jessica"
+                >
+
+                <button type="submit">Add Activity</button>
+            </form>
+        </div>
+
+        <h2>Activity History</h2>
+
+        {% for activity in activities %}
+        <div class="card">
+            <h3>{{ activity.title }}</h3>
+
+            <p class="meta">
+                {{ activity.activity_type.replace("_", " ").title() }}
+                |
+                {{ activity.occurred_at }}
+                |
+                {{ activity.created_by or "Unknown user" }}
+            </p>
+
+            {% if activity.details %}
+            <p>{{ activity.details }}</p>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="card">
+            <p>No activities found for this person.</p>
+        </div>
+        {% endfor %}
+    </main>
+</body>
+</html>
