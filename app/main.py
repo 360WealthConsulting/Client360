@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -23,6 +24,7 @@ from app.routes.microsoft365_mail import router as microsoft365_mail_router
 
 
 app = FastAPI(title="Client360")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.add_middleware(
     SessionMiddleware,
     secret_key="CHANGE_THIS_TO_A_LONG_RANDOM_SECRET",

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>{{ person.full_name or ("Person " ~ person.id) }} - Client360</title>
+
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/workspace.css">
+</head>
+
+<body>
+<header class="workspace-header">
+    <a href="/people" style="color:#d1d5db;">
+        ← People
+    </a>
+
+    <h1>{{ person.full_name or ("Person " ~ person.id) }}</h1>
+
+    <div class="workspace-subtitle">
+        Canonical person record #{{ person.id }}
+        ·
+        {{ "Active" if person.active else "Inactive" }}
+    </div>
+
+    <nav class="workspace-tabs">
+        <a class="active" href="/people/{{ person.id }}">Overview</a>
+        <a href="/timeline/person/{{ person.id }}">Timeline</a>
+        <a href="/people/{{ person.id }}/tasks">Tasks</a>
+        <a href="/people/{{ person.id }}/documents">Documents</a>
+        <a href="/people/{{ person.id }}/notes">Notes</a>
+        <a href="/people/{{ person.id }}/activities">Activities</a>
+    </nav>
+</header>
+
+<main class="workspace-main">
+    <div class="workspace-grid">
+
+        <aside class="stack">
+            <section class="card">
+                <h2 class="section-title">Client Details</h2>
+
+                <div class="detail-row">
+                    <span class="detail-label">Email</span>
+                    {{ person.primary_email or "Not available" }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Phone</span>
+                    {{ person.primary_phone or "Not available" }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Preferred Name</span>
+                    {{ person.preferred_name or "Not available" }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Birth Date</span>
+                    {{ person.birth_date or "Not available" }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Contact Type</span>
+                    {{ person.contact_type or "Not available" }}
+                </div>
+            </section>
+
+            <section class="card">
+                <h2 class="section-title">Household</h2>
+
+                {% if household %}
+                <a href="/households/{{ household.id }}">
+                    {{ household.name }}
+                </a>
+                {% else %}
+                <div class="empty-state">Not assigned</div>
+                {% endif %}
+            </section>
+
+            <section class="card">
+                <h2 class="section-title">Accounts</h2>
+
+                {% for account in accounts %}
+                <div class="detail-row">
+                    <strong>
+                        {{ account.account_name or account.custodian }}
+                    </strong><br>
+                    <span class="empty-state">
+                        {{ account.registration_type or "Registration unavailable" }}
+                        ·
+                        {{ account.status or "Status unavailable" }}
+                    </span>
+
+                    {% if account.total_value is not none %}
+                    <div>
+                        ${{ "{:,.2f}".format(account.total_value) }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="empty-state">No accounts linked.</div>
+                {% endfor %}
+            </section>
+        </aside>
+
+        <section class="workspace-center stack">
+            <section>
+                <h2>Recent Activity</h2>
+
+                {% for event in timeline_events %}
+                <article class="card timeline-event">
+                    <strong>{{ event.title }}</strong>
+
+                    {% if event.summary %}
+                    <p>{{ event.summary }}</p>
+                    {% endif %}
+
+                    <div class="timeline-meta">
+                        {{ event.event_type.replace("_", " ").title() }}
+                        ·
+                        {{ event.source }}
+                        ·
+                        {{ event.event_time }}
+                    </div>
+                </article>
+                {% else %}
+                <div class="card empty-state">
+                    No timeline events found.
+                </div>
+                {% endfor %}
+            </section>
+        </section>
+
+        <aside class="stack">
+            <section class="card">
+                <h2 class="section-title">Open Tasks</h2>
+
+                {% for task in open_tasks %}
+                <div class="detail-row">
+                    <a href="/people/{{ person.id }}/tasks">
+                        {{ task.title }}
+                    </a>
+
+                    <div class="empty-state">
+                        {{ task.priority.title() }}
+                        ·
+                        Due {{ task.due_date or "not set" }}
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state">No open tasks.</div>
+                {% endfor %}
+            </section>
+
+            <section class="card">
+                <h2 class="section-title">Recent Documents</h2>
+
+                {% for document in documents %}
+                <div class="detail-row">
+                    <a href="/documents/{{ document.id }}/download">
+                        {{ document.original_name }}
+                    </a>
+
+                    <div class="empty-state">
+                        {{ document.category or "Other" }}
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state">No documents uploaded.</div>
+                {% endfor %}
+            </section>
+
+            <section class="card">
+                <h2 class="section-title">AI Summary</h2>
+                <div class="empty-state">
+                    AI client summary will appear here.
+                </div>
+            </section>
+        </aside>
+
+    </div>
+</main>
+</body>
+</html>
