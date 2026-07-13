@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Client360 Tasks</title>
+
+    <style>
+        body{
+            font-family:Arial;
+            margin:40px;
+            background:#f3f4f6;
+        }
+
+        table{
+            width:100%;
+            border-collapse:collapse;
+            background:white;
+        }
+
+        th,td{
+            padding:12px;
+            border-bottom:1px solid #ddd;
+            text-align:left;
+        }
+
+        th{
+            background:#f9fafb;
+        }
+
+        .complete{
+            color:#888;
+        }
+
+        a{
+            color:#2563eb;
+            text-decoration:none;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<h1>Global Task Dashboard</h1>
+
+<table>
+
+<tr>
+<th>Status</th>
+<th>Priority</th>
+<th>Client</th>
+<th>Task</th>
+<th>Assigned</th>
+<th>Due</th>
+</tr>
+
+{% for task in tasks %}
+
+<tr class="{% if task.status=='complete' %}complete{% endif %}">
+<td>{{ task.status }}</td>
+<td>{{ task.priority }}</td>
+
+<td>
+<a href="/people/{{ task.person_id }}">
+{{ task.person_name }}
+</a>
+</td>
+
+<td>{{ task.title }}</td>
+
+<td>{{ task.assigned_to or "" }}</td>
+
+<td>{{ task.due_date or "" }}</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+</body>
+</html>
