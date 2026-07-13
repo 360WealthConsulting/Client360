@@ -172,3 +172,32 @@
 .timeline-default {
     border-left-color: #6b7280;
 }
+
+.client-alert {
+    padding: 12px;
+    margin-bottom: 10px;
+    border-left: 4px solid #6b7280;
+    border-radius: 6px;
+    background: #f9fafb;
+    font-size: 14px;
+}
+
+.client-alert-success {
+    border-left-color: #15803d;
+    background: #f0fdf4;
+}
+
+.client-alert-info {
+    border-left-color: #2563eb;
+    background: #eff6ff;
+}
+
+.client-alert-warning {
+    border-left-color: #b45309;
+    background: #fffbeb;
+}
+
+.client-alert-danger {
+    border-left-color: #b91c1c;
+    background: #fef2f2;
+}

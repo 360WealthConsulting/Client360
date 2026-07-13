@@ -390,11 +390,59 @@
             </section>
 
             <section class="card">
-                <h2 class="section-title">AI Summary</h2>
+                <h2 class="section-title">Client Summary</h2>
 
-                <div class="empty-state">
-                    AI client summary will appear here.
+                <div class="detail-row">
+                    <span class="detail-label">Open Tasks</span>
+                    {{ client_summary.open_task_count }}
                 </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Overdue Tasks</span>
+                    {{ client_summary.overdue_task_count }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Documents</span>
+                    {{ client_summary.document_count }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Activities</span>
+                    {{ client_summary.activity_count }}
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">Last Contact</span>
+
+                    {% if client_summary.days_since_last_contact is not none %}
+                        {{ client_summary.days_since_last_contact }} day{{ "" if client_summary.days_since_last_contact == 1 else "s" }} ago
+                    {% else %}
+                        No recorded contact
+                    {% endif %}
+                </div>
+
+                {% if client_summary.last_event_title %}
+                <div class="detail-row">
+                    <span class="detail-label">Latest Event</span>
+                    {{ client_summary.last_event_title }}
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="card">
+                <h2 class="section-title">Alerts</h2>
+
+                {% for alert in client_alerts %}
+                <div class="client-alert client-alert-{{ alert.level }}">
+                    <strong>{{ alert.title }}</strong>
+                    <div>{{ alert.message }}</div>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    No client alerts.
+                </div>
+                {% endfor %}
             </section>
         </aside>
 

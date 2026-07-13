@@ -16,6 +16,8 @@ from app.db import (
     tasks,
 )
 from app.services.documents import get_person_documents
+from app.services.client_summary import get_client_summary
+from app.services.client_alerts import build_client_alerts
 from app.services.timeline import get_person_timeline
 
 
@@ -318,6 +320,8 @@ def person_profile(
     )
 
     documents = get_person_documents(person_id)[:8]
+    client_summary = get_client_summary(person_id)
+    client_alerts = build_client_alerts(client_summary)
 
     return templates.TemplateResponse(
         request=request,
@@ -332,6 +336,8 @@ def person_profile(
             "timeline_events": timeline_events,
             "documents": documents,
             "activities": activity_rows,
+            "client_summary": client_summary,
+            "client_alerts": client_alerts,
             "active_tab": tab,
         },
     )
