@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Client360 Households</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 28px 40px;
+        }
+
+        main {
+            padding: 32px 40px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            margin-bottom: 24px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        label {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 11px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 11px 18px;
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th,
+        td {
+            padding: 14px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        th {
+            background: #f9fafb;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Households</h1>
+        <p>Client360 household relationships</p>
+    </header>
+
+    <main>
+        <p><a href="/">← Back to dashboard</a></p>
+
+        <div class="card">
+            <h2>Create Household</h2>
+
+            <form method="post" action="/households">
+                <label for="name">Household Name</label>
+                <input id="name" name="name" required>
+
+                <label for="city">City</label>
+                <input id="city" name="city">
+
+                <label for="state">State</label>
+                <input id="state" name="state">
+
+                <button type="submit">Create Household</button>
+            </form>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Household</th>
+                    <th>Location</th>
+                    <th>Members</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for household in households %}
+                <tr>
+                    <td>
+                        <a href="/households/{{ household.id }}">
+                            {{ household.name }}
+                        </a>
+                    </td>
+                    <td>
+                        {{ household.city or "" }}
+                        {% if household.city and household.state %}, {% endif %}
+                        {{ household.state or "" }}
+                    </td>
+                    <td>{{ household.member_count }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3">No households found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </main>
+</body>
+</html>

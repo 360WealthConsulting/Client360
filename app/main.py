@@ -8,6 +8,7 @@ from app.routes.search import router as search_router
 from app.routes.source import router as source_router
 from app.routes.tasks import router as tasks_router
 from app.routes.activities import router as activities_router
+from app.routes.households import router as households_router
 
 
 app = FastAPI(title="Client360")
@@ -20,3 +21,4 @@ app.include_router(people_router)
 app.include_router(notes_router)
 app.include_router(tasks_router)
 app.include_router(activities_router)
+app.include_router(households_router)

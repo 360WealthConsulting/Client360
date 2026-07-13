@@ -275,6 +275,39 @@ activities = Table(
 
 
 
+household_relationships = Table(
+    "household_relationships",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "household_id",
+        Integer,
+        ForeignKey("households.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("relationship_type", String(100), nullable=False),
+    Column("is_primary", Boolean, nullable=False, server_default="false"),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    UniqueConstraint(
+        "household_id",
+        "person_id",
+        name="uq_household_relationship_person",
+    ),
+)
+
+
+
 match_review_decisions = Table(
     "match_review_decisions",
     metadata,

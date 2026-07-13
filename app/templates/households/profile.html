@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>{{ household.name }} - Client360</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 28px 40px;
+        }
+
+        main {
+            padding: 32px 40px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            margin-bottom: 24px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        label {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        select,
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 11px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+
+        .checkbox {
+            width: auto;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 11px 18px;
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th,
+        td {
+            padding: 14px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        th {
+            background: #f9fafb;
+        }
+
+        .success {
+            padding: 14px;
+            margin-bottom: 18px;
+            border-left: 4px solid #15803d;
+            background: #dcfce7;
+            color: #166534;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>{{ household.name }}</h1>
+        <p>
+            {{ household.city or "" }}
+            {% if household.city and household.state %}, {% endif %}
+            {{ household.state or "" }}
+        </p>
+    </header>
+
+    <main>
+        <p><a href="/households">← Back to households</a></p>
+
+        {% if created %}
+        <div class="success">Household created successfully.</div>
+        {% endif %}
+
+        {% if member_saved %}
+        <div class="success">Household member saved.</div>
+        {% endif %}
+
+        <div class="card">
+            <h2>Add Household Member</h2>
+
+            <form
+                method="post"
+                action="/households/{{ household.id }}/members"
+            >
+                <label for="person_id">Person</label>
+                <select id="person_id" name="person_id" required>
+                    <option value="">Select a person</option>
+
+                    {% for person in available_people %}
+                    <option value="{{ person.id }}">
+                        {{ person.full_name }}
+                        {% if person.primary_email %}
+                        — {{ person.primary_email }}
+                        {% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+
+                <label for="relationship_type">
+                    Relationship
+                </label>
+
+                <select
+                    id="relationship_type"
+                    name="relationship_type"
+                >
+                    <option value="head">Head of Household</option>
+                    <option value="spouse">Spouse</option>
+                    <option value="partner">Partner</option>
+                    <option value="child">Child</option>
+                    <option value="dependent">Dependent</option>
+                    <option value="trustee">Trustee</option>
+                    <option value="beneficiary">Beneficiary</option>
+                    <option value="member" selected>Other Member</option>
+                </select>
+
+                <label>
+                    <input
+                        class="checkbox"
+                        type="checkbox"
+                        name="is_primary"
+                    >
+                    Primary household contact
+                </label>
+
+                <button type="submit">Save Member</button>
+            </form>
+        </div>
+
+        <h2>Household Members</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Relationship</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Primary</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for member in members %}
+                <tr>
+                    <td>
+                        <a href="/people/{{ member.id }}">
+                            {{ member.full_name }}
+                        </a>
+                    </td>
+                    <td>
+                        {{ member.relationship_type.replace("_", " ").title() }}
+                    </td>
+                    <td>{{ member.primary_email or "" }}</td>
+                    <td>{{ member.primary_phone or "" }}</td>
+                    <td>
+                        {% if member.is_primary %}Yes{% else %}No{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5">
+                        No household members have been added.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </main>
+</body>
+</html>
