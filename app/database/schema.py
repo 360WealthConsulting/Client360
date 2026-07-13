@@ -211,6 +211,40 @@ match_queue = Table(
     ),
 )
 
+tasks = Table(
+    "tasks",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("title", String(255), nullable=False),
+    Column("description", Text),
+    Column("status", String(50), nullable=False, server_default="open"),
+    Column("priority", String(50), nullable=False, server_default="normal"),
+    Column("assigned_to", String(255)),
+    Column("due_date", Date),
+    Column("completed_at", DateTime(timezone=True)),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    ),
+)
+
+
+
 match_review_decisions = Table(
     "match_review_decisions",
     metadata,

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Tasks for {{ person.full_name }}</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 28px 40px;
+        }
+
+        main {
+            max-width: 1000px;
+            padding: 32px 40px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            margin-bottom: 18px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        label {
+            display: block;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 11px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 15px;
+        }
+
+        textarea {
+            min-height: 100px;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 11px 18px;
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        .success {
+            padding: 14px;
+            margin-bottom: 18px;
+            border-left: 4px solid #15803d;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .complete {
+            opacity: 0.65;
+        }
+
+        .meta {
+            color: #6b7280;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Tasks for {{ person.full_name }}</h1>
+        <p>Canonical person record #{{ person.id }}</p>
+    </header>
+
+    <main>
+        <p>
+            <a href="/people/{{ person.id }}">
+                ← Back to profile
+            </a>
+        </p>
+
+        {% if created %}
+        <div class="success">Task created successfully.</div>
+        {% endif %}
+
+        {% if completed %}
+        <div class="success">Task marked complete.</div>
+        {% endif %}
+
+        <div class="card">
+            <h2>Create Task</h2>
+
+            <form
+                method="post"
+                action="/people/{{ person.id }}/tasks"
+            >
+                <label for="title">Title</label>
+                <input id="title" name="title" required>
+
+                <label for="description">Description</label>
+                <textarea
+                    id="description"
+                    name="description"
+                ></textarea>
+
+                <label for="priority">Priority</label>
+                <select id="priority" name="priority">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                </select>
+
+                <label for="assigned_to">Assigned To</label>
+                <input
+                    id="assigned_to"
+                    name="assigned_to"
+                    placeholder="Michael, Lauren, Sarah, Jessica"
+                >
+
+                <label for="due_date">Due Date</label>
+                <input
+                    id="due_date"
+                    name="due_date"
+                    type="date"
+                >
+
+                <button type="submit">Create Task</button>
+            </form>
+        </div>
+
+        <h2>Client Tasks</h2>
+
+        {% for task in tasks %}
+        <div class="card {% if task.status == 'complete' %}complete{% endif %}">
+            <h3>{{ task.title }}</h3>
+
+            {% if task.description %}
+            <p>{{ task.description }}</p>
+            {% endif %}
+
+            <p class="meta">
+                Status: {{ task.status }} |
+                Priority: {{ task.priority }} |
+                Assigned: {{ task.assigned_to or "Unassigned" }} |
+                Due: {{ task.due_date or "No due date" }}
+            </p>
+
+            {% if task.status != "complete" %}
+            <form
+                method="post"
+                action="/people/{{ person.id }}/tasks/{{ task.id }}/complete"
+            >
+                <button type="submit">Mark Complete</button>
+            </form>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="card">
+            <p>No tasks found for this person.</p>
+        </div>
+        {% endfor %}
+    </main>
+</body>
+</html>
