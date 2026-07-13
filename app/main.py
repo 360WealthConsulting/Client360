@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from app.routes.microsoft365 import router as microsoft365_router
+
 from app.routes.documents import router as documents_router
 
 from app.routes.dashboard import router as dashboard_router
@@ -30,3 +32,4 @@ app.include_router(activity_dashboard_router)
 app.include_router(households_router)
 
 app.include_router(documents_router)
+app.include_router(microsoft365_router)
