@@ -374,6 +374,31 @@ match_review_decisions = Table(
         nullable=False,
     ),
 )
+microsoft_accounts = Table(
+    "microsoft_accounts",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("person_id", Integer, ForeignKey("people.id")),
+    Column("tenant_id", String(255), nullable=False),
+    Column("user_id", String(255), nullable=False),
+    Column("email", String(255), nullable=False),
+    Column("display_name", String(255)),
+    Column("access_token", Text),
+    Column("refresh_token", Text),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    ),
+    UniqueConstraint(
+        "tenant_id",
+        "user_id",
+        name="uq_microsoft_account",
+    ),
+)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

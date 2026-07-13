@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from starlette.middleware.sessions import SessionMiddleware
+
 from app.routes.microsoft365 import router as microsoft365_router
 
 from app.routes.documents import router as documents_router
@@ -15,9 +17,14 @@ from app.routes.task_dashboard import router as task_dashboard_router
 from app.routes.activities import router as activities_router
 from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.households import router as households_router
+from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 
 
 app = FastAPI(title="Client360")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="CHANGE_THIS_TO_A_LONG_RANDOM_SECRET",
+)
 
 app.include_router(dashboard_router)
 app.include_router(search_router)
@@ -33,3 +40,4 @@ app.include_router(households_router)
 
 app.include_router(documents_router)
 app.include_router(microsoft365_router)
+app.include_router(microsoft365_oauth_router)
