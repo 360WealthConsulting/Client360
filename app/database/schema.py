@@ -345,6 +345,54 @@ documents = Table(
 )
 
 
+timeline_events = Table(
+    "timeline_events",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+    ),
+    Column(
+        "household_id",
+        Integer,
+        ForeignKey("households.id", ondelete="CASCADE"),
+    ),
+    Column("source", String(100), nullable=False),
+    Column("event_type", String(100), nullable=False),
+    Column("title", String(255), nullable=False),
+    Column("summary", Text),
+    Column(
+        "event_time",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column("external_id", String(500)),
+    Column("event_metadata", JSON),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    ),
+    UniqueConstraint(
+        "source",
+        "external_id",
+        name="uq_timeline_source_external_id",
+    ),
+)
+
+
+
 match_review_decisions = Table(
     "match_review_decisions",
     metadata,

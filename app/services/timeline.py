@@ -1,45 +1,95 @@
+from datetime import datetime, timezone
+from typing import Any, Optional
+
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.database.schema import person_source_links, source_contacts
+from app.db import engine, timeline_events
 
-def get_person_timeline(connection, person_id: int):
+
+def add_timeline_event(
+    *,
+    source: str,
+    event_type: str,
+    title: str,
+    person_id: Optional[int] = None,
+    household_id: Optional[int] = None,
+    summary: Optional[str] = None,
+    event_time: Optional[datetime] = None,
+    external_id: Optional[str] = None,
+    event_metadata: Optional[dict[str, Any]] = None,
+) -> int:
+    if person_id is None and household_id is None:
+        raise ValueError(
+            "A timeline event must have a person_id or household_id."
+        )
+
+    values = {
+        "person_id": person_id,
+        "household_id": household_id,
+        "source": source,
+        "event_type": event_type,
+        "title": title,
+        "summary": summary,
+        "event_time": event_time or datetime.now(timezone.utc),
+        "external_id": external_id,
+        "event_metadata": event_metadata or {},
+    }
+
+    statement = pg_insert(timeline_events).values(**values)
+
+    if external_id:
+        statement = statement.on_conflict_do_update(
+            constraint="uq_timeline_source_external_id",
+            set_={
+                "person_id": person_id,
+                "household_id": household_id,
+                "event_type": event_type,
+                "title": title,
+                "summary": summary,
+                "event_time": values["event_time"],
+                "event_metadata": values["event_metadata"],
+                "updated_at": datetime.now(timezone.utc),
+            },
+        )
+
+    statement = statement.returning(timeline_events.c.id)
+
+    with engine.begin() as connection:
+        return connection.execute(statement).scalar_one()
+
+
+def get_person_timeline(
+    person_id: int,
+    limit: int = 100,
+):
     statement = (
-        select(
-            source_contacts.c.source_system,
-            source_contacts.c.source_file,
-            source_contacts.c.imported_at,
-            person_source_links.c.match_method,
-            person_source_links.c.created_at.label("linked_at"),
-        )
-        .select_from(
-            person_source_links.join(
-                source_contacts,
-                source_contacts.c.id
-                == person_source_links.c.source_contact_id,
-            )
-        )
-        .where(person_source_links.c.person_id == person_id)
+        select(timeline_events)
+        .where(timeline_events.c.person_id == person_id)
         .order_by(
-            source_contacts.c.imported_at.desc(),
-            person_source_links.c.created_at.desc(),
+            timeline_events.c.event_time.desc(),
+            timeline_events.c.id.desc(),
         )
+        .limit(limit)
     )
 
-    rows = connection.execute(statement).mappings().all()
+    with engine.connect() as connection:
+        return connection.execute(statement).mappings().all()
 
-    events = []
 
-    for row in rows:
-        events.append(
-            {
-                "event_type": "source_linked",
-                "occurred_at": row["linked_at"] or row["imported_at"],
-                "title": f"Linked {row['source_system']} record",
-                "details": (
-                    f"Source file: {row['source_file']}. "
-                    f"Match method: {row['match_method'] or 'unknown'}."
-                ),
-            }
+def get_household_timeline(
+    household_id: int,
+    limit: int = 100,
+):
+    statement = (
+        select(timeline_events)
+        .where(timeline_events.c.household_id == household_id)
+        .order_by(
+            timeline_events.c.event_time.desc(),
+            timeline_events.c.id.desc(),
         )
+        .limit(limit)
+    )
 
-    return events
+    with engine.connect() as connection:
+        return connection.execute(statement).mappings().all()
