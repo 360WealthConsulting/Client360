@@ -25,3 +25,5 @@ match_review_decisions = metadata.tables["match_review_decisions"]
 tasks = metadata.tables["tasks"]
 activities = metadata.tables["activities"]
 household_relationships = metadata.tables["household_relationships"]
+
+documents = metadata.tables["documents"]

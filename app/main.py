@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from app.routes.documents import router as documents_router
+
 from app.routes.dashboard import router as dashboard_router
 from app.routes.matches import router as matches_router
 from app.routes.notes import router as notes_router
@@ -26,3 +28,5 @@ app.include_router(task_dashboard_router)
 app.include_router(activities_router)
 app.include_router(activity_dashboard_router)
 app.include_router(households_router)
+
+app.include_router(documents_router)

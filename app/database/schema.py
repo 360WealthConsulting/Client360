@@ -308,6 +308,43 @@ household_relationships = Table(
 
 
 
+
+documents = Table(
+    "documents",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("original_name", String(500), nullable=False),
+    Column("stored_name", String(500), nullable=False, unique=True),
+    Column("storage_path", String(1000), nullable=False),
+    Column("content_type", String(255)),
+    Column("size_bytes", Integer, nullable=False),
+    Column("sha256", String(64), nullable=False, index=True),
+    Column("category", String(100)),
+    Column("description", Text),
+    Column("uploaded_by", String(255)),
+    Column("archived", Boolean, nullable=False, server_default="false"),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    ),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    ),
+)
+
+
 match_review_decisions = Table(
     "match_review_decisions",
     metadata,
