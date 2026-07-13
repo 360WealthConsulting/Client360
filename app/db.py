@@ -1,0 +1,24 @@
+import os
+
+from dotenv import load_dotenv
+from sqlalchemy import MetaData, create_engine
+
+
+load_dotenv("app/.env")
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is missing from app/.env")
+
+engine = create_engine(DATABASE_URL)
+
+metadata = MetaData()
+metadata.reflect(bind=engine)
+
+source_contacts = metadata.tables["source_contacts"]
+people = metadata.tables["people"]
+accounts = metadata.tables["accounts"]
+households = metadata.tables["households"]
+person_source_links = metadata.tables["person_source_links"]
+match_review_decisions = metadata.tables["match_review_decisions"]
