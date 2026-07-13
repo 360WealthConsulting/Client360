@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.db import (
     accounts,
     engine,
+    households,
     people,
     person_source_links,
     source_contacts,
@@ -237,6 +238,15 @@ def person_profile(person_id: int):
         person = connection.execute(
             person_statement
         ).mappings().one_or_none()
+
+        household = None
+
+        if person and person["household_id"]:
+            household = connection.execute(
+                select(households).where(
+                    households.c.id == person["household_id"]
+                )
+            ).mappings().one_or_none()
 
         if person is None:
             return HTMLResponse(
@@ -473,6 +483,19 @@ def person_profile(person_id: int):
             <a class="top-link" href="/people">← Back to people</a>
 
             <div class="profile-grid">
+
+            <div class="card">
+                <h2>Household</h2>
+                {
+                    (
+                        f'<p><a href="/households/{household["id"]}">'
+                        f'{escape(household["name"])}</a></p>'
+                    )
+                    if household
+                    else "<p>Not assigned</p>"
+                }
+            </div>
+
                 <div class="card">
                     <h2>Contact</h2>
                     <p><strong>Email:</strong> {escape(person["primary_email"] or "Not available")}</p>
