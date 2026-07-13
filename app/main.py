@@ -9,6 +9,7 @@ from app.routes.source import router as source_router
 from app.routes.tasks import router as tasks_router
 from app.routes.task_dashboard import router as task_dashboard_router
 from app.routes.activities import router as activities_router
+from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.households import router as households_router
 
 
@@ -23,4 +24,5 @@ app.include_router(notes_router)
 app.include_router(tasks_router)
 app.include_router(task_dashboard_router)
 app.include_router(activities_router)
+app.include_router(activity_dashboard_router)
 app.include_router(households_router)
