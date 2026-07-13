@@ -3,8 +3,14 @@ from typing import Any, Optional
 
 import requests
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.db import engine, microsoft_accounts, people
+from app.db import (
+    engine,
+    microsoft_accounts,
+    microsoft_unmatched_messages,
+    people,
+)
 from app.services.timeline import add_timeline_event
 
 
@@ -121,6 +127,61 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
 
         if person_id is None:
             unmatched += 1
+
+            message_id = message.get("id")
+
+            if message_id:
+                statement = (
+                    pg_insert(microsoft_unmatched_messages)
+                    .values(
+                        microsoft_message_id=message_id,
+                        sender_name=sender_name,
+                        sender_address=sender_address,
+                        subject=message.get("subject"),
+                        body_preview=message.get("bodyPreview"),
+                        received_at=_parse_graph_datetime(
+                            message.get("receivedDateTime")
+                        ),
+                        web_link=message.get("webLink"),
+                        has_attachments=bool(
+                            message.get("hasAttachments")
+                        ),
+                        status="pending",
+                    )
+                    .on_conflict_do_update(
+                        constraint=(
+                            "uq_microsoft_unmatched_message_id"
+                        ),
+                        set_={
+                            "sender_name": sender_name,
+                            "sender_address": sender_address,
+                            "subject": message.get("subject"),
+                            "body_preview": message.get(
+                                "bodyPreview"
+                            ),
+                            "received_at": (
+                                _parse_graph_datetime(
+                                    message.get(
+                                        "receivedDateTime"
+                                    )
+                                )
+                            ),
+                            "web_link": message.get("webLink"),
+                            "has_attachments": bool(
+                                message.get(
+                                    "hasAttachments"
+                                )
+                            ),
+                            "updated_at": datetime.now(
+                                timezone.utc
+                            ),
+                        },
+                    )
+                )
+
+                with engine.begin() as connection:
+                    connection.execute(statement)
+
             continue
 
         matched += 1

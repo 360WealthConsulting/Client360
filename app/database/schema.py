@@ -345,6 +345,30 @@ documents = Table(
 )
 
 
+microsoft_unmatched_messages = Table(
+    "microsoft_unmatched_messages",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_message_id", String(500), nullable=False),
+    Column("sender_name", String(255)),
+    Column("sender_address", String(320), nullable=False),
+    Column("subject", String(500)),
+    Column("body_preview", Text),
+    Column("received_at", DateTime(timezone=True)),
+    Column("web_link", Text),
+    Column("has_attachments", Boolean, nullable=False, server_default="false"),
+    Column("status", String(50), nullable=False, server_default="pending"),
+    Column("matched_person_id", Integer, ForeignKey("people.id", ondelete="SET NULL")),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "microsoft_message_id",
+        name="uq_microsoft_unmatched_message_id",
+    ),
+)
+
+
+
 timeline_events = Table(
     "timeline_events",
     metadata,
