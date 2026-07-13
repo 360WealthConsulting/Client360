@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import insert, select
 
 from app.db import activities, engine, people
+from app.services.timeline import add_timeline_event
 
 
 router = APIRouter()
@@ -97,8 +98,9 @@ async def create_person_activity(
                 status_code=404,
             )
 
-        connection.execute(
-            insert(activities).values(
+        activity_id = connection.execute(
+            insert(activities)
+            .values(
                 person_id=person_id,
                 activity_type=activity_type,
                 title=title,
@@ -106,7 +108,23 @@ async def create_person_activity(
                 occurred_at=occurred_at,
                 created_by=created_by or None,
             )
-        )
+            .returning(activities.c.id)
+        ).scalar_one()
+
+    add_timeline_event(
+        person_id=person_id,
+        source="client360",
+        event_type="activity_created",
+        title=title,
+        summary=details or None,
+        event_time=occurred_at,
+        external_id=f"activity-created-{activity_id}",
+        event_metadata={
+            "activity_id": activity_id,
+            "activity_type": activity_type,
+            "created_by": created_by or None,
+        },
+    )
 
     return RedirectResponse(
         url=f"/people/{person_id}/activities?created=1",

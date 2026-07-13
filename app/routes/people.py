@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.db import (
     accounts,
+    activities,
     engine,
     households,
     people,
@@ -196,7 +197,22 @@ def people_directory():
 
 
 @router.get("/people/{person_id}", response_class=HTMLResponse)
-def person_profile(request: Request, person_id: int):
+def person_profile(
+    request: Request,
+    person_id: int,
+    tab: str = "overview",
+):
+    allowed_tabs = {
+        "overview",
+        "timeline",
+        "tasks",
+        "documents",
+        "notes",
+        "activities",
+    }
+
+    if tab not in allowed_tabs:
+        tab = "overview"
     person_statement = select(people).where(
         people.c.id == person_id
     )
@@ -235,6 +251,16 @@ def person_profile(request: Request, person_id: int):
             accounts.c.account_name,
             accounts.c.id,
         )
+    )
+
+    activity_statement = (
+        select(activities)
+        .where(activities.c.person_id == person_id)
+        .order_by(
+            activities.c.occurred_at.desc(),
+            activities.c.id.desc(),
+        )
+        .limit(20)
     )
 
     task_statement = (
@@ -282,6 +308,10 @@ def person_profile(request: Request, person_id: int):
             task_statement
         ).mappings().all()
 
+        activity_rows = connection.execute(
+            activity_statement
+        ).mappings().all()
+
     timeline_events = get_person_timeline(
         person_id,
         limit=20,
@@ -298,7 +328,10 @@ def person_profile(request: Request, person_id: int):
             "sources": source_rows,
             "accounts": account_rows,
             "open_tasks": open_tasks,
+            "all_tasks": open_tasks,
             "timeline_events": timeline_events,
             "documents": documents,
+            "activities": activity_rows,
+            "active_tab": tab,
         },
     )

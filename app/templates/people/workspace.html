@@ -27,16 +27,224 @@
     </div>
 
     <nav class="workspace-tabs">
-        <a class="active" href="/people/{{ person.id }}">Overview</a>
-        <a href="/timeline/person/{{ person.id }}">Timeline</a>
-        <a href="/people/{{ person.id }}/tasks">Tasks</a>
-        <a href="/people/{{ person.id }}/documents">Documents</a>
-        <a href="/people/{{ person.id }}/notes">Notes</a>
-        <a href="/people/{{ person.id }}/activities">Activities</a>
+        <a
+            class="{{ 'active' if active_tab == 'overview' else '' }}"
+            href="/people/{{ person.id }}?tab=overview"
+        >
+            Overview
+        </a>
+
+        <a
+            class="{{ 'active' if active_tab == 'timeline' else '' }}"
+            href="/people/{{ person.id }}?tab=timeline"
+        >
+            Timeline
+        </a>
+
+        <a
+            class="{{ 'active' if active_tab == 'tasks' else '' }}"
+            href="/people/{{ person.id }}?tab=tasks"
+        >
+            Tasks
+        </a>
+        <a
+            class="{{ 'active' if active_tab == 'documents' else '' }}"
+            href="/people/{{ person.id }}?tab=documents"
+        >
+            Documents
+        </a>
+        <a
+            class="{{ 'active' if active_tab == 'notes' else '' }}"
+            href="/people/{{ person.id }}?tab=notes"
+        >
+            Notes
+        </a>
+        <a
+            class="{{ 'active' if active_tab == 'activities' else '' }}"
+            href="/people/{{ person.id }}?tab=activities"
+        >
+            Activities
+        </a>
     </nav>
 </header>
 
 <main class="workspace-main">
+
+    {% if active_tab == "activities" %}
+
+    <section class="stack">
+        <div>
+            <h2>Client Activities</h2>
+            <p>
+                <a href="/people/{{ person.id }}/activities">
+                    Add or manage activities →
+                </a>
+            </p>
+        </div>
+
+        {% for activity in activities %}
+        <article class="card">
+            <strong>{{ activity.title }}</strong>
+
+            {% if activity.details %}
+            <p>{{ activity.details }}</p>
+            {% endif %}
+
+            <div class="timeline-meta">
+                {{ activity.activity_type.replace("_", " ").title() }}
+                ·
+                {{ activity.created_by or "Unknown user" }}
+                ·
+                {{ activity.occurred_at }}
+            </div>
+        </article>
+        {% else %}
+        <div class="card empty-state">
+            No activities found.
+        </div>
+        {% endfor %}
+    </section>
+
+    {% elif active_tab == "notes" %}
+
+    <section class="stack">
+        <div>
+            <h2>Advisor Notes</h2>
+            <p>
+                <a href="/people/{{ person.id }}/notes">
+                    Edit advisor notes →
+                </a>
+            </p>
+        </div>
+
+        <article class="card">
+            <p class="empty-state">
+                Notes are managed on the dedicated editor page for now.
+            </p>
+        </article>
+    </section>
+
+    {% elif active_tab == "documents" %}
+
+    <section class="stack">
+        <div>
+            <h2>Client Documents</h2>
+            <p>
+                <a href="/people/{{ person.id }}/documents">
+                    Upload or manage documents →
+                </a>
+            </p>
+        </div>
+
+        {% for document in documents %}
+        <article class="card">
+            <strong>
+                <a href="/documents/{{ document.id }}/download">
+                    {{ document.original_name }}
+                </a>
+            </strong>
+
+            {% if document.description %}
+            <p>{{ document.description }}</p>
+            {% endif %}
+
+            <div class="timeline-meta">
+                {{ document.category or "Other" }}
+                ·
+                {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB
+                ·
+                {{ document.uploaded_by or "Unknown user" }}
+                ·
+                {{ document.created_at }}
+            </div>
+        </article>
+        {% else %}
+        <div class="card empty-state">
+            No documents have been uploaded.
+        </div>
+        {% endfor %}
+    </section>
+
+    {% elif active_tab == "tasks" %}
+
+    <section class="stack">
+        <div>
+            <h2>Client Tasks</h2>
+            <p>
+                <a href="/people/{{ person.id }}/tasks">
+                    Create or manage tasks →
+                </a>
+            </p>
+        </div>
+
+        {% for task in all_tasks %}
+        <article class="card">
+            <strong>{{ task.title }}</strong>
+
+            {% if task.description %}
+            <p>{{ task.description }}</p>
+            {% endif %}
+
+            <div class="timeline-meta">
+                {{ task.priority.title() }}
+                ·
+                Assigned to {{ task.assigned_to or "Unassigned" }}
+                ·
+                Due {{ task.due_date or "not set" }}
+            </div>
+        </article>
+        {% else %}
+        <div class="card empty-state">
+            No open tasks found.
+        </div>
+        {% endfor %}
+    </section>
+
+    {% elif active_tab == "timeline" %}
+
+    <section class="stack">
+        <div>
+            <h2>Complete Timeline</h2>
+            <p class="empty-state">
+                All recorded activity for this client.
+            </p>
+        </div>
+
+        {% for event in timeline_events %}
+        <article class="card timeline-event timeline-{{ event.display_style }}">
+            <div class="timeline-icon">
+                {{ event.display_icon }}
+            </div>
+
+            <div class="timeline-label">
+                {{ event.display_label }}
+            </div>
+
+            <div>
+                <strong>{{ event.title }}</strong>
+            </div>
+
+            {% if event.summary %}
+            <p>{{ event.summary }}</p>
+            {% endif %}
+
+            <div class="timeline-meta">
+                {{ event.event_type.replace("_", " ").title() }}
+                ·
+                {{ event.source }}
+                ·
+                {{ event.relative_time }}
+            </div>
+        </article>
+        {% else %}
+        <div class="card empty-state">
+            No timeline events found.
+        </div>
+        {% endfor %}
+    </section>
+
+    {% else %}
+
     <div class="workspace-grid">
 
         <aside class="stack">
@@ -88,12 +296,13 @@
                 <div class="detail-row">
                     <strong>
                         {{ account.account_name or account.custodian }}
-                    </strong><br>
-                    <span class="empty-state">
+                    </strong>
+
+                    <div class="empty-state">
                         {{ account.registration_type or "Registration unavailable" }}
                         ·
                         {{ account.status or "Status unavailable" }}
-                    </span>
+                    </div>
 
                     {% if account.total_value is not none %}
                     <div>
@@ -111,7 +320,7 @@
             <section>
                 <h2>Recent Activity</h2>
 
-                {% for event in timeline_events %}
+                {% for event in timeline_events[:8] %}
                 <article class="card timeline-event">
                     <strong>{{ event.title }}</strong>
 
@@ -124,7 +333,7 @@
                         ·
                         {{ event.source }}
                         ·
-                        {{ event.event_time }}
+                        {{ event.relative_time }}
                     </div>
                 </article>
                 {% else %}
@@ -132,6 +341,12 @@
                     No timeline events found.
                 </div>
                 {% endfor %}
+
+                <p>
+                    <a href="/people/{{ person.id }}?tab=timeline">
+                        View complete timeline →
+                    </a>
+                </p>
             </section>
         </section>
 
@@ -176,6 +391,7 @@
 
             <section class="card">
                 <h2 class="section-title">AI Summary</h2>
+
                 <div class="empty-state">
                     AI client summary will appear here.
                 </div>
@@ -183,6 +399,9 @@
         </aside>
 
     </div>
+
+    {% endif %}
+
 </main>
 </body>
 </html>
