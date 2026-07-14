@@ -194,7 +194,20 @@ documented; no dead-but-ambiguous provider code remains.
 
 ---
 
-## Phase 4 — Database Optimization (Indexing)
+## Phase 4 — Database Optimization (Indexing)  — **IMPLEMENTED**
+
+> **Implementation note.** Two CONCURRENTLY migrations were added:
+> `n4e25b3c2f1d` (batch 1, 14 hot-path indexes) and `o5f36c4d3e2a` (batch 2, 10
+> remaining query-justified scope columns). Batch 2 was scoped by actual query
+> predicates rather than the full ~150 unindexed FK columns — pure audit
+> back-references are intentionally not indexed. `tax_engagement_return_id`,
+> `workflow_steps(workflow_instance_id)`, and `portal_access_grants(portal_account_id)`
+> were found already indexed and excluded. All 24 indexes verified valid and
+> planner-selected; measured ~2.7× on a 63k-row `timeline_events` person lookup.
+> Migration up/down/re-up reversible with sentinel preservation from v0.9.8;
+> single head `o5f36c4d3e2a`; 167 tests pass; 178 routes; OpenAPI intact. Details
+> in `docs/RELEASE_0.9.9_PHASE4_INDEXES.md`; regression test in
+> `tests/test_index_optimization.py`.
 
 **Objective.** Add the missing foreign-key / hot-column indexes (RC9 H20;
 architecture §5/§23) so per-request cost is index-bound. Indexing precedes the
