@@ -11,6 +11,7 @@ from app.db import (
     microsoft_unmatched_messages,
     people,
 )
+from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
 
 
@@ -51,23 +52,11 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
             "No Microsoft 365 account is connected."
         )
 
-    expires_at = account["expires_at"]
-
-    if (
-        expires_at is not None
-        and expires_at <= datetime.now(timezone.utc)
-    ):
-        raise RuntimeError(
-            "The Microsoft access token has expired. "
-            "Reconnect Microsoft 365 before syncing."
-        )
-
-    access_token = account["access_token"]
-
-    if not access_token:
-        raise RuntimeError(
-            "The Microsoft account has no access token."
-        )
+    try:
+        access_token = get_microsoft_access_token(account)
+    except Exception as exc:
+        record_sync_health(account["id"], "error", exc)
+        raise
 
     person_by_email: dict[str, int] = {}
 
@@ -221,6 +210,7 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
 
         published += 1
 
+    record_sync_health(account["id"], "ok")
     return {
         "messages_reviewed": len(messages),
         "matched_messages": matched,

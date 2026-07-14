@@ -4,7 +4,7 @@ from sqlalchemy import and_, or_, select
 import sqlalchemy as sa
 
 from app.db import (
-    activities, assignment_events, assignment_rules, audit_events, documents, engine,
+    assignment_events, assignment_rules, documents, engine,
     households, people, record_assignments, tasks, team_memberships,
     work_approvals, work_assignment_details, work_queues, workflow_instances,
     workflow_steps, timeline_events,
@@ -197,14 +197,36 @@ def work_items(principal, filters=None):
         assignments = authorized_assignments(connection, principal)
         assigned = {(row["entity_type"], row["entity_id"]) for row in assignments}
         direct_all = principal.can("record.read_all")
-        task_rows = connection.execute(select(tasks)).mappings().all()
-        step_rows = connection.execute(select(workflow_steps, workflow_instances.c.id.label("parent_workflow_id"), workflow_instances.c.name.label("workflow_name"), workflow_instances.c.person_id, workflow_instances.c.household_id).join(workflow_instances)).mappings().all()
+        # Push the authorization scope into SQL so the read is O(caller's book)
+        # rather than O(all tasks + all workflow steps) (RC8/RC9 H15-H19). The
+        # scoped rows are exactly those the prior Python-side filter kept.
+        person_ids = {eid for (etype, eid) in assigned if etype == "person"}
+        household_ids = {eid for (etype, eid) in assigned if etype == "household"}
+        task_ids = {eid for (etype, eid) in assigned if etype == "task"}
+        step_ids = {eid for (etype, eid) in assigned if etype == "workflow_step"}
+        workflow_ids = {eid for (etype, eid) in assigned if etype == "workflow_instance"}
+        task_query = select(tasks)
+        step_query = select(workflow_steps, workflow_instances.c.id.label("parent_workflow_id"), workflow_instances.c.name.label("workflow_name"), workflow_instances.c.person_id, workflow_instances.c.household_id).join(workflow_instances)
+        if not direct_all:
+            task_scope = [c for c in (
+                tasks.c.id.in_(task_ids) if task_ids else None,
+                tasks.c.person_id.in_(person_ids) if person_ids else None,
+                tasks.c.household_id.in_(household_ids) if household_ids else None,
+            ) if c is not None]
+            task_query = task_query.where(or_(*task_scope) if task_scope else sa.false())
+            step_scope = [c for c in (
+                workflow_steps.c.id.in_(step_ids) if step_ids else None,
+                workflow_instances.c.id.in_(workflow_ids) if workflow_ids else None,
+                workflow_instances.c.person_id.in_(person_ids) if person_ids else None,
+                workflow_instances.c.household_id.in_(household_ids) if household_ids else None,
+            ) if c is not None]
+            step_query = step_query.where(or_(*step_scope) if step_scope else sa.false())
+        task_rows = connection.execute(task_query).mappings().all()
+        step_rows = connection.execute(step_query).mappings().all()
     items = []
     for row in task_rows:
-        if not direct_all and not ({("task", row["id"]), ("person", row["person_id"]), ("household", row.get("household_id"))} & assigned): continue
         item = dict(row); item.update({"entity_type": "task", "entity_id": row["id"], "assigned": ("task", row["id"]) in assigned, "title": row["title"]}); items.append(item)
     for row in step_rows:
-        if not direct_all and not ({("workflow_step", row["id"]), ("workflow_instance", row["parent_workflow_id"]), ("person", row["person_id"]), ("household", row["household_id"])} & assigned): continue
         item = dict(row); item.update({"entity_type": "workflow_step", "entity_id": row["id"], "assigned": ("workflow_step", row["id"]) in assigned, "title": row["name"], "work_type": "workflow"}); items.append(item)
     for key in ("priority", "status", "team_id"):
         if filters.get(key) not in (None, ""): items = [item for item in items if str(item.get(key) or "") == str(filters[key])]

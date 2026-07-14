@@ -1,12 +1,39 @@
+from html import escape
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 
 from app.connectors.microsoft365.config import (
     get_microsoft365_config,
 )
+from app.db import engine, microsoft_accounts
 
 
 router = APIRouter(prefix="/microsoft365")
+
+
+def _sync_health_html() -> str:
+    """Render the Microsoft 365 sync-health summary (0.9.9 monitoring)."""
+    with engine.connect() as connection:
+        account = connection.execute(
+            select(microsoft_accounts.c.email, microsoft_accounts.c.token_cache_encrypted,
+                   microsoft_accounts.c.last_sync_at, microsoft_accounts.c.last_sync_status,
+                   microsoft_accounts.c.last_sync_error)
+            .order_by(microsoft_accounts.c.updated_at.desc()).limit(1)
+        ).mappings().one_or_none()
+    if account is None:
+        return "<dl><dt>Sync health</dt><dd>No Microsoft 365 account is connected.</dd></dl>"
+    connected = "Connected (refreshable token stored)" if account["token_cache_encrypted"] else "Not connected — reconnect required"
+    return (
+        "<dl>"
+        f"<dt>Connected account</dt><dd>{escape(account['email'] or '')}</dd>"
+        f"<dt>Token status</dt><dd>{escape(connected)}</dd>"
+        f"<dt>Last sync</dt><dd>{escape(str(account['last_sync_at'] or 'never'))}</dd>"
+        f"<dt>Last sync status</dt><dd>{escape(str(account['last_sync_status'] or 'unknown'))}</dd>"
+        f"<dt>Last sync error</dt><dd>{escape(str(account['last_sync_error'] or 'none'))}</dd>"
+        "</dl>"
+    )
 
 
 @router.get("/status", response_class=HTMLResponse)
@@ -29,6 +56,7 @@ def microsoft365_status():
 
     status_label = "Configured" if configured else "Not Configured"
     status_class = "success" if configured else "warning"
+    sync_health = _sync_health_html()
 
     return f"""
     <!DOCTYPE html>
@@ -128,6 +156,11 @@ def microsoft365_status():
                 <p>
                     Client secrets are never displayed on this page.
                 </p>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <h2>Sync health</h2>
+                {sync_health}
             </div>
         </main>
     </body>

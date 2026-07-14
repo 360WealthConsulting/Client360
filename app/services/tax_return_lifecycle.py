@@ -1,11 +1,11 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import uuid
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import or_, select
 
 from app.db import (engine, portal_accounts, record_assignments, tax_client_approvals,
     tax_engagement_returns, tax_engagements, tax_filing_events, tax_return_lifecycle_events,
     tax_return_reviews, tax_review_corrections, tax_return_types, tax_workflow_links,
-    work_approvals, workflow_events, workflow_instances, workflow_steps)
+    work_approvals, workflow_events, workflow_steps)
 from app.portal.service import notify, portal_scope, require_scope
 from app.security.audit import write_audit_event
 from app.services.tax_domain import list_engagements
@@ -166,7 +166,7 @@ def production_dashboard(principal):
     reviewers={str(uid):sum(r.reviewer_user_id==uid and r.status=="pending" for r in review_rows) for uid in {r.reviewer_user_id for r in review_rows if r.reviewer_user_id}}
     return {"items":[dict(r) for r in rows],"metrics":metrics,"by_status":by_status,"by_preparer":preparers,"by_reviewer":reviewers,"review_bottlenecks":{"manager":by_status["manager_review"],"partner":by_status["partner_review"]},"filing":{s:sum(r["filing_status"]==s for r in rows) for s in FILING_TRANSITIONS}}
 
-def portal_returns(principal):
-    scope=portal_scope(principal.account_id)
+def portal_returns(principal, scope=None):
+    scope=scope or portal_scope(principal.account_id)
     with engine.connect() as c: ids=list(c.scalars(select(tax_engagement_returns.c.id).join(tax_engagements).where(or_(tax_engagements.c.person_id.in_(scope["person_ids"]),tax_engagements.c.household_id.in_(scope["shared_household_ids"])))))
     return [return_detail(i) for i in ids]

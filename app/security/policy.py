@@ -1,5 +1,5 @@
 from datetime import date
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 
 def capability_codes_query(user_id, *, users, user_roles, roles, role_capabilities, capabilities):
     today = date.today()

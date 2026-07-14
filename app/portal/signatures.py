@@ -1,17 +1,17 @@
+"""Client-portal e-signature request lifecycle.
+
+Persists signature requests and emits timeline events. Provider selection uses
+the canonical ``app.portal.providers.ProviderRegistry`` (Release 0.9.9 Phase 3
+consolidation) rather than a bespoke registry class. Concrete e-file /
+e-signature provider wiring lands in Epic 5 Sprint 5.6.
+"""
 from datetime import datetime, timezone
-import uuid
 from sqlalchemy import select
 from app.db import engine, signature_requests
+from app.portal.providers import ProviderRegistry
 from app.services.timeline import add_timeline_event
 
-class SignatureProviderRegistry:
-    def __init__(self): self._providers = {}
-    def register(self, provider): self._providers[provider.key] = provider
-    def get(self, key):
-        if key not in self._providers: raise ValueError(f"Signature provider '{key}' is not configured")
-        return self._providers[key]
-
-registry = SignatureProviderRegistry()
+registry = ProviderRegistry("Signature provider")
 
 def create_signature_request(*, provider_key, person_id, household_id, requested_by_user_id,
                              documents, recipients, callback_url, workflow_instance_id=None,

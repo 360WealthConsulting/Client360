@@ -1,8 +1,9 @@
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import uuid
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 
-from app.db import (documents, engine, engagement_letter_templates, people, portal_accounts,
+from app.db import (engine, engagement_letter_templates, people, portal_accounts,
     portal_document_requests, tax_checklist_items, tax_checklist_template_items,
     tax_checklist_templates, tax_engagement_letters, tax_engagement_returns,
     tax_engagements, tax_missing_items, tax_organizer_templates, tax_organizers,
@@ -24,6 +25,51 @@ def _return_context(connection, return_id):
             .outerjoin(tax_workflow_links, tax_workflow_links.c.tax_engagement_return_id==tax_engagement_returns.c.id)
             .outerjoin(workflow_instances, workflow_instances.c.id==tax_workflow_links.c.workflow_instance_id))
         .where(tax_engagement_returns.c.id==return_id)).mappings().one_or_none()
+
+def _detail_from_parts(context, letter, organizer, questionnaire, answers, checklist, missing):
+    """Assemble the intake-detail structure — identical to intake_detail()."""
+    gates={"letter":bool(letter and letter["status"]=="accepted"),"organizer":bool(organizer and organizer["status"]=="completed"),"questionnaire":bool(questionnaire and questionnaire["status"]=="completed"),"documents":all(not i["required"] or i["status"]=="received" for i in checklist)}
+    return {"context":dict(context),"letter":dict(letter) if letter else None,"organizer":dict(organizer) if organizer else None,"questionnaire":dict(questionnaire) if questionnaire else None,"answers":[dict(a) for a in answers],"checklist":[dict(i) for i in checklist],"missing":[dict(i) for i in missing],"gates":gates,"client_readiness":round(100*sum(gates.values())/4),"preparer_ready":all(gates.values())}
+
+def _bulk_intake_details(return_ids):
+    """Bulk equivalent of intake_detail() over many returns (removes the N+1 in
+    staff_dashboard/portal_intakes). Returns {return_id: detail} where each detail
+    is structurally identical to intake_detail(return_id)."""
+    return_ids=list(dict.fromkeys(return_ids))
+    if not return_ids: return {}
+    with engine.connect() as c:
+        contexts=c.execute(select(tax_engagement_returns.c.id.label("return_id"), tax_engagement_returns.c.status.label("return_status"),
+            tax_engagements.c.id.label("engagement_id"), tax_engagements.c.person_id, func.coalesce(tax_engagements.c.household_id,people.c.household_id).label("household_id"),
+            tax_return_types.c.code.label("return_type"), tax_return_types.c.entity_type, tax_years.c.year,
+            workflow_instances.c.id.label("workflow_id"))
+            .select_from(tax_engagement_returns.join(tax_engagements).outerjoin(people,people.c.id==tax_engagements.c.person_id).join(tax_return_types).join(tax_years, tax_years.c.id==tax_engagements.c.tax_year_id)
+                .outerjoin(tax_workflow_links, tax_workflow_links.c.tax_engagement_return_id==tax_engagement_returns.c.id)
+                .outerjoin(workflow_instances, workflow_instances.c.id==tax_workflow_links.c.workflow_instance_id))
+            .where(tax_engagement_returns.c.id.in_(return_ids))).mappings().all()
+        engagement_ids={ctx["engagement_id"] for ctx in contexts}
+        letters=c.execute(select(tax_engagement_letters).where(tax_engagement_letters.c.tax_engagement_id.in_(engagement_ids))).mappings().all() if engagement_ids else []
+        organizers=c.execute(select(tax_organizers).where(tax_organizers.c.tax_engagement_return_id.in_(return_ids))).mappings().all()
+        questionnaires=c.execute(select(tax_questionnaires).where(tax_questionnaires.c.tax_engagement_return_id.in_(return_ids))).mappings().all()
+        checklist=c.execute(select(tax_checklist_items).where(tax_checklist_items.c.tax_engagement_return_id.in_(return_ids)).order_by(tax_checklist_items.c.id)).mappings().all()
+        missing=c.execute(select(tax_missing_items).where(tax_missing_items.c.tax_engagement_return_id.in_(return_ids),tax_missing_items.c.status=="open").order_by(tax_missing_items.c.due_date)).mappings().all()
+        q_ids={q["id"] for q in questionnaires}
+        answers=c.execute(select(tax_questionnaire_answers).where(tax_questionnaire_answers.c.questionnaire_id.in_(q_ids))).mappings().all() if q_ids else []
+    letter_by_eng={}
+    for l in letters: letter_by_eng.setdefault(l["tax_engagement_id"], l)
+    organizer_by_ret={o["tax_engagement_return_id"]:o for o in organizers}
+    questionnaire_by_ret={q["tax_engagement_return_id"]:q for q in questionnaires}
+    checklist_by_ret=defaultdict(list)
+    for i in checklist: checklist_by_ret[i["tax_engagement_return_id"]].append(i)
+    missing_by_ret=defaultdict(list)
+    for m in missing: missing_by_ret[m["tax_engagement_return_id"]].append(m)
+    answers_by_q=defaultdict(list)
+    for a in answers: answers_by_q[a["questionnaire_id"]].append(a)
+    result={}
+    for ctx in contexts:
+        rid=ctx["return_id"]; questionnaire=questionnaire_by_ret.get(rid)
+        result[rid]=_detail_from_parts(ctx, letter_by_eng.get(ctx["engagement_id"]), organizer_by_ret.get(rid), questionnaire,
+            answers_by_q.get(questionnaire["id"], []) if questionnaire else [], checklist_by_ret.get(rid, []), missing_by_ret.get(rid, []))
+    return result
 
 def _audience(entity_type): return "individual" if entity_type == "individual" else "business"
 
@@ -162,19 +208,21 @@ def intake_detail(return_id):
     return {"context":dict(context),"letter":dict(letter) if letter else None,"organizer":dict(organizer) if organizer else None,"questionnaire":dict(questionnaire) if questionnaire else None,"answers":[dict(a) for a in answers],"checklist":[dict(i) for i in checklist],"missing":[dict(i) for i in missing],"gates":gates,"client_readiness":round(100*sum(gates.values())/4),"preparer_ready":all(gates.values())}
 
 def staff_dashboard(principal):
-    returns=list_engagements(principal); items=[]
+    returns=list_engagements(principal)
+    details=_bulk_intake_details([row["return_id"] for row in returns]); items=[]
     for row in returns:
-        try: detail=intake_detail(row["return_id"])
-        except ValueError: continue
+        detail=details.get(row["return_id"])
+        if detail is None: continue
         overdue=sum(bool(m["due_date"] and m["due_date"]<date.today()) for m in detail["missing"]); items.append({**row,"intake":detail,"overdue_items":overdue})
     return {"items":items,"metrics":{"returns":len(items),"client_ready":sum(i["intake"]["client_readiness"]==100 for i in items),"preparer_ready":sum(i["intake"]["preparer_ready"] for i in items),"missing_documents":sum(len(i["intake"]["missing"]) for i in items),"overdue_items":sum(i["overdue_items"] for i in items)}}
 
-def portal_intakes(principal):
+def portal_intakes(principal, scope=None):
     from app.portal.service import portal_scope
-    scope=portal_scope(principal.account_id)
+    scope=scope or portal_scope(principal.account_id)
     with engine.connect() as c:
         ids=list(c.scalars(select(tax_engagement_returns.c.id).join(tax_engagements).where(or_(tax_engagements.c.person_id.in_(scope["person_ids"]),tax_engagements.c.household_id.in_(scope["shared_household_ids"])))))
-    return [intake_detail(i) for i in ids if _has_intake(i)]
+    details=_bulk_intake_details(ids)
+    return [details[i] for i in ids if i in details and details[i]["organizer"] is not None]
 
 def _has_intake(return_id):
     with engine.connect() as c: return bool(c.scalar(select(tax_organizers.c.id).where(tax_organizers.c.tax_engagement_return_id==return_id)))

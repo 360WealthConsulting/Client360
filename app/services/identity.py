@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.db import capabilities, engine, record_assignments, role_capabilities, roles, team_memberships, teams, user_roles, user_sessions, users
 from app.security.identity_utils import normalize_email

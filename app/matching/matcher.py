@@ -1,6 +1,3 @@
-import re
-
-
 def normalize_email(email):
     """Normalize email addresses for matching.
 

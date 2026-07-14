@@ -1,14 +1,15 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.db import engine, portal_accounts, portal_document_requests, portal_notifications, portal_threads
-from app.portal.service import (PortalPrincipal, accept_invitation, complete_client_task,
+from app.db import engine, portal_document_requests, portal_notifications
+from app.portal.service import (PortalPrincipal, accept_invitation, client_document_requests,
+    client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
     confirm_request_upload, create_portal_session, create_thread, dashboard,
-    list_messages, mark_read, notify, request_password_reset, consume_password_reset,
+    list_messages, mark_read, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
 from app.services.documents import save_person_document
 from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
@@ -69,7 +70,7 @@ def api_dashboard(principal: PortalPrincipal = Depends(current_portal)): return 
 @router.get("/api/v1/portal/profile")
 def api_profile(principal: PortalPrincipal = Depends(current_portal)): return principal.__dict__
 @router.get("/api/v1/portal/messages")
-def api_threads(principal: PortalPrincipal = Depends(current_portal)): return {"threads": dashboard(principal)["messages"]}
+def api_threads(principal: PortalPrincipal = Depends(current_portal)): return {"threads": client_threads(principal)}
 @router.post("/api/v1/portal/messages", status_code=201)
 def api_create_thread(payload: ThreadCreate, principal: PortalPrincipal = Depends(current_portal)):
     try: return {"id": create_thread(principal, **payload.dict())}
@@ -88,9 +89,9 @@ def api_mark_read(message_id: int, principal: PortalPrincipal = Depends(current_
     except (ValueError, PermissionError) as exc: raise HTTPException(403, str(exc))
 
 @router.get("/api/v1/portal/documents")
-def api_documents(principal: PortalPrincipal = Depends(current_portal)): return {"documents": dashboard(principal)["documents"]}
+def api_documents(principal: PortalPrincipal = Depends(current_portal)): return {"documents": client_documents(principal)}
 @router.get("/api/v1/portal/requests")
-def api_requests(principal: PortalPrincipal = Depends(current_portal)): return {"requests": dashboard(principal)["document_requests"]}
+def api_requests(principal: PortalPrincipal = Depends(current_portal)): return {"requests": client_document_requests(principal)}
 @router.post("/api/v1/portal/requests/{request_id}/upload", status_code=201)
 async def api_request_upload(request_id: int, file: UploadFile = File(...), principal: PortalPrincipal = Depends(current_portal)):
     with engine.connect() as connection: row = connection.execute(select(portal_document_requests).where(portal_document_requests.c.id == request_id)).mappings().one_or_none()
@@ -104,13 +105,13 @@ async def api_request_upload(request_id: int, file: UploadFile = File(...), prin
     return {"document_id": document_id, "version": version, "status": "uploaded"}
 
 @router.get("/api/v1/portal/tasks")
-def api_tasks(principal: PortalPrincipal = Depends(current_portal)): return {"tasks": dashboard(principal)["tasks"]}
+def api_tasks(principal: PortalPrincipal = Depends(current_portal)): return {"tasks": client_tasks(principal)}
 @router.post("/api/v1/portal/tasks/{step_id}/complete", status_code=204)
 def api_task_complete(step_id: int, principal: PortalPrincipal = Depends(current_portal)):
     try: complete_client_task(principal, step_id)
     except PermissionError as exc: raise HTTPException(403, str(exc))
 @router.get("/api/v1/portal/notifications")
-def api_notifications(principal: PortalPrincipal = Depends(current_portal)): return {"notifications": dashboard(principal)["notifications"]}
+def api_notifications(principal: PortalPrincipal = Depends(current_portal)): return {"notifications": client_notifications(principal)}
 @router.post("/api/v1/portal/notifications/{notification_id}/read", status_code=204)
 def api_notification_read(notification_id: int, principal: PortalPrincipal = Depends(current_portal)):
     with engine.begin() as connection:

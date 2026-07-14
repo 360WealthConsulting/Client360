@@ -34,7 +34,7 @@ from app.routes.auth import router as auth_router
 from app.routes.admin import router as admin_router
 from app.routes.session import router as session_router
 from app.security.middleware import AuthenticationMiddleware
-from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET
+from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET, validate_startup_configuration
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.work import router as work_router
@@ -44,10 +44,12 @@ from app.routes.tax import router as tax_router
 from app.routes.tax_intake import router as tax_intake_router
 from app.routes.tax_returns import router as tax_returns_router
 from app.routes.tax_documents import router as tax_documents_router
+from app.routes.ops import router as ops_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_startup_configuration()
     start_scheduler()
 
     try:
@@ -71,6 +73,7 @@ app.add_middleware(
 )
 
 app.include_router(dashboard_router)
+app.include_router(ops_router)
 app.include_router(search_router)
 app.include_router(source_router)
 app.include_router(matches_router)

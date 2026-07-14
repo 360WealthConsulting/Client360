@@ -12,6 +12,7 @@ from app.db import (
     microsoft_unmatched_calendar_attendees,
     people,
 )
+from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
 
 
@@ -315,18 +316,11 @@ def sync_calendar_events(
     if account is None:
         raise RuntimeError("No Microsoft 365 account is connected.")
 
-    expires_at = account["expires_at"]
-
-    if expires_at is not None and expires_at <= datetime.now(timezone.utc):
-        raise RuntimeError(
-            "The Microsoft access token has expired. "
-            "Reconnect Microsoft 365 before syncing."
-        )
-
-    access_token = account["access_token"]
-
-    if not access_token:
-        raise RuntimeError("The Microsoft account has no access token.")
+    try:
+        access_token = get_microsoft_access_token(account)
+    except Exception as exc:
+        record_sync_health(account["id"], "error", exc)
+        raise
 
     now = datetime.now(timezone.utc)
     response = requests.get(
@@ -357,7 +351,7 @@ def sync_calendar_events(
         )
 
     response.raise_for_status()
-    return process_calendar_events(
+    result = process_calendar_events(
         response.json().get("value", []),
         owner_email=account["email"],
         person_by_email=build_person_email_index(person_rows),
@@ -365,6 +359,8 @@ def sync_calendar_events(
         queue_unmatched=queue_unmatched_calendar_attendee,
         resolve_match=resolve_matched_calendar_attendee,
     )
+    record_sync_health(account["id"], "ok")
+    return result
 
 
 if __name__ == "__main__":

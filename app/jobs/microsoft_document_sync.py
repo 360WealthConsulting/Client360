@@ -16,6 +16,7 @@ from app.db import (
     microsoft_drives,
     people,
 )
+from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
 
 
@@ -304,12 +305,14 @@ def sync_microsoft_documents() -> dict[str, int]:
             .order_by(microsoft_document_matching_rules.c.priority)
         ).mappings().all()
 
-    if account is None or not account["access_token"]:
+    if account is None:
         raise RuntimeError("No Microsoft 365 account is connected.")
-    if account["expires_at"] and account["expires_at"] <= datetime.now(timezone.utc):
-        raise RuntimeError("Microsoft access token expired; reconnect Microsoft 365.")
+    try:
+        access_token = get_microsoft_access_token(account)
+    except Exception as exc:
+        record_sync_health(account["id"], "error", exc)
+        raise
 
-    access_token = account["access_token"]
     totals = {
         "drives_synced": 0,
         "items_reviewed": 0,
@@ -367,6 +370,7 @@ def sync_microsoft_documents() -> dict[str, int]:
             )
 
     totals["tax_documents_bridged"] = bridge_microsoft_documents_to_tax()
+    record_sync_health(account["id"], "ok")
     return totals
 
 

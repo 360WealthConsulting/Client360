@@ -421,14 +421,19 @@ inconsistent exception→status mapping. Standardization is Epic 7 part 2
 ## 17. External Integration Architecture
 
 Provider-neutral adapter pattern **[Implemented for OIDC + Graph config; abstracted
-elsewhere]**:
+elsewhere]**. Since Release 0.9.9 Phase 3 the portal registries share a single
+canonical `app.portal.providers.ProviderRegistry` (label-parameterized), replacing
+the former duplicate per-domain registry classes:
 
 - **OIDC** — provider-neutral staff SSO adapter. **[Implemented]**
-- **Microsoft Graph** — delegated OAuth + MSAL; config via
-  `connectors/microsoft365/config.py`. **[Implemented]**
-- **E-signature** — `SignatureProviderRegistry` port. **[Gap: dead/unwired]**
-- **Filing (e-file)** — `TaxFilingProvider` port, manual provider only.
-  **[Gap: orphaned; wired in Epic 5 Sprint 5.6]**
+- **Microsoft Graph** — single delegated-OAuth path via
+  `services/microsoft_identity.py` (encrypted MSAL cache + silent refresh, Phase 1);
+  config via `connectors/microsoft365/config.py`. **[Implemented]**
+- **E-signature** — signature port on the canonical `ProviderRegistry`
+  (`portal/signatures.py`); persistence + timeline wired, concrete provider
+  reserved for Epic 5 Sprint 5.6. **[Port implemented, provider unwired]**
+- **Filing (e-file)** — `TaxFilingProvider` port, manual provider only; reserved
+  for Epic 5 Sprint 5.6. **[Reserved: unwired]**
 - **Notifications** — provider-neutral hooks; email/SMS/push disabled by default.
   **[Implemented port, stubbed delivery]**
 - **Schwab** — CSV/file import. **[Implemented]**

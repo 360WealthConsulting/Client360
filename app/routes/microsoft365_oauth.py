@@ -11,29 +11,15 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.connectors.microsoft365.config import get_microsoft365_config
 from app.db import engine, microsoft_accounts
-
+from app.services.microsoft_identity import (
+    GRAPH_READ_SCOPES, build_msal_client, serialize_cache,
+)
 
 router = APIRouter(prefix="/microsoft365")
 
-DELEGATED_SCOPES = [
-    "User.Read",
-    "Mail.Read",
-    "Mail.Send",
-    "Calendars.ReadWrite",
-    "Contacts.ReadWrite",
-    "Files.ReadWrite",
-    "Sites.Read.All",
-]
-
-
-def build_msal_client() -> msal.ConfidentialClientApplication:
-    config = get_microsoft365_config()
-
-    return msal.ConfidentialClientApplication(
-        client_id=config.client_id,
-        authority=config.authority,
-        client_credential=config.client_secret,
-    )
+# Least-privilege, read-only scopes (H10). MSAL adds offline_access automatically
+# so a refresh token is issued into the token cache.
+DELEGATED_SCOPES = GRAPH_READ_SCOPES
 
 
 def error_page(
@@ -99,7 +85,8 @@ def microsoft365_callback(request: Request):
             "Return to the status page and start the connection again.",
         )
 
-    client = build_msal_client()
+    token_cache = msal.SerializableTokenCache()
+    client = build_msal_client(token_cache)
 
     try:
         result: Dict[str, Any] = (
@@ -178,6 +165,10 @@ def microsoft365_callback(request: Request):
     expires_at = datetime.now(timezone.utc) + timedelta(
         seconds=expires_in
     )
+    # Persist the encrypted MSAL token cache (which holds the refresh token) rather
+    # than a plaintext, non-refreshable access token (H10). The legacy plaintext
+    # columns are explicitly nulled.
+    token_cache_encrypted = serialize_cache(token_cache)
 
     statement = (
         pg_insert(microsoft_accounts)
@@ -186,8 +177,9 @@ def microsoft365_callback(request: Request):
             user_id=user_id,
             email=email,
             display_name=display_name,
-            access_token=access_token,
+            access_token=None,
             refresh_token=None,
+            token_cache_encrypted=token_cache_encrypted,
             expires_at=expires_at,
         )
         .on_conflict_do_update(
@@ -195,7 +187,9 @@ def microsoft365_callback(request: Request):
             set_={
                 "email": email,
                 "display_name": display_name,
-                "access_token": access_token,
+                "access_token": None,
+                "refresh_token": None,
+                "token_cache_encrypted": token_cache_encrypted,
                 "expires_at": expires_at,
                 "updated_at": datetime.now(timezone.utc),
             },

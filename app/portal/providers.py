@@ -13,14 +13,26 @@ class PortalIdentityProvider(ABC):
     @abstractmethod
     def verify_activation(self, assertion: str) -> PortalIdentityResult: ...
 
-class PortalIdentityProviderRegistry:
-    def __init__(self): self._providers = {}
+class ProviderRegistry:
+    """Canonical registry for pluggable portal service providers.
+
+    Providers are keyed by their ``.key`` attribute. ``label`` is used only to
+    render a clear error when an unknown key is requested, so each registry can
+    name its own domain (identity, signature, ...). Release 0.9.9 Phase 3
+    consolidated the former per-domain registry classes onto this one type.
+    """
+    def __init__(self, label="Provider"):
+        self._providers = {}
+        self._label = label
     def register(self, provider): self._providers[provider.key] = provider
     def get(self, key):
-        if key not in self._providers: raise ValueError(f"Portal identity provider '{key}' is not configured")
+        if key not in self._providers: raise ValueError(f"{self._label} '{key}' is not configured")
         return self._providers[key]
 
-PORTAL_IDENTITY_PROVIDERS = PortalIdentityProviderRegistry()
+# Backwards-compatible alias for the former per-domain registry class.
+PortalIdentityProviderRegistry = ProviderRegistry
+
+PORTAL_IDENTITY_PROVIDERS = ProviderRegistry("Portal identity provider")
 
 @dataclass(frozen=True)
 class SignatureResult:
