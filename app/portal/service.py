@@ -167,6 +167,12 @@ def confirm_request_upload(principal, request_id, document_id):
         connection.execute(document_versions.insert().values(document_id=document_id, version_number=version, uploaded_by_portal_account_id=principal.account_id))
         connection.execute(portal_document_requests.update().where(portal_document_requests.c.id == request_id).values(uploaded_document_id=document_id, uploaded_at=now, status="uploaded", updated_at=now))
     add_timeline_event(person_id=request["person_id"], household_id=request["household_id"], source="client_portal", event_type="document_uploaded", title="Requested document uploaded", external_id=f"portal-request-upload-{request_id}-{document_id}")
+    from app.db import tax_checklist_items
+    with engine.connect() as connection:
+        tax_return_id = connection.scalar(select(tax_checklist_items.c.tax_engagement_return_id).where(tax_checklist_items.c.portal_document_request_id == request_id))
+    if tax_return_id:
+        from app.services.tax_intake import sync_documents
+        sync_documents(tax_return_id)
     return version
 
 def approve_request_upload(request_id, *, approved_by_user_id, approved=True):
@@ -210,4 +216,6 @@ def dashboard(principal):
         docs = connection.execute(select(documents).where(documents.c.person_id.in_(scope["person_ids"]), documents.c.archived.is_(False)).order_by(documents.c.created_at.desc()).limit(20)).mappings().all()
         meetings = connection.execute(select(timeline_events).where(or_(timeline_events.c.person_id.in_(scope["person_ids"]), timeline_events.c.household_id.in_(scope["shared_household_ids"])), timeline_events.c.event_type == "calendar_event", timeline_events.c.event_time >= now).order_by(timeline_events.c.event_time).limit(20)).mappings().all()
     tasks = client_tasks(principal)
-    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}
+    from app.services.tax_intake import portal_intakes
+    tax_intakes = portal_intakes(principal)
+    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}

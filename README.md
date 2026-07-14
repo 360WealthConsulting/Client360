@@ -28,7 +28,10 @@ See [Release 0.9.4 Notes](docs/RELEASE_0.9.4.md),
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
 Epic 5 is in implementation. Sprint 5.1 is released; Sprint 5.2 remains pending
-approval and has not begun.
+release review on `feature/tax-engagement-intake`. It adds engagement letters,
+organizers, conditional questionnaires, document checklists, missing-information
+tracking, portal intake, reminders, and workflow advancement. See
+[Tax Engagement Intake](docs/TAX_ENGAGEMENT_INTAKE.md).
 
 ## Mission
 

@@ -6,6 +6,7 @@ from app.jobs.microsoft_calendar_sync import sync_calendar_events
 from app.jobs.microsoft_mail_sync import sync_recent_mail
 from app.jobs.microsoft_document_sync import sync_microsoft_documents
 from app.services.workflow_automation import evaluate_sla
+from app.services.tax_intake import process_reminders
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,12 @@ def run_workflow_sla_automation() -> None:
     except Exception:
         logger.exception("Workflow SLA automation failed.")
 
+def run_tax_intake_reminders() -> None:
+    try:
+        logger.info("Tax intake reminder result: %s", process_reminders())
+    except Exception:
+        logger.exception("Tax intake reminders failed.")
+
 
 def start_scheduler() -> None:
     if _scheduler.running:
@@ -77,6 +84,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         run_workflow_sla_automation, trigger="interval", minutes=5,
         id="workflow-sla-automation", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    _scheduler.add_job(
+        run_tax_intake_reminders, trigger="cron", hour=9, minute=0,
+        id="tax-intake-reminders", replace_existing=True, max_instances=1, coalesce=True,
     )
 
     _scheduler.start()
