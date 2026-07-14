@@ -19,6 +19,7 @@ from sqlalchemy import (
     create_engine,
     func,
 )
+from app.database.identity_tables import define_identity_tables
 
 load_dotenv("app/.env")
 
@@ -43,6 +44,8 @@ households = Table(
     Column("city", String(100)),
     Column("state", String(50)),
     Column("postal_code", String(20)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     Column(
         "updated_at",
@@ -77,6 +80,8 @@ people = Table(
     Column("postal_code", String(20)),
     Column("contact_type", String(100)),
     Column("active", Boolean, default=True),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     Column(
         "updated_at",
@@ -180,6 +185,8 @@ import_jobs = Table(
     Column("status", String(50), nullable=False, server_default="started"),
     Column("started_at", DateTime(timezone=True), server_default=func.now()),
     Column("completed_at", DateTime(timezone=True)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("rows_read", Integer, nullable=False, server_default="0"),
     Column("rows_inserted", Integer, nullable=False, server_default="0"),
     Column("rows_updated", Integer, nullable=False, server_default="0"),
@@ -272,6 +279,8 @@ activities = Table(
         nullable=False,
     ),
     Column("created_by", String(255)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column(
         "created_at",
         DateTime(timezone=True),
@@ -341,6 +350,8 @@ documents = Table(
     Column("category", String(100)),
     Column("description", Text),
     Column("uploaded_by", String(255)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("archived", Boolean, nullable=False, server_default="false"),
     Column(
         "created_at",
@@ -652,6 +663,7 @@ microsoft_accounts = Table(
     ),
 )
 portfolio_tables = define_portfolio_tables(metadata)
+identity_tables = define_identity_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")
