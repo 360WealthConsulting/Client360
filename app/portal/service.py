@@ -217,5 +217,7 @@ def dashboard(principal):
         meetings = connection.execute(select(timeline_events).where(or_(timeline_events.c.person_id.in_(scope["person_ids"]), timeline_events.c.household_id.in_(scope["shared_household_ids"])), timeline_events.c.event_type == "calendar_event", timeline_events.c.event_time >= now).order_by(timeline_events.c.event_time).limit(20)).mappings().all()
     tasks = client_tasks(principal)
     from app.services.tax_intake import portal_intakes
+    from app.services.tax_return_lifecycle import portal_returns
     tax_intakes = portal_intakes(principal)
-    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}
+    tax_returns = portal_returns(principal)
+    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}

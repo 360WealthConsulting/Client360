@@ -89,7 +89,7 @@ def create_engagement(payload, *, actor_user_id, request_id):
             person_id=payload.get("person_id"), household_id=payload.get("household_id"), relationship_entity_id=payload.get("relationship_entity_id"),
             engagement_type=return_type["entity_type"], created_by_user_id=actor_user_id, metadata=payload.get("metadata", {})).returning(tax_engagements.c.id)).scalar_one()
         return_id = c.execute(tax_engagement_returns.insert().values(tax_engagement_id=engagement_id, return_type_id=return_type["id"],
-            jurisdiction_id=jurisdiction_id, filing_status_id=filing_status_id, priority=payload.get("priority", "normal"), status="not_started").returning(tax_engagement_returns.c.id)).scalar_one()
+            jurisdiction_id=jurisdiction_id, filing_status_id=filing_status_id, priority=payload.get("priority", "normal"), status="received").returning(tax_engagement_returns.c.id)).scalar_one()
         rule = c.execute(select(tax_deadline_rules).where(tax_deadline_rules.c.jurisdiction_id == jurisdiction_id,
             tax_deadline_rules.c.return_type_id == return_type["id"], tax_deadline_rules.c.published.is_(True)).order_by(tax_deadline_rules.c.version.desc()).limit(1)).mappings().one_or_none()
         if rule:
