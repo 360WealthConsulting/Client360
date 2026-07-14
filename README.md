@@ -90,4 +90,6 @@ workflows is defined in the
 Sprint 4.2 Operational Work Management is delivered in Release 0.9.1, and
 Sprint 4.3 Workflow and Process Automation is delivered in Release 0.9.2.
 Sprint 4.4 Client Portal and Secure Collaboration is delivered in Release
-0.9.3. Sprint 4.5 has not started.
+0.9.3. Epic 5 Tax Practice Platform is in technical design; no Epic 5
+implementation has started. See
+[Epic 5 Tax Practice Platform](docs/EPIC_5_TAX_PRACTICE_PLATFORM.md).
