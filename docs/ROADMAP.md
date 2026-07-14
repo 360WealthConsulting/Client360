@@ -63,6 +63,17 @@
 - Existing timeline, immutable audit, capability, and record-scope integration
 - Clean installation and upgrade/downgrade compatibility from Release 0.9.3
 
+## Release 0.9.5 — Tax Engagement Intake & Client Collaboration ✅
+
+- Immutable versioned engagement letters and portal acceptance evidence
+- Individual/business organizers with tax-year snapshots and saved progress
+- Required and conditional questionnaires with resumable answers
+- Required/optional document checklists linked to portal uploads and versions
+- Missing-information tracking, reminders, and readiness dashboards
+- Automatic advancement of existing tax intake and document workflow steps
+- Provider-neutral notifications, timeline, audit, and record authorization
+- Clean installation and upgrade/downgrade compatibility from Release 0.9.4
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation
@@ -112,7 +123,7 @@ can build on the completed practice-management platform without duplicating it.
 ## Epic 5 — Tax Practice Platform 🚧
 
 1. Tax domain, offices, jurisdictions, deadlines, and workflow launch ✅
-2. Engagement intake, organizers, questionnaires, and engagement letters 🚧
+2. Engagement intake, organizers, questionnaires, and engagement letters ✅
 3. Return lifecycle and production-stage automation
 4. Tax document intelligence and missing information
 5. Extensions, estimates, notices, and amendments
@@ -121,8 +132,8 @@ can build on the completed practice-management platform without duplicating it.
 8. Drake/provider and IRS transcript integration
 9. Production reporting, capacity, AI extensions, and release readiness
 
-Sprint 5.1 shipped in Release v0.9.4. Sprint 5.2 is implemented in a draft
-release candidate and has not been merged. See
+Sprint 5.1 shipped in Release v0.9.4 and Sprint 5.2 in Release v0.9.5. Sprint
+5.3 has not begun. See
 [Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md) and
 [Tax Domain Foundation](TAX_DOMAIN_FOUNDATION.md), plus
 [Tax Engagement Intake](TAX_ENGAGEMENT_INTAKE.md).

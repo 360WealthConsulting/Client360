@@ -5,14 +5,17 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
-**Release 0.9.4 — Tax Domain Foundation**
+**Release 0.9.5 — Tax Engagement Intake & Client Collaboration**
 
-Release 0.9.4 establishes the provider-neutral tax operating domain: tax firms,
-offices, staff roles, years, seasons, jurisdictions, return types, filing
-statuses, engagements, returns, calendars, versioned deadlines, tax queues,
-automatic workflow launch, and an authorized production dashboard.
+Release 0.9.5 adds the front half of the tax engagement lifecycle: versioned
+engagement letters, organizers, conditional questionnaires, document
+checklists, missing-information tracking, portal collaboration, reminders,
+readiness dashboards, and automatic workflow advancement.
 
-See [Release 0.9.4 Notes](docs/RELEASE_0.9.4.md),
+See [Release 0.9.5 Notes](docs/RELEASE_0.9.5.md),
+[Sprint 5.2 RC Validation](docs/SPRINT_5_2_RELEASE_VALIDATION.md),
+[Tax Engagement Intake](docs/TAX_ENGAGEMENT_INTAKE.md),
+[Release 0.9.4 Notes](docs/RELEASE_0.9.4.md),
 [Sprint 5.1 RC Validation](docs/SPRINT_5_1_RELEASE_VALIDATION.md),
 [Tax Domain Foundation](docs/TAX_DOMAIN_FOUNDATION.md),
 [Epic 5 Architecture](docs/EPIC_5_TAX_PRACTICE_PLATFORM.md),
@@ -27,11 +30,8 @@ See [Release 0.9.4 Notes](docs/RELEASE_0.9.4.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
-Epic 5 is in implementation. Sprint 5.1 is released; Sprint 5.2 remains pending
-release review on `feature/tax-engagement-intake`. It adds engagement letters,
-organizers, conditional questionnaires, document checklists, missing-information
-tracking, portal intake, reminders, and workflow advancement. See
-[Tax Engagement Intake](docs/TAX_ENGAGEMENT_INTAKE.md).
+Epic 5 is in implementation. Sprints 5.1 and 5.2 are released. Sprint 5.3 has
+not begun.
 
 ## Mission
 

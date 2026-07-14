@@ -4,6 +4,10 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
+No unreleased application changes.
+
+## [0.9.5] — 2026-07-14
+
 ### Added
 
 - Versioned engagement-letter, organizer, questionnaire, and document-checklist
@@ -18,6 +22,12 @@ All notable Client360 releases are documented here.
 
 - Added 12 intake tables with parent revision `g750b7d5f6a7`; new head
   `h860c8e6a7b8`.
+
+### Validation
+
+- Added the Tax Engagement Intake architecture and RC6 validation report.
+- Passed 69 automated tests, clean installation, v0.9.4 rollback/re-upgrade,
+  sentinel preservation, startup, route, OpenAPI, and template validation.
 
 ## [0.9.4] — 2026-07-14
 
