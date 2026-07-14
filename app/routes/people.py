@@ -20,6 +20,7 @@ from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
 from app.services.timeline import get_person_timeline
+from app.services.portfolio import get_person_portfolio
 
 
 router = APIRouter()
@@ -212,6 +213,7 @@ def person_profile(
         "documents",
         "notes",
         "activities",
+        "portfolio",
     }
 
     if tab not in allowed_tabs:
@@ -322,8 +324,9 @@ def person_profile(
 
     documents = get_person_documents(person_id)[:8]
     client_summary = get_client_summary(person_id)
+    portfolio = get_person_portfolio(person_id)
     client_alerts = build_client_alerts(client_summary)
-    advisor_recommendations = build_advisor_recommendations(client_summary)
+    advisor_recommendations = build_advisor_recommendations(client_summary, portfolio)
 
     return templates.TemplateResponse(
         request=request,
@@ -341,6 +344,7 @@ def person_profile(
             "client_summary": client_summary,
             "client_alerts": client_alerts,
             "advisor_recommendations": advisor_recommendations,
+            "portfolio": portfolio,
             "active_tab": tab,
         },
     )
