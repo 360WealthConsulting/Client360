@@ -161,7 +161,7 @@ can build on the completed practice-management platform without duplicating it.
 1. Tax domain, offices, jurisdictions, deadlines, and workflow launch ✅
 2. Engagement intake, organizers, questionnaires, and engagement letters ✅
 3. Return lifecycle and production-stage automation ✅
-4. Tax document intelligence and missing information
+4. Tax document intelligence and missing information 🚧
 5. Extensions, estimates, notices, and amendments
 6. Review, approval, e-file, delivery, and compliance
 7. Secure tax portal and client collaboration

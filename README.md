@@ -44,9 +44,12 @@ See [Release 0.9.6 Notes](docs/RELEASE_0.9.6.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
-Epic 5 is in implementation. Sprints 5.1, 5.2, and 5.3 are released. Sprint 5.3
-delivered the full tax return lifecycle, review routing, client approvals,
-filing state, production queues, and dashboards. See
+Epic 5 is in implementation. Sprints 5.1, 5.2, and 5.3 are released. Sprint 5.4
+(tax document intelligence and missing information) is in draft review — a
+deterministic, authorization-aware document matching engine that replaces
+substring-based matching (RC8 H13) with mandatory human review of ambiguous
+matches. See [Revised Epic 5 Plan](docs/EPIC_5_REVISED_PLAN.md),
+[Tax Document Intelligence](docs/SPRINT_5_4_TAX_DOCUMENT_INTELLIGENCE.md), and
 [Tax Return Lifecycle](docs/TAX_RETURN_LIFECYCLE.md).
 
 ## Mission

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Tax Document Review | Client360{% endblock %}{% block content %}
+<div class="page-header"><div><p class="eyebrow">Tax Production</p><h1>Document match review</h1><p class="muted">Documents awaiting a human match decision. Ambiguous and low-confidence matches are never auto-assigned.</p></div></div>
+<div class="stats-grid"><div class="stat-card"><span>Awaiting review</span><strong>{{ data.count }}</strong></div></div>
+<section class="panel"><h2>Review queue</h2><div class="table-wrap"><table><thead><tr><th>Link</th><th>Document</th><th>Return</th><th>Source</th><th>Confidence</th><th>Status</th></tr></thead><tbody>
+{% for item in data['items'] %}<tr><td>#{{ item.id }}</td><td>{{ item.document_id }}</td><td>{{ item.tax_engagement_return_id or '—' }}</td><td>{{ item.match_source }}</td><td>{{ '%.2f'|format(item.confidence|float) }}</td><td><span class="status-pill {{ item.status }}">{{ item.status }}</span></td></tr>{% else %}<tr><td colspan="6" class="muted">No documents are awaiting review.</td></tr>{% endfor %}
+</tbody></table></div></section>{% endblock %}

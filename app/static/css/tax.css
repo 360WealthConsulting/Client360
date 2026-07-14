@@ -1,0 +1,21 @@
+/* Shared styling for the staff tax dashboards (return, intake, and document
+   review). Sprint 5.4 closes the RC8 gap where these classes were referenced by
+   the tax templates but defined in no loaded stylesheet. */
+.page-header { display: flex; justify-content: space-between; align-items: flex-end; margin: 8px 0 20px; }
+.page-header .eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: #64748b; margin: 0; }
+.page-header h1 { margin: 4px 0; font-size: 24px; }
+.muted { color: #64748b; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin: 16px 0; }
+.stat-card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px #00000010; }
+.stat-card span { display: block; color: #64748b; font-size: 13px; }
+.stat-card strong { font-size: 26px; }
+.panel { background: #fff; border-radius: 10px; padding: 16px 20px; box-shadow: 0 2px 8px #00000010; margin: 16px 0; }
+.panel h2 { margin-top: 0; font-size: 18px; }
+.table-wrap { overflow-x: auto; }
+.table-wrap table { width: 100%; border-collapse: collapse; }
+.table-wrap th, .table-wrap td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+.table-wrap th { color: #475569; font-weight: 600; }
+.status-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; background: #e2e8f0; font-size: 12px; }
+.status-pill.proposed { background: #fef3c7; color: #92400e; }
+.status-pill.accepted { background: #dcfce7; color: #166534; }
+.status-pill.rejected { background: #fee2e2; color: #991b1b; }

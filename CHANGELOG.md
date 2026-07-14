@@ -4,7 +4,35 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-No unreleased application changes.
+### Added — Sprint 5.4: Tax Document Intelligence & Missing Information (draft review)
+
+- Deterministic tax document matching engine (exact identifiers, confidence
+  scoring, ambiguity floor) with mandatory human review for anything not
+  deterministically resolved. Replaces the substring-based Microsoft document
+  matching (RC8 H13).
+- Authorization-aware ownership validation and record-scope-checked reviewer
+  actions (accept/reject/reassign/classify/duplicate/revert) with immutable,
+  append-only review and evidence ledgers.
+- Missing-information engine that recomputes from accepted document links and
+  drives the existing checklist / portal-request / workflow-gating mechanisms.
+- Staff document-review workspace and `/api/v1/tax/documents` + checklist/missing
+  APIs; new `tax.document.review` capability and four document review queues.
+- AI classifier port (interface only; inert — no vendor, no external call).
+- Shared tax dashboard stylesheet (`tax.css`), closing an RC8 unstyled-class gap.
+
+### Database
+
+- Added `tax_document_links`, `tax_document_classifications`,
+  `tax_document_match_evidence`, `tax_document_review_events` (append-only), the
+  `tax.document.review` capability, four review queues, and the
+  `tax_missing_items` FK index (RC9 H20); legacy free-text Microsoft matching
+  rules deactivated. Parent `j0a81f9c8d7e`; new head `k1b92e0d9c8a`.
+
+### Security
+
+- Eliminated all substring/containment ownership matching for tax documents
+  (H13). Auto-assignment requires a single exact-identifier candidate above the
+  auto-match threshold with no competing candidate above the ambiguity floor.
 
 ## [0.9.7] — 2026-07-14
 
