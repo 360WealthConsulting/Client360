@@ -94,7 +94,16 @@ reconnect on genuine re-consent; existing accounts re-connect once.
 
 ---
 
-## Phase 2 — Microsoft Graph Consolidation
+## Phase 2 — Microsoft Graph Consolidation  — **IMPLEMENTED**
+
+> **Implementation note.** Reference analysis confirmed `auth.py`, `graph.py`,
+> `calendar.py`, `mail.py`, `contacts.py`, and `sharepoint.py` formed a closed
+> cluster imported only by one another — no live route, job, or service imported
+> them. All six were removed; `config.py` (used by the OAuth route, status route,
+> and the Phase 1 identity service) and the empty `__init__.py` package marker
+> were retained. `git diff --check` clean; 178 routes unchanged; single Alembic
+> head `m3d14a2f1e0c` (code-only, no migration). Guard tests added in
+> `tests/test_microsoft_graph_consolidation.py` (13 tests).
 
 **Objective.** Consolidate all Graph token acquisition behind the Phase 1 helper
 and remove the unused app-only Graph client (architecture §8, ADR-7).
