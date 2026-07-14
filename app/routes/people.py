@@ -1,22 +1,29 @@
 from html import escape
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from app.db import (
     accounts,
+    activities,
     engine,
     households,
     people,
     person_source_links,
     source_contacts,
+    tasks,
 )
+from app.services.advisor_ai import build_advisor_recommendations
+from app.services.client_alerts import build_client_alerts
+from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
 from app.services.timeline import get_person_timeline
 
 
 router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/people", response_class=HTMLResponse)
@@ -193,7 +200,22 @@ def people_directory():
 
 
 @router.get("/people/{person_id}", response_class=HTMLResponse)
-def person_profile(person_id: int):
+def person_profile(
+    request: Request,
+    person_id: int,
+    tab: str = "overview",
+):
+    allowed_tabs = {
+        "overview",
+        "timeline",
+        "tasks",
+        "documents",
+        "notes",
+        "activities",
+    }
+
+    if tab not in allowed_tabs:
+        tab = "overview"
     person_statement = select(people).where(
         people.c.id == person_id
     )
@@ -234,25 +256,48 @@ def person_profile(person_id: int):
         )
     )
 
+    activity_statement = (
+        select(activities)
+        .where(activities.c.person_id == person_id)
+        .order_by(
+            activities.c.occurred_at.desc(),
+            activities.c.id.desc(),
+        )
+        .limit(20)
+    )
+
+    task_statement = (
+        select(tasks)
+        .where(
+            tasks.c.person_id == person_id,
+            tasks.c.status != "complete",
+        )
+        .order_by(
+            tasks.c.due_date.asc().nullslast(),
+            tasks.c.created_at.desc(),
+        )
+        .limit(8)
+    )
+
     with engine.connect() as connection:
         person = connection.execute(
             person_statement
         ).mappings().one_or_none()
-
-        household = None
-
-        if person and person["household_id"]:
-            household = connection.execute(
-                select(households).where(
-                    households.c.id == person["household_id"]
-                )
-            ).mappings().one_or_none()
 
         if person is None:
             return HTMLResponse(
                 "<h1>Person not found</h1>",
                 status_code=404,
             )
+
+        household = None
+
+        if person["household_id"]:
+            household = connection.execute(
+                select(households).where(
+                    households.c.id == person["household_id"]
+                )
+            ).mappings().one_or_none()
 
         source_rows = connection.execute(
             source_statement
@@ -262,292 +307,40 @@ def person_profile(person_id: int):
             account_statement
         ).mappings().all()
 
-        timeline_events = get_person_timeline(
-            connection,
-            person_id,
-        )
+        open_tasks = connection.execute(
+            task_statement
+        ).mappings().all()
 
-        documents = get_person_documents(person_id)
+        activity_rows = connection.execute(
+            activity_statement
+        ).mappings().all()
 
-    name = person["full_name"] or f"Person {person_id}"
+    timeline_events = get_person_timeline(
+        person_id,
+        limit=20,
+    )
 
-    address_lines = [
-        person["address_line_1"],
-        person["address_line_2"],
-        ", ".join(
-            value
-            for value in [
-                person["city"],
-                person["state"],
-                person["postal_code"],
-            ]
-            if value
-        ),
-    ]
+    documents = get_person_documents(person_id)[:8]
+    client_summary = get_client_summary(person_id)
+    client_alerts = build_client_alerts(client_summary)
+    advisor_recommendations = build_advisor_recommendations(client_summary)
 
-    address = "<br>".join(
-        escape(value)
-        for value in address_lines
-        if value
-    ) or "Not available"
-
-    source_cards = ""
-
-    for row in source_rows:
-        source_location = ", ".join(
-            value
-            for value in [row["city"], row["state"]]
-            if value
-        )
-
-        source_cards += f"""
-            <div class="card">
-                <h3>{escape(row["source_system"])}</h3>
-                <p><strong>Name:</strong> {escape(row["full_name"] or "")}</p>
-                <p><strong>Email:</strong> {escape(row["email"] or "")}</p>
-                <p><strong>Phone:</strong> {escape(row["phone"] or "")}</p>
-                <p><strong>Location:</strong> {escape(source_location)}</p>
-                <p><strong>Match method:</strong> {escape(row["match_method"] or "")}</p>
-                <p><strong>Confirmed:</strong> {"Yes" if row["confirmed"] else "No"}</p>
-                <a href="/source/{row['id']}">View source record</a>
-            </div>
-        """
-
-    if not source_cards:
-        source_cards = """
-            <div class="card">
-                <p>No linked source records.</p>
-            </div>
-        """
-
-    account_rows_html = ""
-
-    for row in account_rows:
-        total_value = (
-            f"${row['total_value']:,.2f}"
-            if row["total_value"] is not None
-            else ""
-        )
-
-        account_rows_html += f"""
-            <tr>
-                <td>{escape(row["custodian"] or "")}</td>
-                <td>{escape(row["account_name"] or "")}</td>
-                <td>{escape(row["registration_type"] or "")}</td>
-                <td>{escape(row["status"] or "")}</td>
-                <td>{total_value}</td>
-            </tr>
-        """
-
-    if not account_rows_html:
-        account_rows_html = """
-        <tr>
-            <td colspan="5">No accounts linked.</td>
-        </tr>
-    """
-
-    documents_html = ""
-
-    for document in documents:
-        size_kb = document["size"] / 1024
-
-        documents_html += f"""
-            <div class="card">
-                <h3>{escape(document["name"])}</h3>
-                <p><strong>Size:</strong> {size_kb:,.1f} KB</p>
-                <p><strong>Path:</strong> {escape(document["path"])}</p>
-            </div>
-        """
-
-    if not documents_html:
-        documents_html = """
-            <div class="card">
-                <p>No documents found for this person.</p>
-            </div>
-        """
-
-    timeline_html = ""
-
-    for event in timeline_events:
-        occurred_at = event["occurred_at"]
-        occurred_text = (
-            occurred_at.strftime("%B %-d, %Y at %-I:%M %p")
-            if occurred_at
-            else "Date unavailable"
-        )
-
-        timeline_html += f"""
-            <div class="card">
-                <h3>{escape(event["title"])}</h3>
-                <p><strong>{escape(occurred_text)}</strong></p>
-                <p>{escape(event["details"])}</p>
-            </div>
-        """
-
-    if not timeline_html:
-        timeline_html = """
-            <div class="card">
-                <p>No timeline events found.</p>
-            </div>
-        """
-
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{escape(name)} - Client360</title>
-        <style>
-            body {{
-                margin: 0;
-                font-family: Arial, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }}
-
-            header {{
-                background: #111827;
-                color: white;
-                padding: 28px 40px;
-            }}
-
-            main {{
-                padding: 32px 40px;
-            }}
-
-            a {{
-                color: #2563eb;
-                text-decoration: none;
-                font-weight: bold;
-            }}
-
-            .top-link {{
-                display: inline-block;
-                margin-bottom: 20px;
-            }}
-
-            .profile-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-                gap: 20px;
-                margin-bottom: 32px;
-            }}
-
-            .card {{
-                background: white;
-                padding: 22px;
-                border-radius: 10px;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            }}
-
-            .sources {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-                gap: 20px;
-                margin-bottom: 32px;
-            }}
-
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                background: white;
-                border-radius: 10px;
-                overflow: hidden;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            }}
-
-            th, td {{
-                text-align: left;
-                padding: 14px 16px;
-                border-bottom: 1px solid #e5e7eb;
-            }}
-
-            th {{
-                background: #f9fafb;
-            }}
-
-            tr:last-child td {{
-                border-bottom: none;
-            }}
-        </style>
-    </head>
-
-    <body>
-        <header>
-            <h1>{escape(name)}</h1>
-            <p>Canonical person record #{person_id}</p>
-        </header>
-
-        <main>
-            <a class="top-link" href="/people">← Back to people</a>
-
-            <div class="profile-grid">
-
-            <div class="card">
-                <h2>Household</h2>
-                {
-                    (
-                        f'<p><a href="/households/{household["id"]}">'
-                        f'{escape(household["name"])}</a></p>'
-                    )
-                    if household
-                    else "<p>Not assigned</p>"
-                }
-            </div>
-
-                <div class="card">
-                    <h2>Contact</h2>
-                    <p><strong>Email:</strong> {escape(person["primary_email"] or "Not available")}</p>
-                    <p><strong>Phone:</strong> {escape(person["primary_phone"] or "Not available")}</p>
-                    <p><strong>Preferred name:</strong> {escape(person["preferred_name"] or "Not available")}</p>
-                </div>
-
-                <div class="card">
-                    <h2>Address</h2>
-                    <p>{address}</p>
-                </div>
-
-                <div class="card">
-                    <h2>Details</h2>
-                    <p><strong>Birth date:</strong> {escape(str(person["birth_date"] or "Not available"))}</p>
-                    <p><strong>Contact type:</strong> {escape(person["contact_type"] or "Not available")}</p>
-                    <p><strong>Active:</strong> {"Yes" if person["active"] else "No"}</p>
-                </div>
-            </div>
-
-            <h2>Linked Source Records</h2>
-            <div class="sources">
-                {source_cards}
-            </div>
-
-    
-                        <h2>Accounts</h2>
-            <table>
-    <thead>
-        <tr>
-            <th>Custodian</th>
-            <th>Account</th>
-            <th>Registration</th>
-            <th>Status</th>
-            <th>Total Value</th>
-        </tr>
-    </thead>
-    <tbody>
-        {account_rows_html}
-    </tbody>
-</table>
-
-            <h2>Documents</h2>
-<div class="sources">
-    {documents_html}
-</div>
-
-            <h2>Timeline</h2>
-            <div class="sources">
-                {timeline_html}
-            </div>
-        </main>
-    </body>
-    </html>
-    """
+    return templates.TemplateResponse(
+        request=request,
+        name="people/workspace.html",
+        context={
+            "person": person,
+            "household": household,
+            "sources": source_rows,
+            "accounts": account_rows,
+            "open_tasks": open_tasks,
+            "all_tasks": open_tasks,
+            "timeline_events": timeline_events,
+            "documents": documents,
+            "activities": activity_rows,
+            "client_summary": client_summary,
+            "client_alerts": client_alerts,
+            "advisor_recommendations": advisor_recommendations,
+            "active_tab": tab,
+        },
+    )

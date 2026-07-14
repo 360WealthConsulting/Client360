@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Microsoft Inbox Review - Client360</title>
+
+    <link rel="stylesheet" href="/static/css/main.css">
+
+    <style>
+        .page-header {
+            background: #111827;
+            color: white;
+            padding: 28px 40px;
+        }
+
+        .page-main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 40px;
+        }
+
+        .message-card {
+            margin-bottom: 18px;
+        }
+
+        .sender {
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .sender-address,
+        .meta {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .subject {
+            margin: 14px 0 8px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .preview {
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .secondary {
+            background: #6b7280;
+        }
+
+        .danger {
+            background: #b91c1c;
+        }
+
+        .count {
+            color: #d1d5db;
+        }
+    </style>
+</head>
+
+<body>
+<header class="page-header">
+    <h1>Microsoft Inbox Review</h1>
+    <div class="count">
+        {{ messages|length }} unmatched message{{ "" if messages|length == 1 else "s" }}
+    </div>
+</header>
+
+<main class="page-main">
+    <p>
+        <a href="/">← Dashboard</a>
+    </p>
+
+    {% for message in messages %}
+    <article class="card message-card">
+        <div class="sender">
+            {{ message.sender_name or "Unknown sender" }}
+        </div>
+
+        <div class="sender-address">
+            {{ message.sender_address }}
+        </div>
+
+        <div class="subject">
+            {{ message.subject or "(No subject)" }}
+        </div>
+
+        {% if message.body_preview %}
+        <div class="preview">
+            {{ message.body_preview }}
+        </div>
+        {% endif %}
+
+        <div class="meta">
+            Received {{ message.received_at or "Date unavailable" }}
+            {% if message.has_attachments %}
+            · Has attachments
+            {% endif %}
+        </div>
+
+        <div class="actions">
+            <form
+                method="post"
+                onsubmit="
+                    this.action =
+                    '/microsoft365/inbox-review/{{ message.id }}/match/'
+                    + this.person_id.value;
+                    return Boolean(this.person_id.value);
+                "
+            >
+                <select name="person_id" required>
+                    <option value="">Select client...</option>
+
+                    {% for person in people %}
+                    <option value="{{ person.id }}">
+                        {{ person.full_name or ("Person " ~ person.id) }}
+                        {% if person.primary_email %}
+                        — {{ person.primary_email }}
+                        {% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+
+                <button type="submit">
+                    Match Existing Client
+                </button>
+            </form>
+
+            <form
+                method="post"
+                action="/microsoft365/inbox-review/{{ message.id }}/create-contact"
+            >
+                <button class="secondary" type="submit">
+                    Create Contact
+                </button>
+            </form>
+
+            <form
+                method="post"
+                action="/microsoft365/inbox-review/{{ message.id }}/ignore"
+            >
+                <button class="danger" type="submit">
+                    Ignore
+                </button>
+            </form>
+
+            {% if message.web_link %}
+            <a
+                href="{{ message.web_link }}"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                Open in Outlook
+            </a>
+            {% endif %}
+        </div>
+    </article>
+    {% else %}
+    <div class="card">
+        <p>No unmatched Microsoft messages are waiting for review.</p>
+    </div>
+    {% endfor %}
+</main>
+</body>
+</html>

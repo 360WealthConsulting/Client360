@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ person.first_name }} {{ person.last_name }} - Timeline</title>
+
+    <style>
+        body{
+            font-family:Arial,Helvetica,sans-serif;
+            margin:40px;
+            background:#f5f7fa;
+        }
+
+        h1{
+            margin-bottom:25px;
+        }
+
+        .event{
+            background:white;
+            border-radius:10px;
+            padding:18px;
+            margin-bottom:16px;
+            box-shadow:0 1px 4px rgba(0,0,0,.08);
+        }
+
+        .title{
+            font-size:18px;
+            font-weight:bold;
+        }
+
+        .summary{
+            margin-top:8px;
+            color:#555;
+        }
+
+        .meta{
+            margin-top:12px;
+            color:#888;
+            font-size:13px;
+        }
+
+        .badge{
+            display:inline-block;
+            padding:4px 10px;
+            border-radius:20px;
+            background:#1d4ed8;
+            color:white;
+            font-size:12px;
+            margin-bottom:10px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<h1>
+Timeline
+</h1>
+
+{% for event in events %}
+
+<div class="event">
+
+<div class="badge">
+{{ event.event_type.replace("_"," ").title() }}
+</div>
+
+<div class="title">
+{{ event.title }}
+</div>
+
+<div class="summary">
+{{ event.summary or "" }}
+</div>
+
+<div class="meta">
+{{ event.source }}
+•
+{{ event.event_time }}
+</div>
+
+</div>
+
+{% endfor %}
+
+</body>
+</html>

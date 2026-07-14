@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.db import engine, people
 from app.services.notes import get_person_notes, save_person_notes
+from app.services.timeline import add_timeline_event
 
 
 router = APIRouter()
@@ -65,8 +66,29 @@ async def update_person_notes(
     body = (await request.body()).decode("utf-8")
     form_data = parse_qs(body)
     notes = form_data.get("notes", [""])[0]
+    previous_notes = get_person_notes(person_id)
 
     save_person_notes(person_id, notes)
+
+    if notes != previous_notes:
+        summary = notes.strip()
+
+        if not summary:
+            summary = "Advisor notes were cleared."
+        elif len(summary) > 500:
+            summary = summary[:497] + "..."
+
+        add_timeline_event(
+            person_id=person_id,
+            source="client360",
+            event_type="note_updated",
+            title="Advisor Notes Updated",
+            summary=summary,
+            event_metadata={
+                "previous_length": len(previous_notes),
+                "new_length": len(notes),
+            },
+        )
 
     return RedirectResponse(
         url=f"/people/{person_id}/notes?saved=1",

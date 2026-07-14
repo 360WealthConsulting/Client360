@@ -12,6 +12,7 @@ from app.services.documents import (
     get_person_documents,
     save_person_document,
 )
+from app.services.timeline import add_timeline_event
 
 
 router = APIRouter()
@@ -71,7 +72,7 @@ async def upload_person_document(
             status_code=400,
         )
 
-    save_person_document(
+    document_id = save_person_document(
         person_id=person_id,
         original_name=file.filename,
         source=file.file,
@@ -82,6 +83,22 @@ async def upload_person_document(
     )
 
     await file.close()
+
+    add_timeline_event(
+        person_id=person_id,
+        source="client360",
+        event_type="document_uploaded",
+        title="Document Uploaded",
+        summary=file.filename,
+        external_id=f"document-uploaded-{document_id}",
+        event_metadata={
+            "document_id": document_id,
+            "category": category,
+            "description": description or None,
+            "uploaded_by": uploaded_by or None,
+            "content_type": file.content_type,
+        },
+    )
 
     return RedirectResponse(
         url=f"/people/{person_id}/documents?uploaded=1",
