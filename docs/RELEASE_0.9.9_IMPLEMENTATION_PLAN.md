@@ -363,7 +363,23 @@ route references them; suite green.
 
 ---
 
-## Phase 7 — Deployment Readiness
+## Phase 7 — Deployment Readiness  — **IMPLEMENTED (WP7.1–7.4; WP7.5 deferred)**
+
+> **Implementation note.** WP7.1 added `GET /readiness` (`app/routes/ops.py`:
+> DB check, current-vs-expected Alembic head drift, scheduler state, Microsoft
+> sync-health; 200/503) and kept `/health` as DB-independent liveness; route
+> 177→178, OpenAPI 163→164. WP7.2 added `configuration_warnings()` /
+> `validate_startup_configuration()` (loud startup warnings for dev
+> `SESSION_SECRET` / missing `MICROSOFT_TOKEN_KEY`; production still hard-fails on
+> missing secret) and documented env vars. WP7.3 added a `Referer` fallback to the
+> CSRF Origin check via a pure `_is_cross_site()` helper (no weakening: Origin
+> still wins; neither header still passes). WP7.4 added `scripts/restore_rehearsal.sh`
+> and `docs/RELEASE_0.9.9_DEPLOYMENT_RUNBOOK.md`; a recorded rehearsal passed
+> (restore → single head `o5f36c4d3e2a` → 297 pass/4 skip). Tests in
+> `tests/test_phase7_deployment_readiness.py` (10). No schema change; no auth/authz/
+> workflow behavior change. **WP7.5 (`person_notes` migration off flat files) was
+> deferred** — it is a business-data/schema change, excluded by the "no new
+> features / no schema change" constraint for this release.
 
 **Objective.** Add operational scaffolding: a readiness endpoint, config/secret
 hardening, CSRF defense-in-depth, and documented backup/restore (architecture

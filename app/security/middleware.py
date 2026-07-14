@@ -1,5 +1,6 @@
 import re
 import uuid
+from urllib.parse import urlsplit
 
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
@@ -10,7 +11,24 @@ from app.security.audit import write_audit_event
 from app.security.policy import has_record_scope
 from app.security.service import resolve_principal
 
-PUBLIC_EXACT = frozenset({"/health", "/auth/login", "/auth/callback", "/portal/login",
+def _is_cross_site(origin, referer, base_url):
+    """Same-origin check for state-changing requests (CSRF defense-in-depth).
+
+    Prefers the Origin header (unchanged behaviour). When Origin is absent it
+    falls back to Referer, rejecting only when a Referer is present and its
+    scheme+host differ. A request with neither header still passes.
+    """
+    base = base_url.rstrip("/")
+    if origin:
+        return origin.rstrip("/") != base
+    if referer:
+        ref = urlsplit(referer)
+        b = urlsplit(base)
+        return (ref.scheme, ref.netloc) != (b.scheme, b.netloc)
+    return False
+
+
+PUBLIC_EXACT = frozenset({"/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume"})
 RULES = (
@@ -80,8 +98,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         if request.url.path in PUBLIC_EXACT or request.url.path.startswith("/static/"):
             return await call_next(request)
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            origin = request.headers.get("origin")
-            if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            if _is_cross_site(
+                request.headers.get("origin"),
+                request.headers.get("referer"),
+                str(request.base_url),
+            ):
                 return JSONResponse(
                     {
                         "detail": "Cross-site request rejected",

@@ -98,3 +98,13 @@ def stop_scheduler() -> None:
     if _scheduler.running:
         _scheduler.shutdown(wait=False)
         logger.info("Client360 background scheduler stopped.")
+
+
+def scheduler_status() -> dict:
+    """Readiness/observability snapshot of the in-process background scheduler."""
+    try:
+        jobs = [{"id": job.id, "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None}
+                for job in _scheduler.get_jobs()]
+    except Exception:
+        jobs = []
+    return {"running": _scheduler.running, "job_count": len(jobs), "jobs": jobs}
