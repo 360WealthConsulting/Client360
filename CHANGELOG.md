@@ -2,6 +2,15 @@
 
 All notable Client360 releases are documented here.
 
+## [Unreleased]
+
+### Documentation
+
+- Added the nine-sprint Epic 5 Tax Practice Platform technical design.
+- Defined normalized tax, workflow, portal, document, provider, security,
+  reporting, migration, testing, and Release 1.0 readiness architecture.
+- No application behavior or database schema changed.
+
 ## [0.9.3] — 2026-07-14
 
 ### Added

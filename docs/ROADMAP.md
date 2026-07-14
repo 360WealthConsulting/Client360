@@ -110,3 +110,18 @@
 - AssetMark and remaining historical import sources
 - AI meeting preparation, client briefs, and relationship-aware recommendations
 - Client portal and secure document exchange
+
+## Epic 5 — Tax Practice Platform (Design) 📝
+
+1. Tax domain, offices, jurisdictions, and deadlines
+2. Return lifecycle and automatic workflow generation
+3. Organizers, questionnaires, and engagement letters
+4. Tax document intelligence and missing information
+5. Extensions, estimates, notices, and amendments
+6. Review, approval, e-file, delivery, and compliance
+7. Secure tax portal and client collaboration
+8. Drake/provider and IRS transcript integration
+9. Production reporting, capacity, AI extensions, and release readiness
+
+Implementation has not started. See
+[Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md).
