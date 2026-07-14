@@ -6,9 +6,9 @@
 
 **Validation date:** July 13, 2026
 
-**Decision:** **Not ready for Release 1.0 or merge to `main`**
+**Decision:** **RC1.1 migration repair validated; keep unmerged pending review**
 
-RC1 is stable when upgrading the existing `main` database and its application and domain checks pass. It is not yet release-ready because a truly empty database cannot be created by running the Alembic migration chain. No merge was performed.
+RC1.1 repairs the clean-database blocker on the focused `fix/rc1-clean-database-migrations` branch. Both a new-database migration and an upgrade from the current `main` head now pass. The repair remains subject to review and has not been merged into `integration/epic4` or `main`.
 
 ## Validation environment and scope
 
@@ -88,18 +88,30 @@ RC1 is stable when upgrading the existing `main` database and its application an
 
 Coverage includes identity/security, integration security, Microsoft Calendar, Microsoft Documents, Relationship Intelligence, and Portfolio Intelligence. The additional mail synchronization scenario was run as an RC validation check against PostgreSQL.
 
-## Release blocker
+## RC1.1 clean-database repair
 
-### Alembic cannot create a clean database
+### Root cause
 
-Running `alembic upgrade head` against an empty PostgreSQL database fails at `5baa24cbdc65` because the baseline revision does not create the original Client360 tables. The first dependent migration attempts to reference `people` and `source_contacts`, which do not exist.
+The original root revision, `da46d875eab7`, was a stamp-only baseline created after the five core tables had been provisioned through SQLAlchemy metadata. The later `54fd91b24da6` revision was another stamp-only baseline created after Tasks, Activities, Household Relationships, and Documents had also been provisioned outside Alembic. A new database therefore reached `5baa24cbdc65` without `people` or `source_contacts`, and later revisions would also have lacked the four second-baseline tables.
 
-This prevents a reliable new-environment bootstrap and weakens disaster-recovery confidence. It does not affect the verified upgrade from the current `main` database, but it must be resolved and retested before Release 1.0.
+### Repair strategy
 
-Recommended resolution: add an explicit, versioned bootstrap mechanism for the baseline schema without rewriting revisions already deployed to `main`. Document and test both supported paths:
+The two baseline revisions now contain the explicit DDL for the schemas they originally represented. Revision IDs, parent links, and the single-head lineage are unchanged. Databases already stamped beyond these revisions do not execute the added DDL, so their data and upgrade behavior are preserved. New databases now receive the missing tables through Alembic without `metadata.create_all()` or a manual prerequisite.
 
-1. New database → full schema at RC head.
-2. Existing production database at `753c04edab33` → RC head.
+Application metadata was also aligned with the existing Portfolio and Sprint 4.1 migrations: custodian and registration foreign keys belong to `accounts`, and identity attribution belongs to `tasks`, not `import_jobs`.
+
+### RC1.1 validation evidence
+
+- Empty PostgreSQL database → `alembic upgrade head`: passed.
+- Expected application tables: 45; actual: 45; missing/unexpected tables: none.
+- Expected versus actual columns: no mismatches.
+- `alembic downgrade base`: passed; only `alembic_version` remained.
+- Second `alembic upgrade head`: passed.
+- Current `main` schema stamped at `753c04edab33` → RC head: passed.
+- Sentinel household/person data survived the existing-database upgrade.
+- Exactly one Alembic head remains: `c410f4a1b2c3`.
+- Full suite: 33 passed, one environment warning.
+- Python compile checks for application, migrations, and tests: passed.
 
 ## Warnings and known issues
 
@@ -122,7 +134,8 @@ Recommended resolution: add an explicit, versioned bootstrap mechanism for the b
 
 ## Migration risks
 
-- **High:** clean database bootstrap is broken, as described above.
+- **Resolved in RC1.1 candidate:** clean database bootstrap now passes from base to head.
+- **Medium:** two already-applied stamp-only baseline files now contain explicit DDL. Existing databases at later revisions skip that DDL, but reviewers should confirm no deployment process forcibly replays historical revisions against a populated schema.
 - **High:** downgrading drops RC1 tables and their data. A downgrade is technically successful but is destructive; backup/restore is the safer rollback strategy after production writes begin.
 - **Medium:** role/capability seeds and first-user bootstrap require a controlled deployment sequence to avoid access lockout or excessive privilege.
 - **Medium:** migration timing was measured only on a small local database. Lock duration and index creation must be measured on a production-sized clone.
@@ -137,7 +150,7 @@ Recommended resolution: add an explicit, versioned bootstrap mechanism for the b
 
 ## Recommendations before Release 1.0
 
-1. Resolve and automate the blank-database migration path; repeat fresh install, existing upgrade, downgrade, and backup/restore validation.
+1. Add the validated blank-database and existing-main upgrade paths to required CI so the repaired baselines cannot regress.
 2. Configure required CI checks on PR #8 for tests, compilation, migration-head validation, and clean-database creation.
 3. Deploy RC1 to staging with production-equivalent PostgreSQL, Python/OpenSSL, secrets, and managed OIDC; test administrator bootstrap and least-privilege role assignments.
 4. Run controlled Microsoft mail, calendar, OneDrive, and SharePoint syncs against a non-production tenant, including pagination, throttling, token expiry, retries, deleted items, and unmatched-review workflows.
@@ -148,4 +161,4 @@ Recommended resolution: add an explicit, versioned bootstrap mechanism for the b
 
 ## Release decision
 
-Keep PR #8 in draft and do not merge `integration/epic4` into `main`. RC1 may proceed to staging after the blank-database strategy is approved, but it should not be designated Release 1.0 until the migration blocker is fixed and the external-provider and production-scale checks above are complete.
+Keep PR #8 in draft and do not merge `integration/epic4` into `main` until the focused RC1.1 repair PR has been reviewed and integrated. The clean-database blocker is resolved on the repair branch, but external-provider, identity-provider, backup/restore, visual, and production-scale checks remain before Release 1.0.
