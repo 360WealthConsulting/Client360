@@ -37,6 +37,7 @@ from app.security.middleware import AuthenticationMiddleware
 from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.portfolio import router as portfolio_router
+from app.routes.work import router as work_router
 
 
 @asynccontextmanager
@@ -88,3 +89,4 @@ app.include_router(portfolio_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(session_router)
+app.include_router(work_router)

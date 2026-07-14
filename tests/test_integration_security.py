@@ -25,3 +25,8 @@ def test_global_intelligence_surfaces_require_firm_wide_record_scope():
         "/portfolio/import/schwab",
     ):
         assert FIRM_WIDE_COLLECTION.match(path), path
+
+
+def test_work_routes_require_work_capability():
+    for path in ("/work", "/work/team", "/work/queues/overdue", "/api/v1/work/my-work"):
+        assert capability_for(path) == "work.read"

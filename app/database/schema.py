@@ -20,6 +20,7 @@ from sqlalchemy import (
     func,
 )
 from app.database.identity_tables import define_identity_tables
+from app.database.work_tables import define_work_tables
 
 load_dotenv("app/.env")
 
@@ -238,7 +239,14 @@ tasks = Table(
     Column("status", String(50), nullable=False, server_default="open"),
     Column("priority", String(50), nullable=False, server_default="normal"),
     Column("assigned_to", String(255)),
+    Column("household_id", Integer, ForeignKey("households.id", ondelete="CASCADE")),
+    Column("team_id", Integer, ForeignKey("teams.id", ondelete="SET NULL")),
+    Column("workflow_name", String(255)),
+    Column("work_type", String(100), nullable=False, server_default="general"),
+    Column("waiting_on", String(50)),
     Column("due_date", Date),
+    Column("sla_due_at", DateTime(timezone=True)),
+    Column("estimated_minutes", Integer, nullable=False, server_default="30"),
     Column("completed_at", DateTime(timezone=True)),
     Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
@@ -349,6 +357,9 @@ documents = Table(
     Column("sha256", String(64), nullable=False, index=True),
     Column("category", String(100)),
     Column("description", Text),
+    Column("review_status", String(50), nullable=False, server_default="not_required"),
+    Column("review_due_at", DateTime(timezone=True)),
+    Column("reviewer_team_id", Integer, ForeignKey("teams.id", ondelete="SET NULL")),
     Column("uploaded_by", String(255)),
     Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
@@ -664,6 +675,7 @@ microsoft_accounts = Table(
 )
 portfolio_tables = define_portfolio_tables(metadata)
 identity_tables = define_identity_tables(metadata)
+work_tables = define_work_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

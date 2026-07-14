@@ -1,6 +1,17 @@
 # Epic 4 — Practice Management Platform
 
-Status: Proposed technical design — implementation requires approval
+## Sprint 4.2 implementation status
+
+The Operational Work Management Platform is implemented on
+`feature/operational-work-management`. It extends the approved capability and
+record-assignment architecture with user/team ownership, immutable assignment
+history, workflows, reusable queues, My Work and Team Work dashboards,
+deterministic capacity/SLA intelligence, and versioned APIs. See
+`docs/WORK_MANAGEMENT_PLATFORM.md` for the implemented contracts and manual
+validation plan. Future tax-return, investment-account, and revenue domains are
+represented only by explicit extension hooks; no metrics are fabricated.
+
+Status: Approved architecture — Sprint 4.2 implemented in a draft pull request
 
 Objective: Replace Wealthbox and TaxDome as the firm's secure, auditable day-to-day operating platform.
 

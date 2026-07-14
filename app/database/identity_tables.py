@@ -27,7 +27,7 @@ def define_identity_tables(metadata: MetaData):
         Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False), Column("effective_date", Date, nullable=False, server_default=func.current_date()),
         Column("inactive_date", Date), UniqueConstraint("user_id", "role_id", "effective_date", name="uq_user_role_period"))
     assignments = Table("record_assignments", metadata,
-        Column("id", Integer, primary_key=True), Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        Column("id", Integer, primary_key=True), Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
         Column("team_id", Integer, ForeignKey("teams.id", ondelete="SET NULL")), Column("entity_type", String(50), nullable=False), Column("entity_id", Integer, nullable=False),
         Column("assignment_type", String(100), nullable=False), Column("effective_date", Date, nullable=False, server_default=func.current_date()), Column("inactive_date", Date),
         UniqueConstraint("user_id", "entity_type", "entity_id", "assignment_type", "effective_date", name="uq_record_assignment_period"))
