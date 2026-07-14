@@ -2,6 +2,7 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from app.jobs.microsoft_calendar_sync import sync_calendar_events
 from app.jobs.microsoft_mail_sync import sync_recent_mail
 
 
@@ -18,6 +19,14 @@ def run_microsoft_mail_sync() -> None:
         logger.exception("Microsoft mail sync failed.")
 
 
+def run_microsoft_calendar_sync() -> None:
+    try:
+        result = sync_calendar_events()
+        logger.info("Microsoft calendar sync result: %s", result)
+    except Exception:
+        logger.exception("Microsoft calendar sync failed.")
+
+
 def start_scheduler() -> None:
     if _scheduler.running:
         return
@@ -27,6 +36,15 @@ def start_scheduler() -> None:
         trigger="interval",
         minutes=15,
         id="microsoft-mail-sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        run_microsoft_calendar_sync,
+        trigger="interval",
+        minutes=15,
+        id="microsoft-calendar-sync",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
