@@ -1,0 +1,1 @@
+{% extends "portal/base.html" %}{% block title %}Tasks{% endblock %}{% block content %}<h1>Workflow Tasks</h1>{% for row in portal.tasks %}<article class="work-card"><h3>{{ row.name }}</h3><p>{{ row.workflow_name }} · {{ row.status|title }}</p></article>{% else %}<div class="empty">No tasks require your action.</div>{% endfor %}{% endblock %}

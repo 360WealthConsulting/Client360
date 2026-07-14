@@ -68,7 +68,7 @@
 - Step dependencies, approvals, escalations, and automation triggers
 - Client, tax, investment, and document workflow integration
 
-### Recommended Sprint 4.4 — Client Portal and Secure Collaboration
+### Sprint 4.4 — Client Portal and Secure Collaboration 🚧
 
 - Portal identities, invitations, MFA, and delegated household access
 - Secure messaging and document requests

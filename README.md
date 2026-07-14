@@ -85,4 +85,5 @@ workflows is defined in the
 [Epic 4 Practice Management Platform](docs/EPIC_4_PRACTICE_MANAGEMENT_PLATFORM.md).
 Sprint 4.2 Operational Work Management is delivered in Release 0.9.1, and
 Sprint 4.3 Workflow and Process Automation is delivered in Release 0.9.2.
-Sprint 4.4 remains unstarted pending architecture and scope approval.
+Sprint 4.4 Client Portal and Secure Collaboration is in development on its
+feature branch. See [Client Portal Architecture](docs/CLIENT_PORTAL.md).

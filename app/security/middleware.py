@@ -10,7 +10,9 @@ from app.security.audit import write_audit_event
 from app.security.policy import has_record_scope
 from app.security.service import resolve_principal
 
-PUBLIC_EXACT = frozenset({"/health", "/auth/login", "/auth/callback"})
+PUBLIC_EXACT = frozenset({"/health", "/auth/login", "/auth/callback", "/portal/login",
+    "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
+    "/api/v1/portal/auth/password-reset/consume"})
 RULES = (
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
@@ -74,6 +76,23 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                     },
                     status_code=403,
                 )
+        if request.url.path.startswith("/portal") or request.url.path.startswith("/api/v1/portal"):
+            from app.portal.service import resolve_portal_session
+            portal_principal = resolve_portal_session(request.session.get("portal_session_token"))
+            request.state.portal_principal = portal_principal
+            if portal_principal is None:
+                if "text/html" in request.headers.get("accept", ""):
+                    return RedirectResponse("/portal/login", 303)
+                return JSONResponse({"detail": "Portal authentication required", "request_id": request.state.request_id}, status_code=401)
+            response = await call_next(request)
+            if response.status_code < 400 and request.method not in {"GET", "HEAD", "OPTIONS"}:
+                write_audit_event(action="portal.route.mutated", entity_type="portal_route", entity_id=request.url.path, request_id=request.state.request_id, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), metadata={"portal_account_id": portal_principal.account_id, "method": request.method, "status_code": response.status_code})
+            response.headers["x-request-id"] = request.state.request_id
+            response.headers["x-content-type-options"] = "nosniff"
+            response.headers["referrer-policy"] = "same-origin"
+            response.headers["x-frame-options"] = "DENY"
+            response.headers["content-security-policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+            return response
         token = request.session.get("session_token")
         principal = resolve_principal(token)
         request.state.principal = principal
