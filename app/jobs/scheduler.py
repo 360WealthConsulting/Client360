@@ -5,6 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.jobs.microsoft_calendar_sync import sync_calendar_events
 from app.jobs.microsoft_mail_sync import sync_recent_mail
 from app.jobs.microsoft_document_sync import sync_microsoft_documents
+from app.services.workflow_automation import evaluate_sla
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,12 @@ def run_microsoft_document_sync() -> None:
         logger.info("Microsoft document sync result: %s", result)
     except Exception:
         logger.exception("Microsoft document sync failed.")
+
+def run_workflow_sla_automation() -> None:
+    try:
+        logger.info("Workflow SLA escalation result: %s", evaluate_sla())
+    except Exception:
+        logger.exception("Workflow SLA automation failed.")
 
 
 def start_scheduler() -> None:
@@ -66,6 +73,10 @@ def start_scheduler() -> None:
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+    )
+    _scheduler.add_job(
+        run_workflow_sla_automation, trigger="interval", minutes=5,
+        id="workflow-sla-automation", replace_existing=True, max_instances=1, coalesce=True,
     )
 
     _scheduler.start()

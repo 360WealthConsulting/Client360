@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ data.workflow.name }}</h1>
+<p>Status: <strong>{{ data.workflow.status|title }}</strong> · Template version {{ data.workflow.template_version }}</p>
+<h2>Steps</h2>
+<ol>{% for step in data.steps %}<li><strong>{{ step.name }}</strong> — {{ step.status|title }}{% if step.sla_due_at %} · SLA {{ step.sla_due_at }}{% endif %}</li>{% endfor %}</ol>
+<h2>History</h2>
+<ul>{% for event in data.events %}<li>{{ event.occurred_at }} — {{ event.event_type|replace('_', ' ')|title }}</li>{% endfor %}</ul>
+{% endblock %}

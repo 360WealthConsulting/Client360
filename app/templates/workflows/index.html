@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Workflow Automation</h1>
+<div class="stats-grid">
+  <article><strong>{{ metrics.by_status.get('active', 0) }}</strong><span>Active workflows</span></article>
+  <article><strong>{{ metrics.pending_approvals }}</strong><span>Pending approvals</span></article>
+  <article><strong>{{ metrics.open_escalations }}</strong><span>Open escalations</span></article>
+</div>
+<h2>Published templates</h2>
+<div class="card-grid">
+{% for template in templates %}
+  <article class="card"><h3>{{ template.name }}</h3><p>{{ template.category|replace('_', ' ')|title }} · Version {{ template.version }}</p><p>{{ template.description or 'Standardized firm workflow with independent review.' }}</p></article>
+{% endfor %}
+</div>
+{% endblock %}

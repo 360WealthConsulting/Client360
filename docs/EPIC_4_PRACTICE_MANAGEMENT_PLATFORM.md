@@ -698,3 +698,7 @@ Epic 4 is complete only when:
 ## 10. Approval gate
 
 Approval of this document authorizes planning and implementation of Sprint 4.1 only. Each later sprint should begin from the accepted output of its dependencies and conclude with a draft pull request, migration/test evidence, manual validation steps, and unresolved decisions. No Sprint 4.1 application code should be written until this design and its open decisions are reviewed.
+
+## 11. Sprint 4.3 implementation
+
+Workflow and Process Automation is implemented as a versioned orchestration layer over Sprint 4.2 assignments and queues. See [WORKFLOW_PROCESS_AUTOMATION.md](WORKFLOW_PROCESS_AUTOMATION.md) for the execution ledger, approval segregation, SLA escalation, event trigger, and API contracts.
