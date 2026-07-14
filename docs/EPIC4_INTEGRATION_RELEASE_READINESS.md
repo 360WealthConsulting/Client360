@@ -29,13 +29,16 @@ The integrated Alembic history has exactly one head:
   -> c410f4a1b2c3 (head)
 ```
 
-Validation used a disposable PostgreSQL database initialized with the current `main` schema and stamped at `753c04edab33`. The complete integrated segment upgraded to head, downgraded back to the main head, and upgraded to integration head again successfully. This is the supported validation path because the repository's earliest historical Alembic revisions are baseline stamps rather than schema-creation migrations.
+RC1.1 repairs the historical stamp-only baselines with explicit Alembic DDL. Validation now covers both a truly empty PostgreSQL database from base to head and a current-`main` database stamped at `753c04edab33` upgraded to the integration head. No manual schema initialization is required by the repaired migration path.
 
 ## Automated evidence
 
 - Alembic heads: one (`c410f4a1b2c3`).
 - Integrated migration upgrade: passed.
 - Integrated migration downgrade and re-upgrade: passed.
+- Empty database upgrade to head, downgrade to base, and second upgrade: passed on the RC1.1 repair branch.
+- All 45 application tables and columns matched application metadata after clean migration.
+- Current-`main` upgrade preserved seeded sentinel client data.
 - Full test suite: 33 passed.
 - Python 3.9 compile checks for application, migrations, and tests: passed.
 - Application import and FastAPI route registration: passed; 72 routes validated.
@@ -57,6 +60,8 @@ The environment emits an existing urllib3 warning because the system Python is l
 - Corrected Python 3.9-incompatible FastAPI Portfolio route annotations discovered during application startup validation.
 - Added capability and record-scope enforcement for Relationship and Portfolio global surfaces. Global searches and imports now fail closed without explicit firm-wide read/write scope.
 - Added record-scope enforcement for relationship deactivation through its associated person.
+- Replaced two historical stamp-only baseline bodies with their original explicit core-schema DDL so Alembic can build a new database without `metadata.create_all()`.
+- Corrected application metadata placement for Portfolio account foreign keys and Sprint 4.1 task attribution columns.
 
 ## Manual review required before merge
 
