@@ -124,6 +124,7 @@ def household_profile(
                 people.c.primary_phone,
                 household_relationships.c.relationship_type,
                 household_relationships.c.is_primary,
+                household_relationships.c.is_primary_household,
             )
             .select_from(
                 household_relationships.join(
@@ -201,6 +202,9 @@ async def save_household_member(
     is_primary = (
         form_data.get("is_primary", [""])[0] == "on"
     )
+    is_primary_household = (
+        form_data.get("is_primary_household", [""])[0] == "on"
+    )
 
     if not person_id_text.isdigit():
         return HTMLResponse(
@@ -245,6 +249,13 @@ async def save_household_member(
                 .values(is_primary=False)
             )
 
+        if is_primary_household:
+            connection.execute(
+                update(household_relationships)
+                .where(household_relationships.c.person_id == person_id)
+                .values(is_primary_household=False)
+            )
+
         connection.execute(
             pg_insert(household_relationships)
             .values(
@@ -252,21 +263,24 @@ async def save_household_member(
                 person_id=person_id,
                 relationship_type=relationship_type,
                 is_primary=is_primary,
+                is_primary_household=is_primary_household,
             )
             .on_conflict_do_update(
                 constraint="uq_household_relationship_person",
                 set_={
                     "relationship_type": relationship_type,
                     "is_primary": is_primary,
+                    "is_primary_household": is_primary_household,
                 },
             )
         )
 
-        connection.execute(
-            update(people)
-            .where(people.c.id == person_id)
-            .values(household_id=household_id)
-        )
+        if is_primary_household:
+            connection.execute(
+                update(people)
+                .where(people.c.id == person_id)
+                .values(household_id=household_id)
+            )
 
     return RedirectResponse(
         url=(

@@ -9,6 +9,9 @@ from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
     router as microsoft365_calendar_router,
 )
+from app.routes.microsoft365_documents import (
+    router as microsoft365_documents_router,
+)
 
 from app.routes.documents import router as documents_router
 
@@ -26,7 +29,14 @@ from app.routes.households import router as households_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_review_router
 from app.routes.timeline import router as timeline_router
+from app.routes.relationships import router as relationships_router
+from app.routes.auth import router as auth_router
+from app.routes.admin import router as admin_router
+from app.routes.session import router as session_router
+from app.security.middleware import AuthenticationMiddleware
+from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
+from app.routes.portfolio import router as portfolio_router
 
 
 @asynccontextmanager
@@ -44,9 +54,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(
     SessionMiddleware,
-    secret_key="CHANGE_THIS_TO_A_LONG_RANDOM_SECRET",
+    secret_key=SESSION_SECRET,
+    https_only=SESSION_HTTPS_ONLY,
+    same_site="lax",
+    max_age=8 * 60 * 60,
 )
 
 app.include_router(dashboard_router)
@@ -64,7 +78,13 @@ app.include_router(households_router)
 app.include_router(documents_router)
 app.include_router(microsoft365_router)
 app.include_router(microsoft365_calendar_router)
+app.include_router(microsoft365_documents_router)
 app.include_router(microsoft365_oauth_router)
 app.include_router(microsoft365_inbox_review_router)
 app.include_router(microsoft365_mail_router)
 app.include_router(timeline_router)
+app.include_router(relationships_router)
+app.include_router(portfolio_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(session_router)

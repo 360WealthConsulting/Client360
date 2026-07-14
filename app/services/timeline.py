@@ -42,6 +42,28 @@ EVENT_DISPLAY = {
         "label": "Calendar Event",
         "style": "calendar",
     },
+    "microsoft_document": {
+        "icon": "📄",
+        "label": "Microsoft Document",
+        "style": "document",
+    },
+    "relationship_added": {
+        "icon": "🔗",
+        "label": "Relationship Added",
+        "style": "relationship",
+    },
+    "relationship_updated": {
+        "icon": "🔗",
+        "label": "Relationship Updated",
+        "style": "relationship",
+    },
+    "portfolio_account_opened": {"icon": "💼", "label": "Account Opened", "style": "portfolio"},
+    "portfolio_account_closed": {"icon": "💼", "label": "Account Closed", "style": "portfolio"},
+    "portfolio_transfer": {"icon": "↔", "label": "Transfer Completed", "style": "portfolio"},
+    "portfolio_billing_updated": {"icon": "$", "label": "Billing Updated", "style": "portfolio"},
+    "portfolio_cash_movement": {"icon": "$", "label": "Large Cash Movement", "style": "portfolio"},
+    "portfolio_allocation_changed": {"icon": "◔", "label": "Allocation Changed", "style": "portfolio"},
+    "portfolio_beneficiary_updated": {"icon": "✓", "label": "Beneficiary Updated", "style": "portfolio"},
     "test": {
         "icon": "⚙",
         "label": "System Event",

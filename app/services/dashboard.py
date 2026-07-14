@@ -9,6 +9,7 @@ from app.db import (
     people,
     tasks,
 )
+from app.services.portfolio import get_firm_portfolio_metrics
 
 
 def get_dashboard_data():
@@ -50,7 +51,7 @@ def get_dashboard_data():
             select(func.coalesce(func.sum(accounts.c.total_value), 0))
         ) or 0
 
-    return {
+    result = {
         "people": total_people,
         "households": total_households,
         "accounts": total_accounts,
@@ -59,3 +60,5 @@ def get_dashboard_data():
         "total_aum": total_aum,
         "recent_activities": recent_activities,
     }
+    result.update(get_firm_portfolio_metrics())
+    return result

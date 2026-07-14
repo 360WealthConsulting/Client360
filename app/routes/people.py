@@ -14,12 +14,20 @@ from app.db import (
     person_source_links,
     source_contacts,
     tasks,
+    relationship_types,
 )
 from app.services.advisor_ai import build_advisor_recommendations
+from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
+from app.services.microsoft_documents import get_person_microsoft_documents
 from app.services.timeline import get_person_timeline
+from app.services.relationships import (
+    build_relationship_graph,
+    get_person_households,
+)
+from app.services.portfolio import get_person_portfolio
 
 
 router = APIRouter()
@@ -212,6 +220,9 @@ def person_profile(
         "documents",
         "notes",
         "activities",
+        "calendar",
+        "relationships",
+        "portfolio",
     }
 
     if tab not in allowed_tabs:
@@ -315,15 +326,41 @@ def person_profile(
             activity_statement
         ).mappings().all()
 
+        relationship_type_rows = connection.execute(
+            select(relationship_types)
+            .where(relationship_types.c.active.is_(True))
+            .order_by(relationship_types.c.category, relationship_types.c.name)
+        ).mappings().all()
+
+        available_people = connection.execute(
+            select(people.c.id, people.c.full_name, people.c.primary_email)
+            .where(people.c.id != person_id, people.c.active.is_(True))
+            .order_by(people.c.last_name, people.c.first_name)
+        ).mappings().all()
+
     timeline_events = get_person_timeline(
         person_id,
         limit=20,
     )
 
     documents = get_person_documents(person_id)[:8]
+    calendar_events = get_person_calendar_events(person_id, limit=50)
+    upcoming_meetings = get_person_calendar_events(
+        person_id,
+        upcoming_only=True,
+        limit=5,
+    )
+    microsoft_documents = get_person_microsoft_documents(person_id, limit=20)
     client_summary = get_client_summary(person_id)
+    portfolio = get_person_portfolio(person_id)
     client_alerts = build_client_alerts(client_summary)
-    advisor_recommendations = build_advisor_recommendations(client_summary)
+    relationship_graph = build_relationship_graph(person_id)
+    person_households = get_person_households(person_id)
+    advisor_recommendations = build_advisor_recommendations(
+        client_summary,
+        relationship_graph=relationship_graph,
+        portfolio=portfolio,
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -337,10 +374,18 @@ def person_profile(
             "all_tasks": open_tasks,
             "timeline_events": timeline_events,
             "documents": documents,
+            "microsoft_documents": microsoft_documents,
             "activities": activity_rows,
+            "calendar_events": calendar_events,
+            "upcoming_meetings": upcoming_meetings,
             "client_summary": client_summary,
             "client_alerts": client_alerts,
             "advisor_recommendations": advisor_recommendations,
+            "relationship_graph": relationship_graph,
+            "relationship_types": relationship_type_rows,
+            "available_people": available_people,
+            "person_households": person_households,
+            "portfolio": portfolio,
             "active_tab": tab,
         },
     )

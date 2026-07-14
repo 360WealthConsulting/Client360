@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     JSON,
     MetaData,
     Numeric,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     create_engine,
     func,
 )
+from app.database.identity_tables import define_identity_tables
 
 load_dotenv("app/.env")
 
@@ -28,6 +30,8 @@ if not DATABASE_URL:
 
 engine = create_engine(DATABASE_URL)
 metadata = MetaData()
+
+from app.database.portfolio_tables import define_portfolio_tables
 
 
 households = Table(
@@ -40,6 +44,8 @@ households = Table(
     Column("city", String(100)),
     Column("state", String(50)),
     Column("postal_code", String(20)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     Column(
         "updated_at",
@@ -72,6 +78,8 @@ people = Table(
     Column("postal_code", String(20)),
     Column("contact_type", String(100)),
     Column("active", Boolean, default=True),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     Column(
         "updated_at",
@@ -154,6 +162,10 @@ accounts = Table(
     Column("open_date", Date),
     Column("closed_date", Date),
     Column("source_file", String(500)),
+    Column("custodian_id", Integer, ForeignKey("custodians.id")),
+    Column("registration_id", Integer, ForeignKey("account_registrations.id")),
+    Column("last_imported_at", DateTime(timezone=True)),
+    Column("last_review_date", Date),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     UniqueConstraint(
         "custodian",
@@ -228,6 +240,8 @@ tasks = Table(
     Column("assigned_to", String(255)),
     Column("due_date", Date),
     Column("completed_at", DateTime(timezone=True)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column(
         "created_at",
         DateTime(timezone=True),
@@ -265,6 +279,8 @@ activities = Table(
         nullable=False,
     ),
     Column("created_by", String(255)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column(
         "created_at",
         DateTime(timezone=True),
@@ -293,6 +309,12 @@ household_relationships = Table(
     ),
     Column("relationship_type", String(100), nullable=False),
     Column("is_primary", Boolean, nullable=False, server_default="false"),
+    Column(
+        "is_primary_household",
+        Boolean,
+        nullable=False,
+        server_default="false",
+    ),
     Column(
         "created_at",
         DateTime(timezone=True),
@@ -328,6 +350,8 @@ documents = Table(
     Column("category", String(100)),
     Column("description", Text),
     Column("uploaded_by", String(255)),
+    Column("created_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("updated_by_user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
     Column("archived", Boolean, nullable=False, server_default="false"),
     Column(
         "created_at",
@@ -341,6 +365,125 @@ documents = Table(
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    ),
+)
+
+
+microsoft_drives = Table(
+    "microsoft_drives",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_drive_id", String(500), nullable=False, unique=True),
+    Column("name", String(500)),
+    Column("drive_type", String(100)),
+    Column("source_type", String(50), nullable=False),
+    Column("site_id", String(500)),
+    Column("web_url", Text),
+    Column("delta_link", Text),
+    Column("last_synced_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+microsoft_documents = Table(
+    "microsoft_documents",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_drive_id", String(500), nullable=False),
+    Column("microsoft_item_id", String(500), nullable=False),
+    Column("person_id", Integer, ForeignKey("people.id", ondelete="SET NULL")),
+    Column("name", String(500), nullable=False),
+    Column("mime_type", String(255)),
+    Column("size_bytes", Integer, nullable=False, server_default="0"),
+    Column("web_url", Text),
+    Column("parent_path", Text),
+    Column("created_at_microsoft", DateTime(timezone=True)),
+    Column("modified_at_microsoft", DateTime(timezone=True)),
+    Column("created_by_email", String(320)),
+    Column("modified_by_email", String(320)),
+    Column("match_method", String(100)),
+    Column("status", String(50), nullable=False, server_default="pending"),
+    Column("deleted", Boolean, nullable=False, server_default="false"),
+    Column("raw_metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "microsoft_drive_id",
+        "microsoft_item_id",
+        name="uq_microsoft_document_drive_item",
+    ),
+)
+
+
+microsoft_document_matching_rules = Table(
+    "microsoft_document_matching_rules",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("person_id", Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False),
+    Column("rule_type", String(50), nullable=False),
+    Column("pattern", String(500), nullable=False),
+    Column("priority", Integer, nullable=False, server_default="100"),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "person_id",
+        "rule_type",
+        "pattern",
+        name="uq_microsoft_document_matching_rule",
+    ),
+)
+
+
+relationship_types = Table(
+    "relationship_types",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("code", String(100), nullable=False, unique=True),
+    Column("name", String(255), nullable=False),
+    Column("inverse_name", String(255)),
+    Column("category", String(100), nullable=False),
+    Column("directed", Boolean, nullable=False, server_default="true"),
+    Column("active", Boolean, nullable=False, server_default="true"),
+)
+
+
+relationship_entities = Table(
+    "relationship_entities",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("entity_type", String(50), nullable=False),
+    Column("person_id", Integer, ForeignKey("people.id", ondelete="CASCADE"), unique=True),
+    Column("household_id", Integer, ForeignKey("households.id", ondelete="CASCADE"), unique=True),
+    Column("name", String(500), nullable=False),
+    Column("details", JSON, nullable=False, server_default="{}"),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+relationships = Table(
+    "relationships",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("from_entity_id", Integer, ForeignKey("relationship_entities.id", ondelete="CASCADE"), nullable=False),
+    Column("to_entity_id", Integer, ForeignKey("relationship_entities.id", ondelete="CASCADE"), nullable=False),
+    Column("relationship_type_id", Integer, ForeignKey("relationship_types.id"), nullable=False),
+    Column("effective_date", Date),
+    Column("inactive_date", Date),
+    Column("notes", Text),
+    Column("confidence_level", Numeric(5, 2), nullable=False, server_default="100"),
+    Column("source", String(50), nullable=False, server_default="manual"),
+    Column("created_by", String(255)),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "from_entity_id",
+        "to_entity_id",
+        "relationship_type_id",
+        name="uq_relationship_edge",
     ),
 )
 
@@ -365,6 +508,54 @@ microsoft_unmatched_messages = Table(
         "microsoft_message_id",
         name="uq_microsoft_unmatched_message_id",
     ),
+)
+
+
+microsoft_unmatched_calendar_attendees = Table(
+    "microsoft_unmatched_calendar_attendees",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_event_id", String(500), nullable=False),
+    Column("attendee_email", String(320), nullable=False),
+    Column("attendee_name", String(255)),
+    Column("attendee_role", String(50)),
+    Column("response_status", String(50)),
+    Column("subject", String(500)),
+    Column("starts_at", DateTime(timezone=True), nullable=False),
+    Column("ends_at", DateTime(timezone=True)),
+    Column("location", String(500)),
+    Column("online_meeting_link", Text),
+    Column("web_link", Text),
+    Column("event_metadata", JSON, nullable=False),
+    Column("status", String(50), nullable=False, server_default="pending"),
+    Column(
+        "matched_person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    ),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    ),
+    UniqueConstraint(
+        "microsoft_event_id",
+        "attendee_email",
+        name="uq_microsoft_calendar_event_attendee",
+    ),
+)
+Index(
+    "ix_microsoft_calendar_review_status_start",
+    microsoft_unmatched_calendar_attendees.c.status,
+    microsoft_unmatched_calendar_attendees.c.starts_at,
 )
 
 
@@ -471,6 +662,8 @@ microsoft_accounts = Table(
         name="uq_microsoft_account",
     ),
 )
+portfolio_tables = define_portfolio_tables(metadata)
+identity_tables = define_identity_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

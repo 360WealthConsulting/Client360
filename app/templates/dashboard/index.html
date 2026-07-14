@@ -96,6 +96,19 @@
             <a href="/activities">Activities</a>
             <a href="/matches">Match Review</a>
             <a href="/search">Search</a>
+            <a href="/microsoft365/inbox-review">Inbox Review</a>
+            <a href="/microsoft365/calendar-review">Calendar Review</a>
+            <a href="/microsoft365/documents-review">Microsoft Documents Review</a>
+            <a href="/relationships/search">Relationship Search</a>
+            <a href="/portfolio/search">Portfolio Search</a>
+        </div>
+        <div class="cards">
+            <div class="card"><div class="label">Firm AUM</div><div class="value">${{ "{:,.0f}".format(dashboard.firm_aum or 0) }}</div></div>
+            <div class="card"><div class="label">Cash Waiting to Invest</div><div class="value">${{ "{:,.0f}".format(dashboard.cash_waiting or 0) }}</div></div>
+            <div class="card"><div class="label">Largest Household</div><div class="value">{{ dashboard.largest_household.name if dashboard.largest_household else "—" }}</div></div>
+            <div class="card"><div class="label">Largest Position</div><div class="value">{{ dashboard.largest_position.symbol if dashboard.largest_position else "—" }}</div></div>
+            <div class="card"><div class="label">Missing Beneficiaries</div><div class="value">{{ dashboard.missing_beneficiaries }}</div></div>
+            <div class="card"><div class="label">Accounts Without Reviews</div><div class="value">{{ dashboard.accounts_without_reviews }}</div></div>
         </div>
 
         <div class="cards">
