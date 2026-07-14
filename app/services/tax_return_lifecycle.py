@@ -166,7 +166,7 @@ def production_dashboard(principal):
     reviewers={str(uid):sum(r.reviewer_user_id==uid and r.status=="pending" for r in review_rows) for uid in {r.reviewer_user_id for r in review_rows if r.reviewer_user_id}}
     return {"items":[dict(r) for r in rows],"metrics":metrics,"by_status":by_status,"by_preparer":preparers,"by_reviewer":reviewers,"review_bottlenecks":{"manager":by_status["manager_review"],"partner":by_status["partner_review"]},"filing":{s:sum(r["filing_status"]==s for r in rows) for s in FILING_TRANSITIONS}}
 
-def portal_returns(principal):
-    scope=portal_scope(principal.account_id)
+def portal_returns(principal, scope=None):
+    scope=scope or portal_scope(principal.account_id)
     with engine.connect() as c: ids=list(c.scalars(select(tax_engagement_returns.c.id).join(tax_engagements).where(or_(tax_engagements.c.person_id.in_(scope["person_ids"]),tax_engagements.c.household_id.in_(scope["shared_household_ids"])))))
     return [return_detail(i) for i in ids]

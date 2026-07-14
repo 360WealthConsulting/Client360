@@ -1,3 +1,4 @@
+from collections import defaultdict
 from decimal import Decimal
 from sqlalchemy import and_, func, or_, select
 from app.db import account_beneficiaries, account_holdings, accounts, engine, households, people, securities
@@ -5,6 +6,24 @@ from app.db import account_beneficiaries, account_holdings, accounts, engine, ho
 from app.portfolio.calculations import aggregate_portfolio
 
 ZERO = Decimal("0")
+
+
+def _largest_position_percents(person_ids):
+    """Bulk `largest_position_percent` for many people in a bounded number of
+    queries, using the same aggregate_portfolio math as get_person_portfolio so
+    the numeric result is identical (removes the concentration-filter N+1)."""
+    person_ids = list(dict.fromkeys(person_ids))
+    if not person_ids: return {}
+    with engine.connect() as conn:
+        account_rows = conn.execute(select(accounts).where(accounts.c.person_id.in_(person_ids))).mappings().all()
+        acct_ids = [r["id"] for r in account_rows]
+        holding_rows = [] if not acct_ids else conn.execute(select(account_holdings.c.account_id, account_holdings.c.market_value, account_holdings.c.cost_basis, account_holdings.c.unrealized_gain, securities.c.symbol, securities.c.name, securities.c.asset_class).join(securities, securities.c.id == account_holdings.c.security_id).where(account_holdings.c.account_id.in_(acct_ids))).mappings().all()
+    acct_to_person = {r["id"]: r["person_id"] for r in account_rows}
+    accounts_by_person = defaultdict(list)
+    for r in account_rows: accounts_by_person[r["person_id"]].append(r)
+    holdings_by_person = defaultdict(list)
+    for h in holding_rows: holdings_by_person[acct_to_person[h["account_id"]]].append(h)
+    return {pid: aggregate_portfolio(accounts_by_person.get(pid, []), holdings_by_person.get(pid, []))["largest_position_percent"] for pid in person_ids}
 
 def _portfolio(where):
     with engine.connect() as conn:
@@ -34,7 +53,7 @@ def get_firm_portfolio_metrics():
         without_reviews = conn.scalar(select(func.count()).select_from(accounts).where(accounts.c.last_review_date.is_(None))) or 0
     return {"firm_aum": firm_aum, "cash_waiting": cash, "largest_household": largest_household, "largest_position": largest_position, "missing_beneficiaries": missing_beneficiaries, "accounts_without_reviews": without_reviews}
 
-def search_portfolios(query="", min_aum=None, registration=None, high_cash=False, missing_beneficiary=False, concentration=None):
+def search_portfolios(query="", min_aum=None, registration=None, high_cash=False, missing_beneficiary=False, concentration=None, limit=None):
     stmt = select(people.c.id, people.c.full_name, func.sum(accounts.c.total_value).label("aum"), func.sum(accounts.c.cash_value).label("cash")).join(accounts, accounts.c.person_id == people.c.id).group_by(people.c.id)
     if query: stmt = stmt.where(or_(people.c.full_name.ilike(f"%{query}%"), accounts.c.registration_type.ilike(f"%{query}%")))
     if registration: stmt = stmt.where(accounts.c.registration_type.ilike(f"%{registration}%"))
@@ -43,5 +62,6 @@ def search_portfolios(query="", min_aum=None, registration=None, high_cash=False
     if high_cash: stmt = stmt.having(func.sum(accounts.c.cash_value) / func.nullif(func.sum(accounts.c.total_value), 0) >= Decimal("0.15"))
     with engine.connect() as conn: rows = [dict(r) for r in conn.execute(stmt.order_by(func.sum(accounts.c.total_value).desc())).mappings()]
     if concentration is not None:
-        rows = [r for r in rows if get_person_portfolio(r["id"])["largest_position_percent"] >= concentration]
-    return rows
+        percents = _largest_position_percents([r["id"] for r in rows])
+        rows = [r for r in rows if percents.get(r["id"], ZERO) >= concentration]
+    return rows[:limit] if limit else rows

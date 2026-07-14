@@ -253,7 +253,18 @@ migrations CONCURRENTLY-safe and reversible; one head; sentinel preserved.
 
 ---
 
-## Phase 5 — Performance Improvements (N+1 Elimination)
+## Phase 5 — Performance Improvements (N+1 Elimination)  — **IMPLEMENTED**
+
+> **Implementation note.** All five WPs delivered with identical-output and
+> query-count-independent-of-N tests (`tests/test_phase5_query_optimization.py`):
+> WP5.1 pushes `work_items()` authorization into SQL (O(book), negative-scope
+> tested); WP5.2 bulk `_bulk_intake_details` (4 returns 28→7 queries, output ==
+> `intake_detail`); WP5.3 threads one `portal_scope()` and gives narrow endpoints
+> dedicated functions (`/notifications` 21→1 query); WP5.4 bulk concentration via
+> the same `aggregate_portfolio` math (4 people 28→2 queries, numerically
+> identical); WP5.5 pagination on `/activities` and `/tasks`. No schema change;
+> head `o5f36c4d3e2a`; 178 tests pass; 178 routes; OpenAPI intact. Details in
+> `docs/RELEASE_0.9.9_PHASE5_QUERY_OPTIMIZATION.md`.
 
 **Objective.** Eliminate the four confirmed N+1 / full-scan hot paths (RC8/RC9
 H15–H19; architecture §23) while **preserving exact authorization/scope

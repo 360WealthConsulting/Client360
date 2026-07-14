@@ -9,7 +9,9 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/tasks")
-def task_dashboard(request: Request):
+def task_dashboard(request: Request, limit: int = 100, offset: int = 0):
+    # Bound the read so the page is O(page size), not O(all tasks) (RC9).
+    limit = max(1, min(limit, 500)); offset = max(0, offset)
     with engine.connect() as connection:
         task_rows = connection.execute(
             select(
@@ -25,6 +27,8 @@ def task_dashboard(request: Request):
                 tasks.c.priority.desc(),
                 tasks.c.due_date.asc().nullslast(),
             )
+            .limit(limit)
+            .offset(offset)
         ).mappings().all()
 
     return templates.TemplateResponse(
@@ -32,5 +36,7 @@ def task_dashboard(request: Request):
         name="tasks/dashboard.html",
         context={
             "tasks": task_rows,
+            "limit": limit,
+            "offset": offset,
         },
     )

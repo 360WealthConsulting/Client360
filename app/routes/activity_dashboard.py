@@ -10,7 +10,9 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/activities")
-def activity_dashboard(request: Request):
+def activity_dashboard(request: Request, limit: int = 100, offset: int = 0):
+    # Bound the read so the page is O(page size), not O(all activities) (RC9).
+    limit = max(1, min(limit, 500)); offset = max(0, offset)
     with engine.connect() as connection:
         activity_rows = connection.execute(
             select(
@@ -25,6 +27,8 @@ def activity_dashboard(request: Request):
                 activities.c.occurred_at.desc(),
                 activities.c.id.desc(),
             )
+            .limit(limit)
+            .offset(offset)
         ).mappings().all()
 
     return templates.TemplateResponse(
@@ -32,5 +36,7 @@ def activity_dashboard(request: Request):
         name="activities/dashboard.html",
         context={
             "activities": activity_rows,
+            "limit": limit,
+            "offset": offset,
         },
     )

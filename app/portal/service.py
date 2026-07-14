@@ -198,8 +198,8 @@ def approve_request_upload(request_id, *, approved_by_user_id, approved=True):
     write_audit_event(action=f"portal.document.{status}", entity_type="portal_document_request", entity_id=request_id, actor_user_id=approved_by_user_id, request_id=f"portal-document-{uuid.uuid4()}")
     return status
 
-def client_tasks(principal):
-    scope = portal_scope(principal.account_id)
+def client_tasks(principal, scope=None):
+    scope = scope or portal_scope(principal.account_id)
     with engine.connect() as connection:
         rows = connection.execute(select(workflow_steps, workflow_instances.c.name.label("workflow_name")).join(workflow_instances).where(or_(workflow_instances.c.person_id.in_(scope["person_ids"]), workflow_instances.c.household_id.in_(scope["shared_household_ids"])), workflow_steps.c.status.in_(("active", "pending")))).mappings().all()
     return [r for r in rows if r["waiting_on"] == "client" or (r["definition_snapshot"] or {}).get("assignment_config", {}).get("audience") == "client"]
@@ -219,17 +219,39 @@ def notify(account_id, notification_type, title, body=None, *, channel="in_app",
         result = provider.deliver(recipient=account_id, title=title, body=body, metadata={"entity_type": entity_type, "entity_id": entity_id})
         return connection.execute(portal_notifications.insert().values(portal_account_id=account_id, channel=channel, notification_type=notification_type, title=title, body=body, status="delivered" if result["delivered"] else "disabled", entity_type=entity_type, entity_id=entity_id, idempotency_key=idempotency_key, delivery_metadata=result).returning(portal_notifications.c.id)).scalar_one()
 
+def client_document_requests(principal, scope=None):
+    scope = scope or portal_scope(principal.account_id)
+    with engine.connect() as connection:
+        return connection.execute(select(portal_document_requests).where(portal_document_requests.c.person_id.in_(scope["person_ids"]), portal_document_requests.c.status.in_(("open", "uploaded"))).order_by(portal_document_requests.c.due_date)).mappings().all()
+
+def client_notifications(principal):
+    with engine.connect() as connection:
+        return connection.execute(select(portal_notifications).where(portal_notifications.c.portal_account_id == principal.account_id).order_by(portal_notifications.c.created_at.desc()).limit(20)).mappings().all()
+
+def client_threads(principal, scope=None):
+    scope = scope or portal_scope(principal.account_id)
+    with engine.connect() as connection:
+        return connection.execute(select(portal_threads).where(or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))).order_by(portal_threads.c.updated_at.desc()).limit(20)).mappings().all()
+
+def client_documents(principal, scope=None):
+    scope = scope or portal_scope(principal.account_id)
+    with engine.connect() as connection:
+        return connection.execute(select(documents).where(documents.c.person_id.in_(scope["person_ids"]), documents.c.archived.is_(False)).order_by(documents.c.created_at.desc()).limit(20)).mappings().all()
+
 def dashboard(principal):
     scope = portal_scope(principal.account_id); now = datetime.now(timezone.utc)
+    # Narrow endpoints (/documents, /requests, /tasks, /notifications, /messages)
+    # reuse the single-purpose function they need instead of computing the whole
+    # dashboard (RC8/RC9). Output is unchanged.
+    requests = client_document_requests(principal, scope)
+    notifications = client_notifications(principal)
+    threads = client_threads(principal, scope)
+    docs = client_documents(principal, scope)
     with engine.connect() as connection:
-        requests = connection.execute(select(portal_document_requests).where(portal_document_requests.c.person_id.in_(scope["person_ids"]), portal_document_requests.c.status.in_(("open", "uploaded"))).order_by(portal_document_requests.c.due_date)).mappings().all()
-        notifications = connection.execute(select(portal_notifications).where(portal_notifications.c.portal_account_id == principal.account_id).order_by(portal_notifications.c.created_at.desc()).limit(20)).mappings().all()
-        threads = connection.execute(select(portal_threads).where(or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))).order_by(portal_threads.c.updated_at.desc()).limit(20)).mappings().all()
-        docs = connection.execute(select(documents).where(documents.c.person_id.in_(scope["person_ids"]), documents.c.archived.is_(False)).order_by(documents.c.created_at.desc()).limit(20)).mappings().all()
         meetings = connection.execute(select(timeline_events).where(or_(timeline_events.c.person_id.in_(scope["person_ids"]), timeline_events.c.household_id.in_(scope["shared_household_ids"])), timeline_events.c.event_type == "calendar_event", timeline_events.c.event_time >= now).order_by(timeline_events.c.event_time).limit(20)).mappings().all()
-    tasks = client_tasks(principal)
+    tasks = client_tasks(principal, scope)
     from app.services.tax_intake import portal_intakes
     from app.services.tax_return_lifecycle import portal_returns
-    tax_intakes = portal_intakes(principal)
-    tax_returns = portal_returns(principal)
+    tax_intakes = portal_intakes(principal, scope)
+    tax_returns = portal_returns(principal, scope)
     return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}
