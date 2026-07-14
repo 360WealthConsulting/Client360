@@ -114,12 +114,17 @@ def accept_letter(return_id, *, portal_principal, metadata=None, request_id=None
     _milestone(return_id,"engagement_letter_accepted",None,portal_principal,request_id); _advance(return_id); return letter["id"]
 
 def sync_documents(return_id):
-    with engine.begin() as c:
+    # Route each uploaded checklist document through the deterministic matching
+    # engine (portal-request provenance -> accepted link -> checklist/missing
+    # resolution). Idempotent: re-running returns the existing link (RC11 C2/C5).
+    from app.services.tax_document_intelligence import ingest_document, portal_request_signals, compute_missing
+    with engine.connect() as c:
         rows=c.execute(select(tax_checklist_items.c.id,portal_document_requests.c.status,portal_document_requests.c.uploaded_document_id).join(portal_document_requests).where(tax_checklist_items.c.tax_engagement_return_id==return_id)).all()
-        for row in rows:
-            if row.status in ("uploaded","approved"):
-                c.execute(tax_checklist_items.update().where(tax_checklist_items.c.id==row.id).values(status="received",document_id=row.uploaded_document_id,completed_at=datetime.now(timezone.utc)))
-                c.execute(tax_missing_items.update().where(tax_missing_items.c.checklist_item_id==row.id,tax_missing_items.c.status=="open").values(status="resolved",resolved_at=datetime.now(timezone.utc)))
+    for row in rows:
+        if row.status in ("uploaded","approved") and row.uploaded_document_id:
+            with engine.connect() as c: signals=portal_request_signals(c,row.id)
+            ingest_document(row.uploaded_document_id,signals)
+    compute_missing(return_id)
     _advance(return_id); return intake_detail(return_id)
 
 def _milestone(return_id,event_type,actor_user_id,portal_principal,request_id):

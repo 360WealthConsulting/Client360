@@ -43,6 +43,7 @@ from app.routes.portal import router as portal_router
 from app.routes.tax import router as tax_router
 from app.routes.tax_intake import router as tax_intake_router
 from app.routes.tax_returns import router as tax_returns_router
+from app.routes.tax_documents import router as tax_documents_router
 
 
 @asynccontextmanager
@@ -99,4 +100,5 @@ app.include_router(workflows_router)
 app.include_router(tax_router)
 app.include_router(tax_intake_router)
 app.include_router(tax_returns_router)
+app.include_router(tax_documents_router)
 app.include_router(portal_router)

@@ -19,6 +19,10 @@ RULES = (
     # workflow/tax prefix rules so the coarse ".read"->".write" inference does
     # not demand work.write/tax.write and lock out those roles (H4).
     (re.compile(r"^/api/v1/workflows/approvals/"), "work.approve"),
+    # Tax document review actions use the dedicated tax.document.review capability;
+    # carve out before the generic tax rule so the .read->.write inference does not
+    # demand tax.write and lock out a reviewer-only role (same shape as the H4 fix).
+    (re.compile(r"^/api/v1/tax/documents/\d+/(accept|reject|reassign|classify|duplicate|revert)"), "tax.document.review"),
     (re.compile(r"^/tax/returns/reviews|^/api/v1/tax/returns/reviews|^/api/v1/tax/returns/\d+/reviews"), "tax.review"),
     (re.compile(r"^/tax/returns|^/api/v1/tax/returns"), "tax.read"),
     (re.compile(r"^/tax/intake|^/api/v1/tax/intake"), "tax.intake.read"),

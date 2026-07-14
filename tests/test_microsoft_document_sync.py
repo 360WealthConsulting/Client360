@@ -16,15 +16,15 @@ PEOPLE = [
 
 
 def sample_item():
+    # Uploaded by an advisor into a "Jane Client" folder. Under deterministic
+    # matching (Sprint 5.4 / H13) this must NOT auto-assign to Jane.
     return {
         "id": "item-123",
         "name": "2026 Tax Return.pdf",
         "size": 4096,
         "webUrl": "https://contoso.sharepoint.com/item-123",
         "file": {"mimeType": "application/pdf"},
-        "parentReference": {
-            "path": "/drives/drive-1/root:/Clients/Jane Client"
-        },
+        "parentReference": {"driveId": "drive-1", "path": "/drives/drive-1/root:/Clients/Jane Client"},
         "createdDateTime": "2026-07-01T12:00:00Z",
         "lastModifiedDateTime": "2026-07-12T14:00:00Z",
         "createdBy": {"user": {"email": "advisor@example.com"}},
@@ -32,24 +32,39 @@ def sample_item():
     }
 
 
-def test_matches_document_by_client_folder_name():
-    assert match_drive_item(sample_item(), PEOPLE, []) == (42, "folder_name")
+def client_item():
+    # Uploaded by the client themselves (exact email identity) -> deterministic.
+    item = sample_item()
+    item["createdBy"] = {"user": {"email": "jane@example.com"}}
+    item["lastModifiedBy"] = {"user": {"email": "jane@example.com"}}
+    return item
 
 
-def test_configurable_rule_takes_priority():
-    rules = [
-        {
-            "person_id": 99,
-            "rule_type": "filename",
-            "pattern": "tax return",
-            "priority": 1,
-        }
-    ]
+def test_folder_name_substring_no_longer_auto_matches():
+    # H13: a document merely sitting in a folder named after a client, uploaded by
+    # someone else, must not be auto-assigned. Deterministic matcher returns none.
+    assert match_drive_item(sample_item(), PEOPLE, []) == (None, None)
 
-    assert match_drive_item(sample_item(), PEOPLE, rules) == (
-        99,
-        "rule:filename",
-    )
+
+def test_exact_uploader_email_matches():
+    assert match_drive_item(client_item(), PEOPLE, []) == (42, "metadata_email")
+
+
+def test_exact_email_rule_matches():
+    rules = [{"person_id": 99, "rule_type": "email_exact", "pattern": "advisor@example.com", "priority": 1, "id": 1}]
+    assert match_drive_item(sample_item(), PEOPLE, rules) == (99, "rule:email_exact")
+
+
+def test_exact_drive_id_rule_matches():
+    rules = [{"person_id": 77, "rule_type": "drive_id", "pattern": "drive-1", "priority": 1, "id": 1}]
+    assert match_drive_item(sample_item(), PEOPLE, rules) == (77, "rule:drive_id")
+
+
+def test_legacy_substring_rule_is_ignored():
+    # Legacy free-text rule types (filename/folder/email/metadata) are inert; they
+    # must not produce a substring match.
+    rules = [{"person_id": 99, "rule_type": "filename", "pattern": "tax return", "priority": 1, "id": 1}]
+    assert match_drive_item(sample_item(), PEOPLE, rules) == (None, None)
 
 
 def test_process_publishes_matched_document_with_stable_item_key():
@@ -62,7 +77,7 @@ def test_process_publishes_matched_document_with_stable_item_key():
     for _ in range(2):
         result = process_drive_items(
             {"id": "drive-1", "name": "Documents", "source_type": "sharepoint"},
-            [sample_item()],
+            [client_item()],
             people_rows=PEOPLE,
             rules=[],
             store=lambda **values: stored.append(values),
@@ -77,14 +92,12 @@ def test_process_publishes_matched_document_with_stable_item_key():
 
 
 def test_unmatched_document_is_stored_for_review_without_timeline_event():
-    item = sample_item()
-    item["parentReference"]["path"] = "/drives/drive-1/root:/Unsorted"
     stored = []
     published = []
 
     result = process_drive_items(
         {"id": "drive-1", "source_type": "onedrive"},
-        [item],
+        [sample_item()],  # advisor uploader, no rules -> unmatched
         people_rows=PEOPLE,
         rules=[],
         store=lambda **values: stored.append(values),

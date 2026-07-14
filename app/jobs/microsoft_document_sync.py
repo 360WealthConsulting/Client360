@@ -51,47 +51,44 @@ def match_drive_item(
     people_rows: Iterable[Mapping[str, Any]],
     rules: Iterable[Mapping[str, Any]],
 ) -> tuple[Optional[int], Optional[str]]:
-    name = item.get("name") or ""
-    parent_path = item.get("parentReference", {}).get("path") or ""
+    """Deterministic, exact-match ownership resolution only (Sprint 5.4 / H13).
+
+    Substring/containment matching on names, folder paths, or emails has been
+    removed. A drive item is auto-assigned to a person only on an *exact*
+    identifier match: a structured exact matching rule (drive id / folder item id
+    / exact email), or exact uploader-email identity — and only when exactly one
+    person matches. Everything else returns ``(None, None)`` and is stored as
+    ``pending`` for mandatory human review.
+    """
+    drive_id = str(item.get("parentReference", {}).get("driveId") or "")
+    item_id = str(item.get("id") or "")
     created_by = _identity_email(item, "createdBy")
     modified_by = _identity_email(item, "lastModifiedBy")
-    search_text = " ".join((name.lower(), parent_path.lower(), created_by, modified_by))
+    uploader_emails = {e for e in (created_by, modified_by) if e}
 
+    # Structured exact matching rules (equality only; no substring). Legacy
+    # free-text rule types are inactive after migration k1b92e0d9c8a and ignored.
     for rule in sorted(
         rules,
-        key=lambda row: (
-            int(row.get("priority", 100)),
-            int(row.get("id", 0)),
-        ),
+        key=lambda row: (int(row.get("priority", 100)), int(row.get("id", 0))),
     ):
-        pattern = (rule.get("pattern") or "").strip().lower()
         rule_type = rule.get("rule_type")
-        target = {
-            "filename": name.lower(),
-            "folder": parent_path.lower(),
-            "email": " ".join((created_by, modified_by)),
-            "metadata": search_text,
-        }.get(rule_type, search_text)
+        value = (rule.get("pattern") or "").strip()
+        if not value:
+            continue
+        if rule_type == "drive_id" and value == drive_id:
+            return int(rule["person_id"]), "rule:drive_id"
+        if rule_type == "folder_item_id" and value == item_id:
+            return int(rule["person_id"]), "rule:folder_item_id"
+        if rule_type == "email_exact" and normalize_email(value) in uploader_emails:
+            return int(rule["person_id"]), "rule:email_exact"
 
-        if pattern and pattern in target:
-            return int(rule["person_id"]), f"rule:{rule_type}"
-
+    # Exact uploader-email identity, requiring a single unambiguous person.
     matches: dict[int, str] = {}
-    normalized_parent = normalize_text(parent_path)
-
     for person in people_rows:
-        person_id = int(person["id"])
-        email = normalize_email(
-            person.get("normalized_email") or person.get("primary_email")
-        )
-        full_name = normalize_text(person.get("full_name"))
-
-        if email and email in (created_by, modified_by):
-            matches[person_id] = "metadata_email"
-        elif email and email in search_text:
-            matches[person_id] = "embedded_email"
-        elif full_name and full_name in normalized_parent:
-            matches[person_id] = "folder_name"
+        email = normalize_email(person.get("normalized_email") or person.get("primary_email"))
+        if email and email in uploader_emails:
+            matches[int(person["id"])] = "metadata_email"
 
     if len(matches) == 1:
         person_id, method = next(iter(matches.items()))
@@ -369,7 +366,42 @@ def sync_microsoft_documents() -> dict[str, int]:
                 )
             )
 
+    totals["tax_documents_bridged"] = bridge_microsoft_documents_to_tax()
     return totals
+
+
+def bridge_microsoft_documents_to_tax(limit=1000):
+    """Feed stored Microsoft documents into the deterministic tax matching engine.
+
+    Runs after drive sync (and is independently callable/testable). Preserves the
+    already-verified deterministic ``match_drive_item`` behavior: a document whose
+    exact match identified a person is offered to that person's returns
+    (auto-accept only if unambiguous and ownership validates); an unmatched
+    document (no person) is recorded as a reviewable unmatched tax link rather than
+    silently discarded (RC11 C1/C5). Idempotent via the engine's existing-link
+    check (RC11 C2) — re-running does not create duplicates.
+    """
+    from app.db import microsoft_documents, tax_document_links
+    from app.services.tax_document_intelligence import (
+        ingest_microsoft_document, person_return_signals)
+    with engine.connect() as connection:
+        already = set(connection.scalars(
+            select(tax_document_links.c.microsoft_document_id)
+            .where(tax_document_links.c.microsoft_document_id.isnot(None))))
+        rows = connection.execute(
+            select(microsoft_documents.c.id, microsoft_documents.c.person_id)
+            .where(microsoft_documents.c.deleted.is_(False))
+            .order_by(microsoft_documents.c.id).limit(limit)
+        ).mappings().all()
+    bridged = 0
+    for row in rows:
+        if row["id"] in already:
+            continue
+        with engine.connect() as connection:
+            signals = person_return_signals(connection, row["person_id"], signal_type="email_exact")
+        ingest_microsoft_document(row["id"], signals)
+        bridged += 1
+    return bridged
 
 
 if __name__ == "__main__":
