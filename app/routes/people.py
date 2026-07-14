@@ -15,9 +15,10 @@ from app.db import (
     source_contacts,
     tasks,
 )
-from app.services.documents import get_person_documents
-from app.services.client_summary import get_client_summary
+from app.services.advisor_ai import build_advisor_recommendations
 from app.services.client_alerts import build_client_alerts
+from app.services.client_summary import get_client_summary
+from app.services.documents import get_person_documents
 from app.services.timeline import get_person_timeline
 
 
@@ -322,6 +323,7 @@ def person_profile(
     documents = get_person_documents(person_id)[:8]
     client_summary = get_client_summary(person_id)
     client_alerts = build_client_alerts(client_summary)
+    advisor_recommendations = build_advisor_recommendations(client_summary)
 
     return templates.TemplateResponse(
         request=request,
@@ -338,6 +340,7 @@ def person_profile(
             "activities": activity_rows,
             "client_summary": client_summary,
             "client_alerts": client_alerts,
+            "advisor_recommendations": advisor_recommendations,
             "active_tab": tab,
         },
     )

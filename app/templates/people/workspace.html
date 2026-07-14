@@ -444,6 +444,20 @@
                 </div>
                 {% endfor %}
             </section>
+
+            <section class="card">
+                <h2 class="section-title">Advisor Recommendations</h2>
+
+                {% for recommendation in advisor_recommendations %}
+                <div class="client-alert client-alert-info">
+                    {{ recommendation }}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    No recommendations available.
+                </div>
+                {% endfor %}
+            </section>
         </aside>
 
     </div>
