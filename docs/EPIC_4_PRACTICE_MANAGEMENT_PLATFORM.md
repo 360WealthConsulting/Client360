@@ -43,6 +43,8 @@ The epic does not yet implement tax-return parsing, portfolio intelligence, gene
 6. Third-party vendors are isolated behind adapters for SMS, e-signature, object storage, OCR, and notifications.
 7. Workflow definitions are versioned. Running workflow instances remain bound to the definition version with which they started.
 8. No automatic creation or merging of canonical people from communications, imports, or portal activity.
+9. Every external integration is accessed through a provider-neutral port and provider adapter. Domain services accept canonical commands/results and never branch on a vendor name.
+10. Authorization is capability based. Roles are configurable bundles of capabilities; application code checks capabilities plus record scope and never hard-codes role names.
 
 ## 3. Recommended implementation sequence
 
@@ -72,7 +74,7 @@ Create the security and organizational foundation required by every staff and cl
 - `users`: employee identity, normalized email, status, authentication subject, last login, MFA state.
 - `teams`: Wealth, Tax, Insurance, Operations, Compliance, and configurable future teams.
 - `team_memberships`: user/team role, effective and inactive dates.
-- `roles`, `permissions`, `role_permissions`, `user_roles`: normalized RBAC model.
+- `capabilities`, `roles`, `role_capabilities`, `user_roles`: capability-based authorization model. Roles compose reusable capabilities; no route or service checks a hard-coded role name.
 - `record_assignments`: advisor, service owner, tax preparer, reviewer, and other assignments to people or households.
 - `audit_events`: actor, action, entity type/id, request correlation ID, timestamp, IP/user agent, redacted before/after metadata.
 - `user_sessions` or authentication-provider session references, including revocation timestamps.
@@ -82,7 +84,8 @@ Create the security and organizational foundation required by every staff and cl
 ### Services
 
 - Authentication adapter supporting a managed OIDC provider; keep provider-specific code outside domain services.
-- Authorization policy service with explicit permissions and record-scope checks.
+- Authorization policy service with explicit capability and record-scope checks.
+- Identity provider port and OIDC adapter. Authentication claims are normalized before entering application services so another compliant provider can replace the initial provider without changing authorization logic.
 - Team and record-assignment services.
 - Append-only audit publisher with field redaction and request correlation.
 - Current-user/request-context dependency for FastAPI.
@@ -90,20 +93,20 @@ Create the security and organizational foundation required by every staff and cl
 ### UI
 
 - Sign-in/sign-out and access-denied views.
-- Staff administration for users, teams, roles, and record assignments.
+- Staff administration for users, teams, capability-composed roles, and record assignments.
 - Read-only audit viewer limited to compliance/administrators.
 - Current team/role context in application navigation.
 
 ### APIs
 
 - `/api/v1/session` for current identity and effective permissions.
-- CRUD APIs for users, teams, memberships, roles, and assignments.
+- CRUD APIs for users, teams, memberships, capabilities, role composition, and assignments.
 - Permission-filtered audit query API; no audit update/delete API.
 - Health endpoint extensions for authentication configuration.
 
 ### Testing strategy
 
-- Unit tests for permission matrices, team scope, inactive memberships, and redaction.
+- Unit tests for capability composition, direct role changes, team scope, inactive memberships, and redaction.
 - Integration tests proving unauthenticated access is rejected and cross-team/record access is denied.
 - Audit completeness tests for create, update, download, login, and denied access.
 - Migration upgrade/downgrade tests and unique normalized-email constraints.
@@ -112,7 +115,7 @@ Create the security and organizational foundation required by every staff and cl
 ### Dependencies
 
 - Select OIDC provider and MFA policy.
-- Define initial employees, teams, roles, and least-privilege permission matrix.
+- Define initial employees, teams, capability catalog, role compositions, and least-privilege matrix.
 - Decide development/testing authentication bypass policy; never enable it in production.
 
 ### Acceptance criteria
@@ -569,6 +572,17 @@ Prove operational equivalence, migrate safely, and retire Wealthbox/TaxDome only
 - Conversations/messages become canonical communication records across Microsoft mail, portal, SMS, and future providers.
 - Timeline events remain client history; audit events remain security/compliance evidence.
 
+### Integration provider and adapter architecture
+
+All integrations—including Microsoft Graph, identity, storage, malware scanning, notifications, SMS, e-signature, OCR, custodians, tax systems, and future AI providers—follow ports-and-adapters boundaries:
+
+1. A domain-owned port defines provider-neutral operations and canonical inputs/results.
+2. A vendor adapter translates authentication, payloads, pagination, errors, rate limits, and webhooks.
+3. An application service selects an adapter from configuration and contains orchestration and business policy.
+4. Persisted domain records store canonical data plus opaque provider references; provider payloads are isolated when retention is required.
+5. Contract tests run against every adapter. Business-rule tests use in-memory fakes and contain no vendor SDKs or payloads.
+6. Provider replacement changes configuration and an adapter, not routes, workflow rules, database ownership, or authorization policy.
+
 ### Integration adapter contracts
 
 Each external provider implements a narrow contract:
@@ -649,7 +663,7 @@ No production client data or credentials may be committed to fixtures, screensho
 Leadership and architecture review must resolve:
 
 1. Managed identity provider for staff and clients, MFA methods, session duration, and account recovery policy.
-2. Initial permission matrix, record assignment model, privileged roles, and segregation-of-duties requirements.
+2. Initial capability catalog and role compositions, record assignment model, privileged capabilities, and segregation-of-duties requirements.
 3. Production hosting, database, object storage, backups, secret management, monitoring, RPO/RTO, and availability targets.
 4. Whether portal and staff identities share one identity tenant while remaining separate application audiences.
 5. Retention, legal hold, audit access, internal-note visibility, client household access, and representative/POA policies.
