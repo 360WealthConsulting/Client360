@@ -1,6 +1,19 @@
 # Sprint 5.4 — Tax Document Intelligence & Missing Information
 
-**Status:** accepted — implemented in `feature/tax-document-intelligence` (draft PR, head `k1b92e0d9c8a`).
+**Status:** accepted — implemented and RC11-remediated in
+`feature/tax-document-intelligence` (draft PR, head `l2c03f1e0d9b`). See the RC11
+remediation appendix in `docs/RC11_VALIDATION.md`.
+
+> **RC11 remediation (post-review):** the ingestion pipeline is now wired to both
+> producers — portal uploads via `tax_intake.sync_documents → ingest_document`,
+> and Microsoft drive documents via
+> `microsoft_document_sync.bridge_microsoft_documents_to_tax → ingest_microsoft_document`.
+> Links now reference **either** a canonical document or a Microsoft document
+> (dual-source model), unmatched documents persist with a NULL return (no
+> fabricated ownership) and are surfaced only to firm-wide reviewers, ingestion is
+> idempotent (replay returns the existing link), reviewer actions enforce a
+> current-status guard (409 on stale actions), and accept/reassign re-validate
+> document-owner vs return-owner (403 + denied audit on cross-owner mismatch).
 **Epic:** 5 (Tax Practice Platform), per `docs/EPIC_5_REVISED_PLAN.md`.
 **Baseline:** Release v0.9.7 (`main`, Alembic head `j0a81f9c8d7e`).
 **Target release:** v0.9.9 (assumes Release 0.9.8 performance/token debt lands first,

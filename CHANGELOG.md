@@ -20,13 +20,23 @@ All notable Client360 releases are documented here.
 - AI classifier port (interface only; inert — no vendor, no external call).
 - Shared tax dashboard stylesheet (`tax.css`), closing an RC8 unstyled-class gap.
 
+- RC11 remediation: wired ingestion end-to-end — portal uploads and Microsoft
+  documents now flow through the engine (dual-source links reference either a
+  canonical or a Microsoft document, no binary duplicated); made ingestion
+  idempotent; added review-state guards (HTTP 409 on stale actions); re-validate
+  document owner vs return client on accept/reassign (HTTP 403 + denied audit);
+  and persist unmatched documents reviewably without fabricating ownership.
+
 ### Database
 
 - Added `tax_document_links`, `tax_document_classifications`,
   `tax_document_match_evidence`, `tax_document_review_events` (append-only), the
   `tax.document.review` capability, four review queues, and the
   `tax_missing_items` FK index (RC9 H20); legacy free-text Microsoft matching
-  rules deactivated. Parent `j0a81f9c8d7e`; new head `k1b92e0d9c8a`.
+  rules deactivated. RC11 remediation adds a dual-source link model (nullable
+  `document_id` + `microsoft_document_id` with an exactly-one-source CHECK) and a
+  nullable return for unmatched links. Parent `j0a81f9c8d7e`; new head
+  `l2c03f1e0d9b`.
 
 ### Security
 

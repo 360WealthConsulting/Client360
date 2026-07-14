@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.tax_document_intelligence import (
-    checklist_view, compute_missing, documents_view, review_action, review_queue,
+    StaleReviewError, checklist_view, compute_missing, documents_view, review_action,
+    review_queue,
 )
 from app.services.tax_domain import list_engagements
 
@@ -64,6 +65,8 @@ def _action(link_id, action, payload, request, principal):
         return review_action(link_id, action, principal=principal, request=request,
             return_id=payload.return_id, checklist_item_id=payload.checklist_item_id,
             category=payload.category, reason=payload.reason)
+    except StaleReviewError as exc:
+        raise HTTPException(409, str(exc))
     except PermissionError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:

@@ -366,7 +366,42 @@ def sync_microsoft_documents() -> dict[str, int]:
                 )
             )
 
+    totals["tax_documents_bridged"] = bridge_microsoft_documents_to_tax()
     return totals
+
+
+def bridge_microsoft_documents_to_tax(limit=1000):
+    """Feed stored Microsoft documents into the deterministic tax matching engine.
+
+    Runs after drive sync (and is independently callable/testable). Preserves the
+    already-verified deterministic ``match_drive_item`` behavior: a document whose
+    exact match identified a person is offered to that person's returns
+    (auto-accept only if unambiguous and ownership validates); an unmatched
+    document (no person) is recorded as a reviewable unmatched tax link rather than
+    silently discarded (RC11 C1/C5). Idempotent via the engine's existing-link
+    check (RC11 C2) — re-running does not create duplicates.
+    """
+    from app.db import microsoft_documents, tax_document_links
+    from app.services.tax_document_intelligence import (
+        ingest_microsoft_document, person_return_signals)
+    with engine.connect() as connection:
+        already = set(connection.scalars(
+            select(tax_document_links.c.microsoft_document_id)
+            .where(tax_document_links.c.microsoft_document_id.isnot(None))))
+        rows = connection.execute(
+            select(microsoft_documents.c.id, microsoft_documents.c.person_id)
+            .where(microsoft_documents.c.deleted.is_(False))
+            .order_by(microsoft_documents.c.id).limit(limit)
+        ).mappings().all()
+    bridged = 0
+    for row in rows:
+        if row["id"] in already:
+            continue
+        with engine.connect() as connection:
+            signals = person_return_signals(connection, row["person_id"], signal_type="email_exact")
+        ingest_microsoft_document(row["id"], signals)
+        bridged += 1
+    return bridged
 
 
 if __name__ == "__main__":

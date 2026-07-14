@@ -21,14 +21,31 @@ from hashlib import sha256 as _sha256
 from typing import Optional, Protocol
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import false as sql_false, or_, select
+from sqlalchemy.exc import IntegrityError
 
-from app.db import (documents, engine, people, tax_checklist_items,
+from app.db import (documents, engine, microsoft_documents, people, tax_checklist_items,
     tax_document_classifications, tax_document_links, tax_document_match_evidence,
     tax_document_review_events, tax_engagement_returns, tax_engagements,
     tax_missing_items)
 from app.security.audit import audit_denied, write_audit_event
 from app.services.tax_domain import list_engagements
+
+
+class StaleReviewError(Exception):
+    """Raised when a review action is applied to a link in an incompatible state
+    (RC11 C3). Route layer maps this to HTTP 409."""
+
+
+# Which current link statuses each review action may be applied from.
+ALLOWED_FROM = {
+    "accept": {"proposed"},
+    "reject": {"proposed"},
+    "reassign": {"proposed", "rejected"},
+    "classify": {"proposed", "accepted"},
+    "duplicate": {"proposed"},
+    "revert": {"accepted"},
+}
 
 # --- Engine constants -------------------------------------------------------
 
@@ -175,9 +192,13 @@ def validate_ownership(connection, person_id, return_id):
     return False
 
 
-def find_duplicate(connection, document_id):
-    """Exact-hash duplicate detection (no fuzzy matching). Returns an existing
-    document id with the same sha256 that already has an accepted link, else None."""
+def find_duplicate(connection, *, document_id=None, microsoft_document_id=None):
+    """Exact-hash duplicate detection for a canonical document (no fuzzy matching).
+    Returns an existing document id with the same sha256 that already has an
+    accepted link, else None. Microsoft documents carry no canonical hash here and
+    are de-duplicated by their own identity via the idempotency check."""
+    if document_id is None:
+        return None
     digest = connection.scalar(select(documents.c.sha256).where(documents.c.id == document_id))
     if not digest:
         return None
@@ -188,6 +209,25 @@ def find_duplicate(connection, document_id):
                tax_document_links.c.status == "accepted")
         .limit(1)
     )
+
+
+def _document_owner(connection, *, document_id=None, microsoft_document_id=None):
+    """The canonical owner person of a source document (or None if unknown, e.g.
+    an unmatched Microsoft document)."""
+    if document_id is not None:
+        return connection.scalar(select(documents.c.person_id).where(documents.c.id == document_id))
+    return connection.scalar(select(microsoft_documents.c.person_id).where(microsoft_documents.c.id == microsoft_document_id))
+
+
+def _existing_link(connection, *, document_id=None, microsoft_document_id=None):
+    """Idempotency lookup (RC11 C2): the most recent non-rejected link already
+    tracking this source document, if any."""
+    source_col = (tax_document_links.c.document_id == document_id) if document_id is not None \
+        else (tax_document_links.c.microsoft_document_id == microsoft_document_id)
+    return connection.execute(
+        select(tax_document_links).where(source_col, tax_document_links.c.status != "rejected")
+        .order_by(tax_document_links.c.id.desc()).limit(1)
+    ).mappings().one_or_none()
 
 
 # --- Signal builders (resolve deterministic evidence to (person, return)) ----
@@ -209,13 +249,10 @@ def portal_request_signals(connection, checklist_item_id):
                    checklist_item_id=row.id, value=f"checklist:{checklist_item_id}")]
 
 
-def email_exact_signals(connection, uploader_email):
-    """Exact normalized-email identity -> the person's active returns. If the
-    person has more than one return, every return becomes a same-weight candidate,
-    which the engine resolves to review (ambiguous), never an auto-assignment."""
-    if not uploader_email:
-        return []
-    person_id = connection.scalar(select(people.c.id).where(people.c.normalized_email == uploader_email))
+def person_return_signals(connection, person_id, *, signal_type="email_exact", value=None):
+    """An exact-identifier signal per tax return owned by an already-identified
+    person. Zero returns -> [] (unmatched); more than one -> multiple same-weight
+    candidates the engine resolves to review, never an auto-assignment."""
     if not person_id:
         return []
     return_ids = list(connection.scalars(
@@ -223,8 +260,16 @@ def email_exact_signals(connection, uploader_email):
         .select_from(tax_engagement_returns.join(tax_engagements))
         .where(tax_engagements.c.person_id == person_id)
     ))
-    return [Signal("email_exact", person_id=person_id, return_id=rid, value=f"email:{uploader_email}")
+    return [Signal(signal_type, person_id=person_id, return_id=rid, value=value or f"person:{person_id}")
             for rid in return_ids]
+
+
+def email_exact_signals(connection, uploader_email):
+    """Exact normalized-email identity -> the identified person's returns."""
+    if not uploader_email:
+        return []
+    person_id = connection.scalar(select(people.c.id).where(people.c.normalized_email == uploader_email))
+    return person_return_signals(connection, person_id, value=f"email:{uploader_email}")
 
 
 # --- Ingestion / link persistence -------------------------------------------
@@ -242,76 +287,91 @@ def _resolve_checklist(connection, return_id, checklist_item_id, document_id):
 
 
 def ingest_document(document_id, signals, *, actor_user_id=None, request_id=None):
-    """Run the engine over a canonical document's signals and persist a link.
+    """Ingest a canonical document (e.g. a portal upload) through the engine."""
+    return _ingest(document_id=document_id, signals=signals, actor_user_id=actor_user_id, request_id=request_id)
 
-    - accept  -> validated, accepted link + checklist/missing resolution
-    - review  -> proposed link for mandatory human review
-    - unmatched -> proposed link with no candidate (surfaced in the unmatched queue)
-    Duplicates (exact hash) are routed to duplicate review, never silently merged.
+
+def ingest_microsoft_document(microsoft_document_id, signals, *, actor_user_id=None, request_id=None):
+    """Ingest a Microsoft drive document through the engine (no binary copied)."""
+    return _ingest(microsoft_document_id=microsoft_document_id, signals=signals,
+                   actor_user_id=actor_user_id, request_id=request_id)
+
+
+def _ingest(*, document_id=None, microsoft_document_id=None, signals, actor_user_id=None, request_id=None):
+    """Run the engine over a source document's signals and persist a link.
+
+    Outcomes: an accepted deterministic link (ownership validated), a proposed
+    link for mandatory human review, or a proposed **unmatched** link with no
+    return (no ownership is fabricated — RC11 C1/C5). Idempotent: re-ingesting a
+    source that already has a non-rejected link returns that link (RC11 C2).
+    Duplicates (exact canonical hash) and document-owner mismatches never
+    auto-accept; they are routed to review.
     """
     decision = decide(signals)
     now = datetime.now(timezone.utc)
-    with engine.begin() as connection:
-        duplicate_of = find_duplicate(connection, document_id)
-        if decision.outcome == "accept" and duplicate_of is not None:
-            status, source, confidence, cand = "proposed", "hash", 0.90, decision.candidate
-            reason = "duplicate: exact hash of an already-linked document"
-        elif decision.outcome == "accept":
+    src = {"document_id": document_id, "microsoft_document_id": microsoft_document_id}
+    try:
+        with engine.begin() as connection:
+            existing = _existing_link(connection, **src)
+            if existing is not None:
+                return {"link_id": existing["id"], "outcome": existing["status"],
+                        "reason": "idempotent: existing link", "confidence": float(existing["confidence"])}
+
+            duplicate_of = find_duplicate(connection, **src)
             cand = decision.candidate
-            if not validate_ownership(connection, cand.person_id, cand.return_id):
-                status, source, confidence = "proposed", cand.signals[0].signal_type, cand.confidence
-                reason = "ownership validation failed -> review"
-                cand = decision.candidate
-            else:
-                status, source, confidence = "accepted", cand.signals[0].signal_type, cand.confidence
+            if decision.outcome == "accept" and duplicate_of is not None:
+                status, source, confidence, reason = "proposed", "hash", 0.90, "duplicate: exact hash of an already-linked document"
+            elif decision.outcome == "accept":
+                owner = _document_owner(connection, **src)
+                if owner is not None and owner != cand.person_id:
+                    status, source, confidence, reason = "proposed", cand.signals[0].signal_type, cand.confidence, "document owner mismatch -> review"
+                elif not validate_ownership(connection, cand.person_id, cand.return_id):
+                    status, source, confidence, reason = "proposed", cand.signals[0].signal_type, cand.confidence, "ownership validation failed -> review"
+                else:
+                    status, source, confidence, reason = "accepted", cand.signals[0].signal_type, cand.confidence, decision.reason
+            elif decision.outcome == "review":
+                status = "proposed"
+                source = cand.signals[0].signal_type if cand and cand.signals else "manual"
+                confidence = cand.confidence if cand else 0.0
                 reason = decision.reason
-        elif decision.outcome == "review":
-            cand = decision.candidate
-            status = "proposed"
-            source = cand.signals[0].signal_type if cand and cand.signals else "manual"
-            confidence = cand.confidence if cand else 0.0
-            reason = decision.reason
-        else:  # unmatched
-            cand = None
-            status, source, confidence, reason = "proposed", "manual", 0.0, decision.reason
+            else:  # unmatched -> reviewable, no fabricated return/owner
+                cand = None
+                status, source, confidence, reason = "proposed", "manual", 0.0, decision.reason
 
-        link_id = connection.execute(tax_document_links.insert().values(
-            document_id=document_id,
-            tax_engagement_return_id=(cand.return_id if cand else None) or _any_return(connection, document_id),
-            tax_checklist_item_id=(cand.checklist_item_id if cand else None),
-            status=status, confidence=confidence, match_source=source,
-            matched_by_user_id=actor_user_id if status == "accepted" and actor_user_id else None,
-            metadata={"reason": reason, "duplicate_of": duplicate_of},
-            decided_at=now if status == "accepted" else None,
-        ).returning(tax_document_links.c.id)).scalar_one()
+            link_id = connection.execute(tax_document_links.insert().values(
+                document_id=document_id, microsoft_document_id=microsoft_document_id,
+                tax_engagement_return_id=(cand.return_id if cand else None),
+                tax_checklist_item_id=(cand.checklist_item_id if cand else None),
+                status=status, confidence=confidence, match_source=source,
+                matched_by_user_id=actor_user_id if status == "accepted" and actor_user_id else None,
+                metadata={"reason": reason, "duplicate_of": duplicate_of},
+                decided_at=now if status == "accepted" else None,
+            ).returning(tax_document_links.c.id)).scalar_one()
 
-        for signal in (cand.signals if cand else []):
-            connection.execute(tax_document_match_evidence.insert().values(
-                tax_document_link_id=link_id, signal_type=signal.signal_type,
-                value_hash=_hash(signal.value), weight=SIGNAL_WEIGHTS.get(signal.signal_type, 0)))
+            for signal in (cand.signals if cand else []):
+                connection.execute(tax_document_match_evidence.insert().values(
+                    tax_document_link_id=link_id, signal_type=signal.signal_type,
+                    value_hash=_hash(signal.value), weight=SIGNAL_WEIGHTS.get(signal.signal_type, 0)))
 
-        if status == "accepted":
-            _resolve_checklist(connection, cand.return_id, cand.checklist_item_id, document_id)
-            connection.execute(tax_document_review_events.insert().values(
-                tax_document_link_id=link_id, action="accept", actor_user_id=actor_user_id,
-                reason=reason, metadata={"auto": actor_user_id is None}))
+            if status == "accepted":
+                _resolve_checklist(connection, cand.return_id, cand.checklist_item_id, document_id)
+                connection.execute(tax_document_review_events.insert().values(
+                    tax_document_link_id=link_id, action="accept", actor_user_id=actor_user_id,
+                    reason=reason, metadata={"auto": actor_user_id is None}))
+    except IntegrityError:
+        # A concurrent ingest won the race; return the now-existing link.
+        with engine.connect() as connection:
+            existing = _existing_link(connection, **src)
+        if existing is not None:
+            return {"link_id": existing["id"], "outcome": existing["status"],
+                    "reason": "idempotent: concurrent insert", "confidence": float(existing["confidence"])}
+        raise
     if status == "accepted":
         write_audit_event(action="tax.document.matched", entity_type="tax_document_link", entity_id=link_id,
             actor_user_id=actor_user_id, request_id=request_id or f"tax-doc-{uuid.uuid4()}",
-            metadata={"document_id": document_id, "return_id": cand.return_id, "confidence": float(confidence), "source": source})
+            metadata={"document_id": document_id, "microsoft_document_id": microsoft_document_id,
+                      "return_id": cand.return_id, "confidence": float(confidence), "source": source})
     return {"link_id": link_id, "outcome": status, "reason": reason, "confidence": float(confidence)}
-
-
-def _any_return(connection, document_id):
-    """Fallback return for an unmatched/review link so the row is queryable: the
-    document's owning person's single return if unambiguous, else None."""
-    person_id = connection.scalar(select(documents.c.person_id).where(documents.c.id == document_id))
-    if not person_id:
-        return None
-    rows = list(connection.scalars(
-        select(tax_engagement_returns.c.id).select_from(tax_engagement_returns.join(tax_engagements))
-        .where(tax_engagements.c.person_id == person_id)))
-    return rows[0] if len(rows) == 1 else None
 
 
 # --- Authorization for reviewer actions -------------------------------------
@@ -340,20 +400,42 @@ def review_action(link_id, action, *, principal, request, return_id=None, checkl
         link = _link_row(connection, link_id)
         if not link:
             raise ValueError("Document link not found")
-        target_return = return_id if action == "reassign" else link["tax_engagement_return_id"]
-        # Authorize against both the current and (for reassign) the target return.
-        if not _authorized_return(principal, link["tax_engagement_return_id"]) or (
-                action == "reassign" and not _authorized_return(principal, target_return)):
+        # State guard (RC11 C3): reject stale/invalid actions so an old decision
+        # cannot overwrite a newer one.
+        if link["status"] not in ALLOWED_FROM[action]:
+            raise StaleReviewError(f"cannot {action} a link in status '{link['status']}'")
+        current_return = link["tax_engagement_return_id"]
+        target_return = return_id if action == "reassign" else current_return
+        # Authorize against the link's current return; an unmatched link (no
+        # return) is only actionable by a firm-wide reviewer (they alone see it in
+        # the unmatched queue). Reassign additionally requires authorization for
+        # the target return.
+        current_ok = principal.can("record.read_all") if current_return is None \
+            else _authorized_return(principal, current_return)
+        target_ok = _authorized_return(principal, target_return) if action == "reassign" else True
+        if not current_ok or not target_ok:
             audit_denied(request, action="tax.document.review_denied", entity_type="tax_document_link",
                          entity_id=link_id, actor_user_id=principal.user_id, detail=f"{action} out of scope")
             raise PermissionError("Document is outside your authorized scope")
+        # An unmatched link must be reassigned to a return before it can be accepted.
+        if action == "accept" and current_return is None:
+            raise StaleReviewError("cannot accept an unmatched link; reassign it to a return first")
+        # Ownership revalidation (RC11 C4): a known document owner must belong to
+        # the target return's client/household, even if the reviewer is authorized
+        # for that return. Unmatched Microsoft docs (unknown owner) are resolved by
+        # the reviewer's explicit, authorized decision.
+        if action in ("accept", "reassign") and target_return is not None:
+            owner = _document_owner(connection, document_id=link["document_id"], microsoft_document_id=link["microsoft_document_id"])
+            if owner is not None and not validate_ownership(connection, owner, target_return):
+                audit_denied(request, action="tax.document.owner_mismatch_denied", entity_type="tax_document_link",
+                             entity_id=link_id, actor_user_id=principal.user_id, detail="document owner / return client mismatch")
+                raise PermissionError("Document owner does not belong to the target return's client")
 
         if action == "accept":
-            # The link is already bound to this return and the reviewer is
-            # authorized for it (checked above), so ownership is established.
             connection.execute(tax_document_links.update().where(tax_document_links.c.id == link_id)
                 .values(status="accepted", matched_by_user_id=principal.user_id, decided_at=now))
-            _resolve_checklist(connection, link["tax_engagement_return_id"], link["tax_checklist_item_id"], link["document_id"])
+            if link["document_id"] is not None:
+                _resolve_checklist(connection, link["tax_engagement_return_id"], link["tax_checklist_item_id"], link["document_id"])
         elif action == "reject":
             connection.execute(tax_document_links.update().where(tax_document_links.c.id == link_id)
                 .values(status="rejected", matched_by_user_id=principal.user_id, decided_at=now))
@@ -364,9 +446,10 @@ def review_action(link_id, action, *, principal, request, return_id=None, checkl
         elif action == "classify":
             connection.execute(tax_document_links.update().where(tax_document_links.c.id == link_id)
                 .values(tax_checklist_item_id=checklist_item_id, category=category, matched_by_user_id=principal.user_id))
-            connection.execute(tax_document_classifications.insert().values(
-                document_id=link["document_id"], category=category or "uncategorized", confidence=1.0,
-                source="manual", reviewer_user_id=principal.user_id, provenance={"link_id": link_id}))
+            if link["document_id"] is not None:
+                connection.execute(tax_document_classifications.insert().values(
+                    document_id=link["document_id"], category=category or "uncategorized", confidence=1.0,
+                    source="manual", reviewer_user_id=principal.user_id, provenance={"link_id": link_id}))
         elif action == "duplicate":
             connection.execute(tax_document_links.update().where(tax_document_links.c.id == link_id)
                 .values(status="superseded", matched_by_user_id=principal.user_id, decided_at=now))
@@ -444,14 +527,16 @@ def documents_view(return_id):
 
 
 def review_queue(principal, status="proposed"):
-    """Scoped review list: proposed/unmatched links for the caller's authorized
-    returns only (never firm-wide unless record.read_all via list_engagements)."""
+    """Scoped review list: links for the caller's authorized returns. Unmatched
+    links (no return, no fabricated owner — RC11 C5) have no per-return scope, so
+    they are surfaced only to firm-wide reviewers (`record.read_all`), who must
+    reassign them to an authorized return before acceptance."""
     authorized = {r["return_id"] for r in list_engagements(principal)}
-    if not authorized:
-        return {"items": [], "count": 0}
+    scope = tax_document_links.c.tax_engagement_return_id.in_(authorized) if authorized else sql_false()
+    if principal.can("record.read_all"):
+        scope = or_(scope, tax_document_links.c.tax_engagement_return_id.is_(None))
     with engine.connect() as connection:
         rows = connection.execute(select(tax_document_links)
-            .where(tax_document_links.c.status == status,
-                   tax_document_links.c.tax_engagement_return_id.in_(authorized))
+            .where(tax_document_links.c.status == status, scope)
             .order_by(tax_document_links.c.confidence.desc())).mappings().all()
     return {"items": [dict(r) for r in rows], "count": len(rows)}
