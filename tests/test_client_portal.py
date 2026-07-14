@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 
 from app.db import (audit_events, document_versions, documents, engine, households,
     people, portal_access_grants, portal_accounts, portal_devices,
-    portal_document_requests, portal_message_receipts, portal_messages,
+    portal_document_requests, portal_message_attachments, portal_message_receipts, portal_messages,
     portal_notifications, portal_sessions, roles, signature_requests, timeline_events,
     user_roles, users, workflow_instances, workflow_steps)
 from app.main import app
@@ -17,6 +17,7 @@ from app.portal.service import (accept_invitation, approve_request_upload, clien
     consume_password_reset, resolve_portal_session, revoke_portal_session,
     send_message, staff_send_message)
 from app.portal.signatures import apply_signature_event, create_signature_request, registry
+from app.security.service import create_session, resolve_principal
 
 def _seed_household(label="Portal"):
     suffix = uuid.uuid4().hex[:10]
@@ -63,6 +64,22 @@ def test_household_joint_and_delegated_scope_isolated_from_other_households():
     assert person_ids[1] not in portal_scope(self_account)["person_ids"]
     with pytest.raises(PermissionError): create_thread(self_principal, household_id=household_id, person_id=person_ids[1], subject="Joint private", body="Must remain isolated")
 
+def test_joint_and_trusted_contacts_receive_explicit_shared_household_scope():
+    household_id, person_ids, user_id, suffix = _seed_household()
+    for access_type in ("joint", "trusted"):
+        account_id = _activate(person_ids[0], household_id, user_id, f"{suffix}-{access_type}", access_type, {"messages": True, "documents": True, "tasks": False})
+        scope = portal_scope(account_id)
+        assert set(person_ids) <= scope["person_ids"]
+        assert household_id in scope["shared_household_ids"]
+
+def test_portal_and_staff_sessions_are_cryptographically_isolated():
+    household_id, person_ids, user_id, suffix = _seed_household()
+    account_id = _activate(person_ids[0], household_id, user_id, suffix)
+    portal_token = create_portal_session(account_id, device_fingerprint="portal-device")
+    staff_token = create_session(user_id)
+    assert resolve_portal_session(portal_token) is not None and resolve_principal(portal_token) is None
+    assert resolve_principal(staff_token) is not None and resolve_portal_session(staff_token) is None
+
 def test_secure_messages_hide_internal_notes_publish_timeline_audit_and_receipts():
     household_id, person_ids, user_id, suffix = _seed_household()
     account_id = _activate(person_ids[0], household_id, user_id, suffix, permissions={"messages": True, "documents": True, "tasks": True})
@@ -79,6 +96,24 @@ def test_secure_messages_hide_internal_notes_publish_timeline_audit_and_receipts
         assert connection.scalar(select(func.count()).select_from(audit_events).where(audit_events.c.entity_type == "portal_message")) >= 2
     with pytest.raises(Exception):
         with engine.begin() as connection: connection.execute(portal_messages.update().where(portal_messages.c.id == message_id).values(body="tampered"))
+    with pytest.raises(Exception):
+        with engine.begin() as connection: connection.execute(portal_message_receipts.delete().where(portal_message_receipts.c.id == receipt_id))
+    with pytest.raises(Exception):
+        with engine.begin() as connection:
+            audit_id = connection.scalar(select(audit_events.c.id).where(audit_events.c.entity_type == "portal_message"))
+            connection.execute(audit_events.update().where(audit_events.c.id == audit_id).values(action="tampered"))
+
+def test_message_attachments_enforce_document_owner_scope():
+    household_id, person_ids, user_id, suffix = _seed_household()
+    account_id = _activate(person_ids[0], household_id, user_id, suffix, permissions={"messages": True, "documents": True, "tasks": True}); _, principal = _principal(account_id)
+    thread_id = create_thread(principal, household_id=household_id, person_id=person_ids[0], subject="Documents", body="Initial")
+    other_household, other_people, _, other_suffix = _seed_household("Attachment Other")
+    with engine.begin() as connection:
+        own_id = connection.execute(documents.insert().values(person_id=person_ids[0], original_name="own.pdf", stored_name=f"own-{suffix}.pdf", storage_path=f"/tmp/own-{suffix}.pdf", size_bytes=1, sha256=("d"*54)+suffix).returning(documents.c.id)).scalar_one()
+        other_id = connection.execute(documents.insert().values(person_id=other_people[0], original_name="other.pdf", stored_name=f"other-{other_suffix}.pdf", storage_path=f"/tmp/other-{other_suffix}.pdf", size_bytes=1, sha256=("e"*54)+other_suffix).returning(documents.c.id)).scalar_one()
+    message_id = send_message(principal, thread_id, "Attached", [own_id])
+    with engine.connect() as connection: assert connection.scalar(select(portal_message_attachments.c.document_id).where(portal_message_attachments.c.message_id == message_id)) == own_id
+    with pytest.raises(PermissionError): send_message(principal, thread_id, "Forbidden attachment", [other_id])
 
 def test_document_request_upload_version_approval_and_scope():
     household_id, person_ids, user_id, suffix = _seed_household()
