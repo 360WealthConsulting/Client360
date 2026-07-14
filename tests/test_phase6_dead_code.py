@@ -48,6 +48,8 @@ def test_app_module_imports_cleanly(module_name):
     # scope (timeline debug endpoint + unused imports), so it is skipped here.
     if module_name.startswith("app.models"):
         pytest.skip("orphaned ORM scaffold — deferred dead-code removal (Phase 6 report)")
+    if module_name == "app.demo.demo_app":
+        pytest.skip("demo entrypoint intentionally guards its own import against a non-demo database")
     importlib.import_module(module_name)
 
 
