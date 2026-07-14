@@ -1,6 +1,23 @@
 # Epic 4 Prerequisite Integration — Release Readiness
 
-Status: Ready for draft pull-request review; not approved for merge or production deployment.
+Status: RC1.2 is ready for staging/UAT; not yet approved for merge or production deployment.
+
+## RC1.2 finalization
+
+The approved RC1.1 migration repair was merged into `integration/epic4` at `c011140`. Draft PR #9 is superseded by the integrated RC branch. PR #8 remains the only candidate for eventual promotion to `main` and must remain unmerged until the manual production gates are approved.
+
+Final automated evidence:
+
+- Clean database base → head, head → base, and base → head: passed.
+- Current `main` revision → RC head with sentinel client preservation: passed.
+- Expected tables and columns: 45/45 tables, no mismatches.
+- Alembic heads: one (`c410f4a1b2c3`).
+- Full suite: 33 passed.
+- Python compilation, application startup, 72 routes, and 18 templates: passed.
+- Direct HTTP/authentication/authorization validation: 45 passed.
+- Microsoft mail repeat-sync deduplication and unmatched review: passed.
+
+Release recommendation: proceed to staging/UAT. Do not merge PR #8 until managed OIDC/MFA, live Microsoft test-tenant flows, representative Schwab imports, production-sized migration timing, backup/restore, and UI/accessibility review have passed.
 
 ## Integrated scope
 

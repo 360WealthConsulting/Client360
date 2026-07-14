@@ -1,14 +1,21 @@
-# Client360 Epic 4 — Release Candidate 1 Validation
+# Client360 Epic 4 — RC1.2 Final Release Candidate Validation
 
-**Candidate:** `integration/epic4` at `bd1e3c12c9688f62a2c3c2daabaeafb066185e9c`
+**Validated application commit:** `integration/epic4` at `c011140`
 
 **Draft PR:** #8, `integration/epic4` → `main`
 
-**Validation date:** July 13, 2026
+**Validation date:** July 14, 2026
 
-**Decision:** **RC1.1 migration repair validated; keep unmerged pending review**
+**Decision:** **Ready for staging/UAT; not yet approved for production or merge to `main`**
 
-RC1.1 repairs the clean-database blocker on the focused `fix/rc1-clean-database-migrations` branch. Both a new-database migration and an upgrade from the current `main` head now pass. The repair remains subject to review and has not been merged into `integration/epic4` or `main`.
+RC1.2 integrates the approved clean-database repair into `integration/epic4`. Automated application, migration, route, authorization, and service validation is green. Production approval remains conditional on the manual external-provider, identity-provider, backup/restore, visual, and production-scale gates below. PR #8 remains draft and unmerged.
+
+## Overall release recommendation
+
+- **Migration readiness:** ready. Both clean installation and current-`main` upgrade paths pass with one Alembic head.
+- **Application readiness:** ready for staging and representative-user acceptance testing.
+- **Production readiness:** conditional, pending the manual gates in this report.
+- **PR #8 recommendation:** do not merge into `main` yet. Merge only after staging sign-off, production identity configuration, external-integration validation, and backup/restore rehearsal are documented and approved.
 
 ## Validation environment and scope
 
@@ -100,7 +107,7 @@ The two baseline revisions now contain the explicit DDL for the schemas they ori
 
 Application metadata was also aligned with the existing Portfolio and Sprint 4.1 migrations: custodian and registration foreign keys belong to `accounts`, and identity attribution belongs to `tasks`, not `import_jobs`.
 
-### RC1.1 validation evidence
+### RC1.2 validation evidence
 
 - Empty PostgreSQL database → `alembic upgrade head`: passed.
 - Expected application tables: 45; actual: 45; missing/unexpected tables: none.
@@ -110,8 +117,13 @@ Application metadata was also aligned with the existing Portfolio and Sprint 4.1
 - Current `main` schema stamped at `753c04edab33` → RC head: passed.
 - Sentinel household/person data survived the existing-database upgrade.
 - Exactly one Alembic head remains: `c410f4a1b2c3`.
-- Full suite: 33 passed, one environment warning.
+- Full suite: 33 passed in 0.43 seconds, with one environment warning.
 - Python compile checks for application, migrations, and tests: passed.
+- Application startup: passed; 72 routes registered.
+- Strict template parsing: 18 templates passed.
+- Direct HTTP/authentication/authorization matrix: 45 cases passed.
+- Microsoft mail repeated-sync check: one matched timeline row and one unmatched-review row after two syncs.
+- Seeded route pass: 5.36 ms mean and 31.97 ms maximum on the small local dataset; not a load test.
 
 ## Warnings and known issues
 
@@ -159,6 +171,41 @@ Application metadata was also aligned with the existing Portfolio and Sprint 4.1
 7. Test backup/restore and rollback on a production-sized clone; do not rely on destructive Alembic downgrade after accepting live RC1 data.
 8. Establish performance budgets and observability for scheduler runs, Graph errors, queue depth, dashboard latency, audit growth, and import failures.
 
+## Deployment checklist
+
+- [ ] Record and verify a database backup; perform a restore rehearsal in an isolated environment.
+- [ ] Confirm production is at Alembic revision `753c04edab33` and no unexpected schema drift exists.
+- [ ] Configure a supported Python/OpenSSL runtime, production session secret, managed OIDC issuer/client settings, redirect URLs, and MFA policy.
+- [ ] Review initial administrator bootstrap, role/capability composition, teams, assignments, and segregation of duties.
+- [ ] Configure Microsoft Graph credentials, least-privilege consent, token storage, scheduler cadence, retry policy, and alerting.
+- [ ] Validate sanitized Schwab column mappings and household/account assignment rules.
+- [ ] Run migrations in staging with a production-sized database clone and record lock duration and total runtime.
+- [ ] Complete visual, accessibility, and mobile-width review of primary workspaces and review queues.
+- [ ] Freeze data-changing jobs during the production migration window and confirm rollback decision owners.
+- [ ] Deploy application code only after the database migration completes successfully; then enable schedulers in a controlled sequence.
+
+## Rollback strategy
+
+1. Stop application workers and Microsoft/import schedulers to prevent new writes.
+2. Prefer application rollback plus database restore to the pre-deployment backup if RC1 tables have accepted production writes.
+3. Use Alembic downgrade only during a rehearsed pre-production rollback. Downgrading below RC1 drops feature data, and downgrading to base removes the entire Client360 schema.
+4. Restore secrets and identity-provider configuration only through the approved secret-management process.
+5. Verify restored Alembic revision, row counts, representative client records, document links, and timeline integrity before reopening access.
+
+## Post-deployment verification checklist
+
+- [ ] `/health` responds successfully and application startup logs contain no migration or reflection failures.
+- [ ] Alembic reports exactly `c410f4a1b2c3` as the sole current head.
+- [ ] Administrator login, MFA, logout, session expiration, and access-denied audit events behave correctly.
+- [ ] Advisor access succeeds for an assigned client and fails for an unassigned client.
+- [ ] Dashboard, search, all Client Workspace tabs, timeline, Relationship, and Portfolio views render with representative data.
+- [ ] Microsoft mail, calendar, and document test syncs publish one deduplicated event and route unmatched items to review.
+- [ ] Schwab test import is idempotent and preserves household totals and beneficiary data.
+- [ ] Background schedulers execute once without duplicate jobs; queue depth and failures are observable.
+- [ ] Audit events are written and remain immutable.
+- [ ] Database connections, route latency, error rate, worker health, and storage growth remain within agreed thresholds.
+- [ ] Backup monitoring and the next scheduled backup complete successfully.
+
 ## Release decision
 
-Keep PR #8 in draft and do not merge `integration/epic4` into `main` until the focused RC1.1 repair PR has been reviewed and integrated. The clean-database blocker is resolved on the repair branch, but external-provider, identity-provider, backup/restore, visual, and production-scale checks remain before Release 1.0.
+Keep PR #8 draft and unmerged. RC1.2 is suitable for staging/UAT and its migration paths are release-ready, but production approval requires completion of the unchecked deployment gates. Once those gates are documented as passed, PR #8 can be marked ready and presented for explicit merge approval.
