@@ -1,53 +1,60 @@
 # Client360 Roadmap
 
-## Phase 1 ✅
-- PostgreSQL
-- Schema
-- Dave Ramsey Import
-- Wealthbox Import
+## Release 0.9 — Epic 4 Foundation ✅
 
-## Phase 2
-- Schwab Import
-- AssetMark Import
-- TaxDome Import
-- Drake Import
-- QuickBooks Import
+- PostgreSQL and a single linear Alembic migration history
+- Canonical people, households, source matching, documents, tasks, and activities
+- Client timeline, search, dashboard, and unified Client Workspace
+- Microsoft Outlook mail and calendar synchronization
+- SharePoint and OneDrive document metadata synchronization
+- Unmatched Microsoft mail, attendee, and document review workflows
+- Relationship Intelligence graph for family, professional, business, trust,
+  estate, beneficiary, and household relationships
+- Schwab Portfolio Intelligence for accounts, holdings, cash, lots,
+  beneficiaries, performance, billing, and household rollups
+- Capability-based roles, teams, assignments, record-level authorization,
+  managed-identity adapters, sessions, and immutable audit logging
+- Clean-database installation and upgrade compatibility from the prior `main`
+  migration head
 
-## Phase 3
-- Master Person Matching
-- Household Matching
-- Duplicate Detection
+## Release 1.0 readiness
 
-## Phase 4
-- Search Engine
-- Dashboard
-- Revenue Reporting
-- AUM Reporting
-- Client Timeline
+- Production-equivalent managed OIDC and MFA validation
+- Controlled Microsoft test-tenant validation, including throttling and token renewal
+- Representative sanitized Schwab import validation
+- Production-sized migration timing and lock analysis
+- Backup and restore rehearsal
+- Combined visual, accessibility, and mobile-width review
+- Production observability, scheduler alerts, retention, and operational runbooks
 
-## Phase 5
-- Web Application
-- Authentication
-- Notes
-- Tasks
-- Opportunity Tracking
+## Epic 4 — Practice Management Platform
 
-## Sprint 8 ✅
-- Microsoft Calendar synchronization
-- Normalized attendee matching
-- Timeline meeting publishing and deduplication
-- Unmatched calendar attendee review
-- Client Workspace calendar intelligence
+### Sprint 4.2 — Operational Work Management
 
-## Sprint 9 ✅
-- OneDrive and SharePoint drive discovery
-- Incremental DriveItem delta synchronization
-- Configurable client matching rules
-- Timeline publishing and unmatched-document review
-- Microsoft-managed documents in the Client Workspace
+- Assignment engine and assignment history
+- Reusable secure queues
+- My Work and team dashboards
+- Capacity, priority, SLA, and daily-agenda services
+- Advisor, Operations, Tax, and Management operating views
 
-## Sprint 10 ✅
-- Normalized relationship graph
-- Family, professional, business, trust, estate, and beneficiary relationships
-- Multiple and primary household memberships
-- Relationship timeline, search, workspace, and advisor intelligence
+### Sprint 4.3 — Workflow and Process Automation
+
+- Reusable workflow templates and instances
+- Step dependencies, approvals, escalations, and automation triggers
+- Client, tax, investment, and document workflow integration
+
+### Later Epic 4 sprints
+
+- Tax return and TaxDome-replacement operations
+- Client service and communication workflows
+- Billing, revenue pipeline, and management reporting
+- Compliance supervision, retention, and operational audit workflows
+
+## Future intelligence and integrations
+
+- Tax Intelligence: Drake, TaxDome migration, IRS notices, and planning data
+- Additional custodians and live Schwab acquisition adapter
+- QuickBooks and revenue intelligence
+- AssetMark and remaining historical import sources
+- AI meeting preparation, client briefs, and relationship-aware recommendations
+- Client portal and secure document exchange
