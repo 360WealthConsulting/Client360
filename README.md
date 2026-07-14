@@ -5,15 +5,18 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
-**Release 0.9.1 — Operational Work Management**
+**Release 0.9.2 — Workflow and Process Automation**
 
-Release 0.9.1 adds the operational assignment, workflow-step, queue, capacity,
-SLA, My Work, Team Work, and versioned API foundations that staff use to manage
-daily work. It builds on the Microsoft 365, Relationship, Portfolio, identity,
-authorization, audit, timeline, search, dashboard, and Client Workspace
-foundation delivered in Release 0.9.
+Release 0.9.2 adds immutable versioned workflow templates, execution snapshots,
+dependency and conditional processing, parallel work, lifecycle controls,
+independent approvals, SLA escalation, domain-event triggers, and idempotent
+automation. It builds on the Release 0.9.1 assignments, queues, My Work, Team
+Work, capacity, and authorization foundation.
 
-See [Release 0.9.1 Notes](docs/RELEASE_0.9.1.md),
+See [Release 0.9.2 Notes](docs/RELEASE_0.9.2.md),
+[Workflow Automation Architecture](docs/WORKFLOW_PROCESS_AUTOMATION.md),
+[RC3 Validation](docs/SPRINT_4_3_RELEASE_VALIDATION.md),
+[Release 0.9.1 Notes](docs/RELEASE_0.9.1.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
@@ -80,5 +83,6 @@ immutable audit events. See
 The architecture for replacing the firm's daily Wealthbox and TaxDome
 workflows is defined in the
 [Epic 4 Practice Management Platform](docs/EPIC_4_PRACTICE_MANAGEMENT_PLATFORM.md).
-Sprint 4.2 Operational Work Management is delivered in Release 0.9.1. Sprint
-4.3 Workflow and Process Automation has not started and requires approval.
+Sprint 4.2 Operational Work Management is delivered in Release 0.9.1, and
+Sprint 4.3 Workflow and Process Automation is delivered in Release 0.9.2.
+Sprint 4.4 remains unstarted pending architecture and scope approval.

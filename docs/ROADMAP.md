@@ -29,6 +29,19 @@
 - Assignment timeline events, immutable audit records, and least-privilege filtering
 - Clean installation and upgrade compatibility from Release 0.9
 
+## Release 0.9.2 — Workflow and Process Automation ✅
+
+- Immutable versioned templates and execution snapshots
+- Sequential, parallel, conditional, and dependency-aware execution
+- Pause, resume, cancel, complete, and reopen lifecycle controls
+- Independent approvals and segregation-of-duties enforcement
+- SLA evaluation, idempotent escalations, and five-minute scheduler processing
+- Event-driven workflow triggers and idempotent automation actions
+- Workflow assignment, queue, timeline, audit, authorization, and record-scope integration
+- Workflow UI, reporting metrics, and versioned APIs
+- Twelve published firm workflow templates
+- Clean installation and upgrade compatibility from Release 0.9.1
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation
@@ -49,11 +62,19 @@
 - Capacity, priority, SLA, and daily-agenda services
 - Advisor, Operations, Tax, and Management operating views
 
-### Sprint 4.3 — Workflow and Process Automation
+### Sprint 4.3 — Workflow and Process Automation ✅
 
 - Reusable workflow templates and instances
 - Step dependencies, approvals, escalations, and automation triggers
 - Client, tax, investment, and document workflow integration
+
+### Recommended Sprint 4.4 — Client Portal and Secure Collaboration
+
+- Portal identities, invitations, MFA, and delegated household access
+- Secure messaging and document requests
+- Client-facing workflow tasks, approvals, and status visibility
+- E-signature and notification provider adapters
+- Consent, communication preferences, retention, and portal audit controls
 
 ### Later Epic 4 sprints
 
