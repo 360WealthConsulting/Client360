@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import and_, func, select
+from sqlalchemy import select
 from app.db import capabilities, engine, role_capabilities, roles, user_roles, user_sessions, users
 from app.integrations.identity.base import IdentityClaims
 from app.security.models import Principal

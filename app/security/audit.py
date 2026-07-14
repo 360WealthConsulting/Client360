@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 from app.db import audit_events, engine
 from app.security.redaction import redact_metadata
 

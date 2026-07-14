@@ -14,7 +14,6 @@ bare, non-refreshable access token.
 from datetime import datetime, timezone
 
 import msal
-from sqlalchemy import select
 
 from app.connectors.microsoft365.config import get_microsoft365_config
 from app.db import engine, microsoft_accounts

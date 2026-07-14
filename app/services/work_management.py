@@ -4,7 +4,7 @@ from sqlalchemy import and_, or_, select
 import sqlalchemy as sa
 
 from app.db import (
-    activities, assignment_events, assignment_rules, audit_events, documents, engine,
+    assignment_events, assignment_rules, documents, engine,
     households, people, record_assignments, tasks, team_memberships,
     work_approvals, work_assignment_details, work_queues, workflow_instances,
     workflow_steps, timeline_events,

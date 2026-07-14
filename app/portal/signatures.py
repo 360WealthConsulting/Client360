@@ -6,7 +6,6 @@ consolidation) rather than a bespoke registry class. Concrete e-file /
 e-signature provider wiring lands in Epic 5 Sprint 5.6.
 """
 from datetime import datetime, timezone
-import uuid
 from sqlalchemy import select
 from app.db import engine, signature_requests
 from app.portal.providers import ProviderRegistry

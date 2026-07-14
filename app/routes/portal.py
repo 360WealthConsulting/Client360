@@ -1,15 +1,15 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.db import engine, portal_accounts, portal_document_requests, portal_notifications, portal_threads
+from app.db import engine, portal_document_requests, portal_notifications
 from app.portal.service import (PortalPrincipal, accept_invitation, client_document_requests,
     client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
     confirm_request_upload, create_portal_session, create_thread, dashboard,
-    list_messages, mark_read, notify, request_password_reset, consume_password_reset,
+    list_messages, mark_read, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
 from app.services.documents import save_person_document
 from app.portal.providers import PORTAL_IDENTITY_PROVIDERS

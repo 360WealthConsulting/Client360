@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 import uuid
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import or_, select
 
 from app.db import (engine, filing_jurisdictions, record_assignments, tax_deadline_rules,
     tax_deadlines, tax_engagement_returns, tax_engagements, tax_filing_statuses,

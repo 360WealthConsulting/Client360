@@ -1,11 +1,11 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import uuid
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import or_, select
 
 from app.db import (engine, portal_accounts, record_assignments, tax_client_approvals,
     tax_engagement_returns, tax_engagements, tax_filing_events, tax_return_lifecycle_events,
     tax_return_reviews, tax_review_corrections, tax_return_types, tax_workflow_links,
-    work_approvals, workflow_events, workflow_instances, workflow_steps)
+    work_approvals, workflow_events, workflow_steps)
 from app.portal.service import notify, portal_scope, require_scope
 from app.security.audit import write_audit_event
 from app.services.tax_domain import list_engagements

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import uuid
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 
 from app.db import (automation_actions, automation_triggers, engine, timeline_events,
     work_approvals, work_queues, workflow_escalations, workflow_events, workflow_instances,

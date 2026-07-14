@@ -1,9 +1,9 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import uuid
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 
-from app.db import (documents, engine, engagement_letter_templates, people, portal_accounts,
+from app.db import (engine, engagement_letter_templates, people, portal_accounts,
     portal_document_requests, tax_checklist_items, tax_checklist_template_items,
     tax_checklist_templates, tax_engagement_letters, tax_engagement_returns,
     tax_engagements, tax_missing_items, tax_organizer_templates, tax_organizers,

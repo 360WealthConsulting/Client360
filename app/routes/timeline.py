@@ -4,31 +4,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db import engine, people
-from app.services.timeline import (
-    add_timeline_event,
-    get_person_timeline,
-)
+from app.services.timeline import get_person_timeline
 
 
 router = APIRouter(prefix="/timeline")
 templates = Jinja2Templates(directory="app/templates")
-
-
-@router.post("/test")
-def create_test_timeline_event():
-    event_id = add_timeline_event(
-        person_id=1,
-        source="system",
-        event_type="test",
-        title="Timeline Engine Online",
-        summary="First timeline event created successfully.",
-        external_id="timeline-engine-test-person-1",
-    )
-
-    return {
-        "status": "created",
-        "event_id": event_id,
-    }
 
 
 @router.get(

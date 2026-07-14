@@ -318,7 +318,18 @@ tests; pagination added; no authorization regression.
 
 ---
 
-## Phase 6 — Dead Code Removal
+## Phase 6 — Dead Code Removal  — **IMPLEMENTED**
+
+> **Implementation note.** WP6.1 removed `POST /timeline/test` (route 178→177,
+> OpenAPI 164→163) plus its now-unused `add_timeline_event` import. WP6.2 removed
+> verified-unused imports across 18 files (AST re-scan reports 0 remaining;
+> `compileall` clean). Reserved ports (`tax_filing_providers.py`,
+> `portal/signatures.py`) were left in place. Regression tests in
+> `tests/test_phase6_dead_code.py` (endpoint gone, whole import graph loads, no
+> unused imports). 286 pass / 4 skip; head `o5f36c4d3e2a`. **Deferred (reported
+> for review):** `app/models/` is an orphaned, broken (PEP 604 on py3.9), zero-
+> reference ORM scaffold contradicting the Core architecture — recommended for a
+> follow-up removal. Details in `docs/RELEASE_0.9.9_PHASE6_DEAD_CODE.md`.
 
 **Objective.** Remove residual dead/debug code (architecture §11/§4; progress
 review §11) beyond the Graph connector (Phase 2).
