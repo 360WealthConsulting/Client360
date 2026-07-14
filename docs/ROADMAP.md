@@ -31,3 +31,10 @@
 - Notes
 - Tasks
 - Opportunity Tracking
+
+## Sprint 8 ✅
+- Microsoft Calendar synchronization
+- Normalized attendee matching
+- Timeline meeting publishing and deduplication
+- Unmatched calendar attendee review
+- Client Workspace calendar intelligence

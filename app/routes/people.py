@@ -16,6 +16,7 @@ from app.db import (
     tasks,
 )
 from app.services.advisor_ai import build_advisor_recommendations
+from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
@@ -212,6 +213,7 @@ def person_profile(
         "documents",
         "notes",
         "activities",
+        "calendar",
     }
 
     if tab not in allowed_tabs:
@@ -321,6 +323,12 @@ def person_profile(
     )
 
     documents = get_person_documents(person_id)[:8]
+    calendar_events = get_person_calendar_events(person_id, limit=50)
+    upcoming_meetings = get_person_calendar_events(
+        person_id,
+        upcoming_only=True,
+        limit=5,
+    )
     client_summary = get_client_summary(person_id)
     client_alerts = build_client_alerts(client_summary)
     advisor_recommendations = build_advisor_recommendations(client_summary)
@@ -338,6 +346,8 @@ def person_profile(
             "timeline_events": timeline_events,
             "documents": documents,
             "activities": activity_rows,
+            "calendar_events": calendar_events,
+            "upcoming_meetings": upcoming_meetings,
             "client_summary": client_summary,
             "client_alerts": client_alerts,
             "advisor_recommendations": advisor_recommendations,

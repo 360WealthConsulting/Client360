@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     JSON,
     MetaData,
     Numeric,
@@ -365,6 +366,54 @@ microsoft_unmatched_messages = Table(
         "microsoft_message_id",
         name="uq_microsoft_unmatched_message_id",
     ),
+)
+
+
+microsoft_unmatched_calendar_attendees = Table(
+    "microsoft_unmatched_calendar_attendees",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_event_id", String(500), nullable=False),
+    Column("attendee_email", String(320), nullable=False),
+    Column("attendee_name", String(255)),
+    Column("attendee_role", String(50)),
+    Column("response_status", String(50)),
+    Column("subject", String(500)),
+    Column("starts_at", DateTime(timezone=True), nullable=False),
+    Column("ends_at", DateTime(timezone=True)),
+    Column("location", String(500)),
+    Column("online_meeting_link", Text),
+    Column("web_link", Text),
+    Column("event_metadata", JSON, nullable=False),
+    Column("status", String(50), nullable=False, server_default="pending"),
+    Column(
+        "matched_person_id",
+        Integer,
+        ForeignKey("people.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    ),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    ),
+    UniqueConstraint(
+        "microsoft_event_id",
+        "attendee_email",
+        name="uq_microsoft_calendar_event_attendee",
+    ),
+)
+Index(
+    "ix_microsoft_calendar_review_status_start",
+    microsoft_unmatched_calendar_attendees.c.status,
+    microsoft_unmatched_calendar_attendees.c.starts_at,
 )
 
 

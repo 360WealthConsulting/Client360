@@ -31,3 +31,6 @@ documents = metadata.tables["documents"]
 microsoft_accounts = metadata.tables["microsoft_accounts"]
 timeline_events = metadata.tables["timeline_events"]
 microsoft_unmatched_messages = metadata.tables["microsoft_unmatched_messages"]
+microsoft_unmatched_calendar_attendees = metadata.tables[
+    "microsoft_unmatched_calendar_attendees"
+]

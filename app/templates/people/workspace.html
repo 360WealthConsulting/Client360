@@ -65,12 +65,49 @@
         >
             Activities
         </a>
+        <a
+            class="{{ 'active' if active_tab == 'calendar' else '' }}"
+            href="/people/{{ person.id }}?tab=calendar"
+        >
+            Calendar
+        </a>
     </nav>
 </header>
 
 <main class="workspace-main">
 
-    {% if active_tab == "activities" %}
+    {% if active_tab == "calendar" %}
+
+    <section class="stack">
+        <div>
+            <h2>Client Meetings</h2>
+            <p class="empty-state">Microsoft 365 meetings matched to this client.</p>
+        </div>
+
+        {% for meeting in calendar_events %}
+        <article class="card meeting-card">
+            <div class="meeting-date">{{ meeting.event_time }}</div>
+            <h3>{{ meeting.title }}</h3>
+            {% if meeting.summary %}<p>{{ meeting.summary }}</p>{% endif %}
+            <div class="timeline-meta">
+                {% if meeting.event_metadata.location %}{{ meeting.event_metadata.location }} ·{% endif %}
+                {{ meeting.event_metadata.response_status or "Response unavailable" }}
+            </div>
+            <div class="meeting-links">
+                {% if meeting.event_metadata.online_meeting_link %}
+                <a href="{{ meeting.event_metadata.online_meeting_link }}" target="_blank" rel="noopener noreferrer">Join meeting</a>
+                {% endif %}
+                {% if meeting.event_metadata.web_link %}
+                <a href="{{ meeting.event_metadata.web_link }}" target="_blank" rel="noopener noreferrer">Open in Outlook</a>
+                {% endif %}
+            </div>
+        </article>
+        {% else %}
+        <div class="card empty-state">No Microsoft calendar meetings found.</div>
+        {% endfor %}
+    </section>
+
+    {% elif active_tab == "activities" %}
 
     <section class="stack">
         <div>
@@ -317,6 +354,22 @@
         </aside>
 
         <section class="workspace-center stack">
+            <section>
+                <h2>Upcoming Meetings</h2>
+                {% for meeting in upcoming_meetings %}
+                <article class="card meeting-card compact-meeting">
+                    <div class="meeting-date">{{ meeting.event_time }}</div>
+                    <strong>{{ meeting.title }}</strong>
+                    {% if meeting.event_metadata.location %}
+                    <div class="timeline-meta">{{ meeting.event_metadata.location }}</div>
+                    {% endif %}
+                </article>
+                {% else %}
+                <div class="card empty-state">No upcoming meetings.</div>
+                {% endfor %}
+                <p><a href="/people/{{ person.id }}?tab=calendar">View calendar →</a></p>
+            </section>
+
             <section>
                 <h2>Recent Activity</h2>
 
