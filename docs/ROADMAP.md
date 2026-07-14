@@ -85,7 +85,7 @@
 - Versioned staff/portal APIs and automatic workflow-milestone advancement
 - Clean installation and upgrade/downgrade compatibility from Release 0.9.5
 
-## Release 0.9.7 — Security Hardening 🚧
+## Release 0.9.7 — Security Hardening ✅
 
 - Fixed work-assignment privilege escalation and assignment IDOR (H1, H8)
 - Fixed role-composition privilege escalation and protected the administrator

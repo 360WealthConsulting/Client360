@@ -57,6 +57,9 @@ preserved. See [Security Hardening 0.9.7](docs/SECURITY_HARDENING_0.9.7.md).
 - 94 automated tests passed (74 existing + 20 new), clean installation, v0.9.6
   upgrade/downgrade/re-upgrade, sentinel preservation, startup, route, OpenAPI,
   template, authorization-matrix, and immutable-audit validation.
+- Independent RC10 adversarial validation passed (52/52 attack cases blocked;
+  no unintended regressions; SAFE TO MERGE). See
+  [RC10 Validation](docs/RC10_VALIDATION.md).
 
 ## [0.9.6] — 2026-07-14
 
