@@ -125,3 +125,9 @@
 
 Implementation has not started. See
 [Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md).
+# Current implementation
+
+- **Sprint 5.1 — Tax Domain Foundation:** in draft review. Canonical firms,
+  offices, staff tax roles, years, jurisdictions, engagements, returns,
+  calendars, deadlines, tax queues, assignments, dashboards, and automatic
+  workflow generation are implemented on `feature/tax-domain-foundation`.
