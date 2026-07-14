@@ -12,6 +12,7 @@ from app.security.service import resolve_principal
 
 PUBLIC_EXACT = frozenset({"/health", "/auth/login", "/auth/callback"})
 RULES = (
+    (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
     (re.compile(r"^/admin/(roles|user-roles)"), "role.manage"),

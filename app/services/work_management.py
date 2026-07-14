@@ -143,13 +143,13 @@ def work_items(principal, filters=None):
         assigned = {(row["entity_type"], row["entity_id"]) for row in assignments}
         direct_all = principal.can("record.read_all")
         task_rows = connection.execute(select(tasks)).mappings().all()
-        step_rows = connection.execute(select(workflow_steps, workflow_instances.c.name.label("workflow_name"), workflow_instances.c.person_id, workflow_instances.c.household_id).join(workflow_instances)).mappings().all()
+        step_rows = connection.execute(select(workflow_steps, workflow_instances.c.id.label("parent_workflow_id"), workflow_instances.c.name.label("workflow_name"), workflow_instances.c.person_id, workflow_instances.c.household_id).join(workflow_instances)).mappings().all()
     items = []
     for row in task_rows:
         if not direct_all and not ({("task", row["id"]), ("person", row["person_id"]), ("household", row.get("household_id"))} & assigned): continue
         item = dict(row); item.update({"entity_type": "task", "entity_id": row["id"], "assigned": ("task", row["id"]) in assigned, "title": row["title"]}); items.append(item)
     for row in step_rows:
-        if not direct_all and not ({("workflow_step", row["id"]), ("person", row["person_id"]), ("household", row["household_id"])} & assigned): continue
+        if not direct_all and not ({("workflow_step", row["id"]), ("workflow_instance", row["parent_workflow_id"]), ("person", row["person_id"]), ("household", row["household_id"])} & assigned): continue
         item = dict(row); item.update({"entity_type": "workflow_step", "entity_id": row["id"], "assigned": ("workflow_step", row["id"]) in assigned, "title": row["name"], "work_type": "workflow"}); items.append(item)
     for key in ("priority", "status", "team_id"):
         if filters.get(key) not in (None, ""): items = [item for item in items if str(item.get(key) or "") == str(filters[key])]
