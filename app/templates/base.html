@@ -1,0 +1,4 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}Client360{% endblock %}</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"></head><body>
+<header class="work-header"><a href="/">Client360</a>{% if principal %}<p>{{ principal.display_name }}</p>{% endif %}</header>
+{% if principal %}<nav class="filters"><a href="/">Dashboard</a><a href="/work">Work</a><a href="/tax">Tax</a><a href="/tax/intake">Tax Intake</a><a href="/tax/returns">Tax Returns</a></nav>{% endif %}
+<main class="work-main">{% block content %}{% endblock %}</main></body></html>

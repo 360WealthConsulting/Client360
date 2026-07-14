@@ -30,8 +30,10 @@ See [Release 0.9.5 Notes](docs/RELEASE_0.9.5.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
-Epic 5 is in implementation. Sprints 5.1 and 5.2 are released. Sprint 5.3 has
-not begun.
+Epic 5 is in implementation. Sprints 5.1 and 5.2 are released. Sprint 5.3 is in
+draft review with the full tax return lifecycle, review routing, client
+approvals, filing state, production queues, and dashboards. See
+[Tax Return Lifecycle](docs/TAX_RETURN_LIFECYCLE.md).
 
 ## Mission
 

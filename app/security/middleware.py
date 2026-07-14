@@ -14,6 +14,7 @@ PUBLIC_EXACT = frozenset({"/health", "/auth/login", "/auth/callback", "/portal/l
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume"})
 RULES = (
+    (re.compile(r"^/tax/returns|^/api/v1/tax/returns"), "tax.read"),
     (re.compile(r"^/tax/intake|^/api/v1/tax/intake"), "tax.intake.read"),
     (re.compile(r"^/tax|^/api/v1/tax"), "tax.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),

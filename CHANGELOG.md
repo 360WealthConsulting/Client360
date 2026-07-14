@@ -4,7 +4,19 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-No unreleased application changes.
+### Added
+
+- Canonical 15-state tax return lifecycle with immutable transition history.
+- Preparer, manager, and partner reviews linked to the existing independent
+  approval engine, including corrections and return-to-preparer behavior.
+- Portal return approval, e-file authorization, delivery acknowledgement,
+  provider-neutral filing events, nine production queues, four dashboards, and
+  versioned staff/portal APIs.
+
+### Database
+
+- Added five production tables and ten return lifecycle/filing columns with
+  parent `h860c8e6a7b8`; new head `i970d9f7b8c9`.
 
 ## [0.9.5] — 2026-07-14
 
