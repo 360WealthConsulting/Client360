@@ -33,6 +33,9 @@ microsoft_documents = metadata.tables["microsoft_documents"]
 microsoft_document_matching_rules = metadata.tables[
     "microsoft_document_matching_rules"
 ]
+relationship_types = metadata.tables["relationship_types"]
+relationship_entities = metadata.tables["relationship_entities"]
+relationships = metadata.tables["relationships"]
 microsoft_accounts = metadata.tables["microsoft_accounts"]
 timeline_events = metadata.tables["timeline_events"]
 microsoft_unmatched_messages = metadata.tables["microsoft_unmatched_messages"]

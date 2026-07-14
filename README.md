@@ -42,3 +42,9 @@ for matching, unmatched review, manual testing, and deployment details.
 Client360 links SharePoint and OneDrive metadata to canonical clients without
 downloading duplicate files. See
 [Microsoft Document Intelligence](docs/MICROSOFT_DOCUMENT_SYNC.md).
+
+## Relationship intelligence
+
+Client360 models family, household, professional, business, trust, estate, and
+beneficiary connections as a normalized graph. See
+[Relationship Intelligence Engine](docs/RELATIONSHIP_ENGINE.md).

@@ -47,6 +47,16 @@ EVENT_DISPLAY = {
         "label": "Microsoft Document",
         "style": "document",
     },
+    "relationship_added": {
+        "icon": "🔗",
+        "label": "Relationship Added",
+        "style": "relationship",
+    },
+    "relationship_updated": {
+        "icon": "🔗",
+        "label": "Relationship Updated",
+        "style": "relationship",
+    },
     "test": {
         "icon": "⚙",
         "label": "System Event",

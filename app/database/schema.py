@@ -295,6 +295,12 @@ household_relationships = Table(
     Column("relationship_type", String(100), nullable=False),
     Column("is_primary", Boolean, nullable=False, server_default="false"),
     Column(
+        "is_primary_household",
+        Boolean,
+        nullable=False,
+        server_default="false",
+    ),
+    Column(
         "created_at",
         DateTime(timezone=True),
         server_default=func.now(),
@@ -408,6 +414,59 @@ microsoft_document_matching_rules = Table(
         "rule_type",
         "pattern",
         name="uq_microsoft_document_matching_rule",
+    ),
+)
+
+
+relationship_types = Table(
+    "relationship_types",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("code", String(100), nullable=False, unique=True),
+    Column("name", String(255), nullable=False),
+    Column("inverse_name", String(255)),
+    Column("category", String(100), nullable=False),
+    Column("directed", Boolean, nullable=False, server_default="true"),
+    Column("active", Boolean, nullable=False, server_default="true"),
+)
+
+
+relationship_entities = Table(
+    "relationship_entities",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("entity_type", String(50), nullable=False),
+    Column("person_id", Integer, ForeignKey("people.id", ondelete="CASCADE"), unique=True),
+    Column("household_id", Integer, ForeignKey("households.id", ondelete="CASCADE"), unique=True),
+    Column("name", String(500), nullable=False),
+    Column("details", JSON, nullable=False, server_default="{}"),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+relationships = Table(
+    "relationships",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("from_entity_id", Integer, ForeignKey("relationship_entities.id", ondelete="CASCADE"), nullable=False),
+    Column("to_entity_id", Integer, ForeignKey("relationship_entities.id", ondelete="CASCADE"), nullable=False),
+    Column("relationship_type_id", Integer, ForeignKey("relationship_types.id"), nullable=False),
+    Column("effective_date", Date),
+    Column("inactive_date", Date),
+    Column("notes", Text),
+    Column("confidence_level", Numeric(5, 2), nullable=False, server_default="100"),
+    Column("source", String(50), nullable=False, server_default="manual"),
+    Column("created_by", String(255)),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "from_entity_id",
+        "to_entity_id",
+        "relationship_type_id",
+        name="uq_relationship_edge",
     ),
 )
 

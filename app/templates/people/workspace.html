@@ -71,6 +71,12 @@
         >
             Calendar
         </a>
+        <a
+            class="{{ 'active' if active_tab == 'relationships' else '' }}"
+            href="/people/{{ person.id }}?tab=relationships"
+        >
+            Relationships
+        </a>
     </nav>
 </header>
 
@@ -105,6 +111,89 @@
         {% else %}
         <div class="card empty-state">No Microsoft calendar meetings found.</div>
         {% endfor %}
+    </section>
+
+    {% elif active_tab == "relationships" %}
+
+    <section class="relationship-layout">
+        <div class="stack">
+            <section class="card">
+                <h2>Relationship Graph</h2>
+                <div class="relationship-root">{{ person.full_name }}</div>
+                {% for category, items in relationship_graph.categories.items() %}
+                <div class="relationship-branch">
+                    <h3>{{ category.replace("_", " ").title() }}</h3>
+                    {% for item in items %}
+                    <div class="relationship-edge">
+                        <span>{{ item.label }}</span>
+                        {% if item.person_id %}
+                        <a href="/people/{{ item.person_id }}">{{ item.name }}</a>
+                        {% elif item.household_id %}
+                        <a href="/households/{{ item.household_id }}">{{ item.name }}</a>
+                        {% else %}
+                        <a href="/relationship-entities/{{ item.entity_id }}">{{ item.name }}</a>
+                        {% endif %}
+                        <small>{{ item.source.replace("_", " ").title() }} · {{ item.confidence_level }}%</small>
+                        {% if item.relationship_id %}<form method="post" action="/relationships/{{ item.relationship_id }}/deactivate?person_id={{ person.id }}">
+                            <button class="relationship-end" type="submit">End</button>
+                        </form>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="empty-state">No relationships recorded.</p>
+                {% endfor %}
+            </section>
+
+            <section class="card">
+                <h2>Household Members</h2>
+                {% for household in person_households %}
+                <div class="detail-row">
+                    <a href="/households/{{ household.id }}">{{ household.name }}</a>
+                    <div class="empty-state">
+                        {{ household.relationship_type.replace("_", " ").title() }}
+                        {% if household.is_primary_household %} · Primary Household{% endif %}
+                    </div>
+                </div>
+                {% else %}<p class="empty-state">No household memberships recorded.</p>{% endfor %}
+            </section>
+        </div>
+
+        <aside class="card">
+            <h2>Add Relationship</h2>
+            <form method="post" action="/people/{{ person.id }}/relationships" class="relationship-form">
+                <label>Relationship Type</label>
+                <select name="relationship_code" required>
+                    {% for type in relationship_types %}
+                    <option value="{{ type.code }}">{{ type.name }}</option>
+                    {% endfor %}
+                </select>
+                <label>Existing Person</label>
+                <select name="target_person_id">
+                    <option value="">Create or link another record...</option>
+                    {% for option in available_people %}
+                    <option value="{{ option.id }}">{{ option.full_name or ("Person " ~ option.id) }}</option>
+                    {% endfor %}
+                </select>
+                <label>Other Record Type</label>
+                <select name="target_entity_type">
+                    <option value="professional">Professional</option>
+                    <option value="business">Business</option>
+                    <option value="trust">Trust</option>
+                    <option value="estate">Estate</option>
+                </select>
+                <label>Other Record Name</label>
+                <input name="target_name" placeholder="Business, trust, estate, or professional">
+                <label>Effective Date</label><input type="date" name="effective_date">
+                <label>Inactive Date</label><input type="date" name="inactive_date">
+                <label>Confidence</label><input type="number" name="confidence_level" min="0" max="100" step="0.01" value="100">
+                <label>Source</label>
+                <select name="source"><option value="manual">Manually Created</option><option value="imported">Imported</option><option value="ai_inferred">AI Inferred</option></select>
+                <label>Notes</label><textarea name="notes"></textarea>
+                <label>Created By</label><input name="created_by">
+                <button type="submit">Save Relationship</button>
+            </form>
+        </aside>
     </section>
 
     {% elif active_tab == "activities" %}
