@@ -5,15 +5,17 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
-**Release 0.9 — Epic 4 Foundation**
+**Release 0.9.1 — Operational Work Management**
 
-Release 0.9 delivers the integrated Microsoft 365, Relationship, Portfolio,
-identity, authorization, audit, timeline, search, dashboard, and Client
-Workspace foundations. The database supports both clean installation and
-upgrade from the previous `main` schema through one linear Alembic history.
+Release 0.9.1 adds the operational assignment, workflow-step, queue, capacity,
+SLA, My Work, Team Work, and versioned API foundations that staff use to manage
+daily work. It builds on the Microsoft 365, Relationship, Portfolio, identity,
+authorization, audit, timeline, search, dashboard, and Client Workspace
+foundation delivered in Release 0.9.
 
-See [Release 0.9 Notes](docs/RELEASE_0.9.md) and the
-[RC1.2 Validation Report](docs/RC1_RELEASE_VALIDATION.md).
+See [Release 0.9.1 Notes](docs/RELEASE_0.9.1.md),
+[Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
+[Release 0.9 Notes](docs/RELEASE_0.9.md).
 
 ## Mission
 
@@ -68,7 +70,7 @@ beneficiary data into household-level portfolio intelligence. See
 
 ## Identity and security
 
-Release 0.9 includes managed-identity adapters, capability-composed roles,
+Client360 includes managed-identity adapters, capability-composed roles,
 team and record assignments, session controls, record-level authorization, and
 immutable audit events. See
 [Identity, Authorization, and Audit](docs/IDENTITY_AUTHORIZATION_AUDIT.md).
@@ -78,5 +80,5 @@ immutable audit events. See
 The architecture for replacing the firm's daily Wealthbox and TaxDome
 workflows is defined in the
 [Epic 4 Practice Management Platform](docs/EPIC_4_PRACTICE_MANAGEMENT_PLATFORM.md).
-Sprint 4.2 implementation remains intentionally paused until Release 0.9 is
-fully published and the next sprint is approved.
+Sprint 4.2 Operational Work Management is delivered in Release 0.9.1. Sprint
+4.3 Workflow and Process Automation has not started and requires approval.

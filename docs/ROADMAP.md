@@ -17,6 +17,18 @@
 - Clean-database installation and upgrade compatibility from the prior `main`
   migration head
 
+## Release 0.9.1 — Operational Work Management ✅
+
+- Generic user and team assignments across people, households, tasks,
+  documents, workflow instances, and workflow steps
+- Primary, secondary, supervisor, and team ownership with immutable history
+- Deterministic automatic assignment rules
+- Reusable secure operational queues
+- My Work, Team Work, queue, workload, capacity, SLA, and bottleneck views
+- Versioned work-management APIs for current Jinja and future React/mobile clients
+- Assignment timeline events, immutable audit records, and least-privilege filtering
+- Clean installation and upgrade compatibility from Release 0.9
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation
@@ -29,7 +41,7 @@
 
 ## Epic 4 — Practice Management Platform
 
-### Sprint 4.2 — Operational Work Management
+### Sprint 4.2 — Operational Work Management ✅
 
 - Assignment engine and assignment history
 - Reusable secure queues
