@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import and_, func, or_, select
 
 from app.db import (automation_actions, automation_triggers, engine, timeline_events,
-    work_approvals, workflow_escalations, workflow_events, workflow_instances,
+    work_approvals, work_queues, workflow_escalations, workflow_events, workflow_instances,
     workflow_step_dependencies, workflow_steps, workflow_template_steps, workflow_templates)
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
@@ -47,7 +47,8 @@ def launch_workflow(template_code, *, actor_user_id, person_id=None, household_i
         query = query.where(workflow_templates.c.version == version) if version else query.order_by(workflow_templates.c.version.desc()).limit(1)
         template = connection.execute(query).mappings().one_or_none()
         if not template: raise ValueError("Published workflow template not found")
-        instance_id = connection.execute(workflow_instances.insert().values(name=template["name"], workflow_type=template["category"], person_id=person_id, household_id=household_id, status="active", priority=priority, metadata=context, template_id=template["id"], template_version=template["version"], launched_by_user_id=actor_user_id, idempotency_key=idempotency_key).returning(workflow_instances.c.id)).scalar_one()
+        template_snapshot = {key: template[key] for key in ("code", "version", "name", "category", "description", "default_sla_hours", "trigger_config")}
+        instance_id = connection.execute(workflow_instances.insert().values(name=template["name"], workflow_type=template["category"], person_id=person_id, household_id=household_id, status="active", priority=priority, metadata=context, template_id=template["id"], template_version=template["version"], template_snapshot=template_snapshot, launched_by_user_id=actor_user_id, idempotency_key=idempotency_key).returning(workflow_instances.c.id)).scalar_one()
         definitions = connection.execute(select(workflow_template_steps).where(workflow_template_steps.c.template_id == template["id"]).order_by(workflow_template_steps.c.sequence)).mappings().all()
         definition_ids = {row["id"] for row in definitions}
         dependent = set(connection.scalars(select(workflow_step_dependencies.c.step_id).where(workflow_step_dependencies.c.step_id.in_(definition_ids)))) if definition_ids else set()
@@ -55,7 +56,9 @@ def launch_workflow(template_code, *, actor_user_id, person_id=None, household_i
         for definition in definitions:
             condition_result = _matches(definition["condition"], context)
             active = definition["id"] not in dependent and condition_result
-            connection.execute(workflow_steps.insert().values(workflow_instance_id=instance_id, name=definition["name"], sequence=definition["sequence"], status="active" if active else ("skipped" if not condition_result else "pending"), priority=priority, sla_due_at=now + timedelta(hours=definition["sla_hours"] or template["default_sla_hours"] or 120) if active else None, requires_approval=definition["step_type"] == "approval", template_step_id=definition["id"], activated_at=now if active else None, condition_result=condition_result))
+            queue_criteria = connection.execute(select(work_queues.c.criteria).where(work_queues.c.code == definition["queue_code"])).scalar_one_or_none() if definition["queue_code"] else {}
+            snapshot = {key: definition[key] for key in ("step_key", "name", "sequence", "step_type", "execution_mode", "condition", "assignment_config", "queue_code", "sla_hours", "requires_independent_approval", "automation_action", "configuration")}
+            connection.execute(workflow_steps.insert().values(workflow_instance_id=instance_id, name=definition["name"], sequence=definition["sequence"], status="active" if active else ("skipped" if not condition_result else "pending"), priority=priority, waiting_on=(queue_criteria or {}).get("waiting_on"), sla_due_at=now + timedelta(hours=definition["sla_hours"] or template["default_sla_hours"] or 120) if active else None, requires_approval=definition["step_type"] == "approval", template_step_id=definition["id"], definition_snapshot=snapshot, activated_at=now if active else None, condition_result=condition_result))
         _event(connection, instance_id, "workflow_launched", actor_user_id, payload={"template": template_code, "version": template["version"]}, key=f"{idempotency_key}:launch")
         instance = connection.execute(select(workflow_instances).where(workflow_instances.c.id == instance_id)).mappings().one()
     _publish(instance, "workflow_launched", f"{template['name']} workflow launched", {"template": template_code})

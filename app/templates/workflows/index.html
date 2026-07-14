@@ -1,15 +1,5 @@
-{% extends "base.html" %}
-{% block content %}
-<h1>Workflow Automation</h1>
-<div class="stats-grid">
-  <article><strong>{{ metrics.by_status.get('active', 0) }}</strong><span>Active workflows</span></article>
-  <article><strong>{{ metrics.pending_approvals }}</strong><span>Pending approvals</span></article>
-  <article><strong>{{ metrics.open_escalations }}</strong><span>Open escalations</span></article>
-</div>
-<h2>Published templates</h2>
-<div class="card-grid">
-{% for template in templates %}
-  <article class="card"><h3>{{ template.name }}</h3><p>{{ template.category|replace('_', ' ')|title }} · Version {{ template.version }}</p><p>{{ template.description or 'Standardized firm workflow with independent review.' }}</p></article>
-{% endfor %}
-</div>
-{% endblock %}
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workflow Automation · Client360</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"></head>
+<body><header class="work-header"><a href="/work">← My Work</a><h1>Workflow Automation</h1><p>Versioned firm processes and operational controls</p></header><main class="work-main">
+<section class="metrics"><article><span>Active workflows</span><strong>{{ metrics.by_status.get('active', 0) }}</strong></article><article><span>Pending approvals</span><strong>{{ metrics.pending_approvals }}</strong></article><article><span>Open escalations</span><strong>{{ metrics.open_escalations }}</strong></article></section>
+<h2>Published templates</h2><div class="work-grid"><section>{% for template in templates %}<article class="work-card"><h3>{{ template.name }}</h3><p>{{ template.category|replace('_', ' ')|title }} · Version {{ template.version }}</p><p>{{ template.description or 'Standardized firm workflow with independent review.' }}</p></article>{% else %}<div class="empty">No published templates.</div>{% endfor %}</section></div>
+</main></body></html>

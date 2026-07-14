@@ -5,7 +5,9 @@ Sprint 4.3 adds a vendor-independent orchestration layer above Client360 records
 ## Architecture
 
 - `workflow_templates`, `workflow_template_steps`, and `workflow_step_dependencies` define versioned directed acyclic processes. Conditions are declarative JSON and are evaluated only against explicit launch context.
+- Published definitions are database-immutable. A new template version is required for every change, and recursive validation rejects direct, multi-hop, and cross-template dependency cycles.
 - `workflow_instances` and `workflow_steps` remain backward compatible with Release 0.9.1. New nullable template references allow legacy instances to continue operating.
+- Each launch stores a template snapshot and a definition snapshot for every instantiated step, insulating in-flight execution and history from future versions.
 - `workflow_events` is append-only and provides the execution ledger. Idempotency keys protect launches, domain events, and automation actions from retry duplication.
 - `work_approvals` is linked to workflow steps. Independent approvals are enforced by service validation and a database check constraint.
 - `workflow_escalations` records idempotent SLA breaches. Escalation evaluation can be called by the scheduler or controlled API.
