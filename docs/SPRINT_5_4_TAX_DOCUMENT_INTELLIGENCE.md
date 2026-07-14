@@ -1,8 +1,9 @@
 # Sprint 5.4 — Tax Document Intelligence & Missing Information
 
-**Status:** accepted — implemented and RC11-remediated in
-`feature/tax-document-intelligence` (draft PR, head `l2c03f1e0d9b`). See the RC11
-remediation appendix in `docs/RC11_VALIDATION.md`.
+**Status:** released in **Client360 v0.9.8** (merge commit
+`48a1bcbba201df75858d7bbdd2f0ffd4c6e893a0`, Alembic head `l2c03f1e0d9b`).
+Independently validated (RC11) and retested (RC11 Retest, SAFE TO MERGE). See the
+RC11 remediation appendix in `docs/RC11_VALIDATION.md` and `docs/RC11_RETEST.md`.
 
 > **RC11 remediation (post-review):** the ingestion pipeline is now wired to both
 > producers — portal uploads via `tax_intake.sync_documents → ingest_document`,

@@ -4,7 +4,15 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-### Added — Sprint 5.4: Tax Document Intelligence & Missing Information (draft review)
+No unreleased application changes.
+
+## [0.9.8] — 2026-07-14
+
+Sprint 5.4 — Tax Document Intelligence & Missing Information. See
+[Release 0.9.8 Notes](docs/RELEASE_0.9.8.md) and
+[Tax Document Intelligence](docs/SPRINT_5_4_TAX_DOCUMENT_INTELLIGENCE.md).
+
+### Added
 
 - Deterministic tax document matching engine (exact identifiers, confidence
   scoring, ambiguity floor) with mandatory human review for anything not
@@ -43,6 +51,14 @@ All notable Client360 releases are documented here.
 - Eliminated all substring/containment ownership matching for tax documents
   (H13). Auto-assignment requires a single exact-identifier candidate above the
   auto-match threshold with no competing candidate above the ambiguity floor.
+
+### Validation
+
+- 136 automated tests passed; independent RC11 adversarial validation and retest
+  (43/43 checks) confirmed H13 cannot be recreated across nine datasets and that
+  the RC11 remediation introduced no new gap (SAFE TO MERGE). Clean installation,
+  v0.9.7 upgrade/downgrade/re-upgrade, and sentinel preservation validated. See
+  [RC11 Validation](docs/RC11_VALIDATION.md) and [RC11 Retest](docs/RC11_RETEST.md).
 
 ## [0.9.7] — 2026-07-14
 

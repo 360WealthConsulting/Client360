@@ -5,6 +5,18 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
+**Release 0.9.8 — Tax Document Intelligence & Missing Information**
+
+Release 0.9.8 delivers Epic 5 Sprint 5.4: a deterministic, authorization-aware
+tax document matching engine that connects portal-uploaded and Microsoft
+documents to the checklist / missing-information system, replaces substring-based
+matching (RC8 H13) with mandatory human review of ambiguous matches, and adds a
+document-review workspace and missing-information engine. See
+[Release 0.9.8 Notes](docs/RELEASE_0.9.8.md),
+[Tax Document Intelligence](docs/SPRINT_5_4_TAX_DOCUMENT_INTELLIGENCE.md),
+[RC11 Validation](docs/RC11_VALIDATION.md), and
+[RC11 Retest](docs/RC11_RETEST.md).
+
 **Release 0.9.7 — Security Hardening**
 
 Release 0.9.7 is a security-hardening release that fixes the confirmed,
@@ -44,8 +56,8 @@ See [Release 0.9.6 Notes](docs/RELEASE_0.9.6.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
-Epic 5 is in implementation. Sprints 5.1, 5.2, and 5.3 are released. Sprint 5.4
-(tax document intelligence and missing information) is in draft review — a
+Epic 5 is in implementation. Sprints 5.1–5.4 are released. Sprint 5.4 (tax
+document intelligence and missing information, Release 0.9.8) delivered a
 deterministic, authorization-aware document matching engine that replaces
 substring-based matching (RC8 H13) with mandatory human review of ambiguous
 matches. See [Revised Epic 5 Plan](docs/EPIC_5_REVISED_PLAN.md),
