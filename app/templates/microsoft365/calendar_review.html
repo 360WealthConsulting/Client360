@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microsoft Calendar Review - Client360</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/workspace.css">
+</head>
+<body>
+<header class="review-header">
+    <h1>Microsoft Calendar Review</h1>
+    <div>{{ attendees|length }} unmatched attendee{{ "" if attendees|length == 1 else "s" }}</div>
+</header>
+<main class="review-main stack">
+    <p><a href="/">← Dashboard</a></p>
+    {% for attendee in attendees %}
+    <article class="card meeting-card">
+        <div class="meeting-date">{{ attendee.starts_at }}</div>
+        <h2>{{ attendee.subject or "(No subject)" }}</h2>
+        <p><strong>{{ attendee.attendee_name or attendee.attendee_email }}</strong><br>{{ attendee.attendee_email }}</p>
+        <div class="timeline-meta">
+            {{ attendee.attendee_role or "Attendee" }} · {{ attendee.response_status or "No response" }}
+            {% if attendee.location %}· {{ attendee.location }}{% endif %}
+        </div>
+        <div class="review-actions">
+            <form method="post" onsubmit="this.action = '/microsoft365/calendar-review/{{ attendee.id }}/match/' + this.person_id.value; return Boolean(this.person_id.value);">
+                <select name="person_id" required>
+                    <option value="">Select client...</option>
+                    {% for person in people %}
+                    <option value="{{ person.id }}">{{ person.full_name or ("Person " ~ person.id) }}{% if person.primary_email %} — {{ person.primary_email }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Match Existing Client</button>
+            </form>
+            <form method="post" action="/microsoft365/calendar-review/{{ attendee.id }}/ignore">
+                <button class="button-danger" type="submit">Ignore</button>
+            </form>
+            {% if attendee.web_link %}
+            <a href="{{ attendee.web_link }}" target="_blank" rel="noopener noreferrer">Open in Outlook</a>
+            {% endif %}
+        </div>
+    </article>
+    {% else %}
+    <div class="card">No unmatched calendar attendees are waiting for review.</div>
+    {% endfor %}
+</main>
+</body>
+</html>

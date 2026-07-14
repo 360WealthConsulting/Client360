@@ -32,3 +32,9 @@ Create a unified client intelligence platform for 360 Wealth Consulting and 360 
 ## Status
 
 Project started: July 2026
+
+## Microsoft 365 intelligence
+
+Client360 synchronizes Outlook mail and calendar meetings into canonical client
+timelines. See [Microsoft Calendar Intelligence](docs/MICROSOFT_CALENDAR_SYNC.md)
+for matching, unmatched review, manual testing, and deployment details.
