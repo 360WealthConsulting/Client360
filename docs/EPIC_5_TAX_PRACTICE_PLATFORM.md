@@ -1,13 +1,16 @@
 # Epic 5 — Tax Practice Platform
 
-> Implementation status: the architecture is approved and Sprint 5.1 is in
-> draft review. See `docs/TAX_DOMAIN_FOUNDATION.md` for the implemented domain
-> boundary and operational model.
+> Implementation status: the architecture is approved, Sprint 5.1 shipped in
+> Release v0.9.4, and Sprint 5.2 is in draft review. See
+> `docs/TAX_DOMAIN_FOUNDATION.md` for the released domain model.
 
-Status: Proposed technical design for review  
-Source baseline: Client360 Release v0.9.3  
-Current Alembic head: `f640a6c4e5f6`  
-Implementation authorized by this document: none
+> Sprint 5.2 implementation is in draft review. See
+> `docs/TAX_ENGAGEMENT_INTAKE.md` for its template, portal, milestone, and
+> workflow-advancement architecture.
+
+Status: Approved architecture under implementation
+Source baseline for Sprint 5.2: Client360 Release v0.9.4
+Current Sprint 5.2 Alembic head: `h860c8e6a7b8`
 
 ## 1. Executive summary
 

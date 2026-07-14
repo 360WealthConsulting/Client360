@@ -1,0 +1,3 @@
+{% extends "portal/base.html" %}{% block title %}Tax Intake | Client360{% endblock %}
+{% block content %}<h1>Tax intake</h1><p>Complete each item so your tax team can begin preparation.</p>
+{% for item in intakes %}<section class="panel"><h2>{{ item.context.year }} {{ item.context.return_type }}</h2><p>Progress: {{ item.client_readiness }}%</p><ul><li>Engagement letter: {{ item.letter.status }}</li><li>Organizer: {{ item.organizer.status }} ({{ item.organizer.progress_percent }}%)</li><li>Questionnaire: {{ item.questionnaire.status }} ({{ item.questionnaire.progress_percent }}%)</li><li>Missing documents: {{ item.missing|length }}</li></ul></section>{% else %}<p>No tax intake is currently assigned to you.</p>{% endfor %}{% endblock %}

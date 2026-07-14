@@ -104,7 +104,9 @@ def create_engagement(payload, *, actor_user_id, request_id):
         assign_work(entity_type="tax_return", entity_id=return_id, assignment_role="primary", user_id=payload["assignee_user_id"], actor_user_id=actor_user_id, reason="Tax engagement launch", request_id=request_id)
     add_timeline_event(source="tax_domain", event_type="tax_engagement_opened", title=f"{return_type['code']} tax engagement opened", person_id=payload.get("person_id"), household_id=payload.get("household_id"), external_id=f"tax-engagement-{engagement_id}-opened", event_metadata={"tax_year":year,"return_id":return_id})
     write_audit_event(action="tax.engagement.created", entity_type="tax_engagement", entity_id=engagement_id, actor_user_id=actor_user_id, request_id=request_id or str(uuid.uuid4()), metadata={"return_id":return_id})
-    return {"engagement_id": engagement_id, "return_id": return_id, "workflow_id": workflow_id}
+    from app.services.tax_intake import launch_intake
+    intake = launch_intake(return_id, actor_user_id=actor_user_id, request_id=request_id)
+    return {"engagement_id": engagement_id, "return_id": return_id, "workflow_id": workflow_id, "intake": intake}
 
 
 def override_deadline(deadline_id, due_date, reason, *, actor_user_id, request_id):

@@ -4,7 +4,20 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-No unreleased application changes.
+### Added
+
+- Versioned engagement-letter, organizer, questionnaire, and document-checklist
+  templates with immutable published definitions and launch-time snapshots.
+- Tax intake orchestration, saved progress, conditional/required questions,
+  missing-information tracking, portal completion, daily reminders, readiness
+  dashboards, and automatic workflow advancement.
+- Versioned staff and portal APIs for tax intake, backed by existing document,
+  notification, assignment, queue, timeline, audit, and authorization services.
+
+### Database
+
+- Added 12 intake tables with parent revision `g750b7d5f6a7`; new head
+  `h860c8e6a7b8`.
 
 ## [0.9.4] — 2026-07-14
 
