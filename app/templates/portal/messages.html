@@ -1,0 +1,1 @@
+{% extends "portal/base.html" %}{% block title %}Messages{% endblock %}{% block content %}<h1>Secure Messages</h1>{% for row in portal.messages %}<article class="work-card"><h3>{{ row.subject }}</h3><p>{{ row.status|title }} · Updated {{ row.updated_at }}</p></article>{% else %}<div class="empty">No secure conversations.</div>{% endfor %}{% endblock %}

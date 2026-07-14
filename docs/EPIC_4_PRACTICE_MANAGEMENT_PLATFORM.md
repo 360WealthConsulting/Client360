@@ -702,3 +702,7 @@ Approval of this document authorizes planning and implementation of Sprint 4.1 o
 ## 11. Sprint 4.3 implementation
 
 Workflow and Process Automation is implemented as a versioned orchestration layer over Sprint 4.2 assignments and queues. See [WORKFLOW_PROCESS_AUTOMATION.md](WORKFLOW_PROCESS_AUTOMATION.md) for the execution ledger, approval segregation, SLA escalation, event trigger, and API contracts.
+
+## 12. Sprint 4.4 implementation
+
+Client Portal and Secure Collaboration uses a distinct portal identity/session boundary with explicit household and delegated grants. It reuses canonical documents, workflows, timelines, meetings, and audit records while preventing portal identities from inheriting staff capabilities. See [CLIENT_PORTAL.md](CLIENT_PORTAL.md).

@@ -2,6 +2,17 @@
 
 All notable Client360 releases are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Separate portal identities, household/delegated grants, invitations,
+  MFA-ready sessions, password-reset handoff, and device tracking.
+- Secure client messaging, internal-note isolation, attachments, and receipts.
+- Document requests, upload versions, approvals, client workflow tasks,
+  notifications, and provider-neutral e-signature abstractions.
+- Versioned portal APIs and eight portal pages.
+
 ## [0.9.2] — 2026-07-14
 
 ### Added

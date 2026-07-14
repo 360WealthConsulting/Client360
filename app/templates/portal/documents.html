@@ -1,0 +1,1 @@
+{% extends "portal/base.html" %}{% block title %}Documents{% endblock %}{% block content %}<h1>Shared Documents</h1>{% for row in portal.documents %}<article class="work-card"><h3>{{ row.original_name }}</h3><p>{{ row.category or 'Document' }} · {{ row.created_at }}</p></article>{% else %}<div class="empty">No documents are shared.</div>{% endfor %}{% endblock %}
