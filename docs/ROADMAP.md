@@ -110,6 +110,31 @@ follow-ups (Microsoft 365 token encryption, performance/index work, DB
 constraints, and full authorization consolidation) remain scheduled for
 Releases 0.9.8 and 1.0 per RC9.
 
+## Release 0.9.9 — Platform Consolidation ✅
+
+Security, performance, and production-readiness consolidation (no new features),
+delivered as eight independently reviewed phases and RC12-validated (0 defects).
+
+- Microsoft 365 OAuth tokens encrypted at rest (Fernet MSAL cache) with a durable
+  silent-refresh lifecycle and least-privilege read-only scopes; per-account
+  sync-health surfaced (addresses the deferred token-encryption follow-up).
+- 24 hot-path foreign-key indexes (`CONCURRENTLY`, reversible) and elimination of
+  four verified N+1 / full-scan hot paths (addresses the deferred performance/index
+  work).
+- Consolidated the Graph connector and portal provider registries; removed a debug
+  endpoint and unused imports.
+- Production readiness: `/readiness` probe, startup config validation, CSRF
+  defense-in-depth, and a rehearsed backup/restore runbook (advances the 1.0
+  backup/restore and observability items).
+- Additive, reversible migrations; single Alembic head `o5f36c4d3e2a`. Clean
+  upgrade/downgrade compatibility from Release 0.9.8.
+
+See [Release 0.9.9 Notes](RELEASE_0.9.9.md), [Production Architecture](PRODUCTION_ARCHITECTURE.md),
+[Deployment Runbook](RELEASE_0.9.9_DEPLOYMENT_RUNBOOK.md), and
+[RC12 Validation](RC12_VALIDATION.md). Deferred: advisor-notes-to-DB migration,
+`MICROSOFT_TOKEN_KEY` rotation, legacy plaintext-column removal, and the orphaned
+`app/models/` scaffold.
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation

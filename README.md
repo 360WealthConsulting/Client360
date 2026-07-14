@@ -5,6 +5,22 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
+**Release 0.9.9 — Platform Consolidation**
+
+Release 0.9.9 is a consolidation and production-readiness release with no new
+end-user features. It encrypts Microsoft 365 OAuth tokens at rest with a durable
+refresh lifecycle and least-privilege read-only scopes, makes the hot read paths
+index-bound (24 foreign-key indexes) and eliminates four verified N+1 hot paths,
+consolidates the Graph connector and provider registries, removes dead code, and
+adds operational readiness (a `/readiness` probe, config validation, CSRF
+defense-in-depth, and a rehearsed backup/restore runbook). Delivered as eight
+independently reviewed phases and validated by an independent RC12 pass (0
+defects). Alembic head `o5f36c4d3e2a`. See
+[Release 0.9.9 Notes](docs/RELEASE_0.9.9.md),
+[Production Architecture](docs/PRODUCTION_ARCHITECTURE.md),
+[Deployment Runbook](docs/RELEASE_0.9.9_DEPLOYMENT_RUNBOOK.md), and
+[RC12 Validation](docs/RC12_VALIDATION.md).
+
 **Release 0.9.8 — Tax Document Intelligence & Missing Information**
 
 Release 0.9.8 delivers Epic 5 Sprint 5.4: a deterministic, authorization-aware

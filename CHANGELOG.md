@@ -6,6 +6,57 @@ All notable Client360 releases are documented here.
 
 No unreleased application changes.
 
+## [0.9.9] — 2026-07-14
+
+Platform Consolidation — a security, performance, and production-readiness
+release with no new end-user features. See
+[Release 0.9.9 Notes](docs/RELEASE_0.9.9.md) and
+[RC12 Validation](docs/RC12_VALIDATION.md).
+
+### Security
+
+- Microsoft 365 OAuth tokens encrypted at rest (Fernet-encrypted MSAL cache keyed
+  by `MICROSOFT_TOKEN_KEY`) with a durable `acquire_token_silent` refresh
+  lifecycle; crypto fails closed when the key is absent; no plaintext token is
+  written to the database or logs.
+- Delegated Graph scopes reduced to least-privilege read-only (no `Mail.Send`, no
+  `*.ReadWrite`).
+- CSRF defense-in-depth: `Referer` fallback added to the `Origin` check.
+- Config hardening: production boot fails without `SESSION_SECRET`; startup warns
+  on a development fallback or a missing `MICROSOFT_TOKEN_KEY`.
+
+### Performance
+
+- 24 hot-path foreign-key indexes (built `CONCURRENTLY`, reversible) making the
+  client/household/portal/workflow read paths index-bound.
+- Eliminated four verified N+1 / full-scan hot paths (intake dashboard 28→7,
+  concentration filter 28→2, portal `/notifications` 21→1, `work_items()`
+  authorization pushed into SQL → O(caller's book)), preserving output and
+  authorization semantics.
+
+### Changed
+
+- Consolidated the Microsoft Graph connector onto a single delegated path and the
+  portal provider registries onto one canonical `ProviderRegistry`.
+- Per-account Microsoft sync-health surfaced on `/microsoft365/status` and the new
+  `/readiness` endpoint.
+
+### Added
+
+- `GET /readiness` (DB, Alembic head drift, scheduler, sync-health; 200/503);
+  `GET /health` remains DB-independent liveness.
+- Backup/restore runbook and rehearsal script.
+
+### Removed
+
+- `POST /timeline/test` debug endpoint, the unused app-only Graph connector
+  modules, and verified-unused imports across 18 files.
+
+### Migrations
+
+- `m3d14a2f1e0c` (token security columns), `n4e25b3c2f1d` + `o5f36c4d3e2a`
+  (hot-path indexes). Additive and reversible; single head `o5f36c4d3e2a`.
+
 ## [0.9.8] — 2026-07-14
 
 Sprint 5.4 — Tax Document Intelligence & Missing Information. See

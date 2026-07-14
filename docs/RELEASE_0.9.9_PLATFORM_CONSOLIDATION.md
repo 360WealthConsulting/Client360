@@ -1,6 +1,9 @@
 # Release 0.9.9 — Platform Consolidation (Technical Design)
 
-**Status:** technical design — submitted for review. No application code written.
+**Status:** **IMPLEMENTED** and released as v0.9.9 (merge `592317d`, Alembic head
+`o5f36c4d3e2a`); RC12-validated. See `docs/RELEASE_0.9.9.md` and
+`docs/RC12_VALIDATION.md`. Deferred: advisor-notes-to-DB migration (WP7.5),
+`MICROSOFT_TOKEN_KEY` rotation, legacy plaintext-column removal, `app/models/`.
 **Baseline:** Release v0.9.8 (`main` @ `8d27e95`, Alembic head `l2c03f1e0d9b`).
 **Governing design document:** `docs/PRODUCTION_ARCHITECTURE.md` — the
 authoritative Client360 architecture. Every change in this release must conform to

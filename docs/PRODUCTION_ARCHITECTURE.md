@@ -9,7 +9,7 @@
 exists today** and marks forward-looking elements explicitly:
 
 - **[Implemented]** — shipped and in the codebase as of v0.9.8.
-- **[Planned: 0.9.9]** — designed for Release 0.9.9 — Platform Consolidation.
+- **[Implemented: 0.9.9]** — shipped in Release 0.9.9 — Platform Consolidation.
 - **[Planned: Epic 5/6]** — later tax sprints or Epic 6.
 - **[Gap]** — a known, intentional deficiency with an owner in the roadmap.
 
@@ -38,8 +38,9 @@ Core design tenets, consistently honored across nine releases:
 - **Adversarial release gates** (RC-series independent validation) before merge.
 
 The platform is functionally rich and architecturally sound; the principal
-production gaps are Microsoft 365 token security **[Gap → Planned: 0.9.9]**,
-dashboard/query performance **[Gap → Planned: 0.9.9]**, and the operational
+production gaps closed in Release 0.9.9 were Microsoft 365 token security
+**[Implemented: 0.9.9]** and dashboard/query performance **[Implemented: 0.9.9]**;
+the remaining focus is the operational
 readiness gates (see §20–§22).
 
 ---
@@ -164,7 +165,9 @@ the schema, used mainly by migrations and `person_merge`. **[Gap]** ~50% of tabl
 have no Python model; the app cannot start without a live, migrated DB.
 Consolidation is Epic 7 part 2.
 
-**Known debt [Gap → Planned].** ~48 missing FK/hot-column indexes (0.9.9);
+**Known debt.** The 24 hot-path FK/hot-column indexes were added in **0.9.9**
+**[Implemented: 0.9.9]** (remaining low-value FK columns intentionally left
+unindexed);
 free-text status/type columns lacking CHECK/lookup enforcement and `json`→`jsonb`
 (0.9.13); no partitioning/retention for unbounded event tables (post-1.0);
 advisor notes stored as flat files outside the DB (0.9.9 candidate).
@@ -187,8 +190,8 @@ distinct keys.
 - **Cookie/session [Implemented].** `SameSite=lax`; `Secure` in production;
   `itsdangerous`-signed session.
 
-**[Gap]** `SESSION_SECRET` has a hardcoded dev fallback outside `production`
-(0.9.9 warning/hardening). No returning-user portal login, no password-reset
+**[Implemented: 0.9.9]** `SESSION_SECRET` fails production boot when unset and
+logs a loud startup warning on the development fallback. No returning-user portal login, no password-reset
 delivery, no portal document download (Epic 5 Sprint 5.7 / portal launch gates).
 
 ---
@@ -244,13 +247,13 @@ SharePoint/OneDrive document sync; mail and calendar sync into canonical timelin
 unmatched review queues; Microsoft documents feed the tax document engine (v0.9.8).
 `app/connectors/microsoft365/config.py` supplies tenant/client config.
 
-**[Gap / Planned: 0.9.9].** OAuth tokens are stored in **plaintext** with **no
-refresh** (integration stops ~1 hour after connect) — the highest-severity open
-security item, fixed in 0.9.9 (§9). Over-broad scopes (`Mail.Send`, `*.ReadWrite`)
-reduced to read-only in 0.9.9. Single "most recently connected" account used for
-all sync (multi-account is post-1.0). No throttling/backoff; mail/calendar are
-single-page fetches; no sync-health surfacing (0.9.9 adds it). ~600 lines of an
-unused app-only Graph client are removed in 0.9.9.
+**[Implemented: 0.9.9].** OAuth tokens are now stored as a **Fernet-encrypted MSAL
+cache** with a durable **silent-refresh** lifecycle (§9), replacing the former
+plaintext-token / ~1-hour-failure mode. Over-broad scopes (`Mail.Send`,
+`*.ReadWrite`) were reduced to read-only, and per-account **sync-health** is
+surfaced. The unused app-only Graph client (~600 lines) was removed. Still
+post-1.0: multi-account sync and throttling/backoff (single "most recently
+connected" account; single-page mail/calendar fetches).
 
 ---
 
@@ -260,7 +263,7 @@ unused app-only Graph client are removed in 0.9.9.
 token; `refresh_token=None` is persisted; sync jobs read the plaintext
 `access_token` and raise `RuntimeError("reconnect Microsoft 365")` on expiry.
 
-**Target [Planned: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §4–5):
+**[Implemented: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §4–5):
 
 ```mermaid
 sequenceDiagram
@@ -454,8 +457,8 @@ the former duplicate per-domain registry classes:
   layer. **[Implemented]**
 - **Tenant boundary (Microsoft):** enforced by the Azure app-registration
   authority; not independently re-checked in code. **[Gap: verify at deploy]**
-- **CSRF boundary:** Origin check on mutations (fails open on missing header) +
-  `SameSite=lax`. **[Gap: 0.9.9 adds Referer fallback]**
+- **CSRF boundary:** Origin check on mutations, with a **Referer fallback** when
+  Origin is absent, + `SameSite=lax`. **[Implemented: 0.9.9]**
 
 ---
 
@@ -468,7 +471,7 @@ tokens are plaintext [Gap]**. Session tokens and portal tokens are stored **hash
 fallback otherwise **[Gap]**. Secrets are read from the environment / `app/.env`
 (gitignored); no vault/KMS integration **[Gap]**.
 
-**Target [Planned: 0.9.9].** Application-level **Fernet** encryption of the MSAL
+**[Implemented: 0.9.9].** Application-level **Fernet** encryption of the MSAL
 token cache keyed by a secrets-managed `MICROSOFT_TOKEN_KEY` (fail-closed if
 absent); documented key rotation (re-encrypt per account); the key must be backed
 up separately from the database.
@@ -480,7 +483,7 @@ up separately from the database.
 **Today [Gap].** No documented backup/restore procedure or rehearsal; advisor
 notes live outside the DB (flat files) and are not covered by a DB backup.
 
-**Target [Planned: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §14):
+**[Implemented: 0.9.9 — backup/restore; advisor-notes-to-DB deferred]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §14):
 `pg_dump`/`pg_restore` runbook covering all 110 tables + the Alembic version
 table; a **restore rehearsal gate** (restore → confirm single Alembic head → green
 test suite → verify sentinel counts); explicit handling of the
@@ -495,7 +498,7 @@ undecryptable). Advisor-notes-to-DB migration is a durability candidate for 0.9.
 `/microsoft365/status` reports config only (not sync health). No metrics/alerting
 integration; failures are server-log-only.
 
-**Target [Planned: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §12–13):
+**[Implemented: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §12–13):
 per-account Microsoft sync-health (`last_sync_at/status/error`) surfaced on
 `/microsoft365/status` and a new `/readiness` endpoint (DB connectivity +
 sync-health + Alembic head); structured operational log fields (job, counts,
@@ -535,7 +538,7 @@ flowchart TB
 - **Vertical first** — the modular monolith scales well vertically for the firm's
   scale. **[Current]**
 - **Query/index optimization** — eliminate N+1 dashboards and add missing indexes
-  so per-request cost is O(caller's book), not O(firm). **[Planned: 0.9.9]**
+  so per-request cost is O(caller's book), not O(firm). **[Implemented: 0.9.9]**
 - **Read replicas** for reporting/read-heavy paths once queries are index-bound.
   **[Planned: post-1.0]**
 - **Horizontal app scaling** — requires scheduler leader election (extract the
@@ -579,7 +582,7 @@ and outputs are explainable and human-confirmed.
 | ADR-10 | In-process APScheduler | Implemented (constraint) | Simple; requires single instance / leader election to scale |
 | ADR-11 | Deterministic-only document ownership matching (no substring) | Implemented (v0.9.8) | Eliminates cross-client exposure (H13); mandatory human review of ambiguity |
 | ADR-12 | Dual-source document links (canonical OR Microsoft) | Implemented (v0.9.8) | One engine, two sources, no binary duplication |
-| ADR-13 | Fernet-encrypted MSAL token cache + silent refresh | Planned (0.9.9) | Remove plaintext-token risk; stop hourly sync failure |
+| ADR-13 | Fernet-encrypted MSAL token cache + silent refresh | Implemented (0.9.9) | Remove plaintext-token risk; stop hourly sync failure |
 | ADR-14 | Canonical authorization service; unify three scope implementations | Partial (0.9.7) → Epic 7 | Single source of authorization truth |
 | ADR-15 | Shared API response envelope + pagination | Planned (Epic 7 / 0.9.13) | Enable a generic frontend client |
 | ADR-16 | Inert AI port now; governed AI in Epic 6 | Implemented / Planned | Ship deterministic pipeline; add governed AI later |
