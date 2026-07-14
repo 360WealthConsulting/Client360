@@ -27,6 +27,7 @@ from app.services.relationships import (
     build_relationship_graph,
     get_person_households,
 )
+from app.services.portfolio import get_person_portfolio
 
 
 router = APIRouter()
@@ -221,6 +222,7 @@ def person_profile(
         "activities",
         "calendar",
         "relationships",
+        "portfolio",
     }
 
     if tab not in allowed_tabs:
@@ -350,12 +352,14 @@ def person_profile(
     )
     microsoft_documents = get_person_microsoft_documents(person_id, limit=20)
     client_summary = get_client_summary(person_id)
+    portfolio = get_person_portfolio(person_id)
     client_alerts = build_client_alerts(client_summary)
     relationship_graph = build_relationship_graph(person_id)
     person_households = get_person_households(person_id)
     advisor_recommendations = build_advisor_recommendations(
         client_summary,
-        relationship_graph,
+        relationship_graph=relationship_graph,
+        portfolio=portfolio,
     )
 
     return templates.TemplateResponse(
@@ -381,6 +385,7 @@ def person_profile(
             "relationship_types": relationship_type_rows,
             "available_people": available_people,
             "person_households": person_households,
+            "portfolio": portfolio,
             "active_tab": tab,
         },
     )

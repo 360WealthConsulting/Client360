@@ -30,6 +30,8 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 metadata = MetaData()
 
+from app.database.portfolio_tables import define_portfolio_tables
+
 
 households = Table(
     "households",
@@ -56,6 +58,8 @@ people = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("household_id", Integer, ForeignKey("households.id")),
+    Column("custodian_id", Integer),
+    Column("registration_id", Integer),
     Column("first_name", String(100)),
     Column("middle_name", String(100)),
     Column("last_name", String(100)),
@@ -155,6 +159,8 @@ accounts = Table(
     Column("open_date", Date),
     Column("closed_date", Date),
     Column("source_file", String(500)),
+    Column("last_imported_at", DateTime(timezone=True)),
+    Column("last_review_date", Date),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     UniqueConstraint(
         "custodian",
@@ -645,6 +651,7 @@ microsoft_accounts = Table(
         name="uq_microsoft_account",
     ),
 )
+portfolio_tables = define_portfolio_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")
