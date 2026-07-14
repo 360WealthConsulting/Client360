@@ -74,6 +74,17 @@
 - Provider-neutral notifications, timeline, audit, and record authorization
 - Clean installation and upgrade/downgrade compatibility from Release 0.9.4
 
+## Release 0.9.6 — Tax Return Lifecycle & Production Automation ✅
+
+- Canonical 15-state return lifecycle with immutable transition history
+- Preparer, manager, and partner review routing on the existing independent
+  approval engine, with corrections and return-to-preparer behavior
+- Portal return approval, e-file authorization, and delivery acknowledgement
+- Provider-neutral filing status machine and filing event ledger
+- Nine production work queues and four staff dashboards
+- Versioned staff/portal APIs and automatic workflow-milestone advancement
+- Clean installation and upgrade/downgrade compatibility from Release 0.9.5
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation
@@ -124,7 +135,7 @@ can build on the completed practice-management platform without duplicating it.
 
 1. Tax domain, offices, jurisdictions, deadlines, and workflow launch ✅
 2. Engagement intake, organizers, questionnaires, and engagement letters ✅
-3. Return lifecycle and production-stage automation 🚧
+3. Return lifecycle and production-stage automation ✅
 4. Tax document intelligence and missing information
 5. Extensions, estimates, notices, and amendments
 6. Review, approval, e-file, delivery, and compliance
@@ -132,8 +143,8 @@ can build on the completed practice-management platform without duplicating it.
 8. Drake/provider and IRS transcript integration
 9. Production reporting, capacity, AI extensions, and release readiness
 
-Sprint 5.1 shipped in Release v0.9.4 and Sprint 5.2 in Release v0.9.5. Sprint
-5.3 is implemented in a draft release candidate and has not been merged. See
+Sprint 5.1 shipped in Release v0.9.4, Sprint 5.2 in Release v0.9.5, and
+Sprint 5.3 in Release v0.9.6. See
 [Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md) and
 [Tax Domain Foundation](TAX_DOMAIN_FOUNDATION.md),
 [Tax Engagement Intake](TAX_ENGAGEMENT_INTAKE.md), and

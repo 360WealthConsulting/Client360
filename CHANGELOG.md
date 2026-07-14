@@ -4,6 +4,10 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
+No unreleased application changes.
+
+## [0.9.6] — 2026-07-14
+
 ### Added
 
 - Canonical 15-state tax return lifecycle with immutable transition history.
@@ -17,6 +21,17 @@ All notable Client360 releases are documented here.
 
 - Added five production tables and ten return lifecycle/filing columns with
   parent `h860c8e6a7b8`; new head `i970d9f7b8c9`.
+
+### Validation
+
+- Added the Tax Return Lifecycle architecture and PR #16 RC7 validation
+  record.
+- Passed 74 automated tests, clean installation, v0.9.5 upgrade/downgrade/
+  re-upgrade, sentinel preservation, startup, route, OpenAPI, and template
+  validation.
+- Found and fixed two template defects during release-candidate validation:
+  a missing shared staff base template and a Jinja/dict-key collision on the
+  production dashboard.
 
 ## [0.9.5] — 2026-07-14
 
