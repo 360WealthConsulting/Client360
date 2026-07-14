@@ -5,15 +5,19 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
-**Release 0.9.2 — Workflow and Process Automation**
+**Release 0.9.3 — Client Portal and Secure Collaboration**
 
-Release 0.9.2 adds immutable versioned workflow templates, execution snapshots,
-dependency and conditional processing, parallel work, lifecycle controls,
-independent approvals, SLA escalation, domain-event triggers, and idempotent
-automation. It builds on the Release 0.9.1 assignments, queues, My Work, Team
-Work, capacity, and authorization foundation.
+Release 0.9.3 adds separate portal identities and sessions, explicit household
+and delegated access, secure messaging, document requests and versions, client
+workflow tasks, in-app notifications, and provider-neutral e-signature hooks.
+Public portal activation remains disabled until the production identity provider
+and operational security gates are approved.
 
-See [Release 0.9.2 Notes](docs/RELEASE_0.9.2.md),
+See [Release 0.9.3 Notes](docs/RELEASE_0.9.3.md),
+[Release 1.0 Readiness](docs/RELEASE_1_0_READINESS.md),
+[Client Portal Architecture](docs/CLIENT_PORTAL.md),
+[RC4 Validation](docs/SPRINT_4_4_RELEASE_VALIDATION.md),
+[Release 0.9.2 Notes](docs/RELEASE_0.9.2.md),
 [Workflow Automation Architecture](docs/WORKFLOW_PROCESS_AUTOMATION.md),
 [RC3 Validation](docs/SPRINT_4_3_RELEASE_VALIDATION.md),
 [Release 0.9.1 Notes](docs/RELEASE_0.9.1.md),
@@ -85,5 +89,5 @@ workflows is defined in the
 [Epic 4 Practice Management Platform](docs/EPIC_4_PRACTICE_MANAGEMENT_PLATFORM.md).
 Sprint 4.2 Operational Work Management is delivered in Release 0.9.1, and
 Sprint 4.3 Workflow and Process Automation is delivered in Release 0.9.2.
-Sprint 4.4 Client Portal and Secure Collaboration is in development on its
-feature branch. See [Client Portal Architecture](docs/CLIENT_PORTAL.md).
+Sprint 4.4 Client Portal and Secure Collaboration is delivered in Release
+0.9.3. Sprint 4.5 has not started.

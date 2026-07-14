@@ -42,6 +42,17 @@
 - Twelve published firm workflow templates
 - Clean installation and upgrade compatibility from Release 0.9.1
 
+## Release 0.9.3 — Client Portal and Secure Collaboration ✅
+
+- Separate portal identities, invitations, MFA-ready sessions, devices, and resets
+- Self, joint, trusted-contact, and delegated household authorization
+- Secure messages, attachments, immutable receipts, and internal-note isolation
+- Document requests, versioned uploads, approvals, and client workflow tasks
+- In-app notifications and disabled provider hooks for email, SMS, and push
+- Provider-neutral e-signature request and event architecture
+- Versioned portal APIs and eight portal pages
+- Clean installation and upgrade compatibility from Release 0.9.2
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation
@@ -68,13 +79,21 @@
 - Step dependencies, approvals, escalations, and automation triggers
 - Client, tax, investment, and document workflow integration
 
-### Sprint 4.4 — Client Portal and Secure Collaboration 🚧
+### Sprint 4.4 — Client Portal and Secure Collaboration ✅
 
 - Portal identities, invitations, MFA, and delegated household access
 - Secure messaging and document requests
 - Client-facing workflow tasks, approvals, and status visibility
 - E-signature and notification provider adapters
 - Consent, communication preferences, retention, and portal audit controls
+
+### Recommended Sprint 4.5 — Tax Practice Operations
+
+- Tax-year cases, organizers, filing jurisdictions, return stages, and deadlines
+- Extensions, estimates, IRS/state notices, amendments, and client tax tasks
+- Tax document checklists, missing-item queues, preparation, review, and approval
+- Drake/TaxDome acquisition adapters without vendor coupling in tax business logic
+- Tax dashboards, SLA metrics, workload, due-date risk, and delivery controls
 
 ### Later Epic 4 sprints
 

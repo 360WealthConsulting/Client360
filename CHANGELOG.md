@@ -2,7 +2,7 @@
 
 All notable Client360 releases are documented here.
 
-## [Unreleased]
+## [0.9.3] — 2026-07-14
 
 ### Added
 
@@ -12,6 +12,20 @@ All notable Client360 releases are documented here.
 - Document requests, upload versions, approvals, client workflow tasks,
   notifications, and provider-neutral e-signature abstractions.
 - Versioned portal APIs and eight portal pages.
+
+### Security
+
+- Portal accounts and sessions are isolated from staff identities.
+- Self-only, joint, trusted-contact, and delegated household grants are
+  explicitly scoped and time bounded.
+- Messages, read receipts, route mutations, and security events are audited;
+  client-visible queries exclude internal staff notes.
+
+### Database
+
+- Alembic head: `f640a6c4e5f6`.
+- Added 15 portal identity, access, session, collaboration, notification, and
+  signature-request tables without changing Release 0.9.2 data.
 
 ## [0.9.2] — 2026-07-14
 
