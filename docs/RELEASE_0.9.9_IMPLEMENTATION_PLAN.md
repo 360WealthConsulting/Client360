@@ -430,7 +430,20 @@ backed up.
 
 ---
 
-## Phase 8 — Validation and Release
+## Phase 8 — Validation and Release  — **RC12 VALIDATED (awaiting merge approval)**
+
+> **Implementation note.** Independent RC12 validation performed and recorded in
+> `docs/RC12_VALIDATION.md`: 24 checks green, **0 defects** — compilation,
+> whitespace, single head `o5f36c4d3e2a`, 0 unused imports, clean base→head (25
+> migrations), startup/OpenAPI/178 routes, v0.9.8 up/down/re-up with sentinel
+> preservation, full suite (297 pass / 4 skip), authorization + H13 + RC-series +
+> token-security + portal-isolation harnesses, append-only audit immutability, no
+> plaintext token, fail-closed crypto + read-only scopes, live `/readiness`,
+> 24/24 indexes planner-selected, N+1 bounded query counts, and a recorded
+> backup/restore rehearsal. **Recommendation: SAFE TO MERGE** subject to owner
+> approval + the production deployment gates. Release-note finalization
+> (CHANGELOG/README/ROADMAP/architecture flips/`RELEASE_0.9.9.md`) is the
+> post-approval release step. PR #19 remains a **draft**; not merged.
 
 **Objective.** Full-platform validation, documentation finalization, draft PR, and
 completion report (release design §15–17). No merge without an independent RC pass.
