@@ -4,14 +4,34 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
+No unreleased application changes.
+
+## [0.9.4] — 2026-07-14
+
+### Added
+
+- Provider-neutral tax firms, offices, staff office roles, tax years, seasons,
+  filing jurisdictions, return types, filing statuses, engagements, returns,
+  calendars, versioned deadline rules, and workflow links.
+- Authorized tax production dashboard and versioned `/api/v1/tax` reference,
+  dashboard, engagement, and deadline operations.
+- Five reusable tax work queues, four tax capabilities, eight baseline return
+  types, six filing statuses, and a versioned Tax Engagement Foundation workflow.
+- Automatic engagement workflow generation with existing assignment, queue,
+  timeline, immutable audit, and record-level authorization integration.
+
 ### Documentation
 
 - Added the nine-sprint Epic 5 Tax Practice Platform technical design.
 - Defined normalized tax, workflow, portal, document, provider, security,
   reporting, migration, testing, and Release 1.0 readiness architecture.
-- Epic 5 architecture approved on July 14, 2026; Sprint 5.1 implementation is
-  authorized to begin from the accepted design.
-- No application behavior or database schema changed.
+- Added Tax Domain Foundation operating documentation and the RC5 release
+  validation report.
+
+### Database
+
+- Alembic head: `g750b7d5f6a7`.
+- Added 14 normalized tax-domain tables while preserving Release v0.9.3 data.
 
 ## [0.9.3] — 2026-07-14
 

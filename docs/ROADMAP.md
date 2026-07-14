@@ -53,6 +53,16 @@
 - Versioned portal APIs and eight portal pages
 - Clean installation and upgrade compatibility from Release 0.9.2
 
+## Release 0.9.4 — Tax Domain Foundation ✅
+
+- Canonical tax firms, offices, staff tax roles, years, and seasons
+- Filing jurisdictions, return types, filing statuses, engagements, and returns
+- Versioned calendars and configurable deadline rules
+- Tax work queues, assignments, dashboard metrics, and versioned APIs
+- Automatic versioned workflow generation for new tax engagements
+- Existing timeline, immutable audit, capability, and record-scope integration
+- Clean installation and upgrade/downgrade compatibility from Release 0.9.3
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation
@@ -87,20 +97,8 @@
 - E-signature and notification provider adapters
 - Consent, communication preferences, retention, and portal audit controls
 
-### Recommended Sprint 4.5 — Tax Practice Operations
-
-- Tax-year cases, organizers, filing jurisdictions, return stages, and deadlines
-- Extensions, estimates, IRS/state notices, amendments, and client tax tasks
-- Tax document checklists, missing-item queues, preparation, review, and approval
-- Drake/TaxDome acquisition adapters without vendor coupling in tax business logic
-- Tax dashboards, SLA metrics, workload, due-date risk, and delivery controls
-
-### Later Epic 4 sprints
-
-- Tax return and TaxDome-replacement operations
-- Client service and communication workflows
-- Billing, revenue pipeline, and management reporting
-- Compliance supervision, retention, and operational audit workflows
+Tax-practice work previously proposed as Sprint 4.5 now belongs to Epic 5 so it
+can build on the completed practice-management platform without duplicating it.
 
 ## Future intelligence and integrations
 
@@ -111,11 +109,11 @@
 - AI meeting preparation, client briefs, and relationship-aware recommendations
 - Client portal and secure document exchange
 
-## Epic 5 — Tax Practice Platform (Design) 📝
+## Epic 5 — Tax Practice Platform 🚧
 
-1. Tax domain, offices, jurisdictions, and deadlines
-2. Return lifecycle and automatic workflow generation
-3. Organizers, questionnaires, and engagement letters
+1. Tax domain, offices, jurisdictions, deadlines, and workflow launch ✅
+2. Engagement intake, organizers, questionnaires, and engagement letters
+3. Return lifecycle and production-stage automation
 4. Tax document intelligence and missing information
 5. Extensions, estimates, notices, and amendments
 6. Review, approval, e-file, delivery, and compliance
@@ -123,11 +121,6 @@
 8. Drake/provider and IRS transcript integration
 9. Production reporting, capacity, AI extensions, and release readiness
 
-Implementation has not started. See
-[Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md).
-# Current implementation
-
-- **Sprint 5.1 — Tax Domain Foundation:** in draft review. Canonical firms,
-  offices, staff tax roles, years, jurisdictions, engagements, returns,
-  calendars, deadlines, tax queues, assignments, dashboards, and automatic
-  workflow generation are implemented on `feature/tax-domain-foundation`.
+Sprint 5.1 shipped in Release v0.9.4. Sprint 5.2 has not begun. See
+[Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md) and
+[Tax Domain Foundation](TAX_DOMAIN_FOUNDATION.md).

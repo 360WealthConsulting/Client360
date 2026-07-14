@@ -5,15 +5,18 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
-**Release 0.9.3 — Client Portal and Secure Collaboration**
+**Release 0.9.4 — Tax Domain Foundation**
 
-Release 0.9.3 adds separate portal identities and sessions, explicit household
-and delegated access, secure messaging, document requests and versions, client
-workflow tasks, in-app notifications, and provider-neutral e-signature hooks.
-Public portal activation remains disabled until the production identity provider
-and operational security gates are approved.
+Release 0.9.4 establishes the provider-neutral tax operating domain: tax firms,
+offices, staff roles, years, seasons, jurisdictions, return types, filing
+statuses, engagements, returns, calendars, versioned deadlines, tax queues,
+automatic workflow launch, and an authorized production dashboard.
 
-See [Release 0.9.3 Notes](docs/RELEASE_0.9.3.md),
+See [Release 0.9.4 Notes](docs/RELEASE_0.9.4.md),
+[Sprint 5.1 RC Validation](docs/SPRINT_5_1_RELEASE_VALIDATION.md),
+[Tax Domain Foundation](docs/TAX_DOMAIN_FOUNDATION.md),
+[Epic 5 Architecture](docs/EPIC_5_TAX_PRACTICE_PLATFORM.md),
+[Release 0.9.3 Notes](docs/RELEASE_0.9.3.md),
 [Release 1.0 Readiness](docs/RELEASE_1_0_READINESS.md),
 [Client Portal Architecture](docs/CLIENT_PORTAL.md),
 [RC4 Validation](docs/SPRINT_4_4_RELEASE_VALIDATION.md),
@@ -24,10 +27,8 @@ See [Release 0.9.3 Notes](docs/RELEASE_0.9.3.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
-Epic 5 is now in implementation. Sprint 5.1 adds the provider-neutral tax
-domain foundation, deadline model, tax workflow launch, authorized production
-dashboard, and versioned tax APIs. See [Tax Domain Foundation](docs/TAX_DOMAIN_FOUNDATION.md)
-and [Epic 5 Architecture](docs/EPIC_5_TAX_PRACTICE_PLATFORM.md).
+Epic 5 is in implementation. Sprint 5.1 is released; Sprint 5.2 remains pending
+approval and has not begun.
 
 ## Mission
 
