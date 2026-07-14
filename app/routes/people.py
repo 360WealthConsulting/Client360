@@ -14,12 +14,17 @@ from app.db import (
     person_source_links,
     source_contacts,
     tasks,
+    relationship_types,
 )
 from app.services.advisor_ai import build_advisor_recommendations
 from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
 from app.services.timeline import get_person_timeline
+from app.services.relationships import (
+    build_relationship_graph,
+    get_person_households,
+)
 
 
 router = APIRouter()
@@ -212,6 +217,7 @@ def person_profile(
         "documents",
         "notes",
         "activities",
+        "relationships",
     }
 
     if tab not in allowed_tabs:
@@ -315,6 +321,18 @@ def person_profile(
             activity_statement
         ).mappings().all()
 
+        relationship_type_rows = connection.execute(
+            select(relationship_types)
+            .where(relationship_types.c.active.is_(True))
+            .order_by(relationship_types.c.category, relationship_types.c.name)
+        ).mappings().all()
+
+        available_people = connection.execute(
+            select(people.c.id, people.c.full_name, people.c.primary_email)
+            .where(people.c.id != person_id, people.c.active.is_(True))
+            .order_by(people.c.last_name, people.c.first_name)
+        ).mappings().all()
+
     timeline_events = get_person_timeline(
         person_id,
         limit=20,
@@ -323,7 +341,12 @@ def person_profile(
     documents = get_person_documents(person_id)[:8]
     client_summary = get_client_summary(person_id)
     client_alerts = build_client_alerts(client_summary)
-    advisor_recommendations = build_advisor_recommendations(client_summary)
+    relationship_graph = build_relationship_graph(person_id)
+    person_households = get_person_households(person_id)
+    advisor_recommendations = build_advisor_recommendations(
+        client_summary,
+        relationship_graph,
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -341,6 +364,10 @@ def person_profile(
             "client_summary": client_summary,
             "client_alerts": client_alerts,
             "advisor_recommendations": advisor_recommendations,
+            "relationship_graph": relationship_graph,
+            "relationship_types": relationship_type_rows,
+            "available_people": available_people,
+            "person_households": person_households,
             "active_tab": tab,
         },
     )

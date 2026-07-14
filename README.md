@@ -32,3 +32,9 @@ Create a unified client intelligence platform for 360 Wealth Consulting and 360 
 ## Status
 
 Project started: July 2026
+
+## Relationship intelligence
+
+Client360 models family, household, professional, business, trust, estate, and
+beneficiary connections as a normalized graph. See
+[Relationship Intelligence Engine](docs/RELATIONSHIP_ENGINE.md).

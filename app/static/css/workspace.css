@@ -168,6 +168,77 @@
     border-left-color: #4f46e5;
 }
 
+.timeline-relationship {
+    border-left-color: #0f766e;
+}
+
+.relationship-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.relationship-root {
+    padding: 14px;
+    border-radius: 8px;
+    background: #111827;
+    color: white;
+    font-weight: 700;
+}
+
+.relationship-branch {
+    margin: 18px 0 0 24px;
+    padding-left: 18px;
+    border-left: 3px solid #cbd5e1;
+}
+
+.relationship-edge {
+    display: grid;
+    grid-template-columns: 140px minmax(160px, 1fr) auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.relationship-edge small {
+    color: var(--text-muted);
+}
+
+.relationship-edge form {
+    margin: 0;
+}
+
+.relationship-end {
+    background: #6b7280;
+    padding: 7px 10px;
+}
+
+.relationship-form label {
+    display: block;
+    margin: 12px 0 5px;
+    font-weight: 700;
+}
+
+.relationship-form input,
+.relationship-form select,
+.relationship-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+}
+
+@media (max-width: 900px) {
+    .relationship-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .relationship-edge {
+        grid-template-columns: 1fr;
+    }
+}
+
 .timeline-system,
 .timeline-default {
     border-left-color: #6b7280;

@@ -31,3 +31,9 @@
 - Notes
 - Tasks
 - Opportunity Tracking
+
+## Sprint 10 ✅
+- Normalized relationship graph
+- Family, professional, business, trust, estate, and beneficiary relationships
+- Multiple and primary household memberships
+- Relationship timeline, search, workspace, and advisor intelligence
