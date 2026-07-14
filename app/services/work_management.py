@@ -13,7 +13,7 @@ from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
 from app.services.work_intelligence import bottlenecks, capacity_metrics, daily_agenda, queue_items
 
-ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_return", "investment_account"}
+ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_engagement", "tax_return", "investment_account"}
 ASSIGNMENT_ROLES = {"primary", "secondary", "supervisor", "owner"}
 
 
@@ -34,6 +34,13 @@ def _timeline_target(connection, entity_type, entity_id):
         return (row.person_id, row.household_id) if row else (None, None)
     if entity_type == "workflow_step":
         row = connection.execute(select(workflow_instances.c.person_id, workflow_instances.c.household_id).select_from(workflow_steps.join(workflow_instances)).where(workflow_steps.c.id == entity_id)).first()
+        return (row.person_id, row.household_id) if row else (None, None)
+    if entity_type in {"tax_engagement", "tax_return"}:
+        from app.db import tax_engagement_returns, tax_engagements
+        if entity_type == "tax_engagement":
+            row = connection.execute(select(tax_engagements.c.person_id, tax_engagements.c.household_id).where(tax_engagements.c.id == entity_id)).first()
+        else:
+            row = connection.execute(select(tax_engagements.c.person_id, tax_engagements.c.household_id).select_from(tax_engagement_returns.join(tax_engagements)).where(tax_engagement_returns.c.id == entity_id)).first()
         return (row.person_id, row.household_id) if row else (None, None)
     return None, None
 

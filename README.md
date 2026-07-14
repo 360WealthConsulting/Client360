@@ -24,6 +24,11 @@ See [Release 0.9.3 Notes](docs/RELEASE_0.9.3.md),
 [Work Management Architecture](docs/WORK_MANAGEMENT_PLATFORM.md), and the
 [Release 0.9 Notes](docs/RELEASE_0.9.md).
 
+Epic 5 is now in implementation. Sprint 5.1 adds the provider-neutral tax
+domain foundation, deadline model, tax workflow launch, authorized production
+dashboard, and versioned tax APIs. See [Tax Domain Foundation](docs/TAX_DOMAIN_FOUNDATION.md)
+and [Epic 5 Architecture](docs/EPIC_5_TAX_PRACTICE_PLATFORM.md).
+
 ## Mission
 
 Create a unified client intelligence platform for 360 Wealth Consulting and 360 Tax Solutions.

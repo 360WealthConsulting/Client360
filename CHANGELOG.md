@@ -78,3 +78,13 @@ All notable Client360 releases are documented here.
 - Integrated Microsoft 365, Relationship Intelligence, Schwab Portfolio
   Intelligence, firm identity, capability authorization, and immutable audit.
 - Alembic head: `c410f4a1b2c3`.
+# Unreleased
+
+### Added
+
+- Sprint 5.1 Tax Domain Foundation: tax firms and offices, staff office roles,
+  tax years and seasons, jurisdictions, return types and filing statuses,
+  engagements and returns, versioned deadlines, tax queues, a production
+  dashboard, versioned APIs, and automatic workflow generation.
+- Tax-domain capability and record-level authorization, timeline publication,
+  and immutable audit integration using the existing Client360 platforms.

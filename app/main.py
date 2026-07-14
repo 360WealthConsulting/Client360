@@ -40,6 +40,7 @@ from app.routes.portfolio import router as portfolio_router
 from app.routes.work import router as work_router
 from app.routes.workflows import router as workflows_router
 from app.routes.portal import router as portal_router
+from app.routes.tax import router as tax_router
 
 
 @asynccontextmanager
@@ -94,3 +95,4 @@ app.include_router(session_router)
 app.include_router(work_router)
 app.include_router(workflows_router)
 app.include_router(portal_router)
+app.include_router(tax_router)
