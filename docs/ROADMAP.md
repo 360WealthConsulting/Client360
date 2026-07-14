@@ -31,3 +31,10 @@
 - Notes
 - Tasks
 - Opportunity Tracking
+
+## Sprint 9 ✅
+- OneDrive and SharePoint drive discovery
+- Incremental DriveItem delta synchronization
+- Configurable client matching rules
+- Timeline publishing and unmatched-document review
+- Microsoft-managed documents in the Client Workspace

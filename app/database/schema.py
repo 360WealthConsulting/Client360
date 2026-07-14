@@ -345,6 +345,72 @@ documents = Table(
 )
 
 
+microsoft_drives = Table(
+    "microsoft_drives",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_drive_id", String(500), nullable=False, unique=True),
+    Column("name", String(500)),
+    Column("drive_type", String(100)),
+    Column("source_type", String(50), nullable=False),
+    Column("site_id", String(500)),
+    Column("web_url", Text),
+    Column("delta_link", Text),
+    Column("last_synced_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+microsoft_documents = Table(
+    "microsoft_documents",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("microsoft_drive_id", String(500), nullable=False),
+    Column("microsoft_item_id", String(500), nullable=False),
+    Column("person_id", Integer, ForeignKey("people.id", ondelete="SET NULL")),
+    Column("name", String(500), nullable=False),
+    Column("mime_type", String(255)),
+    Column("size_bytes", Integer, nullable=False, server_default="0"),
+    Column("web_url", Text),
+    Column("parent_path", Text),
+    Column("created_at_microsoft", DateTime(timezone=True)),
+    Column("modified_at_microsoft", DateTime(timezone=True)),
+    Column("created_by_email", String(320)),
+    Column("modified_by_email", String(320)),
+    Column("match_method", String(100)),
+    Column("status", String(50), nullable=False, server_default="pending"),
+    Column("deleted", Boolean, nullable=False, server_default="false"),
+    Column("raw_metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "microsoft_drive_id",
+        "microsoft_item_id",
+        name="uq_microsoft_document_drive_item",
+    ),
+)
+
+
+microsoft_document_matching_rules = Table(
+    "microsoft_document_matching_rules",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("person_id", Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False),
+    Column("rule_type", String(50), nullable=False),
+    Column("pattern", String(500), nullable=False),
+    Column("priority", Integer, nullable=False, server_default="100"),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "person_id",
+        "rule_type",
+        "pattern",
+        name="uq_microsoft_document_matching_rule",
+    ),
+)
+
+
 microsoft_unmatched_messages = Table(
     "microsoft_unmatched_messages",
     metadata,

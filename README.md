@@ -32,3 +32,9 @@ Create a unified client intelligence platform for 360 Wealth Consulting and 360 
 ## Status
 
 Project started: July 2026
+
+## Microsoft document intelligence
+
+Client360 links SharePoint and OneDrive metadata to canonical clients without
+downloading duplicate files. See
+[Microsoft Document Intelligence](docs/MICROSOFT_DOCUMENT_SYNC.md).

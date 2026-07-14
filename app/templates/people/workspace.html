@@ -163,6 +163,26 @@
             No documents have been uploaded.
         </div>
         {% endfor %}
+
+        <div>
+            <h2>Microsoft 365 Documents</h2>
+            <p class="empty-state">Linked metadata from SharePoint and OneDrive.</p>
+        </div>
+        {% for document in microsoft_documents %}
+        <article class="card">
+            <strong>
+                {% if document.web_url %}<a href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">{{ document.name }}</a>{% else %}{{ document.name }}{% endif %}
+            </strong>
+            <div class="timeline-meta">
+                {{ document.mime_type or "Unknown type" }} ·
+                {{ document.modified_at_microsoft or "Date unavailable" }} ·
+                {{ document.match_method or "Matched" }}
+            </div>
+            {% if document.parent_path %}<p>{{ document.parent_path }}</p>{% endif %}
+        </article>
+        {% else %}
+        <div class="card empty-state">No Microsoft-managed documents matched.</div>
+        {% endfor %}
     </section>
 
     {% elif active_tab == "tasks" %}
@@ -386,6 +406,13 @@
                 </div>
                 {% else %}
                 <div class="empty-state">No documents uploaded.</div>
+                {% endfor %}
+
+                {% for document in microsoft_documents[:5] %}
+                <div class="detail-row">
+                    {% if document.web_url %}<a href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">{{ document.name }}</a>{% else %}<strong>{{ document.name }}</strong>{% endif %}
+                    <div class="empty-state">Microsoft 365 · {{ document.match_method or "Matched" }}</div>
+                </div>
                 {% endfor %}
             </section>
 
