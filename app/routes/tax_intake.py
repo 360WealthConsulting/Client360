@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.portal.service import PortalPrincipal
 from app.routes.portal import current_portal
+from app.security.audit import audit_denied
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.tax_intake import (accept_letter, intake_detail, launch_intake,
@@ -61,7 +62,15 @@ def api_sync(return_id:int,principal:Principal=Depends(require_capability("tax.i
     _authorize_return(principal,return_id); return sync_documents(return_id)
 
 @router.post("/api/v1/tax/intake/reminders")
-def api_reminders(principal:Principal=Depends(require_capability("tax.intake.write"))): return {"sent":process_reminders()}
+def api_reminders(request:Request,principal:Principal=Depends(require_capability("tax.intake.write"))):
+    # process_reminders() operates firm-wide, so the manual trigger requires
+    # firm-wide record authority. This prevents an office-scoped tax.intake.write
+    # holder from firing client-facing reminders outside their scope (H9). The
+    # daily scheduler continues to call the service directly.
+    if not principal.can("record.read_all"):
+        audit_denied(request, action="tax.intake.reminders_denied", entity_type="tax_intake", actor_user_id=principal.user_id, detail="Firm-wide authorization required")
+        raise HTTPException(403,"Firm-wide authorization is required to trigger reminders")
+    return {"sent":process_reminders()}
 
 @router.get("/portal/tax-intake")
 def portal_page(request:Request,principal:PortalPrincipal=Depends(current_portal)):

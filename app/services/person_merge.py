@@ -3,7 +3,11 @@ from typing import Iterable
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app.database.schema import (
+# Use the shared reflected metadata/engine (app.db) rather than the separate
+# app.database.schema engine, so the process opens a single connection pool
+# (H22 — the /matches -> person_merge import chain previously created a second
+# engine against the same database at startup).
+from app.db import (
     engine,
     people,
     person_source_links,

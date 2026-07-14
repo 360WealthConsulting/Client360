@@ -5,7 +5,6 @@ from app.db import (
     activities,
     engine,
     households,
-    match_review_decisions,
     people,
     tasks,
 )
@@ -41,15 +40,16 @@ def get_dashboard_data():
             .limit(10)
         ).mappings().all()
 
-        pending_matches = connection.scalar(
-            select(func.count())
-            .select_from(match_review_decisions)
-            .where(match_review_decisions.c.decision == "pending")
-        ) or 0
-
         total_aum = connection.scalar(
             select(func.coalesce(func.sum(accounts.c.total_value), 0))
         ) or 0
+
+    # Real backlog of duplicate-match review groups awaiting a decision. The
+    # prior query counted a decision value ("pending") that is never persisted,
+    # so it was always zero (H14). Imported locally to avoid a service->route
+    # module-load dependency.
+    from app.routes.matches import count_pending_match_groups
+    pending_matches = count_pending_match_groups()
 
     result = {
         "people": total_people,

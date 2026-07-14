@@ -7,9 +7,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db import engine, relationship_entities, relationship_types
+from app.security.audit import audit_denied
+from app.security.authorization import record_in_scope
 from app.services.relationships import (
     create_relationship,
     deactivate_relationship,
+    relationship_owner,
     search_relationships,
 )
 
@@ -50,7 +53,20 @@ async def add_person_relationship(request: Request, person_id: int):
 
 
 @router.post("/relationships/{relationship_id}/deactivate")
-def end_relationship(relationship_id: int, person_id: int):
+def end_relationship(relationship_id: int, person_id: int, request: Request):
+    principal = getattr(request.state, "principal", None)
+    owner_person, owner_household = relationship_owner(relationship_id)
+    if owner_person is None and owner_household is None:
+        return HTMLResponse("<h1>Relationship not found</h1>", status_code=404)
+    # Authorize against the relationship's actual owning record, not the
+    # caller-supplied person_id query parameter (H5).
+    authorized = principal is not None and (
+        record_in_scope(principal, "person", owner_person, write=True)
+        or record_in_scope(principal, "household", owner_household, write=True)
+    )
+    if not authorized:
+        audit_denied(request, action="relationship.deactivate_denied", entity_type="relationship", entity_id=relationship_id, actor_user_id=getattr(principal, "user_id", None), detail="Relationship is outside authorized scope")
+        return HTMLResponse("<h1>Relationship access denied</h1>", status_code=403)
     if not deactivate_relationship(relationship_id):
         return HTMLResponse("<h1>Relationship not found</h1>", status_code=404)
     return RedirectResponse(

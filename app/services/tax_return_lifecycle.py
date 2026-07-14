@@ -84,6 +84,16 @@ def decide_review(review_id,decision,*,reviewer_user_id,notes=None,corrections=N
     target="in_preparation" if decision=="returned" else {"preparer":"manager_review","manager":"partner_review","partner":"client_review"}[review_type]
     return transition_return(return_id,target,actor_user_id=reviewer_user_id,reason=notes or f"{review_type} review {decision}",request_id=request_id)
 
+def review_return_id(review_id):
+    with engine.connect() as c:
+        return c.scalar(select(tax_return_reviews.c.tax_engagement_return_id).where(tax_return_reviews.c.id==review_id))
+
+def correction_return_id(correction_id):
+    with engine.connect() as c:
+        return c.scalar(select(tax_return_reviews.c.tax_engagement_return_id)
+            .select_from(tax_review_corrections.join(tax_return_reviews,tax_return_reviews.c.id==tax_review_corrections.c.tax_return_review_id))
+            .where(tax_review_corrections.c.id==correction_id))
+
 def resolve_correction(correction_id,*,actor_user_id):
     with engine.begin() as c:
         changed=c.execute(tax_review_corrections.update().where(tax_review_corrections.c.id==correction_id,tax_review_corrections.c.status=="open").values(status="resolved",resolved_by_user_id=actor_user_id,resolved_at=datetime.now(timezone.utc))).rowcount
