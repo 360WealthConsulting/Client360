@@ -9,6 +9,9 @@ from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
     router as microsoft365_calendar_router,
 )
+from app.routes.microsoft365_documents import (
+    router as microsoft365_documents_router,
+)
 
 from app.routes.documents import router as documents_router
 
@@ -64,6 +67,7 @@ app.include_router(households_router)
 app.include_router(documents_router)
 app.include_router(microsoft365_router)
 app.include_router(microsoft365_calendar_router)
+app.include_router(microsoft365_documents_router)
 app.include_router(microsoft365_oauth_router)
 app.include_router(microsoft365_inbox_review_router)
 app.include_router(microsoft365_mail_router)

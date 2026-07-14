@@ -13,6 +13,7 @@ from app.services.documents import (
     save_person_document,
 )
 from app.services.timeline import add_timeline_event
+from app.services.microsoft_documents import get_person_microsoft_documents
 
 
 router = APIRouter()
@@ -41,6 +42,7 @@ def person_documents(request: Request, person_id: int):
         context={
             "person": person,
             "documents": get_person_documents(person_id),
+            "microsoft_documents": get_person_microsoft_documents(person_id),
             "uploaded": request.query_params.get("uploaded") == "1",
             "archived": request.query_params.get("archived") == "1",
         },

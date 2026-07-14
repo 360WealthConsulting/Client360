@@ -202,6 +202,26 @@
             <p>No documents have been uploaded.</p>
         </div>
         {% endfor %}
+
+        <h2>Microsoft 365 Documents</h2>
+
+        {% for document in microsoft_documents %}
+        <div class="card">
+            <h3>{{ document.name }}</h3>
+            <p class="meta">
+                {{ document.mime_type or "Unknown type" }} |
+                {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB |
+                {{ document.modified_at_microsoft or "Date unavailable" }} |
+                {{ document.match_method or "Matched" }}
+            </p>
+            {% if document.parent_path %}<p>{{ document.parent_path }}</p>{% endif %}
+            {% if document.web_url %}
+            <a href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in SharePoint or OneDrive</a>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="card"><p>No Microsoft-managed documents matched.</p></div>
+        {% endfor %}
     </main>
 </body>
 </html>

@@ -28,6 +28,11 @@ household_relationships = metadata.tables["household_relationships"]
 microsoft_accounts = metadata.tables["microsoft_accounts"]
 
 documents = metadata.tables["documents"]
+microsoft_drives = metadata.tables["microsoft_drives"]
+microsoft_documents = metadata.tables["microsoft_documents"]
+microsoft_document_matching_rules = metadata.tables[
+    "microsoft_document_matching_rules"
+]
 microsoft_accounts = metadata.tables["microsoft_accounts"]
 timeline_events = metadata.tables["timeline_events"]
 microsoft_unmatched_messages = metadata.tables["microsoft_unmatched_messages"]

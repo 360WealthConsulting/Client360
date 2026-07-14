@@ -38,3 +38,7 @@ Project started: July 2026
 Client360 synchronizes Outlook mail and calendar meetings into canonical client
 timelines. See [Microsoft Calendar Intelligence](docs/MICROSOFT_CALENDAR_SYNC.md)
 for matching, unmatched review, manual testing, and deployment details.
+
+Client360 links SharePoint and OneDrive metadata to canonical clients without
+downloading duplicate files. See
+[Microsoft Document Intelligence](docs/MICROSOFT_DOCUMENT_SYNC.md).

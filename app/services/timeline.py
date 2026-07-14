@@ -42,6 +42,11 @@ EVENT_DISPLAY = {
         "label": "Calendar Event",
         "style": "calendar",
     },
+    "microsoft_document": {
+        "icon": "📄",
+        "label": "Microsoft Document",
+        "style": "document",
+    },
     "test": {
         "icon": "⚙",
         "label": "System Event",

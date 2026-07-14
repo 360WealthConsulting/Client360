@@ -38,3 +38,10 @@
 - Timeline meeting publishing and deduplication
 - Unmatched calendar attendee review
 - Client Workspace calendar intelligence
+
+## Sprint 9 ✅
+- OneDrive and SharePoint drive discovery
+- Incremental DriveItem delta synchronization
+- Configurable client matching rules
+- Timeline publishing and unmatched-document review
+- Microsoft-managed documents in the Client Workspace

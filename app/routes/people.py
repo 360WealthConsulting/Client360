@@ -20,6 +20,7 @@ from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
+from app.services.microsoft_documents import get_person_microsoft_documents
 from app.services.timeline import get_person_timeline
 
 
@@ -329,6 +330,7 @@ def person_profile(
         upcoming_only=True,
         limit=5,
     )
+    microsoft_documents = get_person_microsoft_documents(person_id, limit=20)
     client_summary = get_client_summary(person_id)
     client_alerts = build_client_alerts(client_summary)
     advisor_recommendations = build_advisor_recommendations(client_summary)
@@ -345,6 +347,7 @@ def person_profile(
             "all_tasks": open_tasks,
             "timeline_events": timeline_events,
             "documents": documents,
+            "microsoft_documents": microsoft_documents,
             "activities": activity_rows,
             "calendar_events": calendar_events,
             "upcoming_meetings": upcoming_meetings,
