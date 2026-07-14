@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from app.portfolio.adapters import SchwabCsvAdapter
 from app.services.portfolio import search_portfolios
@@ -9,7 +11,14 @@ from app.services.portfolio_import import import_portfolio_file
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 @router.get("/search")
-def portfolio_search(q: str = "", min_aum: float | None = None, registration: str | None = None, high_cash: bool = False, missing_beneficiary: bool = False, concentration: float | None = None):
+def portfolio_search(
+    q: str = "",
+    min_aum: Optional[float] = None,
+    registration: Optional[str] = None,
+    high_cash: bool = False,
+    missing_beneficiary: bool = False,
+    concentration: Optional[float] = None,
+):
     return {"results": search_portfolios(q, min_aum, registration, high_cash, missing_beneficiary, concentration)}
 
 @router.post("/import/schwab")

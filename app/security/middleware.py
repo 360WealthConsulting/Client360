@@ -20,6 +20,11 @@ RULES = (
     (re.compile(r"/tasks(?:/|$)|^/tasks"), "task.read"),
     (re.compile(r"/documents(?:/|$)|^/documents"), "document.read"),
     (re.compile(r"^/microsoft|^/mail|^/calendar"), "communication.read"),
+    (re.compile(r"^/portfolio"), "client.read"),
+    (
+        re.compile(r"^/relationships|^/relationship-entities|^/api/relationships"),
+        "client.read",
+    ),
     (
         re.compile(
             r"^/$|^/api/stats|^/people|^/households|^/search|^/api/search|"
@@ -31,7 +36,9 @@ RULES = (
 RECORD_PATH = re.compile(r"^/(people|households)/(\d+)")
 FIRM_WIDE_COLLECTION = re.compile(
     r"^/(?:$|api/(?:stats|search)(?:/|$)|search(?:/|$)|people/?$|households/?$|"
-    r"tasks/?$|activities/?$|matches/?$|source(?:/|$))"
+    r"tasks/?$|activities/?$|matches/?$|source(?:/|$)|portfolio(?:/|$)|"
+    r"relationships/search(?:/|$)|api/relationships/search(?:/|$)|"
+    r"relationship-entities(?:/|$))"
 )
 
 
@@ -90,9 +97,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 request.url.path,
                 "Access denied",
             )
-        if FIRM_WIDE_COLLECTION.match(request.url.path) and not principal.can(
+        broad_scope = (
             "record.read_all"
-        ):
+            if request.method in {"GET", "HEAD", "OPTIONS"}
+            else "record.write_all"
+        )
+        if FIRM_WIDE_COLLECTION.match(request.url.path) and not principal.can(broad_scope):
             return _denied(
                 request,
                 principal,
@@ -101,6 +111,30 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 request.url.path,
                 "Firm-wide collection access denied",
             )
+        relationship_person_id = (
+            request.query_params.get("person_id")
+            if request.url.path.startswith("/relationships/")
+            else None
+        )
+        if relationship_person_id and relationship_person_id.isdigit():
+            with engine.connect() as connection:
+                allowed = has_record_scope(
+                    connection,
+                    principal,
+                    "person",
+                    int(relationship_person_id),
+                    record_assignments=record_assignments,
+                    write=request.method not in {"GET", "HEAD", "OPTIONS"},
+                )
+            if not allowed:
+                return _denied(
+                    request,
+                    principal,
+                    "authorization.relationship_denied",
+                    "person",
+                    relationship_person_id,
+                    "Relationship access denied",
+                )
         record_match = RECORD_PATH.match(request.url.path)
         if record_match:
             entity_type = "person" if record_match.group(1) == "people" else "household"
