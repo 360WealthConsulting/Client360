@@ -138,7 +138,21 @@ app starts; all tests pass; nothing references removed symbols.
 
 ---
 
-## Phase 3 — Provider Abstraction Cleanup
+## Phase 3 — Provider Abstraction Cleanup  — **IMPLEMENTED**
+
+> **Implementation note.** Analysis found the confirmed duplication was a second
+> copy of the registry pattern: `portal/signatures.py` declared its own
+> `SignatureProviderRegistry`, byte-identical to `PortalIdentityProviderRegistry`
+> in `portal/providers.py` except the error string. Consolidated both onto one
+> canonical, label-parameterized `ProviderRegistry` in `portal/providers.py`
+> (`PortalIdentityProviderRegistry` kept as a backwards-compatible alias); error
+> messages preserved exactly. `tax_filing_providers.py` is unwired and not a
+> duplicate — kept with a reserved-for-Sprint-5.6 docstring (plan default).
+> `signatures.py` is test-covered (not dead) — kept, retargeted to the canonical
+> registry, docstring added. No auth/token/schema/route change; 178 routes
+> unchanged; single head `m3d14a2f1e0c`. Regression tests added in
+> `tests/test_provider_abstraction.py` (9 tests) covering identity, signature,
+> notification, and tax-filing provider paths; §17 wording refreshed.
 
 **Objective.** Establish a single documented provider-adapter posture and resolve
 the status of the two unwired provider modules (architecture §17). Per the release

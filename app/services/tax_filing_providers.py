@@ -1,3 +1,12 @@
+"""Tax filing provider port (reserved).
+
+Defines the ``TaxFilingProvider`` protocol, the ``FilingResult`` value object,
+and a manual-filing default. **Reserved for Epic 5 Sprint 5.6** (filing-provider
+wiring) — no route or service imports this module yet. When it is wired it
+should adopt the canonical ``app.portal.providers.ProviderRegistry`` in place of
+the plain ``FILING_PROVIDERS`` dict, so all provider selection shares one
+abstraction.
+"""
 from dataclasses import dataclass
 from typing import Protocol
 
