@@ -16,6 +16,7 @@ from app.db import (
     tasks,
     relationship_types,
 )
+from app.security.authorization import accessible_person_ids
 from app.services.advisor_ai import build_advisor_recommendations
 from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
@@ -332,10 +333,15 @@ def person_profile(
             .order_by(relationship_types.c.category, relationship_types.c.name)
         ).mappings().all()
 
-        available_people = connection.execute(
+        _picker = (
             select(people.c.id, people.c.full_name, people.c.primary_email)
             .where(people.c.id != person_id, people.c.active.is_(True))
-            .order_by(people.c.last_name, people.c.first_name)
+        )
+        _allowed_ids = accessible_person_ids(connection, request.state.principal)
+        if _allowed_ids is not None:
+            _picker = _picker.where(people.c.id.in_(_allowed_ids))
+        available_people = connection.execute(
+            _picker.order_by(people.c.last_name, people.c.first_name)
         ).mappings().all()
 
     timeline_events = get_person_timeline(

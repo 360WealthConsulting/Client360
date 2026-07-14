@@ -15,6 +15,43 @@ from app.db import (
 )
 from app.services.person_merge import merge_source_contacts
 
+MERGE_PLAN_PATH = Path("06 Reports/private/exact_match_merge_plan.csv")
+
+
+def count_pending_match_groups():
+    """Return the number of duplicate-match review groups still awaiting a
+    decision, i.e. groups in the merge plan with no persisted decision.
+
+    The dashboard previously counted ``match_review_decisions.decision ==
+    'pending'``, but that value is never written (the only writer allows
+    approved/rejected/skipped), so the metric was structurally always zero
+    (H14). This mirrors the computation used by the /matches review page.
+    Returns 0 if the merge plan has not been generated yet.
+    """
+    if not MERGE_PLAN_PATH.exists():
+        return 0
+    group_keys = []
+    with MERGE_PLAN_PATH.open("r", encoding="utf-8-sig", newline="") as file_handle:
+        for row in csv.DictReader(file_handle):
+            if row.get("decision") != "REVIEW":
+                continue
+            record_ids = sorted(
+                int(value.strip())
+                for value in row.get("record_ids", "").split("|")
+                if value.strip().isdigit()
+            )
+            key_source = "|".join(str(record_id) for record_id in record_ids)
+            group_keys.append(hashlib.sha256(key_source.encode("utf-8")).hexdigest())
+    if not group_keys:
+        return 0
+    with engine.connect() as connection:
+        decided = set(connection.scalars(
+            select(match_review_decisions.c.group_key).where(
+                match_review_decisions.c.group_key.in_(group_keys)
+            )
+        ))
+    return max(len(group_keys) - len(decided), 0)
+
 
 router = APIRouter()
 

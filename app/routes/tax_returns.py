@@ -8,9 +8,9 @@ from app.routes.portal import current_portal
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.tax_domain import list_engagements
-from app.services.tax_return_lifecycle import (client_decision,decide_review,portal_returns,
-    production_dashboard,record_filing,request_review,resolve_correction,return_detail,
-    sync_workflow,transition_return)
+from app.services.tax_return_lifecycle import (client_decision,correction_return_id,decide_review,
+    portal_returns,production_dashboard,record_filing,request_review,resolve_correction,
+    return_detail,review_return_id,sync_workflow,transition_return)
 
 router=APIRouter(tags=["tax-return-production"]); templates=Jinja2Templates(directory="app/templates")
 class Transition(BaseModel): status:str; reason:Optional[str]=None
@@ -51,10 +51,16 @@ def api_review_request(return_id:int,payload:ReviewRequest,principal:Principal=D
     except ValueError as exc:raise HTTPException(400,str(exc))
 @router.post("/api/v1/tax/returns/reviews/{review_id}/decision")
 def api_review_decision(review_id:int,payload:ReviewDecision,request:Request,principal:Principal=Depends(require_capability("tax.review"))):
+    return_id=review_return_id(review_id)
+    if return_id is None: raise HTTPException(404,"Tax return not found")
+    _authorized(principal,return_id)
     try:return {"status":decide_review(review_id,payload.decision,reviewer_user_id=principal.user_id,notes=payload.notes,corrections=payload.corrections,request_id=request.state.request_id)}
     except (ValueError,PermissionError) as exc:raise HTTPException(400,str(exc))
 @router.post("/api/v1/tax/returns/review-corrections/{correction_id}/resolve",status_code=204)
 def api_resolve(correction_id:int,principal:Principal=Depends(require_capability("tax.write"))):
+    return_id=correction_return_id(correction_id)
+    if return_id is None: raise HTTPException(404,"Open correction not found")
+    _authorized(principal,return_id)
     try:resolve_correction(correction_id,actor_user_id=principal.user_id)
     except ValueError as exc:raise HTTPException(404,str(exc))
 @router.post("/api/v1/tax/returns/{return_id}/filing")

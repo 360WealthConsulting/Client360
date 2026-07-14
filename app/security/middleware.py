@@ -14,6 +14,12 @@ PUBLIC_EXACT = frozenset({"/health", "/auth/login", "/auth/callback", "/portal/l
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume"})
 RULES = (
+    # Approval / review decisions use dedicated segregation-of-duty capabilities
+    # (work.approve, tax.review). These carve-outs must precede the generic
+    # workflow/tax prefix rules so the coarse ".read"->".write" inference does
+    # not demand work.write/tax.write and lock out those roles (H4).
+    (re.compile(r"^/api/v1/workflows/approvals/"), "work.approve"),
+    (re.compile(r"^/tax/returns/reviews|^/api/v1/tax/returns/reviews|^/api/v1/tax/returns/\d+/reviews"), "tax.review"),
     (re.compile(r"^/tax/returns|^/api/v1/tax/returns"), "tax.read"),
     (re.compile(r"^/tax/intake|^/api/v1/tax/intake"), "tax.intake.read"),
     (re.compile(r"^/tax|^/api/v1/tax"), "tax.read"),

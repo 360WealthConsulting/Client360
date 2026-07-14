@@ -85,19 +85,31 @@ def revoke_portal_session(raw):
     if raw:
         with engine.begin() as connection: connection.execute(portal_sessions.update().where(portal_sessions.c.session_hash == _hash(raw)).values(revoked_at=datetime.now(timezone.utc)))
 
-def portal_scope(account_id):
+def portal_scope(account_id, *, permission=None):
+    """Resolve the portal account's reachable person/household ids.
+
+    When ``permission`` is supplied, only grants that explicitly allow that
+    permission contribute to the reachable set (default-deny). This makes the
+    permission correlate to the specific grant covering a record rather than
+    passing if *any* grant on the account has the permission, and it lets the
+    secure-messaging paths enforce ``messages`` consistently (H7)."""
     with engine.connect() as connection:
         grants = connection.execute(select(portal_access_grants).where(portal_access_grants.c.portal_account_id == account_id, _active_grant())).mappings().all()
+        if permission is not None:
+            grants = [g for g in grants if (g["permissions"] or {}).get(permission)]
         household_ids = {r["household_id"] for r in grants}; person_ids = {r["person_id"] for r in grants if r["person_id"]}
         shared_household_ids = {r["household_id"] for r in grants if r["access_type"] in {"joint", "trusted", "delegated"}}
         if shared_household_ids: person_ids |= set(connection.scalars(select(people.c.id).where(people.c.household_id.in_(shared_household_ids))))
     return {"household_ids": household_ids, "shared_household_ids": shared_household_ids, "person_ids": person_ids, "grants": grants}
 
 def require_scope(principal, *, person_id=None, household_id=None, permission=None):
-    scope = portal_scope(principal.account_id)
-    if person_id is not None and person_id not in scope["person_ids"]: raise PermissionError("Person is outside portal access scope")
-    if household_id is not None and household_id not in scope["household_ids"]: raise PermissionError("Household is outside portal access scope")
-    if permission and not any((g["permissions"] or {}).get(permission) for g in scope["grants"]): raise PermissionError(f"Portal grant does not allow {permission}")
+    # Filter reachability by the requested permission first, so membership is
+    # only satisfied via a grant that actually allows the action (H7).
+    scope = portal_scope(principal.account_id, permission=permission)
+    if person_id is not None and person_id not in scope["person_ids"]:
+        raise PermissionError("Person is outside portal access scope" if permission is None else f"Portal grant does not allow {permission}")
+    if household_id is not None and household_id not in scope["household_ids"]:
+        raise PermissionError("Household is outside portal access scope" if permission is None else f"Portal grant does not allow {permission}")
     return scope
 
 def create_thread(principal, *, household_id, person_id, subject, body):
@@ -111,7 +123,7 @@ def create_thread(principal, *, household_id, person_id, subject, body):
     return thread_id
 
 def send_message(principal, thread_id, body, attachment_document_ids=None):
-    scope = portal_scope(principal.account_id)
+    scope = portal_scope(principal.account_id, permission="messages")
     with engine.begin() as connection:
         thread = connection.execute(select(portal_threads).where(portal_threads.c.id == thread_id, or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"])))).mappings().one_or_none()
         if not thread: raise PermissionError("Thread is outside portal access scope")
@@ -135,7 +147,7 @@ def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachm
     return message_id
 
 def list_messages(principal, thread_id):
-    scope = portal_scope(principal.account_id)
+    scope = portal_scope(principal.account_id, permission="messages")
     with engine.connect() as connection:
         allowed = connection.scalar(select(portal_threads.c.id).where(portal_threads.c.id == thread_id, or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))))
         if not allowed: raise PermissionError("Thread is outside portal access scope")
@@ -145,7 +157,7 @@ def mark_read(principal, message_id):
     with engine.begin() as connection:
         thread_id = connection.scalar(select(portal_messages.c.thread_id).where(portal_messages.c.id == message_id, portal_messages.c.visibility == "client"))
         if not thread_id: raise ValueError("Message not found")
-        scope = portal_scope(principal.account_id)
+        scope = portal_scope(principal.account_id, permission="messages")
         if not connection.scalar(select(portal_threads.c.id).where(portal_threads.c.id == thread_id, or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"])))): raise PermissionError("Message is outside portal access scope")
         existing = connection.scalar(select(portal_message_receipts.c.id).where(portal_message_receipts.c.message_id == message_id, portal_message_receipts.c.portal_account_id == principal.account_id))
         if existing: return existing

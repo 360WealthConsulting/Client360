@@ -173,6 +173,25 @@ def create_relationship(
     return relationship_id
 
 
+def relationship_owner(relationship_id: int):
+    """Return the ``(person_id, household_id)`` of the record that owns this
+    relationship (its from-entity), or ``(None, None)`` if it does not exist.
+    Used to authorize mutations against the *actual* owning record rather than a
+    caller-supplied identifier (H5)."""
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(relationship_entities.c.person_id, relationship_entities.c.household_id)
+            .select_from(
+                relationships.join(
+                    relationship_entities,
+                    relationship_entities.c.id == relationships.c.from_entity_id,
+                )
+            )
+            .where(relationships.c.id == relationship_id)
+        ).mappings().one_or_none()
+    return (row["person_id"], row["household_id"]) if row else (None, None)
+
+
 def deactivate_relationship(
     relationship_id: int,
     *,

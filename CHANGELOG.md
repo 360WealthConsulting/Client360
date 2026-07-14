@@ -6,6 +6,58 @@ All notable Client360 releases are documented here.
 
 No unreleased application changes.
 
+## [0.9.7] — 2026-07-14
+
+Security hardening release. Fixes the confirmed, RC9-verified authorization,
+record-scope, and workflow-permission defects before Sprint 5.4. No new feature
+work; least privilege, immutable audit, and record-level authorization
+preserved. See [Security Hardening 0.9.7](docs/SECURITY_HARDENING_0.9.7.md).
+
+### Security
+
+- Fixed work-assignment privilege escalation: assigning a client record now
+  requires `assignment.manage` plus record scope, separated from ordinary
+  `work.write` mutation (H1); reassign/remove now enforce assignment ownership
+  (H8).
+- Fixed role-composition privilege escalation: `role.manage` can only grant
+  capabilities it holds and cannot assign a more-powerful role or recompose the
+  protected administrator role (H2).
+- Enforced record-scope authorization consistently on tax return review and
+  correction endpoints (H3).
+- Corrected the middleware/route capability mismatch that locked the compliance
+  role out of workflow approvals (H4).
+- Required authorization over a relationship's owning record before
+  deactivation (H5).
+- Scoped client-profile pickers to prevent firm-wide name/email enumeration
+  (H6).
+- Enforced the portal `messages` grant on secure-message read/send/mark-read
+  with default-deny (H7).
+- Restricted the firm-wide reminder trigger to firm-wide record authority (H9).
+
+### Fixed
+
+- Rewrote the always-zero "Unassigned" tax dashboard metric (H11) and the
+  always-zero "pending matches" dashboard metric (H14).
+- Eliminated a duplicate database connection pool created at startup via the
+  `person_merge` import chain (H22, narrow fix).
+
+### Added
+
+- Canonical record-scope authorization service (`app/security/authorization.py`)
+  and 20 authorization regression tests.
+- Immutable `outcome="denied"` audit events for denied high-risk mutations.
+
+### Database
+
+- Migration `j0a81f9c8d7e` aligns `tax_engagement_returns.status` server default
+  to `received` (parent `i970d9f7b8c9`; new head `j0a81f9c8d7e`).
+
+### Validation
+
+- 94 automated tests passed (74 existing + 20 new), clean installation, v0.9.6
+  upgrade/downgrade/re-upgrade, sentinel preservation, startup, route, OpenAPI,
+  template, authorization-matrix, and immutable-audit validation.
+
 ## [0.9.6] — 2026-07-14
 
 ### Added

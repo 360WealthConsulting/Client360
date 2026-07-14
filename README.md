@@ -5,6 +5,17 @@ for 360 Wealth Consulting and 360 Tax Solutions.
 
 ## Release status
 
+**Release 0.9.7 — Security Hardening** (in draft review)
+
+Release 0.9.7 is a security-hardening release that fixes the confirmed,
+independently verified authorization, record-scope, and workflow-permission
+defects from the RC8/RC9 architecture review before Epic 5 Sprint 5.4 begins.
+It adds no new features and preserves least privilege, immutable audit, and
+record-level authorization. See
+[Security Hardening 0.9.7](docs/SECURITY_HARDENING_0.9.7.md),
+[RC9 Architecture Verification](docs/RC9_ARCHITECTURE_VERIFICATION.md), and
+[RC8 Architecture Review](docs/RC8_ARCHITECTURE_REVIEW.md).
+
 **Release 0.9.6 — Tax Return Lifecycle & Production Automation**
 
 Release 0.9.6 adds the production half of the tax engagement lifecycle: a

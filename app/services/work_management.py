@@ -10,11 +10,59 @@ from app.db import (
     workflow_steps, timeline_events,
 )
 from app.security.audit import write_audit_event
+from app.security.authorization import (
+    CLIENT_ENTITY_TYPES, assignment_manageable, record_in_scope,
+)
 from app.services.timeline import add_timeline_event
 from app.services.work_intelligence import bottlenecks, capacity_metrics, daily_agenda, queue_items
 
 ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_engagement", "tax_return", "investment_account"}
 ASSIGNMENT_ROLES = {"primary", "secondary", "supervisor", "owner"}
+
+
+def authorize_assignment_target(principal, entity_type, entity_id):
+    """Raise PermissionError unless the principal may create an assignment here.
+
+    Assigning a user to a client record (person/household) grants that user
+    access to the record, so it requires the dedicated ``assignment.manage``
+    capability *and* write scope over the record — it is deliberately separated
+    from ordinary ``work.write`` mutation (H1). For work on a specific entity
+    (task/document/workflow/tax/account) the principal must have write scope
+    over the underlying client record so assignments cannot reach other
+    advisors' clients (H8). This helper enforces authorization at the route
+    boundary; the underlying ``assign_work`` service remains a trusted internal
+    API used by automatic rules and engagement creation.
+    """
+    if entity_type in CLIENT_ENTITY_TYPES:
+        if not principal.can("assignment.manage"):
+            raise PermissionError("assignment.manage capability is required to assign client records")
+        if not record_in_scope(principal, entity_type, entity_id, write=True):
+            raise PermissionError("Record is outside your authorized scope")
+        return
+    if principal.can("record.write_all"):
+        return
+    with engine.connect() as connection:
+        person_id, household_id = _timeline_target(connection, entity_type, entity_id)
+        allowed = (
+            record_in_scope(principal, "person", person_id, write=True, connection=connection)
+            or record_in_scope(principal, "household", household_id, write=True, connection=connection)
+        )
+    if not allowed:
+        raise PermissionError("Underlying record is outside your authorized scope")
+
+
+def authorize_existing_assignment(principal, assignment_id):
+    """Return the assignment row if the principal may manage it, ``None`` if it
+    does not exist, or raise PermissionError if it is out of scope (H8)."""
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(record_assignments).where(record_assignments.c.id == assignment_id)
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+        if not assignment_manageable(connection, principal, row):
+            raise PermissionError("Assignment is outside your authorized scope")
+    return row
 
 
 def _active(table):

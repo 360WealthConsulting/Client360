@@ -66,10 +66,19 @@ def list_engagements(principal, *, tax_year=None, office_id=None, status=None):
 def dashboard(principal, **filters):
     items = list_engagements(principal, **filters)
     today = date.today()
+    return_ids = [i["return_id"] for i in items]
+    with engine.connect() as c:
+        assigned_ids = set(c.scalars(select(record_assignments.c.entity_id).where(
+            record_assignments.c.entity_type == "tax_return",
+            record_assignments.c.entity_id.in_(return_ids),
+            record_assignments.c.inactive_date.is_(None)))) if return_ids else set()
+    # "unassigned" means the return has no active preparer/team assignment — the
+    # prior implementation counted a status value ("not_started") that the
+    # lifecycle can no longer produce, so it was silently always zero (H11).
     return {"items": items, "metrics": {"engagements": len({i["id"] for i in items}), "returns": len(items),
         "due_30_days": sum(bool(i["due_date"] and today <= i["due_date"] <= today + timedelta(days=30)) for i in items),
         "overdue": sum(bool(i["due_date"] and i["due_date"] < today and i["status"] not in {"filed", "completed"}) for i in items),
-        "unassigned": sum(i["status"] == "not_started" for i in items)},
+        "unassigned": sum(i["return_id"] not in assigned_ids for i in items)},
         "queues": {key: sum(i["status"] == value for i in items) for key, value in {"ready_to_prepare":"ready_to_prepare", "manager_review":"manager_review", "partner_review":"partner_review"}.items()}}
 
 

@@ -12,6 +12,7 @@ from app.db import (
     households,
     people,
 )
+from app.security.authorization import accessible_person_ids
 
 
 router = APIRouter()
@@ -144,7 +145,7 @@ def household_profile(
             )
         ).mappings().all()
 
-        available_people = connection.execute(
+        available_statement = (
             select(
                 people.c.id,
                 people.c.full_name,
@@ -160,7 +161,14 @@ def household_profile(
                     )
                 )
             )
-            .order_by(
+        )
+        allowed_person_ids = accessible_person_ids(connection, request.state.principal)
+        if allowed_person_ids is not None:
+            available_statement = available_statement.where(
+                people.c.id.in_(allowed_person_ids)
+            )
+        available_people = connection.execute(
+            available_statement.order_by(
                 people.c.last_name,
                 people.c.first_name,
             )

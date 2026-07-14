@@ -85,6 +85,31 @@
 - Versioned staff/portal APIs and automatic workflow-milestone advancement
 - Clean installation and upgrade/downgrade compatibility from Release 0.9.5
 
+## Release 0.9.7 — Security Hardening 🚧
+
+- Fixed work-assignment privilege escalation and assignment IDOR (H1, H8)
+- Fixed role-composition privilege escalation and protected the administrator
+  role (H2)
+- Enforced record-scope authorization consistently across tax return review,
+  correction, and lifecycle endpoints (H3)
+- Corrected the middleware/route capability mismatch locking out compliance
+  approvals (H4)
+- Closed the relationship-deactivation IDOR (H5)
+- Scoped client-profile pickers against firm-wide enumeration (H6)
+- Enforced portal secure-messaging permission grants with default-deny (H7)
+- Restricted the firm-wide reminder trigger to firm-wide authority (H9)
+- Repaired two always-zero dashboard metrics (H11, H14) and removed a duplicate
+  connection pool (H22, narrow)
+- Added a canonical record-scope authorization service, denial audit events,
+  and 20 authorization regression tests
+- Clean installation and upgrade/downgrade compatibility from Release 0.9.6
+
+See [Security Hardening 0.9.7](SECURITY_HARDENING_0.9.7.md) and
+[RC9 Architecture Verification](RC9_ARCHITECTURE_VERIFICATION.md). Deferred
+follow-ups (Microsoft 365 token encryption, performance/index work, DB
+constraints, and full authorization consolidation) remain scheduled for
+Releases 0.9.8 and 1.0 per RC9.
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation

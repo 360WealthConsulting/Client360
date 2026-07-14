@@ -41,11 +41,19 @@ def change_status(user_id: int, payload: StatusChange, request: Request, princip
 
 @router.post("/user-roles")
 def create_user_role(payload: RoleAssignment, request: Request, principal: Principal = Depends(require_capability("role.manage"))):
-    item_id = assign_role(payload.user_id, payload.role_id); audit(request, principal, "authorization.role_assigned", "user", payload.user_id, {"role_id": payload.role_id}); return {"id": item_id}
+    try: item_id = assign_role(payload.user_id, payload.role_id, actor_capabilities=principal.capabilities)
+    except PermissionError as exc:
+        write_audit_event(action="authorization.role_assign_denied", entity_type="user", entity_id=payload.user_id, actor_user_id=principal.user_id, outcome="denied", request_id=request.state.request_id, metadata={"role_id": payload.role_id, "detail": str(exc)}); raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(404, str(exc))
+    audit(request, principal, "authorization.role_assigned", "user", payload.user_id, {"role_id": payload.role_id}); return {"id": item_id}
 
 @router.put("/roles/{role_id}/capabilities")
 def update_role(role_id: int, payload: RoleComposition, request: Request, principal: Principal = Depends(require_capability("role.manage"))):
-    compose_role(role_id, payload.capability_ids); audit(request, principal, "authorization.role_composed", "role", role_id, {"capability_ids": payload.capability_ids}); return {"role_id": role_id}
+    try: compose_role(role_id, payload.capability_ids, actor_capabilities=principal.capabilities)
+    except PermissionError as exc:
+        write_audit_event(action="authorization.role_compose_denied", entity_type="role", entity_id=role_id, actor_user_id=principal.user_id, outcome="denied", request_id=request.state.request_id, metadata={"capability_ids": payload.capability_ids, "detail": str(exc)}); raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(404, str(exc))
+    audit(request, principal, "authorization.role_composed", "role", role_id, {"capability_ids": payload.capability_ids}); return {"role_id": role_id}
 
 @router.post("/team-memberships")
 def create_membership(payload: TeamMembership, request: Request, principal: Principal = Depends(require_capability("team.manage"))):

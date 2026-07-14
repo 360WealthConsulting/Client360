@@ -5,10 +5,12 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+from app.security.audit import audit_denied
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.work_management import (
-    apply_assignment_rules, assign_work, dashboard, deactivate_assignment,
+    apply_assignment_rules, assign_work, authorize_assignment_target,
+    authorize_existing_assignment, dashboard, deactivate_assignment,
     list_assignments, queue_detail, reassign_work,
 )
 
@@ -64,6 +66,7 @@ async def ui_assign(entity_type: str, entity_id: int, request: Request,
                     principal: Principal = Depends(require_capability("work.write"))):
     form = await request.form()
     try:
+        authorize_assignment_target(principal, entity_type, entity_id)
         assignment_id = assign_work(
             entity_type=entity_type, entity_id=entity_id,
             assignment_role=str(form.get("assignment_role") or "secondary"),
@@ -72,6 +75,9 @@ async def ui_assign(entity_type: str, entity_id: int, request: Request,
             reason=str(form.get("reason") or "") or None,
             actor_user_id=principal.user_id, request_id=request.state.request_id,
         )
+    except PermissionError as exc:
+        audit_denied(request, action="assignment.create_denied", entity_type=entity_type, entity_id=entity_id, actor_user_id=principal.user_id, detail=str(exc))
+        raise HTTPException(403, str(exc))
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
     return RedirectResponse(url=f"/work?assigned={assignment_id}", status_code=303)
@@ -120,7 +126,12 @@ def api_agenda(principal: Principal = Depends(require_capability("work.read"))):
 
 @router.post("/api/v1/work/assignments", status_code=201)
 def api_assign(payload: AssignmentCreate, request: Request, principal: Principal = Depends(require_capability("work.write"))):
-    try: assignment_id = assign_work(**payload.dict(), actor_user_id=principal.user_id, request_id=request.state.request_id)
+    try:
+        authorize_assignment_target(principal, payload.entity_type, payload.entity_id)
+        assignment_id = assign_work(**payload.dict(), actor_user_id=principal.user_id, request_id=request.state.request_id)
+    except PermissionError as exc:
+        audit_denied(request, action="assignment.create_denied", entity_type=payload.entity_type, entity_id=payload.entity_id, actor_user_id=principal.user_id, detail=str(exc))
+        raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
     return {"id": assignment_id}
 
@@ -128,19 +139,36 @@ def api_assign(payload: AssignmentCreate, request: Request, principal: Principal
 @router.post("/api/v1/work/assignments/{assignment_id}/reassign", status_code=201)
 def api_reassign(assignment_id: int, payload: Reassignment, request: Request,
                  principal: Principal = Depends(require_capability("work.write"))):
-    try: new_id = reassign_work(assignment_id, **payload.dict(), actor_user_id=principal.user_id, request_id=request.state.request_id)
+    try:
+        if authorize_existing_assignment(principal, assignment_id) is None:
+            raise HTTPException(404, "Assignment not found")
+        new_id = reassign_work(assignment_id, **payload.dict(), actor_user_id=principal.user_id, request_id=request.state.request_id)
+    except PermissionError as exc:
+        audit_denied(request, action="assignment.reassign_denied", entity_type="assignment", entity_id=assignment_id, actor_user_id=principal.user_id, detail=str(exc))
+        raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
     return {"id": new_id, "replaces": assignment_id}
 
 
 @router.delete("/api/v1/work/assignments/{assignment_id}", status_code=204)
 def api_remove(assignment_id: int, request: Request, principal: Principal = Depends(require_capability("work.write"))):
-    try: deactivate_assignment(assignment_id, actor_user_id=principal.user_id, request_id=request.state.request_id)
+    try:
+        if authorize_existing_assignment(principal, assignment_id) is None:
+            raise HTTPException(404, "Assignment not found")
+        deactivate_assignment(assignment_id, actor_user_id=principal.user_id, request_id=request.state.request_id)
+    except PermissionError as exc:
+        audit_denied(request, action="assignment.remove_denied", entity_type="assignment", entity_id=assignment_id, actor_user_id=principal.user_id, detail=str(exc))
+        raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(404, str(exc))
 
 
 @router.post("/api/v1/work/assignments/automatic", status_code=201)
 def api_automatic(payload: AutomaticAssignment, request: Request, principal: Principal = Depends(require_capability("work.write"))):
-    try: created = apply_assignment_rules(payload.entity_type, payload.entity_id, payload.attributes, principal.user_id, request.state.request_id)
+    try:
+        authorize_assignment_target(principal, payload.entity_type, payload.entity_id)
+        created = apply_assignment_rules(payload.entity_type, payload.entity_id, payload.attributes, principal.user_id, request.state.request_id)
+    except PermissionError as exc:
+        audit_denied(request, action="assignment.automatic_denied", entity_type=payload.entity_type, entity_id=payload.entity_id, actor_user_id=principal.user_id, detail=str(exc))
+        raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
     return {"assignment_ids": created}
