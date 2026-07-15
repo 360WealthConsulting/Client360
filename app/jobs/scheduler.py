@@ -49,6 +49,13 @@ def run_tax_intake_reminders() -> None:
     except Exception:
         logger.exception("Tax intake reminders failed.")
 
+def run_exception_sla_sweep() -> None:
+    try:
+        from app.services.exception_sla import sweep_exception_slas
+        logger.info("Exception SLA sweep result: %s", sweep_exception_slas())
+    except Exception:
+        logger.exception("Exception SLA sweep failed.")
+
 
 def start_scheduler() -> None:
     if _scheduler.running:
@@ -88,6 +95,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         run_tax_intake_reminders, trigger="cron", hour=9, minute=0,
         id="tax-intake-reminders", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    _scheduler.add_job(
+        run_exception_sla_sweep, trigger="interval", minutes=5,
+        id="exception-sla-sweep", replace_existing=True, max_instances=1, coalesce=True,
     )
 
     _scheduler.start()
