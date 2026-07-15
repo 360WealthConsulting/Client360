@@ -29,11 +29,9 @@ CADENCE_MINUTES = {"blocker": 240, "high": 1440, "medium": 2880, "low": 10080}
 MAX_ESCALATION_LEVEL = 3
 
 # Client-actionable exception codes are notified to the client (portal); everything
-# else is staff-facing only.
-CLIENT_FACING_CODES = frozenset({
-    "CLIENT_UNRESPONSIVE", "CLIENT_EFILE_AUTH_MISSING", "CLIENT_ENGAGEMENT_UNSIGNED",
-    "CLIENT_INFO_INCONSISTENT", "DOC_MISSING_OVERDUE",
-})
+# else is staff-facing only. Single source of truth lives in the canonical engine
+# (also drives the portal "action needed" allowlist in Phase 7).
+CLIENT_FACING_CODES = ee.CLIENT_VISIBLE_CODES
 _CLOSED = ("resolved", "cancelled")
 
 

@@ -477,3 +477,145 @@ def metrics(principal):
         "overdue": sum(1 for r in open_rows if r.get("sla_state") == "breached"),
         "escalated": sum(1 for r in open_rows if r["status"] == "escalated"),
     }
+
+
+# --- client portal ("action needed") -----------------------------------------
+#
+# The portal shows a *strict allowlist* of client-actionable exception codes and
+# projects them to plain-language, client-safe fields only. This is the single
+# source of truth for what a client may ever see; the SLA notifier (Phase 4)
+# reuses it for client-facing notifications. Internal categories (compliance,
+# workflow/reviewer/preparer, operational, internal filing) are never included,
+# and no internal terminology (codes, owners, escalation levels, dedupe keys,
+# audit metadata, event history) is exposed.
+CLIENT_VISIBLE_CODES = frozenset({
+    "CLIENT_UNRESPONSIVE", "CLIENT_EFILE_AUTH_MISSING", "CLIENT_ENGAGEMENT_UNSIGNED",
+    "CLIENT_INFO_INCONSISTENT", "DOC_MISSING_OVERDUE",
+})
+
+# Per-code client wording + the existing portal action each item routes to. A
+# code absent from this map is staff-only and can never reach a portal account.
+_CLIENT_PRESENTATION = {
+    "DOC_MISSING_OVERDUE": {
+        "title": "Upload a requested document",
+        "explanation": "Your tax team is waiting on a document to keep your return moving.",
+        "action_label": "Go to document requests",
+        "action_url": "/portal/requests",
+    },
+    "CLIENT_ENGAGEMENT_UNSIGNED": {
+        "title": "Sign your engagement letter",
+        "explanation": "Please review and sign your engagement letter so we can begin your return.",
+        "action_label": "Review and sign",
+        "action_url": "/portal/tasks",
+    },
+    "CLIENT_EFILE_AUTH_MISSING": {
+        "title": "Approve your e-file authorization",
+        "explanation": "Your return is ready and needs your authorization before we can e-file it.",
+        "action_label": "Review and approve",
+        "action_url": "/portal/tasks",
+    },
+    "CLIENT_UNRESPONSIVE": {
+        "title": "Complete your outstanding items",
+        "explanation": "Your tax team needs information from you to move your return forward.",
+        "action_label": "Open your tasks",
+        "action_url": "/portal/tasks",
+    },
+    "CLIENT_INFO_INCONSISTENT": {
+        "title": "Confirm a few details",
+        "explanation": "Your tax team has a question about some information on your return.",
+        "action_label": "Send a secure message",
+        "action_url": "/portal/messages",
+    },
+}
+
+# Client-facing severity wording (never the internal blocker/high/medium/low).
+_CLIENT_PRIORITY = {
+    "blocker": "Needs your attention",
+    "high": "Needs your attention",
+    "medium": "Please complete soon",
+    "low": "When you have a chance",
+}
+
+
+def _client_status(status):
+    if status == "resolved":
+        return "Completed"
+    if status == "cancelled":
+        return "No longer needed"
+    return "Action needed"
+
+
+def _project_client(row):
+    """Project an exception row to client-safe fields only (no codes, owners,
+    escalation levels, dedupe keys, audit/event data, or internal wording)."""
+    policy = _CLIENT_PRESENTATION[row["code"]]
+    year = row["tax_year"]
+    form = row["form_number"]
+    return {
+        "id": row["id"],
+        "title": policy["title"],
+        "explanation": policy["explanation"],
+        "priority": _CLIENT_PRIORITY.get(row["severity"], "Please complete soon"),
+        "status": _client_status(row["status"]),
+        "resolved": row["status"] in CLOSED_STATUSES,
+        "due_date": row["sla_due_at"].date().isoformat() if row["sla_due_at"] else None,
+        "tax_year": year,
+        "return_label": (f"{year} Form {form}" if year and form else (str(year) if year else None)),
+        "action_label": policy["action_label"],
+        "action_url": policy["action_url"],
+    }
+
+
+def client_action_items(scope, *, include_resolved=False):
+    """Portal-safe list of client-visible exceptions within a portal ``scope``.
+
+    ``scope`` is the portal scope dict (``person_ids`` / ``shared_household_ids``)
+    resolved from the portal account's grants — never a staff principal. Only
+    ``CLIENT_VISIBLE_CODES`` are returned, projected to client-safe fields. Active
+    items only by default, so resolved/cancelled exceptions automatically drop out
+    of the client's action view (the real underlying action / detector clears them).
+    """
+    person_ids = tuple(scope.get("person_ids") or ())
+    household_ids = tuple(scope.get("shared_household_ids") or ())
+    if not person_ids and not household_ids:
+        return []
+    from app.db import tax_engagement_returns, tax_engagements, tax_return_types, tax_years
+    query = (
+        select(exceptions, exception_types.c.code.label("code"),
+               tax_years.c.year.label("tax_year"),
+               tax_return_types.c.form_number.label("form_number"))
+        .select_from(
+            exceptions
+            .join(exception_types, exception_types.c.id == exceptions.c.exception_type_id)
+            .outerjoin(tax_engagement_returns,
+                       tax_engagement_returns.c.id == exceptions.c.tax_engagement_return_id)
+            .outerjoin(tax_engagements,
+                       tax_engagements.c.id == tax_engagement_returns.c.tax_engagement_id)
+            .outerjoin(tax_years, tax_years.c.id == tax_engagements.c.tax_year_id)
+            .outerjoin(tax_return_types,
+                       tax_return_types.c.id == tax_engagement_returns.c.return_type_id))
+        .where(exceptions.c.domain == "tax",
+               exception_types.c.code.in_(tuple(CLIENT_VISIBLE_CODES)))
+    )
+    scope_clauses = []
+    if person_ids:
+        scope_clauses.append(exceptions.c.person_id.in_(person_ids))
+    if household_ids:
+        scope_clauses.append(exceptions.c.household_id.in_(household_ids))
+    query = query.where(or_(*scope_clauses))
+    if not include_resolved:
+        query = query.where(exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
+    query = query.order_by(exceptions.c.opened_at.desc())
+    with engine.connect() as c:
+        rows = c.execute(query).mappings().all()
+    return [_project_client(r) for r in rows]
+
+
+def client_action_item(scope, exception_id):
+    """Fetch one client-visible exception by id, enforcing portal scope. Anything
+    not client-visible, out-of-scope, or non-existent is reported as not-found
+    (never trust a client-supplied id, and hide existence of other records)."""
+    for item in client_action_items(scope, include_resolved=True):
+        if item["id"] == exception_id:
+            return item
+    raise ExceptionNotFoundError(f"Exception {exception_id} not found")

@@ -1,0 +1,19 @@
+{% extends "portal/base.html" %}{% block title %}Action Needed{% endblock %}{% block content %}
+<h1>Action Needed</h1>
+<p>These are the items your tax team needs from you. Completing them keeps your return on track.</p>
+{% for item in action_items %}
+<article class="work-card">
+  <h3>{{ item.title }}</h3>
+  <p>{{ item.explanation }}</p>
+  <p>
+    <span class="pill">{{ item.priority }}</span>
+    <span class="pill">{{ item.status }}</span>
+    {% if item.return_label %}<span class="pill">{{ item.return_label }}</span>{% endif %}
+    {% if item.due_date %}<span class="pill">Due {{ item.due_date }}</span>{% endif %}
+  </p>
+  <p><a href="{{ item.action_url }}">{{ item.action_label }} →</a></p>
+</article>
+{% else %}
+<div class="empty">You're all caught up — there's nothing that needs your attention right now.</div>
+{% endfor %}
+{% endblock %}

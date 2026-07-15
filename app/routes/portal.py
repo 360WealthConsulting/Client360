@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.db import engine, portal_document_requests, portal_notifications
-from app.portal.service import (PortalPrincipal, accept_invitation, client_document_requests,
+from app.portal.service import (PortalPrincipal, accept_invitation, client_action_detail,
+    client_action_needed, client_document_requests,
     client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
     confirm_request_upload, create_portal_session, create_thread, dashboard,
     list_messages, mark_read, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
 from app.services.documents import save_person_document
+from app.services.exception_engine import ExceptionNotFoundError
 from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
 
 router = APIRouter(tags=["client-portal"])
@@ -57,6 +59,25 @@ def password_reset_consume(payload: PasswordResetConsume):
 @router.post("/api/v1/portal/auth/logout", status_code=204)
 def portal_logout(request: Request, principal: PortalPrincipal = Depends(current_portal)):
     revoke_portal_session(request.session.pop("portal_session_token", None))
+
+# Client "Action Needed": client-visible tax exceptions surfaced as plain-language,
+# scoped, portal-safe action items. Declared before the catch-all page route so the
+# static path wins. Reads only through the canonical Exception Engine projection.
+@router.get("/portal/action-needed", response_class=HTMLResponse)
+def portal_action_needed(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    return templates.TemplateResponse(request=request, name="portal/action_needed.html",
+        context={"action_items": client_action_needed(principal), "principal": principal})
+
+@router.get("/api/v1/portal/exceptions")
+def api_portal_exceptions(principal: PortalPrincipal = Depends(current_portal)):
+    return {"action_items": client_action_needed(principal)}
+
+@router.get("/api/v1/portal/exceptions/{exception_id}")
+def api_portal_exception(exception_id: int, principal: PortalPrincipal = Depends(current_portal)):
+    try:
+        return client_action_detail(principal, exception_id)
+    except ExceptionNotFoundError:
+        raise HTTPException(404, "Action item not found")
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}
 @router.get("/portal/{page:path}", response_class=HTMLResponse)
