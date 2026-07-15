@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Portfolio Search | Client360{% endblock %}
+{% block content %}
+<div class="page-header"><div><p class="eyebrow">Wealth</p><h1>Portfolio search</h1><p class="muted">Client portfolios by assets under management. Filter by name, registration, cash, or concentration.</p></div></div>
+
+<form class="filters" method="get" action="/portfolio">
+  <input name="q" value="{{ filters.q }}" placeholder="Client or registration">
+  <input name="min_aum" value="{{ filters.min_aum if filters.min_aum is not none else '' }}" inputmode="numeric" placeholder="Min AUM">
+  <input name="registration" value="{{ filters.registration or '' }}" placeholder="Registration">
+  <label><input type="checkbox" name="high_cash" value="true" {{ 'checked' if filters.high_cash else '' }}> High cash</label>
+  <label><input type="checkbox" name="missing_beneficiary" value="true" {{ 'checked' if filters.missing_beneficiary else '' }}> Missing beneficiary</label>
+  <button type="submit">Search</button>
+</form>
+
+<section class="panel">
+  <h2>Results ({{ results|length }})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Client</th><th>AUM</th><th>Cash</th><th>Detail</th></tr></thead>
+      <tbody>
+      {% for r in results %}
+        <tr>
+          <td>{{ r.full_name }}</td>
+          <td>${{ "{:,.0f}".format(r.aum or 0) }}</td>
+          <td>${{ "{:,.0f}".format(r.cash or 0) }}</td>
+          <td><a href="/people/{{ r.id }}?tab=portfolio">View portfolio</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">No portfolios match these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
