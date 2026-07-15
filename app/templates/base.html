@@ -53,10 +53,11 @@
     {"href": "/microsoft365/status", "label": "Microsoft 365", "match": "/microsoft365", "ico": "◫", "show": 'communication.read' in caps}]}
 ] %}
 <body class="c360">
+<a class="skip-link" href="#main">Skip to content</a>
 <div class="app-shell">
   <aside class="app-sidebar">
     <input type="checkbox" id="c360-nav" class="nav-toggle" hidden>
-    <a class="app-brand" href="/"><span class="mark">C3</span><span class="name">Client360</span></a>
+    <a class="app-brand" href="/"><span class="mark" aria-hidden="true">C3</span><span class="name">Client360</span></a>
     <nav class="app-nav" aria-label="Primary">
       {% for g in groups %}
         {% set visible = g["items"] | selectattr("show") | list %}
@@ -65,7 +66,7 @@
           <div class="label">{{ g["label"] }}</div>
           {% for it in visible %}
             {% set active = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
-            <a class="nav-item{{ ' active' if active else '' }}" href="{{ it['href'] }}"><span class="ico">{{ it["ico"] }}</span>{{ it["label"] }}</a>
+            <a class="nav-item{{ ' active' if active else '' }}" href="{{ it['href'] }}"{% if active %} aria-current="page"{% endif %}><span class="ico" aria-hidden="true">{{ it["ico"] }}</span>{{ it["label"] }}</a>
           {% endfor %}
         </div>
         {% endif %}
@@ -75,14 +76,14 @@
 
   <div class="app-main">
     <header class="app-header">
-      <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" aria-label="Toggle navigation">☰</label>
+      <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" role="button" tabindex="0" aria-controls="c360-nav" aria-expanded="false" aria-label="Toggle navigation">☰</label>
       <div class="crumbs"><a href="/">Client360</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
       <form class="app-search" method="get" action="/search" role="search">
-        <span class="mag">⌕</span>
-        <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search">
+        <span class="mag" aria-hidden="true">⌕</span>
+        <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search people, households, and organizations">
       </form>
       <div class="spacer"></div>
-      {% if can_exc %}<a class="icon-btn" href="/exceptions" title="Exceptions" aria-label="Exceptions">⚑</a>{% endif %}
+      {% if can_exc %}<a class="icon-btn" href="/exceptions" title="Exceptions" aria-label="Exceptions"><span aria-hidden="true">⚑</span></a>{% endif %}
       {% if p %}
       <div class="user-chip" title="{{ p.email }}">
         <span class="avatar">{% set parts = (p.display_name or '?').split() %}{{ (parts[0][0] ~ (parts[1][0] if parts|length > 1 else '')) | upper }}</span>
@@ -90,10 +91,11 @@
       </div>
       {% endif %}
     </header>
-    <main class="app-content">
+    <main class="app-content" id="main">
       {% block content %}{% endblock %}
     </main>
   </div>
 </div>
+<script src="/static/js/app.js" defer></script>
 </body>
 </html>
