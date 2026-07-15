@@ -18,10 +18,11 @@ def _filing_type_id():
 # --- seed ---------------------------------------------------------------------
 
 def test_tax_exception_types_seeded():
+    # Sprint 5.5 seeds exactly 24 tax types (other domains are not seeded by the
+    # migration; a shared test DB may contain test-inserted rows, so assert on tax).
     with engine.connect() as c:
-        total = c.scalar(select(text("count(*)")).select_from(exception_types))
         tax = c.scalar(select(text("count(*)")).select_from(exception_types).where(exception_types.c.domain == "tax"))
-    assert total == 24 and tax == 24  # Sprint 5.5 seeds only domain='tax'
+    assert tax == 24
 
 
 def test_capability_family_seeded_and_granted():
