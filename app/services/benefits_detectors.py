@@ -21,16 +21,45 @@ Tax domain is untouched. No compliance calendar, scheduled notifications, UI, po
 Work Management queues here (later phases).
 """
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
 from app import config
 from app.db import (benefit_document_links, benefit_employments, benefit_enrollments,
-    benefit_plan_types, benefit_plan_years, benefit_plans, benefit_retirement_elections,
-    benefit_retirement_plan_details, engagements, engine, exceptions,
-    organization_profiles, organization_service_lines, people, service_lines)
+    benefit_obligations, benefit_plan_types, benefit_plan_years, benefit_plans,
+    benefit_retirement_elections, benefit_retirement_plan_details, engagements, engine,
+    exceptions, organization_profiles, organization_service_lines, people, service_lines)
 from app.services import exception_engine as ee
+
+# Obligation type -> approved benefits exception code (date-driven detector). Types absent
+# from this map are intentionally inert — notably contribution_deposit_review, which stays
+# inactive without reliable payroll/deposit data (never inferred).
+OBLIGATION_EXCEPTION_CODE = {
+    "form_5500": "BEN_5500_FILING_DUE",
+    "fiduciary_review": "BEN_FIDUCIARY_REVIEW_DUE",
+    "nondiscrimination_testing": "BEN_NONDISCRIMINATION_TEST_DUE",
+    "safe_harbor_notice": "BEN_ANNUAL_NOTICE_MISSING",
+    "qdia_notice": "BEN_ANNUAL_NOTICE_MISSING",
+    "auto_enrollment_notice": "BEN_ANNUAL_NOTICE_MISSING",
+    "fee_disclosure": "BEN_ANNUAL_NOTICE_MISSING",
+    "plan_amendment": "BEN_PLAN_AMENDMENT_REQUIRED",
+    "restatement": "BEN_PLAN_AMENDMENT_REQUIRED",
+    "renewal": "BEN_RENEWAL_AT_RISK",
+    "renewal_identified": "BEN_RENEWAL_AT_RISK",
+    "marketing_begins": "BEN_RENEWAL_AT_RISK",
+    "quotes_due": "BEN_RENEWAL_AT_RISK",
+    "recommendation_due": "BEN_RENEWAL_AT_RISK",
+    "employer_decision": "BEN_RENEWAL_AT_RISK",
+    "submission_due": "BEN_RENEWAL_AT_RISK",
+    "effective_date": "BEN_RENEWAL_AT_RISK",
+    "census_requested": "BEN_CENSUS_OVERDUE",
+    "census_due": "BEN_CENSUS_OVERDUE",
+    "open_enrollment_begins": "BEN_OPEN_ENROLLMENT_INCOMPLETE",
+    "open_enrollment_ends": "BEN_OPEN_ENROLLMENT_INCOMPLETE",
+    "spd_delivery": "BEN_SPD_MISSING",
+    "sbc_delivery": "BEN_SBC_MISSING",
+}
 
 _ACTIVE_ENROLLED = ("eligible", "elected", "enrolled")
 _HANDLED_ENROLLED = ("elected", "enrolled", "waived")
@@ -154,6 +183,12 @@ def _load_context():
             .where(service_lines.c.code == "benefits", organization_service_lines.c.status == "active")))
         renewal_month = {r["relationship_entity_id"]: r["renewal_month"] for r in c.execute(
             select(organization_profiles.c.relationship_entity_id, organization_profiles.c.renewal_month)).mappings()}
+        obligations = [dict(r) for r in c.execute(select(
+            benefit_obligations.c.id, benefit_obligations.c.organization_id.label("org_id"),
+            benefit_obligations.c.obligation_type, benefit_obligations.c.title,
+            benefit_obligations.c.due_date, benefit_obligations.c.warning_days,
+            benefit_obligations.c.status).where(
+            benefit_obligations.c.status.in_(("scheduled", "in_progress")))).mappings()]
 
     # derive: enrollments enriched with plan line/org; plan years by plan
     plan_years_by_plan = defaultdict(list)
@@ -180,7 +215,8 @@ def _load_context():
     return dict(emps=emps, plans=plans, years=years, enr=enriched, enr_by_emp=enr_by_emp,
                 elections=elections, ret_details=ret_details, docs_by_plan=docs_by_plan,
                 docs_by_org=docs_by_org, census_engs=census_engs, benefits_sl_orgs=benefits_sl_orgs,
-                renewal_month=renewal_month, plan_years_by_plan=plan_years_by_plan, org_open=org_open)
+                renewal_month=renewal_month, plan_years_by_plan=plan_years_by_plan, org_open=org_open,
+                obligations=obligations)
 
 
 def _emp(ctx, emp_id):
@@ -440,6 +476,61 @@ def detect_adoption_agreement_missing(ctx, today, actor_user_id):
     return _reconcile("ben:adoption:", "BEN_PLAN_AMENDMENT_REQUIRED", cond, actor_user_id=actor_user_id)
 
 
+# --- date-driven obligation detector -----------------------------------------
+
+def _due_datetime(due_date):
+    return datetime(due_date.year, due_date.month, due_date.day, 23, 59, tzinfo=timezone.utc)
+
+
+def detect_obligation_deadlines(ctx, today, actor_user_id):
+    """Date-driven: raise a benefits exception for each active obligation whose warning window
+    has been reached, mapping obligation type -> approved code and setting the exception SLA to
+    the obligation's real due date. Auto-resolves when the obligation is no longer active."""
+    today = _today(today)
+    cond = {}
+    for ob in ctx["obligations"]:
+        code = OBLIGATION_EXCEPTION_CODE.get(ob["obligation_type"])
+        if code is None:  # unsupported / intentionally inert obligation type
+            continue
+        warn = ob["warning_days"] or 0
+        if today < ob["due_date"] - timedelta(days=warn):
+            continue  # warning window not yet reached
+        cond[f"ben:obligation:{ob['id']}"] = {
+            "related_entity_type": "organization", "related_entity_id": ob["org_id"],
+            "title": ob["title"], "person_id": None, "household_id": None,
+            "sla_due_at": _due_datetime(ob["due_date"])}
+    return _reconcile_obligations(cond, ctx, actor_user_id=actor_user_id)
+
+
+def _reconcile_obligations(conditions, ctx, *, actor_user_id):
+    """Reconcile the shared ``ben:obligation:`` family where each condition raises under its own
+    obligation-derived code. Close = auto-resolve any open obligation exception whose obligation
+    is no longer active."""
+    raised, closed, failures = 0, 0, []
+    type_by_id = {ob["id"]: ob["obligation_type"] for ob in ctx["obligations"]}
+    for key, scope in conditions.items():
+        ob_id = int(key.rsplit(":", 1)[1])
+        code = OBLIGATION_EXCEPTION_CODE[type_by_id[ob_id]]
+        try:
+            ee.raise_exception(code=code, actor_user_id=actor_user_id, principal=None,
+                               source="system", dedupe_key=key, **scope)
+            raised += 1
+        except Exception as exc:  # pragma: no cover - defensive isolation
+            failures.append({"dedupe_key": key, "error": type(exc).__name__})
+    with engine.connect() as c:
+        stale = c.execute(select(exceptions.c.id, exceptions.c.status, exceptions.c.dedupe_key)
+            .where(exceptions.c.dedupe_key.like("ben:obligation:%"), exceptions.c.status.notin_(_CLOSED))).mappings().all()
+    for row in stale:
+        if row["dedupe_key"] in conditions:
+            continue
+        try:
+            _auto_resolve(row["id"], row["status"], actor_user_id)
+            closed += 1
+        except Exception as exc:  # pragma: no cover
+            failures.append({"dedupe_key": row["dedupe_key"], "error": type(exc).__name__})
+    return {"raised": raised, "closed": closed, "failures": failures}
+
+
 # --- orchestrator ------------------------------------------------------------
 
 DETECTORS = (
@@ -450,7 +541,7 @@ DETECTORS = (
     detect_spd_missing, detect_sbc_missing, detect_renewal_at_risk, detect_plan_year_missing,
     detect_plan_information_incomplete, detect_retirement_eligibility_unresolved,
     detect_deferral_election_due, detect_retirement_plan_year_missing,
-    detect_adoption_agreement_missing,
+    detect_adoption_agreement_missing, detect_obligation_deadlines,
 )
 
 
@@ -491,6 +582,12 @@ def run_benefits_scan(*, actor_user_id=None, today=None):
     execution result: scanned organizations, exceptions opened / resolved / reopened /
     skipped (idempotent replays), and per-condition failures. One organization's bad data
     is isolated by ``_reconcile`` and reported, never aborting the rest of the scan."""
+    # Materialize any due next-occurrences first (idempotent) so the scan sees them.
+    from app.services.benefits_obligations import materialize_recurring
+    try:
+        materialized = materialize_recurring(actor_user_id=actor_user_id, today=today)
+    except Exception:  # pragma: no cover - materialization failure must not abort the scan
+        materialized = {"considered": 0, "materialized": 0, "failures": 1}
     ctx = _load_context()
     scanned_orgs = len(_benefits_org_ids(ctx))
     before = _open_benefits_status()
@@ -510,6 +607,7 @@ def run_benefits_scan(*, actor_user_id=None, today=None):
         "exceptions_resolved": resolved,
         "exceptions_reopened": reopened,
         "exceptions_skipped": skipped,
-        "failures": len(failures),
+        "obligations_materialized": materialized["materialized"],
+        "failures": len(failures) + materialized["failures"],
         "failure_detail": failures,
     }

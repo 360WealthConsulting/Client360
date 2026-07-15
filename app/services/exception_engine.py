@@ -164,7 +164,7 @@ def raise_exception(*, code, actor_user_id=None, principal=None, source="system"
                     person_id=None, household_id=None, workflow_instance_id=None,
                     workflow_step_id=None, document_id=None, related_entity_type=None,
                     related_entity_id=None, owner_user_id=None, owner_team_id=None,
-                    request_id=None, metadata=None):
+                    sla_due_at=None, request_id=None, metadata=None):
     """Open (or idempotently return / reopen) an exception for the given type code.
 
     - existing OPEN exception with the same ``dedupe_key`` → returned unchanged
@@ -214,7 +214,8 @@ def raise_exception(*, code, actor_user_id=None, principal=None, source="system"
                     document_id=document_id, related_entity_type=related_entity_type,
                     related_entity_id=related_entity_id, owner_user_id=owner_user_id,
                     owner_team_id=owner_team_id, opened_at=now,
-                    sla_due_at=(now + timedelta(minutes=etype["sla_minutes"])) if etype["sla_minutes"] else None,
+                    sla_due_at=(sla_due_at if sla_due_at is not None
+                               else (now + timedelta(minutes=etype["sla_minutes"])) if etype["sla_minutes"] else None),
                     dedupe_key=dedupe_key, created_by_user_id=actor_user_id,
                 ).returning(exceptions.c.id)).scalar_one()
                 _append_event(c, new_id, "opened", None, "open", actor_user_id, None, metadata)

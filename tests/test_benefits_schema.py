@@ -24,7 +24,8 @@ def test_all_benefits_tables_present():
             "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'benefit_%' "
             "OR table_name IN ('organization_profiles','relationship_ownership','service_lines',"
             "'organization_service_lines','organization_service_roles','engagements','service_revenue')"))
-    assert n == 18
+    # 18 Phase-1 tables + 2 Phase-5 obligation tables (benefit_obligation_templates, benefit_obligations)
+    assert n == 20
 
 
 # --- reference seeds ---------------------------------------------------------

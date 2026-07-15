@@ -64,8 +64,10 @@ def run_benefits_detector_scan() -> None:
     try:
         from app.services.benefits_detectors import run_benefits_scan
         from app.services.benefits_work import auto_assign_unassigned
+        from app.services.benefits_notifications import record_scan_health
         result = run_benefits_scan()
         result["auto_assignment"] = auto_assign_unassigned()
+        result["scan_health"] = record_scan_health(result)
         logger.info("Benefits detector scan result: %s", result)
     except Exception:
         logger.exception("Benefits detector scan failed.")
