@@ -1,0 +1,11 @@
+{% if exception_summary %}
+<section class="metrics" aria-label="Exception summary">
+  <article><span>Open exceptions</span><strong>{{ exception_summary.summary.open }}</strong></article>
+  <article><span>Blocker</span><strong>{{ exception_summary.summary.blocker }}</strong></article>
+  <article><span>At risk</span><strong>{{ exception_summary.summary.at_risk }}</strong></article>
+  <article><span>Breached</span><strong>{{ exception_summary.summary.breached }}</strong></article>
+  <article><span>Unassigned</span><strong>{{ exception_summary.summary.unassigned }}</strong></article>
+  <article><span>Compliance</span><strong>{{ exception_summary.summary.compliance }}</strong></article>
+</section>
+<p><a href="/exceptions/reporting">Open exception reporting →</a></p>
+{% endif %}

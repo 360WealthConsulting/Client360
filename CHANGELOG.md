@@ -21,6 +21,44 @@ All notable Client360 releases are documented here.
   the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
   `/tax`, and the work team/queue pages now render.
 
+## [0.9.10] — Exception Engine (release candidate; not yet tagged)
+
+Platform-wide **Exception Engine** (ADR-17), implemented **tax domain only**. Validated by
+[RC13](docs/RC13_VALIDATION.md) — **SAFE TO MERGE**. See
+[Release 0.9.10 Notes](docs/RELEASE_0.9.10.md). Alembic head `q7b58f6c5d4e`.
+
+### Added
+
+- **Canonical Exception Engine** — domain-neutral `exceptions` / `exception_events` /
+  `exception_types` (required CHECK-constrained `domain`); one state machine, idempotent
+  dedupe, stale-action rejection, immutable append-only event ledger, audit + timeline on
+  every mutation, and record-scope authorization on every read/write.
+- **15 tax detectors** translating existing tax source-of-truth conditions into exceptions
+  (stable dedupe keys; auto-resolve on clear, reopen on recurrence).
+- **Deterministic, replay-safe SLA sweep** with severity-based escalation and **honest
+  notification outcomes** (email/SMS stubbed → `disabled`, never fabricated).
+- **Work Management integration** — exceptions project through the single `work_items()`
+  point into My/Team Work, queues (`tax_exceptions`, `tax_exceptions_critical`,
+  `compliance_exceptions`), agenda, capacity, and bottlenecks; reuses `record_assignments`
+  (no second assignment model).
+- **Versioned API + staff console** (`/api/v1/exceptions/*`, `/exceptions`) — thin routes
+  over canonical services; out-of-scope → 404; blocker/compliance resolution segregation.
+- **Client portal "Action Needed"** (`/portal/action-needed`,
+  `/api/v1/portal/exceptions[/{id}]`) — strict client-visible allowlist, plain-language,
+  scoped, portal-safe, read-only; no internal-field/event/audit leakage.
+- **Exception dashboards & reporting** (`/exceptions/reporting`,
+  `/api/v1/exceptions/report`) — authorization-filtered metrics (open/blocker/high/at-risk/
+  breached/unassigned/compliance, by category/owner/team/client/return, aging, escalation
+  distribution, MTTA, MTTR, reopen rate, SLA compliance, real trend); role-appropriate
+  audiences; compact summary embedded on advisor/tax/operations dashboards.
+- New least-privilege capabilities `exception.read` / `exception.write` /
+  `exception.resolve` / `exception.compliance` (no role widened; no new `record.read_all`).
+
+### Migrations
+
+- `p6a47e5d4f3b` — exception engine schema (additive/reversible).
+- `q7b58f6c5d4e` — data-only work-queue criteria (reversible). Single head.
+
 ## [0.9.9] — 2026-07-14
 
 Platform Consolidation — a security, performance, and production-readiness

@@ -1,7 +1,10 @@
 # Release 0.9.10 · Sprint 5.5 — Exception Engine (platform-wide; tax domain first)
 
-**Status:** technical design — **accepted (Option B)**; implementation in phased releases.
-**Baseline:** `main` @ `622c997`, Alembic head `o5f36c4d3e2a`.
+**Status:** **Implemented** (Release 0.9.10 / Sprint 5.5, **tax domain only**) — Option B
+delivered across eight phases (schema · service · detectors · SLA sweep · Work Management ·
+API & staff console · client portal · dashboards/reporting) and validated by
+[RC13](RC13_VALIDATION.md) (**SAFE TO MERGE**). Candidate head `q7b58f6c5d4e`.
+**Baseline:** `main` @ v0.9.9 head `o5f36c4d3e2a`. **Release notes:** `docs/RELEASE_0.9.10.md`.
 **Decision:** per **ADR-17** (`docs/PRODUCTION_ARCHITECTURE.md` §25 / `docs/ADR_EXCEPTION_ENGINE_SCOPE.md`)
 this is a **platform-wide** Exception Engine — canonical tables `exceptions`,
 `exception_events`, `exception_types` with a **required, CHECK-constrained `domain`** field

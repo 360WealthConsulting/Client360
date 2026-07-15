@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.tax_domain import create_engagement, dashboard, override_deadline, reference_data
+from app.services.exception_reporting import dashboard_summary
 
 router = APIRouter(tags=["tax-domain"])
 templates = Jinja2Templates(directory="app/templates")
@@ -24,7 +25,7 @@ class DeadlineOverride(BaseModel):
 @router.get("/tax")
 def tax_dashboard(request: Request, tax_year: Optional[int] = None, office_id: Optional[int] = None,
                   status: Optional[str] = None, principal: Principal = Depends(require_capability("tax.read"))):
-    return templates.TemplateResponse(request=request, name="tax/dashboard.html", context={"tax": dashboard(principal, tax_year=tax_year, office_id=office_id, status=status), "reference": reference_data(), "principal": principal})
+    return templates.TemplateResponse(request=request, name="tax/dashboard.html", context={"tax": dashboard(principal, tax_year=tax_year, office_id=office_id, status=status), "reference": reference_data(), "principal": principal, "exception_summary": dashboard_summary(principal, audience="tax")})
 
 @router.get("/api/v1/tax/reference-data")
 def api_reference(principal: Principal = Depends(require_capability("tax.read"))): return reference_data()

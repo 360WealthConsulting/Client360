@@ -21,6 +21,24 @@ See [Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md) and
 
 ## Release status
 
+**Release 0.9.10 — Exception Engine** (release candidate; not yet tagged)
+
+Release 0.9.10 delivers the platform-wide **Exception Engine** (ADR-17) — a unified way to
+detect, own, escalate, resolve, and report the problems that block work. The schema is
+domain-neutral (`exceptions` / `exception_events` / `exception_types` with a required,
+CHECK-constrained `domain`); this release implements **`domain='tax'` only** (other domains
+are schema-ready but not yet detected). It adds a canonical engine with an immutable event
+ledger and record-scope authorization, 15 tax detectors, a deterministic replay-safe SLA
+sweep with honest notification outcomes, Work Management integration and queues, a versioned
+API and staff console, a read-only client portal "Action Needed" surface with a strict
+client-visible allowlist, and authorization-filtered exception dashboards & reporting.
+New least-privilege `exception.*` capabilities; no role widened. Delivered as eight
+independently reviewed phases and validated by an independent
+[RC13 pass](docs/RC13_VALIDATION.md) (**SAFE TO MERGE**, 0 defects). Alembic head
+`q7b58f6c5d4e`. See [Release 0.9.10 Notes](docs/RELEASE_0.9.10.md),
+[ADR-17](docs/ADR_EXCEPTION_ENGINE_SCOPE.md), and
+[Sprint 5.5 design](docs/SPRINT_5_5_EXCEPTION_DESIGN.md).
+
 **Release 0.9.9 — Platform Consolidation**
 
 Release 0.9.9 is a consolidation and production-readiness release with no new

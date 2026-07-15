@@ -1,8 +1,10 @@
 # ADR — Exception Engine Scope: Tax-specific vs. Platform-wide
 
-**Status:** Proposed (pre-implementation review for Sprint 5.5). **No code written.**
-**Context doc:** `docs/SPRINT_5_5_EXCEPTION_DESIGN.md`. **Baseline:** `main` @ head `o5f36c4d3e2a`.
-**Decision owner:** pending approval.
+**Status:** **Accepted & Implemented** (Release 0.9.10 / Sprint 5.5, **tax domain only**) —
+option B (platform-wide) shipped across eight phases and validated by
+[RC13](RC13_VALIDATION.md) (**SAFE TO MERGE**, 0 defects). Candidate Alembic head
+`q7b58f6c5d4e` (baseline `o5f36c4d3e2a`).
+**Context doc:** `docs/SPRINT_5_5_EXCEPTION_DESIGN.md`. **Release notes:** `docs/RELEASE_0.9.10.md`.
 
 ## Context
 

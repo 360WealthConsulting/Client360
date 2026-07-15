@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services import exception_engine as ee
+from app.services import exception_reporting as er
 from app.services import exception_work as ew
 
 router = APIRouter(tags=["exceptions"])
@@ -117,6 +118,14 @@ def api_list(principal: Principal = Depends(require_capability("exception.read")
 @router.get("/api/v1/exceptions/metrics")
 def api_metrics(principal: Principal = Depends(require_capability("exception.read"))):
     return _run(lambda: ee.metrics(principal))
+
+
+@router.get("/api/v1/exceptions/report")
+def api_report(audience: str = "", trend_days: int = 30,
+               principal: Principal = Depends(require_capability("exception.read"))):
+    # Registered before /{exception_id} so "report" is not captured as an id.
+    return _run(lambda: er.exception_report(principal, audience=audience or None,
+                                            trend_days=max(1, min(trend_days, 120))))
 
 
 @router.get("/api/v1/exceptions/{exception_id}")
@@ -246,6 +255,19 @@ def console(request: Request, principal: Principal = Depends(require_capability(
                      "invalid_filter": str(exc)})
     return templates.TemplateResponse(request=request, name="exceptions/console.html",
         context={"results": results, "metrics": metrics, "filters": filters, "principal": principal})
+
+
+@router.get("/exceptions/reporting", response_class=HTMLResponse)
+def reporting(request: Request, audience: str = "", trend_days: int = 30,
+              principal: Principal = Depends(require_capability("exception.read"))):
+    # Registered before /exceptions/{exception_id} so "reporting" is not an id.
+    try:
+        report = er.exception_report(principal, audience=audience or None,
+                                     trend_days=max(1, min(trend_days, 120)))
+    except ee.UnsupportedDomainError as exc:
+        raise HTTPException(400, str(exc))
+    return templates.TemplateResponse(request=request, name="exceptions/reporting.html",
+        context={"report": report, "audiences": sorted(er.AUDIENCES), "principal": principal})
 
 
 @router.get("/exceptions/{exception_id}", response_class=HTMLResponse)

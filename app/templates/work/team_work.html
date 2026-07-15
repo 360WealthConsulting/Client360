@@ -1,5 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Team Work · Client360</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"></head>
 <body><header class="work-header"><a href="/work">← My Work</a><h1>Team Work</h1><p>Authorized workload, capacity, SLA, and bottleneck view.</p></header><main class="work-main">
 <section class="metrics"><article><span>Open items</span><strong>{{ work.capacity.open_items }}</strong></article><article><span>Committed</span><strong>{{ work.capacity.committed_minutes }}m</strong></article><article><span>Remaining</span><strong>{{ work.capacity.remaining_minutes }}m</strong></article><article><span>Utilization</span><strong>{{ work.capacity.utilization_percent }}%</strong></article></section>
+{% include "partials/exception_summary.html" %}
 <section><h2>Team priorities</h2>{% for item in work['items'] %}<article class="work-card"><h3>{{ item.title }}</h3><p>{{ item.entity_type.replace('_',' ') }} · {{ item.status.replace('_',' ') }} · {{ item.priority }}{% if item.due_date %} · {{ item.due_date }}{% endif %}</p></article>{% else %}<div class="empty">No authorized team work is available.</div>{% endfor %}</section>
 </main></body></html>

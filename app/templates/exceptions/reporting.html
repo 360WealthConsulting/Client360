@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Exception Reporting | Client360{% endblock %}
+{% block content %}
+{% set r = report %}
+{% set panels = r.panels %}
+<div class="page-header"><div>
+  <p class="eyebrow">Tax Practice · Exception Reporting</p>
+  <h1>Exception dashboard</h1>
+  <p class="muted">Authorization-filtered metrics across your book. Viewing the
+    <strong>{{ r.audience }}</strong> view.</p>
+  <form class="filters" method="get" action="/exceptions/reporting">
+    <select name="audience" onchange="this.form.submit()">
+      {% for a in audiences %}<option value="{{ a }}" {{ 'selected' if r.audience==a else '' }}>{{ a|title }} view</option>{% endfor %}
+    </select>
+    <a href="/exceptions">← Exception console</a>
+  </form>
+</div></div>
+
+{% if 'summary' in panels %}
+<section class="panel">
+  <h2>Open exceptions</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Open</span><strong>{{ r.summary.open }}</strong></div>
+    <div class="stat-card"><span>Blocker</span><strong>{{ r.summary.blocker }}</strong></div>
+    <div class="stat-card"><span>High</span><strong>{{ r.summary.high }}</strong></div>
+    <div class="stat-card"><span>At risk</span><strong>{{ r.summary.at_risk }}</strong></div>
+    <div class="stat-card"><span>Breached</span><strong>{{ r.summary.breached }}</strong></div>
+    <div class="stat-card"><span>Unassigned</span><strong>{{ r.summary.unassigned }}</strong></div>
+    <div class="stat-card"><span>Escalated</span><strong>{{ r.summary.escalated }}</strong></div>
+    <div class="stat-card"><span>Compliance</span><strong>{{ r.summary.compliance }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+{% if 'compliance' in panels %}
+<section class="panel">
+  <h2>Compliance</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Open compliance exceptions</span><strong>{{ r.compliance_open }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+{% macro dist(title, mapping) %}
+<section class="panel">
+  <h2>{{ title }}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Open</th></tr></thead>
+    <tbody>
+    {% for k, v in mapping.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+    {% else %}<tr><td colspan="2" class="muted">None.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endmacro %}
+
+{% if 'by_category' in panels %}{{ dist("By category", r.by_category) }}{% endif %}
+{% if 'by_owner_team' in panels %}{{ dist("By owner / team", r.by_owner_team) }}{% endif %}
+{% if 'by_client_return' in panels %}{{ dist("By client", r.by_client) }}{{ dist("By return", r.by_return) }}{% endif %}
+
+{% if 'aging' in panels %}
+<section class="panel">
+  <h2>Aging (open)</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>&lt; 1 day</span><strong>{{ r.aging.lt_1d }}</strong></div>
+    <div class="stat-card"><span>1–3 days</span><strong>{{ r.aging['1_3d'] }}</strong></div>
+    <div class="stat-card"><span>3–7 days</span><strong>{{ r.aging['3_7d'] }}</strong></div>
+    <div class="stat-card"><span>&gt; 7 days</span><strong>{{ r.aging.gt_7d }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+{% if 'escalation' in panels %}{{ dist("Escalation level distribution (open)", r.escalation_distribution) }}{% endif %}
+
+{% if 'unassigned' in panels %}
+<section class="panel"><h2>Unassigned</h2>
+  <div class="stats-grid"><div class="stat-card"><span>Unassigned open</span><strong>{{ r.unassigned }}</strong></div></div>
+</section>
+{% endif %}
+
+{% if 'throughput' in panels %}
+<section class="panel">
+  <h2>Throughput</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Mean time to acknowledge (h)</span><strong>{{ '%.1f'|format(r.throughput.mean_time_to_acknowledge_seconds/3600) if r.throughput.mean_time_to_acknowledge_seconds is not none else '—' }}</strong></div>
+    <div class="stat-card"><span>Mean time to resolve (h)</span><strong>{{ '%.1f'|format(r.throughput.mean_time_to_resolve_seconds/3600) if r.throughput.mean_time_to_resolve_seconds is not none else '—' }}</strong></div>
+    <div class="stat-card"><span>Acknowledged</span><strong>{{ r.throughput.acknowledged_count }}</strong></div>
+    <div class="stat-card"><span>Resolved</span><strong>{{ r.throughput.resolved_count }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+{% if 'sla' in panels %}
+<section class="panel">
+  <h2>SLA compliance</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Resolved w/ SLA</span><strong>{{ r.sla.resolved_with_sla }}</strong></div>
+    <div class="stat-card"><span>Met SLA</span><strong>{{ r.sla.met_sla }}</strong></div>
+    <div class="stat-card"><span>SLA compliance</span><strong>{{ '%.0f%%'|format(r.sla.sla_compliance_rate*100) if r.sla.sla_compliance_rate is not none else '—' }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+{% if 'reopen' in panels %}
+<section class="panel">
+  <h2>Reopen rate</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Reopened</span><strong>{{ r.reopen.reopened_exceptions }}</strong></div>
+    <div class="stat-card"><span>Total</span><strong>{{ r.reopen.total_exceptions }}</strong></div>
+    <div class="stat-card"><span>Reopen rate</span><strong>{{ '%.0f%%'|format(r.reopen.reopen_rate*100) }}</strong></div>
+  </div>
+</section>
+{% endif %}
+
+{% if 'trend' in panels %}
+<section class="panel">
+  <h2>Trend (last {{ r.trend_days }} days)</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Opened</th><th>Resolved</th></tr></thead>
+    <tbody>
+    {% for d in r.trend if d.opened or d.resolved %}
+      <tr><td>{{ d.date }}</td><td>{{ d.opened }}</td><td>{{ d.resolved }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No activity in the window.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

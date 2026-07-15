@@ -13,6 +13,7 @@ from app.services.work_management import (
     authorize_existing_assignment, dashboard, deactivate_assignment,
     list_assignments, queue_detail, reassign_work,
 )
+from app.services.exception_reporting import dashboard_summary
 
 router = APIRouter(tags=["work-management"])
 templates = Jinja2Templates(directory="app/templates")
@@ -51,7 +52,7 @@ def my_work(request: Request, priority: Optional[str] = None, status: Optional[s
 
 @router.get("/work/team")
 def team_work(request: Request, principal: Principal = Depends(require_capability("capacity.read"))):
-    return templates.TemplateResponse(request=request, name="work/team_work.html", context={"work": dashboard(principal), "principal": principal})
+    return templates.TemplateResponse(request=request, name="work/team_work.html", context={"work": dashboard(principal), "principal": principal, "exception_summary": dashboard_summary(principal, audience="operations")})
 
 
 @router.get("/work/queues/{code}")
