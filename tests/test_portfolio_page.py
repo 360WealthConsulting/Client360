@@ -42,7 +42,8 @@ def test_navigation_points_to_html_portfolio_page():
     # Navigation now lives in the application shell (base.html). It must point at
     # the HTML page (/portfolio), never the raw-JSON API (/portfolio/search).
     from app.templating import templates
-    principal = Principal(1, "a@example.com", "A", frozenset({"record.read_all"}))
+    # Portfolio is a firm-wide collection screen: requires client.read + record.read_all
+    principal = Principal(1, "a@example.com", "A", frozenset({"record.read_all", "client.read"}))
     nav = templates.env.get_template("base.html").render(request=_request(), principal=principal)
     assert 'href="/portfolio"' in nav
     assert 'href="/portfolio/search"' not in nav

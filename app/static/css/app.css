@@ -226,9 +226,13 @@ select.input { appearance:none; }
 .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .stack { display:grid; gap:12px; }
 .cols-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.cols-2.aside-left { grid-template-columns:minmax(0,1fr) minmax(0,2fr); }
+.cols-2.aside-right { grid-template-columns:minmax(0,2fr) minmax(240px,1fr); }
 .muted-2 { color:var(--muted); }
 h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; margin:22px 0 12px; }
-@media (max-width:720px) { .cols-2 { grid-template-columns:1fr; } }
+@media (max-width:820px) {
+  .cols-2, .cols-2.aside-left, .cols-2.aside-right { grid-template-columns:1fr; }
+}
 
 /* error pages */
 .err-wrap { min-height:100vh; display:grid; place-items:center; padding:24px; background:var(--ground); font-family:var(--font-sans); color:var(--text); }
