@@ -1,5 +1,9 @@
 # Developer Demo Mode
 
+**Status: implemented and available for local evaluation** (merged to `main`,
+developer tooling — not a numbered product release). Release notes:
+[DEVELOPER_DEMO_MODE_RELEASE.md](DEVELOPER_DEMO_MODE_RELEASE.md).
+
 A repeatable, **isolated** demo of Client360 with realistic **fictional** data.
 It runs against a dedicated `client360_demo` database, never touches the normal
 Client360 database, uses no real client data / credentials / Microsoft tokens,

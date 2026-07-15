@@ -135,6 +135,16 @@ See [Release 0.9.9 Notes](RELEASE_0.9.9.md), [Production Architecture](PRODUCTIO
 `MICROSOFT_TOKEN_KEY` rotation, legacy plaintext-column removal, and the orphaned
 `app/models/` scaffold.
 
+## Developer Tooling — Developer Demo Mode ✅
+
+Implemented and available for local evaluation (developer tooling; not a numbered
+product release). A repeatable, safety-guarded demo with fictional data, isolated to
+a `client360_demo` database, reusing the real auth/authorization. Role-aware landing
+for all six personas; `scripts/demo.sh` lifecycle commands. See
+[Developer Demo Mode](DEVELOPER_DEMO_MODE.md) and
+[release notes](DEVELOPER_DEMO_MODE_RELEASE.md). Known non-blocking UX findings tracked
+in [Demo UX Review](DEMO_UX_REVIEW.md).
+
 ## Release 1.0 readiness
 
 - Production-equivalent managed OIDC and MFA validation

@@ -3,6 +3,22 @@
 Client360 is the unified client intelligence and practice-management platform
 for 360 Wealth Consulting and 360 Tax Solutions.
 
+## Developer Demo Mode
+
+**Available** for local evaluation. A repeatable, safety-guarded demo with realistic
+**fictional** data, isolated to a dedicated `client360_demo` database (never the
+normal database) and reusing the real authentication/authorization (no bypass, no
+weakened controls). Quick start:
+
+```bash
+source .venv/bin/activate
+scripts/demo.sh setup   # create client360_demo, migrate, seed
+scripts/demo.sh start   # http://127.0.0.1:8360/demo/login
+```
+
+See [Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md) and
+[Demo Mode Release Notes](docs/DEVELOPER_DEMO_MODE_RELEASE.md).
+
 ## Release status
 
 **Release 0.9.9 — Platform Consolidation**

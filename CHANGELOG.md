@@ -4,7 +4,22 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-No unreleased application changes.
+### Added (developer tooling — not a product release)
+
+- **Developer Demo Mode** — a repeatable, safety-guarded local demo with fictional
+  data, isolated to a `client360_demo` database and reusing the real
+  authentication/authorization (no bypass, no weakened controls). Includes
+  `scripts/demo.sh` (setup/reset/start/stop/verify/smoke), role-aware post-login
+  landing for all six personas, an HTML portfolio page, and docs
+  ([Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md),
+  [release notes](docs/DEVELOPER_DEMO_MODE_RELEASE.md)). No schema change; no product
+  release tag (developer tooling).
+
+### Fixed
+
+- Latent Jinja template bugs where `data.items`/`work.items`/`tax.items` resolved to
+  the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
+  `/tax`, and the work team/queue pages now render.
 
 ## [0.9.9] — 2026-07-14
 
