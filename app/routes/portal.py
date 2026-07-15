@@ -10,6 +10,7 @@ from app.portal.service import (PortalPrincipal, accept_invitation, client_actio
     client_action_needed, client_document_requests,
     client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
     confirm_request_upload, create_portal_session, create_thread, dashboard,
+    employer_action_detail, employer_action_needed, employer_census_upload, employer_organization_ids,
     list_messages, mark_read, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
 from app.services.documents import save_person_document
@@ -78,6 +79,41 @@ def api_portal_exception(exception_id: int, principal: PortalPrincipal = Depends
         return client_action_detail(principal, exception_id)
     except ExceptionNotFoundError:
         raise HTTPException(404, "Action item not found")
+
+# Employer portal — benefits "Action Needed" (organization-scoped, employer-safe, PII-free).
+# Declared before the catch-all page route. Read-only on exceptions; the employer acts through
+# census upload and secure messages. Out-of-scope organizations deny existence with 404.
+@router.get("/portal/benefits/action-needed", response_class=HTMLResponse)
+def portal_employer_action_needed(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    return templates.TemplateResponse(request=request, name="portal/benefits_action_needed.html",
+        context={"action_items": employer_action_needed(principal), "principal": principal})
+
+@router.get("/api/v1/portal/benefits/organizations")
+def api_portal_employer_orgs(principal: PortalPrincipal = Depends(current_portal)):
+    return {"organization_ids": employer_organization_ids(principal)}
+
+@router.get("/api/v1/portal/benefits/exceptions")
+def api_portal_employer_exceptions(principal: PortalPrincipal = Depends(current_portal)):
+    return {"action_items": employer_action_needed(principal)}
+
+@router.get("/api/v1/portal/benefits/exceptions/{exception_id}")
+def api_portal_employer_exception(exception_id: int, principal: PortalPrincipal = Depends(current_portal)):
+    from app.services.exception_engine import ExceptionNotFoundError
+    try:
+        return employer_action_detail(principal, exception_id)
+    except ExceptionNotFoundError:
+        raise HTTPException(404, "Action item not found")
+
+@router.post("/api/v1/portal/benefits/census/upload", status_code=201)
+async def api_portal_census_upload(organization_id: int, file: UploadFile = File(...),
+                                   principal: PortalPrincipal = Depends(current_portal)):
+    try:
+        document_id = employer_census_upload(principal, organization_id, original_name=file.filename,
+                                             source=file.file, content_type=file.content_type)
+    except PermissionError:
+        raise HTTPException(404, "Organization not found")
+    await file.close()
+    return {"document_id": document_id, "status": "uploaded"}
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}
 @router.get("/portal/{page:path}", response_class=HTMLResponse)

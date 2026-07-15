@@ -30,6 +30,45 @@ SESSION_SECRET = SESSION_SECRET or _DEV_SESSION_SECRET
 SESSION_HTTPS_ONLY = IS_PRODUCTION
 
 
+# --- Benefits (Release 0.9.11) -----------------------------------------------
+# Detector thresholds and the scheduled-scan cadence are read at call time (env,
+# with safe defaults) so operations can tune them without a settings UI or a code
+# change, and tests can override them. Defaults preserve the Phase-3 detector
+# semantics exactly (windows unchanged; grace periods default to 0 = no change).
+
+def _int_env(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def benefits_new_hire_window_days() -> int:
+    return _int_env("BENEFITS_NEW_HIRE_WINDOW_DAYS", 30)
+
+
+def benefits_renewal_warning_days() -> int:
+    return _int_env("BENEFITS_RENEWAL_WARNING_DAYS", 60)
+
+
+def benefits_open_enrollment_warning_days() -> int:
+    return _int_env("BENEFITS_OE_WARNING_DAYS", 7)
+
+
+def benefits_census_grace_days() -> int:
+    return _int_env("BENEFITS_CENSUS_GRACE_DAYS", 0)
+
+
+def benefits_document_grace_days() -> int:
+    return _int_env("BENEFITS_DOCUMENT_GRACE_DAYS", 0)
+
+
+def benefits_scan_interval_minutes() -> int:
+    # Conservative default (30 min), consistent with the Microsoft document sync;
+    # heavier than the 5-min SLA sweep because a detector scan reads the whole book.
+    return max(1, _int_env("BENEFITS_SCAN_INTERVAL_MINUTES", 30))
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 

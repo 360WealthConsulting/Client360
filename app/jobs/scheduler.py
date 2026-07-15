@@ -57,6 +57,22 @@ def run_exception_sla_sweep() -> None:
         logger.exception("Exception SLA sweep failed.")
 
 
+def run_benefits_detector_scan() -> None:
+    """Idempotent benefits detector scan so Work Management reflects current conditions.
+    Honest result (scanned orgs, opened/resolved/reopened/skipped, failures); no Phase-5
+    escalation notifications. Overlap is prevented by APScheduler (max_instances=1, coalesce)."""
+    try:
+        from app.services.benefits_detectors import run_benefits_scan
+        from app.services.benefits_work import auto_assign_unassigned
+        from app.services.benefits_notifications import record_scan_health
+        result = run_benefits_scan()
+        result["auto_assignment"] = auto_assign_unassigned()
+        result["scan_health"] = record_scan_health(result)
+        logger.info("Benefits detector scan result: %s", result)
+    except Exception:
+        logger.exception("Benefits detector scan failed.")
+
+
 def start_scheduler() -> None:
     if _scheduler.running:
         return
@@ -99,6 +115,11 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         run_exception_sla_sweep, trigger="interval", minutes=5,
         id="exception-sla-sweep", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    from app.config import benefits_scan_interval_minutes
+    _scheduler.add_job(
+        run_benefits_detector_scan, trigger="interval", minutes=benefits_scan_interval_minutes(),
+        id="benefits-detector-scan", replace_existing=True, max_instances=1, coalesce=True,
     )
 
     _scheduler.start()

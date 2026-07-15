@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Organizations | Client360{% endblock %}
+{% block content %}
+<div class="page-header"><div>
+  <p class="eyebrow">Employer Operations</p>
+  <h1>Organizations</h1>
+  <p class="muted">Employers and businesses in your authorized book.</p>
+</div></div>
+
+<form class="filters" method="get" action="/organizations">
+  <select name="status"><option value="">Any status</option>
+    {% for s in ["prospect","active","inactive"] %}
+    <option value="{{ s }}" {{ 'selected' if filter_status==s else '' }}>{{ s|title }}</option>{% endfor %}</select>
+  <button type="submit">Filter</button>
+  <a href="/organizations">Reset</a>
+</form>
+
+<section class="panel">
+  <h2>Results ({{ organizations|length }})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Status</th><th>Industry</th></tr></thead>
+      <tbody>
+      {% for o in organizations %}
+        <tr>
+          <td><a href="/organizations/{{ o.id }}">{{ o.name }}</a></td>
+          <td>{{ (o.status or '')|title }}</td>
+          <td>{{ o.industry or '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="muted">No organizations match.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -4,10 +4,10 @@ from sqlalchemy import and_, or_, select
 import sqlalchemy as sa
 
 from app.db import (
-    assignment_events, assignment_rules, documents, engine, exceptions,
-    households, people, record_assignments, tasks, team_memberships,
-    work_approvals, work_assignment_details, work_queues, workflow_instances,
-    workflow_steps, timeline_events,
+    assignment_events, assignment_rules, documents, engine, exceptions, exception_types,
+    households, organization_service_roles, people, record_assignments, relationship_types,
+    tasks, team_memberships, work_approvals, work_assignment_details, work_queues,
+    workflow_instances, workflow_steps, timeline_events,
 )
 from app.security.audit import write_audit_event
 from app.security.authorization import (
@@ -19,7 +19,7 @@ from app.services.work_intelligence import bottlenecks, capacity_metrics, daily_
 # Exception work integration (Sprint 5.5 Phase 5). Exceptions are projected into the
 # existing work-item model — reusing record_assignments and the deterministic scoring —
 # without duplicating source records.
-ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_engagement", "tax_return", "investment_account", "exception"}
+ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_engagement", "tax_return", "investment_account", "exception", "organization", "engagement"}
 ASSIGNMENT_ROLES = {"primary", "secondary", "supervisor", "owner"}
 SEVERITY_PRIORITY = {"blocker": "urgent", "high": "high", "medium": "normal", "low": "low"}
 EXCEPTION_MINUTES = {"blocker": 60, "high": 45, "medium": 30, "low": 15}
@@ -220,16 +220,22 @@ def work_items(principal, filters=None):
         step_ids = {eid for (etype, eid) in assigned if etype == "workflow_step"}
         workflow_ids = {eid for (etype, eid) in assigned if etype == "workflow_instance"}
         return_ids = {eid for (etype, eid) in assigned if etype == "tax_return"}
+        org_ids = {eid for (etype, eid) in assigned if etype == "organization"}
         exception_ids = {eid for (etype, eid) in assigned if etype == "exception"}
         task_query = select(tasks)
         step_query = select(workflow_steps, workflow_instances.c.id.label("parent_workflow_id"), workflow_instances.c.name.label("workflow_name"), workflow_instances.c.person_id, workflow_instances.c.household_id).join(workflow_instances)
-        # Open tax exceptions only (resolved/cancelled are not active work).
-        exc_query = select(exceptions.c.id, exceptions.c.severity, exceptions.c.category, exceptions.c.status,
-                           exceptions.c.escalation_level, exceptions.c.sla_due_at, exceptions.c.title,
-                           exceptions.c.person_id, exceptions.c.household_id,
-                           exceptions.c.tax_engagement_return_id, exceptions.c.owner_user_id,
-                           exceptions.c.owner_team_id).where(
-            exceptions.c.domain == "tax", exceptions.c.status.notin_(("resolved", "cancelled")))
+        # Open tax and benefits exceptions (resolved/cancelled are not active work). Tax is
+        # scoped by return/person/household; benefits by the Organization anchor (related_entity)
+        # plus the employee person/household — reusing the same record_assignments scope.
+        exc_query = select(exceptions.c.id, exceptions.c.domain, exceptions.c.severity,
+                           exceptions.c.category, exceptions.c.status, exceptions.c.escalation_level,
+                           exceptions.c.sla_due_at, exceptions.c.title, exceptions.c.person_id,
+                           exceptions.c.household_id, exceptions.c.tax_engagement_return_id,
+                           exceptions.c.related_entity_type, exceptions.c.related_entity_id,
+                           exceptions.c.owner_user_id, exceptions.c.owner_team_id,
+                           exception_types.c.code).select_from(
+            exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id)).where(
+            exceptions.c.domain.in_(("tax", "benefits")), exceptions.c.status.notin_(("resolved", "cancelled")))
         if not direct_all:
             task_scope = [c for c in (
                 tasks.c.id.in_(task_ids) if task_ids else None,
@@ -249,11 +255,30 @@ def work_items(principal, filters=None):
                 exceptions.c.tax_engagement_return_id.in_(return_ids) if return_ids else None,
                 exceptions.c.person_id.in_(person_ids) if person_ids else None,
                 exceptions.c.household_id.in_(household_ids) if household_ids else None,
+                and_(exceptions.c.related_entity_type == "organization",
+                     exceptions.c.related_entity_id.in_(org_ids)) if org_ids else None,
             ) if c is not None]
             exc_query = exc_query.where(or_(*exc_scope) if exc_scope else sa.false())
         task_rows = connection.execute(task_query).mappings().all()
         step_rows = connection.execute(step_query).mappings().all()
         exc_rows = connection.execute(exc_query).mappings().all()
+        # Permanent relationship owner (context only — never the work assignee) for the
+        # organizations behind any benefits work items.
+        benefits_org_ids = {r["related_entity_id"] for r in exc_rows
+                            if r["domain"] == "benefits" and r["related_entity_type"] == "organization"
+                            and r["related_entity_id"]}
+        rel_owners = {}
+        if benefits_org_ids:
+            for rr in connection.execute(
+                select(organization_service_roles.c.organization_id, organization_service_roles.c.user_id)
+                .select_from(organization_service_roles.join(
+                    relationship_types, relationship_types.c.id == organization_service_roles.c.role_type_id))
+                .where(organization_service_roles.c.organization_id.in_(benefits_org_ids),
+                       organization_service_roles.c.inactive_date.is_(None),
+                       organization_service_roles.c.is_primary.is_(True),
+                       relationship_types.c.code.in_(("renewal_owner", "relationship_manager", "benefits_consultant")))
+            ).mappings():
+                rel_owners.setdefault(rr["organization_id"], rr["user_id"])
     items = []
     for row in task_rows:
         item = dict(row); item.update({"entity_type": "task", "entity_id": row["id"], "assigned": ("task", row["id"]) in assigned, "title": row["title"]}); items.append(item)
@@ -261,12 +286,15 @@ def work_items(principal, filters=None):
         item = dict(row); item.update({"entity_type": "workflow_step", "entity_id": row["id"], "assigned": ("workflow_step", row["id"]) in assigned, "title": row["name"], "work_type": "workflow"}); items.append(item)
     now = datetime.now(timezone.utc)
     for row in exc_rows:
+        org_id = row["related_entity_id"] if row["related_entity_type"] == "organization" else None
         item = dict(row); item.update({
             "entity_type": "exception", "entity_id": row["id"], "work_type": "exception",
+            "domain": row["domain"], "code": row["code"], "organization_id": org_id,
             "priority": SEVERITY_PRIORITY.get(row["severity"], "normal"),
             "due_date": row["sla_due_at"].date() if row["sla_due_at"] else None,
             "sla_state": _exception_sla_state(row["sla_due_at"], row["status"], now),
             "owner": row["owner_user_id"], "team_id": row["owner_team_id"],
+            "relationship_owner_user_id": rel_owners.get(org_id),
             "return_id": row["tax_engagement_return_id"], "estimated_minutes": EXCEPTION_MINUTES.get(row["severity"], 30),
             "waiting_on": f"exception_{row['status']}" if row["status"] in ("waiting", "escalated") else None,
             "assigned": ("exception", row["id"]) in assigned}); items.append(item)

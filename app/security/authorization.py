@@ -61,6 +61,55 @@ def record_in_scope(principal, entity_type, entity_id, *, write=False, connectio
         )
 
 
+def organization_in_scope(principal, organization_id, *, write=False, connection=None):
+    """Organization-anchored record scope (Release 0.9.11 / ADR-18).
+
+    ``record.read_all`` / ``record.write_all`` bypass; otherwise the principal must
+    hold a **user or team** assignment on the organization
+    (``record_assignments`` with ``entity_type='organization'``). Resolves against
+    the same assignment table and bypass capabilities as every other check here —
+    it is not a second authorization model, just a new anchor entity type.
+    """
+    if organization_id is None:
+        return False
+    bypass = "record.write_all" if write else "record.read_all"
+    if principal.can(bypass):
+        return True
+
+    def _check(conn):
+        tids = team_ids(conn, principal)
+        scope = or_(
+            record_assignments.c.user_id == principal.user_id,
+            record_assignments.c.team_id.in_(tids) if tids else sql_false(),
+        )
+        return conn.scalar(
+            select(record_assignments.c.id).where(
+                record_assignments.c.entity_type == "organization",
+                record_assignments.c.entity_id == organization_id,
+                _active(record_assignments), scope,
+            ).limit(1)
+        ) is not None
+
+    if connection is not None:
+        return _check(connection)
+    with engine.connect() as conn:
+        return _check(conn)
+
+
+def benefits_in_scope(principal, *, organization_id=None, person_id=None,
+                      household_id=None, write=False, connection=None):
+    """Benefits record scope: in scope via the organization anchor (team-aware) OR
+    an assigned person OR an assigned household. Firm-wide readers/writers bypass."""
+    if organization_id is not None and organization_in_scope(
+            principal, organization_id, write=write, connection=connection):
+        return True
+    for entity_type, entity_id in (("person", person_id), ("household", household_id)):
+        if entity_id is not None and record_in_scope(
+                principal, entity_type, entity_id, write=write, connection=connection):
+            return True
+    return False
+
+
 def assignment_manageable(connection, principal, assignment_row):
     """True if the principal may reassign/remove an existing assignment row.
 

@@ -22,8 +22,8 @@ from app.security.authorization import record_in_scope
 from app.services.timeline import add_timeline_event
 from app.services.work_management import authorized_assignments
 
-# Sprint 5.5 implements only the tax domain (ADR-17 guardrail).
-SUPPORTED_DOMAINS = frozenset({"tax"})
+# Sprint 5.5 implemented the tax domain; Release 0.9.11 (ADR-18) adds the benefits domain.
+SUPPORTED_DOMAINS = frozenset({"tax", "benefits"})
 
 ACTIVE_STATUSES = frozenset({"open", "acknowledged", "in_progress", "waiting", "escalated", "reopened"})
 CLOSED_STATUSES = frozenset({"resolved", "cancelled"})
@@ -87,6 +87,14 @@ def _authorize(connection, principal, row, *, write):
             ("person", row["person_id"]),
             ("household", row["household_id"]),
         ):
+            if entity_id and record_in_scope(principal, entity_type, entity_id, write=write, connection=connection):
+                return
+    elif row["domain"] == "benefits":  # Organization-anchored (ADR-18), + employee person/household
+        from app.security.authorization import organization_in_scope
+        org_id = row["related_entity_id"] if row["related_entity_type"] == "organization" else None
+        if org_id and organization_in_scope(principal, org_id, write=write, connection=connection):
+            return
+        for entity_type, entity_id in (("person", row["person_id"]), ("household", row["household_id"])):
             if entity_id and record_in_scope(principal, entity_type, entity_id, write=write, connection=connection):
                 return
     raise ExceptionAuthorizationError("Exception is outside your record scope")
@@ -156,7 +164,7 @@ def raise_exception(*, code, actor_user_id=None, principal=None, source="system"
                     person_id=None, household_id=None, workflow_instance_id=None,
                     workflow_step_id=None, document_id=None, related_entity_type=None,
                     related_entity_id=None, owner_user_id=None, owner_team_id=None,
-                    request_id=None, metadata=None):
+                    sla_due_at=None, request_id=None, metadata=None):
     """Open (or idempotently return / reopen) an exception for the given type code.
 
     - existing OPEN exception with the same ``dedupe_key`` → returned unchanged
@@ -206,7 +214,8 @@ def raise_exception(*, code, actor_user_id=None, principal=None, source="system"
                     document_id=document_id, related_entity_type=related_entity_type,
                     related_entity_id=related_entity_id, owner_user_id=owner_user_id,
                     owner_team_id=owner_team_id, opened_at=now,
-                    sla_due_at=(now + timedelta(minutes=etype["sla_minutes"])) if etype["sla_minutes"] else None,
+                    sla_due_at=(sla_due_at if sla_due_at is not None
+                               else (now + timedelta(minutes=etype["sla_minutes"])) if etype["sla_minutes"] else None),
                     dedupe_key=dedupe_key, created_by_user_id=actor_user_id,
                 ).returning(exceptions.c.id)).scalar_one()
                 _append_event(c, new_id, "opened", None, "open", actor_user_id, None, metadata)
@@ -450,10 +459,14 @@ def list_exceptions(principal, *, domain="tax", status=None, severity=None, cate
             return_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "tax_return"}
             person_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "person"}
             household_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "household"}
+            org_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "organization"}
+            from sqlalchemy import and_
             scope = [clause for clause in (
                 exceptions.c.tax_engagement_return_id.in_(return_ids) if return_ids else None,
                 exceptions.c.person_id.in_(person_ids) if person_ids else None,
                 exceptions.c.household_id.in_(household_ids) if household_ids else None,
+                and_(exceptions.c.related_entity_type == "organization",
+                     exceptions.c.related_entity_id.in_(org_ids)) if org_ids else None,
             ) if clause is not None]
             from sqlalchemy import false as sql_false
             query = query.where(or_(*scope) if scope else sql_false())
@@ -616,6 +629,91 @@ def client_action_item(scope, exception_id):
     not client-visible, out-of-scope, or non-existent is reported as not-found
     (never trust a client-supplied id, and hide existence of other records)."""
     for item in client_action_items(scope, include_resolved=True):
+        if item["id"] == exception_id:
+            return item
+    raise ExceptionNotFoundError(f"Exception {exception_id} not found")
+
+
+# --- employer portal ("action needed") ---------------------------------------
+#
+# Strict allowlist of **employer-actionable** benefits exceptions surfaced to an
+# employer portal account (Release 0.9.11, Phase 7). Everything else — compliance
+# (5500/fiduciary/testing/notices), internal document delivery (SPD/SBC), renewals,
+# retirement participant items, and staff-only exceptions — is never shown. Items are
+# projected to **organization-level, PII-free** fields: no employee identity, EIN,
+# compensation, deferral, internal codes, owners, escalation levels, notes, or staff data.
+EMPLOYER_VISIBLE_CODES = frozenset({
+    "BEN_CENSUS_OVERDUE", "BEN_NEW_HIRE_ENROLLMENT_DUE", "BEN_OPEN_ENROLLMENT_INCOMPLETE",
+    "BEN_ELIGIBILITY_UNRESOLVED", "BEN_WAIVER_MISSING",
+})
+
+_EMPLOYER_PRESENTATION = {
+    "BEN_CENSUS_OVERDUE": {
+        "title": "Employee census needed",
+        "explanation": "Your benefits team needs an updated employee census to keep your plan on track.",
+        "action_label": "Upload census", "action_kind": "census"},
+    "BEN_NEW_HIRE_ENROLLMENT_DUE": {
+        "title": "New-hire enrollment action needed",
+        "explanation": "One or more new hires need to be enrolled or waived. Contact your benefits team to complete it.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+    "BEN_OPEN_ENROLLMENT_INCOMPLETE": {
+        "title": "Open enrollment is incomplete",
+        "explanation": "Elections are still outstanding for this open-enrollment period.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+    "BEN_ELIGIBILITY_UNRESOLVED": {
+        "title": "Eligibility information needed",
+        "explanation": "Your benefits team needs information to confirm employee eligibility.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+    "BEN_WAIVER_MISSING": {
+        "title": "Coverage waivers outstanding",
+        "explanation": "Some eligible employees have not yet elected or waived coverage.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+}
+
+
+def _project_employer(row):
+    """Organization-level, PII-free projection for an employer portal account."""
+    policy = _EMPLOYER_PRESENTATION[row["code"]]
+    return {
+        "id": row["id"],
+        "organization_id": row["related_entity_id"],
+        "title": policy["title"],
+        "explanation": policy["explanation"],
+        "status": "Completed" if row["status"] in CLOSED_STATUSES else "Action needed",
+        "resolved": row["status"] in CLOSED_STATUSES,
+        "due_date": row["sla_due_at"].date().isoformat() if row["sla_due_at"] else None,
+        "action_label": policy["action_label"],
+        "action_kind": policy["action_kind"],
+    }
+
+
+def employer_action_items(scope, *, include_resolved=False):
+    """Employer-safe list of employer-actionable benefits exceptions for the portal
+    account's organizations. Only ``EMPLOYER_VISIBLE_CODES``; organization-level, no PII.
+    Active items only by default (completed items drop from the employer's view)."""
+    org_ids = tuple(scope.get("organization_ids") or ())
+    if not org_ids:
+        return []
+    query = (
+        select(exceptions.c.id, exceptions.c.status, exceptions.c.sla_due_at,
+               exceptions.c.related_entity_id, exception_types.c.code.label("code"))
+        .select_from(exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id))
+        .where(exceptions.c.domain == "benefits",
+               exceptions.c.related_entity_type == "organization",
+               exceptions.c.related_entity_id.in_(org_ids),
+               exception_types.c.code.in_(tuple(EMPLOYER_VISIBLE_CODES)))
+    )
+    if not include_resolved:
+        query = query.where(exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
+    with engine.connect() as c:
+        rows = c.execute(query.order_by(exceptions.c.opened_at.desc())).mappings().all()
+    return [_project_employer(r) for r in rows]
+
+
+def employer_action_item(scope, exception_id):
+    """One employer-visible benefits exception by id, enforcing organization scope.
+    Anything not employer-visible, out-of-scope, or non-existent is reported not-found."""
+    for item in employer_action_items(scope, include_resolved=True):
         if item["id"] == exception_id:
             return item
     raise ExceptionNotFoundError(f"Exception {exception_id} not found")

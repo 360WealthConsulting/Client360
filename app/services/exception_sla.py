@@ -90,7 +90,8 @@ def _dispatch(row, level, actor_user_id):
                        "outcome": "delivered" if staff_result["delivered"] else "disabled"})
 
     # Client-facing: notify each active portal account, in-app (delivered) + email (stubbed → disabled).
-    if row["code"] in CLIENT_FACING_CODES and row["person_id"]:
+    # Tax only — benefits employer-portal notifications are Phase 7 (never sent here).
+    if row["domain"] == "tax" and row["code"] in CLIENT_FACING_CODES and row["person_id"]:
         with engine.connect() as c:
             accounts = list(c.scalars(select(portal_accounts.c.id).where(
                 portal_accounts.c.person_id == row["person_id"],
@@ -115,20 +116,23 @@ def _touch(exception_id, now, notification_count):
             last_notified_at=now, notification_count=notification_count + 1))
 
 
-def sweep_exception_slas(*, now=None, actor_user_id=None):
-    """Deterministic SLA sweep over open tax exceptions. Idempotent / safe to replay."""
+def sweep_exception_slas(*, now=None, actor_user_id=None, domains=("tax", "benefits")):
+    """Deterministic SLA sweep over open tax **and benefits** exceptions (one engine, not a
+    benefits-specific SLA). Idempotent / safe to replay. Benefits escalations notify staff
+    internally only — never the employer portal (Phase 7). Escalation never changes permanent
+    Organization relationship ownership."""
     now = now or _now()
     summary = {"scanned": 0, "waiting": 0, "on_track": 0, "at_risk": 0,
                "at_risk_notified": 0, "breached": 0, "escalated": 0}
     with engine.connect() as c:
         rows = c.execute(
-            select(exceptions.c.id, exceptions.c.severity, exceptions.c.status,
+            select(exceptions.c.id, exceptions.c.domain, exceptions.c.severity, exceptions.c.status,
                    exceptions.c.sla_due_at, exceptions.c.escalation_level,
                    exceptions.c.last_notified_at, exceptions.c.notification_count,
                    exceptions.c.owner_user_id, exceptions.c.person_id, exceptions.c.title,
                    exception_types.c.code)
             .select_from(exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id))
-            .where(exceptions.c.domain == "tax", exceptions.c.status.notin_(_CLOSED))
+            .where(exceptions.c.domain.in_(domains), exceptions.c.status.notin_(_CLOSED))
         ).mappings().all()
 
     for row in rows:

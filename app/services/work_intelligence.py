@@ -53,12 +53,14 @@ def queue_matches(item, criteria, today=None):
         item.get("due_date") and item["due_date"] < today and item.get("status") not in CLOSED_STATUSES
     ):
         return False
-    for key in ("waiting_on", "status", "work_type", "entity_type", "category"):
+    for key in ("waiting_on", "status", "work_type", "entity_type", "category", "domain"):
         if key in criteria and item.get(key) != criteria[key]: return False
     severity = criteria.get("severity")
     if severity is not None:
         allowed = severity if isinstance(severity, (list, tuple)) else [severity]
         if item.get("severity") not in allowed: return False
+    codes = criteria.get("codes")
+    if codes is not None and item.get("code") not in codes: return False
     minimum = criteria.get("minimum_priority")
     if minimum and PRIORITY_WEIGHTS.get(item.get("priority"), 0) < PRIORITY_WEIGHTS.get(minimum, 0): return False
     return True

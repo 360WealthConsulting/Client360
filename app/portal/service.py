@@ -25,11 +25,15 @@ def _active_grant():
     today = date.today()
     return and_(portal_access_grants.c.effective_date <= today, or_(portal_access_grants.c.inactive_date.is_(None), portal_access_grants.c.inactive_date >= today))
 
-def invite_portal_account(*, person_id, household_id, email, display_name, access_type, invited_by_user_id, permissions=None, expires_hours=72):
+def invite_portal_account(*, person_id, household_id, email, display_name, access_type, invited_by_user_id, permissions=None, expires_hours=72, organization_id=None):
     normalized = email.strip().lower(); raw = secrets.token_urlsafe(32)
+    # Employer portal accounts (organization_id set) keep the HR-contact person on the grant
+    # so they can use the existing person-scoped secure messages/documents, and add the
+    # organization scope used for the employer "Action Needed" surface.
+    grant_person_id = person_id if (access_type == "self" or organization_id is not None) else None
     with engine.begin() as connection:
         account_id = connection.execute(portal_accounts.insert().values(person_id=person_id, email=email, normalized_email=normalized, display_name=display_name, status="invited").returning(portal_accounts.c.id)).scalar_one()
-        connection.execute(portal_access_grants.insert().values(portal_account_id=account_id, household_id=household_id, person_id=person_id if access_type == "self" else None, access_type=access_type, permissions=permissions or {"messages": True, "documents": True, "tasks": True}, granted_by_user_id=invited_by_user_id))
+        connection.execute(portal_access_grants.insert().values(portal_account_id=account_id, household_id=household_id, person_id=grant_person_id, organization_id=organization_id, access_type=access_type, permissions=permissions or {"messages": True, "documents": True, "tasks": True}, granted_by_user_id=invited_by_user_id))
         connection.execute(portal_invitations.insert().values(portal_account_id=account_id, token_hash=_hash(raw), invited_by_user_id=invited_by_user_id, expires_at=datetime.now(timezone.utc)+timedelta(hours=expires_hours)))
     write_audit_event(action="portal.invited", entity_type="portal_account", entity_id=account_id, actor_user_id=invited_by_user_id, request_id=f"portal-invite-{uuid.uuid4()}", metadata={"person_id": person_id, "household_id": household_id, "access_type": access_type})
     return account_id, raw
@@ -100,7 +104,17 @@ def portal_scope(account_id, *, permission=None):
         household_ids = {r["household_id"] for r in grants}; person_ids = {r["person_id"] for r in grants if r["person_id"]}
         shared_household_ids = {r["household_id"] for r in grants if r["access_type"] in {"joint", "trusted", "delegated"}}
         if shared_household_ids: person_ids |= set(connection.scalars(select(people.c.id).where(people.c.household_id.in_(shared_household_ids))))
-    return {"household_ids": household_ids, "shared_household_ids": shared_household_ids, "person_ids": person_ids, "grants": grants}
+        organization_ids = {r["organization_id"] for r in grants if r["organization_id"]}
+    return {"household_ids": household_ids, "shared_household_ids": shared_household_ids, "person_ids": person_ids, "organization_ids": organization_ids, "grants": grants}
+
+
+def require_org_scope(principal, organization_id, *, permission="benefits"):
+    """Employer portal scope: the account must hold a grant for this Organization that
+    allows the permission. Out-of-scope raises PermissionError (routes map to 404)."""
+    scope = portal_scope(principal.account_id, permission=permission)
+    if organization_id not in scope["organization_ids"]:
+        raise PermissionError("Organization is outside portal access scope")
+    return scope
 
 def require_scope(principal, *, person_id=None, household_id=None, permission=None):
     # Filter reachability by the requested permission first, so membership is
@@ -253,6 +267,52 @@ def client_action_detail(principal, exception_id):
     from app.services.exception_engine import client_action_item
     return client_action_item(scope, exception_id)
 
+
+# --- employer portal (Release 0.9.11, Phase 7) -------------------------------
+
+def employer_organization_ids(principal):
+    return sorted(portal_scope(principal.account_id, permission="benefits")["organization_ids"])
+
+
+def employer_action_needed(principal, scope=None, *, include_resolved=False):
+    """Employer-safe "action needed" items (employer-visible benefits exceptions) for the
+    portal account's organizations. Projection + allowlist live in the Exception Engine."""
+    scope = scope or portal_scope(principal.account_id, permission="benefits")
+    from app.services.exception_engine import employer_action_items
+    return employer_action_items(scope, include_resolved=include_resolved)
+
+
+def employer_action_detail(principal, exception_id):
+    scope = portal_scope(principal.account_id, permission="benefits")
+    from app.services.exception_engine import employer_action_item
+    return employer_action_item(scope, exception_id)
+
+
+def employer_census_upload(principal, organization_id, *, original_name, source, content_type=None):
+    """Employer self-service census upload: stores the file as a document (on the HR contact)
+    and links it to the Organization as a census document — which clears the census-overdue
+    exception on the next scan. Reuses the existing document store; no new document system."""
+    require_org_scope(principal, organization_id, permission="census")
+    from app.db import benefit_document_links
+    from app.services.documents import save_person_document
+    document_id = save_person_document(person_id=principal.person_id, original_name=original_name or "census.csv",
+                                       source=source, content_type=content_type, category="benefits_census",
+                                       description="Employer census upload", uploaded_by=principal.display_name)
+    with engine.begin() as connection:
+        connection.execute(benefit_document_links.insert().values(
+            document_id=document_id, organization_id=organization_id, doc_kind="census"))
+    write_audit_event(action="benefits.employer.census_uploaded", entity_type="organization",
+                      entity_id=organization_id, request_id=f"portal-census-{uuid.uuid4()}",
+                      metadata={"portal_account_id": principal.account_id, "document_id": document_id})
+    return document_id
+
+
+def notify_employer(account_id, *, title, body, entity_type=None, entity_id=None, idempotency_key):
+    """Auditable employer notification via the existing provider/outcome architecture. Records
+    an honest sent/disabled outcome; carries no sensitive employee/EIN/compensation data."""
+    return notify(account_id, "benefits_action", title, body=body, channel="in_app",
+                  entity_type=entity_type, entity_id=entity_id, idempotency_key=idempotency_key)
+
 def dashboard(principal):
     scope = portal_scope(principal.account_id); now = datetime.now(timezone.utc)
     # Narrow endpoints (/documents, /requests, /tasks, /notifications, /messages)
@@ -270,4 +330,6 @@ def dashboard(principal):
     tax_intakes = portal_intakes(principal, scope)
     tax_returns = portal_returns(principal, scope)
     action_items = client_action_needed(principal, scope)
-    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "action_items": action_items, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}
+    employer_actions = employer_action_needed(principal)
+    is_employer = bool(employer_organization_ids(principal))
+    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "action_items": action_items, "employer_action_items": employer_actions, "is_employer": is_employer, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}

@@ -21,6 +21,41 @@ All notable Client360 releases are documented here.
   the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
   `/tax`, and the work team/queue pages now render.
 
+## [0.9.11] — Employer Operations & Employee Benefits (release candidate; not yet tagged)
+
+Usable **Employer Operations** product on shared Client360 concepts (Organizations,
+relationship roles, service lines, universal Engagement) with **Employee Benefits + Retirement**
+first-class (ADR-18). Reuses Person/Household, Documents, Work Management, Timeline, Audit, the
+Exception Engine, the Portal, and the scheduler — no second engine/scheduler/portal/workflow/
+reporting framework/data model. Tax untouched. Validated by [RC14](docs/RC14_VALIDATION.md)
+(**SAFE TO MERGE**, 0 defects). See [Release 0.9.11 Notes](docs/RELEASE_0.9.11.md). Alembic
+head `u1f9c0i9h8g7`.
+
+### Added
+- **Organization foundation** — `relationship_entities` + `organization_profiles` (EIN
+  encrypted); permanent relationship roles; typed ownership (`relationship_ownership`); service
+  lines; universal `engagements`; canonical services with Organization record scope; disabled
+  carrier/recordkeeper(Betterment)/payroll/HRIS ports.
+- **Benefits & retirement** — 17 plan types, plans/plan-years, employments/enrollments/deferral
+  elections; Betterment seeded (no integration).
+- **Detectors** — 18 health + retirement detectors (`domain='benefits'`; idempotent/auto-resolve/
+  reopen); date-driven obligation detector; documented inert gaps (never inferred).
+- **Compliance & renewal obligations** — templates + instantiated obligations (verified dates);
+  shared SLA sweep extended to benefits (internal-only, honest outcomes).
+- **Work Management** — benefits exceptions in the canonical `work_items()` + seven benefits
+  queues; assignment rules; scheduled scan (overlap-prevented, per-org isolation, honest metrics).
+- **Staff API + consoles** — `/api/v1/organizations` + `/api/v1/benefits`; `/organizations`,
+  `/benefits`, `/benefits/reporting` on the modern shell (names not IDs; EIN gated).
+- **Employer portal** — org-scoped Action Needed (PII-free allowlist), census upload, secure
+  messages, auditable employer notifications.
+- **Dashboards & reporting** — proportional benefits dashboard (book, participation,
+  compliance/renewal calendar, exceptions); authorization-filtered; reuses `exception_reporting`.
+- New `organization.*` / `benefits.*` capabilities + `benefits_*` roles (no role widened; no new
+  `record.read_all`).
+
+### Migrations
+`r8c69f7e6d5c` · `s9d7a8g7f6e5` · `t0e8b9h8g7f6` (data-only) · `u1f9c0i9h8g7`. Single head.
+
 ## [0.9.10] — 2026-07-14 — Exception Engine
 
 Platform-wide **Exception Engine** (ADR-17), implemented **tax domain only**. Validated by
