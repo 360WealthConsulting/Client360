@@ -632,3 +632,88 @@ def client_action_item(scope, exception_id):
         if item["id"] == exception_id:
             return item
     raise ExceptionNotFoundError(f"Exception {exception_id} not found")
+
+
+# --- employer portal ("action needed") ---------------------------------------
+#
+# Strict allowlist of **employer-actionable** benefits exceptions surfaced to an
+# employer portal account (Release 0.9.11, Phase 7). Everything else — compliance
+# (5500/fiduciary/testing/notices), internal document delivery (SPD/SBC), renewals,
+# retirement participant items, and staff-only exceptions — is never shown. Items are
+# projected to **organization-level, PII-free** fields: no employee identity, EIN,
+# compensation, deferral, internal codes, owners, escalation levels, notes, or staff data.
+EMPLOYER_VISIBLE_CODES = frozenset({
+    "BEN_CENSUS_OVERDUE", "BEN_NEW_HIRE_ENROLLMENT_DUE", "BEN_OPEN_ENROLLMENT_INCOMPLETE",
+    "BEN_ELIGIBILITY_UNRESOLVED", "BEN_WAIVER_MISSING",
+})
+
+_EMPLOYER_PRESENTATION = {
+    "BEN_CENSUS_OVERDUE": {
+        "title": "Employee census needed",
+        "explanation": "Your benefits team needs an updated employee census to keep your plan on track.",
+        "action_label": "Upload census", "action_kind": "census"},
+    "BEN_NEW_HIRE_ENROLLMENT_DUE": {
+        "title": "New-hire enrollment action needed",
+        "explanation": "One or more new hires need to be enrolled or waived. Contact your benefits team to complete it.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+    "BEN_OPEN_ENROLLMENT_INCOMPLETE": {
+        "title": "Open enrollment is incomplete",
+        "explanation": "Elections are still outstanding for this open-enrollment period.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+    "BEN_ELIGIBILITY_UNRESOLVED": {
+        "title": "Eligibility information needed",
+        "explanation": "Your benefits team needs information to confirm employee eligibility.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+    "BEN_WAIVER_MISSING": {
+        "title": "Coverage waivers outstanding",
+        "explanation": "Some eligible employees have not yet elected or waived coverage.",
+        "action_label": "Message benefits team", "action_kind": "message"},
+}
+
+
+def _project_employer(row):
+    """Organization-level, PII-free projection for an employer portal account."""
+    policy = _EMPLOYER_PRESENTATION[row["code"]]
+    return {
+        "id": row["id"],
+        "organization_id": row["related_entity_id"],
+        "title": policy["title"],
+        "explanation": policy["explanation"],
+        "status": "Completed" if row["status"] in CLOSED_STATUSES else "Action needed",
+        "resolved": row["status"] in CLOSED_STATUSES,
+        "due_date": row["sla_due_at"].date().isoformat() if row["sla_due_at"] else None,
+        "action_label": policy["action_label"],
+        "action_kind": policy["action_kind"],
+    }
+
+
+def employer_action_items(scope, *, include_resolved=False):
+    """Employer-safe list of employer-actionable benefits exceptions for the portal
+    account's organizations. Only ``EMPLOYER_VISIBLE_CODES``; organization-level, no PII.
+    Active items only by default (completed items drop from the employer's view)."""
+    org_ids = tuple(scope.get("organization_ids") or ())
+    if not org_ids:
+        return []
+    query = (
+        select(exceptions.c.id, exceptions.c.status, exceptions.c.sla_due_at,
+               exceptions.c.related_entity_id, exception_types.c.code.label("code"))
+        .select_from(exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id))
+        .where(exceptions.c.domain == "benefits",
+               exceptions.c.related_entity_type == "organization",
+               exceptions.c.related_entity_id.in_(org_ids),
+               exception_types.c.code.in_(tuple(EMPLOYER_VISIBLE_CODES)))
+    )
+    if not include_resolved:
+        query = query.where(exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
+    with engine.connect() as c:
+        rows = c.execute(query.order_by(exceptions.c.opened_at.desc())).mappings().all()
+    return [_project_employer(r) for r in rows]
+
+
+def employer_action_item(scope, exception_id):
+    """One employer-visible benefits exception by id, enforcing organization scope.
+    Anything not employer-visible, out-of-scope, or non-existent is reported not-found."""
+    for item in employer_action_items(scope, include_resolved=True):
+        if item["id"] == exception_id:
+            return item
+    raise ExceptionNotFoundError(f"Exception {exception_id} not found")

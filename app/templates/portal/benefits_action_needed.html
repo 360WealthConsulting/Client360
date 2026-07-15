@@ -1,0 +1,21 @@
+{% extends "portal/base.html" %}{% block title %}Benefits — Action Needed{% endblock %}{% block content %}
+<h1>Benefits — Action Needed</h1>
+<p>These are items your benefits team needs from your organization. Completing them keeps your plans on track.</p>
+{% for item in action_items %}
+<article class="work-card">
+  <h3>{{ item.title }}</h3>
+  <p>{{ item.explanation }}</p>
+  <p>
+    <span class="pill">{{ item.status }}</span>
+    {% if item.due_date %}<span class="pill">Due {{ item.due_date }}</span>{% endif %}
+  </p>
+  {% if item.action_kind == 'census' %}
+  <p><a href="/portal/documents">{{ item.action_label }} →</a></p>
+  {% else %}
+  <p><a href="/portal/messages">{{ item.action_label }} →</a></p>
+  {% endif %}
+</article>
+{% else %}
+<div class="empty">You're all caught up — there's nothing that needs your organization's attention right now.</div>
+{% endfor %}
+{% endblock %}
