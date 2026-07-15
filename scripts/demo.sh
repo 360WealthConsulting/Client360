@@ -128,7 +128,7 @@ def login(u,pw):
     except urllib.error.HTTPError: pass
     return op
 admin=login("admin","demo-admin-pass")
-for p in ("/","/work","/tax/intake","/tax/returns","/people","/admin/audit"):
+for p in ("/","/work","/tax/intake","/tax/returns","/people","/portfolio","/admin/audit"):
     print(f"  GET {p} (admin) -> {code(admin,p)}")
 client=login("client","demo-client-pass")
 print(f"  GET /portal/ (client) -> {code(client,'/portal/')}")
