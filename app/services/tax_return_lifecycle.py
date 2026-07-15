@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 import uuid
 from sqlalchemy import or_, select
 
-from app.db import (engine, portal_accounts, record_assignments, tax_client_approvals,
-    tax_engagement_returns, tax_engagements, tax_filing_events, tax_return_lifecycle_events,
-    tax_return_reviews, tax_review_corrections, tax_return_types, tax_workflow_links,
-    work_approvals, workflow_events, workflow_steps)
+from app.db import (engine, exception_types, exceptions, portal_accounts, record_assignments,
+    tax_client_approvals, tax_engagement_returns, tax_engagements, tax_filing_events,
+    tax_return_lifecycle_events, tax_return_reviews, tax_review_corrections, tax_return_types,
+    tax_workflow_links, work_approvals, workflow_events, workflow_steps)
 from app.portal.service import notify, portal_scope, require_scope
 from app.security.audit import write_audit_event
 from app.services.tax_domain import list_engagements
@@ -31,15 +31,53 @@ def _publish(context,from_status,to_status,reason,actor_user_id,portal_account_i
     add_timeline_event(person_id=context["person_id"],household_id=context["household_id"],source="tax_production",event_type="tax_return_status_changed",title=f"Tax return moved to {to_status.replace('_',' ')}",external_id=f"tax-return-{context['id']}-{to_status}-{uuid.uuid4().hex}",event_metadata={"from":from_status,"to":to_status,"reason":reason})
     write_audit_event(action="tax.return.status_changed",entity_type="tax_return",entity_id=context["id"],actor_user_id=actor_user_id,request_id=request_id or f"tax-return-{uuid.uuid4()}",metadata={"from":from_status,"to":to_status,"reason":reason,"portal_account_id":portal_account_id})
 
+# Exception Engine hooks (Sprint 5.5 Phase 3). Closing states may not be entered while
+# an open blocker exception is scoped to the return, unless force=True (which is audited).
+CLOSING_STATES = {"completed", "archived"}
+FILING_BLOCKER_CODES = ("FILING_REJECTED", "FILING_TRANSMISSION_ERROR")
+
+
+def _open_blocker_exceptions(connection, return_id):
+    return connection.execute(
+        select(exceptions.c.id, exception_types.c.code)
+        .select_from(exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id))
+        .where(exceptions.c.tax_engagement_return_id == return_id,
+               exceptions.c.status.notin_(("resolved", "cancelled")),
+               exception_types.c.blocks_lifecycle.is_(True))
+    ).mappings().all()
+
+
+def _close_return_exceptions(return_id, codes, actor_user_id, resolution="source_cleared"):
+    from app.services import exception_engine as _ee
+    with engine.connect() as c:
+        rows = c.execute(
+            select(exceptions.c.id, exceptions.c.status, exception_types.c.code)
+            .select_from(exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id))
+            .where(exceptions.c.tax_engagement_return_id == return_id,
+                   exceptions.c.status.notin_(("resolved", "cancelled")),
+                   exception_types.c.code.in_(codes))
+        ).mappings().all()
+    for r in rows:
+        if r["status"] in ("open", "acknowledged", "reopened"):
+            _ee.begin_work(r["id"], principal=None, actor_user_id=actor_user_id)
+        _ee.resolve(r["id"], resolution, principal=None, actor_user_id=actor_user_id)
+
+
 def transition_return(return_id,to_status,*,actor_user_id=None,portal_account_id=None,reason=None,request_id=None,force=False):
     if to_status not in STATES: raise ValueError("Unsupported lifecycle status")
     now=datetime.now(timezone.utc)
+    blocker_override=None
     with engine.begin() as c:
         context=_context(c,return_id)
         if not context: raise ValueError("Tax return not found")
         current=context["status"]
         if current==to_status: return to_status
         if not force and to_status not in TRANSITIONS.get(current,set()): raise ValueError(f"Cannot transition from {current} to {to_status}")
+        if to_status in CLOSING_STATES:
+            blockers=_open_blocker_exceptions(c,return_id)
+            if blockers:
+                if not force: raise ValueError(f"Open blocker exception(s) prevent closing return {return_id}: {[b['code'] for b in blockers]}")
+                blocker_override=[b["id"] for b in blockers]
         values={"status":to_status,"status_entered_at":now}
         if to_status=="in_preparation" and not context["preparation_started_at"]: values["preparation_started_at"]=now
         if to_status=="manager_review": values["preparation_completed_at"]=now
@@ -59,6 +97,14 @@ def transition_return(return_id,to_status,*,actor_user_id=None,portal_account_id
     if to_status in {"client_review","awaiting_efile_authorization","delivered","rejected"}:
         for account in accounts: notify(account,f"tax_return_{to_status}",f"Tax return: {to_status.replace('_',' ')}",entity_type="tax_return",entity_id=return_id,idempotency_key=f"tax-return:{return_id}:{to_status}:{account}")
     _publish(context,current,to_status,reason,actor_user_id,portal_account_id,request_id)
+    # Exception Engine hooks at approved transition points (post-commit).
+    if blocker_override:
+        write_audit_event(action="tax.exception.blocker_overridden",entity_type="tax_return",entity_id=return_id,actor_user_id=actor_user_id,request_id=request_id or f"tax-return-{return_id}-force-{uuid.uuid4().hex}",metadata={"to":to_status,"blocker_exception_ids":blocker_override})
+    if to_status=="rejected":
+        from app.services import exception_engine as _ee
+        _ee.raise_exception(code="FILING_REJECTED",actor_user_id=actor_user_id,source="system",dedupe_key=f"tax:filing_rejected:{return_id}",tax_engagement_return_id=return_id,person_id=context["person_id"],household_id=context["household_id"],title="Filing rejected")
+    if to_status=="accepted":
+        _close_return_exceptions(return_id,FILING_BLOCKER_CODES,actor_user_id,resolution="filing_accepted")
     return to_status
 
 def request_review(return_id,review_type,*,requested_by_user_id,reviewer_user_id=None,reviewer_team_id=None,due_at=None):
