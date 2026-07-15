@@ -135,6 +135,29 @@ See [Release 0.9.9 Notes](RELEASE_0.9.9.md), [Production Architecture](PRODUCTIO
 `MICROSOFT_TOKEN_KEY` rotation, legacy plaintext-column removal, and the orphaned
 `app/models/` scaffold.
 
+## Release 0.9.10 — Exception Engine ✅ (release candidate; not yet tagged)
+
+Platform-wide **Exception Engine** (ADR-17), implemented **tax domain only**, delivered as
+eight independently reviewed phases and [RC13](RC13_VALIDATION.md)-validated (**SAFE TO
+MERGE**, 0 defects).
+
+- Canonical engine (`exceptions`/`exception_events`/`exception_types` with a required
+  CHECK-constrained `domain`): one state machine, idempotent dedupe, stale-action
+  rejection, immutable append-only event ledger, record-scope authorization, audit +
+  timeline on every mutation.
+- 15 tax detectors (source-of-truth → exceptions; auto-resolve/reopen); deterministic
+  replay-safe SLA sweep with honest notification outcomes (email/SMS stubbed → `disabled`).
+- Work Management integration + queues (`tax_exceptions`, `tax_exceptions_critical`,
+  `compliance_exceptions`); versioned API + staff console; read-only client portal
+  "Action Needed" (strict client-visible allowlist, no internal leakage); authorization-
+  filtered exception dashboards & reporting (MTTA/MTTR/reopen/SLA/trend — real data only).
+- New least-privilege `exception.*` capabilities; no role widened; no new `record.read_all`.
+- Additive/reversible migrations; single Alembic head `q7b58f6c5d4e`; sentinel-preserving
+  clean upgrade/downgrade compatibility from Release 0.9.9.
+
+See [Release 0.9.10 Notes](RELEASE_0.9.10.md), [ADR-17](ADR_EXCEPTION_ENGINE_SCOPE.md),
+[Sprint 5.5 design](SPRINT_5_5_EXCEPTION_DESIGN.md), and [RC13 Validation](RC13_VALIDATION.md).
+
 ## Developer Tooling — Developer Demo Mode ✅
 
 Implemented and available for local evaluation (developer tooling; not a numbered
@@ -203,8 +226,10 @@ can build on the completed practice-management platform without duplicating it.
 8. Drake/provider and IRS transcript integration
 9. Production reporting, capacity, AI extensions, and release readiness
 
-Sprint 5.1 shipped in Release v0.9.4, Sprint 5.2 in Release v0.9.5, and
-Sprint 5.3 in Release v0.9.6. See
+Sprint 5.1 shipped in Release v0.9.4, Sprint 5.2 in Release v0.9.5,
+Sprint 5.3 in Release v0.9.6, Sprint 5.4 (Tax Document Intelligence) in Release v0.9.8,
+and **Sprint 5.5 (Exception Engine, ADR-17 — tax domain first)** in Release v0.9.10
+([RC13](RC13_VALIDATION.md)-validated). See
 [Epic 5 Technical Design](EPIC_5_TAX_PRACTICE_PLATFORM.md) and
 [Tax Domain Foundation](TAX_DOMAIN_FOUNDATION.md),
 [Tax Engagement Intake](TAX_ENGAGEMENT_INTAKE.md), and

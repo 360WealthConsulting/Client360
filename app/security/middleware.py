@@ -45,6 +45,10 @@ RULES = (
     (re.compile(r"^/tax/returns|^/api/v1/tax/returns"), "tax.read"),
     (re.compile(r"^/tax/intake|^/api/v1/tax/intake"), "tax.intake.read"),
     (re.compile(r"^/tax|^/api/v1/tax"), "tax.read"),
+    # Exception Engine console + API (Sprint 5.5 Phase 6). GET → exception.read;
+    # the .read→.write inference gates mutations as exception.write. The engine
+    # service enforces the finer exception.resolve / exception.compliance on top.
+    (re.compile(r"^/exceptions|^/api/v1/exceptions"), "exception.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),

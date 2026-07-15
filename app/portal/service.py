@@ -238,6 +238,21 @@ def client_documents(principal, scope=None):
     with engine.connect() as connection:
         return connection.execute(select(documents).where(documents.c.person_id.in_(scope["person_ids"]), documents.c.archived.is_(False)).order_by(documents.c.created_at.desc()).limit(20)).mappings().all()
 
+def client_action_needed(principal, scope=None, *, include_resolved=False):
+    """Client-safe "action needed" items (client-visible tax exceptions) within the
+    portal account's scope. Projection + allowlist live in the canonical Exception
+    Engine; this only bridges portal scope to it."""
+    scope = scope or portal_scope(principal.account_id)
+    from app.services.exception_engine import client_action_items
+    return client_action_items(scope, include_resolved=include_resolved)
+
+def client_action_detail(principal, exception_id):
+    """One client-visible exception by id, portal-scoped. Raises
+    ExceptionNotFoundError for anything out-of-scope / not client-visible."""
+    scope = portal_scope(principal.account_id)
+    from app.services.exception_engine import client_action_item
+    return client_action_item(scope, exception_id)
+
 def dashboard(principal):
     scope = portal_scope(principal.account_id); now = datetime.now(timezone.utc)
     # Narrow endpoints (/documents, /requests, /tasks, /notifications, /messages)
@@ -254,4 +269,5 @@ def dashboard(principal):
     from app.services.tax_return_lifecycle import portal_returns
     tax_intakes = portal_intakes(principal, scope)
     tax_returns = portal_returns(principal, scope)
-    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}
+    action_items = client_action_needed(principal, scope)
+    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "action_items": action_items, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}

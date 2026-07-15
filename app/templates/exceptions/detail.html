@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Exception #{{ exception.id }} | Client360{% endblock %}
+{% block content %}
+{% set ex = exception %}
+{% set can_write = principal.can('exception.write') %}
+{% set can_resolve = (principal.can('exception.compliance') if ex.category=='compliance' else (principal.can('exception.resolve') if ex.severity=='blocker' else can_write)) %}
+{% set active = ex.status not in ['resolved','cancelled'] %}
+
+<div class="page-header"><div>
+  <p class="eyebrow">Exception · {{ ex.category|title }}</p>
+  <h1>{{ ex.title }}</h1>
+  <p class="muted">
+    <span class="status-pill sev-{{ ex.severity }}">{{ ex.severity }}</span>
+    <span class="status-pill">{{ ex.status.replace('_',' ') }}</span>
+    <span class="status-pill sla-{{ ex.sla_state }}">SLA: {{ ex.sla_state.replace('_',' ') }}</span>
+    Escalation level {{ ex.escalation_level }}
+  </p>
+  <p><a href="/exceptions">← All exceptions</a></p>
+</div></div>
+
+<section class="panel">
+  <h2>Details</h2>
+  <dl>
+    <dt>Client</dt><dd>{% if ex.person_id %}<a href="/people/{{ ex.person_id }}">Client {{ ex.person_id }}</a>{% else %}—{% endif %}</dd>
+    <dt>Return</dt><dd>{% if ex.tax_engagement_return_id %}<a href="/tax/returns">Return {{ ex.tax_engagement_return_id }}</a>{% else %}—{% endif %}</dd>
+    <dt>Owner</dt><dd>{% if ex.owner_user_id %}User {{ ex.owner_user_id }}{% elif ex.owner_team_id %}Team {{ ex.owner_team_id }}{% else %}Unassigned{% endif %}</dd>
+    <dt>SLA due</dt><dd>{{ ex.sla_due_at or '—' }}</dd>
+    <dt>Opened</dt><dd>{{ ex.opened_at }}</dd>
+    {% if ex.resolution_code %}<dt>Resolution</dt><dd>{{ ex.resolution_code }} — {{ ex.resolution_notes or '' }}</dd>{% endif %}
+    {% if ex.description %}<dt>Description</dt><dd>{{ ex.description }}</dd>{% endif %}
+  </dl>
+</section>
+
+{% if can_write %}
+<section class="panel">
+  <h2>Actions</h2>
+  <div class="filters">
+    {% if active %}
+      <form method="post" action="/exceptions/{{ ex.id }}/acknowledge"><button>Acknowledge</button></form>
+      <form method="post" action="/exceptions/{{ ex.id }}/start"><button>Begin work</button></form>
+      <form method="post" action="/exceptions/{{ ex.id }}/waiting"><input name="reason" placeholder="Waiting on"><button>Waiting</button></form>
+      <form method="post" action="/exceptions/{{ ex.id }}/escalate"><input name="reason" placeholder="Reason"><button>Escalate</button></form>
+      <form method="post" action="/exceptions/{{ ex.id }}/assign"><input name="user_id" inputmode="numeric" placeholder="User ID"><input name="team_id" inputmode="numeric" placeholder="Team ID"><select name="assignment_role"><option>primary</option><option>secondary</option><option>supervisor</option></select><button>Assign</button></form>
+      {% if can_resolve %}<form method="post" action="/exceptions/{{ ex.id }}/resolve"><input name="resolution_code" placeholder="Resolution code" required><input name="notes" placeholder="Notes"><button>Resolve</button></form>{% endif %}
+      <form method="post" action="/exceptions/{{ ex.id }}/cancel"><input name="reason" placeholder="Reason"><button>Cancel</button></form>
+    {% elif ex.status == 'resolved' %}
+      <form method="post" action="/exceptions/{{ ex.id }}/reopen"><button>Reopen</button></form>
+    {% endif %}
+    <form method="post" action="/exceptions/{{ ex.id }}/comment"><input name="body" placeholder="Comment" required><button>Comment</button></form>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Event timeline</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Event</th><th>From → To</th><th>Actor</th><th>When</th></tr></thead>
+      <tbody>
+      {% for e in ex.events %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ e.event_type.replace('_',' ') }}</td>
+          <td>{{ (e.from_status or '') }}{% if e.to_status %} → {{ e.to_status }}{% endif %}</td>
+          <td>{{ e.actor_user_id or 'system' }}</td>
+          <td>{{ e.created_at }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No events yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

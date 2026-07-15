@@ -129,3 +129,8 @@ tax_document_links = metadata.tables["tax_document_links"]
 tax_document_classifications = metadata.tables["tax_document_classifications"]
 tax_document_match_evidence = metadata.tables["tax_document_match_evidence"]
 tax_document_review_events = metadata.tables["tax_document_review_events"]
+
+# Exception Engine (Release 0.9.10 / Sprint 5.5 — ADR-17, platform-wide, tax domain first)
+exception_types = metadata.tables["exception_types"]
+exceptions = metadata.tables["exceptions"]
+exception_events = metadata.tables["exception_events"]
