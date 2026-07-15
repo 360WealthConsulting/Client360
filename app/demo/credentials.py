@@ -21,6 +21,7 @@ class DemoStaffUser:
     email: str
     display_name: str
     auth_subject: str       # users.auth_subject (matches demo IdentityClaims.subject)
+    landing: str            # post-login landing page the persona can actually open
 
 
 @dataclass(frozen=True)
@@ -30,20 +31,25 @@ class DemoPortalUser:
     password: str
     email: str
     display_name: str
+    landing: str = "/portal/"
 
 
 # Fictional firm: "Northwind Wealth & Tax (DEMO)".
+# `landing` is the page each persona is sent to after login — chosen so a persona
+# never lands on a firm-wide page its real RBAC forbids. This does NOT change RBAC:
+# firm-wide screens still require `record.read_all`, held only by administrator and
+# compliance.
 DEMO_STAFF = [
     DemoStaffUser("Administrator", "administrator", "admin", "demo-admin-pass",
-                  "avery.stone@northwind-demo.example", "Avery Stone", "demo|administrator"),
+                  "avery.stone@northwind-demo.example", "Avery Stone", "demo|administrator", "/"),
     DemoStaffUser("Advisor", "advisor", "advisor", "demo-advisor-pass",
-                  "morgan.reed@northwind-demo.example", "Morgan Reed", "demo|advisor"),
+                  "morgan.reed@northwind-demo.example", "Morgan Reed", "demo|advisor", "/work"),
     DemoStaffUser("Operations", "operations", "operations", "demo-operations-pass",
-                  "riley.chen@northwind-demo.example", "Riley Chen", "demo|operations"),
+                  "riley.chen@northwind-demo.example", "Riley Chen", "demo|operations", "/work"),
     DemoStaffUser("Tax Preparer", "tax_preparer", "taxprep", "demo-taxprep-pass",
-                  "jordan.pace@northwind-demo.example", "Jordan Pace", "demo|tax_preparer"),
+                  "jordan.pace@northwind-demo.example", "Jordan Pace", "demo|tax_preparer", "/tax"),
     DemoStaffUser("Compliance", "compliance", "compliance", "demo-compliance-pass",
-                  "sasha.vale@northwind-demo.example", "Sasha Vale", "demo|compliance"),
+                  "sasha.vale@northwind-demo.example", "Sasha Vale", "demo|compliance", "/"),
 ]
 
 # The portal persona is a client of the fictional "Hawthorne Family" household.

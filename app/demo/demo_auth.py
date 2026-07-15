@@ -91,7 +91,7 @@ def demo_login(request: Request, username: str = Form(...), password: str = Form
             user_agent=request.headers.get("user-agent"),
         )
         request.session["portal_session_token"] = token
-        return RedirectResponse("/portal/", 303)
+        return RedirectResponse(DEMO_PORTAL.landing, 303)
 
     # Staff persona → real staff session (authenticate_claims + create_session).
     user = staff_by_username(username)
@@ -111,4 +111,6 @@ def demo_login(request: Request, username: str = Form(...), password: str = Form
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"), metadata={"demo": True},
     )
-    return RedirectResponse("/", 303)
+    # Land each persona on a page its real RBAC permits (UX-01). Authorization is
+    # unchanged — firm-wide pages still enforce record.read_all.
+    return RedirectResponse(user.landing, 303)

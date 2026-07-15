@@ -122,16 +122,32 @@ def code(op,p):
 plain=urllib.request.build_opener(NoRedirect)
 for p in ("/health","/readiness","/demo/login"):
     print(f"  GET {p} -> {code(plain,p)}")
-def login(u,pw):
+def login_probe(u,pw):
     cj=http.cookiejar.CookieJar(); op=urllib.request.build_opener(NoRedirect, urllib.request.HTTPCookieProcessor(cj))
-    try: op.open(BASE+"/demo/login", data=urllib.parse.urlencode({"username":u,"password":pw}).encode(), timeout=10)
-    except urllib.error.HTTPError: pass
-    return op
-admin=login("admin","demo-admin-pass")
-for p in ("/","/work","/tax/intake","/tax/returns","/people","/portfolio","/admin/audit"):
+    loc=None; lstatus=lct=None
+    try:
+        r=op.open(BASE+"/demo/login", data=urllib.parse.urlencode({"username":u,"password":pw}).encode(), timeout=10)
+        loc=r.headers.get("location")
+    except urllib.error.HTTPError as e:
+        loc=e.headers.get("location")
+    if loc:
+        try: rr=op.open(BASE+loc, timeout=10); lstatus, lct = rr.status, rr.headers.get("content-type","").split(";")[0]
+        except urllib.error.HTTPError as e: lstatus, lct = e.code, e.headers.get("content-type","").split(";")[0]
+    return op, loc, lstatus, lct
+print("  -- post-login landing (UX-01) --")
+LANDINGS=[("admin","demo-admin-pass","/"),("compliance","demo-compliance-pass","/"),
+          ("advisor","demo-advisor-pass","/work"),("operations","demo-operations-pass","/work"),
+          ("taxprep","demo-taxprep-pass","/tax"),("client","demo-client-pass","/portal/")]
+bad=0
+for u,pw,expect in LANDINGS:
+    op,loc,ls,lct=login_probe(u,pw)
+    ok = (loc==expect and ls==200 and lct=="text/html")
+    if not ok: bad+=1
+    print(f"  {u:11s} -> {loc}  landing={ls} {lct}  {'OK' if ok else 'FAIL'}")
+admin,_,_,_=login_probe("admin","demo-admin-pass")
+for p in ("/tax/intake","/tax/returns","/people","/portfolio","/admin/audit"):
     print(f"  GET {p} (admin) -> {code(admin,p)}")
-client=login("client","demo-client-pass")
-print(f"  GET /portal/ (client) -> {code(client,'/portal/')}")
+print(f"  landing check: {'PASS' if bad==0 else 'FAIL ('+str(bad)+')'}")
 PYHTTP
     else
       echo "(server not running; skipping HTTP smoke — run 'scripts/demo.sh start' first)"

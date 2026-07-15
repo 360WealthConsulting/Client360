@@ -54,6 +54,27 @@ Sign in at `/demo/login` with a username + password.
 are scoped by real capability-based RBAC (see limitations). The portal user lands
 in the client portal.
 
+### Post-login landing pages
+
+After a successful login, each persona is sent to a page its real RBAC permits, so
+no one lands on a firm-wide page they cannot open:
+
+| Persona | Lands on |
+|---|---|
+| Administrator | `/` (firm dashboard) |
+| Compliance | `/` (firm dashboard) |
+| Advisor | `/work` (My Work) |
+| Operations | `/work` (My Work) |
+| Tax Preparer | `/tax` (Tax command center) |
+| Client Portal User | `/portal/` (client dashboard) |
+
+This landing choice is demo-only convenience; it does **not** change authorization.
+Firm-wide collection screens (`/`, `/people`, `/tasks`, `/households`, `/portfolio`)
+still require the `record.read_all` capability, which only **Administrator** and
+**Compliance** hold. Opening such a screen as Advisor / Operations / Tax Preparer
+returns **403 — this is expected, correct RBAC, not a bug.** Use the persona's
+scoped screens (e.g. an advisor's `/work`) instead.
+
 ## 4. Database safety design
 
 Safety is enforced in `app/demo/safety.py` and applied by every command:
