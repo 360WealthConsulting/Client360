@@ -22,8 +22,8 @@ from app.security.authorization import record_in_scope
 from app.services.timeline import add_timeline_event
 from app.services.work_management import authorized_assignments
 
-# Sprint 5.5 implements only the tax domain (ADR-17 guardrail).
-SUPPORTED_DOMAINS = frozenset({"tax"})
+# Sprint 5.5 implemented the tax domain; Release 0.9.11 (ADR-18) adds the benefits domain.
+SUPPORTED_DOMAINS = frozenset({"tax", "benefits"})
 
 ACTIVE_STATUSES = frozenset({"open", "acknowledged", "in_progress", "waiting", "escalated", "reopened"})
 CLOSED_STATUSES = frozenset({"resolved", "cancelled"})
@@ -87,6 +87,14 @@ def _authorize(connection, principal, row, *, write):
             ("person", row["person_id"]),
             ("household", row["household_id"]),
         ):
+            if entity_id and record_in_scope(principal, entity_type, entity_id, write=write, connection=connection):
+                return
+    elif row["domain"] == "benefits":  # Organization-anchored (ADR-18), + employee person/household
+        from app.security.authorization import organization_in_scope
+        org_id = row["related_entity_id"] if row["related_entity_type"] == "organization" else None
+        if org_id and organization_in_scope(principal, org_id, write=write, connection=connection):
+            return
+        for entity_type, entity_id in (("person", row["person_id"]), ("household", row["household_id"])):
             if entity_id and record_in_scope(principal, entity_type, entity_id, write=write, connection=connection):
                 return
     raise ExceptionAuthorizationError("Exception is outside your record scope")
@@ -450,10 +458,14 @@ def list_exceptions(principal, *, domain="tax", status=None, severity=None, cate
             return_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "tax_return"}
             person_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "person"}
             household_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "household"}
+            org_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "organization"}
+            from sqlalchemy import and_
             scope = [clause for clause in (
                 exceptions.c.tax_engagement_return_id.in_(return_ids) if return_ids else None,
                 exceptions.c.person_id.in_(person_ids) if person_ids else None,
                 exceptions.c.household_id.in_(household_ids) if household_ids else None,
+                and_(exceptions.c.related_entity_type == "organization",
+                     exceptions.c.related_entity_id.in_(org_ids)) if org_ids else None,
             ) if clause is not None]
             from sqlalchemy import false as sql_false
             query = query.where(or_(*scope) if scope else sql_false())

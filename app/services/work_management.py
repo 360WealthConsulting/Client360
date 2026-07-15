@@ -19,7 +19,7 @@ from app.services.work_intelligence import bottlenecks, capacity_metrics, daily_
 # Exception work integration (Sprint 5.5 Phase 5). Exceptions are projected into the
 # existing work-item model — reusing record_assignments and the deterministic scoring —
 # without duplicating source records.
-ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_engagement", "tax_return", "investment_account", "exception"}
+ENTITY_TYPES = {"person", "household", "task", "document", "workflow_instance", "workflow_step", "tax_engagement", "tax_return", "investment_account", "exception", "organization", "engagement"}
 ASSIGNMENT_ROLES = {"primary", "secondary", "supervisor", "owner"}
 SEVERITY_PRIORITY = {"blocker": "urgent", "high": "high", "medium": "normal", "low": "low"}
 EXCEPTION_MINUTES = {"blocker": 60, "high": 45, "medium": 30, "low": 15}
