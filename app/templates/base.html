@@ -1,4 +1,92 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}Client360{% endblock %}</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"><link rel="stylesheet" href="/static/css/tax.css"></head><body>
-<header class="work-header"><a href="/">Client360</a>{% if principal %}<p>{{ principal.display_name }}</p>{% endif %}</header>
-{% if principal %}<nav class="filters"><a href="/">Dashboard</a><a href="/work">Work</a><a href="/tax">Tax</a><a href="/tax/intake">Tax Intake</a><a href="/tax/returns">Tax Returns</a><a href="/tax/documents">Tax Documents</a>{% if principal.can('exception.read') %}<a href="/exceptions">Exceptions</a><a href="/exceptions/reporting">Exception Reporting</a>{% endif %}{% if principal.can('organization.read') %}<a href="/organizations">Organizations</a>{% endif %}{% if principal.can('benefits.read') %}<a href="/benefits">Benefits</a><a href="/benefits/reporting">Benefits Reporting</a>{% endif %}</nav>{% endif %}
-<main class="work-main">{% block content %}{% endblock %}</main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}Client360{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/work.css">
+  <link rel="stylesheet" href="/static/css/tax.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+{% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
+{% set path = request.url.path if request else '/' %}
+{% set can_dash = p.can('record.read_all') if p else False %}
+{% set can_org = p.can('organization.read') if p else False %}
+{% set can_ben = p.can('benefits.read') if p else False %}
+{% set can_exc = p.can('exception.read') if p else False %}
+{% set groups = [
+  {"label": "Overview", "items": [
+    {"href": "/", "label": "Dashboard", "match": "/", "ico": "◧", "show": can_dash},
+    {"href": "/activities", "label": "Activity", "match": "/activities", "ico": "◈", "show": True}]},
+  {"label": "Clients", "items": [
+    {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": True},
+    {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": True},
+    {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": True},
+    {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": True}]},
+  {"label": "Work", "items": [
+    {"href": "/work", "label": "My Work", "match": "/work", "ico": "▦", "show": True},
+    {"href": "/work/team", "label": "Team Work", "match": "/work/team", "ico": "▦", "show": True},
+    {"href": "/tasks", "label": "Tasks", "match": "/tasks", "ico": "✓", "show": True},
+    {"href": "/workflows", "label": "Workflows", "match": "/workflows", "ico": "⇄", "show": True}]},
+  {"label": "Tax", "items": [
+    {"href": "/tax", "label": "Tax Center", "match": "/tax", "ico": "◇", "show": True},
+    {"href": "/tax/intake", "label": "Intake", "match": "/tax/intake", "ico": "◇", "show": True},
+    {"href": "/tax/returns", "label": "Returns", "match": "/tax/returns", "ico": "◇", "show": True},
+    {"href": "/tax/documents", "label": "Documents", "match": "/tax/documents", "ico": "◇", "show": True}]},
+  {"label": "Benefits", "items": [
+    {"href": "/organizations", "label": "Organizations", "match": "/organizations", "ico": "⬢", "show": can_org},
+    {"href": "/benefits", "label": "Benefits", "match": "/benefits", "ico": "⊕", "show": can_ben},
+    {"href": "/benefits/reporting", "label": "Reporting", "match": "/benefits/reporting", "ico": "▥", "show": can_ben}]},
+  {"label": "Oversight", "items": [
+    {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
+    {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
+    {"href": "/admin/audit", "label": "Audit", "match": "/admin/audit", "ico": "▦", "show": True},
+    {"href": "/microsoft365", "label": "Microsoft 365", "match": "/microsoft365", "ico": "◫", "show": True}]}
+] %}
+<body class="c360">
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <input type="checkbox" id="c360-nav" class="nav-toggle" hidden>
+    <a class="app-brand" href="/"><span class="mark">C3</span><span class="name">Client360</span></a>
+    <nav class="app-nav" aria-label="Primary">
+      {% for g in groups %}
+        {% set visible = g["items"] | selectattr("show") | list %}
+        {% if visible %}
+        <div class="nav-group">
+          <div class="label">{{ g["label"] }}</div>
+          {% for it in visible %}
+            {% set active = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
+            <a class="nav-item{{ ' active' if active else '' }}" href="{{ it['href'] }}"><span class="ico">{{ it["ico"] }}</span>{{ it["label"] }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <div class="app-main">
+    <header class="app-header">
+      <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" aria-label="Toggle navigation">☰</label>
+      <div class="crumbs"><a href="/">Client360</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
+      <form class="app-search" method="get" action="/search" role="search">
+        <span class="mag">⌕</span>
+        <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search">
+      </form>
+      <div class="spacer"></div>
+      {% if can_exc %}<a class="icon-btn" href="/exceptions" title="Exceptions" aria-label="Exceptions">⚑</a>{% endif %}
+      {% if p %}
+      <div class="user-chip" title="{{ p.email }}">
+        <span class="avatar">{% set parts = (p.display_name or '?').split() %}{{ (parts[0][0] ~ (parts[1][0] if parts|length > 1 else '')) | upper }}</span>
+        <span class="who"><b>{{ p.display_name }}</b><span>{{ 'Administrator' if can_dash else 'Staff' }}</span></span>
+      </div>
+      {% endif %}
+    </header>
+    <main class="app-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

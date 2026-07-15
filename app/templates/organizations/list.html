@@ -1,37 +1,45 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui %}
 {% block title %}Organizations | Client360{% endblock %}
+{% block crumb %}Organizations{% endblock %}
 {% block content %}
-<div class="page-header"><div>
-  <p class="eyebrow">Employer Operations</p>
-  <h1>Organizations</h1>
-  <p class="muted">Employers and businesses in your authorized book.</p>
-</div></div>
+{{ ui.page_head("Organizations", eyebrow="Employer Operations", desc="Employers and businesses in your authorized book.") }}
 
-<form class="filters" method="get" action="/organizations">
-  <select name="status"><option value="">Any status</option>
-    {% for s in ["prospect","active","inactive"] %}
-    <option value="{{ s }}" {{ 'selected' if filter_status==s else '' }}>{{ s|title }}</option>{% endfor %}</select>
-  <button type="submit">Filter</button>
-  <a href="/organizations">Reset</a>
+<form class="filterbar" method="get" action="/organizations">
+  {% set statuses = [("", "Any status"), ("prospect", "Prospect"), ("active", "Active"), ("inactive", "Inactive")] %}
+  {% for value, label in statuses %}
+    <a class="chip {{ 'active' if (filter_status or '') == value else '' }}" href="/organizations{{ '?status=' ~ value if value else '' }}">{{ label }}</a>
+  {% endfor %}
+  <span class="grow"></span>
+  <span class="subtle">{{ organizations|length }} shown</span>
 </form>
 
-<section class="panel">
-  <h2>Results ({{ organizations|length }})</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Name</th><th>Status</th><th>Industry</th></tr></thead>
-      <tbody>
-      {% for o in organizations %}
-        <tr>
-          <td><a href="/organizations/{{ o.id }}">{{ o.name }}</a></td>
-          <td>{{ (o.status or '')|title }}</td>
-          <td>{{ o.industry or '—' }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="3" class="muted">No organizations match.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+{% if organizations %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Organization</th><th>Status</th><th>Industry</th></tr></thead>
+    <tbody>
+    {% for o in organizations %}
+      <tr>
+        <td>
+          <a class="rowlink" href="/organizations/{{ o.id }}">{{ o.name }}</a>
+          <div class="id-mono">ORG-{{ o.id }}</div>
+        </td>
+        <td>
+          {% set st = (o.status or '')|lower %}
+          {% if st == 'active' %}{{ ui.badge('Active', 'good') }}
+          {% elif st == 'prospect' %}{{ ui.badge('Prospect', 'info') }}
+          {% elif st == 'inactive' %}{{ ui.badge('Inactive', 'warn') }}
+          {% else %}{{ ui.badge(o.status or '—') }}{% endif %}
+        </td>
+        <td>{{ o.industry or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{% call ui.empty("No organizations match", "Adjust the filter, or add the first employer to start tracking benefits, plans, and obligations.") %}
+{% endcall %}
+{% endif %}
 {% endblock %}

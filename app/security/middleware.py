@@ -96,6 +96,9 @@ def _denied(request, principal, action, entity_type, entity_id, detail):
         request_id=request.state.request_id,
         ip_address=request.client.host if request.client else None,
     )
+    if "text/html" in request.headers.get("accept", "") and not request.url.path.startswith("/api"):
+        from app.templating import render_error
+        return render_error(request, 403, detail=detail)
     return JSONResponse(
         {"detail": detail, "request_id": request.state.request_id}, status_code=403
     )

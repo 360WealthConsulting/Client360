@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Not found | Client360</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="c360">
+  <div class="err-wrap">
+    <div class="err-card">
+      <div class="brand"><span class="mark">C3</span><b>Client360</b></div>
+      <div class="code" style="color:var(--muted)">404 · NOT FOUND</div>
+      <h1>That page isn't here</h1>
+      <p>{{ detail or "It may have been moved or removed — or it's outside the records you're assigned to." }}</p>
+      <a class="btn secondary" href="/">Back to Dashboard</a>
+      {% if request_id %}<div class="rid">Reference: {{ request_id }}</div>{% endif %}
+    </div>
+  </div>
+</body>
+</html>
