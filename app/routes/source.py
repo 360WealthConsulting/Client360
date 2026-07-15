@@ -1,20 +1,17 @@
-from html import escape
-
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db import engine, source_contacts
+from app.templating import render_error
 
 
 router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
 
 
-@router.get(
-    "/source/{source_contact_id}",
-    response_class=HTMLResponse,
-)
-def source_contact_page(source_contact_id: int):
+@router.get("/source/{source_contact_id}")
+def source_contact_page(request: Request, source_contact_id: int):
     with engine.connect() as connection:
         record = connection.execute(
             select(source_contacts).where(
@@ -23,73 +20,10 @@ def source_contact_page(source_contact_id: int):
         ).mappings().first()
 
     if not record:
-        return HTMLResponse(
-            "<h1>Record not found</h1>",
-            status_code=404,
-        )
+        return render_error(request, 404, detail="Record not found.")
 
-    def show(value):
-        if value is None or value == "":
-            return "—"
-
-        return escape(str(value))
-
-    rows = ""
-
-    for key, value in record.items():
-        rows += f"""
-        <tr>
-            <td><strong>{escape(str(key))}</strong></td>
-            <td>{show(value)}</td>
-        </tr>
-        """
-
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1.0"
-        >
-        <title>{show(record.get("full_name"))}</title>
-
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background: #f4f6f8;
-                margin: 40px;
-                color: #1f2937;
-            }}
-
-            table {{
-                border-collapse: collapse;
-                width: 100%;
-                background: white;
-            }}
-
-            td {{
-                padding: 10px;
-                border: 1px solid #ddd;
-                vertical-align: top;
-            }}
-
-            a {{
-                color: #2563eb;
-                text-decoration: none;
-            }}
-        </style>
-    </head>
-
-    <body>
-        <p><a href="/search">← Back to Search</a></p>
-
-        <h1>{show(record.get("full_name"))}</h1>
-
-        <table>
-            {rows}
-        </table>
-    </body>
-    </html>
-    """
+    return templates.TemplateResponse(
+        request=request,
+        name="source/detail.html",
+        context={"record": dict(record)},
+    )

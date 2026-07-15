@@ -1,87 +1,21 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{{ person.first_name }} {{ person.last_name }} - Timeline</title>
-
-    <style>
-        body{
-            font-family:Arial,Helvetica,sans-serif;
-            margin:40px;
-            background:#f5f7fa;
-        }
-
-        h1{
-            margin-bottom:25px;
-        }
-
-        .event{
-            background:white;
-            border-radius:10px;
-            padding:18px;
-            margin-bottom:16px;
-            box-shadow:0 1px 4px rgba(0,0,0,.08);
-        }
-
-        .title{
-            font-size:18px;
-            font-weight:bold;
-        }
-
-        .summary{
-            margin-top:8px;
-            color:#555;
-        }
-
-        .meta{
-            margin-top:12px;
-            color:#888;
-            font-size:13px;
-        }
-
-        .badge{
-            display:inline-block;
-            padding:4px 10px;
-            border-radius:20px;
-            background:#1d4ed8;
-            color:white;
-            font-size:12px;
-            margin-bottom:10px;
-        }
-    </style>
-
-</head>
-
-<body>
-
-<h1>
-Timeline
-</h1>
-
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Timeline · {{ person.first_name }} {{ person.last_name }} | Client360{% endblock %}
+{% block crumb %}{{ person.first_name }} {{ person.last_name }} · Timeline{% endblock %}
+{% block content %}
+{% call ui.page_head("Timeline", eyebrow="Client") %}
+  <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
+{% endcall %}
+<div class="stack">
 {% for event in events %}
-
-<div class="event">
-
-<div class="badge">
-{{ event.event_type.replace("_"," ").title() }}
-</div>
-
-<div class="title">
-{{ event.title }}
-</div>
-
-<div class="summary">
-{{ event.summary or "" }}
-</div>
-
-<div class="meta">
-{{ event.source }}
-•
-{{ event.event_time }}
-</div>
-
-</div>
-
+  <div class="card">
+    <span class="badge info">{{ event.event_type.replace("_"," ").title() }}</span>
+    <h3 style="margin:8px 0 4px; font-size:15px">{{ event.title }}</h3>
+    {% if event.summary %}<div class="subtle">{{ event.summary }}</div>{% endif %}
+    <div class="subtle" style="margin-top:6px"><span class="id-mono">{{ event.event_time }}</span> · {{ event.source }}</div>
+  </div>
+{% else %}
+  {% call ui.empty("No timeline events") %}{% endcall %}
 {% endfor %}
-
-</body>
-</html>
+</div>
+{% endblock %}

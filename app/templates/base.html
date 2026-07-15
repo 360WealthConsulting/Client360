@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/css/work.css">
   <link rel="stylesheet" href="/static/css/tax.css">
   <link rel="stylesheet" href="/static/css/app.css">
+  {% block head %}{% endblock %}
 </head>
 {% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
 {% set path = request.url.path if request else '/' %}

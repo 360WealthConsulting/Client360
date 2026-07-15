@@ -1,98 +1,22 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-    <title>Client360 Activities</title>
-
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f3f4f6;
-            color: #1f2937;
-        }
-
-        header {
-            background: #111827;
-            color: white;
-            padding: 28px 40px;
-        }
-
-        main {
-            padding: 32px 40px;
-            max-width: 1100px;
-        }
-
-        a {
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .activity {
-            background: white;
-            padding: 22px;
-            margin-bottom: 18px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        }
-
-        .meta {
-            color: #6b7280;
-            margin-bottom: 12px;
-        }
-
-        .type {
-            display: inline-block;
-            padding: 5px 9px;
-            border-radius: 999px;
-            background: #e5e7eb;
-            font-size: 13px;
-            font-weight: bold;
-        }
-    </style>
-</head>
-
-<body>
-    <header>
-        <h1>Global Activity Dashboard</h1>
-        <p>Recent activity across all Client360 records</p>
-    </header>
-
-    <main>
-        <p><a href="/">← Back to dashboard</a></p>
-
-        {% for activity in activities %}
-        <div class="activity">
-            <div class="type">
-                {{ activity.activity_type.replace("_", " ").title() }}
-            </div>
-
-            <h2>{{ activity.title }}</h2>
-
-            <p class="meta">
-                <a href="/people/{{ activity.person_id }}">
-                    {{ activity.person_name }}
-                </a>
-                |
-                {{ activity.occurred_at }}
-                |
-                {{ activity.created_by or "Unknown user" }}
-            </p>
-
-            {% if activity.details %}
-            <p>{{ activity.details }}</p>
-            {% endif %}
-        </div>
-        {% else %}
-        <div class="activity">
-            <p>No activities found.</p>
-        </div>
-        {% endfor %}
-    </main>
-</body>
-</html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Activity | Client360{% endblock %}
+{% block crumb %}Activity{% endblock %}
+{% block content %}
+{{ ui.page_head("Global activity", eyebrow="Overview", desc="Recent activity across all Client360 records.") }}
+<div class="stack">
+{% for activity in activities %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <span class="badge">{{ activity.activity_type.replace("_"," ").title() }}</span>
+      <span class="id-mono">{{ activity.occurred_at }}</span>
+    </div>
+    <h3 style="margin:8px 0 4px; font-size:15px">{{ activity.title }}</h3>
+    <div class="subtle"><a class="rowlink" href="/people/{{ activity.person_id }}">{{ activity.person_name }}</a> · {{ activity.created_by or "Unknown user" }}</div>
+    {% if activity.details %}<div class="subtle" style="margin-top:4px">{{ activity.details }}</div>{% endif %}
+  </div>
+{% else %}
+  {% call ui.empty("No activity", "Client activity across the firm will appear here.") %}{% endcall %}
+{% endfor %}
+</div>
+{% endblock %}

@@ -155,4 +155,4 @@ def test_workflow_ui_and_versioned_api_routes_are_registered():
     assert "post" in schema["paths"]["/api/v1/workflows"] and "get" in schema["paths"]["/api/v1/workflows/{instance_id}"]
     from app.routes.workflows import templates
     rendered = templates.get_template("workflows/index.html").render(templates=[], metrics={"by_status": {}, "pending_approvals": 0, "open_escalations": 0}, principal=None)
-    assert "Workflow Automation" in rendered
+    assert "Workflow automation" in rendered and "app-shell" in rendered

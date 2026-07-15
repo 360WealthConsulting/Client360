@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Review Group {{ group_number }} | Client360{% endblock %}
+{% block crumb %}Review Group {{ group_number }}{% endblock %}
+{% block content %}
+{% call ui.page_head("Review group " ~ group_number, eyebrow="Match Review", desc="Compare potential duplicate records.") %}
+  <a class="btn secondary" href="/matches">Back to all matches</a>
+{% endcall %}
+<div class="alert warn" style="margin-bottom:16px"><span class="ico">⚠</span><div>
+  <b>Current decision: {{ decision_label }}</b>
+  <p style="margin-top:6px">Names: {{ group.names or '—' }} · Sources: {{ group.source_systems or '—' }} · Reason for review: {{ group.review_reason or '—' }}</p>
+</div></div>
+<div class="row" style="margin-bottom:20px; gap:12px">
+  <form method="post" action="/matches/{{ group_number }}/decision/approved"><button class="btn" type="submit">Approve match</button></form>
+  <form method="post" action="/matches/{{ group_number }}/decision/rejected"><button class="btn danger" type="submit">Not a duplicate</button></form>
+  <form method="post" action="/matches/{{ group_number }}/decision/skipped"><button class="btn secondary" type="submit">Skip</button></form>
+</div>
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+{% for record in records %}
+  {% set addr = [record.address_line_1, record.address_line_2, record.city, record.state, record.postal_code]|select|join(", ") %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0; font-size:15px">{{ record.source_system or '—' }}</h3>
+      <a class="rowlink" href="/source/{{ record.id }}">Open source</a>
+    </div>
+    <div class="stack" style="margin-top:10px">
+      <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Name</span><span>{{ record.full_name or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Email</span><span>{{ record.email or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Phone</span><span>{{ record.phone or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Address</span><span>{{ addr or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Territory</span><span>{{ record.territory or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Source file</span><span>{{ record.source_file or '—' }}</span></div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Microsoft 365 Profile | Client360{% endblock %}
+{% block crumb %}Microsoft 365 Profile{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Microsoft 365</p><h1>Authentication succeeded</h1><p class="desc">The Microsoft 365 account is connected.</p></div></div>
+<div class="card" style="max-width:640px">
+  <div class="stack">
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Name</span><span>{{ account.display_name or "" }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Email</span><span>{{ account.email or "" }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Microsoft user ID</span><span class="id-mono">{{ account.user_id or "" }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Tenant ID</span><span class="id-mono">{{ account.tenant_id or "" }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Token expires</span><span>{{ account.expires_at or "" }}</span></div>
+  </div>
+  <form method="post" action="/microsoft365/disconnect" style="margin-top:14px"><button class="btn danger" type="submit">Disconnect Microsoft 365</button></form>
+</div>
+{% endblock %}

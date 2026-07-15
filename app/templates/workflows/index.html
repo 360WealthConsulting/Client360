@@ -1,5 +1,27 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workflow Automation · Client360</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"></head>
-<body><header class="work-header"><a href="/work">← My Work</a><h1>Workflow Automation</h1><p>Versioned firm processes and operational controls</p></header><main class="work-main">
-<section class="metrics"><article><span>Active workflows</span><strong>{{ metrics.by_status.get('active', 0) }}</strong></article><article><span>Pending approvals</span><strong>{{ metrics.pending_approvals }}</strong></article><article><span>Open escalations</span><strong>{{ metrics.open_escalations }}</strong></article></section>
-<h2>Published templates</h2><div class="work-grid"><section>{% for template in templates %}<article class="work-card"><h3>{{ template.name }}</h3><p>{{ template.category|replace('_', ' ')|title }} · Version {{ template.version }}</p><p>{{ template.description or 'Standardized firm workflow with independent review.' }}</p></article>{% else %}<div class="empty">No published templates.</div>{% endfor %}</section></div>
-</main></body></html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Workflows | Client360{% endblock %}
+{% block crumb %}Workflows{% endblock %}
+{% block content %}
+{{ ui.page_head("Workflow automation", eyebrow="Work", desc="Versioned firm processes and operational controls.") }}
+<div class="stat-grid">
+  {{ ui.stat("Active workflows", metrics.by_status.get('active', 0)) }}
+  {{ ui.stat("Pending approvals", metrics.pending_approvals) }}
+  {{ ui.stat("Open escalations", metrics.open_escalations) }}
+</div>
+<h2 class="section-title">Published templates</h2>
+<div class="stack">
+{% for template in templates %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0; font-size:15px">{{ template.name }}</h3>
+      <span class="badge info">v{{ template.version }}</span>
+    </div>
+    <div class="subtle" style="margin-top:4px">{{ template.category|replace('_',' ')|title }}</div>
+    <div class="subtle" style="margin-top:4px">{{ template.description or 'Standardized firm workflow with independent review.' }}</div>
+  </div>
+{% else %}
+  {% call ui.empty("No published templates") %}{% endcall %}
+{% endfor %}
+</div>
+{% endblock %}

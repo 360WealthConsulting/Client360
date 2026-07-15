@@ -1,227 +1,64 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-    <title>{{ household.name }} - Client360</title>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ household.name }} | Client360{% endblock %}
+{% block crumb %}{{ household.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(household.name, eyebrow="Household", desc=((household.city or "") ~ (", " if household.city and household.state else "") ~ (household.state or ""))) }}
 
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f3f4f6;
-            color: #1f2937;
-        }
+{% if created %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Household created successfully.</div></div>{% endif %}
+{% if member_saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Household member saved.</div></div>{% endif %}
 
-        header {
-            background: #111827;
-            color: white;
-            padding: 28px 40px;
-        }
+<div class="card" style="margin-bottom:16px">
+  <h3>Add household member</h3>
+  <form method="post" action="/households/{{ household.id }}/members">
+    <div class="field">
+      <label for="person_id">Person</label>
+      <select class="input" id="person_id" name="person_id" required>
+        <option value="">Select a person</option>
+        {% for person in available_people %}
+        <option value="{{ person.id }}">{{ person.full_name }}{% if person.primary_email %} — {{ person.primary_email }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="relationship_type">Relationship</label>
+      <select class="input" id="relationship_type" name="relationship_type">
+        <option value="head">Head of Household</option>
+        <option value="spouse">Spouse</option>
+        <option value="partner">Partner</option>
+        <option value="child">Child</option>
+        <option value="dependent">Dependent</option>
+        <option value="trustee">Trustee</option>
+        <option value="beneficiary">Beneficiary</option>
+        <option value="member" selected>Other Member</option>
+      </select>
+    </div>
+    <label class="row" style="gap:8px; font-size:13px"><input type="checkbox" name="is_primary"> Primary household contact</label>
+    <label class="row" style="gap:8px; font-size:13px; margin-top:8px"><input type="checkbox" name="is_primary_household"> This is the person's primary household</label>
+    <div style="margin-top:12px"><button class="btn" type="submit">Save member</button></div>
+  </form>
+</div>
 
-        main {
-            padding: 32px 40px;
-        }
-
-        a {
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .card {
-            background: white;
-            padding: 22px;
-            margin-bottom: 24px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        }
-
-        label {
-            display: block;
-            margin-top: 12px;
-            margin-bottom: 6px;
-            font-weight: bold;
-        }
-
-        select,
-        input {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 11px;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-        }
-
-        .checkbox {
-            width: auto;
-        }
-
-        button {
-            margin-top: 16px;
-            padding: 11px 18px;
-            border: 0;
-            border-radius: 6px;
-            background: #2563eb;
-            color: white;
-            cursor: pointer;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-        }
-
-        th,
-        td {
-            padding: 14px;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        th {
-            background: #f9fafb;
-        }
-
-        .success {
-            padding: 14px;
-            margin-bottom: 18px;
-            border-left: 4px solid #15803d;
-            background: #dcfce7;
-            color: #166534;
-        }
-    </style>
-</head>
-
-<body>
-    <header>
-        <h1>{{ household.name }}</h1>
-        <p>
-            {{ household.city or "" }}
-            {% if household.city and household.state %}, {% endif %}
-            {{ household.state or "" }}
-        </p>
-    </header>
-
-    <main>
-        <p><a href="/households">← Back to households</a></p>
-
-        {% if created %}
-        <div class="success">Household created successfully.</div>
-        {% endif %}
-
-        {% if member_saved %}
-        <div class="success">Household member saved.</div>
-        {% endif %}
-
-        <div class="card">
-            <h2>Add Household Member</h2>
-
-            <form
-                method="post"
-                action="/households/{{ household.id }}/members"
-            >
-                <label for="person_id">Person</label>
-                <select id="person_id" name="person_id" required>
-                    <option value="">Select a person</option>
-
-                    {% for person in available_people %}
-                    <option value="{{ person.id }}">
-                        {{ person.full_name }}
-                        {% if person.primary_email %}
-                        — {{ person.primary_email }}
-                        {% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
-
-                <label for="relationship_type">
-                    Relationship
-                </label>
-
-                <select
-                    id="relationship_type"
-                    name="relationship_type"
-                >
-                    <option value="head">Head of Household</option>
-                    <option value="spouse">Spouse</option>
-                    <option value="partner">Partner</option>
-                    <option value="child">Child</option>
-                    <option value="dependent">Dependent</option>
-                    <option value="trustee">Trustee</option>
-                    <option value="beneficiary">Beneficiary</option>
-                    <option value="member" selected>Other Member</option>
-                </select>
-
-                <label>
-                    <input
-                        class="checkbox"
-                        type="checkbox"
-                        name="is_primary"
-                    >
-                    Primary household contact
-                </label>
-
-                <label>
-                    <input
-                        class="checkbox"
-                        type="checkbox"
-                        name="is_primary_household"
-                    >
-                    This is the person's primary household
-                </label>
-
-                <button type="submit">Save Member</button>
-            </form>
-        </div>
-
-        <h2>Household Members</h2>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Relationship</th>
-                    <th>Email</th>
-                    <th>Phone</th>
-                    <th>Primary</th>
-                    <th>Primary Household</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                {% for member in members %}
-                <tr>
-                    <td>
-                        <a href="/people/{{ member.id }}">
-                            {{ member.full_name }}
-                        </a>
-                    </td>
-                    <td>
-                        {{ member.relationship_type.replace("_", " ").title() }}
-                    </td>
-                    <td>{{ member.primary_email or "" }}</td>
-                    <td>{{ member.primary_phone or "" }}</td>
-                    <td>
-                        {% if member.is_primary %}Yes{% else %}No{% endif %}
-                    </td>
-                    <td>
-                        {% if member.is_primary_household %}Yes{% else %}No{% endif %}
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="6">
-                        No household members have been added.
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </main>
-</body>
-</html>
+<h2 class="section-title">Household members</h2>
+{% if members %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Name</th><th>Relationship</th><th>Email</th><th>Phone</th><th>Primary</th><th>Primary household</th></tr></thead>
+    <tbody>
+    {% for member in members %}
+      <tr>
+        <td><a class="rowlink" href="/people/{{ member.id }}">{{ member.full_name }}</a></td>
+        <td>{{ member.relationship_type.replace("_", " ").title() }}</td>
+        <td>{{ member.primary_email or "" }}</td>
+        <td>{{ member.primary_phone or "" }}</td>
+        <td>{% if member.is_primary %}{{ ui.badge('Yes','good') }}{% else %}<span class="subtle">No</span>{% endif %}</td>
+        <td>{% if member.is_primary_household %}{{ ui.badge('Yes','good') }}{% else %}<span class="subtle">No</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{% call ui.empty("No members yet", "No household members have been added.") %}{% endcall %}
+{% endif %}
+{% endblock %}

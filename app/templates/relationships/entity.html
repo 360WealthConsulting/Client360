@@ -1,6 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>{{ entity.name }} - Client360</title><link rel="stylesheet" href="/static/css/main.css"></head>
-<body><header style="background:#111827;color:white;padding:28px 40px;"><h1>{{ entity.name }}</h1><p>{{ entity.entity_type.replace("_", " ").title() }}</p></header>
-<main style="max-width:900px;padding:32px 40px;"><p><a href="javascript:history.back()">← Back</a></p><section class="card"><h2>Record Details</h2>{% for key, value in entity.details.items() %}<p><strong>{{ key.replace("_", " ").title() }}:</strong> {{ value }}</p>{% else %}<p>No additional details recorded.</p>{% endfor %}</section></main></body>
-</html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ entity.name }} | Client360{% endblock %}
+{% block crumb %}{{ entity.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(entity.name, eyebrow=entity.entity_type.replace("_"," ").title()) }}
+<div class="card" style="max-width:900px">
+  <h3>Record details</h3>
+  {% for key, value in entity.details.items() %}
+  <div class="row" style="justify-content:space-between; gap:16px; {% if not loop.last %}border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:8px;{% endif %}">
+    <span class="subtle">{{ key.replace("_"," ").title() }}</span><span>{{ value }}</span>
+  </div>
+  {% else %}
+  <p class="subtle">No additional details recorded.</p>
+  {% endfor %}
+</div>
+{% endblock %}
