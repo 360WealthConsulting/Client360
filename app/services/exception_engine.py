@@ -461,3 +461,19 @@ def list_exceptions(principal, *, domain="tax", status=None, severity=None, cate
     for row in rows:
         row["sla_state"] = sla_state(row)
     return rows
+
+
+def metrics(principal):
+    """Console metrics summary over the principal's record-scoped tax exceptions."""
+    from collections import Counter
+    rows = list_exceptions(principal)
+    open_rows = [r for r in rows if r["status"] not in CLOSED_STATUSES]
+    return {
+        "total": len(rows),
+        "open": len(open_rows),
+        "by_status": dict(Counter(r["status"] for r in rows)),
+        "by_severity": dict(Counter(r["severity"] for r in open_rows)),
+        "by_category": dict(Counter(r["category"] for r in open_rows)),
+        "overdue": sum(1 for r in open_rows if r.get("sla_state") == "breached"),
+        "escalated": sum(1 for r in open_rows if r["status"] == "escalated"),
+    }
