@@ -635,6 +635,54 @@ ADR-18 marked implemented only after the RC passes).
 
 ---
 
+## 17A. Phase 5 — Compliance & renewal obligation model (design)
+
+Proportional to the Employer-Ops MVP — **not** an ERISA/ACA/retirement-compliance
+administration platform. One instantiated table + one template table; everything else reuses
+Engagements, Work Management, Documents, Timeline, Audit, and the Exception Engine.
+
+**Two tables (minimal):**
+- **`benefit_obligation_templates`** — reusable *definitions* of expected obligations
+  (obligation type, service line, what it applies to, default warning window, recurrence,
+  default responsible relationship role). Seeded reference data; **carries no dates**.
+- **`benefit_obligations`** — *instantiated*, Organization-specific obligations with **actual
+  dates**. Anchored to organization (+ optional service line / engagement / plan / plan year);
+  fields: obligation type, safe title/description, **due date**, warning days, recurrence,
+  responsible role (context), status (`scheduled`/`in_progress`/`completed`/`cancelled`/
+  `waived`), completion date, source, evidence document, notes, audit columns, and a unique
+  `materialization_key` for idempotent recurrence.
+
+**Templates vs instantiated:** templates define *what/when-relative*; obligations carry the
+*actual date*. **Dates are explicitly entered or derived only from verified stored data** —
+never inferred from filing status, participant count, or plan facts Client360 does not store.
+
+**Renewal calendar** is just obligations of milestone types tied to a renewal **engagement**
+(renewal identified → census requested/due/received → marketing → quotes → recommendation →
+employer decision → OE begins/ends → submission → effective date). No second reminder/task
+system.
+
+**Date-driven detector** (`detect_obligation_deadlines`, added to the existing benefits scan):
+for each active obligation whose type maps to an approved exception code and whose warning
+window has been reached, raise a `domain='benefits'` exception with dedupe key
+`ben:obligation:{id}`, the Organization anchor, and **the obligation's due date as the
+exception SLA** (so Work Management due/SLA reflect the deadline). Auto-resolves when the
+obligation is completed/cancelled/waived; annual obligations **materialize** the next
+occurrence on completion (idempotent via `materialization_key`). Type→code map covers 5500,
+fiduciary review, nondiscrimination testing, annual notices (safe-harbor/QDIA/auto-enroll/fee),
+plan amendment/restatement, renewal + census + open-enrollment milestones, SPD/SBC delivery.
+
+**Remaining data gaps (still inert, documented):** **contribution-deposit-late** stays
+inactive — no reliable payroll/deposit data (never inferred from a disabled integration);
+full ACA measurement/affordability is out of scope. Any obligation whose date cannot be
+verified from stored data must be entered explicitly or is not materialized.
+
+**SLA / notifications / scheduler reuse:** the existing exception SLA sweep is extended to
+`domain='benefits'` (internal-only — **no employer-portal notifications**; Phase 7 owns those);
+notifications reuse the existing provider/outcome architecture with honest
+sent/failed/disabled/skipped outcomes and the existing `last_notified_at` cooldown; the
+existing scheduler runs materialization + the (single) benefits detector scan + SLA sweep —
+**no second scheduler, no duplicate scans**.
+
 ## 18. Open questions for approval (recommendations noted)
 
 - **O-1 · Organization = `relationship_entities` + `organization_profiles`** (recommended)
