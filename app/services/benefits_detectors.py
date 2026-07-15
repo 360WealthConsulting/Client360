@@ -25,15 +25,13 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
+from app import config
 from app.db import (benefit_document_links, benefit_employments, benefit_enrollments,
     benefit_plan_types, benefit_plan_years, benefit_plans, benefit_retirement_elections,
-    benefit_retirement_plan_details, engagements, engine, exceptions, organization_profiles,
-    organization_service_lines, people, service_lines)
+    benefit_retirement_plan_details, engagements, engine, exceptions,
+    organization_profiles, organization_service_lines, people, service_lines)
 from app.services import exception_engine as ee
 
-NEW_HIRE_WINDOW_DAYS = 30
-RENEWAL_RISK_DAYS = 60
-OE_CLOSING_DAYS = 7
 _ACTIVE_ENROLLED = ("eligible", "elected", "enrolled")
 _HANDLED_ENROLLED = ("elected", "enrolled", "waived")
 _OPEN_YEAR = ("open_enrollment", "active")
@@ -78,13 +76,18 @@ def _auto_resolve(exception_id, status, actor_user_id, resolution="auto_source_c
 
 def _reconcile(prefix, code, conditions, *, actor_user_id):
     """Raise an exception for each current condition (idempotent) and auto-close any open
-    exception in this detector's dedupe family whose condition has cleared."""
-    raised = 0
+    exception in this detector's dedupe family whose condition has cleared.
+
+    Each raise/resolve is isolated: a single organization's bad data fails only its own
+    condition (recorded in ``failures``) and never aborts the rest of the scan."""
+    raised, closed, failures = 0, 0, []
     for key, scope in conditions.items():
-        ee.raise_exception(code=code, actor_user_id=actor_user_id, principal=None,
-                           source="system", dedupe_key=key, **scope)
-        raised += 1
-    closed = 0
+        try:
+            ee.raise_exception(code=code, actor_user_id=actor_user_id, principal=None,
+                               source="system", dedupe_key=key, **scope)
+            raised += 1
+        except Exception as exc:  # pragma: no cover - defensive isolation
+            failures.append({"dedupe_key": key, "error": type(exc).__name__})
     with engine.connect() as c:
         stale = c.execute(
             select(exceptions.c.id, exceptions.c.status, exceptions.c.dedupe_key)
@@ -93,9 +96,12 @@ def _reconcile(prefix, code, conditions, *, actor_user_id):
     for row in stale:
         if row["dedupe_key"] in conditions:
             continue
-        _auto_resolve(row["id"], row["status"], actor_user_id)
-        closed += 1
-    return {"raised": raised, "closed": closed}
+        try:
+            _auto_resolve(row["id"], row["status"], actor_user_id)
+            closed += 1
+        except Exception as exc:  # pragma: no cover - defensive isolation
+            failures.append({"dedupe_key": row["dedupe_key"], "error": type(exc).__name__})
+    return {"raised": raised, "closed": closed, "failures": failures}
 
 
 def _scope(org_id, title, *, person_id=None, household_id=None):
@@ -194,7 +200,7 @@ def detect_eligibility_unresolved(ctx, today, actor_user_id):
     for eid, e in ctx["emps"].items():
         if e["status"] != "active" or e["hire_date"] is None:
             continue
-        if (today - e["hire_date"]).days <= NEW_HIRE_WINDOW_DAYS:
+        if (today - e["hire_date"]).days <= config.benefits_new_hire_window_days():
             continue  # recent hires are the new-hire detector's job
         if e["org_id"] not in ctx["org_open"]["health"]:
             continue
@@ -210,7 +216,7 @@ def detect_new_hire_enrollment_due(ctx, today, actor_user_id):
     for eid, e in ctx["emps"].items():
         if e["status"] != "active" or e["hire_date"] is None:
             continue
-        if (today - e["hire_date"]).days > NEW_HIRE_WINDOW_DAYS:
+        if (today - e["hire_date"]).days > config.benefits_new_hire_window_days():
             continue
         if e["org_id"] not in ctx["org_open"]["health"]:
             continue
@@ -244,7 +250,7 @@ def detect_open_enrollment_incomplete(ctx, today, actor_user_id):
         p = ctx["plans"].get(y["plan_id"])
         if not p or p["line"] != "health" or y["status"] != "open_enrollment":
             continue
-        if y["oe_end"] is None or y["oe_end"] > today + timedelta(days=OE_CLOSING_DAYS):
+        if y["oe_end"] is None or y["oe_end"] > today + timedelta(days=config.benefits_open_enrollment_warning_days()):
             continue
         active_emps = {eid for eid, e in ctx["emps"].items()
                        if e["org_id"] == p["org_id"] and e["status"] == "active"}
@@ -287,7 +293,8 @@ def detect_census_overdue(ctx, today, actor_user_id):
     for eng in ctx["census_engs"]:
         if "census" not in (eng["engagement_type"] or "").lower():
             continue
-        if eng["status"] in ("closed", "cancelled") or eng["due_date"] is None or eng["due_date"] >= today:
+        grace = timedelta(days=config.benefits_census_grace_days())
+        if eng["status"] in ("closed", "cancelled") or eng["due_date"] is None or eng["due_date"] + grace >= today:
             continue
         if "census" in ctx["docs_by_org"].get(eng["org_id"], set()):
             continue  # a census document has arrived
@@ -315,23 +322,36 @@ def detect_employer_renewal_data_incomplete(ctx, today, actor_user_id):
 
 # --- health / welfare plan detectors -----------------------------------------
 
+def _past_document_grace(plan, today):
+    """A required document is only 'missing' once the configured grace period has
+    elapsed since the plan became effective. Grace defaults to 0 (fire immediately —
+    identical to the Phase-3 semantics); a future/unknown effective date never suppresses."""
+    grace = config.benefits_document_grace_days()
+    eff = plan["effective_date"]
+    if grace <= 0 or eff is None:
+        return True
+    return (today - eff).days >= grace
+
+
 def detect_spd_missing(ctx, today, actor_user_id):
+    today = _today(today)
     cond = {}
     for pid, p in ctx["plans"].items():
         if p["line"] != "health" or p["status"] not in ("active", "renewing"):
             continue
-        if "spd" in ctx["docs_by_plan"].get(pid, set()):
+        if "spd" in ctx["docs_by_plan"].get(pid, set()) or not _past_document_grace(p, today):
             continue
         cond[f"ben:spd:{pid}"] = _scope(p["org_id"], "Required SPD missing")
     return _reconcile("ben:spd:", "BEN_SPD_MISSING", cond, actor_user_id=actor_user_id)
 
 
 def detect_sbc_missing(ctx, today, actor_user_id):
+    today = _today(today)
     cond = {}
     for pid, p in ctx["plans"].items():
         if p["plan_type"] != "medical" or p["status"] not in ("active", "renewing"):
             continue
-        if "sbc" in ctx["docs_by_plan"].get(pid, set()):
+        if "sbc" in ctx["docs_by_plan"].get(pid, set()) or not _past_document_grace(p, today):
             continue
         cond[f"ben:sbc:{pid}"] = _scope(p["org_id"], "Required SBC missing")
     return _reconcile("ben:sbc:", "BEN_SBC_MISSING", cond, actor_user_id=actor_user_id)
@@ -343,7 +363,7 @@ def detect_renewal_at_risk(ctx, today, actor_user_id):
     for pid, p in ctx["plans"].items():
         if p["status"] != "active" or p["renewal_date"] is None:
             continue
-        if p["renewal_date"] > today + timedelta(days=RENEWAL_RISK_DAYS):
+        if p["renewal_date"] > today + timedelta(days=config.benefits_renewal_warning_days()):
             continue
         cond[f"ben:renewal_risk:{pid}"] = _scope(p["org_id"], "Renewal at risk")
     return _reconcile("ben:renewal_risk:", "BEN_RENEWAL_AT_RISK", cond, actor_user_id=actor_user_id)
@@ -434,11 +454,62 @@ DETECTORS = (
 )
 
 
-def scan_benefits_exceptions(*, actor_user_id=None, today=None):
+def scan_benefits_exceptions(*, actor_user_id=None, today=None, ctx=None):
     """Run every active benefits detector once (idempotent). Returns per-detector counts.
-    Inert/gap detectors (``DETECTOR_GAPS``) and disabled-integration types are not run."""
-    ctx = _load_context()
+    Each detector is isolated: a failure in one never aborts the others (recorded per
+    detector). Inert/gap detectors and disabled-integration types are never run."""
+    ctx = ctx if ctx is not None else _load_context()
     summary = {}
     for detector in DETECTORS:
-        summary[detector.__name__] = detector(ctx, today, actor_user_id)
+        try:
+            summary[detector.__name__] = detector(ctx, today, actor_user_id)
+        except Exception as exc:  # pragma: no cover - defensive isolation
+            summary[detector.__name__] = {"raised": 0, "closed": 0,
+                                          "failures": [{"detector": detector.__name__, "error": type(exc).__name__}]}
     return summary
+
+
+def _benefits_org_ids(ctx):
+    """Organizations with a benefits footprint (plans, employees, census engagements, or an
+    active benefits service line) — the set the scheduled scan attributes results to."""
+    ids = set(ctx["benefits_sl_orgs"])
+    ids |= {p["org_id"] for p in ctx["plans"].values()}
+    ids |= {e["org_id"] for e in ctx["emps"].values()}
+    ids |= {eng["org_id"] for eng in ctx["census_engs"]}
+    return ids
+
+
+def _open_benefits_status():
+    """id -> status for every benefits exception (used to diff opened/resolved/reopened)."""
+    with engine.connect() as c:
+        return {r["id"]: r["status"] for r in c.execute(
+            select(exceptions.c.id, exceptions.c.status).where(exceptions.c.domain == "benefits")).mappings()}
+
+
+def run_benefits_scan(*, actor_user_id=None, today=None):
+    """Scheduled entry point. Runs the idempotent detector scan and returns an **honest**
+    execution result: scanned organizations, exceptions opened / resolved / reopened /
+    skipped (idempotent replays), and per-condition failures. One organization's bad data
+    is isolated by ``_reconcile`` and reported, never aborting the rest of the scan."""
+    ctx = _load_context()
+    scanned_orgs = len(_benefits_org_ids(ctx))
+    before = _open_benefits_status()
+    summary = scan_benefits_exceptions(actor_user_id=actor_user_id, today=today, ctx=ctx)
+    after = _open_benefits_status()
+
+    raised_total = sum(s.get("raised", 0) for s in summary.values())
+    failures = [f for s in summary.values() for f in s.get("failures", [])]
+    active = lambda st: st not in _CLOSED
+    opened = sum(1 for i, st in after.items() if active(st) and i not in before)
+    reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
+    resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
+    skipped = max(0, raised_total - opened - reopened)  # idempotent replays (condition persists)
+    return {
+        "scanned_organizations": scanned_orgs,
+        "exceptions_opened": opened,
+        "exceptions_resolved": resolved,
+        "exceptions_reopened": reopened,
+        "exceptions_skipped": skipped,
+        "failures": len(failures),
+        "failure_detail": failures,
+    }
