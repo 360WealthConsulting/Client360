@@ -41,9 +41,10 @@ def test_capability_family_seeded_and_granted():
 
 
 def test_exception_work_queues_seeded():
+    # Phase 1 seeds three exception queues; Phase 5 renames two to the tax_ prefix.
     with engine.connect() as c:
         codes = set(c.execute(text("SELECT code FROM work_queues WHERE code LIKE '%exception%'")).scalars())
-    assert {"exceptions", "exceptions_critical", "compliance_exceptions"} <= codes
+    assert {"tax_exceptions", "tax_exceptions_critical", "compliance_exceptions"} <= codes
 
 
 # --- constraints --------------------------------------------------------------
