@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Benefits Reporting | Client360{% endblock %}
+{% block content %}
+{% set r = report %}
+<div class="page-header"><div>
+  <p class="eyebrow">Employee Benefits</p>
+  <h1>Benefits dashboard</h1>
+  <p class="muted">Authorization-filtered across your authorized employers — book, participation, compliance &amp; renewal calendar.</p>
+</div></div>
+
+<section class="panel">
+  <h2>Book of business</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Employers</span><strong>{{ r.book.employers }}</strong></div>
+    <div class="stat-card"><span>Active plans</span><strong>{{ r.book.active_plans }}</strong></div>
+    <div class="stat-card"><span>Health plans</span><strong>{{ r.book.plans_by_line.get('health', 0) }}</strong></div>
+    <div class="stat-card"><span>Retirement plans</span><strong>{{ r.book.plans_by_line.get('retirement', 0) }}</strong></div>
+    <div class="stat-card"><span>Eligible employees</span><strong>{{ r.book.eligible_employees }}</strong></div>
+    <div class="stat-card"><span>Enrolled</span><strong>{{ r.book.enrolled_employees }}</strong></div>
+    <div class="stat-card"><span>Participation</span><strong>{{ ('%.0f%%'|format(r.book.participation_rate*100)) if r.book.participation_rate is not none else '—' }}</strong></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Obligations</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Active</span><strong>{{ r.obligations.active }}</strong></div>
+    <div class="stat-card"><span>Upcoming (30d)</span><strong>{{ r.obligations.upcoming|length }}</strong></div>
+    <div class="stat-card"><span>Overdue</span><strong>{{ r.obligations.overdue|length }}</strong></div>
+    <div class="stat-card"><span>Completed</span><strong>{{ r.obligations.by_status.get('completed', 0) }}</strong></div>
+  </div>
+  {% if r.obligations.overdue %}
+  <h3>Overdue</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Obligation</th><th>Due</th></tr></thead>
+    <tbody>{% for o in r.obligations.overdue %}<tr><td>{{ o.title }}</td><td>{{ o.due_date }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Compliance &amp; renewal calendar</h2>
+  <h3>Compliance deadlines</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Obligation</th><th>Type</th><th>Due</th></tr></thead>
+    <tbody>
+    {% for o in r.compliance_calendar %}<tr><td>{{ o.title }}</td><td>{{ o.obligation_type|replace('_',' ')|title }}</td><td>{{ o.due_date }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No compliance obligations scheduled.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <h3>Renewals ({{ r.renewals.open_renewal_engagements }} open renewal engagements)</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Plan</th><th>Renews</th></tr></thead>
+    <tbody>
+    {% for p in r.renewals.plans_renewing %}<tr><td>{{ p.name }}</td><td>{{ p.renewal_date }}</td></tr>
+    {% else %}<tr><td colspan="2" class="muted">No plans renewing in the next 90 days.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if r.exceptions %}
+<section class="panel">
+  <h2>Benefits exceptions</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><span>Open</span><strong>{{ r.exceptions.summary.open }}</strong></div>
+    <div class="stat-card"><span>Blocker</span><strong>{{ r.exceptions.summary.blocker }}</strong></div>
+    <div class="stat-card"><span>At risk</span><strong>{{ r.exceptions.summary.at_risk }}</strong></div>
+    <div class="stat-card"><span>Breached</span><strong>{{ r.exceptions.summary.breached }}</strong></div>
+    <div class="stat-card"><span>Unassigned</span><strong>{{ r.exceptions.summary.unassigned }}</strong></div>
+    <div class="stat-card"><span>Compliance</span><strong>{{ r.exceptions.summary.compliance }}</strong></div>
+  </div>
+  <p class="muted">Work the items in the benefits queues and the <a href="/exceptions/reporting?audience=compliance">exception reporting</a> view.</p>
+</section>
+{% endif %}
+{% endblock %}

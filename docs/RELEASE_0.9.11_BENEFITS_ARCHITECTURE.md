@@ -1,8 +1,10 @@
 # Release 0.9.11 · Employer Operations on a Shared Client Platform — Architecture (Phase 0)
 
-**Status:** Phase 0 — **architecture only, no code**. Revised per the "shared Client360
-concepts" direction. For approval before any implementation.
-**Baseline:** `main` @ v0.9.10, Alembic head `q7b58f6c5d4e`.
+**Status:** **Implemented across Phases 1–8 and RC14-validated** ([RC14](RC14_VALIDATION.md) —
+**SAFE TO MERGE**, 0 defects). Release candidate: **PR #22 draft, not merged; v0.9.11 not
+tagged.** (Phase 0 was architecture-only; the design below was approved and delivered.)
+**Baseline:** `main` @ v0.9.10, Alembic head `q7b58f6c5d4e`. **Candidate head:** `u1f9c0i9h8g7`.
+**Release notes:** [RELEASE_0.9.11.md](RELEASE_0.9.11.md).
 **Governing design:** `docs/PRODUCTION_ARCHITECTURE.md` (SQLAlchemy Core, capability RBAC,
 domain-aware record-scope, immutable audit, additive/reversible migrations, single head,
 thin routes over canonical services).

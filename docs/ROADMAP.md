@@ -135,6 +135,33 @@ See [Release 0.9.9 Notes](RELEASE_0.9.9.md), [Production Architecture](PRODUCTIO
 `MICROSOFT_TOKEN_KEY` rotation, legacy plaintext-column removal, and the orphaned
 `app/models/` scaffold.
 
+## Release 0.9.11 — Employer Operations & Employee Benefits 🔶 (release candidate; PR #22 draft, not tagged)
+
+Usable **Employer Operations** product on shared Client360 concepts (ADR-18) with **Employee
+Benefits + Retirement** first-class, delivered as eight independently reviewed phases and
+[RC14](RC14_VALIDATION.md)-validated (**SAFE TO MERGE**, 0 defects).
+
+- **Organizations** = existing `relationship_entities` (+`organization_profiles`, EIN
+  encrypted); permanent relationship roles; typed ownership on the existing `relationships`
+  edge; service lines; universal `engagements` model (tax converges later, documented).
+- **Benefits + retirement** first-class (17 plan types); plans/plan-years/employments/
+  enrollments/deferral elections; provider-neutral ports (Betterment seeded; **integrations
+  disabled**).
+- 18 detectors + a date-driven obligation model (**verified dates only, nothing inferred**);
+  benefits reuses the platform Exception Engine (`domain='benefits'`), the shared SLA sweep,
+  Work Management + seven queues, and the scheduler (overlap-prevented scan).
+- Staff API + `/organizations`/`/benefits`/`/benefits/reporting` consoles (names not IDs;
+  EIN gated); org-scoped **employer portal** (PII-free allowlist, census upload, messages,
+  auditable notifications) reusing the existing portal stack; proportional benefits dashboard
+  reusing `exception_reporting`.
+- New `organization.*` / `benefits.*` capabilities + `benefits_*` roles; no role widened; no
+  new `record.read_all`. Additive/reversible migrations; single head `u1f9c0i9h8g7`;
+  sentinel-preserving up/down cycle from v0.9.10. **Tax untouched.**
+
+See [Release 0.9.11 Notes](RELEASE_0.9.11.md),
+[Architecture (ADR-18)](RELEASE_0.9.11_BENEFITS_ARCHITECTURE.md), and
+[RC14 Validation](RC14_VALIDATION.md).
+
 ## Release 0.9.10 — Exception Engine ✅ (released; tag `v0.9.10`)
 
 Platform-wide **Exception Engine** (ADR-17), implemented **tax domain only**, delivered as

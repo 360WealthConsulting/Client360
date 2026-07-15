@@ -91,17 +91,19 @@ def _reopen_counts(exception_ids):
     return len(reopened)
 
 
-def exception_report(principal, *, audience=None, trend_days=30, now=None):
+def exception_report(principal, *, audience=None, trend_days=30, now=None, domain="tax"):
     """Comprehensive, authorization-filtered exception metrics for a staff principal.
 
     ``audience`` (advisor/operations/tax/compliance/management) selects the panel
-    list only; the returned metrics are complete and identical regardless. Raises
-    the engine's ``UnsupportedDomainError`` for non-tax domains and
-    ``ExceptionAuthorizationError`` when the principal lacks ``exception.read``.
+    list only; the returned metrics are complete and identical regardless. ``domain``
+    (``tax`` or ``benefits``) selects which exception domain to report on — the same
+    reporting engine serves both. Raises the engine's ``UnsupportedDomainError`` for an
+    unimplemented domain and ``ExceptionAuthorizationError`` when the principal lacks
+    ``exception.read``.
     """
     audience = audience if audience in AUDIENCES else default_audience(principal)
     now = now or _now()
-    rows = ee.list_exceptions(principal)  # <-- record-scope enforced here
+    rows = ee.list_exceptions(principal, domain=domain)  # <-- record-scope enforced here
     open_rows = [r for r in rows if r["status"] not in ee.CLOSED_STATUSES]
 
     ack_deltas = [(r["acknowledged_at"] - r["opened_at"]).total_seconds()

@@ -23,6 +23,7 @@ from app.security.models import Principal
 from app.services import benefits_domain as bd
 from app.services import benefits_enrollment as be
 from app.services import benefits_obligations as ob
+from app.services import benefits_reporting as br
 from app.services import engagement_service as es
 from app.services import organization_service as org
 
@@ -261,6 +262,11 @@ def api_providers(principal: Principal = Depends(require_capability("benefits.re
     return {"providers": bd.list_providers()}
 
 
+@router.get("/api/v1/benefits/report")
+def api_benefits_report(principal: Principal = Depends(require_capability("benefits.read"))):
+    return _run(lambda: br.benefits_report(principal))
+
+
 @router.get("/api/v1/benefits/organizations/{organization_id}/plans")
 def api_plans(organization_id: int, principal: Principal = Depends(require_capability("benefits.read"))):
     return {"plans": _run(lambda: bd.list_plans(organization_id, principal=principal))}
@@ -357,6 +363,15 @@ def console_org_detail(organization_id: int, request: Request,
     ctx["role_users"] = _user_names([r["user_id"] for r in ctx["roles"]])
     ctx["owner_names"] = _entity_names([o["owner_entity_id"] for o in ctx["owners"]])
     return templates.TemplateResponse(request=request, name="organizations/detail.html", context=ctx)
+
+
+@router.get("/benefits/reporting", response_class=HTMLResponse)
+def console_benefits_reporting(request: Request,
+                              principal: Principal = Depends(require_capability("benefits.read"))):
+    # Registered before /benefits so "reporting" is not treated as an employer path.
+    report = _run(lambda: br.benefits_report(principal))
+    return templates.TemplateResponse(request=request, name="benefits/reporting.html",
+        context={"report": report, "principal": principal})
 
 
 @router.get("/benefits", response_class=HTMLResponse)
