@@ -49,6 +49,11 @@ RULES = (
     # the .read→.write inference gates mutations as exception.write. The engine
     # service enforces the finer exception.resolve / exception.compliance on top.
     (re.compile(r"^/exceptions|^/api/v1/exceptions"), "exception.read"),
+    # Organization & Employee Benefits staff console + API (Release 0.9.11 Phase 6). GET →
+    # .read; the .read→.write inference gates mutations; the canonical services enforce the
+    # finer benefits.enroll / benefits.compliance / benefits.sensitive.read and record scope.
+    (re.compile(r"^/organizations|^/api/v1/organizations"), "organization.read"),
+    (re.compile(r"^/benefits|^/api/v1/benefits"), "benefits.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Employee Benefits | Client360{% endblock %}
+{% block content %}
+<div class="page-header"><div>
+  <p class="eyebrow">Employee Benefits</p>
+  <h1>Benefits employers</h1>
+  <p class="muted">Organizations with an active or prospective benefits or retirement service line.</p>
+</div></div>
+
+{% if needs_org_read %}
+<section class="panel"><div class="warning">Viewing employers requires organization access.</div></section>
+{% else %}
+<section class="panel">
+  <h2>Employers ({{ employers|length }})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Employer</th><th>Status</th><th>Lines</th></tr></thead>
+      <tbody>
+      {% for e in employers %}
+        <tr>
+          <td><a href="/organizations/{{ e.id }}">{{ e.name }}</a></td>
+          <td>{{ (e.status or '')|title }}</td>
+          <td>{% for l in e.lines %}<span class="status-pill">{{ l|title }}</span> {% endfor %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="muted">No benefits employers in your book yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

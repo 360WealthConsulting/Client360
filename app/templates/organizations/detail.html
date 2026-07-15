@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ org.name }} | Client360{% endblock %}
+{% block content %}
+<div class="page-header"><div>
+  <p class="eyebrow">Employer Operations · {{ (org.entity_type or 'organization')|title }}</p>
+  <h1>{{ org.name }}</h1>
+  <p class="muted"><span class="status-pill">{{ (org.status or 'prospect')|title }}</span></p>
+  <p><a href="/organizations">← All organizations</a></p>
+</div></div>
+
+<section class="panel">
+  <h2>Profile</h2>
+  <dl>
+    <dt>Legal name</dt><dd>{{ org.legal_name or '—' }}</dd>
+    <dt>Industry</dt><dd>{{ org.industry or '—' }}</dd>
+    <dt>Entity form</dt><dd>{{ org.entity_form or '—' }}</dd>
+    <dt>Renewal month</dt><dd>{{ org.renewal_month or '—' }}</dd>
+    <dt>EIN</dt><dd>{% if org.ein %}{{ org.ein }}{% elif org.ein_present %}•••• (restricted — requires benefits.sensitive.read){% else %}—{% endif %}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Service lines</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Service line</th><th>Status</th><th>Since</th></tr></thead>
+    <tbody>
+    {% for sl in service_lines %}<tr><td>{{ sl.code|replace('_',' ')|title }}</td><td>{{ sl.status|title }}</td><td>{{ sl.since_date or '—' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No service lines.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>Relationship roles</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Role</th><th>Staff</th><th>Primary</th><th>Since</th></tr></thead>
+    <tbody>
+    {% for r in roles %}<tr>
+      <td>{{ r.role_code|replace('_',' ')|title }}</td>
+      <td>{{ role_users.get(r.user_id, 'User ' ~ r.user_id) }}</td>
+      <td>{{ 'Yes' if r.is_primary else '' }}</td>
+      <td>{{ r.effective_date or '—' }}</td>
+    </tr>{% else %}<tr><td colspan="4" class="muted">No relationship roles assigned.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>Owners</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Owner</th><th>Relationship</th><th>Ownership %</th><th>Direct</th></tr></thead>
+    <tbody>
+    {% for o in owners %}<tr>
+      <td>{{ o.owner_name or ('Entity ' ~ o.owner_entity_id) }}</td>
+      <td>{{ o.relationship_code|replace('_',' ')|title }}</td>
+      <td>{{ ('%.0f%%'|format(o.ownership_percentage)) if o.ownership_percentage is not none else 'Unknown' }}</td>
+      <td>{{ 'Direct' if o.is_direct else 'Indirect' }}</td>
+    </tr>{% else %}<tr><td colspan="4" class="muted">No ownership recorded.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>Engagements</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Type</th><th>Title</th><th>Status</th><th>Due</th></tr></thead>
+    <tbody>
+    {% for e in engagements %}<tr><td>{{ e.engagement_type|replace('_',' ')|title }}</td><td>{{ e.title or '—' }}</td><td>{{ e.status|replace('_',' ')|title }}</td><td>{{ e.due_date or '—' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No engagements.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if plans is not none %}
+<section class="panel">
+  <h2>Benefit &amp; retirement plans</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Plan</th><th>Status</th><th>Funding</th><th>Renewal</th></tr></thead>
+    <tbody>
+    {% for p in plans %}<tr><td>{{ p.name }}</td><td>{{ p.status|title }}</td><td>{{ p.funding_type or '—' }}</td><td>{{ p.renewal_date or '—' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No plans.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>Compliance &amp; renewal obligations</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Obligation</th><th>Title</th><th>Due</th><th>Status</th><th>Recurrence</th></tr></thead>
+    <tbody>
+    {% for o in obligations %}<tr>
+      <td>{{ o.obligation_type|replace('_',' ')|title }}</td><td>{{ o.title }}</td>
+      <td>{{ o.due_date }}</td><td>{{ o.status|title }}</td><td>{{ o.recurrence|replace('_',' ')|title }}</td>
+    </tr>{% else %}<tr><td colspan="5" class="muted">No obligations recorded.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted">Deadline exceptions for this employer appear in the benefits work queues and the <a href="/exceptions">exception console</a>.</p>
+</section>
+{% endif %}
+{% endblock %}
