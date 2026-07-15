@@ -33,7 +33,7 @@
     --good:      #2F8A3E;  --good-soft:  #E2F1E1;
     --warn:      #B4690E;  --warn-soft:  #F9EAD3;
     --crit:      #B42318;  --crit-soft:  #F9E3E0;
-    --info:      #0E6E63;  --info-soft:  #DBEEEB;
+    --info:      #35618E;  --info-soft:  #E5EBF3;
 
     --radius-sm: 5px;
     --radius:    8px;
@@ -57,7 +57,7 @@
       --good:#57B15C; --good-soft:#173021;
       --warn:#D89A3C; --warn-soft:#33280F;
       --crit:#E27568; --crit-soft:#37201C;
-      --info:#2FB3A3; --info-soft:#123430;
+      --info:#74A6DC; --info-soft:#17293B;
       --shadow-sm:0 1px 2px rgba(0,0,0,.4);
       --shadow:0 6px 20px rgba(0,0,0,.45);
     }
@@ -69,7 +69,7 @@
     --text:#14201F; --text-2:#33423F; --muted:#5E6E6A;
     --accent:#0E6E63; --accent-2:#0A544B; --accent-soft:#DBEEEB; --accent-ink:#063A34;
     --good:#2F8A3E; --good-soft:#E2F1E1; --warn:#B4690E; --warn-soft:#F9EAD3;
-    --crit:#B42318; --crit-soft:#F9E3E0; --info:#0E6E63; --info-soft:#DBEEEB;
+    --crit:#B42318; --crit-soft:#F9E3E0; --info:#35618E; --info-soft:#E5EBF3;
     --shadow-sm:0 1px 2px rgba(15,32,30,.06); --shadow:0 4px 14px rgba(15,32,30,.09);
   }
   :root[data-theme="dark"] {
@@ -78,7 +78,7 @@
     --text:#E7ECEA; --text-2:#C4CFCB; --muted:#8FA09B;
     --accent:#2FB3A3; --accent-2:#54C8BA; --accent-soft:#123430; --accent-ink:#BDEDE6;
     --good:#57B15C; --good-soft:#173021; --warn:#D89A3C; --warn-soft:#33280F;
-    --crit:#E27568; --crit-soft:#37201C; --info:#2FB3A3; --info-soft:#123430;
+    --crit:#E27568; --crit-soft:#37201C; --info:#74A6DC; --info-soft:#17293B;
     --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow:0 6px 20px rgba(0,0,0,.45);
   }
 
@@ -88,14 +88,14 @@
     --border:#D8E0DF; --border-strong:#BCC8C6; --text:#14201F; --text-2:#33423F; --muted:#5E6E6A;
     --accent:#0E6E63; --accent-2:#0A544B; --accent-soft:#DBEEEB; --accent-ink:#063A34;
     --good:#2F8A3E; --good-soft:#E2F1E1; --warn:#B4690E; --warn-soft:#F9EAD3;
-    --crit:#B42318; --crit-soft:#F9E3E0;
+    --crit:#B42318; --crit-soft:#F9E3E0; --info:#35618E; --info-soft:#E5EBF3;
   }
   .force-dark {
     --ground:#0E1514; --surface:#16201E; --surface-2:#1D2A27; --surface-3:#25332F;
     --border:#293633; --border-strong:#3A4A46; --text:#E7ECEA; --text-2:#C4CFCB; --muted:#8FA09B;
     --accent:#2FB3A3; --accent-2:#54C8BA; --accent-soft:#123430; --accent-ink:#BDEDE6;
     --good:#57B15C; --good-soft:#173021; --warn:#D89A3C; --warn-soft:#33280F;
-    --crit:#E27568; --crit-soft:#37201C;
+    --crit:#E27568; --crit-soft:#37201C; --info:#74A6DC; --info-soft:#17293B;
   }
 
   * { box-sizing: border-box; }
@@ -345,7 +345,7 @@
   }
   .alert .ico { flex: none; margin-top: 1px; }
   .alert b { display: block; margin-bottom: 2px; }
-  .alert.info { background: var(--info-soft); border-color: transparent; color: var(--accent-ink); }
+  .alert.info { background: var(--info-soft); border-color: transparent; color: var(--info); }
   .alert.good { background: var(--good-soft); border-color: transparent; color: var(--good); }
   .alert.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
   .alert.crit { background: var(--crit-soft); border-color: transparent; color: var(--crit); }
@@ -505,26 +505,28 @@
   <section class="doc-section">
     <div class="kicker"><span class="num">02</span></div>
     <h2>Color</h2>
-    <p class="sub">A cool-slate neutral scale, biased a few degrees toward the accent so it reads as chosen rather
-      than default. One confident hue — a deep teal — carries identity and interaction. Semantic colors (good /
-      warning / critical) are a separate system and are never used as the accent.</p>
+    <p class="sub">A cool-slate neutral scale, biased a few degrees toward the brand so it reads as chosen rather
+      than default. The <b>primary brand color</b> — a deep teal, <code>#0E6E63</code> — carries Client360's identity
+      and every interaction: primary buttons, active navigation, links, focus states, and key highlights. The four
+      semantic colors are an independent system and never borrow the brand hue — Info is now its own understated
+      steel-blue so "in progress" never reads as a brand highlight.</p>
 
-    <h3 class="block">Neutrals &amp; accent</h3>
+    <h3 class="block">Primary brand &amp; neutrals</h3>
     <div class="swatchset">
+      <div class="swatch"><div class="chipc" style="background:#0E6E63"></div><div class="meta"><b>Primary brand</b><code>#0E6E63</code></div></div>
+      <div class="swatch"><div class="chipc" style="background:#DBEEEB"></div><div class="meta"><b>Brand soft</b><code>#DBEEEB</code></div></div>
       <div class="swatch"><div class="chipc" style="background:#F5F7F7"></div><div class="meta"><b>Ground</b><code>#F5F7F7</code></div></div>
       <div class="swatch"><div class="chipc" style="background:#EDF1F1"></div><div class="meta"><b>Surface muted</b><code>#EDF1F1</code></div></div>
       <div class="swatch"><div class="chipc" style="background:#14201F"></div><div class="meta"><b>Ink / text</b><code>#14201F</code></div></div>
       <div class="swatch"><div class="chipc" style="background:#5E6E6A"></div><div class="meta"><b>Muted</b><code>#5E6E6A</code></div></div>
-      <div class="swatch"><div class="chipc" style="background:#0E6E63"></div><div class="meta"><b>Accent</b><code>#0E6E63</code></div></div>
-      <div class="swatch"><div class="chipc" style="background:#DBEEEB"></div><div class="meta"><b>Accent soft</b><code>#DBEEEB</code></div></div>
     </div>
 
-    <h3 class="block">Semantic (distinct from accent)</h3>
+    <h3 class="block">Semantic (independent of the brand)</h3>
     <div class="swatchset">
-      <div class="swatch"><div class="chipc" style="background:#2F8A3E"></div><div class="meta"><b>Good</b><code>#2F8A3E</code></div></div>
+      <div class="swatch"><div class="chipc" style="background:#2F8A3E"></div><div class="meta"><b>Success</b><code>#2F8A3E</code></div></div>
       <div class="swatch"><div class="chipc" style="background:#B4690E"></div><div class="meta"><b>Warning</b><code>#B4690E</code></div></div>
-      <div class="swatch"><div class="chipc" style="background:#B42318"></div><div class="meta"><b>Critical</b><code>#B42318</code></div></div>
-      <div class="swatch"><div class="chipc" style="background:#0E6E63"></div><div class="meta"><b>Info</b><code>#0E6E63</code></div></div>
+      <div class="swatch"><div class="chipc" style="background:#B42318"></div><div class="meta"><b>Danger</b><code>#B42318</code></div></div>
+      <div class="swatch"><div class="chipc" style="background:#35618E"></div><div class="meta"><b>Info</b><code>#35618E</code></div></div>
     </div>
     <div class="legend">
       <span><span class="badge good"><span class="tick"></span>Active</span> healthy / resolved</span>

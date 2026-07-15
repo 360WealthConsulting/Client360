@@ -37,14 +37,24 @@ frontend framework, no build step.
 
 ## 2. Color palette
 
-A cool-slate neutral scale, biased a few degrees toward the accent so it reads as chosen
-rather than defaulted. One confident hue — a deep teal — carries identity and interaction.
-Semantic colors are a **separate** system and are never used as the accent.
+**Primary brand color: `#0E6E63`** (a deep teal). It carries Client360's identity and **every
+interaction** — primary buttons, active navigation, links, focus states, and key highlights.
+It is exposed as the `--accent` token (components reference `--accent`; conceptually it *is*
+the brand). The neutral scale is a cool slate, biased a few degrees toward the brand so it
+reads as chosen rather than defaulted.
 
-### Neutrals & accent (light theme)
+The four **semantic** colors are an **independent** system and never borrow the brand hue.
+Info in particular is its own understated steel-blue, so an "in progress" / informational
+signal never reads as a brand highlight.
+
+### Primary brand & neutrals (light theme)
 
 | Token | Hex | Use |
 |---|---|---|
+| `--accent` (**primary brand**) | `#0E6E63` | Primary buttons, active nav, links, focus, key highlights |
+| `--accent-2` | `#0A544B` | Brand hover / pressed |
+| `--accent-soft` | `#DBEEEB` | Active-nav tint, selection, focus-ring fill |
+| `--accent-ink` | `#063A34` | Text on `--accent-soft` |
 | `--ground` | `#F5F7F7` | Page background |
 | `--surface` | `#FFFFFF` | Cards, tables, header, sidebar |
 | `--surface-2` | `#EDF1F1` | Muted panels, table headers, hovers |
@@ -54,22 +64,20 @@ Semantic colors are a **separate** system and are never used as the accent.
 | `--text` | `#14201F` | Primary text / headings (teal-biased ink) |
 | `--text-2` | `#33423F` | Secondary text |
 | `--muted` | `#5E6E6A` | Captions, metadata, placeholders |
-| `--accent` | `#0E6E63` | Primary actions, links, active nav |
-| `--accent-2` | `#0A544B` | Accent hover / pressed |
-| `--accent-soft` | `#DBEEEB` | Active-nav tint, selection, focus ring fill |
-| `--accent-ink` | `#063A34` | Text on accent-soft |
 
-### Semantic (distinct from the accent hue)
+### Semantic (independent of the brand)
 
-| Token | Hex | Soft fill | Meaning |
-|---|---|---|---|
-| `--good` | `#2F8A3E` | `--good-soft` `#E2F1E1` | Healthy / active / resolved |
-| `--warn` | `#B4690E` | `--warn-soft` `#F9EAD3` | At risk / attention soon |
-| `--crit` | `#B42318` | `--crit-soft` `#F9E3E0` | Breached / overdue / error |
-| `--info` | `#0E6E63` | `--info-soft` `#DBEEEB` | Informational / in progress |
+| Token | Role | Hex | Soft fill | Meaning |
+|---|---|---|---|---|
+| `--good` | Success | `#2F8A3E` | `--good-soft` `#E2F1E1` | Healthy / active / resolved |
+| `--warn` | Warning | `#B4690E` | `--warn-soft` `#F9EAD3` | At risk / attention soon |
+| `--crit` | Danger | `#B42318` | `--crit-soft` `#F9E3E0` | Breached / overdue / error |
+| `--info` | Info | `#35618E` | `--info-soft` `#E5EBF3` | Informational / in progress |
 
-> `--good` (olive-green) is deliberately kept greener and lighter than `--accent` (deep teal)
-> so status and interaction never read as the same signal.
+> Four hues, four jobs: teal is the **brand** (interaction only); green = success; amber =
+> warning; red = danger; steel-blue = info. `--good` (olive-green), `--info` (steel-blue), and
+> `--accent` (teal) are deliberately spread across the wheel so status and interaction never
+> read as the same signal.
 
 ### Dark theme
 
@@ -85,7 +93,7 @@ accent still works on the darker ground.
 | `--border` | `#293633` | `--accent-2` | `#54C8BA` |
 | `--border-strong` | `#3A4A46` | `--accent-soft` | `#123430` |
 | `--good` | `#57B15C` | `--warn` | `#D89A3C` |
-| `--crit` | `#E27568` | `--info` | `#2FB3A3` |
+| `--crit` | `#E27568` | `--info` | `#74A6DC` |
 
 Theme selection: `prefers-color-scheme` sets the default; a `data-theme="light|dark"`
 attribute on the root element overrides the media query in both directions. Components are
@@ -291,13 +299,15 @@ returns, SLA):
 
 | State | Token | Badge/pill | Severity stripe |
 |---|---|---|---|
-| Healthy / Active / Resolved | `--good` | `.badge.good` | `.sev.low` |
-| Informational / In progress | `--info` (accent) | `.badge.info` | `.sev.medium` |
-| At risk / Attention soon | `--warn` | `.badge.warn` | `.sev.high` |
-| Breached / Overdue / Error | `--crit` | `.badge.crit` | `.sev.critical` |
+| Healthy / Active / Resolved | `--good` (success green) | `.badge.good` | `.sev.low` |
+| Informational / In progress | `--info` (steel-blue) | `.badge.info` | `.sev.medium` |
+| At risk / Attention soon | `--warn` (amber) | `.badge.warn` | `.sev.high` |
+| Breached / Overdue / Error | `--crit` (danger red) | `.badge.crit` | `.sev.critical` |
 | Draft / Neutral | `--muted` | `.badge` (default) | `.sev` (default) |
 
-Color is always paired with text and/or shape for accessibility (see §17).
+None of these is the brand hue — the teal `--accent` is reserved for interaction (buttons,
+links, active nav, focus), never for status. Color is always paired with text and/or shape for
+accessibility (see §17).
 
 ---
 
@@ -350,13 +360,13 @@ All tokens are CSS custom properties on `:root`, redefined under
   --ground:#F5F7F7; --surface:#FFFFFF; --surface-2:#EDF1F1; --surface-3:#E4EAE9;
   --border:#D8E0DF; --border-strong:#BCC8C6;
   --text:#14201F; --text-2:#33423F; --muted:#5E6E6A;
-  /* accent */
+  /* primary brand (exposed as --accent) */
   --accent:#0E6E63; --accent-2:#0A544B; --accent-soft:#DBEEEB; --accent-ink:#063A34;
-  /* semantic */
-  --good:#2F8A3E; --good-soft:#E2F1E1;
-  --warn:#B4690E; --warn-soft:#F9EAD3;
-  --crit:#B42318; --crit-soft:#F9E3E0;
-  --info:#0E6E63; --info-soft:#DBEEEB;
+  /* semantic — independent of the brand */
+  --good:#2F8A3E; --good-soft:#E2F1E1;   /* success */
+  --warn:#B4690E; --warn-soft:#F9EAD3;   /* warning */
+  --crit:#B42318; --crit-soft:#F9E3E0;   /* danger  */
+  --info:#35618E; --info-soft:#E5EBF3;   /* info (steel-blue, not the brand) */
   /* radii + elevation */
   --radius-sm:5px; --radius:8px; --radius-lg:12px;
   --shadow-sm:0 1px 2px rgba(15,32,30,.06);
