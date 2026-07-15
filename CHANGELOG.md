@@ -21,11 +21,11 @@ All notable Client360 releases are documented here.
   the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
   `/tax`, and the work team/queue pages now render.
 
-## [0.9.10] — Exception Engine (release candidate; not yet tagged)
+## [0.9.10] — 2026-07-14 — Exception Engine
 
 Platform-wide **Exception Engine** (ADR-17), implemented **tax domain only**. Validated by
-[RC13](docs/RC13_VALIDATION.md) — **SAFE TO MERGE**. See
-[Release 0.9.10 Notes](docs/RELEASE_0.9.10.md). Alembic head `q7b58f6c5d4e`.
+[RC13](docs/RC13_VALIDATION.md) (**SAFE TO MERGE**, 0 defects); merged to `main` and tagged
+`v0.9.10`. See [Release 0.9.10 Notes](docs/RELEASE_0.9.10.md). Alembic head `q7b58f6c5d4e`.
 
 ### Added
 

@@ -21,7 +21,7 @@ See [Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md) and
 
 ## Release status
 
-**Release 0.9.10 — Exception Engine** (release candidate; not yet tagged)
+**Release 0.9.10 — Exception Engine** (released; tag `v0.9.10`)
 
 Release 0.9.10 delivers the platform-wide **Exception Engine** (ADR-17) — a unified way to
 detect, own, escalate, resolve, and report the problems that block work. The schema is

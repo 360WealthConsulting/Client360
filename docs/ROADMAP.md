@@ -135,7 +135,7 @@ See [Release 0.9.9 Notes](RELEASE_0.9.9.md), [Production Architecture](PRODUCTIO
 `MICROSOFT_TOKEN_KEY` rotation, legacy plaintext-column removal, and the orphaned
 `app/models/` scaffold.
 
-## Release 0.9.10 — Exception Engine ✅ (release candidate; not yet tagged)
+## Release 0.9.10 — Exception Engine ✅ (released; tag `v0.9.10`)
 
 Platform-wide **Exception Engine** (ADR-17), implemented **tax domain only**, delivered as
 eight independently reviewed phases and [RC13](RC13_VALIDATION.md)-validated (**SAFE TO

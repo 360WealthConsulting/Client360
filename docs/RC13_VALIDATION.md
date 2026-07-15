@@ -8,9 +8,10 @@
 not merely confirm it).
 **Date:** 2026-07-14.
 
-> This validation is a **merge gate**. ADR-17 and Sprint 5.5 are marked *implemented*
-> only because every check below passed. PR #21 remains a **draft** and is **not merged**;
-> v0.9.10 is **not tagged**.
+> This validation was the **merge gate**. ADR-17 and Sprint 5.5 are marked *implemented*
+> only because every check below passed. On the strength of this pass (0 defects), PR #21
+> was subsequently merged to `main` (merge commit `43921e4`) and the release tagged
+> **`v0.9.10`**. The gate itself was evaluated against candidate head `q7b58f6c5d4e`.
 
 ---
 
@@ -178,5 +179,6 @@ the remediation here.)
 
 ## 12. Verdict
 
-**SAFE TO MERGE.** Do not merge PR #21 or tag/publish v0.9.10 until release approval.
-On merge, re-run §1 and §3 against the merge commit before tagging.
+**SAFE TO MERGE.** Approved and finalized: PR #21 merged to `main` (merge commit
+`43921e4`), release tagged **`v0.9.10`**. Post-merge, §1 (suite) and §2/§5 (single head)
+were re-confirmed against `main` before tagging.

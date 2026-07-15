@@ -1,7 +1,8 @@
 # Release 0.9.10 — Exception Engine (platform-wide; tax domain first)
 
-**Status:** release candidate — validated by [RC13](RC13_VALIDATION.md) (**SAFE TO MERGE**);
-**not yet tagged**. **Alembic head:** `q7b58f6c5d4e` (baseline v0.9.9 `o5f36c4d3e2a`).
+**Status:** **Released** — validated by [RC13](RC13_VALIDATION.md) (**SAFE TO MERGE**, 0
+defects); PR #21 merged to `main` (merge commit `43921e4`); tagged **`v0.9.10`**.
+**Alembic head:** `q7b58f6c5d4e` (baseline v0.9.9 `o5f36c4d3e2a`).
 **Design:** [ADR-17](ADR_EXCEPTION_ENGINE_SCOPE.md) · [Sprint 5.5 design](SPRINT_5_5_EXCEPTION_DESIGN.md).
 
 Release 0.9.10 delivers the **Exception Engine** — a unified, platform-wide way to
