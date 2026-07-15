@@ -586,6 +586,7 @@ and outputs are explainable and human-confirmed.
 | ADR-14 | Canonical authorization service; unify three scope implementations | Partial (0.9.7) → Epic 7 | Single source of authorization truth |
 | ADR-15 | Shared API response envelope + pagination | Planned (Epic 7 / 0.9.13) | Enable a generic frontend client |
 | ADR-16 | Inert AI port now; governed AI in Epic 6 | Implemented / Planned | Ship deterministic pipeline; add governed AI later |
+| ADR-17 | Platform-wide Exception Engine (`exceptions`/`exception_events`/`exception_types` + required CHECK-constrained `domain`) rather than a tax-specific one | Accepted (0.9.10 / Sprint 5.5); **tax domain first** | Choosing the general model is nearly free now (one column + domain-aware scoping) but a breaking migration later; six domains already exhibit exception needs. See `docs/ADR_EXCEPTION_ENGINE_SCOPE.md` and `docs/SPRINT_5_5_EXCEPTION_DESIGN.md`. Guardrails: implement only `domain='tax'` this sprint; `domain` CHECK-constrained/extensible; domain-aware record-vs-firm scoping from day one; dedicated `exception.*` capability family (no broad `tax.*` re-grant). |
 
 ---
 
