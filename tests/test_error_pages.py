@@ -92,6 +92,29 @@ def test_denial_is_always_403_and_never_a_redirect(path, accept, audited):
     assert "location" not in response.headers
 
 
+@pytest.mark.parametrize(
+    "path,accept",
+    [
+        ("/organizations", BROWSER),
+        ("/api/v1/organizations", BROWSER),
+        ("/organizations", "application/json"),
+    ],
+)
+def test_denial_carries_the_standard_security_headers(path, accept, audited):
+    """Denials return early, before dispatch()'s header block.
+
+    Without this the styled HTML 403 would be the only HTML page in the app served
+    without `x-frame-options`/CSP `frame-ancestors` — i.e. framable. The styled 404
+    already carries them because it passes through call_next.
+    """
+    response = _deny(_request(path, accept))
+    assert response.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "same-origin"
+    assert response.headers["x-request-id"] == "req-error-page-test"
+
+
 @pytest.mark.parametrize("path,accept", [("/organizations", BROWSER), ("/api/v1/x", "application/json")])
 def test_denial_is_audited_on_both_representations(path, accept, audited):
     """HTML rendering must not bypass the denied-access audit trail."""
