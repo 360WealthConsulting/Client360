@@ -1,8 +1,8 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 Phase 5 — Insurance Commissions — complete, incl. audit &
-revenue-validation pass)._
+**2026-07-16** (Release 0.10.0 Phase 5 — Insurance Commissions — **complete & approved**,
+incl. the audit & revenue-validation pass; Phase 6 in progress)._
 
 | Field | Value |
 |---|---|

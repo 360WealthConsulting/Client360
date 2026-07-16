@@ -114,20 +114,22 @@ shared exception queue then shows:
 - **`INS_COMMISSION_OUTSTANDING`** — an expected entry past its due date with nothing received.
   Follow up with the carrier; posting the payment (or writing it off) auto-resolves it.
 
-The scan is **idempotent** — running it repeatedly never creates duplicates. These
-exceptions are **firm-internal**: they surface only in the operations/oversight exception
-queue and are **never** shown on the client's Timeline — commission/compensation detail is not
-client-facing.
+The scan is **idempotent** — running it repeatedly never creates duplicate exceptions. These
+exceptions are **firm-internal**: they appear only in the operations and oversight exception
+queues and are **never** published to the client's Timeline. Commission and compensation
+information is strictly internal and not client-facing.
 
 ### 5.5 Read the revenue rollup
 
-**Commissions → Report** shows expected, received, outstanding, and variance totals, broken
-out by schedule, by organization, and by producer — plus **producer payouts** (individual
-producers) versus **agency-retained** revenue (agency / broker-of-record / override) — under
-the **`insurance_commissions`** revenue category. Every figure is derived directly from the
-commission ledger (the single source of truth), so re-running the report is safe and never
-double-counts; corrections and reversals are reflected immediately. Use it for operational
-management reporting; it carries no compliance metrics.
+**Commissions → Report** displays expected, received, outstanding, and variance totals, with
+breakdowns by schedule, organization, and producer. It also reports **producer payouts**
+(individual producers) and **agency-retained revenue** (agency, broker-of-record, and override
+compensation) under the **`insurance_commissions`** revenue category.
+
+Every figure is derived directly from the canonical commission ledger, which serves as the
+single source of truth. The report is idempotent, cannot double-count transactions, reflects
+adjustments, reversals, chargebacks, and write-offs automatically, and contains no compliance
+determinations.
 
 ## 6. Controls & audit
 
