@@ -5,26 +5,39 @@ import json
 import os
 import re
 import zipfile
+from collections import namedtuple
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.dialects.postgresql import insert
 
-load_dotenv("app/.env")
-
-database_url = os.getenv("DATABASE_URL")
-if not database_url:
-    raise RuntimeError("DATABASE_URL is missing from app/.env")
-
-engine = create_engine(database_url)
-
-metadata = MetaData()
-metadata.reflect(bind=engine)
-
-source_contacts = metadata.tables["source_contacts"]
-
 FOLDER = Path("01 Raw Imports/Wealthbox")
+
+_Database = namedtuple("_Database", "engine source_contacts")
+
+
+@lru_cache(maxsize=None)
+def _database():
+    """Resolve the engine and tables on first use, never at import.
+
+    Reading app/.env, creating the engine and reflecting the schema are all
+    deferred: importing this module must touch neither the filesystem nor the
+    database. Cached, so the cost is paid once per process, exactly as before.
+    """
+    load_dotenv("app/.env")
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is missing from app/.env")
+
+    engine = create_engine(database_url)
+
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+
+    return _Database(engine, metadata.tables["source_contacts"])
 
 
 def find_contact_zips(folder=FOLDER):
@@ -92,6 +105,8 @@ def sanitized_row(row):
 
 def import_contacts_zip(zip_path, conn):
     """Import one Wealthbox contacts ZIP. Returns (rows_read, rows_inserted)."""
+    source_contacts = _database().source_contacts
+
     rows_read = 0
     rows_inserted = 0
 
@@ -221,7 +236,7 @@ def main(folder=FOLDER):
     rows_read = 0
     rows_inserted = 0
 
-    with engine.begin() as conn:
+    with _database().engine.begin() as conn:
         for zip_path in zip_files:
             read, inserted = import_contacts_zip(zip_path, conn)
             rows_read += read

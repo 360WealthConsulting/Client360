@@ -1,18 +1,21 @@
-"""Importers must be importable without client data present.
+"""Importing an importer must do nothing at all.
 
 `app/importers/schwab.py` and `wealthbox.py` used to do their work at module
-scope: they globbed `01 Raw Imports/` (gitignored client data), raised
-FileNotFoundError when it was absent, and then ran the whole import as a side
-effect of being imported. That made `test_app_module_imports_cleanly` impossible
-to pass in a clean checkout, and meant importing the module wrote client data to
-the database.
+scope: read `app/.env`, build an engine, reflect the schema, glob
+`01 Raw Imports/` (gitignored client data), raise FileNotFoundError when it was
+absent, and then run the whole import as a side effect of being imported. That
+made `test_app_module_imports_cleanly` impossible to pass in a clean checkout,
+and meant importing the module wrote client data to the database.
 
-File discovery and execution now sit behind `find_*`/`main()`. These tests pin
-that: import is inert, the error still surfaces when an import is actually
-invoked, and the importers still behave correctly on real fixture files.
+Discovery now sits behind `find_*`, database setup behind a cached `_database()`,
+and execution behind `main()`. These tests pin the whole contract: import is
+inert (no filesystem, no database, no discovery, no execution, no raise), the
+errors still surface when an import is actually invoked, and the importers still
+behave correctly on real fixture files.
 """
 import csv
 import io
+import json
 import os
 import pathlib
 import subprocess
@@ -22,14 +25,35 @@ import zipfile
 import pytest
 from sqlalchemy import select
 
-from app.db import DATABASE_URL, accounts, engine, source_contacts
+from app.db import accounts, engine, source_contacts
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+MODULES = ["app.importers.schwab", "app.importers.wealthbox"]
+
+# A URL that cannot be connected to: any attempt to reach the database at import
+# time fails loudly instead of silently succeeding against the real one.
+UNREACHABLE = "postgresql://nobody:nobody@127.0.0.1:1/nonexistent"
 
 # Deterministic ids: the importers upsert, so re-runs update one row rather than
 # accumulating litter in the shared database.
 TEST_ACCOUNT = "RC1-IMPORT-TEST-0001"
 TEST_WB_ID = "rc1-import-test-0001"
+
+
+def _run(script, cwd, database_url=None):
+    """Run `script` in a clean subprocess, from `cwd`, with DATABASE_URL controlled.
+
+    A subprocess is required: the in-process module is already cached, so a plain
+    `import` here would prove nothing about import-time behaviour.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    if database_url is not None:
+        env["DATABASE_URL"] = database_url
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=cwd, env=env, capture_output=True, text=True, timeout=120,
+    )
 
 
 @pytest.fixture
@@ -40,28 +64,65 @@ def cleanup():
         c.execute(source_contacts.delete().where(source_contacts.c.source_record_id.in_([TEST_ACCOUNT, TEST_WB_ID])))
 
 
-# --- 1. importing is inert, even with no client-data folder -------------------
+# --- 1. importing does no work ------------------------------------------------
 
-@pytest.mark.parametrize("module_name", ["app.importers.schwab", "app.importers.wealthbox"])
-def test_module_imports_cleanly_without_raw_imports_folder(module_name, tmp_path):
-    """Import from a cwd that has no `01 Raw Imports/` at all.
-
-    Runs in a subprocess so the import genuinely re-executes (the in-process
-    module is already cached) and from tmp_path so the client-data folder cannot
-    be found even by accident.
-    """
-    assert not (tmp_path / "01 Raw Imports").exists()
-    env = {
-        **os.environ,
-        "DATABASE_URL": DATABASE_URL,   # app/.env is unreachable from tmp_path
-        "PYTHONPATH": str(REPO_ROOT),
-    }
-    result = subprocess.run(
-        [sys.executable, "-c", f"import {module_name}"],
-        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120,
-    )
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_needs_no_database_configured(module_name, tmp_path):
+    """With DATABASE_URL unset and app/.env unreachable, import must still succeed."""
+    result = _run(f"import {module_name}", cwd=tmp_path, database_url=None)
     assert result.returncode == 0, f"import failed:\n{result.stderr}"
-    assert "FileNotFoundError" not in result.stderr
+    assert "RuntimeError" not in result.stderr
+
+
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_never_connects_to_the_database(module_name, tmp_path):
+    """Pointed at an unreachable database, import must not notice."""
+    result = _run(f"import {module_name}", cwd=tmp_path, database_url=UNREACHABLE)
+    assert result.returncode == 0, f"import connected to the database:\n{result.stderr}"
+    assert "could not connect" not in result.stderr.lower()
+
+
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_reads_no_client_data_and_no_dotenv(module_name, tmp_path):
+    """Audit every file open during import; none may touch client data or app/.env.
+
+    Opening .py/.pyc files is Python's own import machinery, so only the module's
+    own reads are asserted on.
+    """
+    script = (
+        "import sys, json\n"
+        "opened = []\n"
+        "def hook(event, args):\n"
+        "    if event == 'open':\n"
+        "        opened.append(str(args[0]))\n"
+        "sys.addaudithook(hook)\n"
+        f"import {module_name}\n"
+        "bad = [p for p in opened if '01 Raw Imports' in p or p.endswith('.env')]\n"
+        "print(json.dumps(bad))\n"
+    )
+    result = _run(script, cwd=tmp_path, database_url=UNREACHABLE)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.strip().splitlines()[-1]) == []
+
+
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_does_not_discover_client_data(module_name, tmp_path):
+    """Even when a client-data folder IS present, import must not glob it."""
+    (tmp_path / "01 Raw Imports" / "Schwab").mkdir(parents=True)
+    (tmp_path / "01 Raw Imports" / "Wealthbox").mkdir(parents=True)
+    script = (
+        "import sys\n"
+        "seen = []\n"
+        "def hook(event, args):\n"
+        "    if event in ('os.scandir', 'os.listdir') and args and '01 Raw Imports' in str(args[0]):\n"
+        "        seen.append(str(args[0]))\n"
+        "sys.addaudithook(hook)\n"
+        f"import {module_name}\n"
+        "print('SCANNED' if seen else 'NOT_SCANNED')\n"
+    )
+    result = _run(script, cwd=tmp_path, database_url=UNREACHABLE)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == "NOT_SCANNED"
 
 
 @pytest.mark.parametrize(
@@ -73,17 +134,13 @@ def test_module_imports_cleanly_without_raw_imports_folder(module_name, tmp_path
 )
 def test_importing_does_not_run_the_import(module_name, marker, tmp_path):
     """Importing must not execute the importer — it used to write to the DB."""
-    env = {**os.environ, "DATABASE_URL": DATABASE_URL, "PYTHONPATH": str(REPO_ROOT)}
-    result = subprocess.run(
-        [sys.executable, "-c", f"import {module_name}"],
-        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120,
-    )
+    result = _run(f"import {module_name}", cwd=tmp_path, database_url=UNREACHABLE)
     assert result.returncode == 0
     assert marker not in result.stdout
     assert "Opening" not in result.stdout and "Imported" not in result.stdout
 
 
-# --- 2. the error surfaces only when an import is explicitly invoked ----------
+# --- 2. errors surface only when the importer is executed ---------------------
 
 def test_schwab_missing_files_raise_only_when_invoked(tmp_path):
     from app.importers import schwab
@@ -109,6 +166,22 @@ def test_wealthbox_missing_zip_raises_only_when_invoked(tmp_path):
         wealthbox.find_contact_zips(tmp_path)
     with pytest.raises(FileNotFoundError, match="No Wealthbox contacts ZIP found"):
         wealthbox.main(tmp_path)
+
+
+def test_missing_database_url_raises_only_when_invoked(tmp_path):
+    """The RuntimeError moved from import time to first explicit use."""
+    script = (
+        "import app.importers.wealthbox as wb\n"
+        "print('IMPORTED')\n"
+        "try:\n"
+        "    wb._database()\n"
+        "except RuntimeError as e:\n"
+        "    print('RAISED_ON_USE:', e)\n"
+    )
+    result = _run(script, cwd=tmp_path, database_url=None)
+    assert result.returncode == 0, result.stderr
+    assert "IMPORTED" in result.stdout
+    assert "RAISED_ON_USE: DATABASE_URL is missing from app/.env" in result.stdout
 
 
 # --- 3. behaviour preserved on fixture files ---------------------------------
@@ -177,6 +250,26 @@ def test_schwab_profile_import_still_excludes_taxpayer_id(tmp_path, cleanup):
     assert "123-45-6789" not in str(row["raw_data"])
 
 
+def test_schwab_main_runs_both_halves(tmp_path, cleanup):
+    """main() still drives accounts + profile together, as the script did."""
+    from app.importers import schwab
+
+    _write_accounts_csv(tmp_path)
+    _write_profile_csv(tmp_path)
+    schwab.main(tmp_path)
+
+    with engine.connect() as c:
+        assert c.execute(
+            select(accounts).where(accounts.c.account_number == TEST_ACCOUNT)
+        ).mappings().one()
+        assert c.execute(
+            select(source_contacts).where(
+                source_contacts.c.source_record_id == TEST_ACCOUNT,
+                source_contacts.c.source_system == "Schwab Profile",
+            )
+        ).mappings().one()
+
+
 def _write_contacts_zip(folder):
     path = folder / "wealthbox-contacts-fixture.zip"
     buf = io.StringIO()
@@ -221,10 +314,10 @@ def test_wealthbox_import_is_idempotent_on_rerun(tmp_path, cleanup):
     wealthbox.main(tmp_path)
 
     with engine.connect() as c:
-        n = c.execute(
+        rows = c.execute(
             select(source_contacts).where(
                 source_contacts.c.source_record_id == TEST_WB_ID,
                 source_contacts.c.source_system == "Wealthbox",
             )
         ).mappings().all()
-    assert len(n) == 1
+    assert len(rows) == 1
