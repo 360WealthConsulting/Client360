@@ -20,6 +20,7 @@ so the output is deterministic for a given commit.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 from pathlib import Path
 
@@ -37,6 +38,35 @@ def run_gate(cmd: list[str]) -> str:
     """Run a gate command; return a PASS/FAIL cell."""
     proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
     return "**PASS**" if proc.returncode == 0 else "**FAIL**"
+
+
+def ci_status() -> str:
+    """Best-effort CI conclusion for HEAD via gh, or a note if unavailable."""
+    sha = git("rev-parse", "HEAD")
+    proc = subprocess.run(
+        ["gh", "run", "list", "--commit", sha, "--limit", "1", "--json", "conclusion",
+         "--jq", ".[0].conclusion"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    got = proc.stdout.strip()
+    if proc.returncode != 0:
+        return "unknown (gh unavailable)"
+    return f"**{got}**" if got else "no run found for HEAD"
+
+
+def suite_result() -> str:
+    """Run the full suite on the isolated DB and return a PASS cell with counts.
+
+    Only called under --run. Uses scripts/test.sh so the isolated-DB guard and
+    reset apply; parses the pytest summary line for the counts.
+    """
+    proc = subprocess.run(
+        ["scripts/test.sh", "run"], cwd=REPO_ROOT, capture_output=True, text=True
+    )
+    tail = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+    m = re.search(r"(\d+ passed(?:, \d+ skipped)?)", tail)
+    counts = m.group(1) if m else "counts unavailable"
+    return f"**PASS** ({counts})" if proc.returncode == 0 else f"**FAIL** ({tail})"
 
 
 def latest_release_tag() -> str:
@@ -69,11 +99,13 @@ def build(version: str, title: str, run_gates: bool) -> str:
         "SCOPE": f"Release {version} candidate validation.",
         "BASELINE_REF": latest_release_tag(),
         "CANDIDATE_SHA": candidate,
+        "BRANCH": git("rev-parse", "--abbrev-ref", "HEAD"),
+        "CI_STATUS": ci_status(),
         "VALIDATOR": "<name>",
         "DATE": date,
         "MERGE_GATE": "Not merged; tag not yet applied.",
         "RECOMMENDATION": "<!-- FILL after the gates below are green -->",
-        "SUITE": pending,  # never auto-run: needs the isolated DB
+        "SUITE": suite_result() if run_gates else pending,
         "COMPILEALL": run_gate(["python", "-m", "compileall", "-q", "app", "tests", "migrations"]) if run_gates else pending,
         "DIFFCHECK": run_gate(["git", "diff", "--check"]) if run_gates else pending,
         "RUFF": run_gate(["python", "scripts/ruff_gate.py"]) if run_gates else pending,

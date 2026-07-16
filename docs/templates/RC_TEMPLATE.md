@@ -1,8 +1,9 @@
 # {{RC_ID}} — Release Candidate Validation (Release {{VERSION}}{{TITLE}})
 
 **Scope:** {{SCOPE}}
-**Baseline head:** `{{BASELINE_REF}}`
-**Candidate head:** `{{CANDIDATE_SHA}}`
+**Baseline:** `{{BASELINE_REF}}`
+**Candidate:** `{{CANDIDATE_SHA}}` on branch `{{BRANCH}}`
+**CI:** {{CI_STATUS}}
 **Validator:** {{VALIDATOR}}
 **Date:** {{DATE}}
 
