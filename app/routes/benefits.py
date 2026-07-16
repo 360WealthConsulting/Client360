@@ -188,7 +188,7 @@ def api_org_list(status: str = "", principal: Principal = Depends(require_capabi
 
 @router.post("/api/v1/organizations", status_code=201)
 def api_org_create(payload: OrgCreate, principal: Principal = Depends(require_capability("organization.write"))):
-    return _run(lambda: org.create_organization(principal, **payload.dict()))
+    return _run(lambda: org.create_organization(principal, **payload.model_dump()))
 
 
 @router.get("/api/v1/organizations/{organization_id}")
@@ -202,7 +202,7 @@ def api_org_get(organization_id: int, include_sensitive: bool = False,
 def api_org_update(organization_id: int, payload: OrgUpdate,
                    principal: Principal = Depends(require_capability("organization.write"))):
     return _run(lambda: org.update_organization(organization_id, principal=principal,
-                                                **{k: v for k, v in payload.dict().items() if v is not None}))
+                                                **{k: v for k, v in payload.model_dump().items() if v is not None}))
 
 
 @router.get("/api/v1/organizations/{organization_id}/service-lines")
@@ -241,7 +241,7 @@ def api_org_owners(organization_id: int, principal: Principal = Depends(require_
 def api_org_ownership(organization_id: int, payload: OwnershipBody,
                       principal: Principal = Depends(require_capability("organization.write"))):
     return _run(lambda: org.record_ownership(principal=principal, owned_organization_id=organization_id,
-                                            **payload.dict()))
+                                            **payload.model_dump()))
 
 
 @router.get("/api/v1/organizations/{organization_id}/engagements")
@@ -252,7 +252,7 @@ def api_org_engagements(organization_id: int, principal: Principal = Depends(req
 @router.post("/api/v1/organizations/{organization_id}/engagements", status_code=201)
 def api_org_create_engagement(organization_id: int, payload: EngagementBody,
                               principal: Principal = Depends(require_capability("organization.write"))):
-    return _run(lambda: es.create_engagement(principal, organization_id=organization_id, **payload.dict()))
+    return _run(lambda: es.create_engagement(principal, organization_id=organization_id, **payload.model_dump()))
 
 
 # --- Benefits JSON API (/api/v1/benefits) ------------------------------------
@@ -275,7 +275,7 @@ def api_plans(organization_id: int, principal: Principal = Depends(require_capab
 @router.post("/api/v1/benefits/organizations/{organization_id}/plans", status_code=201)
 def api_create_plan(organization_id: int, payload: PlanBody,
                     principal: Principal = Depends(require_capability("benefits.write"))):
-    return _run(lambda: bd.create_plan(principal, organization_id=organization_id, **payload.dict()))
+    return _run(lambda: bd.create_plan(principal, organization_id=organization_id, **payload.model_dump()))
 
 
 @router.get("/api/v1/benefits/plans/{plan_id}")
@@ -286,7 +286,7 @@ def api_plan(plan_id: int, principal: Principal = Depends(require_capability("be
 @router.post("/api/v1/benefits/plans/{plan_id}/plan-years", status_code=201)
 def api_create_plan_year(plan_id: int, payload: PlanYearBody,
                          principal: Principal = Depends(require_capability("benefits.write"))):
-    return {"id": _run(lambda: bd.create_plan_year(plan_id, principal=principal, **payload.dict()))}
+    return {"id": _run(lambda: bd.create_plan_year(plan_id, principal=principal, **payload.model_dump()))}
 
 
 @router.get("/api/v1/benefits/plans/{plan_id}/plan-years")
@@ -297,13 +297,13 @@ def api_plan_years(plan_id: int, principal: Principal = Depends(require_capabili
 @router.post("/api/v1/benefits/organizations/{organization_id}/employments", status_code=201)
 def api_create_employment(organization_id: int, payload: EmploymentBody,
                           principal: Principal = Depends(require_capability("benefits.write"))):
-    return {"id": _run(lambda: be.create_employment(principal, organization_id=organization_id, **payload.dict()))}
+    return {"id": _run(lambda: be.create_employment(principal, organization_id=organization_id, **payload.model_dump()))}
 
 
 @router.post("/api/v1/benefits/enrollments", status_code=201)
 def api_create_enrollment(payload: EnrollmentBody,
                           principal: Principal = Depends(require_capability("benefits.write"))):
-    return {"id": _run(lambda: be.enroll(principal, **payload.dict()))}
+    return {"id": _run(lambda: be.enroll(principal, **payload.model_dump()))}
 
 
 @router.get("/api/v1/benefits/organizations/{organization_id}/obligations")
@@ -315,7 +315,7 @@ def api_obligations(organization_id: int, status: str = "",
 @router.post("/api/v1/benefits/organizations/{organization_id}/obligations", status_code=201)
 def api_create_obligation(organization_id: int, payload: ObligationBody,
                           principal: Principal = Depends(require_capability("benefits.write"))):
-    return _run(lambda: ob.create_obligation(principal, organization_id=organization_id, **payload.dict()))
+    return _run(lambda: ob.create_obligation(principal, organization_id=organization_id, **payload.model_dump()))
 
 
 @router.post("/api/v1/benefits/obligations/{obligation_id}/complete")
