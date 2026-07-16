@@ -96,8 +96,22 @@ jobs:
       - name: Single Alembic head
         run: scripts/check_migration_heads.sh
 
-      - name: Apply migrations
-        run: alembic upgrade head
+      # Walks the whole graph to base and back, exercising every downgrade, and
+      # leaves the schema at head — so this replaces a plain `alembic upgrade
+      # head` and the suite runs against a verified-at-head schema.
+      - name: Migrations reversible (schema left at head)
+        run: scripts/check_migrations_reversible.sh
+
+      # Proves the Phase 0 isolation guard actually blocks pytest: collection
+      # against a non-disposable database name must fail before any test runs.
+      - name: Test-database safety guard holds
+        run: |
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/client360_production \
+             python -m pytest --collect-only -q >/dev/null 2>&1; then
+            echo "GUARD FAILED: the suite collected against a non-disposable database." >&2
+            exit 1
+          fi
+          echo "OK: the suite refuses a non-disposable database (isolation guard holds)."
 
       # `python -m pytest` (not bare `pytest`) so the repo root lands on sys.path
       # and `import app` resolves. junit-xml is emitted for the failure artifact.
