@@ -1,10 +1,36 @@
 # Release v0.10.0 — Insurance Operations: Architecture
 
-**Status:** design, pending final approval. No implementation has begun.
+**Status:** in progress — **Phases 0–4 implemented as non-regulated operational
+skeletons**; Phases 5–10 not started; **all regulated logic deferred behind the AD-5
+gate**. Not yet released or tagged. (Current single Alembic head `a7g8i9k0f1h2`;
+migration chain in §13. See `PROJECT_STATUS.md` for live status.)
 **Scope:** individual **life insurance & annuities** (advisor-sold, in-force-managed).
 Not group/employer benefits (that is 0.9.11), not P&C, not group life.
 **Baseline:** built on the 0.9.11 platform (ADR-18) and the 0.9.13 test/CI/release
 infrastructure. New migration chains off head `u1f9c0i9h8g7`.
+
+> ### Implementation status at a glance — read before building on this document
+>
+> This is the design of record. What has actually shipped on `feature/insurance-operations`
+> is a deliberately narrower, three-way split:
+>
+> - **Implemented (operational / non-regulated skeleton):** product catalog,
+>   `insurance_case`, policies + coverages/riders/parties/values, policy lifecycle &
+>   Timeline/Audit events, new-business pipeline & requirement tracking, in-force reviews
+>   state machine + obligation calendar, producer licensing/CE **records**, expiry
+>   detectors, operational (counts-only) reporting, UI, and JSON APIs. Phases 0–4.
+> - **Deferred (regulated logic — NOT built, NOT enabled):** suitability determination,
+>   replacement/1035 recommendation logic, licensing/CE **validation**, sale/issue
+>   **blocking**, automated compliance approvals, and any regulatory decision engine.
+>   Tests assert these functions do **not** exist in the services and that scan results
+>   carry no compliance field.
+> - **AD-5 approval gate:** the deferred regulated logic stays blocked until a **qualified,
+>   named compliance reviewer** is in place **and** an approved, dated sign-off artifact
+>   exists for the relevant rule set (§AD-5). Business sign-off (Michael Shelton, operational
+>   scope) is **not** regulatory certification. Missing/rejected artifact = phase blocked.
+>   This gate is **not resolvable in code**.
+>
+> Phase-by-phase built-vs-deferred detail is in §§12a–12c; the gate itself is in §AD-5.
 
 This document incorporates the seven approved design refinements. Where it says
 "reuse," the platform system is used unchanged; a new table is introduced **only

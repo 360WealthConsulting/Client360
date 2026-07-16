@@ -4,7 +4,95 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-_Nothing yet._
+**Release 0.10.0 — Insurance Operations (in progress; not tagged).** Individual
+**life insurance & annuities** (advisor-sold, in-force-managed) as a domain inside
+Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on the
+0.9.11 platform and 0.9.13 test/CI/release infrastructure. Design of record:
+[`docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md`](docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md).
+
+> ⚠️ **Non-regulated skeletons only.** Phases 2–4 ship the operational/non-regulated
+> plumbing only. All regulated logic — suitability determination, replacement/1035
+> recommendation, licensing/CE **validation**, and any compliance approval or
+> regulatory decision engine — is **deferred behind the AD-5 gate** and is not built
+> or enabled. A qualified, named compliance reviewer plus an approved sign-off
+> artifact is required before any regulated phase may proceed (see AD-5 below).
+
+### Added — Phase 0 · Schema foundation (`v2b3d4f5a6c7`)
+- Insurance schema foundation: product catalog (carrier profiles → product families
+  → product versions), `insurance_case` coordinator (1:1 with an engagement),
+  policy/party/producer tables.
+- `insurance.*` capabilities and roles seeded; `insurance` registered in the shared
+  Exception Engine (`SUPPORTED_DOMAINS` + CHECK) and Work Management (`work_items` domain).
+
+### Added — Phase 1 · Policies core (`w3c4e5g6b7d8`, `x4d5f6h7c8e9`)
+- Product-version evolution: carrier codes (NAIC) + rider compatibility as first-class,
+  versioned data (not hard-coded).
+- Policies core with coverages/riders/parties/values; multi-owner / multi-insured /
+  multi-beneficiary support; policy CRUD JSON API and book/detail UI.
+- Policy lifecycle statuses (issued, delivered, reinstated) and lifecycle events on the
+  **shared Timeline/Audit** (no separate history model); name-resolved UI.
+
+### Added — Phase 2 · New-business pipeline — non-regulated skeleton (`y5e6g7i8d9f0`)
+- Application/case progression (case status transitions), requirement tracking
+  (`insurance_requirements`: requested → satisfied — an operational checklist, **not** a
+  determination), underwriting-**status** tracking (records the carrier's status; the
+  platform does not decide it), document collection via the shared `documents` table,
+  workflow-driven carrier-communication orchestration, Timeline/Audit events, operational
+  pipeline reporting (counts only), case-workspace + pipeline UI, and JSON APIs.
+- **Not built (AD-5-gated):** suitability determination, replacement/1035 recommendation
+  logic, automated compliance approvals, any regulatory decision engine. A test asserts no
+  such function exists in the service.
+
+### Added — Phase 3 · In-force servicing — non-regulated skeleton (`z6f7h8j9e0g1`)
+- Policy reviews as a first-class **state machine** (due → scheduled → in_progress →
+  completed / deferred / overdue / cancelled); obligation calendar (annual reviews
+  materialize their next occurrence on completion); a scheduled/manual scan flips past-due
+  reviews to `overdue` and raises `INS_REVIEW_OVERDUE` through the **shared Exception
+  Engine** (idempotent, auto-resolving); operational review metrics (completion rate,
+  overdue/deferred counts); reviews-board UI + JSON APIs; Timeline/Audit review events.
+- **Not built (AD-5-gated):** suitability determination (the `suitability` review type and
+  `insurance.suitability` capability stay reserved), replacement/1035 recommendation logic,
+  and any compliance/regulatory decision engine. Tests assert the scan result carries no
+  compliance field. Live cron wiring of the scan is deferred to Phase 6; the callable +
+  manual endpoint ship now.
+
+### Added — Phase 4 · Producer licensing & CE — non-regulated skeleton (`a7g8i9k0f1h2`)
+- Producer **licensing records** (`insurance_licenses`) and **CE records**
+  (`insurance_ce_records`) — firm-internal, capability-gated
+  (`insurance.licensing.read`/`.write`), audited, staff-entered; date-driven expiry
+  reminders (`detect_licenses_expiring` / `detect_ce_period_ending` raise
+  `INS_LICENSE_EXPIRING` / `INS_CE_PERIOD_ENDING` through the shared Exception Engine,
+  firm-level/unanchored for oversight roles); operational licensing counts; licensing
+  dashboard UI + JSON APIs.
+- **Not built (AD-5-gated):** licensing **validation** (whether a producer may sell a
+  product in a state), CE **satisfaction determination**, sale/issue **blocking** on
+  licensing status, and any compliance/regulatory decision engine. Stored
+  `credits_required` / `credits_completed` are staff-entered figures — the platform draws
+  no conclusion from them. Tests assert no validation/determination function exists.
+
+### Blocked / deferred
+- **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
+  Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
+  is **not** regulatory certification. No regulated phase passes its RC gate without a
+  completed, approved sign-off artifact from a qualified, named compliance reviewer. This
+  is not resolvable in code and remains open.
+- **Remaining phases:** 5 (commissions), 6 (exceptions/detectors/queues + `run_insurance_scan`
+  cron), 7 (policyholder portal), 8 (reporting/dashboards), 9 (integration stubs),
+  10 (RC validation + release), plus the AD-5-gated regulated portions of Phases 2–4.
+
+### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
+- **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter
+  (active virtualenv → repo-local `.venv` → `python3` → `python` if Python 3, else a clear
+  failure) with no hardcoded paths; `test.sh`, `restore_rehearsal.sh`, `release.sh`,
+  `demo.sh`, `check_migrations_reversible.sh`, `check_migration_heads.sh`, and
+  `check_schema_at_head.sh` now source it and invoke `python`/`alembic`/`pytest`/`uvicorn`
+  through `$PYTHON`. Fixes the bare-`python` failure that broke the harness on
+  venv-only/py3.12 environments (previously 1 failing safety test).
+
+### Migrations
+Additive, off head `u1f9c0i9h8g7`, single head `a7g8i9k0f1h2`, reversible:
+`v2b3d4f5a6c7` → `w3c4e5g6b7d8` → `x4d5f6h7c8e9` → `y5e6g7i8d9f0` → `z6f7h8j9e0g1` →
+`a7g8i9k0f1h2`.
 
 ## [0.9.13] — 2026-07-16 — Platform Foundation
 
