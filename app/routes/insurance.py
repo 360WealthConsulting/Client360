@@ -259,6 +259,25 @@ def console_reporting(request: Request,
                                       context={"report": report, "principal": principal})
 
 
+# --- Phase 8: consolidated operations dashboard (firm-internal STAFF only; proportional to the
+# viewer's capabilities and record scope; reuses the existing reports + shared engine/work/portal
+# primitives). Operational/workflow/financial only — no compliance determination (AD-5). ---
+
+@router.get("/api/v1/insurance/dashboard")
+def api_insurance_dashboard(principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_reporting
+    return _run(lambda: insurance_reporting.operations_dashboard(principal))
+
+
+@router.get("/insurance/dashboard", response_class=HTMLResponse)
+def console_insurance_dashboard(request: Request,
+                                principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_reporting
+    dash = _run(lambda: insurance_reporting.operations_dashboard(principal))
+    return templates.TemplateResponse(request=request, name="insurance/dashboard.html",
+                                      context={"dash": dash, "principal": principal})
+
+
 # --- Phase 3 (non-regulated): in-force servicing reviews + obligation calendar ---
 
 class ReviewCreate(BaseModel):

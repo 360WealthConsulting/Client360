@@ -1,10 +1,11 @@
 # Release v0.10.0 — Insurance Operations: Architecture
 
-**Status:** in progress — **Phases 0–7 implemented** (Phases 2–4 as non-regulated operational
-skeletons; **Phases 5–7 — commissions, exceptions/work-management/scheduled scanning, and the
-policyholder portal surface — are non-regulated and complete for their scope**); Phases 8–10
-not started; **all regulated logic deferred behind the AD-5 gate**. Not yet released or tagged.
-(Current single Alembic head `d0l1n2o3i4k5`; migration chain in §13. See `PROJECT_STATUS.md`.)
+**Status:** in progress — **Phases 0–8 implemented** (Phases 2–4 as non-regulated operational
+skeletons; **Phases 5–8 — commissions, exceptions/work-management/scheduled scanning, the
+policyholder portal surface, and reporting & dashboards — are non-regulated and complete for
+their scope**); Phases 9–10 not started; **all regulated logic deferred behind the AD-5 gate**.
+Not yet released or tagged. (Current single Alembic head `d0l1n2o3i4k5`; migration chain in §13.
+See `PROJECT_STATUS.md`.)
 **Scope:** individual **life insurance & annuities** (advisor-sold, in-force-managed).
 Not group/employer benefits (that is 0.9.11), not P&C, not group life.
 **Baseline:** built on the 0.9.11 platform (ADR-18) and the 0.9.13 test/CI/release
@@ -25,7 +26,10 @@ infrastructure. New migration chains off head `u1f9c0i9h8g7`.
 >   `run_insurance_scan()` across all detectors, wired into the shared scheduler and Work
 >   Management with organization-scoped, firm-internal exceptions (Phase 6).** **Policyholder
 >   portal — a read-only, opt-in, scoped policy view via the existing portal, with no
->   producers/commissions/licensing/exceptions exposed (Phase 7).** Phases 0–7.
+>   producers/commissions/licensing/exceptions exposed (Phase 7).** **Reporting & dashboards —
+>   a consolidated firm-internal operations dashboard, proportional to the viewer's capabilities
+>   and record scope, over the existing reporting/exception/work-queue primitives (Phase 8).**
+>   Phases 0–8.
 > - **Deferred (regulated logic — NOT built, NOT enabled):** suitability determination,
 >   replacement/1035 recommendation logic, licensing/CE **validation**, sale/issue
 >   **blocking**, automated compliance approvals, and any regulatory decision engine.
@@ -462,6 +466,65 @@ surface is factual policy data only, so the **AD-5 gate is unaffected**.
 
 **No schema change** — the surface is read-only over existing tables and the `insurance` grant
 permission is JSON (data-driven). Single Alembic head unchanged.
+
+## 12e. Phase 8 — reporting & dashboards (architecture checkpoint; non-regulated)
+
+Phase 8 adds a **consolidated, firm-internal insurance operations dashboard** and completes the
+operational reporting surface, extending the existing `app/services/insurance_reporting.py` — no
+parallel reporting engine, dashboard framework, authorization system, or record-scope model.
+
+**Proposed dashboards & reports.** One `operations_dashboard(principal)` composes the existing
+per-domain reports plus three new operational summaries, each **derived from a scoped list**:
+- **pipeline** — cases/policies by status + open requirements (`pipeline_report`, reuse).
+- **reviews** — completion rate, overdue/deferred (`review_report`, reuse).
+- **commissions** — expected/received/outstanding/variance + producer-payout vs agency-retained
+  (`commission_report`, reuse — financial).
+- **licensing** — license/CE counts + upcoming expiry (`licensing_report`, reuse).
+- **exceptions** — insurance exception counts by code/severity/status (**new** `exception_summary`;
+  reuses `exception_engine.list_exceptions(principal, domain="insurance")`).
+- **work_queues** — insurance queue depths (**new** `work_queue_report`; reuses Work Management
+  `work_items(principal)` + the queue criteria — the same counting `work_management.dashboard`
+  uses).
+- **portal_adoption** — firm-internal count of policyholder portal grants that allow the
+  `insurance` permission and policies exposed (**new** `portal_activity_report`) — oversight only.
+
+**Intended users & capability gates.** A **staff** surface (never the client portal). The
+dashboard route requires **`insurance.read`**; each optional section is included **only** if the
+viewer holds its capability — commissions → `insurance.commissions.read`, licensing →
+`insurance.licensing.read`, exceptions → `exception.read`, work_queues → `work.read`,
+portal_adoption → `record.read_all`. The result names the `sections` included, so the response is
+**proportional to the viewer's permissions**.
+
+**Record-scope behavior.** Authorization is applied **before aggregation**: every section is
+computed from an already scope-filtered list (`ins.list_*`, `com.list_commissions`,
+`ee.list_exceptions`, `work_items`) — a principal only ever aggregates records they may see;
+`record.read_all` aggregates firm-wide. No section bypasses record scope.
+
+**Client-facing vs firm-internal boundary.** This is **firm-internal only** — served under
+`/insurance/*` (staff), capability-gated. It is **not** part of the policyholder portal and
+exposes producer compensation, commissions, licensing, exceptions, and queue internals **only**
+to staff who already hold those capabilities. The Phase 7 portal is untouched and continues to
+expose none of this.
+
+**Data sources & aggregation.** Pure read-only aggregation (Python `Counter`/sums) over the
+scoped lists and the canonical tables; no persisted aggregate, no second source of truth.
+Exception codes resolve `exception_type_id → code` from the five seeded insurance exception types.
+
+**API & UI surfaces.** `GET /api/v1/insurance/dashboard` (JSON) and `/insurance/dashboard` (staff
+HTML console). The existing per-report endpoints (`/reporting`, `/reviews/report`,
+`/licensing/report`, `/commissions/report`) remain as drill-downs.
+
+**Performance.** Each section is O(scoped rows); `commission_report` and `work_items` load the
+full scoped set into Python (existing pattern). Acceptable at current scale; SQL-side aggregation
+for very large books is deferred (architecture-review item #6).
+
+**AD-5 exclusions (explicit).** Operational counts, workflow status, and financial reconciliation
+**only**. No suitability, replacement/1035, licensing-validation, sale/issue-blocking,
+compliance-approval, or any regulated determination or compliance metric. A test asserts the
+dashboard carries no compliance/determination fields.
+
+**Migration requirements.** **None** — read-only reporting; reuses existing capabilities
+(`insurance.read` + the per-section caps). Single Alembic head unchanged.
 
 ## 13. Dependencies
 

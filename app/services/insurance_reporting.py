@@ -141,3 +141,118 @@ def commission_report(principal):
         "by_organization": flatten(by_org),
         "by_producer": flatten(by_producer),
     }
+
+
+# ============================================================================
+# Phase 8 — consolidated operations dashboard + operational summaries.
+# Firm-internal STAFF reporting only (never the client portal). Extends this module;
+# reuses the shared Exception Engine, Work Management, and portal grants — no parallel
+# reporting engine, dashboard framework, authorization system, or record-scope model.
+# Authorization is applied BEFORE aggregation (every section derives from a scoped list),
+# and each optional section is included only if the viewer holds its capability. Operational
+# counts / workflow status / financial reconciliation ONLY — no compliance determination (AD-5).
+# ============================================================================
+
+def _can(principal, cap):
+    return principal is not None and principal.can(cap)
+
+
+def exception_summary(principal):
+    """Insurance operational exception counts within record scope. Reuses the shared engine's
+    scope-filtered list (authorization before aggregation) — operational only, no compliance
+    conclusion. Requires exception.read."""
+    from sqlalchemy import select
+
+    from app.db import engine, exception_types
+    from app.services import exception_engine as ee
+    rows = ee.list_exceptions(principal, domain="insurance")  # record-scope enforced here
+    with engine.connect() as c:
+        code_by_id = {r[0]: r[1] for r in c.execute(select(
+            exception_types.c.id, exception_types.c.code).where(
+            exception_types.c.domain == "insurance"))}
+    open_rows = [r for r in rows if r["status"] not in ee.CLOSED_STATUSES]
+    return {
+        "total": len(rows),
+        "open": len(open_rows),
+        "by_code": dict(Counter(code_by_id.get(r["exception_type_id"], "unknown") for r in open_rows)),
+        "by_severity": dict(Counter(r["severity"] for r in open_rows)),
+        "by_status": dict(Counter(r["status"] for r in rows)),
+    }
+
+
+def work_queue_report(principal):
+    """Insurance work-queue depths — reuses Work Management ``work_items`` (scope-filtered) and
+    the existing queue criteria (the same counting the shared work dashboard uses). No new queue
+    engine. Requires work.read."""
+    from sqlalchemy import select
+
+    from app.db import engine, work_queues
+    from app.services.work_intelligence import queue_items
+    from app.services.work_management import work_items
+    items = work_items(principal)  # scope-filtered; includes insurance
+    with engine.connect() as c:
+        queues = c.execute(select(work_queues.c.code, work_queues.c.name, work_queues.c.criteria)
+                           .where(work_queues.c.code.like("insurance_%"), work_queues.c.active.is_(True))
+                           .order_by(work_queues.c.name)).mappings().all()
+    return [{"code": q["code"], "name": q["name"], "count": len(queue_items(items, q["criteria"] or {}))}
+            for q in queues]
+
+
+def portal_activity_report(principal):
+    """Firm-internal policyholder-portal adoption for insurance (oversight metric — NOT
+    client-facing). Counts active portal grants that allow the ``insurance`` permission and the
+    policies exposed through them. Requires record.read_all (oversight)."""
+    from sqlalchemy import func, or_, select
+
+    from app.db import engine, insurance_policies, portal_access_grants
+    today = date.today()
+    with engine.connect() as c:
+        grants = c.execute(select(portal_access_grants).where(
+            portal_access_grants.c.effective_date <= today,
+            or_(portal_access_grants.c.inactive_date.is_(None),
+                portal_access_grants.c.inactive_date >= today))).mappings().all()
+    ins_grants = [g for g in grants if (g["permissions"] or {}).get("insurance")]
+    person_ids = {g["person_id"] for g in ins_grants if g["person_id"]}
+    household_ids = {g["household_id"] for g in ins_grants if g["household_id"]}
+    org_ids = {g["organization_id"] for g in ins_grants if g["organization_id"]}
+    clauses = []
+    if person_ids:
+        clauses.append(insurance_policies.c.person_id.in_(person_ids))
+    if household_ids:
+        clauses.append(insurance_policies.c.household_id.in_(household_ids))
+    if org_ids:
+        clauses.append(insurance_policies.c.organization_id.in_(org_ids))
+    exposed = 0
+    if clauses:
+        with engine.connect() as c:
+            exposed = c.execute(select(func.count()).select_from(insurance_policies)
+                                .where(or_(*clauses))).scalar_one()
+    return {
+        "portal_accounts_with_insurance": len({g["portal_account_id"] for g in ins_grants}),
+        "grants_with_insurance": len(ins_grants),
+        "policies_exposed": exposed,
+    }
+
+
+def operations_dashboard(principal):
+    """Consolidated, firm-internal insurance operations dashboard — proportional to the viewer's
+    capabilities and record scope. Reuses the existing per-domain reports + shared primitives; no
+    parallel engine. Operational / workflow / financial reporting ONLY — no compliance
+    determination or metric (AD-5). Served as a STAFF surface, never through the client portal."""
+    sections = {
+        "pipeline": pipeline_report(principal),   # insurance.read (route-gated)
+        "reviews": review_report(principal),
+    }
+    if _can(principal, "exception.read"):
+        sections["exceptions"] = exception_summary(principal)
+    if _can(principal, "work.read"):
+        sections["work_queues"] = work_queue_report(principal)
+    if _can(principal, "insurance.commissions.read"):
+        sections["commissions"] = commission_report(principal)
+    if _can(principal, "insurance.licensing.read"):
+        sections["licensing"] = licensing_report(principal)
+    if _can(principal, "record.read_all"):
+        sections["portal_adoption"] = portal_activity_report(principal)
+    return {"boundary": "firm_internal_staff",
+            "sections_included": sorted(sections.keys()),
+            "sections": sections}

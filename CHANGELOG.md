@@ -182,14 +182,39 @@ Behavior-preserving cleanup from the Release 0.10.0 architecture review (items #
   suitability/replacement determination; **AD-5 unaffected**.
 - No schema change (read-only over existing tables; the `insurance` grant permission is JSON).
 
+### Added — Phase 8 · Reporting & dashboards (no migration; extend `insurance_reporting`)
+- **Consolidated operations dashboard** (`insurance_reporting.operations_dashboard` +
+  `GET /api/v1/insurance/dashboard` / `/insurance/dashboard`) — a **firm-internal staff** surface
+  that composes the existing per-domain reports (pipeline, reviews, commissions, licensing) plus
+  three new operational summaries, **proportional to the viewer's capabilities**: each optional
+  section is included only if the viewer holds its capability (commissions →
+  `insurance.commissions.read`, licensing → `insurance.licensing.read`, exceptions →
+  `exception.read`, work_queues → `work.read`, portal_adoption → `record.read_all`); the response
+  names the `sections_included`.
+- **New summaries, all derived from a scope-filtered list** (authorization before aggregation):
+  `exception_summary` (reuses `exception_engine.list_exceptions(domain="insurance")`, counts by
+  code/severity/status), `work_queue_report` (reuses Work Management `work_items` + the existing
+  queue criteria for depths), and `portal_activity_report` (firm-internal policyholder-portal
+  adoption — oversight only).
+- **Reuse only** — extends `insurance_reporting.py`; no parallel reporting engine, dashboard
+  framework, authorization system, or record-scope model. Record scope is applied before every
+  aggregation; `record.read_all` aggregates firm-wide.
+- **Firm-internal boundary** — a staff surface under `/insurance/*` (401 without auth), never the
+  client portal; producer compensation, commissions, licensing, exceptions, and queue internals
+  are shown only to staff who already hold those capabilities. The Phase 7 portal is untouched.
+- **Non-regulated** — operational counts, workflow status, and financial reconciliation only; no
+  suitability, replacement/1035, licensing-validation, sale-blocking, compliance-approval, or any
+  compliance metric. A test asserts the dashboard carries no compliance/determination content.
+  **AD-5 unaffected.** No schema change (read-only; reuses existing capabilities).
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
   is **not** regulatory certification. No regulated phase passes its RC gate without a
   completed, approved sign-off artifact from a qualified, named compliance reviewer. This
   is not resolvable in code and remains open.
-- **Remaining phases:** 8 (reporting/dashboards), 9 (integration stubs), 10 (RC validation +
-  release), plus the AD-5-gated regulated portions of Phases 2–4.
+- **Remaining phases:** 9 (integration stubs), 10 (RC validation + release), plus the AD-5-gated
+  regulated portions of Phases 2–4.
 
 ### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
 - **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter
