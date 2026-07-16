@@ -38,10 +38,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 3.9 is what the project actually runs on (.venv is 3.9.6) and what
+      # requirements.txt was pinned against: typer needs click>=8.2.1 on
+      # Python >=3.10, which the pinned click==8.1.8 cannot satisfy. This
+      # mismatch was invisible while the workflow failed to parse.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.9"
 
       - name: Install dependencies
         run: |
