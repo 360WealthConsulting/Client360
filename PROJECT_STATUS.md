@@ -11,12 +11,13 @@ Phase 8 not started.)_
 | **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* |
 | **Current Alembic head** | `d0l1n2o3i4k5` — single head; **dev `client360` and test `client360_test` both at head** |
 | **Tests** | **701 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; single head `d0l1n2o3i4k5` (Phase 7 has no migration); compile OK; authorization + portal-scope + scheduler registration verified; startup/shutdown clean; `git diff --check` clean. |
-| **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–5; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance Commissions SOP drafted (`docs/confluence/INSURANCE_COMMISSIONS_SOP_DRAFT.md`, draft-only). |
+| **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–7; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance SOPs drafted (commissions, exceptions & work queues, policyholder portal — all draft-only under `docs/confluence/`). |
 
 ## Completed phases (0.10.0)
 
-Phases 2–4 shipped as **non-regulated operational skeletons**; **Phase 5 (commissions) is
-non-regulated and complete for its scope**. Regulated logic remains deferred — see AD-5:
+Phases 2–4 shipped as **non-regulated operational skeletons**; **Phases 5–7 (commissions;
+exceptions / work-management / scheduled scanning; policyholder portal) are non-regulated and
+complete for their scope**. Regulated logic remains deferred — see AD-5:
 
 - **Phase 0** — Schema foundation: product catalog, `insurance_case`, policy/party/producer; `insurance.*` caps/roles; exception-engine + work-management registration. Migration `v2b3d4f5a6c7`.
 - **Phase 1** — Policies core + coverages/riders/parties/values; product-version evolution; CRUD API, book/detail UI; lifecycle statuses + shared Timeline/Audit events. Migrations `w3c4e5g6b7d8`, `x4d5f6h7c8e9`.
@@ -48,7 +49,7 @@ page (Git technical, Confluence operational) — no duplication.
 ## Open risks
 
 - 🔴 **AD-5 — compliance reviewer NOT YET NAMED.** All regulated insurance logic (suitability, replacement/1035, licensing/CE validation, compliance approvals) is **blocked** and cannot pass an RC gate without a qualified, named reviewer + approved sign-off artifact. Michael Shelton is the **business** owner (operational scope) only — not regulatory certification. **Not resolvable in code.**
-- 🟠 **Release 0.10.0 not yet RC-validated / not tagged.** Phases 5–10 outstanding.
+- 🟠 **Release 0.10.0 not yet RC-validated / not tagged.** Phases 8–10 outstanding.
 - 🟡 **Confluence Insurance pages are draft/unpublished** — must not be published until the corresponding phase functionality is complete and (for regulated content) AD-5-cleared.
 - 🟡 **Benefits (0.9.11) Confluence pages still in draft** — awaiting page-owner approval.
 
