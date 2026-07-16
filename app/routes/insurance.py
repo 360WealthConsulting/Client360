@@ -162,3 +162,94 @@ def console_policy(policy_id: int, request: Request,
     policy = _run(lambda: ins.get_policy(principal, policy_id))
     return templates.TemplateResponse(request=request, name="insurance/policy.html",
                                       context={"policy": policy, "principal": principal})
+
+
+# --- Phase 2 (non-regulated): cases, requirements, underwriting status --------
+
+class CaseStatusUpdate(BaseModel):
+    status: str
+
+
+class RequirementCreate(BaseModel):
+    requirement_type: str
+    case_id: int | None = None
+    policy_id: int | None = None
+    description: str | None = None
+    due_date: str | None = None
+    document_id: int | None = None
+
+
+class RequirementSatisfy(BaseModel):
+    document_id: int | None = None
+
+
+class UnderwritingStatus(BaseModel):
+    underwriting_status: str
+
+
+@router.get("/api/v1/insurance/cases")
+def api_case_list(status: str = "", principal: Principal = Depends(require_capability("insurance.read"))):
+    return {"cases": _run(lambda: ins.list_cases(principal, status=status or None))}
+
+
+@router.get("/api/v1/insurance/cases/{case_id}")
+def api_case_get(case_id: int, principal: Principal = Depends(require_capability("insurance.read"))):
+    return _run(lambda: ins.get_case(principal, case_id))
+
+
+@router.patch("/api/v1/insurance/cases/{case_id}/status")
+def api_case_status(case_id: int, payload: CaseStatusUpdate, request: Request,
+                    principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.update_case_status(principal, case_id, payload.status, **_actor(request, principal)))
+
+
+@router.patch("/api/v1/insurance/policies/{policy_id}/underwriting")
+def api_underwriting_status(policy_id: int, payload: UnderwritingStatus, request: Request,
+                            principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.set_underwriting_status(
+        principal, policy_id, payload.underwriting_status, **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/requirements", status_code=201)
+def api_requirement_create(payload: RequirementCreate, request: Request,
+                           principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.request_requirement(principal, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.patch("/api/v1/insurance/requirements/{requirement_id}/satisfy")
+def api_requirement_satisfy(requirement_id: int, payload: RequirementSatisfy, request: Request,
+                            principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.satisfy_requirement(
+        principal, requirement_id, document_id=payload.document_id, **_actor(request, principal)))
+
+
+@router.get("/api/v1/insurance/requirements")
+def api_requirement_list(case_id: int | None = None, policy_id: int | None = None, open_only: bool = False,
+                         principal: Principal = Depends(require_capability("insurance.read"))):
+    return {"requirements": _run(lambda: ins.list_requirements(
+        principal, case_id=case_id, policy_id=policy_id, open_only=open_only))}
+
+
+@router.get("/insurance/cases/{case_id}", response_class=HTMLResponse)
+def console_case(case_id: int, request: Request,
+                 principal: Principal = Depends(require_capability("insurance.read"))):
+    case = _run(lambda: ins.get_case(principal, case_id))
+    return templates.TemplateResponse(request=request, name="insurance/case.html",
+                                      context={"case": case, "principal": principal})
+
+
+# --- operational reporting (non-regulated) -----------------------------------
+
+@router.get("/api/v1/insurance/reporting")
+def api_reporting(principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_reporting
+    return _run(lambda: insurance_reporting.pipeline_report(principal))
+
+
+@router.get("/insurance/reporting", response_class=HTMLResponse)
+def console_reporting(request: Request,
+                      principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_reporting
+    report = _run(lambda: insurance_reporting.pipeline_report(principal))
+    return templates.TemplateResponse(request=request, name="insurance/reporting.html",
+                                      context={"report": report, "principal": principal})

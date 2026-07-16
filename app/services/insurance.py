@@ -23,6 +23,7 @@ from app.db import (
     insurance_policies,
     insurance_policy_parties,
     insurance_policy_producers,
+    insurance_requirements,
     insurance_riders,
     people,
     relationship_entities,
@@ -66,14 +67,16 @@ def _now():
 # --- authorization -----------------------------------------------------------
 
 def _policy_scope_ok(principal, row, *, write, connection) -> bool:
+    """Record-scope check for any org/person/household-anchored insurance row
+    (policies and cases; cases have no organization_id, hence .get)."""
     if principal is None:
         return True
     if principal.can("record.write_all") or (not write and principal.can("record.read_all")):
         return True
-    if row["organization_id"] and organization_in_scope(
-            principal, row["organization_id"], write=write, connection=connection):
+    org_id = row.get("organization_id")
+    if org_id and organization_in_scope(principal, org_id, write=write, connection=connection):
         return True
-    for et, eid in (("person", row["person_id"]), ("household", row["household_id"])):
+    for et, eid in (("person", row.get("person_id")), ("household", row.get("household_id"))):
         if eid and record_in_scope(principal, et, eid, write=write, connection=connection):
             return True
     return False
@@ -323,3 +326,153 @@ def add_producer(principal, policy_id, *, producer_entity_type, producer_entity_
             split_percentage=split_percentage,
         ).returning(insurance_policy_producers.c.id)).scalar_one()
     return {"id": pid}
+
+
+# ============================================================================
+# Phase 2 — NON-REGULATED new-business plumbing (behind the AD-5 gate line).
+# Nothing below evaluates suitability, replacement/1035, licensing, or CE, makes
+# a recommendation, or performs an automated compliance approval. These are
+# operational status/checklist tracking only; staff enter the values.
+# ============================================================================
+
+CASE_STATUS_EVENTS = {
+    "fact_find": ("insurance_case_fact_find", "Fact finding started"),
+    "proposed": ("insurance_case_proposed", "Proposal presented"),
+    "underwriting": ("insurance_case_underwriting", "Case in underwriting"),
+    "issued": ("insurance_case_issued", "Case issued"),
+    "declined": ("insurance_case_declined", "Case declined"),
+    "closed": ("insurance_case_closed", "Case closed"),
+}
+
+_REQUIREMENT_OPEN = ("requested", "received")
+
+
+def _load_case(c, case_id):
+    row = c.execute(select(insurance_cases).where(insurance_cases.c.id == case_id)).mappings().one_or_none()
+    if row is None:
+        raise InsuranceNotFound("Insurance case not found.")
+    return row
+
+
+def get_case(principal, case_id):
+    _require(principal, "insurance.read")
+    with engine.connect() as c:
+        case = _load_case(c, case_id)
+        if not _policy_scope_ok(principal, case, write=False, connection=c):
+            raise InsuranceNotFound("Insurance case not found.")
+        policies = [dict(r) for r in c.execute(select(insurance_policies).where(
+            insurance_policies.c.case_id == case_id)).mappings()]
+        requirements = [dict(r) for r in c.execute(select(insurance_requirements).where(
+            insurance_requirements.c.case_id == case_id)).mappings()]
+        return {**dict(case), "policies": policies, "requirements": requirements}
+
+
+def list_cases(principal, *, status=None, limit=200):
+    _require(principal, "insurance.read")
+    query = select(insurance_cases).order_by(insurance_cases.c.id.desc())
+    if status:
+        query = query.where(insurance_cases.c.status == status)
+    with engine.connect() as c:
+        rows = [dict(r) for r in c.execute(query).mappings()
+                if _policy_scope_ok(principal, r, write=False, connection=c)]
+    return rows[:limit]
+
+
+def update_case_status(principal, case_id, new_status, *, actor_user_id=None, request_id=None):
+    """Advance a case through its operational pipeline. No regulated logic."""
+    _require(principal, "insurance.write")
+    with engine.begin() as c:
+        case = _load_case(c, case_id)
+        if not _policy_scope_ok(principal, case, write=True, connection=c):
+            raise PermissionError("Case is outside your record scope.")
+        c.execute(insurance_cases.update().where(insurance_cases.c.id == case_id)
+                  .values(status=new_status, updated_at=_now()))
+        event = CASE_STATUS_EVENTS.get(new_status)
+        if event:
+            event_type, title = event
+            _publish(c, action="insurance.case.status_changed", event_type=event_type, title=title,
+                     policy_row=case, actor_user_id=actor_user_id, request_id=request_id,
+                     metadata={"from": case["status"], "to": new_status})
+    return {"id": case_id, "status": new_status}
+
+
+def set_underwriting_status(principal, policy_id, underwriting_status, *, actor_user_id=None, request_id=None):
+    """Record the carrier's underwriting status. Tracking only — the platform does
+    not derive or decide underwriting; staff enter what the carrier reports."""
+    _require(principal, "insurance.write")
+    with engine.begin() as c:
+        policy = _load_policy(c, policy_id)
+        if not _policy_scope_ok(principal, policy, write=True, connection=c):
+            raise PermissionError("Policy is outside your record scope.")
+        c.execute(insurance_policies.update().where(insurance_policies.c.id == policy_id)
+                  .values(underwriting_status=underwriting_status, updated_at=_now()))
+        _publish(c, action="insurance.policy.underwriting_status_changed",
+                 event_type="insurance_underwriting_status_changed", title="Underwriting status changed",
+                 policy_row=policy, actor_user_id=actor_user_id, request_id=request_id,
+                 metadata={"underwriting_status": underwriting_status})
+    return {"id": policy_id, "underwriting_status": underwriting_status}
+
+
+# --- requirements (operational checklist; not a compliance determination) ----
+
+def request_requirement(principal, *, requirement_type, case_id=None, policy_id=None,
+                        description=None, due_date=None, document_id=None,
+                        actor_user_id=None, request_id=None):
+    _require(principal, "insurance.write")
+    if not case_id and not policy_id:
+        raise InsuranceError("A requirement needs a case or policy.")
+    with engine.begin() as c:
+        anchor = _load_case(c, case_id) if case_id else _load_policy(c, policy_id)
+        if not _policy_scope_ok(principal, anchor, write=True, connection=c):
+            raise PermissionError("Requirement anchor is outside your record scope.")
+        rid = c.execute(insurance_requirements.insert().values(
+            case_id=case_id, policy_id=policy_id, requirement_type=requirement_type,
+            status="requested", description=description, due_date=due_date,
+            document_id=document_id, requested_by_user_id=actor_user_id, requested_date=_now().date(),
+        ).returning(insurance_requirements.c.id)).scalar_one()
+        _publish(c, action="insurance.requirement.requested",
+                 event_type="insurance_requirement_requested", title="Requirement requested",
+                 policy_row=anchor, actor_user_id=actor_user_id, request_id=request_id,
+                 metadata={"requirement_type": requirement_type})
+    return {"id": rid}
+
+
+def satisfy_requirement(principal, requirement_id, *, document_id=None, actor_user_id=None, request_id=None):
+    _require(principal, "insurance.write")
+    with engine.begin() as c:
+        req = c.execute(select(insurance_requirements).where(
+            insurance_requirements.c.id == requirement_id)).mappings().one_or_none()
+        if req is None:
+            raise InsuranceNotFound("Requirement not found.")
+        anchor = (_load_case(c, req["case_id"]) if req["case_id"]
+                  else _load_policy(c, req["policy_id"]))
+        if not _policy_scope_ok(principal, anchor, write=True, connection=c):
+            raise PermissionError("Requirement is outside your record scope.")
+        values = {"status": "satisfied", "satisfied_date": _now().date(), "updated_at": _now()}
+        if document_id is not None:
+            values["document_id"] = document_id
+        c.execute(insurance_requirements.update().where(
+            insurance_requirements.c.id == requirement_id).values(**values))
+        _publish(c, action="insurance.requirement.satisfied",
+                 event_type="insurance_requirement_satisfied", title="Requirement satisfied",
+                 policy_row=anchor, actor_user_id=actor_user_id, request_id=request_id,
+                 metadata={"requirement_type": req["requirement_type"]})
+    return {"id": requirement_id, "status": "satisfied"}
+
+
+def list_requirements(principal, *, case_id=None, policy_id=None, open_only=False):
+    _require(principal, "insurance.read")
+    if not case_id and not policy_id:
+        raise InsuranceError("list_requirements needs a case_id or policy_id anchor.")
+    query = select(insurance_requirements)
+    if case_id:
+        query = query.where(insurance_requirements.c.case_id == case_id)
+    if policy_id:
+        query = query.where(insurance_requirements.c.policy_id == policy_id)
+    if open_only:
+        query = query.where(insurance_requirements.c.status.in_(_REQUIREMENT_OPEN))
+    with engine.connect() as c:
+        anchor = _load_case(c, case_id) if case_id else _load_policy(c, policy_id)
+        if not _policy_scope_ok(principal, anchor, write=False, connection=c):
+            raise InsuranceNotFound("Requirement anchor not found.")  # hide existence
+        return [dict(r) for r in c.execute(query).mappings()]

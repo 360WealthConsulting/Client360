@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Insurance Pipeline{% endblock %}
+{% block crumb %}<a href="/insurance">Insurance</a> / Reporting{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Insurance Pipeline</h1></div>
+
+<div class="stat-grid">
+  <div class="stat"><div class="label">Cases</div><div class="value">{{ report.case_count }}</div></div>
+  <div class="stat"><div class="label">Policies</div><div class="value">{{ report.policy_count }}</div></div>
+  <div class="stat"><div class="label">Open requirements</div><div class="value">{{ report.open_requirements }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Cases by status</h2>
+  {% if report.cases_by_status %}
+  <table class="data"><thead><tr><th>Status</th><th class="num">Count</th></tr></thead><tbody>
+    {% for status, n in report.cases_by_status.items() %}
+      <tr><td>{{ status.replace('_', ' ') }}</td><td class="num">{{ n }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty">No cases in scope.</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Policies by status</h2>
+  {% if report.policies_by_status %}
+  <table class="data"><thead><tr><th>Status</th><th class="num">Count</th></tr></thead><tbody>
+    {% for status, n in report.policies_by_status.items() %}
+      <tr><td>{{ status.replace('_', ' ') }}</td><td class="num">{{ n }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty">No policies in scope.</div>{% endif %}
+</div>
+{% endblock %}

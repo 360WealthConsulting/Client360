@@ -328,6 +328,28 @@ gate before "implemented."
 
 ---
 
+## 12a. Phase 2 scope split — non-regulated (built) vs compliance-gated (deferred)
+
+With the compliance reviewer unassigned (AD-5), Phase 2 ships the **non-regulated
+new-business plumbing only**; every regulated determination stays behind the gate.
+
+**Non-regulated — built in Phase 2 (`y5e6g7i8d9f0` + services/routes/UI):**
+application pipeline & case progression (case status transitions), requirement tracking
+(`insurance_requirements`: requested → satisfied — an operational checklist, not a
+determination), underwriting-**status** tracking (`insurance_policies.underwriting_status`
+— records the carrier's status; the platform does not decide it), document collection
+(reuses the shared `documents` table via `requirement.document_id`), carrier-communication /
+process orchestration (reuses workflow automation), shared Timeline/Audit events
+(case status, requirement requested/satisfied, underwriting status changed), operational
+reporting (`insurance_reporting.pipeline_report` — pipeline counts only, no compliance
+metrics), UI (case workspace, pipeline), and the JSON APIs.
+
+**Compliance-gated — NOT built / not enabled** (behind AD-5): suitability determination,
+replacement recommendations, 1035 recommendation logic, licensing validation, CE
+determination, automated compliance approvals, and any regulatory decision engine. No
+function evaluates, scores, recommends, validates, or concludes a regulated matter (a test
+asserts none exist in the service).
+
 ## 13. Dependencies
 
 - Builds on the 0.9.11 platform and the 0.9.13 test/CI/release infrastructure (isolated
