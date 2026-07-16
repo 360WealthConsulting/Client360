@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Insurance Book{% endblock %}
+{% block crumb %}Insurance{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Insurance Book</h1>
+</div>
+
+<div class="filterbar">
+  <a class="chip{{ ' active' if not status else '' }}" href="/insurance">All</a>
+  <a class="chip{{ ' active' if status == 'in_force' else '' }}" href="/insurance?status=in_force">In force</a>
+  <a class="chip{{ ' active' if status == 'proposed' else '' }}" href="/insurance?status=proposed">Proposed</a>
+  <a class="chip{{ ' active' if status == 'underwriting' else '' }}" href="/insurance?status=underwriting">Underwriting</a>
+</div>
+
+{% if policies %}
+<div class="table-wrap"><div class="table-scroll">
+<table class="data">
+  <thead><tr>
+    <th class="c-sortable">Policy #</th>
+    <th class="c-sortable">Status</th>
+    <th class="c-sortable num">Face</th>
+    <th class="c-sortable num">Premium</th>
+  </tr></thead>
+  <tbody>
+  {% for p in policies %}
+    <tr>
+      <td><a class="rowlink" href="/insurance/policies/{{ p.id }}">{{ p.policy_number or ('Policy #' ~ p.id) }}</a></td>
+      <td><span class="badge">{{ p.status.replace('_', ' ') }}</span></td>
+      <td class="num">{{ '{:,.0f}'.format(p.face_amount) if p.face_amount is not none else '—' }}</td>
+      <td class="num">{{ '{:,.2f}'.format(p.premium_amount) if p.premium_amount is not none else '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% else %}
+<div class="empty">No insurance policies in scope.</div>
+{% endif %}
+{% endblock %}

@@ -22,6 +22,7 @@
 {% set can_org = 'organization.read' in caps %}
 {% set can_ben = 'benefits.read' in caps %}
 {% set can_exc = 'exception.read' in caps %}
+{% set can_ins = 'insurance.read' in caps %}
 {% set firm_client = ('client.read' in caps) and read_all %}
 {% set groups = [
   {"label": "Overview", "items": [
@@ -46,6 +47,8 @@
     {"href": "/organizations", "label": "Organizations", "match": "/organizations", "ico": "⬢", "show": can_org},
     {"href": "/benefits", "label": "Benefits", "match": "/benefits", "ico": "⊕", "show": can_ben},
     {"href": "/benefits/reporting", "label": "Reporting", "match": "/benefits/reporting", "ico": "▥", "show": can_ben}]},
+  {"label": "Insurance", "items": [
+    {"href": "/insurance", "label": "Book", "match": "/insurance", "ico": "☂", "show": can_ins}]},
   {"label": "Oversight", "items": [
     {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
     {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
