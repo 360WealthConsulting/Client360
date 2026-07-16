@@ -8,15 +8,15 @@ profile, current canonical source(s), and maturity. Seeds the Publication Regist
 
 | Area | Code | Canonical source(s) today | Maturity |
 |---|---|---|---|
-| Client360 (platform) | CLM360 | `EPIC_4_PRACTICE_MANAGEMENT_PLATFORM.md`, `PRODUCTION_ARCHITECTURE.md`, `README.md`, baseline migrations | Platform arch strong; exec/user gap |
+| Client360 (platform) | CLM360 | `EPIC_4_PRACTICE_MANAGEMENT_PLATFORM.md`, `README.md`, baseline migrations (deployment arch `PRODUCTION_ARCHITECTURE.md` canonical in **40 · Cross-Platform**; CLM360 links it) | Platform arch strong; exec/user gap |
 | Tax Operations | TAXOPS | `EPIC_5_TAX_PRACTICE_PLATFORM.md`, `TAX_*` , `app/services/tax_*` | Arch strong; **business process (SOP/policy/calendar) gap** |
 | Wealth Management | WLTH | `SCHWAB_PORTFOLIO_ENGINE.md`, `app/services/portfolio*` | Arch strong; ops gap |
 | Insurance | INS | `RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md`, `app/services/insurance*`, Commissions SOP draft | Arch strong; SOP started; drafts in register |
 | Employee Benefits | BEN | `RELEASE_0.9.11_BENEFITS_ARCHITECTURE.md`, `app/services/benefits_*` | Arch strong; 3 Confluence drafts |
-| Retirement Plans | RET | folded into `benefits_obligations.py` | No dedicated pages — gap |
+| Retirement Plans | RET | retirement compliance in `benefits_obligations.py` (canonical in **Employee Benefits**; RET links it) | No dedicated pages — gap |
 | CRM | CRM | `RELATIONSHIP_ENGINE.md`, `app/services/{relationships,notes,activities}.py` | Arch partial; ops gap |
 | Work Management | WORK | `WORK_MANAGEMENT_PLATFORM.md`, `app/services/work_*` | Arch strong; ops gap |
-| Document Management | DOC | `MICROSOFT_DOCUMENT_SYNC.md`, `CLIENT_PORTAL.md`, `app/services/{documents,microsoft_documents}.py` | Arch strong; ops gap |
+| Document Management | DOC | `CLIENT_PORTAL.md`, `app/services/{documents,microsoft_documents}.py` (Microsoft sync canonical in **Microsoft 365**; DOC links it) | Arch strong; ops gap |
 | Reporting | RPT | `app/services/*_reporting.py`, `dashboard.py` | No consolidated doc — gap |
 | AI & Automation | AIA | `app/services/{advisor_ai,work_intelligence,client_summary,tax_document_intelligence}.py` | No doc — gap |
 
@@ -60,6 +60,28 @@ profile, current canonical source(s), and maturity. Seeds the Publication Regist
 | 80 Libraries | — | — | 1 SOP exemplar | — | — | Release process G |
 
 `G*` = one global CHANGELOG; per-area Release Notes/Change Records not yet sliced.
+
+## Single-home resolution for shared sources (no duplicate mappings)
+
+A handful of sources are *used by* several areas. To honour "every capability maps into exactly
+one place," each is **owned by one area** (or the Cross-Platform node); every other area **links**
+it and never re-documents it. This table is authoritative over the per-area rows above.
+
+| Shared source | Canonical home (owns it) | Linked (not duplicated) by |
+|---|---|---|
+| `PRODUCTION_ARCHITECTURE.md` (deployment/topology) | 40 · Cross-Platform → Platform Architecture | Client360, Servers, IT |
+| `IDENTITY_AUTHORIZATION_AUDIT.md` | 40 · Cross-Platform → Global Security & Identity | Security, Administration, every module's Security & Permissions page |
+| `ADR_EXCEPTION_ENGINE_SCOPE.md` (exception engine) | 40 · Cross-Platform → Global Exception Engine | Compliance, every module's Exception Handling page |
+| `WORKFLOW_PROCESS_AUTOMATION.md` (workflow engine) | 40 · Cross-Platform → Global Workflow Engine | every module's Workflows page |
+| `MICROSOFT_CALENDAR_SYNC.md`, `MICROSOFT_DOCUMENT_SYNC.md` | Microsoft 365 | Document Management, CRM (calendar) |
+| retirement compliance in `benefits_obligations.py` | Employee Benefits | Retirement Plans |
+| `CLIENT_PORTAL.md` | Document Management | Insurance/portal consumers (Phase 7) |
+| `service_revenue` / insurance-commission revenue | Insurance / Reporting (software definition) | Accounting (business process) |
+| `SECURITY_HARDENING_0.9.7.md` | Security | IT, every module's Security page |
+
+**Rule:** a page's `canonical_source` names its owning area's artifact; a consuming area's page is
+a *Related Capabilities* link. No source is the canonical home of two areas — the capability-map
+expression of the framework's one-canonical-home principle.
 
 ## What this tells us
 

@@ -100,6 +100,9 @@ types (e.g. Tax Operations documents both the Client360 Tax module *and* the fir
 - **Labels:** `domain:capabilities|infrastructure|operations|shared`, `area:<code>`,
   `type:<code>`, `profile:<software|infra|ops>`, `source:git|confluence`,
   `status:draft|published`, `review:<cadence>`.
+- **Codes are position-scoped** in the page id (`<AREA>-<TYPE>`): a token reused as both an area
+  and a type (e.g. `SEC`, `TRAIN`) never collides — `SEC-SEC` is the Security area's Security &
+  Permissions page; `HR-SEC` is HR's. Area codes and type codes are disjoint namespaces by position.
 
 ## 4. Page properties (required on every page)
 

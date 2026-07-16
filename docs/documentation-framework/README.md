@@ -92,7 +92,8 @@ Sources, profiles, and coverage: [`03-CAPABILITY-MAP.md`](03-CAPABILITY-MAP.md).
 
 ## 5. Definition of Done (summary)
 
-A change is "done" only when its area's documentation is current:
+**Documentation is required for every completed feature — mandatory, not advisory.** No feature,
+phase, or change is "Done" until its area's documentation is current:
 - **Software release/phase:** Change Log + Release Notes + every Git-canonical doc type touched
   (Architecture, Data Model, Business Rules, Workflows, Exception Handling, Integrations,
   Security, Reporting) + register row + flagged Confluence follow-ups.

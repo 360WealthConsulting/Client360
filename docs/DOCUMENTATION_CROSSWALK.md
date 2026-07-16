@@ -11,6 +11,13 @@ section map below; software-backed areas link to their Client360 source, and are
 software yet are still listed as manual sections so the manual tree is complete. Individual
 capability→page rows are added per section as pages are drafted.
 
+> **This crosswalk is the framework's Publication Register.** Under the approved
+> [360 Wealth Consulting Operations Manual documentation framework](documentation-framework/README.md)
+> this file is the register of record — the single index of each page's canonical source, owner,
+> status, and review dates. The framework defines the *structure* (information architecture,
+> templates, area profiles); this register tracks *state*. They link; neither duplicates the
+> other. Roadmap Phase A promotes it to a machine-readable form (`docs/registers/pages.yml`).
+
 **Confluence site:** `360wealthconsulting.atlassian.net` · **Space:** 360 Wealth Consulting
 Operations (`3WCO`). Proposed 360OS Ids and final section placement are pending the page
 owner's numbering registry.

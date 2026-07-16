@@ -132,6 +132,22 @@ operational metrics for IT and business areas; adopt if/when metrics are formali
 | **Controls & Compliance Register** | (rules) | ✅ | ✅ |
 | **Operating Calendar & Key Dates** | ✅ (deadlines) | ✅ (maintenance) | ✅ |
 
+## C2. Type disambiguation — no overlapping document types
+
+Where two types could seem to overlap, the boundary is fixed. Each page carries exactly one
+`doc_type`; there are no two types that document the same thing (reuse the one page and link it).
+
+| Looks similar | Distinction |
+|---|---|
+| **Business Rules** vs **Policy** | Business Rules = *software-enforced* logic (in code); Policy = a firm *mandate/standard* (governance/HR/security). |
+| **Exception Handling** vs **Incident Response** | Exception Handling = automated *software* exceptions (shared Exception Engine); Incident Response = *human/operational* security/IT incidents. |
+| **Change Log** vs **Release Notes** vs **Change Record** | Change Log = the single `CHANGELOG.md`; Release Notes = a per-area, user-facing *slice* of it per release; Change Record = the same idea for non-release infrastructure changes. One source, rendered per area — never re-authored. |
+| **Data Model** vs **Asset & Configuration Inventory** | Data Model = software entities/tables (from migrations); Asset & Config Inventory = infrastructure assets/config (CMDB-lite). |
+| **SOP** vs **Runbook** vs **Checklist** | SOP = staff *procedure*; Runbook = *system* operational/emergency steps; Checklist = point-of-use verification list. |
+| **Ownership** (metadata) vs **Roles & Responsibilities (RACI)** | Ownership = one accountable owner *per page*; RACI = R/A/C/I *per process/activity*. |
+| **Reporting** vs **Service Levels & KPIs** | Reporting = report/rollup definitions & how-to; KPIs = service-level/metric targets. |
+| **Integrations** vs **Vendor & Contract Register** | Integrations = *technical* system-to-system connections; Vendor Register = *commercial* vendor/contract/SLA facts. |
+
 ## D. Minimum-viable page set per profile ("documented")
 
 - **Software:** Executive Overview, Business Purpose, Architecture, Data Model, User Guide,

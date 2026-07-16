@@ -62,8 +62,11 @@ One repo-tooling script (not application code), four subcommands, via the connec
 
 ## 4. Definition of Done — now covering three change types
 
-A change is "done" only when its documentation is current. The docs gate keys off **what the
-change touches**:
+**Mandatory, not advisory: no feature, phase, or change is "Done" until its documentation is
+updated.** This applies to *every* completed feature without exception — a feature whose
+documentation obligations (below) are unmet is not shippable, the same way failing tests or a
+missing CHANGELOG entry block a release today. The docs gate keys off **what the change
+touches**:
 
 **A. Software release/phase PR** (as before): Change Log (module-tagged) · Release Notes ·
 every git-canonical doc type touched (path→type mapping: `migrations/**`→Data Model;

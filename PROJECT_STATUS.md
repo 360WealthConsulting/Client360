@@ -34,6 +34,17 @@ non-regulated and complete for its scope**. Regulated logic remains deferred —
 - **Phase 10** — RC validation + release v0.10.0 (tag).
 - **Regulated portions of Phases 2–4** — blocked pending AD-5 (see below).
 
+## Documentation standard (Definition of Done)
+
+The **360 Wealth Consulting Operations Manual documentation framework** (approved) is the
+permanent, company-wide documentation standard: `docs/documentation-framework/` (information
+architecture, templates + area profiles, capability map, gap analysis, roadmap, and the Git ↔
+Confluence sync + Definition of Done). **Documentation is required for every completed feature,
+phase, and change — mandatory, not advisory.** Per phase/release: update the Change Log, the
+module Release Notes, every Git-canonical doc type touched, and the publication register
+(`docs/DOCUMENTATION_CROSSWALK.md`); flag Confluence-canonical follow-ups. One canonical home per
+page (Git technical, Confluence operational) — no duplication.
+
 ## Open risks
 
 - 🔴 **AD-5 — compliance reviewer NOT YET NAMED.** All regulated insurance logic (suitability, replacement/1035, licensing/CE validation, compliance approvals) is **blocked** and cannot pass an RC gate without a qualified, named reviewer + approved sign-off artifact. Michael Shelton is the **business** owner (operational scope) only — not regulatory certification. **Not resolvable in code.**
