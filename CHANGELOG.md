@@ -4,22 +4,46 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-### Added (developer tooling — not a product release)
+_Nothing yet._
 
-- **Developer Demo Mode** — a repeatable, safety-guarded local demo with fictional
-  data, isolated to a `client360_demo` database and reusing the real
-  authentication/authorization (no bypass, no weakened controls). Includes
-  `scripts/demo.sh` (setup/reset/start/stop/verify/smoke), role-aware post-login
-  landing for all six personas, an HTML portfolio page, and docs
-  ([Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md),
-  [release notes](docs/DEVELOPER_DEMO_MODE_RELEASE.md)). No schema change; no product
-  release tag (developer tooling).
+## [0.9.13] — 2026-07-16 — Platform Foundation
+
+Developer platform, testing, and release hardening. **No product or business-logic
+change; no schema change** (Alembic head unchanged at `u1f9c0i9h8g7`). Validated by
+[RC-0.9.13](docs/RC_0.9.13_VALIDATION.md). Delivers issue #24.
+
+### Added
+- **Isolated test database** (#24) — the suite ran against the real development
+  database (`client360`); it now refuses any non-disposable target. `app/safety.py`
+  guard, `tests/conftest.py`, and `scripts/test.sh` (setup/reset/run/verify/status).
+  A full run leaves `client360` byte-for-byte unchanged; local suite **287s → ~11s**.
+- **Ruff lint gate** (#26) — `pyproject.toml` config and `scripts/ruff_gate.py`, a
+  count-based ratchet that baselines the legacy backlog and fails only on *new*
+  violations. Backlog tracked in #26.
+- **CI/CD hardening** — pip caching, single-Alembic-head, migration-reversibility,
+  schema-at-head, and test-DB-isolation checks; CHANGELOG lint; failure artifacts;
+  branch protection requiring the `build` check on `main`.
+- **Release tooling** — `scripts/release.sh` (guarded, dry-run), `scripts/check_changelog.py`,
+  and `scripts/gen_rc.py` + `docs/templates/RC_TEMPLATE.md`.
+- **Developer Demo Mode** (previously unreleased tooling) — safety-guarded local demo
+  on a `client360_demo` database reusing real auth; `scripts/demo.sh`, role-aware
+  landings, docs.
+
+### Changed
+- **Runtime Python 3.9 → 3.12.** Resolved the Typer/Click constraint by removing an
+  orphaned `typer` pin (imported nowhere, required by nothing) — `click` unchanged.
+  `requirements-py39.lock` retained one cycle for rollback.
 
 ### Fixed
-
+- **Importers no longer run on import** — `schwab`, `wealthbox`, and `dave_ramsey`
+  read `app/.env`, built an engine, and ran a real client-data import merely as a
+  side effect of being imported. `dave_ramsey` alone wrote 7,755+ records per test run.
+- `benefits` routes: `payload.dict()` → `model_dump()` (Pydantic v2 deprecation).
 - Latent Jinja template bugs where `data.items`/`work.items`/`tax.items` resolved to
-  the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
-  `/tax`, and the work team/queue pages now render.
+  the dict `.items` method; `/work`, `/tax/intake`, `/tax`, and the work queue pages render.
+
+### Migrations
+None — 0.9.13 is tooling/infrastructure only. Single head `u1f9c0i9h8g7`.
 
 ## [0.9.12] — 2026-07-16 — Application Shell & UI Consolidation
 
