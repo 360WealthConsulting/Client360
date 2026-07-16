@@ -46,7 +46,30 @@ else
   bad "working tree has uncommitted changes (commit or stash first)"
 fi
 
-# 3. The tag does not already exist (locally or on the remote).
+# 3. On the intended release branch (releases are cut from main by default).
+RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$branch" = "$RELEASE_BRANCH" ]; then
+  pass "on the release branch '${RELEASE_BRANCH}'"
+else
+  bad "on branch '${branch}', not the release branch '${RELEASE_BRANCH}' (set RELEASE_BRANCH to override)"
+fi
+
+# 4. Local and remote are in sync (no unpushed, unpulled, or divergent commits).
+git fetch --quiet origin "$branch" 2>/dev/null || true
+if git rev-parse -q --verify "origin/${branch}" >/dev/null 2>&1; then
+  if [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/${branch}")" ]; then
+    pass "local and origin/${branch} are in sync"
+  else
+    ahead="$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo '?')"
+    behind="$(git rev-list --count "HEAD..origin/${branch}" 2>/dev/null || echo '?')"
+    bad "local and origin/${branch} diverged (ahead ${ahead}, behind ${behind}) — push/pull first"
+  fi
+else
+  bad "no origin/${branch} to compare against (push the branch first)"
+fi
+
+# 5. The tag does not already exist (locally or on the remote).
 if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
   bad "tag ${TAG} already exists locally"
 elif git ls-remote --exit-code --tags origin "${TAG}" >/dev/null 2>&1; then
@@ -55,28 +78,28 @@ else
   pass "tag ${TAG} does not exist yet"
 fi
 
-# 4. Exactly one Alembic head (broken migration graph must not ship).
+# 6. Exactly one Alembic head (broken migration graph must not ship).
 if scripts/check_migration_heads.sh >/dev/null 2>&1; then
   pass "exactly one Alembic head"
 else
   bad "migration graph has multiple heads (run scripts/check_migration_heads.sh)"
 fi
 
-# 5. CHANGELOG has a dated entry for this version.
+# 7. CHANGELOG has a dated entry for this version.
 if grep -qE "^## \[${VERSION//./\\.}\][^#]*—\s*[0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
   pass "CHANGELOG has a dated [${VERSION}] entry"
 else
   bad "CHANGELOG has no dated [${VERSION}] entry (add one before releasing)"
 fi
 
-# 6. CHANGELOG passes its structural lint.
+# 8. CHANGELOG passes its structural lint.
 if python scripts/check_changelog.py >/dev/null 2>&1; then
   pass "CHANGELOG structural lint passes"
 else
   bad "CHANGELOG structural lint fails (run scripts/check_changelog.py)"
 fi
 
-# 7. CI is green on the current commit (best-effort; needs gh + a pushed commit).
+# 9. CI is green on the current commit (best-effort; needs gh + a pushed commit).
 sha="$(git rev-parse HEAD)"
 if command -v gh >/dev/null 2>&1; then
   conclusion="$(gh run list --commit "$sha" --limit 1 --json conclusion --jq '.[0].conclusion' 2>/dev/null || echo "")"
