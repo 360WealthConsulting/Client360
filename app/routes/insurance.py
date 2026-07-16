@@ -657,3 +657,45 @@ def api_insurance_scan(principal: Principal = Depends(require_capability("insura
     result = _run(lambda: run_insurance_scan(actor_user_id=principal.user_id))
     result["auto_assignment"] = _run(lambda: auto_assign_unassigned(actor_user_id=principal.user_id))
     return result
+
+
+# --- Phase 9: integration ports (DISABLED stubs; read-only registry/status + inert invoke).
+# Every port is disabled — no live I/O, credentials, endpoints, or scheduled jobs. Invoking a
+# port returns a disabled outcome and performs no external I/O. Vendor-neutral extension points
+# only; no AD-5-gated determination. ---
+
+class PortInvoke(BaseModel):
+    organization_id: int | None = None
+
+
+@router.get("/api/v1/insurance/integration/ports")
+def api_integration_ports(principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_integrations as ig
+    return {"ports": ig.list_ports()}
+
+
+@router.get("/api/v1/insurance/integration/ports/{key}")
+def api_integration_port_status(key: str,
+                                principal: Principal = Depends(require_capability("insurance.read"))):
+    from dataclasses import asdict
+
+    from app.services import insurance_integrations as ig
+    try:
+        return asdict(ig.port_status(key))
+    except ValueError:
+        raise HTTPException(404, "Integration port not found") from None
+
+
+@router.post("/api/v1/insurance/integration/ports/{key}/invoke")
+def api_integration_port_invoke(key: str, payload: PortInvoke, request: Request,
+                                principal: Principal = Depends(require_capability("insurance.write"))):
+    """Invoke an insurance integration port. All ports are DISABLED stubs — returns a disabled
+    outcome and performs no external I/O; the request carries no vendor payload or secrets."""
+    from dataclasses import asdict
+
+    from app.services import insurance_integrations as ig
+    try:
+        return asdict(ig.invoke_port(key, organization_id=payload.organization_id,
+                                     **_actor(request, principal)))
+    except ValueError:
+        raise HTTPException(404, "Integration port not found") from None

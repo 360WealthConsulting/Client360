@@ -207,14 +207,34 @@ Behavior-preserving cleanup from the Release 0.10.0 architecture review (items #
   compliance metric. A test asserts the dashboard carries no compliance/determination content.
   **AD-5 unaffected.** No schema change (read-only; reuses existing capabilities).
 
+### Added — Phase 9 · Integration ports as disabled stubs (no migration; reuse the provider idiom)
+- **Vendor-neutral extension points, disabled** (`app/services/insurance_integrations.py`) — six
+  ports: `carrier_policy_feed`, `case_status_feed`, `commission_statement_feed`,
+  `licensing_appointment_feed`, `document_evidence_intake` (inbound), and `operational_export_hook`
+  (outbound). Ships the neutral interfaces + **disabled** stubs only — same registry idiom as
+  `benefits_providers` / `tax_filing_providers` / `portal.providers`; **no parallel integration
+  framework**.
+- **Inert by construction** — every port reports `enabled=False` / `status='not_connected'`.
+  Calling a disabled port **fails safe** (`outcome='disabled'`, no external I/O — no HTTP, file
+  transfer, auth, polling, or vendor API call). `enabled` is hardcoded and **never read from
+  configuration or environment** — no port activates because a config value exists; activation is
+  an explicit code decision (a concrete adapter + registry row) in a future release.
+- **No secrets / endpoints / scheduled jobs** — no credentials, tokens, certificates, URLs, or
+  production config are added; no scheduler job is registered. Read-only registry/status routes
+  (`GET /api/v1/insurance/integration/ports[/{key}]`, `insurance.read`) and an inert invoke
+  (`POST …/{key}/invoke`, `insurance.write`); invoking writes an **audit-safe** event
+  (`insurance.integration.port_invoked`) with metadata only — never the payload or secrets.
+- Non-regulated transport extension points only — no suitability, replacement/1035, licensing
+  validation, sale-blocking, or compliance approval; **AD-5 unaffected**. No schema change.
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
   is **not** regulatory certification. No regulated phase passes its RC gate without a
   completed, approved sign-off artifact from a qualified, named compliance reviewer. This
   is not resolvable in code and remains open.
-- **Remaining phases:** 9 (integration stubs), 10 (RC validation + release), plus the AD-5-gated
-  regulated portions of Phases 2–4.
+- **Remaining phases:** 10 (RC validation + release), plus the AD-5-gated regulated portions of
+  Phases 2–4.
 
 ### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
 - **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter

@@ -1,11 +1,11 @@
 # Release v0.10.0 — Insurance Operations: Architecture
 
-**Status:** in progress — **Phases 0–8 implemented** (Phases 2–4 as non-regulated operational
-skeletons; **Phases 5–8 — commissions, exceptions/work-management/scheduled scanning, the
-policyholder portal surface, and reporting & dashboards — are non-regulated and complete for
-their scope**); Phases 9–10 not started; **all regulated logic deferred behind the AD-5 gate**.
-Not yet released or tagged. (Current single Alembic head `d0l1n2o3i4k5`; migration chain in §13.
-See `PROJECT_STATUS.md`.)
+**Status:** in progress — **Phases 0–9 implemented** (Phases 2–4 as non-regulated operational
+skeletons; **Phases 5–9 — commissions, exceptions/work-management/scheduled scanning, the
+policyholder portal surface, reporting & dashboards, and integration ports as disabled stubs —
+are non-regulated and complete for their scope**); Phase 10 (RC + release) not started; **all
+regulated logic deferred behind the AD-5 gate**. Not yet released or tagged. (Current single
+Alembic head `d0l1n2o3i4k5`; migration chain in §13. See `PROJECT_STATUS.md`.)
 **Scope:** individual **life insurance & annuities** (advisor-sold, in-force-managed).
 Not group/employer benefits (that is 0.9.11), not P&C, not group life.
 **Baseline:** built on the 0.9.11 platform (ADR-18) and the 0.9.13 test/CI/release
@@ -29,7 +29,10 @@ infrastructure. New migration chains off head `u1f9c0i9h8g7`.
 >   producers/commissions/licensing/exceptions exposed (Phase 7).** **Reporting & dashboards —
 >   a consolidated firm-internal operations dashboard, proportional to the viewer's capabilities
 >   and record scope, over the existing reporting/exception/work-queue primitives (Phase 8).**
->   Phases 0–8.
+>   **Integration ports — six vendor-neutral, disabled-by-default extension-point stubs (carrier
+>   policy/in-force, case status, commission statements, licensing/appointments, document intake,
+>   outbound export); inert, no I/O, no credentials/endpoints, no scheduled jobs (Phase 9).**
+>   Phases 0–9.
 > - **Deferred (regulated logic — NOT built, NOT enabled):** suitability determination,
 >   replacement/1035 recommendation logic, licensing/CE **validation**, sale/issue
 >   **blocking**, automated compliance approvals, and any regulatory decision engine.
@@ -525,6 +528,91 @@ dashboard carries no compliance/determination fields.
 
 **Migration requirements.** **None** — read-only reporting; reuses existing capabilities
 (`insurance.read` + the per-section caps). Single Alembic head unchanged.
+
+## 12f. Phase 9 — integration ports as disabled stubs (architecture checkpoint; non-regulated)
+
+Phase 9 establishes clean, documented **extension points** for future insurance integrations
+**without activating anything**. It reuses the same disabled-provider registry idiom as
+`benefits_providers` / `tax_filing_providers` / `portal.providers` — **no parallel integration
+framework**. `app/services/insurance_integrations.py` ships neutral interfaces + **disabled**
+stubs only.
+
+**Proposed port types** (justified by the current insurance architecture; each a disabled stub):
+`carrier_policy_feed` (inbound — carrier policy & in-force data), `case_status_feed` (inbound —
+application / case status), `commission_statement_feed` (inbound — automated carrier
+commission-statement import, the machine twin of the Phase 5 manual import),
+`licensing_appointment_feed` (inbound — producer licensing / appointment data),
+`document_evidence_intake` (inbound — document / evidence), `operational_export_hook` (outbound
+— operational export).
+
+**Intended future use.** When a real vendor contract, credentials, and compliance review exist,
+a port is activated by adding a concrete adapter class + registry row — no schema or interface
+change. Each activation is its own explicit decision (its own release).
+
+**Neutral interfaces & adapter boundaries.** One `InsuranceIntegrationPort` protocol
+(`key`, `port_type`, `direction`, `description`, `enabled`, `connection_status`, `invoke`) and a
+`_DisabledPort` base. Ports are **vendor-neutral** — no carrier-specific business logic beyond
+naming a neutral contract. A future adapter maps a vendor payload to the canonical domain at the
+boundary; the rest of the system never sees vendor shapes.
+
+**Configuration & enablement model.** **Disabled-by-default and code-governed:** `enabled` is a
+hardcoded `False` on the stub — it is **never read from configuration or environment**. **No port
+becomes active because a config value exists.** Activation requires an explicit implementation +
+enablement decision in code (a concrete adapter replacing the stub). This release adds **no**
+config keys, secrets, or endpoints for these ports.
+
+**Capability & authorization.** Reuses existing capabilities — viewing the port registry/status
+requires `insurance.read`; invoking a port (inert this release) requires `insurance.write`. A
+future live integration may warrant a dedicated `insurance.integration.*` capability; not needed
+for disabled stubs.
+
+**Organization & record-scope behavior.** Port operations accept an optional `organization_id`
+so future org-scoped feeds can enforce organization record scope at the boundary. While disabled,
+no data flows, so nothing is exposed; `organization_id` appears only in audit-safe metadata. A
+live inbound feed will apply the same `_policy_scope_ok`/organization scope as the rest of the
+domain before writing any record.
+
+**Audit expectations.** Invoking a port writes one shared audit event
+(`insurance.integration.port_invoked`) with **audit-safe metadata only** — port key, outcome,
+status, organization_id — and **never** the payload, credentials, or any sensitive content.
+Reads (list/status) are not audited (consistent with platform read behavior).
+
+**Idempotency & retry (future implementations).** Documented contract for when ports activate:
+inbound feeds must be **idempotent** on a stable external id (re-delivery must not double-write),
+apply the shared Exception Engine for failures, and be safe to retry; outbound hooks must be
+idempotent on a stable operation key. Disabled stubs trivially satisfy this (they do nothing).
+
+**Error & quarantine behavior.** A disabled port **fails safe**: `invoke` returns
+`outcome='disabled'` / `status='not_connected'` and performs no I/O — it never raises for a valid
+port and never partially succeeds. An **unknown** port key raises `ValueError` (routes → 404). A
+future live port that receives an unprocessable record must **quarantine** it (raise a shared
+insurance exception / route to a work queue) rather than drop or guess.
+
+**Secret-management boundaries.** **No credentials, secrets, tokens, endpoints, certificates, or
+production configuration are added or committed.** A future integration's secrets live in the
+platform's existing secret store (e.g. the encrypted-token pattern used for Microsoft), never in
+code, logs, or audit metadata.
+
+**Scheduler boundaries.** **No scheduled job is registered** for any port. The Phase 6
+`insurance-detector-scan` job is unchanged and unrelated. Future polling/sync cadence is an
+explicit scheduler decision at activation — a config value or a stub does not schedule anything.
+
+**Data ownership & canonical-source rules.** Client360 remains the **canonical source** for all
+insurance records. Inbound feeds populate/augment canonical tables through the domain services
+(never a shadow store); outbound hooks export **from** the canonical tables. A vendor is never
+the source of truth for a Client360 record.
+
+**Disabled-by-default (explicit).** Every port reports a clearly disabled/unavailable state;
+`list_ports()` shows `enabled=False` / `status='not_connected'` for all. Calling a disabled port
+does nothing and returns an honest disabled outcome.
+
+**AD-5 exclusions (explicit).** These are transport extension points only. No port performs or
+enables suitability, replacement/1035, licensing validation, sale/issue blocking, compliance
+approval, or any regulated determination or decisioning. Live regulated integration remains
+behind AD-5 and a future release.
+
+**Migration requirements.** **None** — a code-only registry of disabled stubs; no schema, config,
+secret, or scheduler change. Single Alembic head unchanged.
 
 ## 13. Dependencies
 

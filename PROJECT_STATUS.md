@@ -1,8 +1,8 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 — Phase 8 Reporting & Dashboards complete; Phases 0–8 done.
-Phase 9 not started.)_
+**2026-07-16** (Release 0.10.0 — Phase 9 Integration Ports (disabled stubs) complete; Phases
+0–9 done. Phase 10 (RC + release) not started.)_
 
 | Field | Value |
 |---|---|
@@ -10,14 +10,15 @@ Phase 9 not started.)_
 | **Branch** | `feature/insurance-operations` (base: `main`) |
 | **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* |
 | **Current Alembic head** | `d0l1n2o3i4k5` — single head; **dev `client360` and test `client360_test` both at head** |
-| **Tests** | **706 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; single head `d0l1n2o3i4k5` (Phases 7–8 have no migration); compile OK; reporting-aggregation + authorization/record-scope + portal non-leakage verified; startup/shutdown clean; `git diff --check` clean. |
-| **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–8; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance SOPs drafted (commissions, exceptions & work queues, policyholder portal — all draft-only under `docs/confluence/`). |
+| **Tests** | **717 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; single head `d0l1n2o3i4k5` (Phases 7–9 have no migration); compile OK; disabled-by-default + no-external-I/O + safe-failure + audit + authorization verified; no secrets/endpoints committed; startup/shutdown clean; `git diff --check` clean. |
+| **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–9; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance SOPs drafted (commissions, exceptions & work queues, policyholder portal — all draft-only under `docs/confluence/`). |
 
 ## Completed phases (0.10.0)
 
-Phases 2–4 shipped as **non-regulated operational skeletons**; **Phases 5–8 (commissions;
-exceptions / work-management / scheduled scanning; policyholder portal; reporting & dashboards)
-are non-regulated and complete for their scope**. Regulated logic remains deferred — see AD-5:
+Phases 2–4 shipped as **non-regulated operational skeletons**; **Phases 5–9 (commissions;
+exceptions / work-management / scheduled scanning; policyholder portal; reporting & dashboards;
+integration ports as disabled stubs) are non-regulated and complete for their scope**. Regulated
+logic remains deferred — see AD-5:
 
 - **Phase 0** — Schema foundation: product catalog, `insurance_case`, policy/party/producer; `insurance.*` caps/roles; exception-engine + work-management registration. Migration `v2b3d4f5a6c7`.
 - **Phase 1** — Policies core + coverages/riders/parties/values; product-version evolution; CRUD API, book/detail UI; lifecycle statuses + shared Timeline/Audit events. Migrations `w3c4e5g6b7d8`, `x4d5f6h7c8e9`.
@@ -28,11 +29,11 @@ are non-regulated and complete for their scope**. Regulated logic remains deferr
 - **Phase 6** — Exceptions, Work Management & Scheduled Scanning (non-regulated, complete): single `run_insurance_scan()` orchestrating all detectors through the **shared** Exception Engine (idempotent, failure-isolated, honest reporting); registered on the **existing** scheduler (`insurance-detector-scan`); insurance **work queues** via the existing criteria framework; **auto-assignment** via existing assignment rules (`insurance_work.py`); organization-based record scope kept off the client Timeline; manual `POST /api/v1/insurance/scan`. Migration `c9k0m1n2h3j4` (data-only queues). Reuses shared subsystems — no insurance-specific engine/queue/scheduler.
 - **Phase 7** — Policyholder portal surface (non-regulated, complete): read-only policy view via the **existing** portal framework (`insurance_portal.py` + portal routes/template), opt-in `insurance` grant permission, person/household/org scope, out-of-scope 404, dashboard slice. Proportional disclosure only — **no producers/commissions/licensing/exceptions** exposed; insurance exceptions cannot reach the client action surface. No migration (read-only). Pre-cleanup of review items #1–#3 also applied.
 - **Phase 8** — Reporting & dashboards (non-regulated, complete): consolidated firm-internal `operations_dashboard` (`insurance_reporting.py` + `/api/v1/insurance/dashboard` + `/insurance/dashboard`) composing pipeline/reviews/commissions/licensing plus new exception, work-queue, and portal-adoption summaries; **proportional to the viewer's capabilities**; record scope applied before aggregation; reuses the shared exception/work-queue/reporting primitives — no parallel engine. Staff-only (not the client portal); no compliance metrics (AD-5). No migration (read-only).
+- **Phase 9** — Integration ports as disabled stubs (non-regulated, complete): six vendor-neutral, **disabled-by-default** extension-point stubs (`insurance_integrations.py`) — carrier policy/in-force, case status, commission statements, licensing/appointments, document intake (inbound), outbound export; inert (no I/O, credentials, endpoints, or scheduled jobs); config never enables them; read-only registry/status + inert audit-safe invoke routes. Reuses the shared disabled-provider idiom — no parallel framework. No migration.
 
 ## Remaining phases (0.10.0)
 
-- **Phase 9** — Integration ports (disabled stubs). *(Next task.)*
-- **Phase 10** — RC validation + release v0.10.0 (tag).
+- **Phase 10** — RC validation + release v0.10.0 (tag). *(Next task.)*
 - **Regulated portions of Phases 2–4** — blocked pending AD-5 (see below).
 
 ## Documentation standard (Definition of Done)
@@ -55,13 +56,13 @@ page (Git technical, Confluence operational) — no duplication.
 
 ## Next task
 
-**Phase 9 — Integration ports (disabled stubs).** Register inert integration ports (e.g.
-carrier feeds / in-force / commission data) as **disabled stubs** — no live I/O, no vendor
-credentials, no external calls. Reuses the existing connector/importer patterns. Begin only
-after Phase 8 is reviewed/accepted.
+**Phase 10 — RC validation + release v0.10.0.** Produce the RC validation doc, run the release
+gates (`scripts/release.sh` dry-run), and tag v0.10.0. **Release does not proceed for any
+AD-5-gated content** — only the non-regulated Phases 0–9 surface is in scope. Begin only after
+Phase 9 is reviewed/accepted.
 
 ---
 
-_Phase 8 is complete and stopped for review. Do not begin Phase 9 until this checkpoint is
+_Phase 9 is complete and stopped for review. Do not begin Phase 10 until this checkpoint is
 reviewed/accepted per the project cadence. AD-5 remains an open, non-code blocker for all
 regulated insurance logic._
