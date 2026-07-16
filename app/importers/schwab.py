@@ -25,16 +25,25 @@ accounts = metadata.tables["accounts"]
 source_contacts = metadata.tables["source_contacts"]
 import_jobs = metadata.tables["import_jobs"]
 
-folder = Path("01 Raw Imports/Schwab")
+FOLDER = Path("01 Raw Imports/Schwab")
 
-accounts_files = sorted(folder.glob("AccountsList_*.csv"))
-profile_files = sorted(folder.glob("Profile_Firm_*.csv"))
 
-if not accounts_files:
-    raise FileNotFoundError("No Schwab AccountsList CSV found.")
+def find_input_files(folder=FOLDER):
+    """Locate the Schwab input CSVs, raising if either set is missing.
 
-if not profile_files:
-    raise FileNotFoundError("No Schwab Profile CSV found.")
+    Import-time discovery would make merely importing this module depend on a
+    client-data folder that is gitignored and absent from any clean checkout.
+    """
+    accounts_files = sorted(folder.glob("AccountsList_*.csv"))
+    profile_files = sorted(folder.glob("Profile_Firm_*.csv"))
+
+    if not accounts_files:
+        raise FileNotFoundError("No Schwab AccountsList CSV found.")
+
+    if not profile_files:
+        raise FileNotFoundError("No Schwab Profile CSV found.")
+
+    return accounts_files, profile_files
 
 
 def clean(value):
@@ -358,11 +367,19 @@ def import_profile_file(path):
     print("Taxpayer IDs were excluded.")
 
 
-for accounts_path in accounts_files:
-    import_accounts_file(accounts_path)
+def main(folder=FOLDER):
+    """Run the full Schwab import. Invoked explicitly, never on import."""
+    accounts_files, profile_files = find_input_files(folder)
 
-for profile_path in profile_files:
-    import_profile_file(profile_path)
+    for accounts_path in accounts_files:
+        import_accounts_file(accounts_path)
 
-print()
-print("Schwab import complete.")
+    for profile_path in profile_files:
+        import_profile_file(profile_path)
+
+    print()
+    print("Schwab import complete.")
+
+
+if __name__ == "__main__":
+    main()
