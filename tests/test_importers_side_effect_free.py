@@ -34,6 +34,10 @@ MODULES = ["app.importers.schwab", "app.importers.wealthbox"]
 # time fails loudly instead of silently succeeding against the real one.
 UNREACHABLE = "postgresql://nobody:nobody@127.0.0.1:1/nonexistent"
 
+# A plausible, resolvable URL — used where the point is that import does not
+# connect *even when it could*, rather than that a connection failed.
+REACHABLE = "postgresql://localhost/client360"
+
 # Deterministic ids: the importers upsert, so re-runs update one row rather than
 # accumulating litter in the shared database.
 TEST_ACCOUNT = "RC1-IMPORT-TEST-0001"
@@ -80,6 +84,56 @@ def test_import_never_connects_to_the_database(module_name, tmp_path):
     result = _run(f"import {module_name}", cwd=tmp_path, database_url=UNREACHABLE)
     assert result.returncode == 0, f"import connected to the database:\n{result.stderr}"
     assert "could not connect" not in result.stderr.lower()
+
+
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_opens_no_network_connection(module_name, tmp_path):
+    """Audit the socket layer: import must not connect, or even resolve a host.
+
+    Stronger than pointing at an unreachable database — this proves no attempt is
+    made at all, rather than that an attempt happened to fail.
+    """
+    script = (
+        "import sys, json\n"
+        "events = []\n"
+        "def hook(event, args):\n"
+        "    if event in ('socket.connect', 'socket.getaddrinfo'):\n"
+        "        events.append(event)\n"
+        "sys.addaudithook(hook)\n"
+        f"import {module_name}\n"
+        "print(json.dumps(events))\n"
+    )
+    # A *reachable* database is configured: if import wanted to connect, it could.
+    result = _run(script, cwd=tmp_path, database_url=os.environ.get("DATABASE_URL") or REACHABLE)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.strip().splitlines()[-1]) == []
+
+
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_creates_no_engine_and_reflects_nothing(module_name, tmp_path):
+    """The lazy helper must still be cold after import."""
+    script = (
+        "import sys, json\n"
+        f"import {module_name}\n"
+        f"mod = sys.modules['{module_name}']\n"
+        "print(json.dumps({\n"
+        "    'engine_attr': 'engine' in vars(mod),\n"
+        "    'metadata_attr': 'metadata' in vars(mod),\n"
+        "    'database_cached': mod._database.cache_info().currsize > 0,\n"
+        "}))\n"
+    )
+    result = _run(script, cwd=tmp_path, database_url=UNREACHABLE)
+    assert result.returncode == 0, result.stderr
+    state = json.loads(result.stdout.strip().splitlines()[-1])
+    assert state == {"engine_attr": False, "metadata_attr": False, "database_cached": False}
+
+
+@pytest.mark.parametrize("module_name", MODULES)
+def test_import_succeeds_with_no_dotenv_file(module_name, tmp_path):
+    """load_dotenv reads a path relative to cwd; from here app/.env cannot exist."""
+    assert not (tmp_path / "app" / ".env").exists()
+    result = _run(f"import {module_name}", cwd=tmp_path, database_url=None)
+    assert result.returncode == 0, f"import failed without app/.env:\n{result.stderr}"
 
 
 @pytest.mark.parametrize("module_name", MODULES)
