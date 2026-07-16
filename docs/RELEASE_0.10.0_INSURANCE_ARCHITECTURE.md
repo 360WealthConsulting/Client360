@@ -361,13 +361,106 @@ versus a standalone build.
 
 ---
 
-## 17. Open decisions for final approval
+## 17. Architecture decisions (resolved)
 
-1. **Carrier-as-org + `insurance_carrier_profiles`** (recommended, per Refinement 1)
-   vs. a standalone carrier table.
-2. **Case ↔ engagement is 1:1** (recommended) vs. one case spanning multiple
-   engagements (a one-way schema door).
-3. Confirm **iPipeline/KaiZen ship as disabled ports** this release.
-4. Confirm **underwriting = tracking, not decisioning**; **illustrations = documents +
-   metadata, not generation**.
-5. Regulatory **SME owner** for per-phase suitability/replacement/CE sign-off (R1).
+### AD-1 — Carrier is an Organization node + `insurance_carrier_profiles` (1:1), not a standalone carrier table
+
+**Decision.** A carrier is a `relationship_entities` node (`entity_type='insurance_carrier'`)
+with a 1:1 `insurance_carrier_profiles` row for regulated insurer fields (NAIC company
+code, AM Best rating, appointment status). Downstream tables reference it by a stable
+`carrier_id`.
+
+**Why.** A carrier IS an organization the firm has relationships with — appointments,
+broker-of-record, agency hierarchy — all of which are already the relationships graph.
+Carrier-as-org reuses org naming/address/profile, `organization_in_scope` authorization,
+and audit/timeline, and mirrors exactly how employers are modeled
+(`relationship_entities` + `organization_profiles`). Regulated fields that the org layer
+can't hold go in the profile table, not a JSON blob.
+
+**Alternatives considered.** (A) Standalone `insurance_carriers` table — cleaner queries
+and self-contained, but reinvents appointments/BoR (a parallel `insurance_appointments`
+table), reinvents org profile/address, bypasses org auth, and adds a second "kind of
+organization" the platform doesn't know about (violates Refinement 1). (B) Carrier-as-org
+with NAIC/rating in `relationship_entities.details` JSON — rejected: regulated fields must
+be structured/queryable. (C) Standalone table referencing an org node — two sources of
+truth, over-engineered.
+
+**Long-term tradeoffs.** Pro: appointments/BoR/hierarchy and record-scope "just work";
+consistent with employer modeling; new carrier fields = extend the profile. Con: requires
+adding `insurance_carrier` to the two `ORG_ENTITY_TYPES` frozensets
+(`organization_service.py`, `relationships.py`); "all carriers" queries filter by
+`entity_type` + join profile; carriers (counterparties) share `relationship_entities` with
+client-orgs, mitigated by the `entity_type` discriminator and `insurance.*` (not
+`organization.*`) capability gating.
+
+**Migration implications if reversed later.** Moving to a standalone table would: create
+`insurance_carriers`, backfill from `relationship_entities`+profiles, repoint the
+`carrier_id` FKs on `insurance_policies` and `insurance_product_families`, migrate
+appointment relationships into a new table, then drop the carrier entity nodes. Bounded and
+mechanical (data migration + FK repoint), but touches multiple FKs. **De-risked now** by
+referencing carriers everywhere via a stable `carrier_id` — so only carrier *resolution*
+changes if reversed, not every downstream table. This is the more expensive of the two
+one-way doors and is the reason AD-1 gets explicit scrutiny.
+
+### AD-2 — InsuranceCase ↔ Engagement is 1:1
+
+**Decision.** Each `insurance_case` references exactly one `engagement` (unique
+`engagement_id`); each engagement backs at most one case.
+
+**Why.** A case and its engagement are two facets of one thing: the engagement is the
+platform's work/revenue/workflow record; the case is the domain's regulated-artifact
+coordinator for that same work. 1:1 keeps them one logical unit and keeps revenue
+(`insurance_commissions`), `work_items`, and workflow attribution unambiguous — a single
+engagement owns the money and the work for a single case. Multiple *proposed policies*
+already live under one case, so a "term + annuity" case is one case with two proposed
+policies and one engagement, not two engagements.
+
+**Alternatives considered.** (C) N:1 (case spans multiple engagements) — only needed if the
+firm bills per-policy-line separately; today billing is at engagement granularity, so not
+required. (B) 1:N (one long-lived engagement, many cases over time) — rejected because an
+engagement is scoped work (`open→closed`), not a durable relationship; the durable
+container is the household/person, under which many cases group. (E) case with no
+engagement — rejected, loses service-line/revenue/work/workflow reuse. (F) engagement only,
+no case — rejected in the Refinement-2 determination.
+
+**Long-term tradeoffs.** Pro: unambiguous revenue/work attribution; simplest join; matches
+"engagement = scoped work." Con: creating a case always creates an engagement (two rows —
+cheap, and it buys real reuse); no shared long-lived container across cases — served
+instead by the household/person anchor.
+
+**Migration implications if reversed later.** 1:1 is the low-regret default because
+**relaxing it is additive and cheap**: to allow N:M, add an `insurance_case_engagements`
+join table, backfill from the `engagement_id` column, drop the column — no data loss, no
+merge. Tightening the reverse direction (N:M → 1:1) would be expensive (must resolve/merge),
+which is exactly why we start strict. AD-2 is a one-way door that is inexpensive to walk
+back through.
+
+### AD-3 — iPipeline / KaiZen ship as disabled provider ports this release
+
+**Decision.** Interfaces + registry + disabled stubs (honest `not_connected`), following
+`benefits_providers.py`. No live I/O. **Why.** Live integration carries vendor-contract,
+credential, and compliance risk that must not gate the domain build; ports let the domain
+be built and tested against stable interfaces. **Alternative:** build live now — rejected
+(couples the release to vendor availability; iPipeline/KaiZen are pure greenfield).
+**Migration if reversed:** enabling a port later = a new class + registry row + config; no
+schema change. Very low lock-in.
+
+### AD-4 — Underwriting = tracking (not decisioning); illustrations = documents + metadata (not generation)
+
+**Decision.** Client360 tracks underwriting status/requirements/APS and stores
+illustrations as documents with structured metadata. **Why.** The firm is an
+advisory/brokerage, not a carrier: underwriting *decisions* and illustration *generation*
+are carrier/iPipeline functions. Building them would reimplement carrier systems at the
+wrong layer. **Alternative:** build illustration generation / underwriting decisioning —
+rejected (actuarial, carrier-specific, out of scope). **Migration if extended:** richer
+structured underwriting/illustration data is additive (columns/child tables on the existing
+records). Low lock-in.
+
+### AD-5 — Regulatory SME sign-off owner (org decision, unresolved by engineering)
+
+**Decision required from the firm, not from engineering.** R1 (regulatory correctness) is
+the top risk; suitability, replacement/1035, and CE rule sets — modeled as reviewable data
+— must be signed off per phase by a named accountable party (compliance principal / licensed
+supervisor). Engineering cannot self-certify these. **This is a release dependency:** absent
+a named SME owner, the release carries compliance liability. Recommend assigning the owner
+before Phase 2 (new business, where suitability first appears).
