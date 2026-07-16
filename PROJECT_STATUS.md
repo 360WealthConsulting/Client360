@@ -7,7 +7,7 @@ _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
 |---|---|
 | **Current release** | **0.10.0 — Insurance Operations** (in progress; not tagged). Last tagged release: **0.9.13**. |
 | **Branch** | `feature/insurance-operations` (base: `main`) |
-| **Active PR** | Draft PR #<PR_NUMBER> — *Draft, do not merge* (opened at this checkpoint) |
+| **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* (opened at this checkpoint) |
 | **Current Alembic head** | `a7g8i9k0f1h2` — single head; **dev `client360` and test `client360_test` both at head** |
 | **Tests** | **659 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Compile OK; `git diff --check` clean; startup/shutdown clean. |
 | **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–4; architecture doc header updated (implemented-skeleton / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk drafted with Insurance Operations pages (all **draft**, unpublished). |
