@@ -23,6 +23,7 @@
 {% set can_ben = 'benefits.read' in caps %}
 {% set can_exc = 'exception.read' in caps %}
 {% set can_ins = 'insurance.read' in caps %}
+{% set can_ins_lic = 'insurance.licensing.read' in caps %}
 {% set firm_client = ('client.read' in caps) and read_all %}
 {% set groups = [
   {"label": "Overview", "items": [
@@ -50,6 +51,7 @@
   {"label": "Insurance", "items": [
     {"href": "/insurance", "label": "Book", "match": "/insurance", "ico": "☂", "show": can_ins},
     {"href": "/insurance/reviews", "label": "Reviews", "match": "/insurance/reviews", "ico": "◷", "show": can_ins},
+    {"href": "/insurance/licensing", "label": "Licensing", "match": "/insurance/licensing", "ico": "✦", "show": can_ins_lic},
     {"href": "/insurance/reporting", "label": "Pipeline", "match": "/insurance/reporting", "ico": "▥", "show": can_ins}]},
   {"label": "Oversight", "items": [
     {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},

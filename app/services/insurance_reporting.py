@@ -9,8 +9,10 @@ or determinations) — those remain behind the AD-5 gate.
 from __future__ import annotations
 
 from collections import Counter
+from datetime import date, timedelta
 
 from app.services import insurance as ins
+from app.services import insurance_licensing as lic
 
 
 def pipeline_report(principal):
@@ -47,4 +49,22 @@ def review_report(principal):
         "overdue": by_status.get("overdue", 0),
         "deferred": by_status.get("deferred", 0),
         "completion_rate": round(completed / total, 3) if total else 0.0,
+    }
+
+
+def licensing_report(principal, *, today=None, window_days=60):
+    """Producer licensing & CE operational counts. Records + upcoming-expiry counts
+    only — the platform makes NO licensing-validation or CE-satisfaction determination
+    (those stay behind the AD-5 gate). Requires insurance.licensing.read."""
+    licenses = lic.list_licenses(principal)
+    ce = lic.list_ce(principal)
+    horizon = (today or date.today()) + timedelta(days=window_days)
+    expiring = sum(1 for row in licenses
+                   if row["status"] == "active" and row["expiry_date"] and row["expiry_date"] <= horizon)
+    return {
+        "license_count": len(licenses),
+        "licenses_by_status": dict(Counter(row["status"] for row in licenses)),
+        "licenses_expiring": expiring,
+        "ce_count": len(ce),
+        "ce_by_status": dict(Counter(row["status"] for row in ce)),
     }

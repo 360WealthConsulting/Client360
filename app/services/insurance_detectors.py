@@ -18,11 +18,17 @@ entry point (also driven by the operational manual-scan endpoint).
 """
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.db import engine, exceptions, insurance_policy_reviews
+from app.db import (
+    engine,
+    exceptions,
+    insurance_ce_records,
+    insurance_licenses,
+    insurance_policy_reviews,
+)
 from app.services import exception_engine as ee
 from app.services import insurance as ins
 
@@ -93,10 +99,10 @@ def _auto_resolve(exception_id, status, actor_user_id):
     ee.resolve(exception_id, "auto_source_cleared", principal=None, actor_user_id=actor_user_id)
 
 
-def _auto_close_cleared(conditions, actor_user_id, failures):
+def _auto_close_cleared(conditions, actor_user_id, failures, prefix=_DEDUPE_PREFIX):
     with engine.connect() as c:
         stale = c.execute(select(exceptions.c.id, exceptions.c.status, exceptions.c.dedupe_key).where(
-            exceptions.c.dedupe_key.like(f"{_DEDUPE_PREFIX}%"),
+            exceptions.c.dedupe_key.like(f"{prefix}%"),
             exceptions.c.status.notin_(_CLOSED))).mappings().all()
     closed = 0
     for row in stale:
@@ -159,4 +165,108 @@ def run_insurance_review_scan(*, actor_user_id=None, today=None):
         "exceptions_resolved": resolved,
         "failures": len(result["failures"]),
         "failure_detail": result["failures"],
+    }
+
+
+# ============================================================================
+# Phase 4 — producer licensing & CE EXPIRY reminders (date-driven, operational).
+# These flag an upcoming license-expiry / CE-period-end date. They make NO
+# licensing-validation or CE-satisfaction determination and block nothing; the
+# regulated determinations stay behind the AD-5 gate. Licensing is firm-internal
+# (not client-scoped), so the exceptions carry no person/household anchor and
+# surface to oversight roles (record.read_all).
+# ============================================================================
+_LICENSE_PREFIX = "ins:license_expiring:"
+_CE_PREFIX = "ins:ce_period_ending:"
+LICENSE_EXPIRY_WINDOW_DAYS = 60
+CE_PERIOD_WINDOW_DAYS = 90
+
+
+def _firm_scope(title, sla_date):
+    """A firm-internal (unanchored) exception scope — no client person/household."""
+    return {"related_entity_type": None, "related_entity_id": None,
+            "person_id": None, "household_id": None, "title": title,
+            "sla_due_at": _due_datetime(sla_date)}
+
+
+def _license_expiry_conditions(today):
+    horizon = today + timedelta(days=LICENSE_EXPIRY_WINDOW_DAYS)
+    with engine.connect() as c:
+        rows = c.execute(select(insurance_licenses.c.id, insurance_licenses.c.expiry_date).where(
+            insurance_licenses.c.status == "active",
+            insurance_licenses.c.expiry_date.isnot(None),
+            insurance_licenses.c.expiry_date <= horizon)).mappings().all()
+    return {f"{_LICENSE_PREFIX}{r['id']}": _firm_scope("Producer license expiring", r["expiry_date"])
+            for r in rows}
+
+
+def _ce_period_conditions(today):
+    horizon = today + timedelta(days=CE_PERIOD_WINDOW_DAYS)
+    with engine.connect() as c:
+        rows = c.execute(select(insurance_ce_records.c.id, insurance_ce_records.c.period_end).where(
+            insurance_ce_records.c.status == "in_progress",
+            insurance_ce_records.c.period_end.isnot(None),
+            insurance_ce_records.c.period_end <= horizon)).mappings().all()
+    return {f"{_CE_PREFIX}{r['id']}": _firm_scope("Continuing-education period ending", r["period_end"])
+            for r in rows}
+
+
+def _reconcile(prefix, code, conditions, *, actor_user_id):
+    """Raise ``code`` for each current condition (idempotent) and auto-close any open
+    exception in this family whose condition has cleared. Each item is isolated."""
+    raised, failures = 0, []
+    for key, scope in conditions.items():
+        try:
+            ee.raise_exception(code=code, actor_user_id=actor_user_id, principal=None,
+                               source="system", dedupe_key=key, **scope)
+            raised += 1
+        except Exception as exc:  # pragma: no cover - defensive isolation
+            failures.append({"dedupe_key": key, "error": type(exc).__name__})
+    closed = _auto_close_cleared(conditions, actor_user_id, failures, prefix=prefix)
+    return {"raised": raised, "closed": closed, "failures": failures}
+
+
+def detect_licenses_expiring(*, actor_user_id=None, today=None):
+    today = _today(today)
+    return _reconcile(_LICENSE_PREFIX, "INS_LICENSE_EXPIRING",
+                      _license_expiry_conditions(today), actor_user_id=actor_user_id)
+
+
+def detect_ce_period_ending(*, actor_user_id=None, today=None):
+    today = _today(today)
+    return _reconcile(_CE_PREFIX, "INS_CE_PERIOD_ENDING",
+                      _ce_period_conditions(today), actor_user_id=actor_user_id)
+
+
+def _open_exception_status(prefix):
+    with engine.connect() as c:
+        return {r["id"]: r["status"] for r in c.execute(select(
+            exceptions.c.id, exceptions.c.status).where(
+            exceptions.c.dedupe_key.like(f"{prefix}%"))).mappings()}
+
+
+def run_insurance_licensing_scan(*, actor_user_id=None, today=None):
+    """Scheduled/manual entry point for licensing & CE expiry reminders. Idempotent
+    (stable dedupe). Returns honest opened/resolved counts. Live cron wiring is Phase 6."""
+    def _delta(prefix, detect):
+        before = _open_exception_status(prefix)
+        result = detect(actor_user_id=actor_user_id, today=today)
+        after = _open_exception_status(prefix)
+
+        def active(st):
+            return st not in _CLOSED
+        opened = sum(1 for i, st in after.items() if active(st) and i not in before)
+        reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
+        resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
+        return opened, reopened, resolved, result["failures"]
+
+    lo, lr, lres, lf = _delta(_LICENSE_PREFIX, detect_licenses_expiring)
+    co, cr, cres, cf = _delta(_CE_PREFIX, detect_ce_period_ending)
+    failures = lf + cf
+    return {
+        "exceptions_opened": lo + co,
+        "exceptions_reopened": lr + cr,
+        "exceptions_resolved": lres + cres,
+        "failures": len(failures),
+        "failure_detail": failures,
     }

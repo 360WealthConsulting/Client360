@@ -374,6 +374,33 @@ replacement recommendations, **1035** recommendation logic, licensing/CE determi
 any compliance approval or regulatory decision engine. Tests assert no such function exists
 in the review/detector/reporting modules and that the scan result carries no compliance field.
 
+## 12c. Phase 4 scope split — non-regulated (built) vs compliance-gated (deferred)
+
+Phase 4 (Licensing & CE) is named in the AD-5 gated list, so — like Phases 2 and 3 — only
+the non-regulated skeleton ships; the determination logic stays gated. Extensibility was
+re-verified first: the Phase 3 schema supports multiple concurrent cases, multiple policies
+per case, replacements, partial 1035s (structurally; economics are a future nullable
+column), split ownership, multiple beneficiaries, business-/trust-owned policies, multiple
+producers, carrier product evolution, and future provider ports **without redesign**.
+
+**Non-regulated — built in Phase 4 (`a7g8i9k0f1h2` + services/detectors/routes/UI):**
+producer **licensing records** (`insurance_licenses`) and **CE records** (`insurance_ce_records`)
+— firm-internal, capability-gated (`insurance.licensing.read`/`.write`, seeded in Phase 0),
+audited, staff-entered; **date-driven expiry reminders** (`detect_licenses_expiring` /
+`detect_ce_period_ending` raise `INS_LICENSE_EXPIRING` / `INS_CE_PERIOD_ENDING` through the
+**shared Exception Engine** — idempotent, auto-resolving, firm-level/unanchored so they
+surface to oversight roles); operational **licensing counts** (`licensing_report`); the
+licensing dashboard UI + JSON APIs. Live cron wiring of the scan is Phase 6; the callable +
+manual endpoint ship now.
+
+**Compliance-gated — NOT built / not enabled** (behind AD-5): licensing **validation**
+(whether a producer may sell a product in a state), CE **satisfaction determination**
+(whether a CE requirement is met), sale/issue **blocking** on licensing status, and any
+compliance approval or regulatory decision engine. The stored `credits_required` /
+`credits_completed` are staff-entered figures — the platform draws no conclusion from them.
+Tests assert no validation/determination function exists in the licensing/detector/reporting
+modules and that the scan result carries no compliance field.
+
 ## 13. Dependencies
 
 - Builds on the 0.9.11 platform and the 0.9.13 test/CI/release infrastructure (isolated

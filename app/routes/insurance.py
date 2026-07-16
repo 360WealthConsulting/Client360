@@ -15,12 +15,13 @@ from pydantic import BaseModel
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services import insurance as ins
+from app.services import insurance_licensing as lic
 from app.templating import templates
 
 router = APIRouter(tags=["insurance"])
 
-_NOT_FOUND = (ins.InsuranceNotFound,)
-_BAD_INPUT = (ins.InsuranceError,)
+_NOT_FOUND = (ins.InsuranceNotFound, lic.LicensingNotFound)
+_BAD_INPUT = (ins.InsuranceError, lic.LicensingError)
 
 
 def _run(fn):
@@ -331,3 +332,115 @@ def console_reviews(request: Request, status: str = "",
     return templates.TemplateResponse(request=request, name="insurance/reviews.html",
                                       context={"reviews": reviews, "metrics": metrics,
                                                "status": status, "principal": principal})
+
+
+# --- Phase 4 (non-regulated): producer licensing & CE records + expiry reminders ---
+
+class LicenseCreate(BaseModel):
+    producer_user_id: int
+    state: str
+    license_number: str | None = None
+    npn: str | None = None
+    lines: list[str] | None = None
+    status: str = "active"
+    issue_date: date | None = None
+    expiry_date: date | None = None
+    notes: str | None = None
+
+
+class LicenseUpdate(BaseModel):
+    state: str | None = None
+    license_number: str | None = None
+    npn: str | None = None
+    lines: list[str] | None = None
+    status: str | None = None
+    issue_date: date | None = None
+    expiry_date: date | None = None
+    notes: str | None = None
+
+
+class CeCreate(BaseModel):
+    producer_user_id: int
+    state: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    credits_required: float | None = None
+    credits_completed: float | None = None
+    status: str = "in_progress"
+    notes: str | None = None
+
+
+class CeUpdate(BaseModel):
+    state: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    credits_required: float | None = None
+    credits_completed: float | None = None
+    status: str | None = None
+    notes: str | None = None
+
+
+@router.get("/api/v1/insurance/licenses")
+def api_license_list(producer_user_id: int | None = None, state: str = "", status: str = "",
+                     principal: Principal = Depends(require_capability("insurance.licensing.read"))):
+    return {"licenses": _run(lambda: lic.list_licenses(
+        principal, producer_user_id=producer_user_id, state=state or None, status=status or None))}
+
+
+@router.post("/api/v1/insurance/licenses", status_code=201)
+def api_license_create(payload: LicenseCreate, request: Request,
+                       principal: Principal = Depends(require_capability("insurance.licensing.write"))):
+    return _run(lambda: lic.record_license(principal, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.patch("/api/v1/insurance/licenses/{license_id}")
+def api_license_update(license_id: int, payload: LicenseUpdate, request: Request,
+                       principal: Principal = Depends(require_capability("insurance.licensing.write"))):
+    return _run(lambda: lic.update_license(principal, license_id, **payload.model_dump(),
+                                           **_actor(request, principal)))
+
+
+@router.get("/api/v1/insurance/ce")
+def api_ce_list(producer_user_id: int | None = None, status: str = "",
+                principal: Principal = Depends(require_capability("insurance.licensing.read"))):
+    return {"ce_records": _run(lambda: lic.list_ce(
+        principal, producer_user_id=producer_user_id, status=status or None))}
+
+
+@router.post("/api/v1/insurance/ce", status_code=201)
+def api_ce_create(payload: CeCreate, request: Request,
+                  principal: Principal = Depends(require_capability("insurance.licensing.write"))):
+    return _run(lambda: lic.record_ce(principal, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.patch("/api/v1/insurance/ce/{ce_id}")
+def api_ce_update(ce_id: int, payload: CeUpdate, request: Request,
+                  principal: Principal = Depends(require_capability("insurance.licensing.write"))):
+    return _run(lambda: lic.update_ce(principal, ce_id, **payload.model_dump(),
+                                      **_actor(request, principal)))
+
+
+@router.get("/api/v1/insurance/licensing/report")
+def api_licensing_report(principal: Principal = Depends(require_capability("insurance.licensing.read"))):
+    from app.services import insurance_reporting
+    return _run(lambda: insurance_reporting.licensing_report(principal))
+
+
+@router.post("/api/v1/insurance/licensing/scan")
+def api_licensing_scan(principal: Principal = Depends(require_capability("insurance.licensing.write"))):
+    """Operational expiry-reminder scan for producer licenses and CE periods. Idempotent.
+    No licensing-validation or CE-satisfaction determination."""
+    from app.services import insurance_detectors
+    return _run(lambda: insurance_detectors.run_insurance_licensing_scan(actor_user_id=principal.user_id))
+
+
+@router.get("/insurance/licensing", response_class=HTMLResponse)
+def console_licensing(request: Request,
+                      principal: Principal = Depends(require_capability("insurance.licensing.read"))):
+    from app.services import insurance_reporting
+    licenses = _run(lambda: lic.list_licenses(principal))
+    ce_records = _run(lambda: lic.list_ce(principal))
+    report = _run(lambda: insurance_reporting.licensing_report(principal))
+    return templates.TemplateResponse(request=request, name="insurance/licensing.html",
+                                      context={"licenses": licenses, "ce_records": ce_records,
+                                               "report": report, "principal": principal})
