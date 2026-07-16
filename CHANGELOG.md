@@ -21,7 +21,36 @@ All notable Client360 releases are documented here.
   the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
   `/tax`, and the work team/queue pages now render.
 
-## [0.9.11] — Employer Operations & Employee Benefits (release candidate; not yet tagged)
+## [0.9.12] — 2026-07-16 — Application Shell & UI Consolidation
+
+Consolidated every staff-facing page into a single application shell on a shared design
+system, with progressive-enhancement interaction polish. **Frontend only** — no business
+logic, routes, authorization, or record-scope semantics changed; no schema change (Alembic
+head unchanged at `u1f9c0i9h8g7`). Validated by [RC-1](docs/RC1_UI_VALIDATION.md)
+(0 unmet criteria). Merge commit `98b0622`.
+
+### Added
+- **Application shell + design system** — all 21 staff routes render inside one shell
+  (`docs/UI_DESIGN_SYSTEM.md`); shared components, styled 403/404/500 pages, empty states.
+- **Interaction polish** — client-side sortable data tables (numeric-aware, `aria-sort`),
+  skip-to-content link, `aria-current`/`aria-expanded` navigation state. Progressive
+  enhancement: every page works fully with JavaScript disabled.
+
+### Fixed
+- **Authorization denials now content-negotiate** — browser navigations get a styled HTML
+  403, API/JSON clients keep the JSON body; the denial itself (status, audit) is unchanged.
+  Denials now also carry the standard security headers (`x-frame-options`, CSP
+  `frame-ancestors`, `nosniff`, `referrer-policy`), which they previously lacked.
+- **CI was never running** — the workflow was tab-indented (invalid YAML) and failed at 0s on
+  every commit, including the 0.9.11 merge. It now parses, provisions Postgres, and gates.
+- **Importers are side-effect free on import** — `app/importers/schwab.py` and `wealthbox.py`
+  no longer read `app/.env`, build an engine, or run a client-data import merely on import.
+- Flaky securities-symbol collision fixed in the portfolio query tests.
+
+### Migrations
+None — 0.9.12 is frontend/tooling only. Single head `u1f9c0i9h8g7`.
+
+## [0.9.11] — 2026-07-15 — Employer Operations & Employee Benefits
 
 Usable **Employer Operations** product on shared Client360 concepts (Organizations,
 relationship roles, service lines, universal Engagement) with **Employee Benefits + Retirement**
@@ -396,13 +425,3 @@ preserved. See [Security Hardening 0.9.7](docs/SECURITY_HARDENING_0.9.7.md).
 - Integrated Microsoft 365, Relationship Intelligence, Schwab Portfolio
   Intelligence, firm identity, capability authorization, and immutable audit.
 - Alembic head: `c410f4a1b2c3`.
-# Unreleased
-
-### Added
-
-- Sprint 5.1 Tax Domain Foundation: tax firms and offices, staff office roles,
-  tax years and seasons, jurisdictions, return types and filing statuses,
-  engagements and returns, versioned deadlines, tax queues, a production
-  dashboard, versioned APIs, and automatic workflow generation.
-- Tax-domain capability and record-level authorization, timeline publication,
-  and immutable audit integration using the existing Client360 platforms.

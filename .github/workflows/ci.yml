@@ -84,6 +84,12 @@ jobs:
 
       # compileall over app + tests + migrations (was app only) — the gate the RC
       # docs already claim.
+      # CHANGELOG structural lint (0.9.13 Phase 4): every tag has a dated entry,
+      # one [Unreleased], no stray H1. Catches the drift that left 0.9.11 marked
+      # "not yet tagged" and 0.9.12 undocumented.
+      - name: CHANGELOG lint
+        run: python scripts/check_changelog.py
+
       - name: Compile
         run: python -m compileall app tests migrations
 
