@@ -152,7 +152,7 @@ def test_status_change_to_in_force_publishes_a_timeline_event():
     with engine.connect() as c:
         tl = c.execute(select(timeline_events).where(
             timeline_events.c.source == "insurance",
-            timeline_events.c.event_type == "insurance_policy_in_force",
+            timeline_events.c.event_type == "insurance_policy_placed_in_force",
             timeline_events.c.household_id == hid)).mappings().all()
     assert len(tl) == 1
 
@@ -161,6 +161,75 @@ def test_no_separate_insurance_history_table_exists():
     tables = inspect(engine).get_table_names()
     assert not [t for t in tables if t.startswith("insurance_") and
                 ("history" in t or t.endswith("_events") or t.endswith("_audit") or "timeline" in t)]
+
+
+def test_full_lifecycle_publishes_the_expected_timeline_events():
+    with engine.begin() as c:
+        hid = _household(c)
+        carrier = _carrier(c)
+        pv = _version(c, carrier)
+        uid = _user(c)
+    policy = ins.create_policy(_p(), carrier_id=carrier, product_version_id=pv, household_id=hid)
+    transitions = ["applied", "underwriting", "issued", "delivered", "in_force",
+                   "lapsed", "reinstated"]
+    for st in transitions:
+        ins.update_policy_status(_p(), policy["id"], st, actor_user_id=uid)
+    expected = {
+        "insurance_application_submitted", "insurance_underwriting_status_changed",
+        "insurance_policy_issued", "insurance_policy_delivered",
+        "insurance_policy_placed_in_force", "insurance_policy_lapsed",
+        "insurance_policy_reinstated",
+    }
+    with engine.connect() as c:
+        got = set(c.execute(select(timeline_events.c.event_type).where(
+            timeline_events.c.source == "insurance",
+            timeline_events.c.household_id == hid,
+            timeline_events.c.event_type != "insurance_policy_created")).scalars())
+    assert expected <= got
+
+
+def test_ownership_and_beneficiary_changes_publish_events_without_pii():
+    with engine.begin() as c:
+        hid = _household(c)
+        carrier = _carrier(c)
+        pv = _version(c, carrier)
+        uid = _user(c)
+        pers = _person(c, hid)
+    policy = ins.create_policy(_p(), carrier_id=carrier, product_version_id=pv, household_id=hid)
+    ins.add_party(_p(), policy["id"], party_role="owner", party_entity_type="person",
+                  party_entity_id=pers, actor_user_id=uid)
+    ins.add_party(_p(), policy["id"], party_role="beneficiary", party_entity_type="person",
+                  party_entity_id=pers, designation="primary", share_percentage=100, actor_user_id=uid)
+    with engine.connect() as c:
+        rows = c.execute(select(timeline_events.c.event_type, timeline_events.c.event_metadata).where(
+            timeline_events.c.source == "insurance",
+            timeline_events.c.household_id == hid,
+            timeline_events.c.event_type.in_(
+                ["insurance_ownership_changed", "insurance_beneficiary_changed"]))).mappings().all()
+    types = {r["event_type"] for r in rows}
+    assert types == {"insurance_ownership_changed", "insurance_beneficiary_changed"}
+    # payloads are proportional: role + entity TYPE only, never the party's id/share/PII
+    for r in rows:
+        meta = r["event_metadata"] or {}
+        assert set(meta) <= {"role", "party_entity_type"}
+        assert str(pers) not in str(meta) and "share" not in meta
+
+
+def test_get_policy_returns_names_not_raw_ids():
+    with engine.begin() as c:
+        hid = _household(c)
+        carrier = _carrier(c, name="Northwestern Mutual")
+        pv = _version(c, carrier)
+        pers = _person(c, hid)
+        uid = _user(c)
+    policy = ins.create_policy(_p(), carrier_id=carrier, product_version_id=pv, household_id=hid)
+    ins.add_party(_p(), policy["id"], party_role="owner", party_entity_type="person", party_entity_id=pers)
+    ins.add_producer(_p(), policy["id"], producer_entity_type="user", producer_entity_id=uid,
+                     producer_role="writing_agent")
+    got = ins.get_policy(_p(), policy["id"])
+    assert got["carrier_name"] == "Northwestern Mutual"
+    assert got["parties"][0]["party_name"] is not None
+    assert got["producers"][0]["producer_name"] == "U"
 
 
 # --- rider compatibility on attach -------------------------------------------

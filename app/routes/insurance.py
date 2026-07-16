@@ -135,9 +135,9 @@ def api_rider_add(policy_id: int, payload: RiderBody,
 
 
 @router.post("/api/v1/insurance/policies/{policy_id}/parties", status_code=201)
-def api_party_add(policy_id: int, payload: PartyBody,
+def api_party_add(policy_id: int, payload: PartyBody, request: Request,
                   principal: Principal = Depends(require_capability("insurance.write"))):
-    return _run(lambda: ins.add_party(principal, policy_id, **payload.model_dump()))
+    return _run(lambda: ins.add_party(principal, policy_id, **payload.model_dump(), **_actor(request, principal)))
 
 
 @router.post("/api/v1/insurance/policies/{policy_id}/producers", status_code=201)

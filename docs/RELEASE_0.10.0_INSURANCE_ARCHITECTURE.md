@@ -139,6 +139,16 @@ Lookups live in `app/services/insurance_catalog.py`
 (`find_by_carrier_product_code`, `find_by_illustration_identifier`, `compatible_riders`,
 `is_rider_compatible`).
 
+**Phase 1 — lifecycle events on the shared Timeline/Audit (no separate history model).**
+`app/services/insurance.py` publishes each significant lifecycle transition into the
+existing `timeline_events` + `audit_events`: case opened; application submitted;
+underwriting status changed; policy issued / delivered / placed in force / lapsed /
+reinstated / surrendered / replaced / death-claim; ownership changed; beneficiary changed.
+(Requirement requested/satisfied arrive with the requirements model in a later phase.)
+Payloads are proportional — role, status, and carrier reference only, never identifiers,
+financials, or party PII. The policy status CHECK was widened (`issued`, `delivered`,
+`reinstated`) in migration `x4d5f6h7c8e9`.
+
 ### 4.2 Policies and parties (Refinement 3) — no single-owner assumptions
 
 - **`insurance_policies`** — subject anchor (person/household/org), `carrier_id`,

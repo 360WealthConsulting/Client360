@@ -5,6 +5,7 @@
 <div class="page-head">
   <h1>{{ policy.policy_number or ('Policy #' ~ policy.id) }}</h1>
   <span class="badge">{{ policy.status.replace('_', ' ') }}</span>
+  <span class="subtle">{{ policy.carrier_name or 'Unknown carrier' }}</span>
 </div>
 
 <div class="stat-grid">
@@ -26,7 +27,7 @@
     {% for pt in policy.parties %}
       <tr>
         <td>{{ pt.party_role }}{{ ' (primary insured)' if pt.is_primary_insured else '' }}</td>
-        <td>{{ pt.party_entity_type }} #{{ pt.party_entity_id }}</td>
+        <td>{{ pt.party_name or (pt.party_entity_type ~ ' (unnamed)') }}</td>
         <td>{{ pt.designation or '—' }}</td>
         <td class="num">{{ pt.share_percentage if pt.share_percentage is not none else '—' }}</td>
       </tr>
@@ -43,7 +44,8 @@
     <thead><tr><th>Role</th><th>Producer</th><th class="num">Split %</th></tr></thead>
     <tbody>
     {% for pr in policy.producers %}
-      <tr><td>{{ pr.producer_role }}</td><td>{{ pr.producer_entity_type }} #{{ pr.producer_entity_id }}</td>
+      <tr><td>{{ pr.producer_role.replace('_', ' ') }}</td>
+      <td>{{ pr.producer_name or (pr.producer_entity_type ~ ' (unnamed)') }}</td>
       <td class="num">{{ pr.split_percentage if pr.split_percentage is not none else '—' }}</td></tr>
     {% endfor %}
     </tbody>

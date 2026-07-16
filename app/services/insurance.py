@@ -17,23 +17,38 @@ from sqlalchemy import select
 from app.db import (
     engagements,
     engine,
+    households,
     insurance_cases,
     insurance_coverages,
     insurance_policies,
     insurance_policy_parties,
     insurance_policy_producers,
     insurance_riders,
+    people,
     relationship_entities,
     service_lines,
     timeline_events,
+    users,
 )
 from app.security.audit import write_audit_event
 from app.security.authorization import organization_in_scope, record_in_scope
 from app.services import insurance_catalog
 
-# Significant policy lifecycle transitions that are worth a client-timeline entry.
-_TIMELINE_STATUSES = {"applied", "underwriting", "in_force", "lapsed", "surrendered",
-                      "replaced", "death_claim"}
+# Significant policy status transitions -> (timeline event_type, human title).
+# Each is a proportional client-timeline entry; payloads never carry identifiers,
+# financials, or party PII (only role/status/carrier reference).
+STATUS_EVENTS = {
+    "applied": ("insurance_application_submitted", "Application submitted"),
+    "underwriting": ("insurance_underwriting_status_changed", "Underwriting status changed"),
+    "issued": ("insurance_policy_issued", "Policy issued"),
+    "delivered": ("insurance_policy_delivered", "Policy delivered"),
+    "in_force": ("insurance_policy_placed_in_force", "Policy placed in force"),
+    "reinstated": ("insurance_policy_reinstated", "Policy reinstated"),
+    "lapsed": ("insurance_policy_lapsed", "Policy lapsed"),
+    "surrendered": ("insurance_policy_surrendered", "Policy surrendered"),
+    "replaced": ("insurance_policy_replaced", "Policy replaced"),
+    "death_claim": ("insurance_policy_death_claim", "Death claim opened"),
+}
 
 
 class InsuranceError(RuntimeError):
@@ -156,6 +171,21 @@ def _load_policy(c, policy_id):
     return row
 
 
+def _entity_name(c, entity_type, entity_id):
+    """Resolve a display name so the UI shows names, not raw IDs."""
+    if not entity_id:
+        return None
+    if entity_type == "person":
+        table, col = people, people.c.full_name
+    elif entity_type == "household":
+        table, col = households, households.c.name
+    elif entity_type == "user":
+        table, col = users, users.c.display_name
+    else:  # organization (carrier, agency, trust, business)
+        table, col = relationship_entities, relationship_entities.c.name
+    return c.execute(select(col).where(table.c.id == entity_id)).scalar_one_or_none()
+
+
 def get_policy(principal, policy_id):
     """Return a policy with its coverages, riders, parties, and producers."""
     _require(principal, "insurance.read")
@@ -166,12 +196,19 @@ def get_policy(principal, policy_id):
         def children(table):
             return [dict(r) for r in c.execute(select(table).where(
                 table.c.policy_id == policy_id)).mappings()]
+        parties = children(insurance_policy_parties)
+        for p in parties:
+            p["party_name"] = _entity_name(c, p["party_entity_type"], p["party_entity_id"])
+        producers = children(insurance_policy_producers)
+        for p in producers:
+            p["producer_name"] = _entity_name(c, p["producer_entity_type"], p["producer_entity_id"])
         return {
             **dict(policy),
+            "carrier_name": _entity_name(c, "organization", policy["carrier_id"]),
             "coverages": children(insurance_coverages),
             "riders": children(insurance_riders),
-            "parties": children(insurance_policy_parties),
-            "producers": children(insurance_policy_producers),
+            "parties": parties,
+            "producers": producers,
         }
 
 
@@ -186,7 +223,12 @@ def list_policies(principal, *, status=None, carrier_id=None, limit=200):
     with engine.connect() as c:
         rows = [r for r in c.execute(query).mappings()
                 if _policy_scope_ok(principal, r, write=False, connection=c)]
-    return [dict(r) for r in rows[:limit]]
+        out = []
+        for r in rows[:limit]:
+            d = dict(r)
+            d["carrier_name"] = _entity_name(c, "organization", r["carrier_id"])
+            out.append(d)
+    return out
 
 
 def update_policy_status(principal, policy_id, new_status, *, actor_user_id=None, request_id=None):
@@ -197,10 +239,10 @@ def update_policy_status(principal, policy_id, new_status, *, actor_user_id=None
             raise PermissionError("Policy is outside your record scope.")
         c.execute(insurance_policies.update().where(insurance_policies.c.id == policy_id)
                   .values(status=new_status, updated_at=_now()))
-        if new_status in _TIMELINE_STATUSES:
-            _publish(c, action="insurance.policy.status_changed",
-                     event_type=f"insurance_policy_{new_status}",
-                     title=f"Insurance policy {new_status.replace('_', ' ')}",
+        event = STATUS_EVENTS.get(new_status)
+        if event:
+            event_type, title = event
+            _publish(c, action="insurance.policy.status_changed", event_type=event_type, title=title,
                      policy_row=policy, actor_user_id=actor_user_id, request_id=request_id,
                      metadata={"from": policy["status"], "to": new_status})
     return {"id": policy_id, "status": new_status}
@@ -236,8 +278,15 @@ def add_rider(principal, policy_id, *, rider_type, description=None, face_amount
     return {"id": rid}
 
 
+_PARTY_EVENTS = {
+    "owner": ("insurance_ownership_changed", "Ownership changed"),
+    "beneficiary": ("insurance_beneficiary_changed", "Beneficiary changed"),
+}
+
+
 def add_party(principal, policy_id, *, party_role, party_entity_type, party_entity_id,
-              share_percentage=None, designation=None, is_primary_insured=False):
+              share_percentage=None, designation=None, is_primary_insured=False,
+              actor_user_id=None, request_id=None):
     _require(principal, "insurance.write")
     with engine.begin() as c:
         policy = _load_policy(c, policy_id)
@@ -248,6 +297,16 @@ def add_party(principal, policy_id, *, party_role, party_entity_type, party_enti
             party_entity_id=party_entity_id, share_percentage=share_percentage,
             designation=designation, is_primary_insured=is_primary_insured,
         ).returning(insurance_policy_parties.c.id)).scalar_one()
+        # Ownership/beneficiary changes are significant lifecycle events. The payload
+        # carries only the role and party TYPE — never the party's identity or share —
+        # to stay proportional and avoid PII leakage on the shared timeline.
+        event = _PARTY_EVENTS.get(party_role)
+        if event:
+            event_type, title = event
+            _publish(c, action=f"insurance.party.{party_role}_changed",
+                     event_type=event_type, title=title, policy_row=policy,
+                     actor_user_id=actor_user_id, request_id=request_id,
+                     metadata={"role": party_role, "party_entity_type": party_entity_type})
     return {"id": pid}
 
 
