@@ -109,3 +109,33 @@ app.include_router(tax_intake_router)
 app.include_router(tax_returns_router)
 app.include_router(tax_documents_router)
 app.include_router(portal_router)
+
+
+# --- Styled error pages for browser navigations (JSON preserved for API/tests) ---
+from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
+from fastapi.responses import JSONResponse as _JSONResponse  # noqa: E402
+from app.templating import render_error as _render_error, wants_html as _wants_html  # noqa: E402
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_exception_handler(request, exc):
+    if exc.status_code in (403, 404) and _wants_html(request):
+        return _render_error(request, exc.status_code, detail=exc.detail)
+    return _JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request, exc):
+    # Browsers get a styled 500; API clients get JSON. Starlette re-raises after
+    # this in test mode, so raise_server_exceptions behavior is unchanged.
+    if _wants_html(request):
+        return _render_error(request, 500)
+    request_id = getattr(request.state, "request_id", None)
+    body = {"detail": "Internal server error"}
+    if request_id:
+        body["request_id"] = request_id
+    return _JSONResponse(body, status_code=500)

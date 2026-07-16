@@ -1,1 +1,28 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Audit Log</title><link rel="stylesheet" href="/static/css/main.css"></head><body><main><h1>Immutable Audit Log</h1><table><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Outcome</th><th>Request</th></tr>{% for event in events %}<tr><td>{{ event.occurred_at }}</td><td>{{ event.actor_user_id or "System" }}</td><td>{{ event.action }}</td><td>{{ event.entity_type }} {{ event.entity_id or "" }}</td><td>{{ event.outcome }}</td><td>{{ event.request_id }}</td></tr>{% endfor %}</table></main></body></html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Audit Log | Client360{% endblock %}
+{% block crumb %}Audit Log{% endblock %}
+{% block content %}
+{{ ui.page_head("Immutable audit log", eyebrow="Oversight", desc="Tamper-evident record of every mutation across the platform.") }}
+{% if events %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Outcome</th><th>Request</th></tr></thead>
+    <tbody>
+    {% for event in events %}
+      <tr>
+        <td class="id-mono">{{ event.occurred_at }}</td>
+        <td>{{ event.actor_user_id or "System" }}</td>
+        <td>{{ event.action }}</td>
+        <td>{{ event.entity_type }} <span class="id-mono">{{ event.entity_id or "" }}</span></td>
+        <td>{% if event.outcome == 'denied' %}{{ ui.badge('denied','crit') }}{% elif event.outcome == 'success' %}{{ ui.badge('success','good') }}{% else %}{{ ui.badge(event.outcome) }}{% endif %}</td>
+        <td class="id-mono">{{ event.request_id }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{% call ui.empty("No audit events") %}{% endcall %}
+{% endif %}
+{% endblock %}

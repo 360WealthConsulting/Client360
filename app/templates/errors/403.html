@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Not authorized | Client360</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="c360">
+  <div class="err-wrap">
+    <div class="err-card warn">
+      <div class="brand"><span class="mark">C3</span><b>Client360</b></div>
+      <div class="code">403 · NOT AUTHORIZED</div>
+      <h1>You don't have access to this screen</h1>
+      <p>{{ detail or "This area requires a capability your account doesn't hold. Your work lives under My Work." }}</p>
+      <a class="btn" href="/work">Go to My Work</a>
+      {% if request_id %}<div class="rid">Reference: {{ request_id }}</div>{% endif %}
+    </div>
+  </div>
+</body>
+</html>

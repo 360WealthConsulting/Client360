@@ -1,1 +1,51 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Firm Identity Administration</title><link rel="stylesheet" href="/static/css/main.css"></head><body><main><h1>Firm Identity Administration</h1><p>Signed in as {{ principal.display_name }}. Roles are configurable bundles of capabilities.</p><h2>Users</h2><table><tr><th>Name</th><th>Email</th><th>Status</th><th>MFA</th><th>Last login</th></tr>{% for user in identity.users %}<tr><td>{{ user.display_name }}</td><td>{{ user.email }}</td><td>{{ user.status }}</td><td>{{ "Yes" if user.mfa_enabled else "No" }}</td><td>{{ user.last_login_at or "Never" }}</td></tr>{% endfor %}</table><h2>Teams</h2><ul>{% for team in identity.teams %}<li>{{ team.name }} — {{ "Active" if team.active else "Inactive" }}</li>{% endfor %}</ul><h2>Roles</h2><ul>{% for role in identity.roles %}<li>{{ role.name }} — {{ role.description or "Capability-composed role" }}</li>{% endfor %}</ul><h2>Capability Catalog</h2><table><tr><th>Capability</th><th>Description</th><th>Sensitive</th></tr>{% for item in identity.capabilities %}<tr><td>{{ item.code }}</td><td>{{ item.description }}</td><td>{{ "Yes" if item.sensitive else "No" }}</td></tr>{% endfor %}</table><p><a href="/admin/audit">View audit log</a></p></main></body></html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Firm Identity | Client360{% endblock %}
+{% block crumb %}Identity Administration{% endblock %}
+{% block content %}
+{% call ui.page_head("Firm identity administration", eyebrow="Oversight", desc="Roles are configurable bundles of capabilities.") %}
+  <a class="btn secondary" href="/admin/audit">View audit log</a>
+{% endcall %}
+<h2 class="section-title">Users</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>MFA</th><th>Last login</th></tr></thead>
+    <tbody>
+    {% for user in identity.users %}
+      <tr>
+        <td>{{ user.display_name }}</td>
+        <td>{{ user.email }}</td>
+        <td>{{ user.status }}</td>
+        <td>{% if user.mfa_enabled %}{{ ui.badge('Yes','good') }}{% else %}{{ ui.badge('No','warn') }}{% endif %}</td>
+        <td class="subtle">{{ user.last_login_at or "Never" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="cols-2" style="align-items:start; margin-top:16px">
+  <div class="card">
+    <h3>Teams</h3>
+    <div class="stack">
+    {% for team in identity.teams %}<div class="row" style="justify-content:space-between"><span>{{ team.name }}</span>{% if team.active %}{{ ui.badge('Active','good') }}{% else %}{{ ui.badge('Inactive') }}{% endif %}</div>{% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <h3>Roles</h3>
+    <div class="stack">
+    {% for role in identity.roles %}<div><b style="font-size:13px">{{ role.name }}</b><div class="subtle">{{ role.description or "Capability-composed role" }}</div></div>{% endfor %}
+    </div>
+  </div>
+</div>
+<h2 class="section-title">Capability catalog</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Capability</th><th>Description</th><th>Sensitive</th></tr></thead>
+    <tbody>
+    {% for item in identity.capabilities %}
+      <tr><td class="id-mono">{{ item.code }}</td><td>{{ item.description }}</td><td>{% if item.sensitive %}{{ ui.badge('Yes','warn') }}{% else %}<span class="subtle">No</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

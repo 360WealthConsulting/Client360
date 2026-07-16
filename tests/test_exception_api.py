@@ -203,9 +203,10 @@ def test_api_ui_result_parity_and_no_raw_json_in_nav():
 
 def test_navigation_link_is_capability_gated():
     base = pathlib.Path("app/templates/base.html").read_text()
-    assert "principal.can('exception.read')" in base and 'href="/exceptions"' in base
-    # rendered for a capable principal, the nav link is present
+    # the Exceptions nav item is gated on the exception.read capability
+    assert "'exception.read' in caps" in base and '"/exceptions"' in base
+    # rendered for a capable principal, the nav link is present in the shell
     u, p, h, r = _case()
     admin = Principal(u, "a@e.com", "A", FULL)
     html = X.console(_req(), principal=admin).body.decode()
-    assert '<a href="/exceptions">Exceptions</a>' in html
+    assert 'href="/exceptions"' in html and 'Exceptions' in html

@@ -1,44 +1,29 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Microsoft Documents Review - Client360</title>
-    <link rel="stylesheet" href="/static/css/main.css">
-</head>
-<body>
-<header style="background:#111827;color:white;padding:28px 40px;">
-    <h1>Microsoft Documents Review</h1>
-    <div>{{ documents|length }} unmatched document{{ "" if documents|length == 1 else "s" }}</div>
-</header>
-<main style="max-width:1100px;margin:0 auto;padding:32px 40px;">
-    <p><a href="/">← Dashboard</a></p>
-    {% for document in documents %}
-    <article class="card" style="margin-bottom:18px;">
-        <h2>{{ document.name }}</h2>
-        <p>{{ document.parent_path or "Root folder" }}</p>
-        <div style="color:#6b7280;font-size:14px;">
-            {{ document.mime_type or "Unknown type" }} · {{ document.size_bytes }} bytes · {{ document.modified_at_microsoft or "Date unavailable" }}
-        </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:16px;">
-            <form method="post" onsubmit="this.action='/microsoft365/documents-review/{{ document.id }}/match/'+this.person_id.value;return Boolean(this.person_id.value);">
-                <select name="person_id" required>
-                    <option value="">Select client...</option>
-                    {% for person in people %}
-                    <option value="{{ person.id }}">{{ person.full_name or ("Person " ~ person.id) }}{% if person.primary_email %} — {{ person.primary_email }}{% endif %}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit">Match Existing Client</button>
-            </form>
-            <form method="post" action="/microsoft365/documents-review/{{ document.id }}/ignore">
-                <button type="submit" style="background:#b91c1c;">Ignore</button>
-            </form>
-            {% if document.web_url %}<a href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in Microsoft 365</a>{% endif %}
-        </div>
-    </article>
-    {% else %}
-    <div class="card">No unmatched Microsoft documents are waiting for review.</div>
-    {% endfor %}
-</main>
-</body>
-</html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Microsoft Documents Review | Client360{% endblock %}
+{% block crumb %}Documents Review{% endblock %}
+{% block content %}
+{{ ui.page_head("Microsoft documents review", eyebrow="Microsoft 365", desc=(documents|length ~ " unmatched document" ~ ("" if documents|length == 1 else "s"))) }}
+<div class="stack">
+{% for document in documents %}
+  <div class="card">
+    <h3 style="margin:0 0 4px; font-size:16px">{{ document.name }}</h3>
+    <div class="subtle">{{ document.parent_path or "Root folder" }}</div>
+    <div class="subtle" style="margin-top:4px">{{ document.mime_type or "Unknown type" }} · {{ document.size_bytes }} bytes · {{ document.modified_at_microsoft or "Date unavailable" }}</div>
+    <div class="row" style="margin-top:14px; gap:10px">
+      <form class="row" style="gap:8px" method="post" onsubmit="this.action='/microsoft365/documents-review/{{ document.id }}/match/'+this.person_id.value;return Boolean(this.person_id.value);">
+        <select class="input" name="person_id" required style="height:32px">
+          <option value="">Select client...</option>
+          {% for person in people %}<option value="{{ person.id }}">{{ person.full_name or ("Person " ~ person.id) }}{% if person.primary_email %} — {{ person.primary_email }}{% endif %}</option>{% endfor %}
+        </select>
+        <button class="btn sm" type="submit">Match existing client</button>
+      </form>
+      <form method="post" action="/microsoft365/documents-review/{{ document.id }}/ignore"><button class="btn danger sm" type="submit">Ignore</button></form>
+      {% if document.web_url %}<a class="btn ghost sm" href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in Microsoft 365</a>{% endif %}
+    </div>
+  </div>
+{% else %}
+  {% call ui.empty("Documents clear", "No unmatched Microsoft documents are waiting for review.") %}{% endcall %}
+{% endfor %}
+</div>
+{% endblock %}

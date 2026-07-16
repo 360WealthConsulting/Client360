@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Match Review | Client360{% endblock %}
+{% block crumb %}Match Review{% endblock %}
+{% block content %}
+{{ ui.page_head("Match review", eyebrow="Overview", desc="Potential duplicate records requiring manual review.") }}
+<div class="filterbar">
+  {% set labels = {'all':'All','pending':'Pending','approved':'Approved','rejected':'Not a Duplicate','skipped':'Skipped'} %}
+  {% for s in ['all','pending','approved','rejected','skipped'] %}
+  <a class="chip {{ 'active' if status == s else '' }}" href="/matches?status={{ s }}">{{ labels[s] }}</a>
+  {% endfor %}
+</div>
+<div class="stat-grid" style="margin-bottom:16px">
+  {{ ui.stat("Total groups", "{:,}".format(summary.total)) }}
+  {{ ui.stat("Approved", "{:,}".format(summary.approved)) }}
+  {{ ui.stat("Not duplicates", "{:,}".format(summary.rejected)) }}
+  {{ ui.stat("Skipped", "{:,}".format(summary.skipped)) }}
+  {{ ui.stat("Remaining", "{:,}".format(summary.remaining)) }}
+  {{ ui.stat("Progress", "{:.1f}%".format(summary.completion_percent)) }}
+</div>
+<div class="alert info" style="margin-bottom:16px"><span class="ico">ℹ</span><div>Review decisions are saved. Client records are not merged or changed by this page.</div></div>
+{% if groups %}
+<div class="stack">
+{% for g in groups %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <a class="rowlink" href="/matches/{{ g.group_number }}">Review group {{ g.group_number }}</a>
+      {% set kind = {'approved':'good','rejected':'crit','skipped':'','pending':'warn'}[g.decision] %}
+      {{ ui.badge(g.status_label, kind) }}
+    </div>
+    <div class="subtle" style="margin-top:8px"><b>Names:</b> {{ g.names or '—' }}</div>
+    <div class="subtle"><b>Sources:</b> {{ g.sources or '—' }}</div>
+    <div class="subtle"><b>Email:</b> {{ g.email or '—' }}</div>
+    <div class="subtle"><b>Phone:</b> {{ g.phone or '—' }}</div>
+    <div class="subtle"><b>Reason for review:</b> {{ g.review_reason or '—' }}</div>
+    <div class="subtle" style="margin-top:4px"><b>Source records:</b>
+      {% for rid in g.record_ids %}<a class="rowlink" href="/source/{{ rid }}">Record {{ rid }}</a>{% if not loop.last %} · {% endif %}{% else %}—{% endfor %}
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% else %}
+{% call ui.empty("No matching groups", "No review groups match this filter.") %}{% endcall %}
+{% endif %}
+{% endblock %}

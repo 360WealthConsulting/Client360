@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}People | Client360{% endblock %}
+{% block crumb %}People{% endblock %}
+{% block content %}
+{{ ui.page_head("Canonical people", eyebrow="Clients", desc=("{:,}".format(count) ~ " unified client records")) }}
+{% if rows %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Location</th><th class="num">Sources</th><th class="num">Accounts</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td><a class="rowlink" href="/people/{{ row.id }}">{{ row.full_name or ("Person " ~ row.id) }}</a></td>
+        <td>{{ row.primary_email or "" }}</td>
+        <td>{{ row.primary_phone or "" }}</td>
+        <td>{{ [row.city, row.state]|select|join(", ") }}</td>
+        <td class="num">{{ row.source_count }}</td>
+        <td class="num">{{ row.account_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{% call ui.empty("No people", "No canonical people found.") %}{% endcall %}
+{% endif %}
+{% endblock %}

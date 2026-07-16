@@ -1,9 +1,8 @@
-from html import escape
-
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
+
+from app.templating import render_error
 
 from app.db import (
     accounts,
@@ -35,8 +34,8 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
-@router.get("/people", response_class=HTMLResponse)
-def people_directory():
+@router.get("/people")
+def people_directory(request: Request):
     source_count = func.count(
         func.distinct(person_source_links.c.source_contact_id)
     ).label("source_count")
@@ -85,130 +84,14 @@ def people_directory():
     with engine.connect() as connection:
         rows = connection.execute(statement).mappings().all()
 
-    table_rows = ""
-
-    for row in rows:
-        name = row["full_name"] or f"Person {row['id']}"
-        location = ", ".join(
-            value
-            for value in [row["city"], row["state"]]
-            if value
-        )
-
-        table_rows += f"""
-            <tr>
-                <td>
-                    <a href="/people/{row['id']}">
-                        {escape(name)}
-                    </a>
-                </td>
-                <td>{escape(row["primary_email"] or "")}</td>
-                <td>{escape(row["primary_phone"] or "")}</td>
-                <td>{escape(location)}</td>
-                <td>{row["source_count"]}</td>
-                <td>{row["account_count"]}</td>
-            </tr>
-        """
-
-    if not table_rows:
-        table_rows = """
-            <tr>
-                <td colspan="6">No canonical people found.</td>
-            </tr>
-        """
-
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Client360 People</title>
-        <style>
-            body {{
-                margin: 0;
-                font-family: Arial, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }}
-
-            header {{
-                background: #111827;
-                color: white;
-                padding: 28px 40px;
-            }}
-
-            main {{
-                padding: 32px 40px;
-            }}
-
-            a {{
-                color: #2563eb;
-                text-decoration: none;
-                font-weight: bold;
-            }}
-
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                background: white;
-                border-radius: 10px;
-                overflow: hidden;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            }}
-
-            th, td {{
-                text-align: left;
-                padding: 14px 16px;
-                border-bottom: 1px solid #e5e7eb;
-            }}
-
-            th {{
-                background: #f9fafb;
-            }}
-
-            tr:last-child td {{
-                border-bottom: none;
-            }}
-
-            .top-link {{
-                display: inline-block;
-                margin-bottom: 20px;
-            }}
-        </style>
-    </head>
-
-    <body>
-        <header>
-            <h1>Canonical People</h1>
-            <p>{len(rows)} unified client records</p>
-        </header>
-
-        <main>
-            <a class="top-link" href="/">← Back to dashboard</a>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Phone</th>
-                        <th>Location</th>
-                        <th>Sources</th>
-                        <th>Accounts</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {table_rows}
-                </tbody>
-            </table>
-        </main>
-    </body>
-    </html>
-    """
+    return templates.TemplateResponse(
+        request=request,
+        name="people/directory.html",
+        context={"rows": [dict(r) for r in rows], "count": len(rows)},
+    )
 
 
-@router.get("/people/{person_id}", response_class=HTMLResponse)
+@router.get("/people/{person_id}")
 def person_profile(
     request: Request,
     person_id: int,
@@ -297,10 +180,7 @@ def person_profile(
         ).mappings().one_or_none()
 
         if person is None:
-            return HTMLResponse(
-                "<h1>Person not found</h1>",
-                status_code=404,
-            )
+            return render_error(request, 404, detail="Person not found.")
 
         household = None
 

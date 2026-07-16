@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} | Client360{% endblock %}
+{% block crumb %}Microsoft 365{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Microsoft 365</p><h1>{{ title }}</h1></div></div>
+<div class="alert warn" style="max-width:640px"><span class="ico">⚠</span><div>
+  <p>{{ details }}</p>
+  <p style="margin-top:10px"><a class="rowlink" href="/microsoft365/status">Return to Microsoft 365 status</a></p>
+</div></div>
+{% endblock %}

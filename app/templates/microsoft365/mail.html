@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Outlook Mail | Client360{% endblock %}
+{% block crumb %}Outlook Mail{% endblock %}
+{% block content %}
+{{ ui.page_head("Outlook mail", eyebrow="Microsoft 365", desc=("Latest messages for " ~ (account_email or ""))) }}
+<div class="stack">
+{% for m in messages %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <span class="badge {{ 'good' if m.is_read else 'info' }}">{{ 'Read' if m.is_read else 'Unread' }}{% if m.has_attachments %} · attachments{% endif %}</span>
+      <span class="id-mono">{{ m.received }}</span>
+    </div>
+    <h3 style="margin:10px 0 4px; font-size:16px"><a class="rowlink" href="{{ m.web_link }}" target="_blank" rel="noopener noreferrer">{{ m.subject }}</a></h3>
+    <div class="subtle"><b>{{ m.sender_name }}</b> &lt;{{ m.sender_address }}&gt;</div>
+    {% if m.preview %}<div class="subtle" style="margin-top:6px">{{ m.preview }}</div>{% endif %}
+  </div>
+{% else %}
+  {% call ui.empty("No messages", "No Outlook messages were returned.") %}{% endcall %}
+{% endfor %}
+</div>
+{% endblock %}

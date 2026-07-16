@@ -1,183 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-    <title>Client360 Advisor Dashboard</title>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Firm Dashboard | Client360{% endblock %}
+{% block crumb %}Firm dashboard{% endblock %}
+{% block content %}
+{{ ui.page_head("Firm dashboard", eyebrow="Overview", desc="360 Wealth Consulting operating overview.") }}
 
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f3f4f6;
-            color: #1f2937;
-        }
+{% include "partials/exception_summary.html" %}
 
-        header {
-            background: #111827;
-            color: white;
-            padding: 28px 40px;
-        }
+<h2 class="section-title">Book of business</h2>
+<div class="stat-grid">
+  {{ ui.stat("Firm AUM", "${:,.0f}".format(dashboard.firm_aum or 0)) }}
+  {{ ui.stat("Cash waiting to invest", "${:,.0f}".format(dashboard.cash_waiting or 0)) }}
+  {{ ui.stat("Largest household", dashboard.largest_household.name if dashboard.largest_household else "—") }}
+  {{ ui.stat("Largest position", dashboard.largest_position.symbol if dashboard.largest_position else "—") }}
+  {{ ui.stat("Missing beneficiaries", dashboard.missing_beneficiaries, delta="needs review" if dashboard.missing_beneficiaries else "clear", trend="down" if dashboard.missing_beneficiaries else "up") }}
+  {{ ui.stat("Accounts without reviews", dashboard.accounts_without_reviews, delta="follow up" if dashboard.accounts_without_reviews else "clear", trend="down" if dashboard.accounts_without_reviews else "up") }}
+</div>
 
-        main {
-            padding: 32px 40px;
-        }
+<h2 class="section-title">Records</h2>
+<div class="stat-grid">
+  {{ ui.stat("Canonical people", dashboard.people or 0) }}
+  {{ ui.stat("Households", dashboard.households or 0) }}
+  {{ ui.stat("Accounts", dashboard.accounts or 0) }}
+  {{ ui.stat("Open tasks", dashboard.open_tasks or 0) }}
+  {{ ui.stat("Total account value", "${:,.2f}".format(dashboard.total_aum or 0)) }}
+</div>
 
-        a {
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .navigation {
-            display: flex;
-            gap: 18px;
-            flex-wrap: wrap;
-            margin-bottom: 28px;
-        }
-
-        .cards {
-            display: grid;
-            grid-template-columns: repeat(
-                auto-fit,
-                minmax(210px, 1fr)
-            );
-            gap: 20px;
-            margin-bottom: 34px;
-        }
-
-        .card {
-            background: white;
-            padding: 22px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        }
-
-        .label {
-            color: #6b7280;
-            font-size: 14px;
-            margin-bottom: 8px;
-        }
-
-        .value {
-            font-size: 30px;
-            font-weight: bold;
-        }
-
-        .activity {
-            background: white;
-            padding: 18px;
-            margin-bottom: 14px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-        }
-
-        .meta {
-            color: #6b7280;
-            font-size: 14px;
-        }
-    </style>
-</head>
-
-<body>
-    <header>
-        <h1>Client360 Advisor Dashboard</h1>
-        <p>360 Wealth Consulting operating overview</p>
-    </header>
-
-    <main>
-        {% include "partials/exception_summary.html" %}
-        <div class="navigation">
-            <a href="/people">People</a>
-            <a href="/households">Households</a>
-            <a href="/tasks">Tasks</a>
-            <a href="/activities">Activities</a>
-            <a href="/matches">Match Review</a>
-            <a href="/search">Search</a>
-            <a href="/microsoft365/inbox-review">Inbox Review</a>
-            <a href="/microsoft365/calendar-review">Calendar Review</a>
-            <a href="/microsoft365/documents-review">Microsoft Documents Review</a>
-            <a href="/relationships/search">Relationship Search</a>
-            <a href="/portfolio">Portfolio Search</a>
-            <a href="/work">My Work</a>
-            <a href="/work/team">Team Work</a>
-        </div>
-        <div class="cards">
-            <div class="card"><div class="label">Firm AUM</div><div class="value">${{ "{:,.0f}".format(dashboard.firm_aum or 0) }}</div></div>
-            <div class="card"><div class="label">Cash Waiting to Invest</div><div class="value">${{ "{:,.0f}".format(dashboard.cash_waiting or 0) }}</div></div>
-            <div class="card"><div class="label">Largest Household</div><div class="value">{{ dashboard.largest_household.name if dashboard.largest_household else "—" }}</div></div>
-            <div class="card"><div class="label">Largest Position</div><div class="value">{{ dashboard.largest_position.symbol if dashboard.largest_position else "—" }}</div></div>
-            <div class="card"><div class="label">Missing Beneficiaries</div><div class="value">{{ dashboard.missing_beneficiaries }}</div></div>
-            <div class="card"><div class="label">Accounts Without Reviews</div><div class="value">{{ dashboard.accounts_without_reviews }}</div></div>
-        </div>
-
-        <div class="cards">
-            <div class="card">
-                <div class="label">Canonical People</div>
-                <div class="value">
-                    {{ dashboard.people or 0 }}
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="label">Households</div>
-                <div class="value">
-                    {{ dashboard.households or 0 }}
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="label">Accounts</div>
-                <div class="value">
-                    {{ dashboard.accounts or 0 }}
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="label">Open Tasks</div>
-                <div class="value">
-                    {{ dashboard.open_tasks or 0 }}
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="label">Total Account Value</div>
-                <div class="value">
-                    ${{ "{:,.2f}".format(dashboard.total_aum or 0) }}
-                </div>
-            </div>
-        </div>
-
-        <h2>Recent Activity</h2>
-
-        {% for activity in dashboard.recent_activities %}
-        <div class="activity">
-            <h3>
-                <a href="/people/{{ activity.person_id }}">
-                    {{ activity.title }}
-                </a>
-            </h3>
-
-            <p class="meta">
-                {{ activity.activity_type.replace("_", " ").title() }}
-                |
-                {{ activity.occurred_at }}
-                |
-                {{ activity.created_by or "Unknown user" }}
-            </p>
-
-            {% if activity.details %}
-            <p>{{ activity.details }}</p>
-            {% endif %}
-        </div>
-        {% else %}
-        <div class="activity">
-            <p>No recent activities found.</p>
-        </div>
-        {% endfor %}
-    </main>
-</body>
-</html>
+<h2 class="section-title">Recent activity</h2>
+<div class="card">
+  <div class="stack">
+    {% for activity in dashboard.recent_activities %}
+    <div class="row" style="justify-content:space-between; align-items:flex-start; gap:14px; {% if not loop.last %}border-bottom:1px solid var(--border); padding-bottom:12px;{% endif %}">
+      <div>
+        <a class="rowlink" href="/people/{{ activity.person_id }}">{{ activity.title }}</a>
+        <div class="subtle">{{ activity.activity_type.replace("_", " ").title() }} · {{ activity.created_by or "Unknown user" }}</div>
+        {% if activity.details %}<div class="subtle" style="margin-top:2px">{{ activity.details }}</div>{% endif %}
+      </div>
+      <span class="id-mono">{{ activity.occurred_at }}</span>
+    </div>
+    {% else %}
+    {% call ui.empty("No recent activity", "Client activity across the firm will appear here.") %}{% endcall %}
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

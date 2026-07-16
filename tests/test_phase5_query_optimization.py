@@ -118,13 +118,17 @@ def test_narrow_portal_functions_match_dashboard_and_are_cheaper():
 # --- WP5.4 search_portfolios bulk concentration ------------------------------
 
 def _seed_portfolio():
+    # `securities.symbol` is UNIQUE (uq_security_symbol) and this suite runs against a
+    # long-lived database that is never truncated, so seeded symbols accumulate across
+    # runs. A 4-hex symbol only spans 65,536 values; at ~8 inserts per run the birthday
+    # odds of an IntegrityError climb with every run. Use the full suffix.
     suffix = uuid.uuid4().hex[:8]
     with engine.begin() as c:
         hid = c.execute(households.insert().values(name=f"PF {suffix}").returning(households.c.id)).scalar_one()
         pid = c.execute(people.insert().values(household_id=hid, full_name=f"Investor {suffix}", active=True).returning(people.c.id)).scalar_one()
         acct = c.execute(accounts.insert().values(custodian="Schwab", person_id=pid, household_id=hid, registration_type="Individual", total_value=100000, cash_value=10000).returning(accounts.c.id)).scalar_one()
-        sec1 = c.execute(securities.insert().values(name="Alpha", symbol=f"AL{suffix[:4]}", asset_class="Equity").returning(securities.c.id)).scalar_one()
-        sec2 = c.execute(securities.insert().values(name="Beta", symbol=f"BT{suffix[:4]}", asset_class="Bond").returning(securities.c.id)).scalar_one()
+        sec1 = c.execute(securities.insert().values(name="Alpha", symbol=f"AL{suffix}", asset_class="Equity").returning(securities.c.id)).scalar_one()
+        sec2 = c.execute(securities.insert().values(name="Beta", symbol=f"BT{suffix}", asset_class="Bond").returning(securities.c.id)).scalar_one()
         c.execute(account_holdings.insert().values(account_id=acct, security_id=sec1, as_of_date=date.today(), market_value=70000))
         c.execute(account_holdings.insert().values(account_id=acct, security_id=sec2, as_of_date=date.today(), market_value=30000))
     return pid

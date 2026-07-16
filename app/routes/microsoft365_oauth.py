@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
-from html import escape
 from typing import Any, Dict
 
 import msal
 import requests
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -16,36 +16,18 @@ from app.services.microsoft_identity import (
 )
 
 router = APIRouter(prefix="/microsoft365")
+templates = Jinja2Templates(directory="app/templates")
 
 # Least-privilege, read-only scopes (H10). MSAL adds offline_access automatically
 # so a refresh token is issued into the token cache.
 DELEGATED_SCOPES = GRAPH_READ_SCOPES
 
 
-def error_page(
-    title: str,
-    details: str,
-    status_code: int = 400,
-) -> HTMLResponse:
-    return HTMLResponse(
-        f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <title>{escape(title)}</title>
-        </head>
-        <body style="font-family: Arial; margin: 40px;">
-            <h1>{escape(title)}</h1>
-            <p>{escape(details)}</p>
-            <p>
-                <a href="/microsoft365/status">
-                    Return to Microsoft 365 status
-                </a>
-            </p>
-        </body>
-        </html>
-        """,
+def error_page(request, title, details, status_code=400):
+    return templates.TemplateResponse(
+        request=request,
+        name="microsoft365/oauth_message.html",
+        context={"title": title, "details": details},
         status_code=status_code,
     )
 
@@ -62,6 +44,7 @@ def connect_microsoft365(request: Request):
 
     if "auth_uri" not in flow:
         return error_page(
+            request,
             "Unable to start Microsoft sign-in",
             str(flow),
             status_code=500,
@@ -81,6 +64,7 @@ def microsoft365_callback(request: Request):
 
     if not flow:
         return error_page(
+            request,
             "Microsoft sign-in session expired",
             "Return to the status page and start the connection again.",
         )
@@ -97,6 +81,7 @@ def microsoft365_callback(request: Request):
         )
     except ValueError:
         return error_page(
+            request,
             "Microsoft sign-in validation failed",
             "The authorization response could not be validated.",
         )
@@ -107,6 +92,7 @@ def microsoft365_callback(request: Request):
 
     if not access_token:
         return error_page(
+            request,
             "Microsoft authentication failed",
             result.get(
                 "error_description",
@@ -131,6 +117,7 @@ def microsoft365_callback(request: Request):
 
     if not graph_response.ok:
         return error_page(
+            request,
             "Microsoft Graph profile request failed",
             graph_response.text,
             status_code=graph_response.status_code,
@@ -157,6 +144,7 @@ def microsoft365_callback(request: Request):
 
     if not user_id or not email:
         return error_page(
+            request,
             "Microsoft profile is incomplete",
             "Microsoft did not return a user ID and email address.",
         )
@@ -212,7 +200,7 @@ def microsoft365_callback(request: Request):
     )
 
 
-@router.get("/profile", response_class=HTMLResponse)
+@router.get("/profile")
 def microsoft365_profile(request: Request):
     session_user = request.session.get("microsoft_user")
 
@@ -241,44 +229,11 @@ def microsoft365_profile(request: Request):
             status_code=303,
         )
 
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Microsoft 365 Profile - Client360</title>
-    </head>
-    <body style="font-family: Arial; margin: 40px;">
-        <h1>Microsoft 365 authentication succeeded</h1>
-
-        <p><strong>Name:</strong>
-            {escape(account["display_name"] or "")}
-        </p>
-
-        <p><strong>Email:</strong>
-            {escape(account["email"] or "")}
-        </p>
-
-        <p><strong>Microsoft User ID:</strong>
-            {escape(account["user_id"] or "")}
-        </p>
-
-        <p><strong>Tenant ID:</strong>
-            {escape(account["tenant_id"] or "")}
-        </p>
-
-        <p><strong>Token Expires:</strong>
-            {escape(str(account["expires_at"] or ""))}
-        </p>
-
-        <form method="post" action="/microsoft365/disconnect">
-            <button type="submit">
-                Disconnect Microsoft 365
-            </button>
-        </form>
-    </body>
-    </html>
-    """
+    return templates.TemplateResponse(
+        request=request,
+        name="microsoft365/profile.html",
+        context={"account": dict(account)},
+    )
 
 
 @router.post("/disconnect")

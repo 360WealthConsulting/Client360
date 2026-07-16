@@ -1,43 +1,73 @@
-
 name: Client360 CI
 
 on:
-	push:
-		branches:
-			- main
-			- feature/**
-			- release/**
-	pull_request:
-		branches:
-			- main
+  push:
+    branches:
+      - main
+      - feature/**
+      - release/**
+  pull_request:
+    branches:
+      - main
 
 jobs:
-	build:
-		runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
 
-		steps:
-			- name: Checkout repository
-				uses: actions/checkout@v4
+    # The suite talks to a real database (app/db.py reflects the schema at
+    # import time), so CI provisions a disposable Postgres rather than mocking.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: client360_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-			- name: Set up Python
-				uses: actions/setup-python@v5
-				with:
-					python-version: "3.11"
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/client360_ci
 
-			- name: Install dependencies
-				run: |
-					python -m pip install --upgrade pip
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-					if [ -f requirements.txt ]; then
-						pip install -r requirements.txt
-					fi
+      # 3.9 is what the project actually runs on (.venv is 3.9.6) and what
+      # requirements.txt was pinned against: typer needs click>=8.2.1 on
+      # Python >=3.10, which the pinned click==8.1.8 cannot satisfy. This
+      # mismatch was invisible while the workflow failed to parse.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
 
-					pip install pytest
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
 
-			- name: Compile application
-				run: |
-					python -m compileall app
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
 
-			- name: Run tests
-				run: |
-					pytest -q || true
+          pip install pytest
+
+      - name: Compile application
+        run: |
+          python -m compileall app
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      # `python -m pytest` (not bare `pytest`) so the repo root lands on
+      # sys.path and `import app` resolves. The result is deliberately not
+      # suppressed: a failing test must fail the build.
+      - name: Run tests
+        run: |
+          python -m pytest -q

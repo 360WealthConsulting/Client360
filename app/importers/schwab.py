@@ -2,39 +2,64 @@ import csv
 import hashlib
 import os
 import re
+from collections import namedtuple
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.dialects.postgresql import insert
 
-load_dotenv("app/.env")
+FOLDER = Path("01 Raw Imports/Schwab")
 
-database_url = os.getenv("DATABASE_URL")
-if not database_url:
-    raise RuntimeError("DATABASE_URL is missing from app/.env")
+_Database = namedtuple("_Database", "engine accounts source_contacts import_jobs")
 
-engine = create_engine(database_url)
 
-metadata = MetaData()
-metadata.reflect(bind=engine)
+@lru_cache(maxsize=None)
+def _database():
+    """Resolve the engine and tables on first use, never at import.
 
-accounts = metadata.tables["accounts"]
-source_contacts = metadata.tables["source_contacts"]
-import_jobs = metadata.tables["import_jobs"]
+    Reading app/.env, creating the engine and reflecting the schema are all
+    deferred: importing this module must touch neither the filesystem nor the
+    database. Cached, so the cost is paid once per process, exactly as before.
+    """
+    load_dotenv("app/.env")
 
-folder = Path("01 Raw Imports/Schwab")
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is missing from app/.env")
 
-accounts_files = sorted(folder.glob("AccountsList_*.csv"))
-profile_files = sorted(folder.glob("Profile_Firm_*.csv"))
+    engine = create_engine(database_url)
 
-if not accounts_files:
-    raise FileNotFoundError("No Schwab AccountsList CSV found.")
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
 
-if not profile_files:
-    raise FileNotFoundError("No Schwab Profile CSV found.")
+    return _Database(
+        engine,
+        metadata.tables["accounts"],
+        metadata.tables["source_contacts"],
+        metadata.tables["import_jobs"],
+    )
+
+
+def find_input_files(folder=FOLDER):
+    """Locate the Schwab input CSVs, raising if either set is missing.
+
+    Import-time discovery would make merely importing this module depend on a
+    client-data folder that is gitignored and absent from any clean checkout.
+    """
+    accounts_files = sorted(folder.glob("AccountsList_*.csv"))
+    profile_files = sorted(folder.glob("Profile_Firm_*.csv"))
+
+    if not accounts_files:
+        raise FileNotFoundError("No Schwab AccountsList CSV found.")
+
+    if not profile_files:
+        raise FileNotFoundError("No Schwab Profile CSV found.")
+
+    return accounts_files, profile_files
 
 
 def clean(value):
@@ -102,6 +127,8 @@ def file_hash(path):
 
 
 def start_import_job(conn, source_file, source_hash):
+    import_jobs = _database().import_jobs
+
     statement = (
         insert(import_jobs)
         .values(
@@ -124,6 +151,8 @@ def finish_import_job(
     rows_updated,
     rows_skipped,
 ):
+    import_jobs = _database().import_jobs
+
     conn.execute(
         import_jobs.update()
         .where(import_jobs.c.id == job_id)
@@ -139,6 +168,8 @@ def finish_import_job(
 
 
 def fail_import_job(conn, job_id, error_message):
+    import_jobs = _database().import_jobs
+
     conn.execute(
         import_jobs.update()
         .where(import_jobs.c.id == job_id)
@@ -151,12 +182,15 @@ def fail_import_job(conn, job_id, error_message):
 
 
 def import_accounts_file(path):
+    database = _database()
+    accounts = database.accounts
+
     rows_read = 0
     rows_inserted = 0
     rows_updated = 0
     rows_skipped = 0
 
-    with engine.begin() as conn:
+    with database.engine.begin() as conn:
         job_id = start_import_job(conn, path.name, file_hash(path))
 
         try:
@@ -235,12 +269,15 @@ def import_accounts_file(path):
 
 
 def import_profile_file(path):
+    database = _database()
+    source_contacts = database.source_contacts
+
     rows_read = 0
     rows_inserted = 0
     rows_updated = 0
     rows_skipped = 0
 
-    with engine.begin() as conn:
+    with database.engine.begin() as conn:
         job_id = start_import_job(conn, path.name, file_hash(path))
 
         try:
@@ -358,11 +395,19 @@ def import_profile_file(path):
     print("Taxpayer IDs were excluded.")
 
 
-for accounts_path in accounts_files:
-    import_accounts_file(accounts_path)
+def main(folder=FOLDER):
+    """Run the full Schwab import. Invoked explicitly, never on import."""
+    accounts_files, profile_files = find_input_files(folder)
 
-for profile_path in profile_files:
-    import_profile_file(profile_path)
+    for accounts_path in accounts_files:
+        import_accounts_file(accounts_path)
 
-print()
-print("Schwab import complete.")
+    for profile_path in profile_files:
+        import_profile_file(profile_path)
+
+    print()
+    print("Schwab import complete.")
+
+
+if __name__ == "__main__":
+    main()

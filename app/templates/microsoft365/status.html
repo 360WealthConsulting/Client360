@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Microsoft 365 Status | Client360{% endblock %}
+{% block crumb %}Microsoft 365{% endblock %}
+{% block content %}
+{{ ui.page_head("Microsoft 365 integration", eyebrow="Microsoft 365", desc="Client360 connector status.") }}
+<div class="card" style="max-width:900px">
+  <div class="alert {{ 'good' if configured else 'warn' }}" style="margin-bottom:16px"><span class="ico">{{ '✓' if configured else '⚠' }}</span><div><b>{{ status_label }}</b><p style="margin-top:4px">{{ message }}</p></div></div>
+  <div class="stack">
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Tenant ID</span><span class="id-mono">{{ tenant_id }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Client ID</span><span class="id-mono">{{ client_id }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Redirect URI</span><span class="id-mono">{{ redirect_uri }}</span></div>
+  </div>
+  <p class="subtle" style="margin-top:12px">Client secrets are never displayed on this page.</p>
+</div>
+<div class="card" style="max-width:900px; margin-top:16px">
+  <h3>Sync health</h3>
+  {% if sync %}
+  <div class="stack">
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Connected account</span><span>{{ sync.email or '—' }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Token status</span><span>{{ sync.connected }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Last sync</span><span>{{ sync.last_sync_at }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Last sync status</span><span>{{ sync.last_sync_status }}</span></div>
+    <div class="row" style="justify-content:space-between; gap:12px"><span class="subtle">Last sync error</span><span>{{ sync.last_sync_error }}</span></div>
+  </div>
+  {% else %}
+  <p class="subtle">No Microsoft 365 account is connected.</p>
+  {% endif %}
+</div>
+{% endblock %}

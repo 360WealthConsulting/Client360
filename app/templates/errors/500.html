@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Something went wrong | Client360</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="c360">
+  <div class="err-wrap">
+    <div class="err-card crit">
+      <div class="brand"><span class="mark">C3</span><b>Client360</b></div>
+      <div class="code">500 · SERVER ERROR</div>
+      <h1>Something went wrong on our end</h1>
+      <p>The team has been notified. Try again in a moment — if it keeps happening, share the reference below with support.</p>
+      <a class="btn secondary" href="/">Back to Dashboard</a>
+      {% if request_id %}<div class="rid">Reference: {{ request_id }}</div>{% endif %}
+    </div>
+  </div>
+</body>
+</html>

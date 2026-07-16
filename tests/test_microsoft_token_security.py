@@ -121,9 +121,10 @@ def test_record_sync_health_persists():
 
 def test_status_page_shows_sync_health(monkeypatch):
     from app.routes.microsoft365 import microsoft365_status
+    from starlette.requests import Request
     account = _account_row()
     import app.services.microsoft_identity as mi
     mi.record_sync_health(account["id"], "ok")
-    html = microsoft365_status()
-    html = html if isinstance(html, str) else html.body.decode()
+    req = Request({"type": "http", "method": "GET", "path": "/microsoft365/status", "headers": [], "query_string": b""})
+    html = microsoft365_status(req).body.decode()
     assert "Sync health" in html and "Last sync status" in html

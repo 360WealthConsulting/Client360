@@ -1,87 +1,27 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-    <title>{{ person.full_name or ("Person " ~ person.id) }} - Client360</title>
+{% extends "base.html" %}
+{% block title %}{{ person.full_name or ("Person " ~ person.id) }} | Client360{% endblock %}
+{% block crumb %}{{ person.full_name or ("Person " ~ person.id) }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <p class="eyebrow">Client</p>
+  <h1>{{ person.full_name or ("Person " ~ person.id) }}</h1>
+  <p class="desc">Canonical person record #{{ person.id }} · {{ "Active" if person.active else "Inactive" }}</p>
+</div></div>
 
-    <link rel="stylesheet" href="/static/css/main.css">
-    <link rel="stylesheet" href="/static/css/workspace.css">
-</head>
+<nav class="tabs">
+  <a class="tab {{ 'active' if active_tab == 'overview' else '' }}" href="/people/{{ person.id }}?tab=overview">Overview</a>
+  <a class="tab {{ 'active' if active_tab == 'timeline' else '' }}" href="/people/{{ person.id }}?tab=timeline">Timeline</a>
+  <a class="tab {{ 'active' if active_tab == 'tasks' else '' }}" href="/people/{{ person.id }}?tab=tasks">Tasks</a>
+  <a class="tab {{ 'active' if active_tab == 'documents' else '' }}" href="/people/{{ person.id }}?tab=documents">Documents</a>
+  <a class="tab {{ 'active' if active_tab == 'notes' else '' }}" href="/people/{{ person.id }}?tab=notes">Notes</a>
+  <a class="tab {{ 'active' if active_tab == 'activities' else '' }}" href="/people/{{ person.id }}?tab=activities">Activities</a>
+  <a class="tab {{ 'active' if active_tab == 'calendar' else '' }}" href="/people/{{ person.id }}?tab=calendar">Calendar</a>
+  <a class="tab {{ 'active' if active_tab == 'relationships' else '' }}" href="/people/{{ person.id }}?tab=relationships">Relationships</a>
+  <a class="tab {{ 'active' if active_tab == 'portfolio' else '' }}" href="/people/{{ person.id }}?tab=portfolio">Portfolio</a>
+</nav>
 
-<body>
-<header class="workspace-header">
-    <a href="/people" style="color:#d1d5db;">
-        ← People
-    </a>
-
-    <h1>{{ person.full_name or ("Person " ~ person.id) }}</h1>
-
-    <div class="workspace-subtitle">
-        Canonical person record #{{ person.id }}
-        ·
-        {{ "Active" if person.active else "Inactive" }}
-    </div>
-
-    <nav class="workspace-tabs">
-        <a
-            class="{{ 'active' if active_tab == 'overview' else '' }}"
-            href="/people/{{ person.id }}?tab=overview"
-        >
-            Overview
-        </a>
-
-        <a
-            class="{{ 'active' if active_tab == 'timeline' else '' }}"
-            href="/people/{{ person.id }}?tab=timeline"
-        >
-            Timeline
-        </a>
-
-        <a
-            class="{{ 'active' if active_tab == 'tasks' else '' }}"
-            href="/people/{{ person.id }}?tab=tasks"
-        >
-            Tasks
-        </a>
-        <a
-            class="{{ 'active' if active_tab == 'documents' else '' }}"
-            href="/people/{{ person.id }}?tab=documents"
-        >
-            Documents
-        </a>
-        <a
-            class="{{ 'active' if active_tab == 'notes' else '' }}"
-            href="/people/{{ person.id }}?tab=notes"
-        >
-            Notes
-        </a>
-        <a
-            class="{{ 'active' if active_tab == 'activities' else '' }}"
-            href="/people/{{ person.id }}?tab=activities"
-        >
-            Activities
-        </a>
-        <a
-            class="{{ 'active' if active_tab == 'calendar' else '' }}"
-            href="/people/{{ person.id }}?tab=calendar"
-        >
-            Calendar
-        </a>
-        <a
-            class="{{ 'active' if active_tab == 'relationships' else '' }}"
-            href="/people/{{ person.id }}?tab=relationships"
-        >
-            Relationships
-        </a>
-        <a class="{{ 'active' if active_tab == 'portfolio' else '' }}" href="/people/{{ person.id }}?tab=portfolio">Portfolio</a>
-    </nav>
-</header>
-
-<main class="workspace-main">
+<div class="workspace-body">
 
     {% if active_tab == "calendar" %}
 
@@ -648,6 +588,5 @@
 
     {% endif %}
 
-</main>
-</body>
-</html>
+</div>
+{% endblock %}

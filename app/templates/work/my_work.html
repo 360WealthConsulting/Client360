@@ -1,8 +1,78 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Work · Client360</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"></head>
-<body><header class="work-header"><a href="/">← Dashboard</a><h1>My Work</h1><p>{{ principal.display_name }} · prioritized daily operating queue</p></header>
-<main class="work-main">
-<form class="filters" method="get"><label>Priority<input name="priority" value="{{ filters.get('priority','') }}"></label><label>Status<input name="status" value="{{ filters.get('status','') }}"></label><label>Due before<input type="date" name="due_before" value="{{ filters.get('due_before','') }}"></label><button>Filter</button><a href="/work">Clear</a></form>
-<section class="metrics"><article><span>Daily priorities</span><strong>{{ work['items']|length }}</strong></article><article><span>Assigned clients</span><strong>{{ work.assigned_people|length }}</strong></article><article><span>Households</span><strong>{{ work.assigned_households|length }}</strong></article><article><span>Documents to review</span><strong>{{ work.documents_awaiting_review|length }}</strong></article><article><span>Upcoming meetings</span><strong>{{ work.upcoming_meetings|length }}</strong></article><article><span>Approvals</span><strong>{{ work.approvals|length }}</strong></article><article><span>Overdue</span><strong>{{ work.overdue_items|length }}</strong></article><article><span>SLA risks</span><strong>{{ work.sla_risks|length }}</strong></article><article><span>Capacity</span><strong>{{ work.capacity.capacity_score }}%</strong></article></section>
-<div class="work-grid"><section><h2>Daily Agenda</h2>{% for item in work['items'] %}<article class="work-card"><div><span class="badge">{{ item.entity_type.replace('_',' ') }}</span><span class="priority {{ item.priority }}">{{ item.priority }}</span></div><h3>{{ item.title }}</h3><p>{{ item.status.replace('_',' ') }}{% if item.due_date %} · Due {{ item.due_date }}{% endif %}</p><small>Priority score {{ item.priority_score }} · SLA {{ item.sla_risk.level }}</small>{% if principal.can('work.write') %}<details><summary>Assign</summary><form class="assign" method="post" action="/work/assignments/{{ item.entity_type }}/{{ item.entity_id }}"><select name="assignment_role"><option>secondary</option><option>primary</option><option>supervisor</option><option>owner</option></select><input name="user_id" inputmode="numeric" placeholder="User ID"><input name="team_id" inputmode="numeric" placeholder="Team ID"><input name="reason" placeholder="Reason"><button>Assign</button></form></details>{% endif %}</article>{% else %}<div class="empty">No authorized work matches these filters.</div>{% endfor %}</section>
-<aside><h2>Queues</h2>{% for queue in work.queues %}<a class="queue" href="/work/queues/{{ queue.code }}"><span>{{ queue.name }}</span><strong>{{ queue.count }}</strong></a>{% else %}<div class="empty">No active queues.</div>{% endfor %}<h2>Bottlenecks</h2>{% for row in work.bottlenecks %}<div class="queue"><span>{{ row.reason.replace('_',' ') }}</span><strong>{{ row.count }}</strong></div>{% else %}<div class="empty">No bottlenecks detected.</div>{% endfor %}</aside></div>
-</main></body></html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}My Work | Client360{% endblock %}
+{% block crumb %}My Work{% endblock %}
+{% block content %}
+{{ ui.page_head("My Work", eyebrow="Work", desc=(principal.display_name ~ " · prioritized daily operating queue") if principal else "Prioritized daily operating queue") }}
+
+<form class="filterbar" method="get">
+  <input class="input" name="priority" placeholder="Priority" value="{{ filters.get('priority','') }}" style="height:30px; max-width:140px">
+  <input class="input" name="status" placeholder="Status" value="{{ filters.get('status','') }}" style="height:30px; max-width:140px">
+  <input class="input" type="date" name="due_before" value="{{ filters.get('due_before','') }}" style="height:30px">
+  <button class="btn sm" type="submit">Filter</button>
+  <a class="chip" href="/work">Clear</a>
+</form>
+
+<div class="stat-grid">
+  {{ ui.stat("Daily priorities", work['items']|length) }}
+  {{ ui.stat("Assigned clients", work.assigned_people|length) }}
+  {{ ui.stat("Households", work.assigned_households|length) }}
+  {{ ui.stat("Documents to review", work.documents_awaiting_review|length) }}
+  {{ ui.stat("Upcoming meetings", work.upcoming_meetings|length) }}
+  {{ ui.stat("Approvals", work.approvals|length) }}
+  {{ ui.stat("Overdue", work.overdue_items|length) }}
+  {{ ui.stat("SLA risks", work.sla_risks|length) }}
+  {{ ui.stat("Capacity", (work.capacity.capacity_score ~ "%")) }}
+</div>
+
+<div class="cols-2 aside-right" style="margin-top:16px">
+  <section>
+    <h2 class="section-title">Daily agenda</h2>
+    <div class="stack">
+    {% for item in work['items'] %}
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <span class="badge">{{ item.entity_type.replace('_',' ') }}</span>
+          <span class="sev {{ 'critical' if item.priority in ['urgent','high'] else ('medium' if item.priority == 'medium' else 'low') }}">{{ item.priority }}</span>
+        </div>
+        <h3 style="margin:8px 0 4px; font-size:15px">{{ item.title }}</h3>
+        <div class="subtle">{{ item.status.replace('_',' ') }}{% if item.due_date %} · Due {{ item.due_date }}{% endif %}</div>
+        <div class="subtle" style="margin-top:2px">Priority score {{ item.priority_score }} · SLA {{ item.sla_risk.level }}</div>
+        {% if principal and principal.can('work.write') %}
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer; color:var(--accent); font-size:13px; font-weight:620">Assign</summary>
+          <form class="row" style="margin-top:8px" method="post" action="/work/assignments/{{ item.entity_type }}/{{ item.entity_id }}">
+            <select class="input" name="assignment_role" style="height:32px"><option>secondary</option><option>primary</option><option>supervisor</option><option>owner</option></select>
+            <input class="input" name="user_id" inputmode="numeric" placeholder="User ID" style="height:32px; max-width:110px">
+            <input class="input" name="team_id" inputmode="numeric" placeholder="Team ID" style="height:32px; max-width:110px">
+            <input class="input" name="reason" placeholder="Reason" style="height:32px">
+            <button class="btn sm" type="submit">Assign</button>
+          </form>
+        </details>
+        {% endif %}
+      </div>
+    {% else %}
+      {% call ui.empty("No work matches", "No authorized work matches these filters.") %}{% endcall %}
+    {% endfor %}
+    </div>
+  </section>
+  <aside>
+    <h2 class="section-title">Queues</h2>
+    <div class="stack">
+    {% for queue in work.queues %}
+      <a class="card row" style="justify-content:space-between; text-decoration:none; color:var(--text)" href="/work/queues/{{ queue.code }}"><span>{{ queue.name }}</span><span class="badge info">{{ queue.count }}</span></a>
+    {% else %}
+      {% call ui.empty("No active queues") %}{% endcall %}
+    {% endfor %}
+    </div>
+    <h2 class="section-title">Bottlenecks</h2>
+    <div class="stack">
+    {% for row in work.bottlenecks %}
+      <div class="card row" style="justify-content:space-between"><span>{{ row.reason.replace('_',' ') }}</span><span class="badge warn">{{ row.count }}</span></div>
+    {% else %}
+      {% call ui.empty("No bottlenecks detected") %}{% endcall %}
+    {% endfor %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

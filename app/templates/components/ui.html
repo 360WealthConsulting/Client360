@@ -1,0 +1,33 @@
+{# Client360 component macros (Release 0.9.12, Phase 0).
+   Import in a template with:  {% import "components/ui.html" as ui %}
+   Every macro renders design-system markup from docs/UI_DESIGN_SYSTEM.md. #}
+
+{% macro page_head(title, eyebrow=None, desc=None) %}
+<div class="page-head">
+  <div>
+    {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
+    <h1>{{ title }}</h1>
+    {% if desc %}<p class="desc">{{ desc }}</p>{% endif %}
+  </div>
+  {% if caller %}<div class="row">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro stat(label, value, delta=None, trend='flat') %}
+<div class="stat">
+  <div class="k">{{ label }}</div>
+  <div class="v">{{ value }}</div>
+  {% if delta %}<div class="delta {{ trend }}">{{ delta }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro badge(text, kind='') %}<span class="badge {{ kind }}">{% if kind %}<span class="tick"></span>{% endif %}{{ text }}</span>{% endmacro %}
+
+{% macro empty(title, message=None) %}
+<div class="empty">
+  <div class="em-ico">◦</div>
+  <h4>{{ title }}</h4>
+  {% if message %}<p>{{ message }}</p>{% endif %}
+  {% if caller %}{{ caller() }}{% endif %}
+</div>
+{% endmacro %}

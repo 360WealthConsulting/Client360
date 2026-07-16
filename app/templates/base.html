@@ -1,4 +1,101 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}Client360{% endblock %}</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"><link rel="stylesheet" href="/static/css/tax.css"></head><body>
-<header class="work-header"><a href="/">Client360</a>{% if principal %}<p>{{ principal.display_name }}</p>{% endif %}</header>
-{% if principal %}<nav class="filters"><a href="/">Dashboard</a><a href="/work">Work</a><a href="/tax">Tax</a><a href="/tax/intake">Tax Intake</a><a href="/tax/returns">Tax Returns</a><a href="/tax/documents">Tax Documents</a>{% if principal.can('exception.read') %}<a href="/exceptions">Exceptions</a><a href="/exceptions/reporting">Exception Reporting</a>{% endif %}{% if principal.can('organization.read') %}<a href="/organizations">Organizations</a>{% endif %}{% if principal.can('benefits.read') %}<a href="/benefits">Benefits</a><a href="/benefits/reporting">Benefits Reporting</a>{% endif %}</nav>{% endif %}
-<main class="work-main">{% block content %}{% endblock %}</main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}Client360{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/work.css">
+  <link rel="stylesheet" href="/static/css/tax.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+  {% block head %}{% endblock %}
+</head>
+{% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
+{% set path = request.url.path if request else '/' %}
+{# Nav gating mirrors the real route requirements: the middleware RULES capability
+   for each path, plus record.read_all for firm-wide collection screens. An item is
+   shown only if the signed-in user could actually open it (never shown-then-403). #}
+{% set caps = p.capabilities if p else [] %}
+{% set read_all = 'record.read_all' in caps %}
+{% set can_dash = read_all %}
+{% set can_org = 'organization.read' in caps %}
+{% set can_ben = 'benefits.read' in caps %}
+{% set can_exc = 'exception.read' in caps %}
+{% set firm_client = ('client.read' in caps) and read_all %}
+{% set groups = [
+  {"label": "Overview", "items": [
+    {"href": "/", "label": "Dashboard", "match": "/", "ico": "◧", "show": firm_client},
+    {"href": "/activities", "label": "Activity", "match": "/activities", "ico": "◈", "show": firm_client}]},
+  {"label": "Clients", "items": [
+    {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": firm_client},
+    {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": firm_client},
+    {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": firm_client},
+    {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": firm_client}]},
+  {"label": "Work", "items": [
+    {"href": "/work", "label": "My Work", "match": "/work", "ico": "▦", "show": 'work.read' in caps},
+    {"href": "/work/team", "label": "Team Work", "match": "/work/team", "ico": "▦", "show": 'capacity.read' in caps},
+    {"href": "/tasks", "label": "Tasks", "match": "/tasks", "ico": "✓", "show": ('task.read' in caps) and read_all},
+    {"href": "/workflows", "label": "Workflows", "match": "/workflows", "ico": "⇄", "show": 'work.read' in caps}]},
+  {"label": "Tax", "items": [
+    {"href": "/tax", "label": "Tax Center", "match": "/tax", "ico": "◇", "show": 'tax.read' in caps},
+    {"href": "/tax/intake", "label": "Intake", "match": "/tax/intake", "ico": "◇", "show": 'tax.intake.read' in caps},
+    {"href": "/tax/returns", "label": "Returns", "match": "/tax/returns", "ico": "◇", "show": 'tax.read' in caps},
+    {"href": "/tax/documents", "label": "Documents", "match": "/tax/documents", "ico": "◇", "show": 'tax.read' in caps}]},
+  {"label": "Benefits", "items": [
+    {"href": "/organizations", "label": "Organizations", "match": "/organizations", "ico": "⬢", "show": can_org},
+    {"href": "/benefits", "label": "Benefits", "match": "/benefits", "ico": "⊕", "show": can_ben},
+    {"href": "/benefits/reporting", "label": "Reporting", "match": "/benefits/reporting", "ico": "▥", "show": can_ben}]},
+  {"label": "Oversight", "items": [
+    {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
+    {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
+    {"href": "/admin/audit", "label": "Audit", "match": "/admin/audit", "ico": "▦", "show": 'audit.read' in caps},
+    {"href": "/microsoft365/status", "label": "Microsoft 365", "match": "/microsoft365", "ico": "◫", "show": 'communication.read' in caps}]}
+] %}
+<body class="c360">
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <input type="checkbox" id="c360-nav" class="nav-toggle" hidden>
+    <a class="app-brand" href="/"><span class="mark" aria-hidden="true">C3</span><span class="name">Client360</span></a>
+    <nav class="app-nav" aria-label="Primary">
+      {% for g in groups %}
+        {% set visible = g["items"] | selectattr("show") | list %}
+        {% if visible %}
+        <div class="nav-group">
+          <div class="label">{{ g["label"] }}</div>
+          {% for it in visible %}
+            {% set active = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
+            <a class="nav-item{{ ' active' if active else '' }}" href="{{ it['href'] }}"{% if active %} aria-current="page"{% endif %}><span class="ico" aria-hidden="true">{{ it["ico"] }}</span>{{ it["label"] }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <div class="app-main">
+    <header class="app-header">
+      <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" role="button" tabindex="0" aria-controls="c360-nav" aria-expanded="false" aria-label="Toggle navigation">☰</label>
+      <div class="crumbs"><a href="/">Client360</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
+      <form class="app-search" method="get" action="/search" role="search">
+        <span class="mag" aria-hidden="true">⌕</span>
+        <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search people, households, and organizations">
+      </form>
+      <div class="spacer"></div>
+      {% if can_exc %}<a class="icon-btn" href="/exceptions" title="Exceptions" aria-label="Exceptions"><span aria-hidden="true">⚑</span></a>{% endif %}
+      {% if p %}
+      <div class="user-chip" title="{{ p.email }}">
+        <span class="avatar">{% set parts = (p.display_name or '?').split() %}{{ (parts[0][0] ~ (parts[1][0] if parts|length > 1 else '')) | upper }}</span>
+        <span class="who"><b>{{ p.display_name }}</b><span>{{ 'Administrator' if can_dash else 'Staff' }}</span></span>
+      </div>
+      {% endif %}
+    </header>
+    <main class="app-content" id="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="/static/js/app.js" defer></script>
+</body>
+</html>

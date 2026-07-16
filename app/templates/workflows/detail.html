@@ -1,5 +1,32 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ data.workflow.name }} · Client360</title><link rel="stylesheet" href="/static/css/main.css"><link rel="stylesheet" href="/static/css/work.css"></head>
-<body><header class="work-header"><a href="/workflows">← Workflows</a><h1>{{ data.workflow.name }}</h1><p>Status: <strong>{{ data.workflow.status|title }}</strong> · Template version {{ data.workflow.template_version }}</p></header><main class="work-main">
-<h2>Steps</h2><ol>{% for step in data.steps %}<li><strong>{{ step.name }}</strong> — {{ step.status|title }}{% if step.sla_due_at %} · SLA {{ step.sla_due_at }}{% endif %}</li>{% endfor %}</ol>
-<h2>History</h2><ul>{% for event in data.events %}<li>{{ event.occurred_at }} — {{ event.event_type|replace('_', ' ')|title }}</li>{% endfor %}</ul>
-</main></body></html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ data.workflow.name }} | Client360{% endblock %}
+{% block crumb %}{{ data.workflow.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(data.workflow.name, eyebrow="Workflow", desc=("Status: " ~ data.workflow.status|title ~ " · Template version " ~ data.workflow.template_version)) }}
+<div class="cols-2" style="align-items:start">
+  <div class="card">
+    <h3>Steps</h3>
+    <div class="stack">
+    {% for step in data.steps %}
+      <div class="row" style="justify-content:space-between; {% if not loop.last %}border-bottom:1px solid var(--border); padding-bottom:8px;{% endif %}">
+        <span>{{ step.name }}</span>
+        <span class="badge">{{ step.status|title }}{% if step.sla_due_at %} · SLA {{ step.sla_due_at }}{% endif %}</span>
+      </div>
+    {% else %}
+      <p class="subtle">No steps recorded.</p>
+    {% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <h3>History</h3>
+    <div class="stack">
+    {% for event in data.events %}
+      <div class="subtle"><span class="id-mono">{{ event.occurred_at }}</span> — {{ event.event_type|replace('_',' ')|title }}</div>
+    {% else %}
+      <p class="subtle">No history recorded.</p>
+    {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

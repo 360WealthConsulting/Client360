@@ -86,6 +86,24 @@ FIRM_WIDE_COLLECTION = re.compile(
 )
 
 
+def _secure_headers(response, request):
+    """Stamp the standard response headers.
+
+    dispatch() applies these to whatever call_next returns, but denial responses
+    return early and never reach that block. That was harmless while a denial was
+    an inert JSON body; since Release 0.9.12 renders a styled HTML 403 it matters,
+    because an HTML document without `x-frame-options`/`frame-ancestors` is
+    framable. The styled 404 already carries these (it is raised inside the route
+    and passes through call_next) — this keeps the 403 consistent with it.
+    """
+    response.headers["x-request-id"] = request.state.request_id
+    response.headers["x-content-type-options"] = "nosniff"
+    response.headers["referrer-policy"] = "same-origin"
+    response.headers["x-frame-options"] = "DENY"
+    response.headers["content-security-policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    return response
+
+
 def _denied(request, principal, action, entity_type, entity_id, detail):
     write_audit_event(
         action=action,
@@ -96,8 +114,12 @@ def _denied(request, principal, action, entity_type, entity_id, detail):
         request_id=request.state.request_id,
         ip_address=request.client.host if request.client else None,
     )
-    return JSONResponse(
-        {"detail": detail, "request_id": request.state.request_id}, status_code=403
+    if "text/html" in request.headers.get("accept", "") and not request.url.path.startswith("/api"):
+        from app.templating import render_error
+        return _secure_headers(render_error(request, 403, detail=detail), request)
+    return _secure_headers(
+        JSONResponse({"detail": detail, "request_id": request.state.request_id}, status_code=403),
+        request,
     )
 
 

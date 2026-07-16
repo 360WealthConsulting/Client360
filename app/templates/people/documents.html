@@ -1,227 +1,53 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-    <title>Documents for {{ person.full_name }}</title>
-
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f3f4f6;
-            color: #1f2937;
-        }
-
-        header {
-            background: #111827;
-            color: white;
-            padding: 28px 40px;
-        }
-
-        main {
-            max-width: 1050px;
-            padding: 32px 40px;
-        }
-
-        a {
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .card {
-            background: white;
-            padding: 22px;
-            margin-bottom: 18px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        }
-
-        label {
-            display: block;
-            margin-top: 14px;
-            margin-bottom: 6px;
-            font-weight: bold;
-        }
-
-        input,
-        select,
-        textarea {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 11px;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-        }
-
-        textarea {
-            min-height: 90px;
-        }
-
-        button {
-            margin-top: 14px;
-            padding: 11px 18px;
-            border: 0;
-            border-radius: 6px;
-            background: #2563eb;
-            color: white;
-            cursor: pointer;
-        }
-
-        .archive {
-            background: #6b7280;
-        }
-
-        .success {
-            padding: 14px;
-            margin-bottom: 18px;
-            border-left: 4px solid #15803d;
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .meta {
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        .document-actions {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .document-actions form {
-            margin: 0;
-        }
-    </style>
-</head>
-
-<body>
-    <header>
-        <h1>Documents for {{ person.full_name }}</h1>
-        <p>Canonical person record #{{ person.id }}</p>
-    </header>
-
-    <main>
-        <p>
-            <a href="/people/{{ person.id }}">
-                ← Back to profile
-            </a>
-        </p>
-
-        {% if uploaded %}
-        <div class="success">Document uploaded successfully.</div>
-        {% endif %}
-
-        {% if archived %}
-        <div class="success">Document archived.</div>
-        {% endif %}
-
-        <div class="card">
-            <h2>Upload Document</h2>
-
-            <form
-                method="post"
-                enctype="multipart/form-data"
-                action="/people/{{ person.id }}/documents"
-            >
-                <label for="file">File</label>
-                <input id="file" name="file" type="file" required>
-
-                <label for="category">Category</label>
-                <select id="category" name="category">
-                    <option value="tax_return">Tax Return</option>
-                    <option value="investment_statement">Investment Statement</option>
-                    <option value="estate">Estate Planning</option>
-                    <option value="insurance">Insurance</option>
-                    <option value="compliance">Compliance</option>
-                    <option value="agreement">Agreement</option>
-                    <option value="meeting_note">Meeting Note</option>
-                    <option value="other" selected>Other</option>
-                </select>
-
-                <label for="description">Description</label>
-                <textarea
-                    id="description"
-                    name="description"
-                ></textarea>
-
-                <label for="uploaded_by">Uploaded By</label>
-                <input
-                    id="uploaded_by"
-                    name="uploaded_by"
-                    placeholder="Michael, Lauren, Sarah, Jessica"
-                >
-
-                <button type="submit">Upload Document</button>
-            </form>
-        </div>
-
-        <h2>Client Documents</h2>
-
-        {% for document in documents %}
-        <div class="card">
-            <h3>{{ document.original_name }}</h3>
-
-            <p class="meta">
-                {{ document.category or "Other" }}
-                |
-                {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB
-                |
-                {{ document.created_at }}
-                |
-                {{ document.uploaded_by or "Unknown user" }}
-            </p>
-
-            {% if document.description %}
-            <p>{{ document.description }}</p>
-            {% endif %}
-
-            <div class="document-actions">
-                <a href="/documents/{{ document.id }}/download">
-                    Download
-                </a>
-
-                <form
-                    method="post"
-                    action="/people/{{ person.id }}/documents/{{ document.id }}/archive"
-                >
-                    <button class="archive" type="submit">
-                        Archive
-                    </button>
-                </form>
-            </div>
-        </div>
-        {% else %}
-        <div class="card">
-            <p>No documents have been uploaded.</p>
-        </div>
-        {% endfor %}
-
-        <h2>Microsoft 365 Documents</h2>
-
-        {% for document in microsoft_documents %}
-        <div class="card">
-            <h3>{{ document.name }}</h3>
-            <p class="meta">
-                {{ document.mime_type or "Unknown type" }} |
-                {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB |
-                {{ document.modified_at_microsoft or "Date unavailable" }} |
-                {{ document.match_method or "Matched" }}
-            </p>
-            {% if document.parent_path %}<p>{{ document.parent_path }}</p>{% endif %}
-            {% if document.web_url %}
-            <a href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in SharePoint or OneDrive</a>
-            {% endif %}
-        </div>
-        {% else %}
-        <div class="card"><p>No Microsoft-managed documents matched.</p></div>
-        {% endfor %}
-    </main>
-</body>
-</html>
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Documents · {{ person.full_name }} | Client360{% endblock %}
+{% block crumb %}{{ person.full_name }} · Documents{% endblock %}
+{% block content %}
+{% call ui.page_head("Client documents", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
+  <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
+{% endcall %}
+{% if uploaded %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Document uploaded successfully.</div></div>{% endif %}
+{% if archived %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Document archived.</div></div>{% endif %}
+<div class="card" style="max-width:760px; margin-bottom:16px">
+  <h3>Upload document</h3>
+  <form method="post" enctype="multipart/form-data" action="/people/{{ person.id }}/documents">
+    <div class="field"><label for="file">File</label><input class="input" id="file" name="file" type="file" required style="height:auto; padding:9px"></div>
+    <div class="field"><label for="category">Category</label>
+      <select class="input" id="category" name="category">
+        <option value="tax_return">Tax Return</option><option value="investment_statement">Investment Statement</option><option value="estate">Estate Planning</option><option value="insurance">Insurance</option><option value="compliance">Compliance</option><option value="agreement">Agreement</option><option value="meeting_note">Meeting Note</option><option value="other" selected>Other</option>
+      </select></div>
+    <div class="field"><label for="description">Description</label><textarea class="input" id="description" name="description" style="height:auto; min-height:90px; padding:11px"></textarea></div>
+    <div class="field"><label for="uploaded_by">Uploaded by</label><input class="input" id="uploaded_by" name="uploaded_by" placeholder="Michael, Lauren, Sarah, Jessica"></div>
+    <button class="btn" type="submit">Upload document</button>
+  </form>
+</div>
+<h2 class="section-title">Client documents</h2>
+<div class="stack">
+{% for document in documents %}
+  <div class="card">
+    <h3 style="margin:0 0 4px; font-size:15px"><a class="rowlink" href="/documents/{{ document.id }}/download">{{ document.original_name }}</a></h3>
+    <div class="subtle">{{ document.category or "Other" }} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.created_at }} · {{ document.uploaded_by or "Unknown user" }}</div>
+    {% if document.description %}<div style="margin-top:6px">{{ document.description }}</div>{% endif %}
+    <div class="row" style="margin-top:10px; gap:12px">
+      <a class="btn ghost sm" href="/documents/{{ document.id }}/download">Download</a>
+      <form method="post" action="/people/{{ person.id }}/documents/{{ document.id }}/archive"><button class="btn secondary sm" type="submit">Archive</button></form>
+    </div>
+  </div>
+{% else %}
+  {% call ui.empty("No documents", "No documents have been uploaded.") %}{% endcall %}
+{% endfor %}
+</div>
+<h2 class="section-title">Microsoft 365 documents</h2>
+<div class="stack">
+{% for document in microsoft_documents %}
+  <div class="card">
+    <h3 style="margin:0 0 4px; font-size:15px">{{ document.name }}</h3>
+    <div class="subtle">{{ document.mime_type or "Unknown type" }} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.modified_at_microsoft or "Date unavailable" }} · {{ document.match_method or "Matched" }}</div>
+    {% if document.parent_path %}<div class="subtle" style="margin-top:4px">{{ document.parent_path }}</div>{% endif %}
+    {% if document.web_url %}<div style="margin-top:8px"><a class="btn ghost sm" href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in SharePoint or OneDrive</a></div>{% endif %}
+  </div>
+{% else %}
+  {% call ui.empty("No Microsoft documents", "No Microsoft-managed documents matched.") %}{% endcall %}
+{% endfor %}
+</div>
+{% endblock %}
