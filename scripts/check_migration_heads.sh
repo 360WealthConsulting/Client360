@@ -15,16 +15,19 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-heads="$(alembic heads 2>/dev/null | grep -c '(head)' || true)"
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "${REPO_ROOT}/scripts/lib/pyenv.sh"
+
+heads="$("$PYTHON" -m alembic heads 2>/dev/null | grep -c '(head)' || true)"
 
 if [ "$heads" -eq 1 ]; then
   echo "OK: exactly one Alembic head."
-  alembic heads 2>/dev/null | sed 's/^/  /'
+  "$PYTHON" -m alembic heads 2>/dev/null | sed 's/^/  /'
   exit 0
 fi
 
 echo "FAIL: expected exactly one Alembic head, found ${heads}." >&2
-alembic heads 2>/dev/null | sed 's/^/  /' >&2
+"$PYTHON" -m alembic heads 2>/dev/null | sed 's/^/  /' >&2
 echo "Two branches each added a migration. Merge the heads with:" >&2
 echo "  alembic merge -m 'merge heads' <rev1> <rev2>" >&2
 exit 1

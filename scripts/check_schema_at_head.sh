@@ -15,8 +15,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-head="$(alembic heads 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
-current="$(alembic current 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "${REPO_ROOT}/scripts/lib/pyenv.sh"
+
+head="$("$PYTHON" -m alembic heads 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
+current="$("$PYTHON" -m alembic current 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
 
 if [ -z "$head" ]; then
   echo "FAIL: could not determine the Alembic head." >&2

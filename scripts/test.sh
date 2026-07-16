@@ -22,6 +22,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "${REPO_ROOT}/scripts/lib/pyenv.sh"
+
 export CLIENT360_ENVIRONMENT="${CLIENT360_ENVIRONMENT:-development}"
 export TEST_DB_NAME="${TEST_DB_NAME:-client360_test}"
 export DATABASE_URL="${TEST_DATABASE_URL:-postgresql://localhost/${TEST_DB_NAME}}"
@@ -35,7 +38,7 @@ if [ "${CLIENT360_ENVIRONMENT}" = "production" ]; then
 fi
 
 # The guard is the boundary: a raised SuiteSafetyError exits non-zero under `set -e`.
-_python_guard() { python -c "from app.safety import assert_test_database; print(assert_test_database())"; }
+_python_guard() { "$PYTHON" -c "from app.safety import assert_test_database; print(assert_test_database())"; }
 
 _db_exists() { psql -lqt | cut -d '|' -f1 | grep -qw "${TEST_DB_NAME}"; }
 
@@ -44,7 +47,7 @@ _db_exists() { psql -lqt | cut -d '|' -f1 | grep -qw "${TEST_DB_NAME}"; }
 _migrate() {
   echo "Applying migrations to head..."
   local out
-  if ! out="$(alembic upgrade head 2>&1)"; then
+  if ! out="$("$PYTHON" -m alembic upgrade head 2>&1)"; then
     echo "$out" >&2
     return 1
   fi
@@ -87,13 +90,13 @@ case "${1:-}" in
     "$0" reset
     echo "== running the full suite against ${TEST_DB_NAME} =="
     shift || true
-    python -m pytest -q "$@"
+    "$PYTHON" -m pytest -q "$@"
     ;;
 
   fast)
     _python_guard >/dev/null
     shift || true
-    python -m pytest -q "$@"
+    "$PYTHON" -m pytest -q "$@"
     ;;
 
   status)
