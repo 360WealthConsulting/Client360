@@ -316,7 +316,7 @@ gate before "implemented."
 |---|---|---|
 | **0** | Product catalog (carrier profile/family/version) + `insurance_case` + policy/party/producer schema; capabilities/roles; register `insurance` in exception engine (`SUPPORTED_DOMAINS`, CHECK) + work management (`work_items` tuple) | migration reversible, single head; caps/roles seeded; suite green |
 | **1** | Policies core + coverages/riders/parties/values; policy CRUD API + book/detail UI | policy lifecycle CRUD; multi-owner/insured/beneficiary; record-scope |
-| **2** | New business — **case** as container: applications (engagement) + workflow + fact finder + illustrations (docs) + proposed policies + suitability + e-sign | a case coordinates ≥2 proposed policies → an issued policy |
+| **2** | New business — **case** as container: applications (engagement) + workflow + fact finder + illustrations (docs) + proposed policies + suitability + e-sign. **BLOCKED (AD-5): no suitability rules/recommendations/approvals until the compliance reviewer is named, or a non-regulated skeleton is explicitly authorized.** | a case coordinates ≥2 proposed policies → an issued policy; **and** an approved compliance sign-off artifact exists for the suitability rule set |
 | **3** | In-force — servicing, **reviews as first-class** (state machine + metrics), replacements/1035, obligation calendar | review lifecycle drives completion/overdue metrics; 1035 with suitability |
 | **4** | Licensing & CE — records + expiry detectors | expiring-license exception raised |
 | **5** | Commissions — expected/received ledger, splits/overrides, reconciliation, revenue rollup | split-commission producers credit correctly; variance surfaced |
@@ -356,6 +356,11 @@ gate before "implemented."
 
 ## 15. Acceptance criteria
 
+- **Compliance gate (regulated phases 2–4):** an approved, dated compliance sign-off
+  artifact (§17 AD-5) from the named licensed reviewer exists for that phase's rule sets
+  (suitability / replacement-1035 / licensing / CE). No regulated phase passes its RC gate
+  without it. **Phase 2 is BLOCKED until the reviewer is named or a non-regulated skeleton
+  is explicitly authorized.**
 - Policy lifecycle drives applied → in-force via the workflow; record-scope enforced.
 - A **case coordinates ≥2 proposed policies** converging to an issued policy, without
   duplicating engagement functionality.
@@ -565,3 +570,56 @@ that can stall a phase if the owner is unavailable — which is the correct fail
 **Architecture-document impact.** This section is the change — it records the recommended
 process. The remaining input is the firm naming the owner; §13 (dependencies) already flags
 this as a release dependency.
+
+### AD-5 — RESOLUTION (2026-07-16): compliance owner status → **Phase 2 BLOCKED**
+
+**Business owner (recorded).** **Michael Shelton** is the business owner for **workflow and
+operational requirements** — what the process should do, how cases and reviews flow, what
+staff see. His business approval is authoritative for that scope.
+
+**Business approval is NOT regulatory certification.** Neither engineering nor Michael's
+business sign-off constitutes regulatory certification of suitability, replacement/1035,
+licensing, or CE rule sets — **unless** Michael is himself the appropriately licensed
+compliance principal responsible for these rules (see the checklist below). That has not
+been established, so:
+
+**Accountable compliance reviewer: NOT YET NAMED → Phase 2 is BLOCKED** for any regulated
+logic (suitability rules, recommendations, approvals, replacement/1035 disclosure logic,
+CE/licensing rules, or compliance conclusions). Phase 2 does not begin until either (a) the
+reviewer below is named, or (b) the requester explicitly authorizes a **non-regulated
+skeleton phase** containing none of the above.
+
+**Reviewer qualification & authority checklist** (the person named must satisfy all):
+- [ ] **Actively licensed** — resident life & annuity producer license in the firm's
+      operating state(s), in good standing.
+- [ ] **Supervisory authority** — a designated compliance principal / supervisory officer
+      (e.g., the firm's CCO or a licensed supervisor) with authority to approve firm
+      procedures and to **block a release**.
+- [ ] **Securities registration if variable products are in scope** — VUL / variable
+      annuities are securities; a FINRA-registered principal (e.g., Series 26/24 over
+      Series 6/7) must supervise. If v0.10.0 stays non-variable, note the exclusion.
+- [ ] **Annuity suitability competence** — current on the NAIC *Suitability in Annuity
+      Transactions* model reg (and the applicable state adoption / best-interest standard).
+- [ ] **Replacement / 1035 competence** — current on the NAIC *Life Insurance & Annuities
+      Replacement* model reg, state replacement disclosure timing, and IRC §1035 exchange
+      rules.
+- [ ] **CE / licensing competence** — current on state CE and license-line/appointment rules.
+- [ ] **Accountable & independent** — named, dated sign-off; not the same person who authored
+      the rule set, where the firm's structure allows separation.
+
+**Sign-off artifact** (recorded per regulated phase before its RC gate passes; suggested
+`docs/compliance/INSURANCE_SIGNOFF_<phase>.md` or a checked block in the phase's RC doc):
+
+| Field | Content |
+|---|---|
+| Rule-set version | the version/hash of the reviewed rule-set data (e.g. seed migration revision + rule-set id) |
+| Reviewer | name + role + license/registration numbers |
+| Date | ISO date of review |
+| Scope reviewed | which rule sets (suitability / replacement-1035 / licensing / CE) and product lines |
+| Approval status | approved \| approved-with-exceptions \| rejected |
+| Comments / exceptions | required conditions, carve-outs, or follow-ups |
+
+**Compliance gate.** A regulated phase (Phase 2 suitability/new-business, Phase 3
+replacements/1035/reviews, Phase 4 licensing/CE) **cannot pass its RC gate without a
+completed, approved sign-off artifact** from the named reviewer for that phase's rule sets.
+Missing or rejected artifact = phase blocked.
