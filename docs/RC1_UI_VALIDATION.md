@@ -11,7 +11,9 @@ full automated suite.
 **Frontend only** — no business logic, routes, authorization, or record-scope
 changed. The one exception is `app/security/middleware.py`, which now renders a
 **styled HTML 403 for browser navigations** while preserving the JSON 403 for API
-clients; the denial itself (status, audit trail) is unchanged. See criterion 14.
+clients, and stamps the standard security headers onto denials (which previously
+carried none). The denial itself — status, audit trail, no redirect — is unchanged.
+See criterion 14 and §Security headers.
 
 > **Revalidation — 2026-07-15 (RC-1b).** Every criterion below was re-run against the
 > current branch head. Statuses are the results of that run, not the original pass.
@@ -52,15 +54,15 @@ sorting — is now **met and behaviourally verified**.
 | 11 | Permissions | ✅ PASS | advisor `/organizations` → **403 styled** (`403 · NOT AUTHORIZED`); nav mirrors real route capabilities |
 | 12 | Record scope | ✅ PASS | advisor `/people/1` (assigned) = **200**; `/people/2` = **403**; `/people/3` = **403** |
 | 13 | Performance | ✅ PASS | **4–40 ms** server time across 21 pages |
-| 14 | Error pages | ✅ PASS | Browser `Accept: text/html` → styled 403; **same route with `Accept: application/json` → JSON, no HTML**; `/people/99999999` → styled 404. Pinned by `tests/test_error_pages.py` (8 tests) |
+| 14 | Error pages | ✅ PASS | Browser `Accept: text/html` → styled 403; **same route with `Accept: application/json` → JSON, no HTML**; `/people/99999999` → styled 404. Both 403 representations now carry `x-frame-options: DENY`, CSP `frame-ancestors 'none'`, `nosniff`, `referrer-policy` — see §Security headers. Pinned by `tests/test_error_pages.py` (11 tests) |
 | 15 | Empty states | ✅ PASS | `/organizations` renders shared `class="empty"` component |
 | 16 | Mobile (390px) | ◻ **not re-verified** | Requires a browser. RC-1: PASS (sidebar collapses behind ☰) |
 | 17 | Tablet (834px) | ◻ **not re-verified** | Requires a browser. RC-1: PASS |
 | 18 | Desktop (1280px) | ◻ **not re-verified** | Requires a browser. RC-1: PASS |
 | 19 | Browser compatibility | ◐ PASS w/ notes | Chromium/Edge verified at RC-1; **Safari/WebKit & Firefox still untested**. **Changed since RC-1:** the release now ships JavaScript (`app.js`). It is dependency-free and ES5-level (`var`, no arrow functions/optional chaining), using `localeCompare`, `classList`, `dataset`-free attribute access — all long-supported. Progressive enhancement: **tables render and pages work fully with JS disabled** |
 
-**Automated suite:** **521 passed / 5 skipped**, plus **8 new** middleware error-page
-tests (529 / 5 skipped total). See `docs/RC1_UI_VALIDATION.md` §Test & CI hardening.
+**Automated suite:** **532 passed / 5 skipped**, three consecutive clean runs (521
+pre-existing + 11 new middleware error-page tests). See §Test & CI hardening.
 
 ---
 
@@ -90,6 +92,24 @@ browsers get the styled 403, `Accept: application/json` still gets JSON. The sta
 (403), the absence of any redirect, and the denied-access audit write are unchanged and
 are pinned by tests, including a mutation check confirming the HTML test fails without
 the middleware change.
+
+### Security headers on denials (found and fixed this checkpoint)
+`dispatch()` stamps `x-frame-options`, CSP, `nosniff` and `referrer-policy` onto
+whatever `call_next` returns — but `_denied` returns **early** and never reached that
+block. Measured live: an allowed page carried all four; the 403 carried **none**.
+
+The gap is **pre-existing** (the JSON 403 lacked them too), but this release changed its
+impact: a styled HTML 403 without `frame-ancestors` is a **framable document**, where an
+inert JSON body was not. It was the only HTML page in the app missing them — the styled
+404 already carried them, because it is raised inside the route and passes through
+`call_next`. `_denied` now stamps the same headers; verified live on both
+representations and pinned by three tests.
+
+**Severity: low** — the 403 page holds no sensitive data and no actions beyond a link to
+`/work`. Fixed because it is cheap, in-scope, and the 404 establishes the intended
+behaviour. Other early returns in `dispatch()` (the cross-site rejection, the
+`/auth/login` and `/portal/login` redirects, the 401s) also bypass the block; they are
+redirects or inert JSON, so they are **not** fixed here — recommended as follow-up.
 
 ### Test & CI hardening (this checkpoint)
 - **CI was never running.** `.github/workflows/ci.yml` was indented with **tab
