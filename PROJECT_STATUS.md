@@ -50,7 +50,7 @@ page (Git technical, Confluence operational) — no duplication.
 ## Open risks
 
 - 🔴 **AD-5 — compliance reviewer NOT YET NAMED.** All regulated insurance logic (suitability, replacement/1035, licensing/CE validation, compliance approvals) is **blocked** and cannot pass an RC gate without a qualified, named reviewer + approved sign-off artifact. Michael Shelton is the **business** owner (operational scope) only — not regulatory certification. **Not resolvable in code.**
-- 🟠 **Release 0.10.0 not yet RC-validated / not tagged.** Phases 8–10 outstanding.
+- 🟠 **Release 0.10.0 not yet RC-validated / not tagged.** Phases 0–9 built; **Phase 10 (RC + release) outstanding**.
 - 🟡 **Confluence Insurance pages are draft/unpublished** — must not be published until the corresponding phase functionality is complete and (for regulated content) AD-5-cleared.
 - 🟡 **Benefits (0.9.11) Confluence pages still in draft** — awaiting page-owner approval.
 
