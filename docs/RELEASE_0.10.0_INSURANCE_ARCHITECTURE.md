@@ -23,7 +23,9 @@ infrastructure. New migration chains off head `u1f9c0i9h8g7`.
 >   outstanding exceptions, and revenue rollup (Phase 5)**, operational (counts-only)
 >   reporting, UI, and JSON APIs. **Exceptions, work queues & scheduled scanning — one
 >   `run_insurance_scan()` across all detectors, wired into the shared scheduler and Work
->   Management with organization-scoped, firm-internal exceptions (Phase 6).** Phases 0–6.
+>   Management with organization-scoped, firm-internal exceptions (Phase 6).** **Policyholder
+>   portal — a read-only, opt-in, scoped policy view via the existing portal, with no
+>   producers/commissions/licensing/exceptions exposed (Phase 7).** Phases 0–7.
 > - **Deferred (regulated logic — NOT built, NOT enabled):** suitability determination,
 >   replacement/1035 recommendation logic, licensing/CE **validation**, sale/issue
 >   **blocking**, automated compliance approvals, and any regulatory decision engine.
