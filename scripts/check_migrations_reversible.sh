@@ -57,10 +57,7 @@ fi
 echo "== upgrade head again =="
 alembic upgrade head >/dev/null
 
-current="$(alembic current 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
-if [ "$current" != "$head" ]; then
-  echo "FAIL: schema is at '${current:-<none>}', expected head '$head'." >&2
-  exit 1
-fi
+# Reuse the standalone read-only check as the final assertion (DRY).
+"${REPO_ROOT}/scripts/check_schema_at_head.sh"
 
 echo "OK: migrations are reversible; schema is at head ($head)."
