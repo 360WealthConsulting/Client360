@@ -69,6 +69,12 @@ def benefits_scan_interval_minutes() -> int:
     return max(1, _int_env("BENEFITS_SCAN_INTERVAL_MINUTES", 30))
 
 
+def insurance_scan_interval_minutes() -> int:
+    # Same conservative default (30 min) as the benefits detector scan; the insurance scan
+    # likewise reads the whole book, so it runs less often than the 5-min SLA sweep.
+    return max(1, _int_env("INSURANCE_SCAN_INTERVAL_MINUTES", 30))
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 

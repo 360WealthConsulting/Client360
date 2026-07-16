@@ -1,10 +1,10 @@
 # Release v0.10.0 — Insurance Operations: Architecture
 
-**Status:** in progress — **Phases 0–5 implemented** (Phases 2–4 as non-regulated
-operational skeletons; **Phase 5 commissions is non-regulated and complete for its
-scope**); Phases 6–10 not started; **all regulated logic deferred behind the AD-5
-gate**. Not yet released or tagged. (Current single Alembic head `b8i9k1l2g3j4`;
-migration chain in §13. See `PROJECT_STATUS.md` for live status.)
+**Status:** in progress — **Phases 0–6 implemented** (Phases 2–4 as non-regulated
+operational skeletons; **Phase 5 commissions and Phase 6 exceptions/work-management/scheduled
+scanning are non-regulated and complete for their scope**); Phases 7–10 not started; **all
+regulated logic deferred behind the AD-5 gate**. Not yet released or tagged. (Current single
+Alembic head `c9k0m1n2h3j4`; migration chain in §13. See `PROJECT_STATUS.md` for live status.)
 **Scope:** individual **life insurance & annuities** (advisor-sold, in-force-managed).
 Not group/employer benefits (that is 0.9.11), not P&C, not group life.
 **Baseline:** built on the 0.9.11 platform (ADR-18) and the 0.9.13 test/CI/release
@@ -21,7 +21,9 @@ infrastructure. New migration chains off head `u1f9c0i9h8g7`.
 >   calendar, producer licensing/CE **records**, expiry detectors, **commission ledger —
 >   split-aware expected/received, carrier-statement import & reconciliation, variance/
 >   outstanding exceptions, and revenue rollup (Phase 5)**, operational (counts-only)
->   reporting, UI, and JSON APIs. Phases 0–5.
+>   reporting, UI, and JSON APIs. **Exceptions, work queues & scheduled scanning — one
+>   `run_insurance_scan()` across all detectors, wired into the shared scheduler and Work
+>   Management with organization-scoped, firm-internal exceptions (Phase 6).** Phases 0–6.
 > - **Deferred (regulated logic — NOT built, NOT enabled):** suitability determination,
 >   replacement/1035 recommendation logic, licensing/CE **validation**, sale/issue
 >   **blocking**, automated compliance approvals, and any regulatory decision engine.

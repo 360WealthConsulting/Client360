@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db import (
     engine,
@@ -28,6 +28,7 @@ from app.db import (
     insurance_ce_records,
     insurance_commissions,
     insurance_licenses,
+    insurance_policies,
     insurance_policy_reviews,
 )
 from app.services import exception_engine as ee
@@ -293,9 +294,14 @@ _COMMISSION_OUTSTANDING_PREFIX = "ins:commission_outstanding:"
 
 
 def _commission_scope(row, title):
-    """Firm-internal (unanchored) scope — no client person/household/org, so no client
-    timeline event fires. Policy/commission ids ride in description + metadata."""
-    return {"related_entity_type": None, "related_entity_id": None,
+    """Organization-scoped, firm-internal scope. Anchors the client ORGANIZATION when the
+    policy has one (``related_entity_type='organization'``) so the exception gets organization
+    record scope and reaches org-scoped work queues — but NEVER sets person/household, which is
+    the only thing that would publish a client-facing timeline event. Compensation therefore
+    stays off the client timeline; the policy/commission ids ride in description + metadata."""
+    org_id = row["organization_id"]
+    return {"related_entity_type": "organization" if org_id else None,
+            "related_entity_id": org_id,
             "person_id": None, "household_id": None,
             "title": title,
             "description": f"Commission #{row['id']} on policy #{row['policy_id']}",
@@ -364,4 +370,71 @@ def run_insurance_commission_scan(*, actor_user_id=None, today=None):
         "exceptions_resolved": vres + ores,
         "failures": len(failures),
         "failure_detail": failures,
+    }
+
+
+# ============================================================================
+# Phase 6 — single orchestrated insurance scan.
+# One entry point that runs EVERY insurance detector through the shared Exception
+# Engine (no insurance-specific engine). Idempotent (stable dedupe), auto-resolving/
+# reopening, with per-detector failure isolation so one detector — or one
+# organization's bad data inside a detector — never aborts the rest. Honest aggregate
+# reporting. This is the live scheduler + manual entry point (wired in app/jobs/scheduler.py).
+# ============================================================================
+
+def _insurance_exception_status():
+    """id -> status for every insurance-domain exception (used to diff the whole scan)."""
+    with engine.connect() as c:
+        return {r[0]: r[1] for r in c.execute(select(
+            exceptions.c.id, exceptions.c.status).where(exceptions.c.domain == "insurance"))}
+
+
+def _count_insurance_organizations():
+    """Distinct client organizations in the insurance book (organization-scoped policies)."""
+    with engine.connect() as c:
+        return c.execute(select(func.count(func.distinct(insurance_policies.c.organization_id)))
+                         .where(insurance_policies.c.organization_id.isnot(None))).scalar_one()
+
+
+def run_insurance_scan(*, actor_user_id=None, today=None):
+    """Run every insurance detector as one idempotent, failure-isolated scan and report
+    honestly. Reuses the shared Exception Engine and Work Management — no insurance-specific
+    subsystem. Returns organizations scanned and exceptions opened / resolved / reopened /
+    skipped (idempotent no-ops re-confirmed) / failures, plus each detector's own result."""
+    before = _insurance_exception_status()
+    # Resolve sub-scans by module attribute at call time so a detector can be independently
+    # stubbed/failed in tests and a real failure is isolated here.
+    subscans = (
+        ("reviews", run_insurance_review_scan),
+        ("licensing", run_insurance_licensing_scan),
+        ("commissions", run_insurance_commission_scan),
+    )
+    by_detector, failures = {}, []
+    for name, fn in subscans:
+        try:
+            result = fn(actor_user_id=actor_user_id, today=today)
+            by_detector[name] = result
+            for fd in result.get("failure_detail", []):
+                failures.append({"detector": name, **fd})
+        except Exception as exc:  # pragma: no cover - defensive isolation: one detector can't abort the scan
+            by_detector[name] = {"error": type(exc).__name__}
+            failures.append({"detector": name, "error": type(exc).__name__})
+    after = _insurance_exception_status()
+
+    def active(st):
+        return st not in _CLOSED
+
+    opened = sum(1 for i, st in after.items() if active(st) and i not in before)
+    reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
+    resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
+    skipped = sum(1 for i, st in after.items() if active(st) and i in before and active(before[i]))
+    return {
+        "organizations_scanned": _count_insurance_organizations(),
+        "exceptions_opened": opened,
+        "exceptions_resolved": resolved,
+        "exceptions_reopened": reopened,
+        "exceptions_skipped": skipped,
+        "failures": len(failures),
+        "failure_detail": failures,
+        "by_detector": by_detector,
     }

@@ -119,16 +119,42 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
 - **Robustness** — statement→policy auto-match no longer crashes on a duplicate policy number
   (deterministic oldest-first pick).
 
+### Added — Phase 6 · Insurance exceptions, work management & scheduled scanning (`c9k0m1n2h3j4`)
+- **Single `run_insurance_scan()`** orchestrates every insurance detector (in-force reviews,
+  producer licensing/CE expiry, commission variance/outstanding) through the **shared Exception
+  Engine** — no insurance-specific engine. Idempotent (stable dedupe), auto-resolving/reopening,
+  with **per-detector failure isolation** so one detector or one organization's bad data never
+  aborts the scan. Honest aggregate reporting: **organizations scanned, exceptions opened /
+  resolved / reopened / skipped, failures**, plus each detector's own result.
+- **Scheduled scanning** via the **existing scheduler** — `run_insurance_detector_scan`
+  registered as `insurance-detector-scan` (interval `INSURANCE_SCAN_INTERVAL_MINUTES`, default
+  30; `max_instances=1`, `coalesce=True` — no overlap). No new scheduler framework.
+- **Insurance work queues** seeded through the **existing queue framework**
+  (`work_queues.criteria`): `insurance_unassigned`, `insurance_exceptions`, `insurance_reviews`,
+  `insurance_licensing`, `insurance_commissions`, `insurance_high_priority` — projected through
+  the same `work_items` surface as tax/benefits. No new queue framework.
+- **Automatic assignment** via the **existing assignment rules** (`app/services/insurance_work.py`
+  reuses `apply_assignment_rules`) — `auto_assign_unassigned` applies rules to unassigned open
+  insurance exceptions; with no rule configured, items stay in *Insurance — Unassigned*. No new
+  assignment model.
+- **Organization-based record scope** — commission exceptions now anchor the client
+  **organization** (`related_entity_type='organization'`) for org-scoped queues/assignment while
+  keeping `person_id`/`household_id` NULL, so **no compensation ever reaches the client
+  Timeline** (client-facing exception visibility remains out of scope). Reviews keep their
+  existing org/person/household anchor.
+- **Manual twin** `POST /api/v1/insurance/scan` (capability `insurance.write`) runs the same
+  orchestrated scan + auto-assignment.
+- Non-regulated throughout: no suitability, replacement/1035, or licensing determination; the
+  **AD-5 gate is unaffected**.
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
   is **not** regulatory certification. No regulated phase passes its RC gate without a
   completed, approved sign-off artifact from a qualified, named compliance reviewer. This
   is not resolvable in code and remains open.
-- **Remaining phases:** 6 (exceptions/detectors/queues + live `run_insurance_scan` cron —
-  wires the Phase 3/4/5 scan callables), 7 (policyholder portal), 8 (reporting/dashboards),
-  9 (integration stubs), 10 (RC validation + release), plus the AD-5-gated regulated portions
-  of Phases 2–4.
+- **Remaining phases:** 7 (policyholder portal), 8 (reporting/dashboards), 9 (integration
+  stubs), 10 (RC validation + release), plus the AD-5-gated regulated portions of Phases 2–4.
 
 ### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
 - **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter
@@ -140,9 +166,9 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
   venv-only/py3.12 environments (previously 1 failing safety test).
 
 ### Migrations
-Additive, off head `u1f9c0i9h8g7`, single head `b8i9k1l2g3j4`, reversible:
+Additive, off head `u1f9c0i9h8g7`, single head `c9k0m1n2h3j4`, reversible:
 `v2b3d4f5a6c7` → `w3c4e5g6b7d8` → `x4d5f6h7c8e9` → `y5e6g7i8d9f0` → `z6f7h8j9e0g1` →
-`a7g8i9k0f1h2` → `b8i9k1l2g3j4`.
+`a7g8i9k0f1h2` → `b8i9k1l2g3j4` → `c9k0m1n2h3j4` (Phase 6: data-only insurance work queues).
 
 ## [0.9.13] — 2026-07-16 — Platform Foundation
 

@@ -1,16 +1,16 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 Phase 5 — Insurance Commissions — **complete & approved**,
-incl. the audit & revenue-validation pass; Phase 6 in progress)._
+**2026-07-16** (Release 0.10.0 Phase 6 — Insurance Exceptions, Work Management & Scheduled
+Scanning — complete; Phase 5 approved)._
 
 | Field | Value |
 |---|---|
 | **Current release** | **0.10.0 — Insurance Operations** (in progress; not tagged). Last tagged release: **0.9.13**. |
 | **Branch** | `feature/insurance-operations` (base: `main`) |
 | **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* |
-| **Current Alembic head** | `b8i9k1l2g3j4` — single head; **dev `client360` and test `client360_test` both at head** |
-| **Tests** | **682 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff clean on Phase 5 files; single head `b8i9k1l2g3j4`; compile OK; `git diff --check` clean; startup/shutdown clean. |
+| **Current Alembic head** | `c9k0m1n2h3j4` — single head; **dev `client360` and test `client360_test` both at head** |
+| **Tests** | **692 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; migrations reversible; single head `c9k0m1n2h3j4`; compile OK; scheduler registration verified; startup/shutdown clean; `git diff --check` clean. |
 | **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–5; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance Commissions SOP drafted (`docs/confluence/INSURANCE_COMMISSIONS_SOP_DRAFT.md`, draft-only). |
 
 ## Completed phases (0.10.0)
@@ -24,11 +24,11 @@ non-regulated and complete for its scope**. Regulated logic remains deferred —
 - **Phase 3** — In-force servicing (skeleton): reviews state machine, obligation calendar, `INS_REVIEW_OVERDUE` via shared Exception Engine, review metrics, reviews board UI/APIs. Migration `z6f7h8j9e0g1`.
 - **Phase 4** — Producer licensing & CE **records** (skeleton): `insurance_licenses`, `insurance_ce_records`, expiry detectors (`INS_LICENSE_EXPIRING` / `INS_CE_PERIOD_ENDING`), licensing dashboard UI/APIs. Migration `a7g8i9k0f1h2`.
 - **Phase 5** — Commissions (non-regulated, complete): split-aware expected/received ledger (`insurance_commissions`), adjustments/reversals/chargebacks + write-off, carrier-statement import + reconciliation (`insurance_commission_statements` / `_statement_lines`), **firm-internal** variance/outstanding exceptions (`INS_COMMISSION_VARIANCE` / `INS_COMMISSION_OUTSTANDING`; kept off the client Timeline), uncapped ledger-derived revenue rollup with producer-payout / agency-retained breakdown, full audit coverage, commissions console + APIs, `insurance.commissions.write` capability. Migration `b8i9k1l2g3j4`. Includes the audit & revenue-validation pass.
+- **Phase 6** — Exceptions, Work Management & Scheduled Scanning (non-regulated, complete): single `run_insurance_scan()` orchestrating all detectors through the **shared** Exception Engine (idempotent, failure-isolated, honest reporting); registered on the **existing** scheduler (`insurance-detector-scan`); insurance **work queues** via the existing criteria framework; **auto-assignment** via existing assignment rules (`insurance_work.py`); organization-based record scope kept off the client Timeline; manual `POST /api/v1/insurance/scan`. Migration `c9k0m1n2h3j4` (data-only queues). Reuses shared subsystems — no insurance-specific engine/queue/scheduler.
 
 ## Remaining phases (0.10.0)
 
-- **Phase 6** — Exceptions + detectors + queues + `run_insurance_scan` scheduled job (live cron wiring of the Phase 3/4/5 scan callables). *(Next task.)*
-- **Phase 7** — Policyholder portal surface.
+- **Phase 7** — Policyholder portal surface. *(Next task.)*
 - **Phase 8** — Reporting + dashboards.
 - **Phase 9** — Integration ports (disabled stubs).
 - **Phase 10** — RC validation + release v0.10.0 (tag).
@@ -43,14 +43,13 @@ non-regulated and complete for its scope**. Regulated logic remains deferred —
 
 ## Next task
 
-**Phase 6 — Exceptions, detectors, queues, and live scan cron.** Wire the Phase 3/4/5 scan
-callables (`run_insurance_review_scan`, `run_insurance_licensing_scan`,
-`run_insurance_commission_scan`) into the scheduler as `run_insurance_scan`, and complete the
-insurance exception queues. Fully operational (no AD-5 dependency). Begin only after the
-Phase 5 work is committed and the draft PR is updated — **stop for review before Phase 6.**
+**Phase 7 — Policyholder portal surface.** Expose an org/person-scoped policyholder view via
+the existing portal framework (out-of-scope requests 404). **Client-facing exception visibility
+remains deliberately out of scope** — commission/compensation and firm-internal exceptions stay
+off client surfaces. Begin only after Phase 6 is reviewed/accepted.
 
 ---
 
-_Phase 5 is complete and stopped for review. Do not begin Phase 6 until this checkpoint is
+_Phase 6 is complete and stopped for review. Do not begin Phase 7 until this checkpoint is
 reviewed/accepted per the project cadence. AD-5 remains an open, non-code blocker for all
 regulated insurance logic._

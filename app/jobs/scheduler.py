@@ -73,6 +73,22 @@ def run_benefits_detector_scan() -> None:
         logger.exception("Benefits detector scan failed.")
 
 
+def run_insurance_detector_scan() -> None:
+    """Idempotent insurance scan (reviews + licensing/CE + commissions) through the shared
+    Exception Engine, then auto-assign new exceptions via the existing assignment rules so the
+    insurance work queues reflect current conditions. Honest result (orgs scanned, opened/
+    resolved/reopened/skipped, failures). Overlap is prevented by APScheduler
+    (max_instances=1, coalesce). No insurance-specific engine, queue, or scheduler."""
+    try:
+        from app.services.insurance_detectors import run_insurance_scan
+        from app.services.insurance_work import auto_assign_unassigned
+        result = run_insurance_scan()
+        result["auto_assignment"] = auto_assign_unassigned()
+        logger.info("Insurance detector scan result: %s", result)
+    except Exception:
+        logger.exception("Insurance detector scan failed.")
+
+
 def start_scheduler() -> None:
     if _scheduler.running:
         return
@@ -120,6 +136,11 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         run_benefits_detector_scan, trigger="interval", minutes=benefits_scan_interval_minutes(),
         id="benefits-detector-scan", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    from app.config import insurance_scan_interval_minutes
+    _scheduler.add_job(
+        run_insurance_detector_scan, trigger="interval", minutes=insurance_scan_interval_minutes(),
+        id="insurance-detector-scan", replace_existing=True, max_instances=1, coalesce=True,
     )
 
     _scheduler.start()

@@ -611,3 +611,20 @@ def console_commissions(request: Request, status: str = "",
     return templates.TemplateResponse(request=request, name="insurance/commissions.html",
                                       context={"commissions": commissions, "statements": statements,
                                                "report": report, "status": status, "principal": principal})
+
+
+# --- Phase 6: single orchestrated insurance scan (reuses shared Exception Engine +
+# Work Management; the same run_insurance_scan the scheduler runs). Idempotent, failure-
+# isolated, honest reporting. No regulated determination; no client-facing visibility. ---
+
+@router.post("/api/v1/insurance/scan")
+def api_insurance_scan(principal: Principal = Depends(require_capability("insurance.write"))):
+    """Run every insurance detector as one idempotent scan through the shared Exception Engine,
+    then apply the existing assignment rules to any unassigned insurance exceptions. Returns the
+    honest aggregate result (organizations scanned, exceptions opened/resolved/reopened/skipped,
+    failures). This is the manual twin of the scheduled `insurance-detector-scan` job."""
+    from app.services.insurance_detectors import run_insurance_scan
+    from app.services.insurance_work import auto_assign_unassigned
+    result = _run(lambda: run_insurance_scan(actor_user_id=principal.user_id))
+    result["auto_assignment"] = _run(lambda: auto_assign_unassigned(actor_user_id=principal.user_id))
+    return result
