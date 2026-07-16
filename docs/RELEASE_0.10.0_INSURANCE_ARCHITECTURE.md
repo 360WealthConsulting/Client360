@@ -361,14 +361,18 @@ versus a standalone build.
 
 ---
 
-## 17. Architecture decisions (resolved)
+## 17. Architecture decisions (final)
+
+All five decisions are final for v0.10.0. Each states a recommendation, rationale,
+rejected alternatives, long-term tradeoffs, migration implications where the decision is a
+one-way schema door, and whether the architecture document needs to change.
 
 ### AD-1 — Carrier is an Organization node + `insurance_carrier_profiles` (1:1), not a standalone carrier table
 
-**Decision.** A carrier is a `relationship_entities` node (`entity_type='insurance_carrier'`)
-with a 1:1 `insurance_carrier_profiles` row for regulated insurer fields (NAIC company
-code, AM Best rating, appointment status). Downstream tables reference it by a stable
-`carrier_id`.
+**Recommendation.** Model a carrier as a `relationship_entities` node
+(`entity_type='insurance_carrier'`) with a 1:1 `insurance_carrier_profiles` row for
+regulated insurer fields (NAIC company code, AM Best rating, appointment status).
+Downstream tables reference it by a stable `carrier_id`.
 
 **Why.** A carrier IS an organization the firm has relationships with — appointments,
 broker-of-record, agency hierarchy — all of which are already the relationships graph.
@@ -402,9 +406,12 @@ referencing carriers everywhere via a stable `carrier_id` — so only carrier *r
 changes if reversed, not every downstream table. This is the more expensive of the two
 one-way doors and is the reason AD-1 gets explicit scrutiny.
 
+**Architecture-document impact.** None — §4.1 already specifies carrier-as-org + profile.
+This decision ratifies the written design.
+
 ### AD-2 — InsuranceCase ↔ Engagement is 1:1
 
-**Decision.** Each `insurance_case` references exactly one `engagement` (unique
+**Recommendation.** Each `insurance_case` references exactly one `engagement` (unique
 `engagement_id`); each engagement backs at most one case.
 
 **Why.** A case and its engagement are two facets of one thing: the engagement is the
@@ -435,32 +442,99 @@ merge. Tightening the reverse direction (N:M → 1:1) would be expensive (must r
 which is exactly why we start strict. AD-2 is a one-way door that is inexpensive to walk
 back through.
 
-### AD-3 — iPipeline / KaiZen ship as disabled provider ports this release
+**Architecture-document impact.** None — §3 already specifies the 1:1 coordinator. This
+decision ratifies the written design.
 
-**Decision.** Interfaces + registry + disabled stubs (honest `not_connected`), following
-`benefits_providers.py`. No live I/O. **Why.** Live integration carries vendor-contract,
-credential, and compliance risk that must not gate the domain build; ports let the domain
-be built and tested against stable interfaces. **Alternative:** build live now — rejected
-(couples the release to vendor availability; iPipeline/KaiZen are pure greenfield).
-**Migration if reversed:** enabling a port later = a new class + registry row + config; no
-schema change. Very low lock-in.
+### AD-3 — iPipeline / KaiZen / carrier integrations ship as disabled provider ports; live integration deferred
 
-### AD-4 — Underwriting = tracking (not decisioning); illustrations = documents + metadata (not generation)
+**Recommendation.** Ship interfaces + registry + disabled stubs (honest `not_connected`),
+following `benefits_providers.py`. No live I/O in v0.10.0; live adapters are a later release.
 
-**Decision.** Client360 tracks underwriting status/requirements/APS and stores
-illustrations as documents with structured metadata. **Why.** The firm is an
-advisory/brokerage, not a carrier: underwriting *decisions* and illustration *generation*
-are carrier/iPipeline functions. Building them would reimplement carrier systems at the
-wrong layer. **Alternative:** build illustration generation / underwriting decisioning —
-rejected (actuarial, carrier-specific, out of scope). **Migration if extended:** richer
-structured underwriting/illustration data is additive (columns/child tables on the existing
-records). Low lock-in.
+**Rationale.** Live integration carries vendor-contract, credential, and compliance risk
+that must not gate the domain build. Ports let the domain be built and tested against stable
+interfaces now, and turned on later without reshaping the domain. iPipeline/KaiZen are pure
+greenfield (absent from the codebase), so there is nothing to preserve by rushing them.
 
-### AD-5 — Regulatory SME sign-off owner (org decision, unresolved by engineering)
+**Alternatives rejected.** (A) Build live integration in v0.10.0 — couples the release to
+vendor onboarding, credentials, and carrier data variance; expands the compliance surface
+before the domain is even proven. (B) Omit the ports entirely and add integration as an
+afterthought — rejected: designing the port boundary now keeps live adapters from later
+forcing domain-model changes.
 
-**Decision required from the firm, not from engineering.** R1 (regulatory correctness) is
-the top risk; suitability, replacement/1035, and CE rule sets — modeled as reviewable data
-— must be signed off per phase by a named accountable party (compliance principal / licensed
-supervisor). Engineering cannot self-certify these. **This is a release dependency:** absent
-a named SME owner, the release carries compliance liability. Recommend assigning the owner
-before Phase 2 (new business, where suitability first appears).
+**Long-term tradeoffs.** Pro: the domain ships and is usable via manual entry; enabling a
+port later is isolated. Con: until a port is live, in-force/commission data is entered by
+hand (acceptable at launch scale; the ports are the migration path off manual entry).
+
+**Migration implications.** Enabling a provider later = a new class + a registry row +
+config; **no schema change**. Very low lock-in.
+
+**Architecture-document impact.** None — §11 already specifies disabled ports. This decision
+ratifies it.
+
+### AD-4 — v0.10.0 is individual life & annuities only; underwriting = tracking, not automated decisioning
+
+**Recommendation.** Limit v0.10.0 to **individual life insurance and annuities**. Model
+underwriting as **status/requirements/APS tracking** and illustrations as **documents +
+structured metadata** — not automated underwriting decisions or illustration generation.
+
+**Rationale.** Two-part decision. (1) *Scope:* group/employer benefits already ship in
+0.9.11; P&C and group life are different products, parties, and regulation — folding them in
+would multiply the data model and the regulatory surface (R1) without a shared lifecycle.
+Individual life + annuities is one coherent lifecycle (case → application → underwriting →
+issue → in-force → review). (2) *Underwriting layer:* the firm is an advisory/brokerage, not
+a carrier — underwriting *decisions* and illustration *generation* are carrier/iPipeline
+functions. Building them would reimplement carrier/actuarial systems at the wrong layer.
+
+**Alternatives rejected.** (A) Include P&C or group life now — rejected: separate lifecycle,
+parties, and regulation; large scope-and-risk multiplier for no reuse gain. (B) Build
+underwriting decisioning / illustration generation — rejected: actuarial, carrier-specific,
+and duplicative of iPipeline; out of layer.
+
+**Long-term tradeoffs.** Pro: a tight, provable domain with a single regulated lifecycle;
+tracking-only keeps Client360 as the system of *record and coordination*, not a carrier
+engine. Con: producers still generate illustrations and receive underwriting decisions in
+carrier tools — Client360 stores and coordinates, it does not originate them (this is the
+correct boundary for a brokerage).
+
+**Migration implications.** Adding P&C/group life later is additive (new product families
++ domain tables); richer structured underwriting/illustration data is additive
+(columns/child tables on the existing records). Low lock-in in both directions.
+
+**Architecture-document impact.** None structurally — the scope line at the top and §11/AD-4
+already state this. This section now records the scope-limit explicitly as a ratified
+decision.
+
+### AD-5 — Regulatory sign-off is a named-owner + per-phase-gate process (recommended); the owner is the firm's to name
+
+**Recommendation.** Adopt this process, and name the owner before Phase 2:
+1. **Named accountable owner** — a licensed compliance principal / supervisory officer at
+   the firm (not engineering) owns regulatory correctness for suitability, replacement/1035,
+   licensing, and CE.
+2. **Rules as reviewable data** — every regulated rule set (suitability criteria,
+   replacement/1035 disclosure requirements, CE requirements, license-line rules) is modeled
+   as seeded/config data, not code, so the owner can read and approve it without reading
+   source.
+3. **Per-phase sign-off gate** — the phases that introduce regulated logic
+   (Phase 2 suitability/new-business, Phase 3 replacements/1035/reviews, Phase 4
+   licensing/CE) **do not pass their RC gate without a recorded sign-off** from the owner on
+   that phase's rule-set data. The sign-off is captured as a dated artifact (e.g. a checked
+   line in that phase's RC document).
+
+**Rationale.** R1 (regulatory correctness) is the top release risk and a compliance
+liability, not a bug class — engineering cannot self-certify it. A named owner + reviewable
+data + a hard phase gate converts an open-ended risk into an auditable, blocking checklist
+item.
+
+**Alternatives rejected.** (A) Engineering self-certifies — rejected: outside engineering's
+authority and competence; creates undisclosed liability. (B) One big compliance review at
+release end — rejected: defers discovery of rule errors to the most expensive moment and
+can't unwind merged phases. (C) No formal gate — rejected: R1 unmanaged.
+
+**Long-term tradeoffs.** Pro: compliance defensibility; rule changes are data edits the owner
+re-approves, not code changes. Con: the per-phase gate adds a human dependency to Phases 2–4
+that can stall a phase if the owner is unavailable — which is the correct failure mode
+(better a stalled phase than an unreviewed compliance rule).
+
+**Architecture-document impact.** This section is the change — it records the recommended
+process. The remaining input is the firm naming the owner; §13 (dependencies) already flags
+this as a release dependency.
