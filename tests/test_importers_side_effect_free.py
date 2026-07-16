@@ -28,7 +28,7 @@ from sqlalchemy import select
 from app.db import accounts, engine, source_contacts
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-MODULES = ["app.importers.schwab", "app.importers.wealthbox"]
+MODULES = ["app.importers.schwab", "app.importers.wealthbox", "app.importers.dave_ramsey"]
 
 # A URL that cannot be connected to: any attempt to reach the database at import
 # time fails loudly instead of silently succeeding against the real one.
@@ -184,6 +184,7 @@ def test_import_does_not_discover_client_data(module_name, tmp_path):
     [
         ("app.importers.schwab", "Schwab import complete"),
         ("app.importers.wealthbox", "Wealthbox contact import complete"),
+        ("app.importers.dave_ramsey", "Dave Ramsey import complete"),
     ],
 )
 def test_importing_does_not_run_the_import(module_name, marker, tmp_path):

@@ -87,8 +87,10 @@ def configuration_warnings() -> list[str]:
             "MICROSOFT_TOKEN_KEY is not set; Microsoft 365 sync and token "
             "decryption are disabled. Set it and back it up separately from the DB."
         )
-    if not os.getenv("DATABASE_URL"):
-        warnings.append("DATABASE_URL is not set; using the built-in default connection.")
+    # No DATABASE_URL warning here: there is no built-in default. app/db.py and
+    # app/database/schema.py both raise at import if it is unset, so the process
+    # cannot reach startup validation without one. The warning this replaces
+    # claimed a fallback that has never existed.
     return warnings
 
 

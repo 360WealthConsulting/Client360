@@ -10,9 +10,16 @@ on:
     branches:
       - main
 
+# One in-flight run per ref; a new push cancels the previous run instead of
+# queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # The suite talks to a real database (app/db.py reflects the schema at
     # import time), so CI provisions a disposable Postgres rather than mocking.
@@ -37,37 +44,95 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Full history so the Ruff baseline can be diffed against the base branch.
+          fetch-depth: 0
 
-      # 3.9 is what the project actually runs on (.venv is 3.9.6) and what
-      # requirements.txt was pinned against: typer needs click>=8.2.1 on
-      # Python >=3.10, which the pinned click==8.1.8 cannot satisfy. This
-      # mismatch was invisible while the workflow failed to parse.
+      # 3.12 is the project runtime as of 0.9.13 Phase 1. The old 3.9 pin existed
+      # only because typer required click>=8.2.1 on >=3.10 while click==8.1.8 was
+      # pinned — but typer was an orphan (imported nowhere, required by nothing),
+      # so removing it dissolved the constraint with no version change to click.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
+      # requirements-dev.txt pulls in requirements.txt plus the pinned Ruff, so
+      # runtime and dev tooling install from one pinned source (no ad-hoc
+      # `pip install pytest`/`ruff` — pytest is already in requirements.txt).
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
 
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+      # Ruff new-violation gate (0.9.13 Phase 2): fails only when a change ADDS a
+      # violation. The legacy backlog is baselined in docs/ruff-baseline.json and
+      # deliberately not fixed here (see scripts/ruff_gate.py).
+      - name: Lint (Ruff gate)
+        run: python scripts/ruff_gate.py
+
+      # The baseline may only shrink. Guards against burying a new violation by
+      # regenerating the baseline. Skipped on push-to-main (no base to diff).
+      - name: Ruff baseline may not grow
+        if: github.event_name == 'pull_request'
+        run: |
+          git show "origin/${{ github.base_ref }}:docs/ruff-baseline.json" > /tmp/base-baseline.json 2>/dev/null \
+            || { echo "No baseline on base branch; skipping."; exit 0; }
+          python scripts/ruff_gate.py --assert-not-grown /tmp/base-baseline.json
+
+      # compileall over app + tests + migrations (was app only) — the gate the RC
+      # docs already claim.
+      # CHANGELOG structural lint (0.9.13 Phase 4): every tag has a dated entry,
+      # one [Unreleased], no stray H1. Catches the drift that left 0.9.11 marked
+      # "not yet tagged" and 0.9.12 undocumented.
+      - name: CHANGELOG lint
+        run: python scripts/check_changelog.py
+
+      - name: Compile
+        run: python -m compileall app tests migrations
+
+      # Whitespace errors on lines THIS PR added (not the legacy tree). Skipped on
+      # push-to-main, where there is no base to diff against.
+      - name: Whitespace check (PR diff)
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"
+
+      - name: Single Alembic head
+        run: scripts/check_migration_heads.sh
+
+      # Walks the whole graph to base and back, exercising every downgrade, and
+      # leaves the schema at head — so this replaces a plain `alembic upgrade
+      # head` and the suite runs against a verified-at-head schema.
+      - name: Migrations reversible (schema left at head)
+        run: scripts/check_migrations_reversible.sh
+
+      # Proves the Phase 0 isolation guard actually blocks pytest: collection
+      # against a non-disposable database name must fail before any test runs.
+      - name: Test-database safety guard holds
+        run: |
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/client360_production \
+             python -m pytest --collect-only -q >/dev/null 2>&1; then
+            echo "GUARD FAILED: the suite collected against a non-disposable database." >&2
+            exit 1
           fi
+          echo "OK: the suite refuses a non-disposable database (isolation guard holds)."
 
-          pip install pytest
-
-      - name: Compile application
-        run: |
-          python -m compileall app
-
-      - name: Apply migrations
-        run: |
-          alembic upgrade head
-
-      # `python -m pytest` (not bare `pytest`) so the repo root lands on
-      # sys.path and `import app` resolves. The result is deliberately not
-      # suppressed: a failing test must fail the build.
+      # `python -m pytest` (not bare `pytest`) so the repo root lands on sys.path
+      # and `import app` resolves. junit-xml is emitted for the failure artifact.
       - name: Run tests
-        run: |
-          python -m pytest -q
+        run: python -m pytest -q --junitxml=pytest-results.xml
+
+      # Only on failure: the test report and the demo log, so a red run is
+      # diagnosable without re-running locally. Nothing survived a run before.
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-diagnostics
+          path: |
+            pytest-results.xml
+            .demo-server.log
+          if-no-files-found: ignore
+          retention-days: 7

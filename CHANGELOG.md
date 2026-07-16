@@ -4,24 +4,77 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-### Added (developer tooling — not a product release)
+_Nothing yet._
 
-- **Developer Demo Mode** — a repeatable, safety-guarded local demo with fictional
-  data, isolated to a `client360_demo` database and reusing the real
-  authentication/authorization (no bypass, no weakened controls). Includes
-  `scripts/demo.sh` (setup/reset/start/stop/verify/smoke), role-aware post-login
-  landing for all six personas, an HTML portfolio page, and docs
-  ([Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md),
-  [release notes](docs/DEVELOPER_DEMO_MODE_RELEASE.md)). No schema change; no product
-  release tag (developer tooling).
+## [0.9.13] — 2026-07-16 — Platform Foundation
+
+Developer platform, testing, and release hardening. **No product or business-logic
+change; no schema change** (Alembic head unchanged at `u1f9c0i9h8g7`). Validated by
+[RC-0.9.13](docs/RC_0.9.13_VALIDATION.md). Delivers issue #24.
+
+### Added
+- **Isolated test database** (#24) — the suite ran against the real development
+  database (`client360`); it now refuses any non-disposable target. `app/safety.py`
+  guard, `tests/conftest.py`, and `scripts/test.sh` (setup/reset/run/verify/status).
+  A full run leaves `client360` byte-for-byte unchanged; local suite **287s → ~11s**.
+- **Ruff lint gate** (#26) — `pyproject.toml` config and `scripts/ruff_gate.py`, a
+  count-based ratchet that baselines the legacy backlog and fails only on *new*
+  violations. Backlog tracked in #26.
+- **CI/CD hardening** — pip caching, single-Alembic-head, migration-reversibility,
+  schema-at-head, and test-DB-isolation checks; CHANGELOG lint; failure artifacts;
+  branch protection requiring the `build` check on `main`.
+- **Release tooling** — `scripts/release.sh` (guarded, dry-run), `scripts/check_changelog.py`,
+  and `scripts/gen_rc.py` + `docs/templates/RC_TEMPLATE.md`.
+- **Developer Demo Mode** (previously unreleased tooling) — safety-guarded local demo
+  on a `client360_demo` database reusing real auth; `scripts/demo.sh`, role-aware
+  landings, docs.
+
+### Changed
+- **Runtime Python 3.9 → 3.12.** Resolved the Typer/Click constraint by removing an
+  orphaned `typer` pin (imported nowhere, required by nothing) — `click` unchanged.
+  `requirements-py39.lock` retained one cycle for rollback.
 
 ### Fixed
-
+- **Importers no longer run on import** — `schwab`, `wealthbox`, and `dave_ramsey`
+  read `app/.env`, built an engine, and ran a real client-data import merely as a
+  side effect of being imported. `dave_ramsey` alone wrote 7,755+ records per test run.
+- `benefits` routes: `payload.dict()` → `model_dump()` (Pydantic v2 deprecation).
 - Latent Jinja template bugs where `data.items`/`work.items`/`tax.items` resolved to
-  the dict `.items` method (surfaced by rendering demo screens); `/work`, `/tax/intake`,
-  `/tax`, and the work team/queue pages now render.
+  the dict `.items` method; `/work`, `/tax/intake`, `/tax`, and the work queue pages render.
 
-## [0.9.11] — Employer Operations & Employee Benefits (release candidate; not yet tagged)
+### Migrations
+None — 0.9.13 is tooling/infrastructure only. Single head `u1f9c0i9h8g7`.
+
+## [0.9.12] — 2026-07-16 — Application Shell & UI Consolidation
+
+Consolidated every staff-facing page into a single application shell on a shared design
+system, with progressive-enhancement interaction polish. **Frontend only** — no business
+logic, routes, authorization, or record-scope semantics changed; no schema change (Alembic
+head unchanged at `u1f9c0i9h8g7`). Validated by [RC-1](docs/RC1_UI_VALIDATION.md)
+(0 unmet criteria). Merge commit `98b0622`.
+
+### Added
+- **Application shell + design system** — all 21 staff routes render inside one shell
+  (`docs/UI_DESIGN_SYSTEM.md`); shared components, styled 403/404/500 pages, empty states.
+- **Interaction polish** — client-side sortable data tables (numeric-aware, `aria-sort`),
+  skip-to-content link, `aria-current`/`aria-expanded` navigation state. Progressive
+  enhancement: every page works fully with JavaScript disabled.
+
+### Fixed
+- **Authorization denials now content-negotiate** — browser navigations get a styled HTML
+  403, API/JSON clients keep the JSON body; the denial itself (status, audit) is unchanged.
+  Denials now also carry the standard security headers (`x-frame-options`, CSP
+  `frame-ancestors`, `nosniff`, `referrer-policy`), which they previously lacked.
+- **CI was never running** — the workflow was tab-indented (invalid YAML) and failed at 0s on
+  every commit, including the 0.9.11 merge. It now parses, provisions Postgres, and gates.
+- **Importers are side-effect free on import** — `app/importers/schwab.py` and `wealthbox.py`
+  no longer read `app/.env`, build an engine, or run a client-data import merely on import.
+- Flaky securities-symbol collision fixed in the portfolio query tests.
+
+### Migrations
+None — 0.9.12 is frontend/tooling only. Single head `u1f9c0i9h8g7`.
+
+## [0.9.11] — 2026-07-15 — Employer Operations & Employee Benefits
 
 Usable **Employer Operations** product on shared Client360 concepts (Organizations,
 relationship roles, service lines, universal Engagement) with **Employee Benefits + Retirement**
@@ -396,13 +449,3 @@ preserved. See [Security Hardening 0.9.7](docs/SECURITY_HARDENING_0.9.7.md).
 - Integrated Microsoft 365, Relationship Intelligence, Schwab Portfolio
   Intelligence, firm identity, capability authorization, and immutable audit.
 - Alembic head: `c410f4a1b2c3`.
-# Unreleased
-
-### Added
-
-- Sprint 5.1 Tax Domain Foundation: tax firms and offices, staff office roles,
-  tax years and seasons, jurisdictions, return types and filing statuses,
-  engagements and returns, versioned deadlines, tax queues, a production
-  dashboard, versioned APIs, and automatic workflow generation.
-- Tax-domain capability and record-level authorization, timeline publication,
-  and immutable audit integration using the existing Client360 platforms.
