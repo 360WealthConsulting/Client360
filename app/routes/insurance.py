@@ -474,6 +474,12 @@ class CommissionReceived(BaseModel):
     statement_id: int | None = None
 
 
+class CommissionAdjustment(BaseModel):
+    amount: float
+    kind: str = "adjustment"  # adjustment | reversal | chargeback
+    reason: str | None = None
+
+
 class StatementLineBody(BaseModel):
     amount: float
     policy_number: str | None = None
@@ -543,6 +549,14 @@ def api_commission_received(commission_id: int, payload: CommissionReceived, req
 def api_commission_write_off(commission_id: int, request: Request,
                              principal: Principal = Depends(require_capability("insurance.commissions.write"))):
     return _run(lambda: com.write_off(principal, commission_id, **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/commissions/{commission_id}/adjust")
+def api_commission_adjust(commission_id: int, payload: CommissionAdjustment, request: Request,
+                          principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    """Apply a signed adjustment / reversal / chargeback to an entry's net received amount."""
+    return _run(lambda: com.record_adjustment(principal, commission_id, **payload.model_dump(),
+                                              **_actor(request, principal)))
 
 
 @router.post("/api/v1/insurance/policies/{policy_id}/commissions/generate", status_code=201)

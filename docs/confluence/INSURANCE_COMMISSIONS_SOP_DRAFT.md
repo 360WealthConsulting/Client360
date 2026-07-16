@@ -43,7 +43,7 @@ matter of compliance; chargeback economics beyond a simple write-off. Regulated 
 | Task | Capability required | Typical role |
 |---|---|---|
 | View ledger, statements, revenue rollup | `insurance.commissions.read` | insurance_agent, insurance_operations, insurance_compliance, administrator |
-| Record/generate expected, post received, import & reconcile statements, write off | `insurance.commissions.write` | insurance_agent, insurance_operations, administrator |
+| Record/generate expected, post received, adjust/reverse/chargeback, import & reconcile statements, write off | `insurance.commissions.write` | insurance_agent, insurance_operations, administrator |
 
 Ledger entries are **record-scoped to the policy** (household / person / organization): staff
 see and act on commissions only for policies within their book. Carrier statements are
@@ -81,7 +81,17 @@ entry's status recomputes automatically:
 | Received within $0.01 of expected | **received** (cleanly reconciled) |
 | Received less than expected | **partial** (under-payment — a variance) |
 | Received more than expected | **variance** (over-payment) |
-| Not collectible (chargeback/cancellation) | **written_off** (use **Write off**) |
+| Uncollectible expected | **written_off** (use **Write off**) |
+
+**Corrections — adjustment / reversal / chargeback.** Use **Adjust** to apply a signed
+correction to an entry's net received amount, choosing the **kind**:
+- **adjustment** — a true-up (±) for a miscounted payment.
+- **reversal** — back out a payment posted in error (negative).
+- **chargeback** — a carrier claws paid commission back (negative).
+
+The entry's net received and status recompute automatically, and the correction flows
+straight through to the revenue rollup. Every correction is recorded in the audit trail with
+its kind and reason.
 
 ### 5.3 Import & reconcile a carrier statement
 
@@ -104,13 +114,20 @@ shared exception queue then shows:
 - **`INS_COMMISSION_OUTSTANDING`** — an expected entry past its due date with nothing received.
   Follow up with the carrier; posting the payment (or writing it off) auto-resolves it.
 
-The scan is **idempotent** — running it repeatedly never creates duplicates.
+The scan is **idempotent** — running it repeatedly never creates duplicates. These
+exceptions are **firm-internal**: they surface only in the operations/oversight exception
+queue and are **never** shown on the client's Timeline — commission/compensation detail is not
+client-facing.
 
 ### 5.5 Read the revenue rollup
 
 **Commissions → Report** shows expected, received, outstanding, and variance totals, broken
-out by schedule and by organization, under the **`insurance_commissions`** revenue category.
-Use it for operational management reporting; it carries no compliance metrics.
+out by schedule, by organization, and by producer — plus **producer payouts** (individual
+producers) versus **agency-retained** revenue (agency / broker-of-record / override) — under
+the **`insurance_commissions`** revenue category. Every figure is derived directly from the
+commission ledger (the single source of truth), so re-running the report is safe and never
+double-counts; corrections and reversals are reflected immediately. Use it for operational
+management reporting; it carries no compliance metrics.
 
 ## 6. Controls & audit
 

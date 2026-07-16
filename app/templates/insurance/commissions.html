@@ -9,6 +9,8 @@
   <div class="stat"><div class="label">Received</div><div class="value">{{ '%.2f' | format(report.received_total) }}</div></div>
   <div class="stat"><div class="label">Outstanding</div><div class="value">{{ '%.2f' | format(report.outstanding_total) }}</div></div>
   <div class="stat"><div class="label">Variance</div><div class="value">{{ '%.2f' | format(report.variance_total) }}</div></div>
+  <div class="stat"><div class="label">Producer payouts (recv)</div><div class="value">{{ '%.2f' | format(report.producer_payouts.received) }}</div></div>
+  <div class="stat"><div class="label">Agency retained (recv)</div><div class="value">{{ '%.2f' | format(report.agency_retained.received) }}</div></div>
   <div class="stat"><div class="label">Entries</div><div class="value">{{ report.entry_count }}</div></div>
 </div>
 

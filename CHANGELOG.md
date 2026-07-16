@@ -96,6 +96,29 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
   replacement/1035, licensing, or CE determination; nothing is blocked. A test asserts no
   regulated-determination function or verb leaked into the commission surface.
 
+### Fixed — Phase 5 audit & revenue-validation pass
+- **Adjustment / reversal / chargeback** — added `record_adjustment` (a signed delta applied
+  to an entry's canonical net `received_amount`, distinguished by kind in the audit trail) so
+  true-ups, reversals, and carrier chargebacks are first-class and flow through the rollup;
+  audited as `insurance.commission.adjusted`. `write_off` remains for uncollectible expected.
+- **Audit completeness** — `reconcile_statement` now writes its own
+  `insurance.commission.statement_reconciled` event for the statement-level status roll-up
+  (in addition to the per-line events). Every commission mutation is now covered by an
+  immutable audit event; a test asserts one per mutation. Variance exception open/resolve is
+  audited by the shared engine (`exception.raised` / `exception.resolved`).
+- **Timeline privacy** — commission variance/outstanding exceptions are now **firm-internal
+  (unanchored)**: they carry no person/household, so the shared engine no longer publishes a
+  client-facing "Commission variance" Timeline event. Commission/compensation activity stays
+  in the immutable audit log and the firm-internal exception queue — never the client Timeline
+  (test-enforced).
+- **Revenue source of truth** — the rollup now reads the **full scoped ledger (uncapped)** so
+  totals cannot silently truncate; it derives every figure from `insurance_commissions`
+  (`service_revenue` is never written by the ledger), is idempotent and non-duplicating on
+  repeated runs, and reflects corrections/reversals immediately. Added **producer-payout vs
+  agency-retained** and **by-producer** breakdowns, derived from the ledger + split data.
+- **Robustness** — statement→policy auto-match no longer crashes on a duplicate policy number
+  (deterministic oldest-first pick).
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this

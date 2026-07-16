@@ -195,7 +195,8 @@ def record_received(principal, commission_id, *, received_amount, statement_id=N
 
 
 def write_off(principal, commission_id, *, actor_user_id=None, request_id=None):
-    """Close an expected entry the firm will not collect (e.g. chargeback/cancel)."""
+    """Close an expected entry the firm will not collect (terminal). For a carrier that
+    claws paid money back, use ``record_adjustment(kind='chargeback')`` instead."""
     _require(principal, "insurance.commissions.write")
     with engine.begin() as c:
         row = c.execute(select(insurance_commissions).where(
@@ -210,6 +211,44 @@ def write_off(principal, commission_id, *, actor_user_id=None, request_id=None):
                       entity_type="insurance_commission", entity_id=commission_id,
                       actor_user_id=_actor(principal, actor_user_id), request_id=_rid(request_id))
     return {"id": commission_id, "status": "written_off"}
+
+
+_ADJUSTMENT_KINDS = ("adjustment", "reversal", "chargeback")
+
+
+def record_adjustment(principal, commission_id, *, amount, kind="adjustment", reason=None,
+                      actor_user_id=None, request_id=None):
+    """Apply a signed adjustment to an entry's NET received amount and recompute status.
+
+    One primitive for three back-office corrections, distinguished by ``kind`` in the audit
+    trail: ``adjustment`` (a true-up, ±), ``reversal`` and ``chargeback`` (a carrier claws
+    money back — normally negative). ``amount`` is a signed delta added to the entry's current
+    ``received_amount``; that column stays the single canonical net actual, and the revenue
+    rollup re-derives every actual/variance total from it — so totals cannot drift and a
+    correction flows straight through. Each call is an immutable audit event; there is no
+    second history table.
+    """
+    _require(principal, "insurance.commissions.write")
+    if kind not in _ADJUSTMENT_KINDS:
+        raise CommissionError(f"kind must be one of {_ADJUSTMENT_KINDS}.")
+    delta = Decimal(str(amount))
+    with engine.begin() as c:
+        row = c.execute(select(insurance_commissions).where(
+            insurance_commissions.c.id == commission_id)).mappings().one_or_none()
+        if row is None:
+            raise CommissionNotFound("Commission entry not found.")
+        _policy_or_403(c, row["policy_id"], principal, write=True)
+        base = _money(row["received_amount"]) or Decimal("0.00")
+        new_received = _money(base + delta)
+        status = _reconciled_status(row["expected_amount"], new_received)
+        c.execute(insurance_commissions.update().where(
+            insurance_commissions.c.id == commission_id).values(
+            received_amount=new_received, status=status, updated_at=_now()))
+    write_audit_event(action="insurance.commission.adjusted",
+                      entity_type="insurance_commission", entity_id=commission_id,
+                      actor_user_id=_actor(principal, actor_user_id), request_id=_rid(request_id),
+                      metadata={"kind": kind, "amount": float(delta), "reason": reason, "status": status})
+    return {"id": commission_id, "status": status, "received_amount": float(new_received)}
 
 
 def _decorate(c, row):
@@ -235,7 +274,11 @@ def get_commission(principal, commission_id):
 
 
 def list_commissions(principal, *, policy_id=None, status=None, schedule=None, limit=500):
-    """The commission ledger, filtered to the principal's record scope (by policy)."""
+    """The commission ledger, filtered to the principal's record scope (by policy).
+
+    ``limit=None`` returns the full scoped ledger with no cap — used by the revenue rollup so
+    reported totals are a faithful projection of every transaction and never silently truncate.
+    """
     _require(principal, "insurance.commissions.read")
     query = select(insurance_commissions).order_by(insurance_commissions.c.id.desc())
     if policy_id:
@@ -244,8 +287,10 @@ def list_commissions(principal, *, policy_id=None, status=None, schedule=None, l
         query = query.where(insurance_commissions.c.status == status)
     if schedule:
         query = query.where(insurance_commissions.c.schedule == schedule)
+    if limit is not None:
+        query = query.limit(limit)
     with engine.connect() as c:
-        rows = c.execute(query.limit(limit)).mappings().all()
+        rows = c.execute(query).mappings().all()
         # Resolve each distinct policy's scope once, then filter.
         scope_ok = {}
         for pid in {r["policy_id"] for r in rows}:
@@ -293,8 +338,11 @@ def _match_line_to_commission(c, line):
     schedule where given, still awaiting payment. Deterministic (oldest expected first)."""
     policy_id = line["policy_id"]
     if policy_id is None and line["policy_number"]:
+        # policy_number is not schema-unique; pick deterministically (oldest) rather than
+        # crash on the rare duplicate — staff can always reconcile the line manually.
         policy_id = c.execute(select(insurance_policies.c.id).where(
-            insurance_policies.c.policy_number == line["policy_number"])).scalar_one_or_none()
+            insurance_policies.c.policy_number == line["policy_number"])
+            .order_by(insurance_policies.c.id).limit(1)).scalars().first()
     if policy_id is None:
         return None, None
     q = select(insurance_commissions).where(
@@ -368,6 +416,12 @@ def reconcile_statement(principal, statement_id, *, actor_user_id=None, request_
             st = "imported"
         c.execute(insurance_commission_statements.update().where(
             insurance_commission_statements.c.id == statement_id).values(status=st, updated_at=_now()))
+    # Audit the statement-level roll-up (reconciliation status change) as its own event, in
+    # addition to the per-line events reconcile_line already writes.
+    write_audit_event(action="insurance.commission.statement_reconciled",
+                      entity_type="insurance_commission_statement", entity_id=statement_id,
+                      actor_user_id=_actor(principal, actor_user_id), request_id=_rid(request_id),
+                      metadata={"status": st, "lines_matched": matched, "lines_total": len(line_ids)})
     return {"statement_id": statement_id, "lines_matched": matched, "status": st,
             "lines_total": len(line_ids)}
 

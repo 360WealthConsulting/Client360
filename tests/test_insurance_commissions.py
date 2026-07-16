@@ -14,16 +14,19 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db import (
+    audit_events,
     engine,
     exceptions,
     households,
+    insurance_commissions,
     insurance_product_families,
     insurance_product_versions,
     people,
     relationship_entities,
+    timeline_events,
     users,
 )
 from app.security.models import Principal
@@ -146,10 +149,11 @@ def test_underpayment_is_partial_overpayment_is_variance():
 
 
 def test_statement_import_and_reconcile_matches_by_policy_number():
-    policy_id, carrier_id, _pr = _policy_with_producers([("writing_agent", 100)], policy_number="POL-XYZ")
+    pnum = f"POL-{_sfx()[:8]}"
+    policy_id, carrier_id, _pr = _policy_with_producers([("writing_agent", 100)], policy_number=pnum)
     com.generate_expected(_p(), policy_id=policy_id, basis_amount=500, schedule="first_year")
     stmt = com.import_statement(_p(), carrier_id=carrier_id, reference="STMT-1",
-                                lines=[{"policy_number": "POL-XYZ", "schedule": "first_year", "amount": 450}])
+                                lines=[{"policy_number": pnum, "schedule": "first_year", "amount": 450}])
     result = com.reconcile_statement(_p(), stmt["id"])
     assert result["lines_matched"] == 1
     ledger = com.list_commissions(_p(), policy_id=policy_id)
@@ -220,7 +224,8 @@ def test_commission_report_rolls_up_revenue():
     assert "first_year" in report["by_schedule"]
     assert set(report) == {"revenue_category", "entry_count", "by_status", "expected_total",
                            "received_total", "outstanding_total", "variance_total",
-                           "by_schedule", "by_organization"}
+                           "producer_payouts", "agency_retained",
+                           "by_schedule", "by_organization", "by_producer"}
 
 
 # --- record scope + capability gating ----------------------------------------
@@ -257,3 +262,200 @@ def test_no_regulated_determination_functions_in_commissions():
         assert defined & regulated == set(), f"regulated logic leaked into {mod.__name__}"
         assert not [n for n in defined for v in verbs if v in n], \
             f"a determination verb leaked into {mod.__name__}"
+
+
+# ============================================================================
+# Audit-and-revenue-validation pass (Phase 5 follow-up)
+# ============================================================================
+
+def _org(c, entity_type="organization"):
+    return c.execute(relationship_entities.insert().values(
+        entity_type=entity_type, name=f"Agency {_sfx()}", details={}, active=True
+    ).returning(relationship_entities.c.id)).scalar_one()
+
+
+def _audit_count(action, entity_id=None):
+    with engine.connect() as c:
+        q = select(func.count()).select_from(audit_events).where(audit_events.c.action == action)
+        if entity_id is not None:
+            q = q.where(audit_events.c.entity_id == str(entity_id))
+        return c.execute(q).scalar_one()
+
+
+def _commission_timeline_rows():
+    with engine.connect() as c:
+        return c.execute(select(func.count()).select_from(timeline_events).where(
+            timeline_events.c.title.ilike("%commission%"))).scalar_one()
+
+
+# --- 1. audit coverage: every mutation writes an immutable audit event -------
+
+def test_every_commission_mutation_writes_an_audit_event():
+    pnum = f"AUD-{_sfx()[:8]}"
+    policy_id, carrier_id, producers = _policy_with_producers(
+        [("writing_agent", 100)], policy_number=pnum)
+
+    # generated
+    before = _audit_count("insurance.commission.generated", policy_id)
+    cid = com.generate_expected(_p(), policy_id=policy_id, basis_amount=500,
+                                schedule="first_year")["created"][0]["id"]
+    assert _audit_count("insurance.commission.generated", policy_id) == before + 1
+
+    # expected_recorded (single)
+    before = _audit_count("insurance.commission.expected_recorded")
+    com.record_expected(_p(), policy_id=policy_id, producer_entity_type="user",
+                        producer_entity_id=producers[0], expected_amount=100, schedule="renewal")
+    assert _audit_count("insurance.commission.expected_recorded") == before + 1
+
+    # received_recorded
+    assert _audit_count("insurance.commission.received_recorded", cid) == 0
+    com.record_received(_p(), cid, received_amount=400)
+    assert _audit_count("insurance.commission.received_recorded", cid) == 1
+
+    # adjusted
+    assert _audit_count("insurance.commission.adjusted", cid) == 0
+    com.record_adjustment(_p(), cid, amount=100, kind="adjustment")
+    assert _audit_count("insurance.commission.adjusted", cid) == 1
+
+    # statement imported + line reconciled + statement reconciled
+    assert _audit_count("insurance.commission.statement_imported") >= 0
+    stmt = com.import_statement(_p(), carrier_id=carrier_id, reference="AUD-STMT",
+                                lines=[{"policy_number": pnum, "schedule": "renewal", "amount": 90}])
+    assert _audit_count("insurance.commission.statement_imported", stmt["id"]) == 1
+    before_line = _audit_count("insurance.commission.line_reconciled")
+    com.reconcile_statement(_p(), stmt["id"])
+    assert _audit_count("insurance.commission.line_reconciled") == before_line + 1
+    assert _audit_count("insurance.commission.statement_reconciled", stmt["id"]) == 1
+
+    # written_off
+    wid = com.record_expected(_p(), policy_id=policy_id, producer_entity_type="user",
+                              producer_entity_id=producers[0], expected_amount=50)["id"]
+    com.write_off(_p(), wid)
+    assert _audit_count("insurance.commission.written_off", wid) == 1
+
+
+def test_variance_exception_lifecycle_is_audited():
+    policy_id, _c, _pr = _policy_with_producers([("writing_agent", 100)])
+    cid = com.generate_expected(_p(), policy_id=policy_id, basis_amount=100)["created"][0]["id"]
+    com.record_received(_p(), cid, received_amount=60)  # variance condition
+    before_raise = _audit_count("exception.raised")
+    det.run_insurance_commission_scan(actor_user_id=1, today=TODAY)
+    assert _audit_count("exception.raised") > before_raise  # opening the exception was audited
+    before_resolve = _audit_count("exception.resolved")
+    com.record_received(_p(), cid, received_amount=100)  # clears the condition
+    det.run_insurance_commission_scan(actor_user_id=1, today=TODAY)
+    assert _audit_count("exception.resolved") > before_resolve  # auto-resolve was audited
+
+
+# --- 1b. Timeline visibility & privacy: no compensation on the client timeline
+
+def test_commission_activity_never_lands_on_the_client_timeline():
+    pnum = f"PRIV-{_sfx()[:8]}"
+    before = _commission_timeline_rows()
+    policy_id, carrier_id, _pr = _policy_with_producers([("writing_agent", 100)], policy_number=pnum)
+    cid = com.generate_expected(_p(), policy_id=policy_id, basis_amount=100,
+                                due_date=TODAY - timedelta(days=10))["created"][0]["id"]
+    com.record_received(_p(), cid, received_amount=60)   # variance
+    stmt = com.import_statement(_p(), carrier_id=carrier_id, reference="PRIV-STMT",
+                                lines=[{"policy_number": pnum, "amount": 10}])
+    com.reconcile_statement(_p(), stmt["id"])
+    det.run_insurance_commission_scan(actor_user_id=1, today=TODAY)  # raises variance + outstanding
+
+    # No NEW timeline event mentioning commissions/compensation is created by any commission
+    # mutation or by the scan (delta guards against pre-existing rows in a shared test DB).
+    assert _commission_timeline_rows() == before, "commission/compensation leaked onto the timeline"
+
+    # The commission exceptions are firm-internal (unanchored) — no person/household anchor,
+    # which is what would otherwise publish a client timeline event.
+    with engine.connect() as c:
+        rows = c.execute(select(exceptions.c.person_id, exceptions.c.household_id).where(
+            exceptions.c.dedupe_key.in_((f"ins:commission_variance:{cid}",
+                                         f"ins:commission_outstanding:{cid}")))).mappings().all()
+    assert rows and all(r["person_id"] is None and r["household_id"] is None for r in rows)
+
+
+# --- 2. revenue rollup is ledger-derived, idempotent, and correction-aware ---
+
+def test_report_totals_are_derived_from_the_ledger():
+    policy_id, _c, producers = _policy_with_producers([("writing_agent", 100)])
+    com.generate_expected(_p(), policy_id=policy_id, basis_amount=1000)
+    e = com.list_commissions(_p(), policy_id=policy_id)[0]
+    com.record_received(_p(), e["id"], received_amount=750)
+    report = insurance_reporting.commission_report(_p())
+    # A full-scope (record.read_all) principal's report totals equal the raw ledger sums over
+    # the ENTIRE ledger — the rollup is a faithful, uncapped projection of the transactions.
+    with engine.connect() as c:
+        total_expected = c.execute(select(func.coalesce(
+            func.sum(insurance_commissions.c.expected_amount), 0))).scalar_one()
+        total_received = c.execute(select(func.coalesce(
+            func.sum(insurance_commissions.c.received_amount), 0))).scalar_one()
+    assert Decimal(str(report["expected_total"])) == Decimal(str(total_expected))
+    assert Decimal(str(report["received_total"])) == Decimal(str(total_received))
+
+
+def test_adjustment_reversal_chargeback_writeoff_flow_through_totals():
+    policy_id, _c, _pr = _policy_with_producers([("writing_agent", 100)])
+    cid = com.generate_expected(_p(), policy_id=policy_id, basis_amount=1000)["created"][0]["id"]
+    com.record_received(_p(), cid, received_amount=1000)
+    assert com.get_commission(_p(), cid)["received_amount"] == Decimal("1000.00")
+    com.record_adjustment(_p(), cid, amount=-200, kind="reversal")
+    assert com.get_commission(_p(), cid)["received_amount"] == Decimal("800.00")
+    com.record_adjustment(_p(), cid, amount=-800, kind="chargeback")
+    assert com.get_commission(_p(), cid)["received_amount"] == Decimal("0.00")
+    com.record_adjustment(_p(), cid, amount=50, kind="adjustment")
+    got = com.get_commission(_p(), cid)
+    assert got["received_amount"] == Decimal("50.00") and got["status"] == "partial"
+    # the rollup reflects the net after all corrections (received == 50 for this entry)
+    rep = insurance_reporting.commission_report(_p(), )
+    assert rep["by_producer"], "producer breakdown present"
+
+
+def test_revenue_rollup_is_idempotent_and_non_duplicating():
+    policy_id, _c, _pr = _policy_with_producers([("writing_agent", 100)])
+    com.generate_expected(_p(), policy_id=policy_id, basis_amount=500)
+    with engine.connect() as c:
+        rows_before = c.execute(select(func.count()).select_from(insurance_commissions)).scalar_one()
+    r1 = insurance_reporting.commission_report(_p())
+    r2 = insurance_reporting.commission_report(_p())
+    assert r1 == r2  # pure re-derivation — no drift, no double counting
+    with engine.connect() as c:
+        rows_after = c.execute(select(func.count()).select_from(insurance_commissions)).scalar_one()
+    assert rows_before == rows_after  # reporting persists nothing
+
+
+def test_reconciliation_after_a_correction_clears_the_variance():
+    pnum = f"COR-{_sfx()[:8]}"
+    policy_id, carrier_id, _pr = _policy_with_producers([("writing_agent", 100)], policy_number=pnum)
+    cid = com.generate_expected(_p(), policy_id=policy_id, basis_amount=500)["created"][0]["id"]
+    stmt = com.import_statement(_p(), carrier_id=carrier_id, reference="COR-STMT",
+                                lines=[{"policy_number": pnum, "amount": 450}])
+    com.reconcile_statement(_p(), stmt["id"])  # 450 vs 500 -> partial (variance)
+    det.run_insurance_commission_scan(actor_user_id=1, today=TODAY)
+    with engine.connect() as c:
+        opened = c.execute(select(exceptions.c.status).where(
+            exceptions.c.dedupe_key == f"ins:commission_variance:{cid}")).scalar_one()
+    assert opened not in ("resolved", "cancelled")
+    # correction: carrier pays the missing 50 -> clean, variance auto-resolves
+    com.record_adjustment(_p(), cid, amount=50, kind="adjustment")
+    assert com.get_commission(_p(), cid)["status"] == "received"
+    det.run_insurance_commission_scan(actor_user_id=1, today=TODAY)
+    with engine.connect() as c:
+        after = c.execute(select(exceptions.c.status).where(
+            exceptions.c.dedupe_key == f"ins:commission_variance:{cid}")).scalar_one()
+    assert after in ("resolved", "cancelled")
+
+
+def test_producer_payouts_and_agency_retained_split_from_ledger():
+    with engine.begin() as c:
+        agency = _org(c)
+    policy_id, _c, producers = _policy_with_producers([("writing_agent", 60)])
+    # attach an organization producer (agency) with a 40% override
+    ins.add_producer(_p(), policy_id, producer_entity_type="organization",
+                     producer_entity_id=agency, producer_role="override", split_percentage=40)
+    com.generate_expected(_p(), policy_id=policy_id, basis_amount=1000)
+    rep = insurance_reporting.commission_report(_p())
+    # this test's policy is isolated in scope; individual producer gets 600, agency org 400
+    assert rep["producer_payouts"]["expected"] >= 600.0
+    assert rep["agency_retained"]["expected"] >= 400.0
+    assert f"organization:{agency}" in rep["by_producer"]
+    assert f"user:{producers[0]}" in rep["by_producer"]

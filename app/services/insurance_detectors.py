@@ -28,7 +28,6 @@ from app.db import (
     insurance_ce_records,
     insurance_commissions,
     insurance_licenses,
-    insurance_policies,
     insurance_policy_reviews,
 )
 from app.services import exception_engine as ee
@@ -279,30 +278,29 @@ def run_insurance_licensing_scan(*, actor_user_id=None, today=None):
 # A reconciled row whose received amount differs from expected raises
 # INS_COMMISSION_VARIANCE; an expected row past its due date with nothing received
 # raises INS_COMMISSION_OUTSTANDING. Both are money-reconciliation gaps — NOT a
-# compliance conclusion. Anchored to the policy's org/person/household so they reach
-# the right owners; idempotent and auto-resolving through the SHARED engine. Live
-# cron wiring is Phase 6.
+# compliance conclusion.
+#
+# PRIVACY: these are FIRM-INTERNAL back-office financial exceptions. They carry NO
+# person/household anchor (which would make the SHARED engine publish a client-facing
+# "Commission variance" timeline event — sensitive compensation must never surface
+# there) and no client-org relation. The policy/commission ids travel in the
+# description/metadata for triage only. They surface to oversight/operations roles,
+# exactly like the licensing/CE expiry reminders. Idempotent and auto-resolving through
+# the SHARED engine; live cron wiring is Phase 6.
 # ============================================================================
 _COMMISSION_VARIANCE_PREFIX = "ins:commission_variance:"
 _COMMISSION_OUTSTANDING_PREFIX = "ins:commission_outstanding:"
 
 
-def _commission_anchor(c, row):
-    policy = c.execute(select(insurance_policies).where(
-        insurance_policies.c.id == row["policy_id"])).mappings().one_or_none() or {}
-    return {"organization_id": policy.get("organization_id"),
-            "person_id": policy.get("person_id"),
-            "household_id": policy.get("household_id")}
-
-
-def _commission_scope(anchor, title, sla_date):
-    org_id = anchor.get("organization_id")
-    return {"related_entity_type": "organization" if org_id else None,
-            "related_entity_id": org_id,
-            "person_id": anchor.get("person_id"),
-            "household_id": anchor.get("household_id"),
+def _commission_scope(row, title):
+    """Firm-internal (unanchored) scope — no client person/household/org, so no client
+    timeline event fires. Policy/commission ids ride in description + metadata."""
+    return {"related_entity_type": None, "related_entity_id": None,
+            "person_id": None, "household_id": None,
             "title": title,
-            "sla_due_at": _due_datetime(sla_date) if sla_date else None}
+            "description": f"Commission #{row['id']} on policy #{row['policy_id']}",
+            "sla_due_at": _due_datetime(row["due_date"]) if row["due_date"] else None,
+            "metadata": {"commission_id": row["id"], "policy_id": row["policy_id"]}}
 
 
 def _commission_variance_conditions(today):
@@ -312,7 +310,7 @@ def _commission_variance_conditions(today):
             insurance_commissions.c.status.in_(("partial", "variance")))).mappings().all()
         for row in rows:
             conditions[f"{_COMMISSION_VARIANCE_PREFIX}{row['id']}"] = _commission_scope(
-                _commission_anchor(c, row), "Commission variance vs expected", row["due_date"])
+                row, "Commission variance vs expected")
     return conditions
 
 
@@ -326,7 +324,7 @@ def _commission_outstanding_conditions(today):
             insurance_commissions.c.due_date < today)).mappings().all()
         for row in rows:
             conditions[f"{_COMMISSION_OUTSTANDING_PREFIX}{row['id']}"] = _commission_scope(
-                _commission_anchor(c, row), "Expected commission outstanding", row["due_date"])
+                row, "Expected commission outstanding")
     return conditions
 
 

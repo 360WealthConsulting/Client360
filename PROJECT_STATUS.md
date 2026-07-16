@@ -1,7 +1,8 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 Phase 5 — Insurance Commissions — complete)._
+**2026-07-16** (Release 0.10.0 Phase 5 — Insurance Commissions — complete, incl. audit &
+revenue-validation pass)._
 
 | Field | Value |
 |---|---|
@@ -9,7 +10,7 @@ _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
 | **Branch** | `feature/insurance-operations` (base: `main`) |
 | **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* |
 | **Current Alembic head** | `b8i9k1l2g3j4` — single head; **dev `client360` and test `client360_test` both at head** |
-| **Tests** | **674 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff clean on Phase 5 files; migrations reversible; compile OK; `git diff --check` clean; startup/shutdown clean. |
+| **Tests** | **682 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff clean on Phase 5 files; single head `b8i9k1l2g3j4`; compile OK; `git diff --check` clean; startup/shutdown clean. |
 | **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–5; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance Commissions SOP drafted (`docs/confluence/INSURANCE_COMMISSIONS_SOP_DRAFT.md`, draft-only). |
 
 ## Completed phases (0.10.0)
@@ -22,7 +23,7 @@ non-regulated and complete for its scope**. Regulated logic remains deferred —
 - **Phase 2** — New-business pipeline (skeleton): case progression, requirement tracking, underwriting-status, document collection, workflow orchestration, pipeline reporting, UI/APIs. Migration `y5e6g7i8d9f0`.
 - **Phase 3** — In-force servicing (skeleton): reviews state machine, obligation calendar, `INS_REVIEW_OVERDUE` via shared Exception Engine, review metrics, reviews board UI/APIs. Migration `z6f7h8j9e0g1`.
 - **Phase 4** — Producer licensing & CE **records** (skeleton): `insurance_licenses`, `insurance_ce_records`, expiry detectors (`INS_LICENSE_EXPIRING` / `INS_CE_PERIOD_ENDING`), licensing dashboard UI/APIs. Migration `a7g8i9k0f1h2`.
-- **Phase 5** — Commissions (non-regulated, complete): split-aware expected/received ledger (`insurance_commissions`), carrier-statement import + reconciliation (`insurance_commission_statements` / `_statement_lines`), variance/outstanding exceptions (`INS_COMMISSION_VARIANCE` / `INS_COMMISSION_OUTSTANDING`), revenue rollup, commissions console + APIs, `insurance.commissions.write` capability. Migration `b8i9k1l2g3j4`.
+- **Phase 5** — Commissions (non-regulated, complete): split-aware expected/received ledger (`insurance_commissions`), adjustments/reversals/chargebacks + write-off, carrier-statement import + reconciliation (`insurance_commission_statements` / `_statement_lines`), **firm-internal** variance/outstanding exceptions (`INS_COMMISSION_VARIANCE` / `INS_COMMISSION_OUTSTANDING`; kept off the client Timeline), uncapped ledger-derived revenue rollup with producer-payout / agency-retained breakdown, full audit coverage, commissions console + APIs, `insurance.commissions.write` capability. Migration `b8i9k1l2g3j4`. Includes the audit & revenue-validation pass.
 
 ## Remaining phases (0.10.0)
 

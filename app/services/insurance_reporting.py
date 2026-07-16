@@ -75,17 +75,28 @@ def licensing_report(principal, *, today=None, window_days=60):
 def commission_report(principal):
     """Operational commission reconciliation + revenue rollup within record scope.
 
-    Expected vs received, outstanding, and variance totals, broken out by schedule and by
-    organization, tagged with the ``insurance_commissions`` revenue category. This is money
-    reconciliation and revenue reporting — it makes no compliance determination.
+    Everything here is DERIVED, in one pass, from the canonical commission ledger
+    (``insurance_commissions``) plus its producer split data — there is no persisted
+    aggregate and no second source of truth (``service_revenue`` is never written by the
+    commission ledger; it stays an operational projection). ``expected_*`` come from each
+    entry's ``expected_amount``; ``received_*`` / actuals come from ``received_amount`` (which
+    already reflects posted receipts AND every adjustment / reversal / chargeback applied via
+    ``record_adjustment``). Because it is a pure re-sum over the ledger, the rollup is
+    idempotent, never double-counts on repeated runs, and a correction flows straight through.
+
+    Producer payouts (individual producers) and agency-retained revenue (organization
+    producers — agency / broker-of-record / override) are split by ``producer_entity_type``.
+    Money reconciliation and revenue reporting only; no compliance determination.
     """
-    entries = com.list_commissions(principal)  # scope-filtered by policy
+    entries = com.list_commissions(principal, limit=None)  # full scoped ledger — no cap
 
     def money(x):
         return Decimal(str(x)) if x is not None else Decimal("0")
 
     open_statuses = ("expected", "partial", "variance")
-    by_schedule, by_org = {}, {}
+    by_schedule, by_org, by_producer = {}, {}, {}
+    producer_payout = {"expected": Decimal("0"), "received": Decimal("0")}
+    agency_retained = {"expected": Decimal("0"), "received": Decimal("0")}
     expected_total = received_total = outstanding_total = Decimal("0")
     for e in entries:
         exp, rec = money(e["expected_amount"]), money(e["received_amount"])
@@ -100,10 +111,21 @@ def commission_report(principal):
         org = by_org.setdefault(org_key, {"expected": Decimal("0"), "received": Decimal("0")})
         org["expected"] += exp
         org["received"] += rec
+        # producer payouts vs agency-retained, both derived from the ledger + split data
+        prod_key = f"{e['producer_entity_type']}:{e['producer_entity_id']}"
+        prod = by_producer.setdefault(prod_key, {"expected": Decimal("0"), "received": Decimal("0")})
+        prod["expected"] += exp
+        prod["received"] += rec
+        bucket = producer_payout if e["producer_entity_type"] == "user" else agency_retained
+        bucket["expected"] += exp
+        bucket["received"] += rec
 
     def flatten(bucket):
         return {k: {"expected": float(v["expected"]), "received": float(v["received"])}
                 for k, v in bucket.items()}
+
+    def pair(bucket):
+        return {"expected": float(bucket["expected"]), "received": float(bucket["received"])}
 
     return {
         "revenue_category": "insurance_commissions",
@@ -113,6 +135,9 @@ def commission_report(principal):
         "received_total": float(received_total),
         "outstanding_total": float(outstanding_total),
         "variance_total": float(received_total - expected_total),
+        "producer_payouts": pair(producer_payout),
+        "agency_retained": pair(agency_retained),
         "by_schedule": flatten(by_schedule),
         "by_organization": flatten(by_org),
+        "by_producer": flatten(by_producer),
     }
