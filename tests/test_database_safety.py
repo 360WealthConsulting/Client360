@@ -7,6 +7,10 @@ pin that the demo guard (in use since 0.9.9) is unchanged by the generalisation.
 """
 from __future__ import annotations
 
+import os
+import pathlib
+import subprocess
+
 import pytest
 
 from app.demo.safety import DemoSafetyError, assert_demo_database, is_demo_database
@@ -100,6 +104,84 @@ def test_restore_rehearsal_accepts_its_scratch_default():
     assert assert_rehearsal_database(
         "postgresql://localhost/client360_restore_rehearsal"
     ) == "client360_restore_rehearsal"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        REAL,
+        "postgresql://prod.example.com/client360_production",
+        "postgresql://localhost/client360_demo",
+    ],
+)
+def test_restore_rehearsal_refuses_production_like_targets(url):
+    with pytest.raises(RehearsalSafetyError):
+        assert_rehearsal_database(url)
+
+
+def test_restore_rehearsal_refuses_production_environment(monkeypatch):
+    monkeypatch.setenv("CLIENT360_ENVIRONMENT", "production")
+    with pytest.raises(RehearsalSafetyError, match="production"):
+        assert_rehearsal_database("postgresql://localhost/client360_restore_rehearsal")
+
+
+# --- the script wires the guard in front of `dropdb` ---------------------------
+#
+# The unit tests above prove the guard's logic. These prove the *script* consults
+# it before it destroys anything — which is the property that actually matters,
+# since `dropdb --if-exists "$DB"` previously ran on an unvalidated argument.
+
+REHEARSAL_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "restore_rehearsal.sh"
+
+
+def _run_rehearsal(db, *, force=False, env=None):
+    argv = [str(REHEARSAL_SCRIPT)]
+    if force:
+        argv.append("--force")
+    argv += ["/nonexistent-dump-file.sql", db]
+    return subprocess.run(
+        argv,
+        cwd=str(REHEARSAL_SCRIPT.parents[1]),
+        env={**os.environ, **(env or {})},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_rehearsal_script_refuses_before_it_drops_anything():
+    """Deliberately uses a production-*like* name that does not exist.
+
+    If the guard ever regresses, this test must not itself be the thing that
+    destroys a real database — so it never names `client360`. The unit tests
+    above cover that name, where no dropdb is involved.
+    """
+    result = _run_rehearsal("client360_production_lookalike")
+    assert result.returncode == 2, result.stderr
+    assert "REFUSED" in result.stderr
+    # Ordering is the point: the guard must fire before the drop, not after.
+    assert "(re)creating scratch DB" not in result.stdout
+
+
+def test_rehearsal_force_does_not_override_the_production_environment():
+    """The override is for the name check only — never for production."""
+    result = _run_rehearsal(
+        "client360_restore_rehearsal",
+        force=True,
+        env={"CLIENT360_ENVIRONMENT": "production"},
+    )
+    assert result.returncode == 2, result.stderr
+    assert "REFUSED" in result.stderr
+    assert "(re)creating scratch DB" not in result.stdout
+
+
+def test_rehearsal_override_is_explicit_and_unmistakable():
+    """`--force` must be spelled out; no short flag, no env-var backdoor."""
+    source = REHEARSAL_SCRIPT.read_text()
+    assert '"${1:-}" = "--force"' in source
+    assert "-f)" not in source
+    # A silent override would defeat the guard; the script must announce it loudly.
+    assert source.count("WARNING") >= 2
 
 
 # --- the demo guard must be unchanged by the generalisation --------------------
