@@ -13,8 +13,10 @@ past-due review to ``overdue`` (publishing the shared timeline event) and raises
 ``INS_REVIEW_OVERDUE``; when the review is completed/cancelled/deferred the
 exception auto-resolves so recurrence reopens it.
 
-Live scheduler (cron) wiring is Phase 6; this module is the callable, idempotent
-entry point (also driven by the operational manual-scan endpoint).
+The detectors are the callable, idempotent entry points. Phase 6 added the single
+``run_insurance_scan()`` orchestrator, wired into the shared scheduler
+(``app/jobs/scheduler.py`` → ``insurance-detector-scan``) and also driven by the operational
+manual-scan endpoint.
 """
 from __future__ import annotations
 
@@ -48,6 +50,57 @@ def _today(today):
 
 def _due_datetime(d):
     return datetime(d.year, d.month, d.day, 23, 59, tzinfo=UTC)
+
+
+# --- shared scan plumbing (one implementation for every insurance scan) ------
+
+def _exception_status(*, prefix=None, domain=None):
+    """id -> status snapshot for the insurance exceptions selected by dedupe-key ``prefix``
+    or ``domain``. The single snapshot every scan's before/after diff runs against."""
+    with engine.connect() as c:
+        query = select(exceptions.c.id, exceptions.c.status)
+        if prefix is not None:
+            query = query.where(exceptions.c.dedupe_key.like(f"{prefix}%"))
+        if domain is not None:
+            query = query.where(exceptions.c.domain == domain)
+        return {r[0]: r[1] for r in c.execute(query)}
+
+
+def _scan_delta(before, after):
+    """opened / reopened / resolved / skipped from two id->status snapshots — the scan diff
+    arithmetic in exactly one place. ``skipped`` = still-open conditions re-confirmed (idempotent
+    no-ops)."""
+    def active(st):
+        return st not in _CLOSED
+    opened = sum(1 for i, st in after.items() if active(st) and i not in before)
+    reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
+    resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
+    skipped = sum(1 for i, st in after.items() if active(st) and i in before and active(before[i]))
+    return opened, reopened, resolved, skipped
+
+
+def _run_detector_deltas(pairs, *, actor_user_id, today):
+    """Run each ``(dedupe_prefix, detector)`` pair — isolated by prefix — and aggregate honest
+    opened/reopened/resolved + failures across them. Shared by the licensing and commission
+    family scans so the per-prefix diff loop exists once."""
+    opened = reopened = resolved = 0
+    failures = []
+    for prefix, detect in pairs:
+        before = _exception_status(prefix=prefix)
+        result = detect(actor_user_id=actor_user_id, today=today)
+        after = _exception_status(prefix=prefix)
+        o, r, res, _skipped = _scan_delta(before, after)
+        opened += o
+        reopened += r
+        resolved += res
+        failures += result["failures"]
+    return {
+        "exceptions_opened": opened,
+        "exceptions_reopened": reopened,
+        "exceptions_resolved": resolved,
+        "failures": len(failures),
+        "failure_detail": failures,
+    }
 
 
 def _overdue_conditions(today):
@@ -139,27 +192,14 @@ def detect_reviews_overdue(*, actor_user_id=None, today=None):
     return {"raised": raised, "reviews_marked_overdue": flipped, "closed": closed, "failures": failures}
 
 
-def _open_review_exception_status():
-    with engine.connect() as c:
-        return {r["id"]: r["status"] for r in c.execute(select(
-            exceptions.c.id, exceptions.c.status).where(
-            exceptions.c.dedupe_key.like(f"{_DEDUPE_PREFIX}%"))).mappings()}
-
-
 def run_insurance_review_scan(*, actor_user_id=None, today=None):
     """Scheduled/manual entry point for the in-force obligation calendar. Idempotent:
     re-running neither double-raises (dedupe) nor re-flips (guarded). Returns an honest
     execution result — reviews flipped overdue and exceptions opened/reopened/resolved."""
-    before = _open_review_exception_status()
+    before = _exception_status(prefix=_DEDUPE_PREFIX)
     result = detect_reviews_overdue(actor_user_id=actor_user_id, today=today)
-    after = _open_review_exception_status()
-
-    def active(st):
-        return st not in _CLOSED
-
-    opened = sum(1 for i, st in after.items() if active(st) and i not in before)
-    reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
-    resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
+    after = _exception_status(prefix=_DEDUPE_PREFIX)
+    opened, reopened, resolved, _skipped = _scan_delta(before, after)
     return {
         "reviews_marked_overdue": result["reviews_marked_overdue"],
         "exceptions_opened": opened,
@@ -240,38 +280,12 @@ def detect_ce_period_ending(*, actor_user_id=None, today=None):
                       _ce_period_conditions(today), actor_user_id=actor_user_id)
 
 
-def _open_exception_status(prefix):
-    with engine.connect() as c:
-        return {r["id"]: r["status"] for r in c.execute(select(
-            exceptions.c.id, exceptions.c.status).where(
-            exceptions.c.dedupe_key.like(f"{prefix}%"))).mappings()}
-
-
 def run_insurance_licensing_scan(*, actor_user_id=None, today=None):
     """Scheduled/manual entry point for licensing & CE expiry reminders. Idempotent
-    (stable dedupe). Returns honest opened/resolved counts. Live cron wiring is Phase 6."""
-    def _delta(prefix, detect):
-        before = _open_exception_status(prefix)
-        result = detect(actor_user_id=actor_user_id, today=today)
-        after = _open_exception_status(prefix)
-
-        def active(st):
-            return st not in _CLOSED
-        opened = sum(1 for i, st in after.items() if active(st) and i not in before)
-        reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
-        resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
-        return opened, reopened, resolved, result["failures"]
-
-    lo, lr, lres, lf = _delta(_LICENSE_PREFIX, detect_licenses_expiring)
-    co, cr, cres, cf = _delta(_CE_PREFIX, detect_ce_period_ending)
-    failures = lf + cf
-    return {
-        "exceptions_opened": lo + co,
-        "exceptions_reopened": lr + cr,
-        "exceptions_resolved": lres + cres,
-        "failures": len(failures),
-        "failure_detail": failures,
-    }
+    (stable dedupe). Returns honest opened/reopened/resolved counts."""
+    return _run_detector_deltas(
+        [(_LICENSE_PREFIX, detect_licenses_expiring), (_CE_PREFIX, detect_ce_period_ending)],
+        actor_user_id=actor_user_id, today=today)
 
 
 # ============================================================================
@@ -281,13 +295,14 @@ def run_insurance_licensing_scan(*, actor_user_id=None, today=None):
 # raises INS_COMMISSION_OUTSTANDING. Both are money-reconciliation gaps — NOT a
 # compliance conclusion.
 #
-# PRIVACY: these are FIRM-INTERNAL back-office financial exceptions. They carry NO
-# person/household anchor (which would make the SHARED engine publish a client-facing
-# "Commission variance" timeline event — sensitive compensation must never surface
-# there) and no client-org relation. The policy/commission ids travel in the
-# description/metadata for triage only. They surface to oversight/operations roles,
-# exactly like the licensing/CE expiry reminders. Idempotent and auto-resolving through
-# the SHARED engine; live cron wiring is Phase 6.
+# PRIVACY: these are FIRM-INTERNAL back-office financial exceptions. They anchor the client
+# ORGANIZATION when the policy has one (for organization record scope + org-scoped work
+# queues), but they carry NO person/household anchor — that is the only thing that would make
+# the SHARED engine publish a client-facing "Commission variance" timeline event, and sensitive
+# compensation must never surface there. The policy/commission ids also travel in the
+# description/metadata for triage. They surface to oversight/operations roles, like the
+# licensing/CE expiry reminders. Idempotent and auto-resolving through the SHARED engine; the
+# orchestrated run_insurance_scan() is wired into the scheduler (Phase 6).
 # ============================================================================
 _COMMISSION_VARIANCE_PREFIX = "ins:commission_variance:"
 _COMMISSION_OUTSTANDING_PREFIX = "ins:commission_outstanding:"
@@ -348,29 +363,11 @@ def detect_commissions_outstanding(*, actor_user_id=None, today=None):
 
 def run_insurance_commission_scan(*, actor_user_id=None, today=None):
     """Scheduled/manual entry point for commission reconciliation exceptions. Idempotent
-    (stable dedupe). Returns honest opened/reopened/resolved counts. Live cron is Phase 6."""
-    def _delta(prefix, detect):
-        before = _open_exception_status(prefix)
-        result = detect(actor_user_id=actor_user_id, today=today)
-        after = _open_exception_status(prefix)
-
-        def active(st):
-            return st not in _CLOSED
-        opened = sum(1 for i, st in after.items() if active(st) and i not in before)
-        reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
-        resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
-        return opened, reopened, resolved, result["failures"]
-
-    vo, vr, vres, vf = _delta(_COMMISSION_VARIANCE_PREFIX, detect_commission_variance)
-    oo, ore, ores, of = _delta(_COMMISSION_OUTSTANDING_PREFIX, detect_commissions_outstanding)
-    failures = vf + of
-    return {
-        "exceptions_opened": vo + oo,
-        "exceptions_reopened": vr + ore,
-        "exceptions_resolved": vres + ores,
-        "failures": len(failures),
-        "failure_detail": failures,
-    }
+    (stable dedupe). Returns honest opened/reopened/resolved counts."""
+    return _run_detector_deltas(
+        [(_COMMISSION_VARIANCE_PREFIX, detect_commission_variance),
+         (_COMMISSION_OUTSTANDING_PREFIX, detect_commissions_outstanding)],
+        actor_user_id=actor_user_id, today=today)
 
 
 # ============================================================================
@@ -381,13 +378,6 @@ def run_insurance_commission_scan(*, actor_user_id=None, today=None):
 # organization's bad data inside a detector — never aborts the rest. Honest aggregate
 # reporting. This is the live scheduler + manual entry point (wired in app/jobs/scheduler.py).
 # ============================================================================
-
-def _insurance_exception_status():
-    """id -> status for every insurance-domain exception (used to diff the whole scan)."""
-    with engine.connect() as c:
-        return {r[0]: r[1] for r in c.execute(select(
-            exceptions.c.id, exceptions.c.status).where(exceptions.c.domain == "insurance"))}
-
 
 def _count_insurance_organizations():
     """Distinct client organizations in the insurance book (organization-scoped policies)."""
@@ -401,7 +391,7 @@ def run_insurance_scan(*, actor_user_id=None, today=None):
     honestly. Reuses the shared Exception Engine and Work Management — no insurance-specific
     subsystem. Returns organizations scanned and exceptions opened / resolved / reopened /
     skipped (idempotent no-ops re-confirmed) / failures, plus each detector's own result."""
-    before = _insurance_exception_status()
+    before = _exception_status(domain="insurance")
     # Resolve sub-scans by module attribute at call time so a detector can be independently
     # stubbed/failed in tests and a real failure is isolated here.
     subscans = (
@@ -419,15 +409,8 @@ def run_insurance_scan(*, actor_user_id=None, today=None):
         except Exception as exc:  # pragma: no cover - defensive isolation: one detector can't abort the scan
             by_detector[name] = {"error": type(exc).__name__}
             failures.append({"detector": name, "error": type(exc).__name__})
-    after = _insurance_exception_status()
-
-    def active(st):
-        return st not in _CLOSED
-
-    opened = sum(1 for i, st in after.items() if active(st) and i not in before)
-    reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
-    resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
-    skipped = sum(1 for i, st in after.items() if active(st) and i in before and active(before[i]))
+    after = _exception_status(domain="insurance")
+    opened, reopened, resolved, skipped = _scan_delta(before, after)
     return {
         "organizations_scanned": _count_insurance_organizations(),
         "exceptions_opened": opened,

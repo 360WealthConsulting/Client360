@@ -396,8 +396,8 @@ manual scan flips past-due reviews to `overdue` and raises `INS_REVIEW_OVERDUE` 
 **review metrics** (`insurance_reporting.review_report`: completion rate, overdue/deferred
 counts), the reviews board UI + JSON APIs, and the shared Timeline/Audit review events.
 `review_type` is a scheduling category (`annual | inforce | servicing`) and a review's
-`outcome_note` is a free-text servicing summary — never a determination. Live cron wiring of
-the scan is deferred to Phase 6 (`run_insurance_scan` job); the callable + manual endpoint ship now.
+`outcome_note` is a free-text servicing summary — never a determination. The scan runs both as
+the callable + manual endpoint and, since Phase 6, as the scheduled `run_insurance_scan` job.
 
 **Compliance-gated — NOT built / not enabled** (behind AD-5): suitability determination
 (and the `suitability` review type / `insurance.suitability` capability stay reserved),
@@ -421,8 +421,8 @@ audited, staff-entered; **date-driven expiry reminders** (`detect_licenses_expir
 `detect_ce_period_ending` raise `INS_LICENSE_EXPIRING` / `INS_CE_PERIOD_ENDING` through the
 **shared Exception Engine** — idempotent, auto-resolving, firm-level/unanchored so they
 surface to oversight roles); operational **licensing counts** (`licensing_report`); the
-licensing dashboard UI + JSON APIs. Live cron wiring of the scan is Phase 6; the callable +
-manual endpoint ship now.
+licensing dashboard UI + JSON APIs. The scan runs both as the callable + manual endpoint and,
+since Phase 6, as the scheduled `run_insurance_scan` job.
 
 **Compliance-gated — NOT built / not enabled** (behind AD-5): licensing **validation**
 (whether a producer may sell a product in a state), CE **satisfaction determination**

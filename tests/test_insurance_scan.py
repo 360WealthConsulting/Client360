@@ -13,7 +13,9 @@ from __future__ import annotations
 import uuid
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import func, select, text
 
 from app.db import (
     assignment_rules,
@@ -234,3 +236,32 @@ def test_scheduler_registers_insurance_scan_job():
         assert any(j["id"] == "insurance-detector-scan" for j in sched.scheduler_status()["jobs"])
     finally:
         sched.stop_scheduler()
+
+
+# --- 6. authorization: dedicated insurance.scan capability (pre-Phase-7 cleanup) ---
+
+def test_scan_requires_the_insurance_scan_capability():
+    """The operational scan is gated by insurance.scan — a dedicated, non-mutating-detection
+    authority. insurance.write alone no longer suffices (no weakening: the roles that could scan
+    before are granted insurance.scan; see the grant test)."""
+    from app.security.dependencies import require_capability
+    dep = require_capability("insurance.scan")
+
+    allowed = Principal(1, "a@e.com", "A", frozenset({"insurance.scan"}))
+    assert dep(principal=allowed) is allowed
+
+    write_only = Principal(2, "b@e.com", "B", frozenset({"insurance.write"}))
+    with pytest.raises(HTTPException) as exc:
+        dep(principal=write_only)
+    assert exc.value.status_code == 403
+
+
+def test_insurance_scan_capability_granted_to_operational_roles_only():
+    with engine.connect() as c:
+        granted = set(c.execute(text(
+            "select r.code from role_capabilities rc "
+            "join roles r on r.id = rc.role_id "
+            "join capabilities cap on cap.id = rc.capability_id "
+            "where cap.code = 'insurance.scan'")).scalars())
+    assert granted == {"administrator", "insurance_agent", "insurance_operations"}
+    assert "insurance_compliance" not in granted  # compliance cannot run operational scans

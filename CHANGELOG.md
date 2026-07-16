@@ -147,6 +147,22 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
 - Non-regulated throughout: no suitability, replacement/1035, or licensing determination; the
   **AD-5 gate is unaffected**.
 
+### Changed — Pre-Phase-7 architecture cleanup (`d0l1n2o3i4k5`)
+Behavior-preserving cleanup from the Release 0.10.0 architecture review (items #1–#3):
+- **Docs refresh** — removed stale "cron wiring is Phase 6 (future)" wording from
+  `insurance_detectors.py` and the architecture doc now that the scheduled scan is live;
+  corrected the commission-exception privacy comment to reflect the Phase 6 organization anchor.
+- **De-duplicated scan plumbing** — introduced shared `_exception_status`, `_scan_delta`, and
+  `_run_detector_deltas` helpers; the four scan functions now share one diff implementation
+  instead of four copies. **No functional change** (identical return shapes/values; all detector
+  tests unchanged).
+- **Dedicated scan authorization** — new capability **`insurance.scan`** (data-only migration
+  `d0l1n2o3i4k5`) gates the operational scans (`/scan`, `/reviews/scan`, `/commissions/scan`)
+  instead of overloading `insurance.write`/`.commissions.write`. Running a non-mutating detection
+  sweep is now its own authority. Granted to the same roles that could scan before
+  (administrator, insurance_agent, insurance_operations) — **no expansion, no weakening**; the
+  producer-licensing scan keeps its tighter `insurance.licensing.write` gate.
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
@@ -166,9 +182,10 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
   venv-only/py3.12 environments (previously 1 failing safety test).
 
 ### Migrations
-Additive, off head `u1f9c0i9h8g7`, single head `c9k0m1n2h3j4`, reversible:
+Additive, off head `u1f9c0i9h8g7`, single head `d0l1n2o3i4k5`, reversible:
 `v2b3d4f5a6c7` → `w3c4e5g6b7d8` → `x4d5f6h7c8e9` → `y5e6g7i8d9f0` → `z6f7h8j9e0g1` →
-`a7g8i9k0f1h2` → `b8i9k1l2g3j4` → `c9k0m1n2h3j4` (Phase 6: data-only insurance work queues).
+`a7g8i9k0f1h2` → `b8i9k1l2g3j4` → `c9k0m1n2h3j4` (Phase 6: data-only insurance work queues) →
+`d0l1n2o3i4k5` (pre-Phase-7: data-only `insurance.scan` capability).
 
 ## [0.9.13] — 2026-07-16 — Platform Foundation
 

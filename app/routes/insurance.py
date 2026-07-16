@@ -296,7 +296,7 @@ def api_review_report(principal: Principal = Depends(require_capability("insuran
 
 
 @router.post("/api/v1/insurance/reviews/scan")
-def api_review_scan(principal: Principal = Depends(require_capability("insurance.write"))):
+def api_review_scan(principal: Principal = Depends(require_capability("insurance.scan"))):
     """Operational obligation-calendar scan: flag past-due reviews overdue and raise the
     shared operational exception. Idempotent. No compliance determination."""
     from app.services import insurance_detectors
@@ -525,7 +525,7 @@ def api_commission_create(payload: CommissionCreate, request: Request,
 
 
 @router.post("/api/v1/insurance/commissions/scan")
-def api_commission_scan(principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+def api_commission_scan(principal: Principal = Depends(require_capability("insurance.scan"))):
     """Operational scan: surface commission variance and overdue-outstanding through the
     shared Exception Engine. Idempotent. No compliance determination."""
     from app.services import insurance_detectors
@@ -615,10 +615,20 @@ def console_commissions(request: Request, status: str = "",
 
 # --- Phase 6: single orchestrated insurance scan (reuses shared Exception Engine +
 # Work Management; the same run_insurance_scan the scheduler runs). Idempotent, failure-
-# isolated, honest reporting. No regulated determination; no client-facing visibility. ---
+# isolated, honest reporting. No regulated determination; no client-facing visibility.
+#
+# AUTHORIZATION (pre-Phase-7 cleanup): the operational scans are gated by the dedicated
+# `insurance.scan` capability, not by `insurance.write`. Running a NON-MUTATING detection sweep
+# (it only raises operational exceptions through the shared engine; it writes no policy,
+# licensing, or commission record) is a distinct authority from writing insurance records, so it
+# gets its own capability. `insurance.scan` is granted to the same operational roles that could
+# run the scan before (administrator, insurance_agent, insurance_operations) — no expansion, no
+# weakening. The unified `/scan`, `/reviews/scan`, and `/commissions/scan` all use it. The
+# producer-licensing scan (`/licensing/scan`) intentionally keeps its tighter
+# `insurance.licensing.write` gate so licensing oversight is not broadened. ---
 
 @router.post("/api/v1/insurance/scan")
-def api_insurance_scan(principal: Principal = Depends(require_capability("insurance.write"))):
+def api_insurance_scan(principal: Principal = Depends(require_capability("insurance.scan"))):
     """Run every insurance detector as one idempotent scan through the shared Exception Engine,
     then apply the existing assignment rules to any unassigned insurance exceptions. Returns the
     honest aggregate result (organizations scanned, exceptions opened/resolved/reopened/skipped,

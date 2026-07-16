@@ -1,16 +1,16 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 Phase 6 — Insurance Exceptions, Work Management & Scheduled
-Scanning — complete; Phase 5 approved)._
+**2026-07-16** (Release 0.10.0 — Phase 6 complete; architecture review approved and the
+pre-Phase-7 cleanup (review items #1–#3) applied. Phase 7 not started.)_
 
 | Field | Value |
 |---|---|
 | **Current release** | **0.10.0 — Insurance Operations** (in progress; not tagged). Last tagged release: **0.9.13**. |
 | **Branch** | `feature/insurance-operations` (base: `main`) |
 | **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* |
-| **Current Alembic head** | `c9k0m1n2h3j4` — single head; **dev `client360` and test `client360_test` both at head** |
-| **Tests** | **692 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; migrations reversible; single head `c9k0m1n2h3j4`; compile OK; scheduler registration verified; startup/shutdown clean; `git diff --check` clean. |
+| **Current Alembic head** | `d0l1n2o3i4k5` — single head; **dev `client360` and test `client360_test` both at head** |
+| **Tests** | **694 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; migrations reversible; single head `d0l1n2o3i4k5`; compile OK; authorization + scheduler registration verified; startup/shutdown clean; `git diff --check` clean. |
 | **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–5; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance Commissions SOP drafted (`docs/confluence/INSURANCE_COMMISSIONS_SOP_DRAFT.md`, draft-only). |
 
 ## Completed phases (0.10.0)
