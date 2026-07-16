@@ -9,6 +9,7 @@ charset-normalizer==3.4.9
 click==8.1.8
 cryptography==49.0.0
 et_xmlfile==2.0.0
+exceptiongroup==1.3.1
 fastapi==0.128.8
 h11==0.16.0
 idna==3.18
@@ -16,7 +17,9 @@ iniconfig==2.1.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
 Mako==1.3.12
+markdown-it-py==3.0.0
 MarkupSafe==3.0.3
+mdurl==0.1.2
 msal==1.37.0
 numpy==2.0.2
 openpyxl==3.1.5
@@ -34,10 +37,15 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-multipart==0.0.20
 pytz==2026.2
+PyYAML==6.0.3
 requests==2.32.5
+rich==15.0.0
+shellingham==1.5.4
 six==1.17.0
 SQLAlchemy==2.0.51
 starlette==0.49.3
+tomli==2.4.1
+typer==0.23.2
 typing-inspection==0.4.2
 typing_extensions==4.16.0
 tzdata==2026.3
