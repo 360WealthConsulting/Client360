@@ -1,0 +1,37 @@
+# Tooling configuration for Client360 (introduced 0.9.13 Phase 2).
+# Only Ruff is configured here for now; other tools may follow in later phases.
+
+[tool.ruff]
+# The project runs on Python 3.12 as of 0.9.13 Phase 1.
+target-version = "py312"
+line-length = 100
+
+# Migrations are alembic-generated historical records; they are linted (their
+# existing findings are in the baseline) but never reformatted.
+extend-exclude = [".venv", "01 Raw Imports", "02 Working Data", "03 Database"]
+
+[tool.ruff.lint]
+# A high-signal set, deliberately chosen for THIS codebase:
+#   E4/E7/E9  import placement, statement/comparison errors, syntax
+#   F         pyflakes — unused imports/vars, undefined names (real cruft/bugs)
+#   B         flake8-bugbear — genuine bug patterns
+#   I         import ordering (auto-fixable)
+#   UP        pyupgrade — modern idioms now that we target 3.12
+select = ["E4", "E7", "E9", "F", "B", "I", "UP"]
+
+# Deliberate exclusions, each with a reason:
+#   E701/E702  the codebase's compact one-liner house style; a formatter's
+#              concern, not a lint bug. 573 occurrences — enforcing it would be
+#              a stylistic war, not a quality gate.
+#   B008       function-call-in-default-argument: this is how FastAPI's
+#              Depends()/Query() are written. Idiomatic here, not a defect.
+ignore = ["E701", "E702", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files legitimately re-import and shadow, and assert on broad exceptions.
+"tests/*" = ["B017"]
+
+[tool.ruff.format]
+# Configured and available via `ruff format`, but NOT a CI gate in Phase 2,
+# which gates lint only. line-length above governs it.
+quote-style = "double"

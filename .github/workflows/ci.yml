@@ -57,6 +57,14 @@ jobs:
 
           pip install pytest
 
+      # Ruff new-violation gate (0.9.13 Phase 2). The legacy backlog is baselined
+      # in docs/ruff-baseline.json and deliberately not fixed here; this fails the
+      # build only when a change ADDS a violation (see scripts/ruff_gate.py).
+      - name: Lint (Ruff gate)
+        run: |
+          pip install ruff==0.15.21
+          python scripts/ruff_gate.py
+
       - name: Compile application
         run: |
           python -m compileall app
