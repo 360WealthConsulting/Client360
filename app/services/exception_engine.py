@@ -23,7 +23,7 @@ from app.services.timeline import add_timeline_event
 from app.services.work_management import authorized_assignments
 
 # Sprint 5.5 implemented the tax domain; Release 0.9.11 (ADR-18) adds the benefits domain.
-SUPPORTED_DOMAINS = frozenset({"tax", "benefits"})
+SUPPORTED_DOMAINS = frozenset({"tax", "benefits", "insurance"})
 
 ACTIVE_STATUSES = frozenset({"open", "acknowledged", "in_progress", "waiting", "escalated", "reopened"})
 CLOSED_STATUSES = frozenset({"resolved", "cancelled"})
@@ -89,7 +89,10 @@ def _authorize(connection, principal, row, *, write):
         ):
             if entity_id and record_in_scope(principal, entity_type, entity_id, write=write, connection=connection):
                 return
-    elif row["domain"] == "benefits":  # Organization-anchored (ADR-18), + employee person/household
+    elif row["domain"] in ("benefits", "insurance"):
+        # Organization-anchored (ADR-18) with a person/household fallback. Insurance
+        # reuses the same scope model: carrier/owner org via related_entity, or the
+        # insured person/household (Release 0.10.0, AD-1).
         from app.security.authorization import organization_in_scope
         org_id = row["related_entity_id"] if row["related_entity_type"] == "organization" else None
         if org_id and organization_in_scope(principal, org_id, write=write, connection=connection):

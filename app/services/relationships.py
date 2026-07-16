@@ -62,7 +62,7 @@ def ensure_household_entity(connection, household_id: int) -> int:
 
 
 def create_named_entity(connection, entity_type: str, name: str, details=None) -> int:
-    if entity_type not in {"business", "trust", "estate", "professional"}:
+    if entity_type not in {"business", "trust", "estate", "professional", "insurance_carrier"}:
         raise ValueError("Unsupported relationship entity type.")
     if not name.strip():
         raise ValueError("Entity name is required.")

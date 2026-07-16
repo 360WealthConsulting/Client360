@@ -235,7 +235,7 @@ def work_items(principal, filters=None):
                            exceptions.c.owner_user_id, exceptions.c.owner_team_id,
                            exception_types.c.code).select_from(
             exceptions.join(exception_types, exception_types.c.id == exceptions.c.exception_type_id)).where(
-            exceptions.c.domain.in_(("tax", "benefits")), exceptions.c.status.notin_(("resolved", "cancelled")))
+            exceptions.c.domain.in_(("tax", "benefits", "insurance")), exceptions.c.status.notin_(("resolved", "cancelled")))
         if not direct_all:
             task_scope = [c for c in (
                 tasks.c.id.in_(task_ids) if task_ids else None,
