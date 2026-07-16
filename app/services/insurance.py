@@ -23,6 +23,7 @@ from app.db import (
     insurance_policies,
     insurance_policy_parties,
     insurance_policy_producers,
+    insurance_policy_reviews,
     insurance_requirements,
     insurance_riders,
     people,
@@ -90,11 +91,12 @@ def _require(principal, cap):
 # --- shared timeline + audit (no separate insurance history) -----------------
 
 def _publish(connection, *, action, event_type, title, policy_row=None,
-             actor_user_id=None, request_id=None, metadata=None):
+             actor_user_id=None, request_id=None, metadata=None,
+             entity_type="insurance_policy"):
     # HTTP callers pass request.state.request_id; system/scheduled callers may not,
     # and audit_events.request_id is NOT NULL, so synthesize one.
     write_audit_event(
-        action=action, entity_type="insurance_policy",
+        action=action, entity_type=entity_type,
         entity_id=(policy_row or {}).get("id"), actor_user_id=actor_user_id,
         request_id=request_id or f"insurance-{uuid.uuid4()}", metadata=metadata,
     )
@@ -476,3 +478,182 @@ def list_requirements(principal, *, case_id=None, policy_id=None, open_only=Fals
         if not _policy_scope_ok(principal, anchor, write=False, connection=c):
             raise InsuranceNotFound("Requirement anchor not found.")  # hide existence
         return [dict(r) for r in c.execute(query).mappings()]
+
+
+# ============================================================================
+# Phase 3 — NON-REGULATED in-force servicing: policy reviews as a first-class
+# state machine, feeding the obligation calendar. Nothing below determines
+# suitability, replacement/1035, licensing, or CE, or makes a compliance
+# conclusion. A review records an operational servicing touchpoint; review_type
+# is a scheduling category and outcome_note is a free-text servicing summary,
+# never a determination. Suitability reviews remain behind the AD-5 gate.
+# ============================================================================
+
+REVIEW_EVENTS = {
+    "scheduled": ("insurance_review_scheduled", "Policy review scheduled"),
+    "in_progress": ("insurance_review_started", "Policy review started"),
+    "completed": ("insurance_review_completed", "Policy review completed"),
+    "deferred": ("insurance_review_deferred", "Policy review deferred"),
+    "overdue": ("insurance_review_overdue", "Policy review overdue"),
+    "cancelled": ("insurance_review_cancelled", "Policy review cancelled"),
+}
+_REVIEW_TYPES = ("annual", "inforce", "servicing")
+_REVIEW_OPEN = ("due", "scheduled", "in_progress")
+
+
+def _load_review(c, review_id):
+    row = c.execute(select(insurance_policy_reviews).where(
+        insurance_policy_reviews.c.id == review_id)).mappings().one_or_none()
+    if row is None:
+        raise InsuranceNotFound("Insurance review not found.")
+    return row
+
+
+def _review_anchor(c, review):
+    """The policy or case a review hangs off — carries the record-scope anchor
+    (person/household/organization) and the timeline subject."""
+    if review["policy_id"]:
+        return _load_policy(c, review["policy_id"])
+    return _load_case(c, review["case_id"])
+
+
+def _publish_review(c, review, anchor, *, action, status, actor_user_id, request_id, metadata=None):
+    event = REVIEW_EVENTS.get(status)
+    if not event:
+        return
+    event_type, title = event
+    anchor_row = {"id": review["id"], "person_id": anchor.get("person_id"),
+                  "household_id": anchor.get("household_id"),
+                  "organization_id": anchor.get("organization_id")}
+    _publish(c, action=action, event_type=event_type, title=title, policy_row=anchor_row,
+             actor_user_id=actor_user_id, request_id=request_id,
+             entity_type="insurance_policy_review", metadata=metadata)
+
+
+def _review_view(c, review, anchor=None):
+    d = dict(review)
+    d["reviewer_name"] = _entity_name(c, "user", review["reviewer_user_id"])
+    d["subject_type"] = "policy" if review["policy_id"] else "case"
+    d["subject_id"] = review["policy_id"] or review["case_id"]
+    d["subject_name"] = None
+    if anchor:
+        d["subject_name"] = (_entity_name(c, "household", anchor.get("household_id"))
+                             or _entity_name(c, "person", anchor.get("person_id")))
+    return d
+
+
+def schedule_review(principal, *, review_type, due_date, policy_id=None, case_id=None,
+                    scheduled_date=None, reviewer_user_id=None, notes=None,
+                    actor_user_id=None, request_id=None):
+    """Place a servicing review on the calendar. Operational scheduling only."""
+    _require(principal, "insurance.write")
+    if not policy_id and not case_id:
+        raise InsuranceError("A review needs a policy or case.")
+    if review_type not in _REVIEW_TYPES:
+        raise InsuranceError(f"Unsupported review_type: {review_type}")
+    with engine.begin() as c:
+        anchor = _load_policy(c, policy_id) if policy_id else _load_case(c, case_id)
+        if not _policy_scope_ok(principal, anchor, write=True, connection=c):
+            raise PermissionError("Review subject is outside your record scope.")
+        status = "scheduled" if scheduled_date else "due"
+        rid = c.execute(insurance_policy_reviews.insert().values(
+            policy_id=policy_id, case_id=case_id, review_type=review_type, status=status,
+            due_date=due_date, scheduled_date=scheduled_date, reviewer_user_id=reviewer_user_id,
+            outcome_note=notes, created_by_user_id=actor_user_id,
+        ).returning(insurance_policy_reviews.c.id)).scalar_one()
+        review = {"id": rid, "policy_id": policy_id, "case_id": case_id}
+        _publish_review(c, review, anchor, action="insurance.review.scheduled",
+                        status="scheduled", actor_user_id=actor_user_id, request_id=request_id,
+                        metadata={"review_type": review_type})
+    return {"id": rid, "status": status}
+
+
+def update_review_status(principal, review_id, new_status, *, scheduled_date=None,
+                         actor_user_id=None, request_id=None):
+    """Advance a review through its operational states (schedule / start / defer / cancel)."""
+    _require(principal, "insurance.write")
+    if new_status not in ("scheduled", "in_progress", "deferred", "cancelled"):
+        raise InsuranceError(f"Unsupported review status transition: {new_status}")
+    with engine.begin() as c:
+        review = _load_review(c, review_id)
+        anchor = _review_anchor(c, review)
+        if not _policy_scope_ok(principal, anchor, write=True, connection=c):
+            raise PermissionError("Review is outside your record scope.")
+        values = {"status": new_status, "updated_at": _now()}
+        if scheduled_date is not None:
+            values["scheduled_date"] = scheduled_date
+        c.execute(insurance_policy_reviews.update().where(
+            insurance_policy_reviews.c.id == review_id).values(**values))
+        _publish_review(c, review, anchor, action="insurance.review.status_changed",
+                        status=new_status, actor_user_id=actor_user_id, request_id=request_id,
+                        metadata={"from": review["status"], "to": new_status})
+    return {"id": review_id, "status": new_status}
+
+
+def _materialize_next_review(c, review, next_due, actor_user_id):
+    """Idempotently open the next annual occurrence (obligation-calendar recurrence)."""
+    key = (f"ins:review:{review['policy_id'] or 0}:{review['case_id'] or 0}:"
+           f"{review['review_type']}:{next_due.isoformat()}")
+    existing = c.execute(select(insurance_policy_reviews.c.id).where(
+        insurance_policy_reviews.c.materialization_key == key)).scalar_one_or_none()
+    if existing:
+        return existing
+    return c.execute(insurance_policy_reviews.insert().values(
+        policy_id=review["policy_id"], case_id=review["case_id"], review_type=review["review_type"],
+        status="due", due_date=next_due, materialization_key=key, created_by_user_id=actor_user_id,
+    ).returning(insurance_policy_reviews.c.id)).scalar_one()
+
+
+def complete_review(principal, review_id, *, completed_date=None, next_review_date=None,
+                    outcome_note=None, actor_user_id=None, request_id=None):
+    """Mark a servicing review complete. outcome_note is a free-text operational
+    summary — NOT a suitability or compliance determination."""
+    _require(principal, "insurance.write")
+    with engine.begin() as c:
+        review = _load_review(c, review_id)
+        anchor = _review_anchor(c, review)
+        if not _policy_scope_ok(principal, anchor, write=True, connection=c):
+            raise PermissionError("Review is outside your record scope.")
+        c.execute(insurance_policy_reviews.update().where(
+            insurance_policy_reviews.c.id == review_id).values(
+            status="completed", completed_date=completed_date or _now().date(),
+            next_review_date=next_review_date, outcome_note=outcome_note, updated_at=_now()))
+        _publish_review(c, review, anchor, action="insurance.review.completed",
+                        status="completed", actor_user_id=actor_user_id, request_id=request_id,
+                        metadata={"review_type": review["review_type"]})
+        next_id = None
+        if next_review_date and review["review_type"] == "annual":
+            next_id = _materialize_next_review(c, review, next_review_date, actor_user_id)
+    return {"id": review_id, "status": "completed", "next_review_id": next_id}
+
+
+def get_review(principal, review_id):
+    _require(principal, "insurance.read")
+    with engine.connect() as c:
+        review = _load_review(c, review_id)
+        anchor = _review_anchor(c, review)
+        if not _policy_scope_ok(principal, anchor, write=False, connection=c):
+            raise InsuranceNotFound("Insurance review not found.")  # hide existence
+        return _review_view(c, review, anchor)
+
+
+def list_reviews(principal, *, policy_id=None, case_id=None, status=None, limit=200):
+    """Servicing reviews within the principal's record scope (the reviews board)."""
+    _require(principal, "insurance.read")
+    query = select(insurance_policy_reviews).order_by(insurance_policy_reviews.c.due_date)
+    if policy_id:
+        query = query.where(insurance_policy_reviews.c.policy_id == policy_id)
+    if case_id:
+        query = query.where(insurance_policy_reviews.c.case_id == case_id)
+    if status:
+        query = query.where(insurance_policy_reviews.c.status == status)
+    out = []
+    with engine.connect() as c:
+        for review in c.execute(query).mappings():
+            anchor = _review_anchor(c, review)
+            if not _policy_scope_ok(principal, anchor, write=False, connection=c):
+                continue
+            out.append(_review_view(c, review, anchor))
+            if len(out) >= limit:
+                break
+    return out

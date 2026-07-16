@@ -350,6 +350,30 @@ determination, automated compliance approvals, and any regulatory decision engin
 function evaluates, scores, recommends, validates, or concludes a regulated matter (a test
 asserts none exist in the service).
 
+## 12b. Phase 3 scope split — non-regulated (built) vs compliance-gated (deferred)
+
+Phase 3 (in-force servicing) straddles the AD-5 line: the doc's own exit gate reads
+"review lifecycle drives completion/overdue metrics; **1035 with suitability**." The
+review-lifecycle half is operational and ships; the suitability-bearing half stays gated.
+
+**Non-regulated — built in Phase 3 (`z6f7h8j9e0g1` + services/detector/routes/UI):**
+policy reviews as a first-class **state machine** (`insurance_policy_reviews`: due →
+scheduled → in_progress → completed / deferred / overdue / cancelled), the **obligation
+calendar** (annual reviews materialize their next occurrence on completion; a scheduled/
+manual scan flips past-due reviews to `overdue` and raises `INS_REVIEW_OVERDUE` through the
+**shared Exception Engine** — no second engine, idempotent, auto-resolving), operational
+**review metrics** (`insurance_reporting.review_report`: completion rate, overdue/deferred
+counts), the reviews board UI + JSON APIs, and the shared Timeline/Audit review events.
+`review_type` is a scheduling category (`annual | inforce | servicing`) and a review's
+`outcome_note` is a free-text servicing summary — never a determination. Live cron wiring of
+the scan is deferred to Phase 6 (`run_insurance_scan` job); the callable + manual endpoint ship now.
+
+**Compliance-gated — NOT built / not enabled** (behind AD-5): suitability determination
+(and the `suitability` review type / `insurance.suitability` capability stay reserved),
+replacement recommendations, **1035** recommendation logic, licensing/CE determination, and
+any compliance approval or regulatory decision engine. Tests assert no such function exists
+in the review/detector/reporting modules and that the scan result carries no compliance field.
+
 ## 13. Dependencies
 
 - Builds on the 0.9.11 platform and the 0.9.13 test/CI/release infrastructure (isolated

@@ -30,3 +30,21 @@ def pipeline_report(principal):
         "policies_by_status": dict(Counter(p["status"] for p in policies)),
         "open_requirements": open_requirements,
     }
+
+
+def review_report(principal):
+    """Servicing-review metrics within the principal's record scope. Operational
+    only — completion rate and overdue/deferred counts. NO compliance metrics
+    (no suitability/replacement/1035/licensing/CE rates); those stay behind AD-5."""
+    reviews = ins.list_reviews(principal)  # scope-filtered
+    by_status = Counter(r["status"] for r in reviews)
+    total = len(reviews)
+    completed = by_status.get("completed", 0)
+    return {
+        "total": total,
+        "by_status": dict(by_status),
+        "completed": completed,
+        "overdue": by_status.get("overdue", 0),
+        "deferred": by_status.get("deferred", 0),
+        "completion_rate": round(completed / total, 3) if total else 0.0,
+    }

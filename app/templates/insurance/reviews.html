@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Insurance Reviews{% endblock %}
+{% block crumb %}<a href="/insurance">Insurance</a> / Reviews{% endblock %}
+{% block content %}
+<div class="page-head"><h1>In-force Reviews</h1></div>
+
+<div class="stat-grid">
+  <div class="stat"><div class="label">Reviews</div><div class="value">{{ metrics.total }}</div></div>
+  <div class="stat"><div class="label">Completed</div><div class="value">{{ metrics.completed }}</div></div>
+  <div class="stat"><div class="label">Overdue</div><div class="value">{{ metrics.overdue }}</div></div>
+  <div class="stat"><div class="label">Completion rate</div><div class="value">{{ '{:.0%}'.format(metrics.completion_rate) }}</div></div>
+</div>
+
+<div class="filterbar">
+  <a class="chip{{ ' active' if not status else '' }}" href="/insurance/reviews">All</a>
+  <a class="chip{{ ' active' if status == 'due' else '' }}" href="/insurance/reviews?status=due">Due</a>
+  <a class="chip{{ ' active' if status == 'scheduled' else '' }}" href="/insurance/reviews?status=scheduled">Scheduled</a>
+  <a class="chip{{ ' active' if status == 'overdue' else '' }}" href="/insurance/reviews?status=overdue">Overdue</a>
+  <a class="chip{{ ' active' if status == 'completed' else '' }}" href="/insurance/reviews?status=completed">Completed</a>
+</div>
+
+{% if reviews %}
+<div class="table-wrap"><div class="table-scroll">
+<table class="data">
+  <thead><tr>
+    <th>Subject</th>
+    <th>Type</th>
+    <th>Status</th>
+    <th>Due</th>
+    <th>Scheduled</th>
+    <th>Reviewer</th>
+  </tr></thead>
+  <tbody>
+  {% for r in reviews %}
+    <tr>
+      <td>
+        {% if r.subject_type == 'policy' %}<a class="rowlink" href="/insurance/policies/{{ r.subject_id }}">{{ r.subject_name or ('Policy #' ~ r.subject_id) }}</a>
+        {% else %}<a class="rowlink" href="/insurance/cases/{{ r.subject_id }}">{{ r.subject_name or ('Case #' ~ r.subject_id) }}</a>{% endif %}
+      </td>
+      <td>{{ r.review_type.replace('_', ' ') }}</td>
+      <td><span class="badge">{{ r.status.replace('_', ' ') }}</span></td>
+      <td>{{ r.due_date or '—' }}</td>
+      <td>{{ r.scheduled_date or '—' }}</td>
+      <td>{{ r.reviewer_name or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% else %}
+<div class="empty">No reviews in scope.</div>
+{% endif %}
+{% endblock %}

@@ -6,6 +6,8 @@ gating is per-endpoint; record scope is enforced in the service.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -253,3 +255,79 @@ def console_reporting(request: Request,
     report = _run(lambda: insurance_reporting.pipeline_report(principal))
     return templates.TemplateResponse(request=request, name="insurance/reporting.html",
                                       context={"report": report, "principal": principal})
+
+
+# --- Phase 3 (non-regulated): in-force servicing reviews + obligation calendar ---
+
+class ReviewCreate(BaseModel):
+    review_type: str
+    due_date: date
+    policy_id: int | None = None
+    case_id: int | None = None
+    scheduled_date: date | None = None
+    reviewer_user_id: int | None = None
+    notes: str | None = None
+
+
+class ReviewStatusUpdate(BaseModel):
+    status: str
+    scheduled_date: date | None = None
+
+
+class ReviewComplete(BaseModel):
+    completed_date: date | None = None
+    next_review_date: date | None = None
+    outcome_note: str | None = None
+
+
+@router.get("/api/v1/insurance/reviews")
+def api_review_list(status: str = "", policy_id: int | None = None, case_id: int | None = None,
+                    principal: Principal = Depends(require_capability("insurance.read"))):
+    return {"reviews": _run(lambda: ins.list_reviews(
+        principal, status=status or None, policy_id=policy_id, case_id=case_id))}
+
+
+@router.get("/api/v1/insurance/reviews/report")
+def api_review_report(principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_reporting
+    return _run(lambda: insurance_reporting.review_report(principal))
+
+
+@router.post("/api/v1/insurance/reviews/scan")
+def api_review_scan(principal: Principal = Depends(require_capability("insurance.write"))):
+    """Operational obligation-calendar scan: flag past-due reviews overdue and raise the
+    shared operational exception. Idempotent. No compliance determination."""
+    from app.services import insurance_detectors
+    return _run(lambda: insurance_detectors.run_insurance_review_scan(actor_user_id=principal.user_id))
+
+
+@router.post("/api/v1/insurance/reviews", status_code=201)
+def api_review_create(payload: ReviewCreate, request: Request,
+                      principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.schedule_review(principal, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.patch("/api/v1/insurance/reviews/{review_id}/status")
+def api_review_status(review_id: int, payload: ReviewStatusUpdate, request: Request,
+                      principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.update_review_status(
+        principal, review_id, payload.status, scheduled_date=payload.scheduled_date,
+        **_actor(request, principal)))
+
+
+@router.patch("/api/v1/insurance/reviews/{review_id}/complete")
+def api_review_complete(review_id: int, payload: ReviewComplete, request: Request,
+                        principal: Principal = Depends(require_capability("insurance.write"))):
+    return _run(lambda: ins.complete_review(
+        principal, review_id, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.get("/insurance/reviews", response_class=HTMLResponse)
+def console_reviews(request: Request, status: str = "",
+                    principal: Principal = Depends(require_capability("insurance.read"))):
+    from app.services import insurance_reporting
+    reviews = _run(lambda: ins.list_reviews(principal, status=status or None))
+    metrics = _run(lambda: insurance_reporting.review_report(principal))
+    return templates.TemplateResponse(request=request, name="insurance/reviews.html",
+                                      context={"reviews": reviews, "metrics": metrics,
+                                               "status": status, "principal": principal})
