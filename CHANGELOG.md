@@ -163,14 +163,33 @@ Behavior-preserving cleanup from the Release 0.10.0 architecture review (items #
   (administrator, insurance_agent, insurance_operations) — **no expansion, no weakening**; the
   producer-licensing scan keeps its tighter `insurance.licensing.write` gate.
 
+### Added — Phase 7 · Policyholder portal surface (no migration; reuse the portal)
+- **Read-only policyholder policy view** through the **existing** portal framework
+  (`app/services/insurance_portal.py` + portal routes/template) — no insurance-specific portal
+  engine, auth, session, or scope model. Scope is **opt-in**: resolved with
+  `portal_scope(account_id, permission="insurance")`, so only a grant that allows the
+  `insurance` permission sees anything; policies match by person / shared-household /
+  organization scope.
+- **Proportional disclosure** — carrier, product, policy number, status, issue date, face
+  amount, premium, coverages, riders, and the policyholder's own owner/insured/beneficiary
+  designations. `GET /api/v1/portal/insurance/policies[/{id}]` + a `/portal/insurance` page; the
+  portal dashboard gains an `insurance_policies` slice.
+- **Out-of-scope policy ids deny existence with 404**; unauthenticated portal access → 401.
+- **Client-facing exception visibility stays out of scope** — the surface never exposes
+  producers, commissions/compensation/splits, licensing/CE, exceptions, or internal metadata.
+  Insurance exceptions cannot reach the client action-needed surface (the shared
+  `client_action_items` is hard-scoped to `domain='tax'`). Factual policy data only — no
+  suitability/replacement determination; **AD-5 unaffected**.
+- No schema change (read-only over existing tables; the `insurance` grant permission is JSON).
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
   is **not** regulatory certification. No regulated phase passes its RC gate without a
   completed, approved sign-off artifact from a qualified, named compliance reviewer. This
   is not resolvable in code and remains open.
-- **Remaining phases:** 7 (policyholder portal), 8 (reporting/dashboards), 9 (integration
-  stubs), 10 (RC validation + release), plus the AD-5-gated regulated portions of Phases 2–4.
+- **Remaining phases:** 8 (reporting/dashboards), 9 (integration stubs), 10 (RC validation +
+  release), plus the AD-5-gated regulated portions of Phases 2–4.
 
 ### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
 - **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter

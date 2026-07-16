@@ -332,4 +332,6 @@ def dashboard(principal):
     action_items = client_action_needed(principal, scope)
     employer_actions = employer_action_needed(principal)
     is_employer = bool(employer_organization_ids(principal))
-    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "action_items": action_items, "employer_action_items": employer_actions, "is_employer": is_employer, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}
+    from app.services.insurance_portal import portal_policies  # local import avoids a cycle
+    insurance_policies = portal_policies(principal)  # own insurance-permission scope (opt-in)
+    return {"tasks": tasks, "document_requests": requests, "messages": threads, "notifications": notifications, "documents": docs, "meetings": meetings, "tax_intakes": tax_intakes, "tax_returns": tax_returns, "action_items": action_items, "employer_action_items": employer_actions, "is_employer": is_employer, "insurance_policies": insurance_policies, "workflow_progress": [{"name": r["workflow_name"], "step": r["name"], "status": r["status"]} for r in tasks]}

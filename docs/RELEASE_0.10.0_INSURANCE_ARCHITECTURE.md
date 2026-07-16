@@ -1,10 +1,10 @@
 # Release v0.10.0 — Insurance Operations: Architecture
 
-**Status:** in progress — **Phases 0–6 implemented** (Phases 2–4 as non-regulated
-operational skeletons; **Phase 5 commissions and Phase 6 exceptions/work-management/scheduled
-scanning are non-regulated and complete for their scope**); Phases 7–10 not started; **all
-regulated logic deferred behind the AD-5 gate**. Not yet released or tagged. (Current single
-Alembic head `c9k0m1n2h3j4`; migration chain in §13. See `PROJECT_STATUS.md` for live status.)
+**Status:** in progress — **Phases 0–7 implemented** (Phases 2–4 as non-regulated operational
+skeletons; **Phases 5–7 — commissions, exceptions/work-management/scheduled scanning, and the
+policyholder portal surface — are non-regulated and complete for their scope**); Phases 8–10
+not started; **all regulated logic deferred behind the AD-5 gate**. Not yet released or tagged.
+(Current single Alembic head `d0l1n2o3i4k5`; migration chain in §13. See `PROJECT_STATUS.md`.)
 **Scope:** individual **life insurance & annuities** (advisor-sold, in-force-managed).
 Not group/employer benefits (that is 0.9.11), not P&C, not group life.
 **Baseline:** built on the 0.9.11 platform (ADR-18) and the 0.9.13 test/CI/release
@@ -431,6 +431,35 @@ compliance approval or regulatory decision engine. The stored `credits_required`
 `credits_completed` are staff-entered figures — the platform draws no conclusion from them.
 Tests assert no validation/determination function exists in the licensing/detector/reporting
 modules and that the scan result carries no compliance field.
+
+## 12d. Phase 7 — policyholder portal surface (non-regulated; reuse the portal)
+
+Phase 7 gives policyholders a **read-only view of their own policies** through the **existing
+portal framework** — no new portal engine, auth, session, or scope model. It reuses
+`PortalPrincipal`, `portal_scope`, `require_scope` / `require_org_scope`, the `current_portal`
+dependency, permission-scoped `portal_access_grants`, the portal router, and the portal
+templates, exactly like the tax-returns and employer-benefits surfaces.
+
+**Built (`app/services/insurance_portal.py` + portal routes/template):** a scoped, portal-safe
+policy list and detail. Scope is resolved with `portal_scope(account_id, permission="insurance")`
+— only a grant that explicitly allows `insurance` sees anything (opt-in, least privilege).
+Policies are matched by `person_id ∈ person_ids`, `household_id ∈ shared_household_ids`, or
+`organization_id ∈ organization_ids`. Projection is **proportional**: carrier name, product
+family/type, policy number, status, issue date, face amount, premium amount/mode, coverages
+(type + face), riders (type + description), and the policyholder's own beneficiary/owner
+**designations** (role + name). Out-of-scope policy ids **deny existence with 404**. A
+`/portal/insurance` page and `/api/v1/portal/insurance/policies[/{id}]` JSON. The portal
+dashboard gains an `insurance_policies` slice.
+
+**Deliberately NOT exposed to clients** (client-facing exception visibility stays out of scope):
+insurance **exceptions** (review/commission/licensing — the shared `client_action_items` is
+hard-scoped to `domain='tax'`, so insurance items can never appear), **commissions / producer
+compensation / splits**, **producers**, **licensing/CE**, underwriting-internal notes, and any
+internal metadata. No suitability, replacement/1035, or other determination is shown — the
+surface is factual policy data only, so the **AD-5 gate is unaffected**.
+
+**No schema change** — the surface is read-only over existing tables and the `insurance` grant
+permission is JSON (data-driven). Single Alembic head unchanged.
 
 ## 13. Dependencies
 
