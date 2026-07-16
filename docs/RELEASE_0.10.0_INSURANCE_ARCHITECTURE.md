@@ -122,6 +122,23 @@ insurance_carriers  →  insurance_product_families  →  insurance_product_vers
   — product changes are versioned, never overwritten. KaiZen / premium-financed
   strategies are product families/versions, not code.
 
+**Phase 1 refinement — carrier product evolution as first-class (migration `w3c4e5g6b7d8`).**
+Validating "can Product Version represent long-term carrier evolution" surfaced that
+carrier product codes, illustration identifiers, and rider compatibility were only
+expressible via the untyped `spec` JSON — inadequate for integration-matching keys and a
+queryable/validatable compatibility relationship. Resolved structurally, not with JSON:
+- `insurance_product_versions` gains **`carrier_product_code`** and **`illustration_identifier`**
+  (indexed for matching; not globally unique — carriers reuse codes and a family's versions
+  share one, so matching is scoped by carrier).
+- **`insurance_product_rider_compatibility`** (`product_version_id, rider_type, requirement
+  [included|available|optional|excluded], carrier_rider_code, effective_from/to`, unique per
+  `(product_version_id, rider_type)`) makes allowed/rejected riders queryable. A rider is
+  compatible only if listed with an attachable requirement; absent or `excluded` = rejected.
+- `spec` JSON is retained for genuinely unstructured carrier-specific attributes only.
+Lookups live in `app/services/insurance_catalog.py`
+(`find_by_carrier_product_code`, `find_by_illustration_identifier`, `compatible_riders`,
+`is_rider_compatible`).
+
 ### 4.2 Policies and parties (Refinement 3) — no single-owner assumptions
 
 - **`insurance_policies`** — subject anchor (person/household/org), `carrier_id`,
