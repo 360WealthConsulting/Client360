@@ -5,8 +5,16 @@ The codebase carries a lint backlog (~560 findings) that this release does not
 fix. Instead it is *baselined*: recorded once, and never allowed to grow. This
 gate enforces the ratchet.
 
-    python scripts/ruff_gate.py            # fail if any NEW violation appeared
-    python scripts/ruff_gate.py --update   # record the current state as baseline
+    python scripts/ruff_gate.py                 # fail if any NEW violation appeared
+    python scripts/ruff_gate.py --update        # record the current state as baseline
+    python scripts/ruff_gate.py --assert-not-grown <old-baseline.json>
+                                                # fail if the committed baseline grew
+
+The `--assert-not-grown` mode closes the bypass in the plain gate: someone could
+add a violation AND run `--update`, so the baseline absorbs it and the gate
+passes. New code must be clean, so the baseline should only ever shrink (burndown)
+or hold. CI compares this PR's baseline against the base branch's and fails if any
+(file, rule) count rose.
 
 The baseline is a count of findings per (file, rule) — not per line — so it
 survives edits that shift line numbers or move code around. A finding is "new"
@@ -29,7 +37,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BASELINE = REPO_ROOT / "docs" / "ruff-baseline.json"
-TARGETS = ["app", "tests", "migrations"]
+# scripts/ is included so the tooling gates itself; ruff traversal skips non-.py.
+TARGETS = ["app", "tests", "migrations", "scripts"]
 
 
 def current_counts() -> Counter:
@@ -66,7 +75,35 @@ def write_baseline(counts: Counter) -> None:
     print(f"Baseline updated: {total} findings across {len(counts)} (file, rule) pairs.")
 
 
+def assert_not_grown(old_baseline_path: str) -> int:
+    """Fail if the committed baseline grew versus a reference baseline.
+
+    Guards against burying a new violation by regenerating the baseline. A brand
+    new file with findings, or any file whose count rose, is a regression here
+    too — new code is required to be clean, so the baseline never legitimately
+    grows.
+    """
+    old = Counter(json.loads(Path(old_baseline_path).read_text()))
+    new = load_baseline()
+    grew = {k: (old.get(k, 0), new[k]) for k in new if new[k] > old.get(k, 0)}
+    if grew:
+        print("The committed Ruff baseline GREW — a violation was baselined away:\n")
+        for key in sorted(grew):
+            was, now = grew[key]
+            path, code = key.rsplit("::", 1)
+            print(f"  {path}  [{code}]  ({'added to baseline' if was == 0 else f'{was} -> {now}'})")
+        print("\nThe baseline may only shrink. Fix the finding instead of recording it.")
+        return 1
+    print(f"Baseline did not grow ({sum(new.values())} findings, was {sum(old.values())}).")
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "--assert-not-grown":
+        if len(argv) < 2:
+            raise SystemExit("usage: ruff_gate.py --assert-not-grown <old-baseline.json>")
+        return assert_not_grown(argv[1])
+
     counts = current_counts()
 
     if "--update" in argv:
