@@ -8,8 +8,8 @@ contains suitability, replacement/1035, licensing, or CE determination.
 
 Additive and reversible; single Alembic head.
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "y5e6g7i8d9f0"
 down_revision = "x4d5f6h7c8e9"
