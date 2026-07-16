@@ -224,6 +224,7 @@ def test_capabilities_and_roles_are_seeded():
         roles = set(c.execute(text("select code from roles where code like 'insurance_%'")).scalars())
     assert caps == {
         "insurance.read", "insurance.write", "insurance.suitability", "insurance.commissions.read",
+        "insurance.commissions.write",  # added in Phase 5 (commissions)
         "insurance.licensing.read", "insurance.licensing.write", "insurance.sensitive.read",
     }
     assert roles == {"insurance_agent", "insurance_operations", "insurance_compliance"}
@@ -238,7 +239,7 @@ def test_sensitive_capability_flagged_and_administrator_granted_all():
             "join roles r on r.id=rc.role_id join capabilities cap on cap.id=rc.capability_id "
             "where r.code='administrator' and cap.code like 'insurance.%'")).scalar_one()
     assert sensitive is True
-    assert admin_has == 7  # administrator holds every insurance capability
+    assert admin_has == 8  # administrator holds every insurance capability (Phase 5 added commissions.write)
 
 
 def test_agent_role_lacks_sensitive_and_suitability():

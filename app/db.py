@@ -174,3 +174,8 @@ insurance_requirements = metadata.tables["insurance_requirements"]
 insurance_policy_reviews = metadata.tables["insurance_policy_reviews"]
 insurance_licenses = metadata.tables["insurance_licenses"]
 insurance_ce_records = metadata.tables["insurance_ce_records"]
+
+# Insurance commissions (Release 0.10.0, Phase 5)
+insurance_commissions = metadata.tables["insurance_commissions"]
+insurance_commission_statements = metadata.tables["insurance_commission_statements"]
+insurance_commission_statement_lines = metadata.tables["insurance_commission_statement_lines"]

@@ -15,13 +15,14 @@ from pydantic import BaseModel
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services import insurance as ins
+from app.services import insurance_commissions as com
 from app.services import insurance_licensing as lic
 from app.templating import templates
 
 router = APIRouter(tags=["insurance"])
 
-_NOT_FOUND = (ins.InsuranceNotFound, lic.LicensingNotFound)
-_BAD_INPUT = (ins.InsuranceError, lic.LicensingError)
+_NOT_FOUND = (ins.InsuranceNotFound, lic.LicensingNotFound, com.CommissionNotFound)
+_BAD_INPUT = (ins.InsuranceError, lic.LicensingError, com.CommissionError)
 
 
 def _run(fn):
@@ -444,3 +445,155 @@ def console_licensing(request: Request,
     return templates.TemplateResponse(request=request, name="insurance/licensing.html",
                                       context={"licenses": licenses, "ce_records": ce_records,
                                                "report": report, "principal": principal})
+
+
+# --- Phase 5 (non-regulated): commissions — ledger, statements, reconciliation ---
+
+class CommissionCreate(BaseModel):
+    policy_id: int
+    producer_entity_type: str
+    producer_entity_id: int
+    expected_amount: float
+    schedule: str = "first_year"
+    producer_role: str = "writing_agent"
+    split_percentage: float | None = None
+    period_label: str | None = None
+    due_date: date | None = None
+    notes: str | None = None
+
+
+class CommissionGenerate(BaseModel):
+    basis_amount: float
+    schedule: str = "first_year"
+    period_label: str | None = None
+    due_date: date | None = None
+
+
+class CommissionReceived(BaseModel):
+    received_amount: float
+    statement_id: int | None = None
+
+
+class StatementLineBody(BaseModel):
+    amount: float
+    policy_number: str | None = None
+    policy_id: int | None = None
+    producer_reference: str | None = None
+    schedule: str | None = None
+    notes: str | None = None
+
+
+class StatementImport(BaseModel):
+    carrier_id: int
+    statement_date: date | None = None
+    reference: str | None = None
+    stated_total: float | None = None
+    source: str = "manual"
+    lines: list[StatementLineBody] = []
+
+
+class LineReconcile(BaseModel):
+    commission_id: int | None = None
+
+
+# Literal paths first so /commissions/report and /commissions/scan are not captured by the
+# /commissions/{commission_id} int route.
+
+@router.get("/api/v1/insurance/commissions")
+def api_commission_list(policy_id: int | None = None, status: str = "", schedule: str = "",
+                        principal: Principal = Depends(require_capability("insurance.commissions.read"))):
+    return {"commissions": _run(lambda: com.list_commissions(
+        principal, policy_id=policy_id, status=status or None, schedule=schedule or None))}
+
+
+@router.get("/api/v1/insurance/commissions/report")
+def api_commission_report(principal: Principal = Depends(require_capability("insurance.commissions.read"))):
+    from app.services import insurance_reporting
+    return _run(lambda: insurance_reporting.commission_report(principal))
+
+
+@router.post("/api/v1/insurance/commissions", status_code=201)
+def api_commission_create(payload: CommissionCreate, request: Request,
+                          principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    return _run(lambda: com.record_expected(principal, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/commissions/scan")
+def api_commission_scan(principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    """Operational scan: surface commission variance and overdue-outstanding through the
+    shared Exception Engine. Idempotent. No compliance determination."""
+    from app.services import insurance_detectors
+    return _run(lambda: insurance_detectors.run_insurance_commission_scan(actor_user_id=principal.user_id))
+
+
+@router.get("/api/v1/insurance/commissions/{commission_id}")
+def api_commission_get(commission_id: int,
+                       principal: Principal = Depends(require_capability("insurance.commissions.read"))):
+    return _run(lambda: com.get_commission(principal, commission_id))
+
+
+@router.post("/api/v1/insurance/commissions/{commission_id}/received")
+def api_commission_received(commission_id: int, payload: CommissionReceived, request: Request,
+                            principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    return _run(lambda: com.record_received(principal, commission_id, **payload.model_dump(),
+                                            **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/commissions/{commission_id}/write-off")
+def api_commission_write_off(commission_id: int, request: Request,
+                             principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    return _run(lambda: com.write_off(principal, commission_id, **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/policies/{policy_id}/commissions/generate", status_code=201)
+def api_commission_generate(policy_id: int, payload: CommissionGenerate, request: Request,
+                            principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    """Fan a commission basis across the policy's active producers by split."""
+    return _run(lambda: com.generate_expected(principal, policy_id=policy_id, **payload.model_dump(),
+                                              **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/commission-statements", status_code=201)
+def api_statement_import(payload: StatementImport, request: Request,
+                         principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    # model_dump() recursively renders the nested line models to plain dicts, which
+    # import_statement reads with .get(); no further transformation needed.
+    return _run(lambda: com.import_statement(principal, **payload.model_dump(), **_actor(request, principal)))
+
+
+@router.get("/api/v1/insurance/commission-statements")
+def api_statement_list(carrier_id: int | None = None, status: str = "",
+                       principal: Principal = Depends(require_capability("insurance.commissions.read"))):
+    return {"statements": _run(lambda: com.list_statements(
+        principal, carrier_id=carrier_id, status=status or None))}
+
+
+@router.get("/api/v1/insurance/commission-statements/{statement_id}")
+def api_statement_get(statement_id: int,
+                      principal: Principal = Depends(require_capability("insurance.commissions.read"))):
+    return _run(lambda: com.get_statement(principal, statement_id))
+
+
+@router.post("/api/v1/insurance/commission-statements/{statement_id}/reconcile")
+def api_statement_reconcile(statement_id: int, request: Request,
+                            principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    return _run(lambda: com.reconcile_statement(principal, statement_id, **_actor(request, principal)))
+
+
+@router.post("/api/v1/insurance/commission-lines/{line_id}/reconcile")
+def api_line_reconcile(line_id: int, payload: LineReconcile, request: Request,
+                       principal: Principal = Depends(require_capability("insurance.commissions.write"))):
+    return _run(lambda: com.reconcile_line(principal, line_id, commission_id=payload.commission_id,
+                                           **_actor(request, principal)))
+
+
+@router.get("/insurance/commissions", response_class=HTMLResponse)
+def console_commissions(request: Request, status: str = "",
+                        principal: Principal = Depends(require_capability("insurance.commissions.read"))):
+    from app.services import insurance_reporting
+    commissions = _run(lambda: com.list_commissions(principal, status=status or None))
+    statements = _run(lambda: com.list_statements(principal))
+    report = _run(lambda: insurance_reporting.commission_report(principal))
+    return templates.TemplateResponse(request=request, name="insurance/commissions.html",
+                                      context={"commissions": commissions, "statements": statements,
+                                               "report": report, "status": status, "principal": principal})

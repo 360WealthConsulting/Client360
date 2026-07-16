@@ -26,7 +26,9 @@ from app.db import (
     engine,
     exceptions,
     insurance_ce_records,
+    insurance_commissions,
     insurance_licenses,
+    insurance_policies,
     insurance_policy_reviews,
 )
 from app.services import exception_engine as ee
@@ -267,6 +269,101 @@ def run_insurance_licensing_scan(*, actor_user_id=None, today=None):
         "exceptions_opened": lo + co,
         "exceptions_reopened": lr + cr,
         "exceptions_resolved": lres + cres,
+        "failures": len(failures),
+        "failure_detail": failures,
+    }
+
+
+# ============================================================================
+# Phase 5 — commission reconciliation exceptions (operational/financial).
+# A reconciled row whose received amount differs from expected raises
+# INS_COMMISSION_VARIANCE; an expected row past its due date with nothing received
+# raises INS_COMMISSION_OUTSTANDING. Both are money-reconciliation gaps — NOT a
+# compliance conclusion. Anchored to the policy's org/person/household so they reach
+# the right owners; idempotent and auto-resolving through the SHARED engine. Live
+# cron wiring is Phase 6.
+# ============================================================================
+_COMMISSION_VARIANCE_PREFIX = "ins:commission_variance:"
+_COMMISSION_OUTSTANDING_PREFIX = "ins:commission_outstanding:"
+
+
+def _commission_anchor(c, row):
+    policy = c.execute(select(insurance_policies).where(
+        insurance_policies.c.id == row["policy_id"])).mappings().one_or_none() or {}
+    return {"organization_id": policy.get("organization_id"),
+            "person_id": policy.get("person_id"),
+            "household_id": policy.get("household_id")}
+
+
+def _commission_scope(anchor, title, sla_date):
+    org_id = anchor.get("organization_id")
+    return {"related_entity_type": "organization" if org_id else None,
+            "related_entity_id": org_id,
+            "person_id": anchor.get("person_id"),
+            "household_id": anchor.get("household_id"),
+            "title": title,
+            "sla_due_at": _due_datetime(sla_date) if sla_date else None}
+
+
+def _commission_variance_conditions(today):
+    conditions = {}
+    with engine.connect() as c:
+        rows = c.execute(select(insurance_commissions).where(
+            insurance_commissions.c.status.in_(("partial", "variance")))).mappings().all()
+        for row in rows:
+            conditions[f"{_COMMISSION_VARIANCE_PREFIX}{row['id']}"] = _commission_scope(
+                _commission_anchor(c, row), "Commission variance vs expected", row["due_date"])
+    return conditions
+
+
+def _commission_outstanding_conditions(today):
+    conditions = {}
+    with engine.connect() as c:
+        rows = c.execute(select(insurance_commissions).where(
+            insurance_commissions.c.status == "expected",
+            insurance_commissions.c.received_amount.is_(None),
+            insurance_commissions.c.due_date.isnot(None),
+            insurance_commissions.c.due_date < today)).mappings().all()
+        for row in rows:
+            conditions[f"{_COMMISSION_OUTSTANDING_PREFIX}{row['id']}"] = _commission_scope(
+                _commission_anchor(c, row), "Expected commission outstanding", row["due_date"])
+    return conditions
+
+
+def detect_commission_variance(*, actor_user_id=None, today=None):
+    today = _today(today)
+    return _reconcile(_COMMISSION_VARIANCE_PREFIX, "INS_COMMISSION_VARIANCE",
+                      _commission_variance_conditions(today), actor_user_id=actor_user_id)
+
+
+def detect_commissions_outstanding(*, actor_user_id=None, today=None):
+    today = _today(today)
+    return _reconcile(_COMMISSION_OUTSTANDING_PREFIX, "INS_COMMISSION_OUTSTANDING",
+                      _commission_outstanding_conditions(today), actor_user_id=actor_user_id)
+
+
+def run_insurance_commission_scan(*, actor_user_id=None, today=None):
+    """Scheduled/manual entry point for commission reconciliation exceptions. Idempotent
+    (stable dedupe). Returns honest opened/reopened/resolved counts. Live cron is Phase 6."""
+    def _delta(prefix, detect):
+        before = _open_exception_status(prefix)
+        result = detect(actor_user_id=actor_user_id, today=today)
+        after = _open_exception_status(prefix)
+
+        def active(st):
+            return st not in _CLOSED
+        opened = sum(1 for i, st in after.items() if active(st) and i not in before)
+        reopened = sum(1 for i, st in after.items() if active(st) and i in before and not active(before[i]))
+        resolved = sum(1 for i, st in after.items() if not active(st) and i in before and active(before[i]))
+        return opened, reopened, resolved, result["failures"]
+
+    vo, vr, vres, vf = _delta(_COMMISSION_VARIANCE_PREFIX, detect_commission_variance)
+    oo, ore, ores, of = _delta(_COMMISSION_OUTSTANDING_PREFIX, detect_commissions_outstanding)
+    failures = vf + of
+    return {
+        "exceptions_opened": vo + oo,
+        "exceptions_reopened": vr + ore,
+        "exceptions_resolved": vres + ores,
         "failures": len(failures),
         "failure_detail": failures,
     }

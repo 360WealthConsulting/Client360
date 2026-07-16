@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date, timedelta
+from decimal import Decimal
 
 from app.services import insurance as ins
+from app.services import insurance_commissions as com
 from app.services import insurance_licensing as lic
 
 
@@ -67,4 +69,50 @@ def licensing_report(principal, *, today=None, window_days=60):
         "licenses_expiring": expiring,
         "ce_count": len(ce),
         "ce_by_status": dict(Counter(row["status"] for row in ce)),
+    }
+
+
+def commission_report(principal):
+    """Operational commission reconciliation + revenue rollup within record scope.
+
+    Expected vs received, outstanding, and variance totals, broken out by schedule and by
+    organization, tagged with the ``insurance_commissions`` revenue category. This is money
+    reconciliation and revenue reporting — it makes no compliance determination.
+    """
+    entries = com.list_commissions(principal)  # scope-filtered by policy
+
+    def money(x):
+        return Decimal(str(x)) if x is not None else Decimal("0")
+
+    open_statuses = ("expected", "partial", "variance")
+    by_schedule, by_org = {}, {}
+    expected_total = received_total = outstanding_total = Decimal("0")
+    for e in entries:
+        exp, rec = money(e["expected_amount"]), money(e["received_amount"])
+        expected_total += exp
+        received_total += rec
+        if e["status"] in open_statuses and exp > rec:
+            outstanding_total += exp - rec
+        sched = by_schedule.setdefault(e["schedule"], {"expected": Decimal("0"), "received": Decimal("0")})
+        sched["expected"] += exp
+        sched["received"] += rec
+        org_key = e["organization_id"] if e["organization_id"] is not None else "unassigned"
+        org = by_org.setdefault(org_key, {"expected": Decimal("0"), "received": Decimal("0")})
+        org["expected"] += exp
+        org["received"] += rec
+
+    def flatten(bucket):
+        return {k: {"expected": float(v["expected"]), "received": float(v["received"])}
+                for k, v in bucket.items()}
+
+    return {
+        "revenue_category": "insurance_commissions",
+        "entry_count": len(entries),
+        "by_status": dict(Counter(e["status"] for e in entries)),
+        "expected_total": float(expected_total),
+        "received_total": float(received_total),
+        "outstanding_total": float(outstanding_total),
+        "variance_total": float(received_total - expected_total),
+        "by_schedule": flatten(by_schedule),
+        "by_organization": flatten(by_org),
     }

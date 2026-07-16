@@ -1,8 +1,9 @@
 # Release v0.10.0 — Insurance Operations: Architecture
 
-**Status:** in progress — **Phases 0–4 implemented as non-regulated operational
-skeletons**; Phases 5–10 not started; **all regulated logic deferred behind the AD-5
-gate**. Not yet released or tagged. (Current single Alembic head `a7g8i9k0f1h2`;
+**Status:** in progress — **Phases 0–5 implemented** (Phases 2–4 as non-regulated
+operational skeletons; **Phase 5 commissions is non-regulated and complete for its
+scope**); Phases 6–10 not started; **all regulated logic deferred behind the AD-5
+gate**. Not yet released or tagged. (Current single Alembic head `b8i9k1l2g3j4`;
 migration chain in §13. See `PROJECT_STATUS.md` for live status.)
 **Scope:** individual **life insurance & annuities** (advisor-sold, in-force-managed).
 Not group/employer benefits (that is 0.9.11), not P&C, not group life.
@@ -14,11 +15,13 @@ infrastructure. New migration chains off head `u1f9c0i9h8g7`.
 > This is the design of record. What has actually shipped on `feature/insurance-operations`
 > is a deliberately narrower, three-way split:
 >
-> - **Implemented (operational / non-regulated skeleton):** product catalog,
->   `insurance_case`, policies + coverages/riders/parties/values, policy lifecycle &
->   Timeline/Audit events, new-business pipeline & requirement tracking, in-force reviews
->   state machine + obligation calendar, producer licensing/CE **records**, expiry
->   detectors, operational (counts-only) reporting, UI, and JSON APIs. Phases 0–4.
+> - **Implemented (operational / non-regulated):** product catalog, `insurance_case`,
+>   policies + coverages/riders/parties/values, policy lifecycle & Timeline/Audit events,
+>   new-business pipeline & requirement tracking, in-force reviews state machine + obligation
+>   calendar, producer licensing/CE **records**, expiry detectors, **commission ledger —
+>   split-aware expected/received, carrier-statement import & reconciliation, variance/
+>   outstanding exceptions, and revenue rollup (Phase 5)**, operational (counts-only)
+>   reporting, UI, and JSON APIs. Phases 0–5.
 > - **Deferred (regulated logic — NOT built, NOT enabled):** suitability determination,
 >   replacement/1035 recommendation logic, licensing/CE **validation**, sale/issue
 >   **blocking**, automated compliance approvals, and any regulatory decision engine.

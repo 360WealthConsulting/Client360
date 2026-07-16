@@ -70,15 +70,42 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
   `credits_required` / `credits_completed` are staff-entered figures — the platform draws
   no conclusion from them. Tests assert no validation/determination function exists.
 
+### Added — Phase 5 · Insurance commissions — expected/received ledger & reconciliation (`b8i9k1l2g3j4`)
+- **Split-aware expected ledger.** `insurance_commissions` — one expected/received row per
+  producer split; `generate_expected` fans a commission basis across a policy's active
+  producers by `split_percentage` (an `override` role credits an upline entity), so a
+  split-commission policy credits each producer correctly. `record_expected` captures a
+  single entry. Schedules: `first_year | renewal | trail | override | other`.
+- **Received posting & reconciliation.** `record_received` posts a payment and recomputes
+  status (received / partial / variance within a one-cent tolerance). Carrier statements
+  import (`insurance_commission_statements` + `_statement_lines`) and reconcile against
+  expected rows (`reconcile_line` auto-matches by policy + schedule; `reconcile_statement`
+  rolls the whole statement up) — where variance surfaces.
+- **Operational exceptions.** `INS_COMMISSION_VARIANCE` (received ≠ expected) and
+  `INS_COMMISSION_OUTSTANDING` (expected past due, unpaid) raise through the **shared
+  Exception Engine** — idempotent, auto-resolving, anchored to the policy's owners. Callable
+  + manual scan endpoint ship now; live cron wiring is Phase 6.
+- **Revenue rollup.** `insurance_reporting.commission_report` — expected/received/outstanding/
+  variance totals by schedule and by organization, tagged with the `insurance_commissions`
+  revenue category. Operational reporting only.
+- **Surface.** JSON API (`/api/v1/insurance/commissions*`, `/commission-statements*`,
+  `/commission-lines/*`) + a `/insurance/commissions` staff console. New capability
+  `insurance.commissions.write` (read capability was seeded in Phase 0), granted to
+  administrator / insurance_agent / insurance_operations; ledger scoped by policy record scope.
+- **Non-regulated.** This is money movement and reconciliation only — no suitability,
+  replacement/1035, licensing, or CE determination; nothing is blocked. A test asserts no
+  regulated-determination function or verb leaked into the commission surface.
+
 ### Blocked / deferred
 - **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
   Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
   is **not** regulatory certification. No regulated phase passes its RC gate without a
   completed, approved sign-off artifact from a qualified, named compliance reviewer. This
   is not resolvable in code and remains open.
-- **Remaining phases:** 5 (commissions), 6 (exceptions/detectors/queues + `run_insurance_scan`
-  cron), 7 (policyholder portal), 8 (reporting/dashboards), 9 (integration stubs),
-  10 (RC validation + release), plus the AD-5-gated regulated portions of Phases 2–4.
+- **Remaining phases:** 6 (exceptions/detectors/queues + live `run_insurance_scan` cron —
+  wires the Phase 3/4/5 scan callables), 7 (policyholder portal), 8 (reporting/dashboards),
+  9 (integration stubs), 10 (RC validation + release), plus the AD-5-gated regulated portions
+  of Phases 2–4.
 
 ### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
 - **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter
@@ -90,9 +117,9 @@ Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on
   venv-only/py3.12 environments (previously 1 failing safety test).
 
 ### Migrations
-Additive, off head `u1f9c0i9h8g7`, single head `a7g8i9k0f1h2`, reversible:
+Additive, off head `u1f9c0i9h8g7`, single head `b8i9k1l2g3j4`, reversible:
 `v2b3d4f5a6c7` → `w3c4e5g6b7d8` → `x4d5f6h7c8e9` → `y5e6g7i8d9f0` → `z6f7h8j9e0g1` →
-`a7g8i9k0f1h2`.
+`a7g8i9k0f1h2` → `b8i9k1l2g3j4`.
 
 ## [0.9.13] — 2026-07-16 — Platform Foundation
 

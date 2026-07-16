@@ -100,7 +100,7 @@ policyholder portal also serves **C (Client Experience)**.
 | **In-Force Policy Servicing** | H · Insurance Operations | Michael Shelton | Draft | `app/services/insurance.py` (servicing); migration `z6f7h8j9e0g1` | Phase 3 (non-regulated skeleton) | Operational servicing only. Replacement/1035 **recommendation** excluded (AD-5). |
 | **Insurance Reviews and Obligations** | H · Insurance Operations | Michael Shelton | Draft | `app/services/insurance.py` (reviews state machine); `app/services/insurance_detectors.py` | Phase 3 | Publish when Phase 3 is RC-validated. Review lifecycle/obligation calendar only; **no suitability determination** content (AD-5). |
 | **Producer Licensing and Continuing Education** | H · Insurance Operations / K · Compliance | Michael Shelton | Draft | `app/services/insurance_licensing.py`; migration `a7g8i9k0f1h2` | Phase 4 (non-regulated skeleton) | Records + expiry reminders only. Licensing/CE **validation** and sale/issue blocking excluded (AD-5). |
-| **Insurance Commissions** | H · Insurance Operations / I · Finance and Accounting | Michael Shelton | Draft — **planned, not built** | Phase 5 feature (planned); `docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md` §12 (Phase 5) | Phase 5 | **BLOCKED** — do not publish until Phase 5 is implemented and RC-validated. |
+| **Insurance Commissions** | H · Insurance Operations / I · Finance and Accounting | Michael Shelton | Draft | `app/services/insurance_commissions.py`; `app/services/insurance_detectors.py` (variance/outstanding); `app/services/insurance_reporting.py` (`commission_report`); migration `b8i9k1l2g3j4`; SOP draft `docs/confluence/INSURANCE_COMMISSIONS_SOP_DRAFT.md` | Phase 5 (non-regulated, built) | Operational ledger/reconciliation/revenue only. Publish when Phase 5 is RC-validated; excludes any regulated determination (AD-5). Live scan cron is Phase 6. |
 | **Insurance Exceptions and Work Queues** | H · Insurance Operations / K · Compliance | Michael Shelton | Draft | `app/services/insurance_detectors.py`; shared exception engine (`app/services/exception_*`); `app/services/work_management.py` | Phase 3–4 (live cron scan is Phase 6) | Publish operational exceptions/queues; state clearly that the scheduled scan (`run_insurance_scan`) is wired in Phase 6 — manual/callable only until then. |
 | **Policyholder Portal Operations** | H · Insurance Operations / C · Client Experience | Michael Shelton | Draft — **planned, not built** | Phase 7 feature (planned); portal recipe (`docs/CLIENT_PORTAL.md`) | Phase 7 | **BLOCKED** — do not publish until Phase 7 is implemented and RC-validated. |
 | **Insurance Reporting** | H · Insurance Operations | Michael Shelton | Draft | `app/services/insurance_reporting.py` | Phase 2 (counts-only) | Operational counts only; **no compliance metrics**. Publish when Phase 2 is RC-validated. |
@@ -109,7 +109,9 @@ policyholder portal also serves **C (Client Experience)**.
 ### Notes
 - Every Insurance page is **draft/unpublished**; none may go live until its phase is
   RC-validated and, for regulated content, AD-5-cleared.
-- Two pages (Commissions, Policyholder Portal) correspond to **unbuilt** phases and exist as
-  placeholders only — they must not describe any functionality as available.
+- The **Policyholder Portal** page corresponds to an **unbuilt** phase (Phase 7) and exists as
+  a placeholder only — it must not describe any functionality as available. The **Insurance
+  Commissions** page is now backed by built Phase 5 functionality (a draft SOP exists), but
+  stays draft/unpublished until Phase 5 is RC-validated.
 - The **compliance reviewer role remains unfilled (AD-5)**; this is an open, non-code blocker
   and is surfaced on the Roles & Responsibilities page rather than hidden.
