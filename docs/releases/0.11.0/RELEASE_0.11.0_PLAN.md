@@ -3,6 +3,11 @@
 _Status: **PLANNING** (new development cycle). Created 2026-07-17. Predecessor: **0.10.0 —
 Insurance Operations**, released and closed 2026-07-17 (`main` at `v0.10.0`, merge `5ba60a2`)._
 
+_Revision 2026-07-17: incorporated the approved **P0 checkpoint decisions D1–D9** (see
+`docs/releases/0.11.0/P0_ARCHITECTURE_CHECKPOINT.md`). **D10 (taxonomy reconciliation) is NOT
+incorporated** — it is deferred pending `docs/releases/0.11.0/D10_TAXONOMY_IMPACT_ASSESSMENT.md`
+and explicit approval._
+
 > **Planning only.** No functionality is implemented, no released code is modified, no branch is
 > created by this document. Scope is a proposal for the architecture checkpoint; it becomes
 > binding only when approved there. Release 0.11.0 is a **new development cycle** with its own
@@ -43,9 +48,16 @@ part of Definition of Done), but the committed 0.11.0 spine is Phase A.
 3. **Load the Template Library** (framework deliverable 2) as reusable Confluence templates.
 4. **Add a Git `governance/` tree** for git-canonical operational artifacts (policies, runbooks,
    DR/BCP, controls register, operating-calendar data) — structure and READMEs, not full content.
-5. **Promote the Publication Register** — expand `DOCUMENTATION_CROSSWALK.md` to all **26 areas ×
-   each area profile's document types**, status seeded from the Capability Map. *(The item deferred
-   from 0.10.0.)*
+5. **Promote the Publication Register** — author the register as canonical, machine-readable
+   **`docs/registers/pages.yml`** (per framework deliverable 6 §2) and render
+   `DOCUMENTATION_CROSSWALK.md` as a **generated view** of it *(D1)*. Seed one row per page across
+   all **26 areas × each area profile's document types**, **plus** node-40 shared singletons and
+   node-90 register/governance pages under pseudo-areas **`SHARED` / `GOV`** *(D2)*; for the 11
+   node-10 client-facing (Hybrid) areas, seed the **union** of Software-profile and Business-Ops
+   process document types *(D3)*. Status is drawn from a fixed enum **`planned | draft | published |
+   needs_review`** *(D4)*, seeded from the Capability Map. Add a nullable **`compliance_gate`**
+   field (e.g. `AD-5`) with the enforced invariant **`compliance_gate set ⇒ status ≠ published`**
+   *(D9)*. *(The item deferred from 0.10.0.)*
 6. **Wire the Definition-of-Done docs gate (advisory)** — add the DoD checklist to the PR template
    and an **advisory** (non-blocking) docs gate; assign an owner/reviewer per area.
 7. **Exit criterion (Phase A):** every area has a page skeleton, a register row, and an owner; the
@@ -59,9 +71,11 @@ part of Definition of Done), but the committed 0.11.0 spine is Phase A.
   import (idempotent, re-runnable; documented steps).
 - `governance/` directory scaffold in the repo: subtree layout, README per node, ownership front
   matter, and a short CONTRIBUTING pointer — **structure only**, no authored policy content.
-- Full Publication Register in `DOCUMENTATION_CROSSWALK.md`: 26 area rows × profile document types,
-  each with owner, canonical home (Git vs Confluence), status seeded from the Capability Map, and
-  AD-5 flags carried onto regulated rows.
+- Full Publication Register as canonical **`docs/registers/pages.yml`** (crosswalk generated from
+  it): rows for 26 areas × profile document types **+ `SHARED`/`GOV`** rows, Hybrid-area unions for
+  node 10, each with owner, canonical home (Git vs Confluence), status from the enum `planned |
+  draft | published | needs_review`, and a machine-checkable `compliance_gate` (AD-5) field that
+  keeps regulated rows out of `published`.
 - PR-template DoD checklist + advisory docs-gate script (report-only; exits 0). No blocking.
 - Per-area owner/reviewer assignment table.
 - Release documentation for 0.11.0 itself (CHANGELOG entry, this plan → architecture checkpoint →
@@ -109,7 +123,7 @@ part of Definition of Done), but the committed 0.11.0 spine is Phase A.
 |---|---|---|---|---|
 | R1 | Register promotion becomes a content-authoring rabbit hole (drifts into Phase D) | High | Med | Hard scope: **rows + skeletons + owners only**; authored content is out of scope (§3). DoD = a row exists, not a page written. |
 | R2 | Confluence space provisioning is partially manual / not idempotent | Med | Med | Script/checklist the node + template creation; make re-runnable; record page IDs in the Register. |
-| R3 | AD-5 regulated rows mis-seeded as "publishable" | Med | High | Every regulated row carries an explicit **AD-5-BLOCKED** flag; publication status defaults to draft; boundary reused verbatim from 0.10.0 pages. |
+| R3 | AD-5 regulated rows mis-seeded as "publishable" | Med | High | Every regulated row carries a machine-checkable **`compliance_gate: AD-5`** field; the register invariant **`compliance_gate set ⇒ status ≠ published`** blocks it *(D9)*; boundary reused verbatim from 0.10.0 pages. |
 | R4 | Advisory gate mistaken for blocking / blocks delivery | Low | Med | Gate exits 0 (report-only) by design; blocking is deferred to Phase E and called out in the gate's own output. |
 | R5 | Ownership gaps — areas without a named owner | Med | Low | Default owner = Michael Shelton (business) with a visible "reviewer TBD" marker; compliance areas flagged UNFILLED (AD-5). |
 | R6 | Scope creep pulling Phase B risk-floor content forward | Med | High | Phase B explicitly a non-goal (§3); architecture checkpoint rejects any risk-floor authoring. |
@@ -124,9 +138,11 @@ part of Definition of Done), but the committed 0.11.0 spine is Phase A.
 - ✅ Confluence space skeleton live: all node pages + 3 profile Area Shell templates + Template
   Library imported; page IDs recorded in the Register.
 - ✅ `governance/` tree scaffolded in-repo with per-node README and ownership front matter.
-- ✅ **Publication Register complete:** every one of the 26 areas has ≥1 register row per its
-  profile's document types, an owner, a canonical home, a seeded status, and (where regulated) an
-  AD-5 flag.
+- ✅ **Publication Register complete:** `docs/registers/pages.yml` is canonical and the crosswalk is
+  generated from it; every one of the 26 areas (plus `SHARED`/`GOV`) has ≥1 register row per its
+  profile's document types (Hybrid areas seed both profiles' types), each with an owner, a canonical
+  home, a status from the fixed enum, and — where regulated — a `compliance_gate` (AD-5) that the
+  invariant check confirms is never `published`.
 - ✅ DoD checklist present in the PR template; advisory docs gate runs in CI and reports (exit 0).
 - ✅ Every area has a named owner/reviewer (or an explicit TBD/UNFILLED marker).
 - ✅ **Phase A exit** met: *every area has a page skeleton, a register row, an owner; DoD visible
@@ -162,7 +178,9 @@ Michael Shelton is the business/operational owner only — not regulatory certif
 Implications for this cycle:
 
 - No regulated capability is built, enabled, or documented as available.
-- Regulated Publication Register rows are seeded **AD-5-BLOCKED / draft**, never publishable.
+- Regulated Publication Register rows carry a **`compliance_gate: AD-5`** field; the register
+  invariant **`compliance_gate set ⇒ status ≠ published`** makes "never publishable" machine-checkable
+  rather than prose *(D9)*.
 - The only AD-5 movement possible outside code is **naming the reviewer**; until then the gate
   stays shut. This plan does not assume that happens within 0.11.0.
 
@@ -199,7 +217,7 @@ Effort is **relative sequence**, not calendar dates (consistent with the roadmap
 | **0.11-P0** | Framework ratification & checkpoint | Approve framework; confirm scope; architecture checkpoint for this cycle | XS | Architecture checkpoint |
 | **0.11-P1** | Confluence space skeleton | Create nodes `00/01/10/20/30/40/80/90`; 3 profile Area Shell templates; import Template Library | M | Validation: pages exist, IDs recorded |
 | **0.11-P2** | `governance/` Git tree | Scaffold subtree + per-node README + ownership front matter + CONTRIBUTING pointer | S | Validation: tree builds, links resolve |
-| **0.11-P3** | Publication Register promotion | Expand crosswalk to 26 areas × doc types; seed status from Capability Map; assign owners; flag AD-5 rows | **L** | Validation: every area has rows + owner + home + status |
+| **0.11-P3** | Publication Register promotion | Author canonical `docs/registers/pages.yml` (crosswalk generated from it); seed 26 areas + `SHARED`/`GOV`, Hybrid unions for node 10; status from the `planned\|draft\|published\|needs_review` enum (Capability Map); assign owners; add `compliance_gate` (AD-5) + not-publishable invariant | **L** | Validation: every area has rows + owner + home + status; register is `pages.yml`; AD-5 invariant passes |
 | **0.11-P4** | DoD gate (advisory) + PR template | Add DoD checklist to PR template; advisory docs-gate script (report-only) in CI | S | Validation: gate runs, reports, exits 0 |
 | **0.11-P5** | RC validation | Full suite green; register/skeleton/owner completeness audit; docs consistency pass | S | RC gate |
 | **0.11-P6** | Release approval & tag | Approval artifact; CHANGELOG date; release `v0.11.0`; publish release notes | XS | Release approval gate |
