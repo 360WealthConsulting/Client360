@@ -116,13 +116,12 @@ def _read(path):
     try:
         with open(path, encoding="utf-8") as fh:
             return fh.read()
-    except Exception as e:  # pragma: no cover
+    except Exception:  # pragma: no cover
         return ""
 
 
 def scan_file(rep, path):
     text = _read(path)
-    rel = os.path.relpath(path, ROOT)
     if not text.strip():
         rep.add(WARNING, "empty_file", path, "file is empty")
         return
