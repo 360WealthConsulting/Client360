@@ -24,41 +24,46 @@ rejected. **Canonical-source enum (enforced):** `git` (Git-canonical), `confluen
 (Confluence-canonical), `generated` (generated views), `legacy_unresolved` (unresolved legacy — never
 canonical).
 
-**Scope decision (documented):** "required document types per area profile" = each profile's
-**minimum-viable ("documented") set** (framework `02-DOCUMENT-TYPE-TEMPLATES.md` §D). This yields a
-meaningful coverage register rather than ~450 empty matrix cells; the full doc-type matrix expands
-later under the Definition of Done. Hybrid areas seed the **union** of the Software min-set and the
-Business-Ops process types Policy/SOP/RACI/Checklist/Calendar (D3), de-duplicated.
+**Scope decision (AMENDED — see §16 Remediation).** Coverage is the **complete** per-profile
+document-type set from framework `01-INFORMATION-ARCHITECTURE.md` §2 (Software 19, Infrastructure 14,
+Business Operations 14). Hybrid (node 10) areas seed the **complete de-duplicated union of the
+Software and Business-Operations requirements** (27 types). Nodes 40/80/90 carry no profile in 01 §2
+(shared singletons / aggregators / registers) and use justified specific sets.
+_(The initial P3 pass seeded a minimum-viable set; that was corrected in remediation — figures in
+§2–§10 below reflect the corrected full-matrix register; §16 documents the change.)_
 
 ## 2. Counts
 
-- **Total register rows: 314.**
-- **By status:** `planned` 249 · `draft` 23 · `needs_review` 23 (all legacy) · `published` 19.
-- **By canonical source:** `git` 147 · `confluence` 137 · `generated` 7 · `legacy_unresolved` 23.
-- **By compliance gate:** `AD-5` 10 · `none` 304.
-- **By node:** 00→4 · 01→5 · 10→169 · 20→45 · 30→51 · 40→9 · 80→11 · 90→20.
-- **By profile:** hybrid 162 · operations 101 · infrastructure 42 · library 9.
-- **By area (29 total = 26 framework + SHARED + GOV + MANUAL):** e.g. INS 29, GOV 21, WLTH 15, CRM 14,
-  DOC 14, RPT 14, TAXOPS 14, MANUAL 13, CLM360 13, RET 13, AIA 13, WORK 13, CMP 10, BEN 16, node-20
-  areas 7–8, node-30 areas 8–10, SHARED 8, SOPLIB 4, TRAIN 3, RELMGMT 3.
-- **By document type (29 types):** EXEC 27, SOP 25, LEGACY 23, ARCH 20, PURPOSE 20, CALENDAR 19,
-  CHECKLIST 18, POLICY 18, RACI 18, SEC 18, CHANGELOG 17, USERGUIDE 13, DATA 11, RELNOTES 11, NODE 8,
-  REGISTER 8, ASSET 7, BCDR 7, RUNBOOK 7, RULES 4, PROCESS 3, TEMPLATE 3, CONTROLS 2, META 2, and
-  EXC/GLOSSARY/INTEG/REPORT/WF 1 each.
+- **Total register rows: 554.**
+- **By status:** `planned` 489 · `draft` 23 · `needs_review` 23 (all legacy) · `published` 19.
+- **By canonical source:** `git` 230 · `confluence` 294 · `generated` 7 · `legacy_unresolved` 23.
+- **By compliance gate:** `AD-5` 11 · `none` 543.
+- **By node:** 00→4 · 01→5 · 10→323 · 20→87 · 30→92 · 40→9 · 80→14 · 90→20.
+- **By profile:** hybrid 316 · operations 142 · infrastructure 84 · library 12.
+- **By area (28 total = 26 framework + `SHARED` + `GOV`; no `MANUAL`):** INS 43, GOV 34, WLTH 29,
+  CRM 28, DOC 28, RPT 28, TAXOPS 28, CLM360 27, RET 27, AIA 27, WORK 27, BEN 30, CMP 16, node-20
+  areas 14–15, node-30 areas 15–16, SHARED 8, SOPLIB 5, TRAIN 4, RELMGMT 4.
+- **By document type:** every profile-bearing area now carries its full 01 §2 doc-type set; the most
+  frequent types are EXEC, SOP, RELATED, CHANGELOG, ARCH, PURPOSE, SEC, CALENDAR, POLICY, RACI, plus
+  the structural/register/legacy types (NODE 8, TEMPLATE 3, REGISTER 8, LEGACY 23).
 
 ## 3. Framework-area coverage
 
-All **26 framework areas** plus `SHARED` and `GOV` are represented (validator-enforced). Node 10 (11
-hybrid areas), node 20 (6 infra), node 30 (6 ops), node 80 (3 library), node 40 (`SHARED`
-singletons), node 90 (`GOV`). `MANUAL` is the structural pseudo-area for the manual's own
-nodes/templates.
+All **26 framework areas** plus `SHARED` and `GOV` are represented (validator-enforced) — **28 valid
+areas total; `MANUAL` was removed** (Issue 1). Node 10 (11 hybrid areas), node 20 (6 infra), node 30
+(6 ops), node 80 (3 library aggregators), node 40 (`SHARED` singletons), node 90 (`GOV`). The
+Operations Manual's own structural pages (8 nodes + 3 templates) are classified under the approved
+**`GOV`** area while retaining their true tree node.
 
 ## 4. Hybrid union treatment
 
-The 11 node-10 areas use `profile: hybrid` = Software min-set (EXEC, PURPOSE, ARCH, DATA, USERGUIDE,
-SEC, RELNOTES, CHANGELOG) **∪** Business-Ops process types (POLICY, RACI, SOP, CHECKLIST, CALENDAR) —
-13 de-duplicated types (SOP appears once). The validator confirms **no duplicate profile-union
-coverage rows** per area.
+The 11 node-10 areas use `profile: hybrid` = the **complete de-duplicated union of the full Software
+profile (19 types) and the full Business-Operations profile (14 types)** = **27 types** per area
+(11 × 27 = 297 coverage rows). SOP/TRAIN and the core types appear once (de-duplicated). This union
+is a **superset** of both the 01 §2 hybrid definition (Software + SOP/Policy/RACI/Calendar) and the
+approved D3 list (+ Checklist), so no requirement is dropped. The validator confirms **no duplicate
+profile-union coverage rows** and **complete coverage** (each hybrid area has exactly the 27-type
+set).
 
 ## 5. Governance-row treatment
 
@@ -103,22 +108,34 @@ letter is both mapped and preserved. The generated crosswalk renders the letter�
   **not** a duplicate, not an omitted page in §3, and not a scope-definition issue — the §1 summary
   simply miscounted the §3 table.
 - **Correct count: 12** proposed Insurance pages.
-- **Records involved (the 12):** *Published (6, real Confluence pages):* Insurance Operations Overview
-  (`28770305`), Commissions (`28803073`), Exceptions & Work Queues (`28835841`), Policyholder Portal
-  (`28868609`), Reporting & Dashboard (`28901377`), Integrations (`28901397`). *Draft (6, no page
-  yet):* Policy Management, New Business Case Management, In-Force Policy Servicing, Reviews &
-  Obligations, Producer Licensing & CE, Roles & Responsibilities.
-- **Validation proving the result:** the register contains exactly **6 INS rows `status: published`
-  and 6 INS rows `status: draft`** = 12 proposed pages; page_ids are unique; the 6 published carry
-  unique real Confluence IDs. (INS also has 13 planned coverage rows and 4 AD-5 regulated rule-set
-  rows — distinct from the 12 proposed pages; INS total = 29.)
+- **Composition (AMENDED — Issue 3), the 12 proposed pages by class:**
+  - **Insurance area parent / landing page — 1:** `INS-EXEC-01` "Insurance Operations — Release
+    0.10.0" (`28770305`). Classified as **both** a landing/section-navigation page **and** a
+    descriptive operational overview; `doc_type: EXEC` (Executive Overview). It is **not** one of the
+    operational child SOPs.
+  - **Published operational child pages — 5 (preserved, verified IDs):** Commissions `28803073`
+    (`INS-SOP-01`), Exceptions & Work Queues `28835841` (`INS-SOP-02`), Policyholder Portal
+    `28868609` (`INS-SOP-03`), Reporting & Dashboard `28901377` (`INS-REPORT-01`), Integrations
+    `28901397` (`INS-INTEG-01`). These are the five Release 0.10.0 operational deliverables — retained
+    unchanged.
+  - **Unpublished / draft proposed pages — 6:** Policy Management (`INS-USERGUIDE-01`), New Business
+    Case Management (`INS-SOP-04`), In-Force Servicing (`INS-SOP-05`), Reviews & Obligations
+    (`INS-SOP-06`), Producer Licensing & CE (`INS-SOP-07`), Roles & Responsibilities (`INS-RACI-01`).
+  - So the earlier "six published Insurance pages" = **1 landing/parent + 5 operational children**
+    (not six equivalent operational pages).
+- **Total Insurance register records: 43** = 27 hybrid coverage rows + 4 explicit AD-5 regulated
+  rule-set rows (`INS-RULES-SUITABILITY/REPLACEMENT/LICENSING/CE`) + the 12 proposed pages above.
+- **Validation proving the result:** the register holds exactly **6 INS `published`** (1 landing +
+  5 children) and **6 INS `draft`** = 12 proposed pages; all page_ids unique; the 6 published carry
+  unique verified Confluence IDs.
 
 ## 10. AD-5 validation results
 
-- **10 rows carry `compliance_gate: AD-5`**, all with `status != published` (invariant holds):
-  the 4 regulated Insurance rule-set rows (`INS-RULES-SUITABILITY/REPLACEMENT/LICENSING/CE`, planned),
-  `INS-SOP-07` (Producer Licensing/CE, draft) and `INS-RACI-01` (Roles, draft), `CMP-POLICY` and
-  `CMP-CONTROLS` (regulated compliance, planned), and `GOV-CONTROLS-README` + `GOV-CONTROLS-REGISTER`.
+- **11 rows carry `compliance_gate: AD-5`**, all with `status != published` (invariant holds):
+  the INS Business-Rules coverage row (`INS-RULES`) + the 4 explicit regulated rule-set rows
+  (`INS-RULES-SUITABILITY/REPLACEMENT/LICENSING/CE`, planned), `INS-SOP-07` (Producer Licensing/CE,
+  draft) and `INS-RACI-01` (Roles, draft), `CMP-POLICY` and `CMP-CONTROLS` (regulated compliance,
+  planned), and `GOV-CONTROLS-README` + `GOV-CONTROLS-REGISTER`.
 - **Programmatic invariant** `compliance_gate set ⇒ status ≠ published` is enforced by the validator
   (0 violations).
 - **Published 0.10.0 Insurance pages classified individually:** all 6 (Overview, Commissions,
@@ -149,17 +166,18 @@ governance artifacts represented, exactly 23 non-canonical legacy rows, and **cr
 
 ## 13. Deviations
 
-1. **Source filename.** Instruction cited `06-SYNC-AND-DEFINITION-OF-DONE.md` (correct here) — no
-   deviation this phase; the earlier obsolete `06-DOCUMENTATION-SYNC-AND-DOD.md` reference is not used.
-2. **Coverage = minimum-viable set** (not the full doc-type matrix) — documented §1; a deliberate,
-   reversible scope choice that keeps the register meaningful. Expanding to the full matrix is a
-   later-phase option.
-3. **Crosswalk content replaced.** The former hand-authored `DOCUMENTATION_CROSSWALK.md` prose
+1. **Source filename.** `06-SYNC-AND-DEFINITION-OF-DONE.md` is the correct file — no deviation.
+2. **Crosswalk content replaced.** The former hand-authored `DOCUMENTATION_CROSSWALK.md` prose
    (§1 section map, §2 Benefits, §3 Insurance) is **superseded** by the generated view; its data is
    preserved as register rows (Benefits 3, Insurance 12, D10 letter map) and row `notes`. This is the
    intended D1 outcome.
-4. **`MANUAL` pseudo-area** introduced for the manual's own nodes/templates (structural pages need a
-   home); added to the valid-area set alongside `SHARED`/`GOV`.
+3. **Node-40/80/90 use justified specific sets, not a profile matrix** — 01 §2 assigns profiles only
+   to nodes 10/20/30; nodes 40 (shared singletons), 80 (aggregators), 90 (registers/governance) carry
+   no framework profile, so they seed specific pages rather than a doc-type matrix. Source-justified,
+   not a preference reduction.
+
+_(Resolved in remediation — no longer deviations: the earlier "minimum-viable coverage" and the
+unapproved `MANUAL` pseudo-area. See §16.)_
 
 ## 14. Unresolved issues
 
@@ -183,5 +201,67 @@ governance artifacts represented, exactly 23 non-canonical legacy rows, and **cr
 
 ---
 
-**Stopping after the P3 report.** Awaiting explicit approval before beginning
+## 16. P3 REMEDIATION (amendment)
+
+Applied after the conditional-acceptance review. The figures in §1–§15 above already reflect the
+remediated register; this section records what changed and the verification.
+
+### 16.1 Issue 1 — `MANUAL` pseudo-area removed
+- `MANUAL` was **not** an approved taxonomy area. It has been **removed**. The approved taxonomy is
+  now exactly the **26 framework area codes + `SHARED` + `GOV` = 28 valid areas**.
+- The 11 structural manual pages (8 nodes + 3 templates) are re-classified under the approved
+  **`GOV`** area (page_ids `GOV-NODE-00…90`, `GOV-TEMPLATE-*`), keeping their true tree node and
+  verified Confluence IDs — no Confluence change.
+- The 2 legacy pages formerly tagged `MANUAL` (`📐 360 Standards` `23199768`, `🏠 Home` `23166977`)
+  now map to the approved area **`GOV`**, remaining `legacy_unresolved` / `manual_review` /
+  `needs_review` (non-canonical — a legacy page mapping to an approved area does **not** make it that
+  area's canonical page).
+- **Schema validation updated:** only the 26 codes + `SHARED` + `GOV` are accepted; any other area
+  (incl. `MANUAL`) is rejected.
+
+### 16.2 Issue 2 — complete document-type coverage
+- **Controlling determination (Option A — full matrix).** Framework `01-INFORMATION-ARCHITECTURE.md`
+  §2 defines the complete per-profile sets: **Software 19, Infrastructure 14, Business Operations 14**
+  (core = EXEC/PURPOSE/RELATED/CHANGELOG). The initial pass seeded a minimum-viable subset — corrected
+  to the **full** sets for all profile-bearing areas (nodes 10/20/30).
+- **Hybrid union.** Per remediation Issue 2A, node-10 areas seed the **complete de-duplicated union**
+  of the full Software and full Business-Operations sets = **27 types**. This is a **superset** of the
+  narrower 01 §2 hybrid definition (Software + SOP/Policy/RACI/Calendar) and the approved D3 list
+  (+ Checklist); adopting the superset drops no requirement, so the sources do not conflict in a way
+  that reduces scope. (Had they, this section would report a conflict rather than choose a smaller set.)
+- **Nodes 40/80/90** carry no profile in 01 §2 → justified specific sets (SHARED singletons, node-80
+  aggregators core+index, GOV registers/governance/structural).
+- **Validation:** a new coverage-completeness check asserts every node-10 area has the full 27-type
+  set, every node-20 area the 14 infra types, every node-30 area the 14 ops types, and node-80 areas
+  the aggregator set — **0 missing**.
+
+### 16.3 Issue 3 — Insurance count terminology (see §9)
+- **1** Insurance parent/**landing** page (`28770305`, `INS-EXEC-01`) — classified as **both** landing
+  and descriptive overview; `doc_type: EXEC`.
+- **5** published operational child pages (verified IDs preserved).
+- **6** unpublished/draft proposed pages.
+- **43** total Insurance register records.
+- The prior "six published Insurance pages" is now explained as **1 landing + 5 operational children**.
+
+### 16.4 Final figures
+- **Final valid-area count: 28** (26 framework + `SHARED` + `GOV`).
+- **Final row count: 554.**
+- **Hybrid coverage: 11 × 27 = 297 rows** (node 10 total 323 incl. INS/BEN instances).
+- **AD-5 rows: 11**, all non-published (invariant holds).
+- **Legacy: 23**, all `legacy_unresolved` / `manual_review` / `needs_review` (non-canonical).
+
+### 16.5 Validation results (post-remediation)
+`validate_register.py` passes **0 errors**, including: only 26+`SHARED`+`GOV` areas valid; complete
+profile/document-type coverage; no duplicate Hybrid-union rows; AD-5 invariant; all 20 known
+Confluence IDs present with intended status (**unchanged**); 23 non-canonical legacy rows; crosswalk
+current. `gen_crosswalk.py --check` exit 0 (regeneration produces no diff). **No Confluence change**
+occurred during remediation.
+
+### 16.6 Remaining deviations
+Only the non-blocking items in §13 (crosswalk prose superseded by the generated view; nodes 40/80/90
+use justified specific sets). No unresolved conflict.
+
+---
+
+**Stopping after the amended P3 report.** Awaiting explicit approval before beginning
 **0.11-P4 — DoD Gate and PR Template**.
