@@ -1,8 +1,11 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 — Phase 9 Integration Ports (disabled stubs) complete; Phases
-0–9 done. Phase 10 (RC + release) not started.)_
+**2026-07-16** (Release 0.10.0 — **Phase 10 RC validation complete** (`docs/RC_0.10.0_VALIDATION.md`).
+**The non-regulated Release 0.10.0 implementation (Phases 0–9) is complete and ready to enter
+Phase 10 RC validation. AD-5 remains an external release blocker for any regulated insurance
+functionality.** Recommended for release — awaiting approval to date the CHANGELOG, merge PR #27,
+and tag `v0.10.0`.)_
 
 | Field | Value |
 |---|---|
@@ -50,19 +53,19 @@ page (Git technical, Confluence operational) — no duplication.
 ## Open risks
 
 - 🔴 **AD-5 — compliance reviewer NOT YET NAMED.** All regulated insurance logic (suitability, replacement/1035, licensing/CE validation, compliance approvals) is **blocked** and cannot pass an RC gate without a qualified, named reviewer + approved sign-off artifact. Michael Shelton is the **business** owner (operational scope) only — not regulatory certification. **Not resolvable in code.**
-- 🟠 **Release 0.10.0 not yet RC-validated / not tagged.** Phases 0–9 built; **Phase 10 (RC + release) outstanding**.
+- 🟠 **Release 0.10.0 RC-validated (`docs/RC_0.10.0_VALIDATION.md`), not yet tagged.** Non-regulated Phases 0–9 passed RC validation and are recommended for release; the tag step (date CHANGELOG `[0.10.0]` + merge PR #27 + tag `v0.10.0`) is **awaiting approval**.
 - 🟡 **Confluence Insurance pages are draft/unpublished** — must not be published until the corresponding phase functionality is complete and (for regulated content) AD-5-cleared.
 - 🟡 **Benefits (0.9.11) Confluence pages still in draft** — awaiting page-owner approval.
 
 ## Next task
 
-**Phase 10 — RC validation + release v0.10.0.** Produce the RC validation doc, run the release
-gates (`scripts/release.sh` dry-run), and tag v0.10.0. **Release does not proceed for any
-AD-5-gated content** — only the non-regulated Phases 0–9 surface is in scope. Begin only after
-Phase 9 is reviewed/accepted.
+**Release (approval-gated).** RC validation is complete and passed (`docs/RC_0.10.0_VALIDATION.md`).
+Awaiting approval to: (1) date the CHANGELOG `[0.10.0]` entry, (2) merge draft PR #27 into `main`,
+(3) tag `v0.10.0` (`scripts/release.sh 0.10.0`). **No AD-5-gated content is in the release** — only
+the non-regulated Phases 0–9 surface.
 
 ---
 
-_Phase 9 is complete and stopped for review. Do not begin Phase 10 until this checkpoint is
-reviewed/accepted per the project cadence. AD-5 remains an open, non-code blocker for all
+_Phase 10 RC validation is complete and stopped for review. Do not date the CHANGELOG, merge PR
+#27, or create the `v0.10.0` tag until final approval. AD-5 remains an open, non-code blocker for all
 regulated insurance logic._
