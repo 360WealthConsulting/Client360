@@ -1,0 +1,6769 @@
+# CANONICAL Publication Register — 360 Wealth Consulting Operations Manual
+# Release 0.11.0 · Phase A (P3). THIS FILE IS THE SOURCE OF TRUTH (decision D1).
+# Edit here; regenerate the human view with scripts/registers/gen_crosswalk.py.
+# Validate with scripts/registers/validate_register.py.
+meta:
+  schema_version: '1.0'
+  canonical: true
+  generated: false
+  description: Canonical machine-readable Publication Register for the 360 Wealth Consulting Operations
+    Manual (Release 0.11.0 · P3). Edit THIS file; docs/DOCUMENTATION_CROSSWALK.md is generated from it.
+  row_count: 314
+enums:
+  status:
+  - planned
+  - draft
+  - published
+  - needs_review
+  canonical_source:
+  - git
+  - confluence
+  - generated
+  - legacy_unresolved
+  valid_areas:
+  - ACCT
+  - AD
+  - AIA
+  - BEN
+  - CLM360
+  - CMP
+  - CRM
+  - DOC
+  - DR
+  - GOV
+  - HR
+  - INS
+  - M365
+  - MANUAL
+  - MKT
+  - NET
+  - OFFICE
+  - RELMGMT
+  - RET
+  - RPT
+  - SEC
+  - SHARED
+  - SOPLIB
+  - SRV
+  - TAXOPS
+  - TRAIN
+  - VEND
+  - WLTH
+  - WORK
+  valid_nodes:
+  - '00'
+  - '01'
+  - '10'
+  - '20'
+  - '30'
+  - '40'
+  - '80'
+  - '90'
+schema:
+  fields:
+  - page_id
+  - title
+  - area
+  - node
+  - profile
+  - doc_type
+  - canonical_source
+  - repository_path
+  - confluence_page_id
+  - confluence_parent_id
+  - owner
+  - reviewer
+  - status
+  - last_reviewed
+  - review_cycle
+  - next_review
+  - compliance_gate
+  - legacy_identifier
+  - legacy_source
+  - reconciliation_status
+  - notes
+  null_allowed:
+  - repository_path
+  - confluence_page_id
+  - confluence_parent_id
+  - legacy_identifier
+  - legacy_source
+  - reconciliation_status
+  - notes
+  invariants:
+  - unique page_id
+  - unique non-null confluence_page_id
+  - unique non-null repository_path (canonical)
+  - compliance_gate set (AD-5) => status != published
+  - legacy_unresolved rows are never canonical and never published
+taxonomy_migration_d10:
+- letter: A
+  area: GOV
+  note: Executive Management -> structural/GOV
+- letter: B
+  area: MKT
+  note: Sales and Marketing
+- letter: C
+  area: DOC
+  note: Client Experience
+- letter: D
+  area: TAXOPS
+  note: Tax Operations
+- letter: E
+  area: WLTH
+  note: Wealth Management
+- letter: F
+  area: BEN
+  note: Employee Benefits
+- letter: G
+  area: RET
+  note: Retirement Plans
+- letter: H
+  area: INS
+  note: Insurance Operations
+- letter: I
+  area: ACCT
+  note: Finance and Accounting
+- letter: J
+  area: HR
+  note: HR and People Operations
+- letter: K
+  area: CMP
+  note: Compliance
+- letter: L
+  area: SEC
+  note: Technology and Cybersecurity (L-split primary; siblings M365/AD/NET/SRV/DR)
+- letter: M
+  area: OFFICE
+  note: Administration -> Office Operations
+- letter: N
+  area: TRAIN
+  note: Training
+pages:
+- page_id: LEGACY-CAP008-EXEC
+  title: 🏛️ Executive Management
+  area: GOV
+  node: '00'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '25493545'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-008
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Structural, not a capability area; requires manual review.
+- page_id: LEGACY-HOME-360OS
+  title: 360OS Operations Home
+  area: GOV
+  node: '00'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '24117290'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: HOME-001
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Overlaps 00 · Company Home; eventually merge (one canonical
+    home).
+- page_id: LEGACY-HOME-LEGACY
+  title: 🏠 Home
+  area: MANUAL
+  node: '00'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23166977'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: HOME-LEGACY
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Third home-like page; overlaps 00; requires manual review.
+- page_id: MANUAL-NODE-00
+  title: 00 · Company Home
+  area: MANUAL
+  node: '00'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28966913'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: LEGACY-360-STANDARDS
+  title: 📐 360 Standards
+  area: MANUAL
+  node: '01'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23199768'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: 360-STANDARDS
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Overlaps 01 · How This Manual Works; merge/link the documentation
+    standard.
+- page_id: MANUAL-NODE-01
+  title: 01 · How This Manual Works
+  area: MANUAL
+  node: '01'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28835861'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: MANUAL-TEMPLATE-BIZ
+  title: Area Shell Template — Business Operations Profile
+  area: MANUAL
+  node: '01'
+  profile: operations
+  doc_type: TEMPLATE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28835901'
+  confluence_parent_id: '28835861'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Area Shell template PAGE (not a native Confluence template).
+- page_id: MANUAL-TEMPLATE-INFRA
+  title: Area Shell Template — Infrastructure Profile
+  area: MANUAL
+  node: '01'
+  profile: operations
+  doc_type: TEMPLATE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28999701'
+  confluence_parent_id: '28835861'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Area Shell template PAGE (not a native Confluence template).
+- page_id: MANUAL-TEMPLATE-SW
+  title: Area Shell Template — Software Profile
+  area: MANUAL
+  node: '01'
+  profile: operations
+  doc_type: TEMPLATE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28966933'
+  confluence_parent_id: '28835861'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Area Shell template PAGE (not a native Confluence template).
+- page_id: AIA-ARCH
+  title: AI & Automation — Architecture
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-CALENDAR
+  title: AI & Automation — Operating Calendar
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-CHANGELOG
+  title: AI & Automation — Change Log / Record
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-CHECKLIST
+  title: AI & Automation — Checklist
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-DATA
+  title: AI & Automation — Data Model
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-EXEC
+  title: AI & Automation — Executive Overview
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-POLICY
+  title: AI & Automation — Policy
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-PURPOSE
+  title: AI & Automation — Business Purpose
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-RACI
+  title: AI & Automation — Roles & Responsibilities (RACI)
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-RELNOTES
+  title: AI & Automation — Release Notes
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-SEC
+  title: AI & Automation — Security & Permissions
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-SOP
+  title: AI & Automation — SOP
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AIA-USERGUIDE
+  title: AI & Automation — User Guide
+  area: AIA
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-ARCH
+  title: Employee Benefits — Architecture
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-CALENDAR
+  title: Employee Benefits — Operating Calendar
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-CHANGELOG
+  title: Employee Benefits — Change Log / Record
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-CHECKLIST
+  title: Employee Benefits — Checklist
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-CHK-01
+  title: Employee Benefits — Obligation Management Checklist
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '27918338'
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: '2026-07-15'
+  review_cycle: quarterly
+  next_review: '2026-10-15'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated benefits checklist (v0.9.11). Confluence draft.
+- page_id: BEN-DATA
+  title: Employee Benefits — Data Model
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-EXEC
+  title: Employee Benefits — Executive Overview
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: F
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-POLICY
+  title: Employee Benefits — Policy
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-PURPOSE
+  title: Employee Benefits — Business Purpose
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-RACI
+  title: Employee Benefits — Roles & Responsibilities (RACI)
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-RELNOTES
+  title: Employee Benefits — Release Notes
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-SEC
+  title: Employee Benefits — Security & Permissions
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-SOP
+  title: Employee Benefits — SOP
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: BEN-SOP-01
+  title: Employee Benefits — Deadline Monitoring, Exceptions & Work Queues
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '27983873'
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: '2026-07-15'
+  review_cycle: quarterly
+  next_review: '2026-10-15'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated benefits SOP (v0.9.11). Confluence draft.
+- page_id: BEN-REF-01
+  title: Employee Benefits — Compliance & Renewal Obligations
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '27951106'
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: '2026-07-15'
+  review_cycle: quarterly
+  next_review: '2026-10-15'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated benefits obligations reference (v0.9.11). Confluence draft.
+- page_id: BEN-USERGUIDE
+  title: Employee Benefits — User Guide
+  area: BEN
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-ARCH
+  title: Client360 Platform — Architecture
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-CALENDAR
+  title: Client360 Platform — Operating Calendar
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-CHANGELOG
+  title: Client360 Platform — Change Log / Record
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-CHECKLIST
+  title: Client360 Platform — Checklist
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-DATA
+  title: Client360 Platform — Data Model
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-EXEC
+  title: Client360 Platform — Executive Overview
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-POLICY
+  title: Client360 Platform — Policy
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-PURPOSE
+  title: Client360 Platform — Business Purpose
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-RACI
+  title: Client360 Platform — Roles & Responsibilities (RACI)
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-RELNOTES
+  title: Client360 Platform — Release Notes
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-SEC
+  title: Client360 Platform — Security & Permissions
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-SOP
+  title: Client360 Platform — SOP
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CLM360-USERGUIDE
+  title: Client360 Platform — User Guide
+  area: CLM360
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-ARCH
+  title: CRM — Architecture
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-CALENDAR
+  title: CRM — Operating Calendar
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-CHANGELOG
+  title: CRM — Change Log / Record
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-CHECKLIST
+  title: CRM — Checklist
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-DATA
+  title: CRM — Data Model
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-EXEC
+  title: CRM — Executive Overview
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP001-LIFECYCLE
+  title: 👤 Client Lifecycle
+  area: CRM
+  node: '10'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23330817'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-001
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Many child pages; eventually move under CRM; high dependency;
+    manual review.
+- page_id: CRM-POLICY
+  title: CRM — Policy
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-PURPOSE
+  title: CRM — Business Purpose
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-RACI
+  title: CRM — Roles & Responsibilities (RACI)
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-RELNOTES
+  title: CRM — Release Notes
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-SEC
+  title: CRM — Security & Permissions
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-SOP
+  title: CRM — SOP
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CRM-USERGUIDE
+  title: CRM — User Guide
+  area: CRM
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-ARCH
+  title: Document Management — Architecture
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-CALENDAR
+  title: Document Management — Operating Calendar
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-CHANGELOG
+  title: Document Management — Change Log / Record
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-CHECKLIST
+  title: Document Management — Checklist
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-DATA
+  title: Document Management — Data Model
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-EXEC
+  title: Document Management — Executive Overview
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: C
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP014-CX
+  title: 💎 Client Experience
+  area: DOC
+  node: '10'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '25657365'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-014
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move/link under DOC/CLM360.
+- page_id: DOC-POLICY
+  title: Document Management — Policy
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-PURPOSE
+  title: Document Management — Business Purpose
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-RACI
+  title: Document Management — Roles & Responsibilities (RACI)
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-RELNOTES
+  title: Document Management — Release Notes
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-SEC
+  title: Document Management — Security & Permissions
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-SOP
+  title: Document Management — SOP
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DOC-USERGUIDE
+  title: Document Management — User Guide
+  area: DOC
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-ARCH
+  title: Insurance — Architecture
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-CALENDAR
+  title: Insurance — Operating Calendar
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-CHANGELOG
+  title: Insurance — Change Log / Record
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-CHECKLIST
+  title: Insurance — Checklist
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-DATA
+  title: Insurance — Data Model
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-EXEC
+  title: Insurance — Executive Overview
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: H
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-EXEC-01
+  title: Insurance Operations Overview
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28770305'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: '2026-07-17'
+  review_cycle: per_release
+  next_review: '2026-10-17'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Section overview / staff home; non-regulated. Verified published page.
+- page_id: INS-INTEG-01
+  title: Insurance Integrations — Extension Points (Reference)
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: INTEG
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28901397'
+  confluence_parent_id: '28770305'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: '2026-07-17'
+  review_cycle: per_release
+  next_review: '2026-10-17'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated reference; disabled ports (Phase 9). Also serves SEC.
+- page_id: INS-POLICY
+  title: Insurance — Policy
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-PURPOSE
+  title: Insurance — Business Purpose
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-RACI
+  title: Insurance — Roles & Responsibilities (RACI)
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-RACI-01
+  title: Insurance Roles and Responsibilities
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: draft
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Role/capability map; accountable compliance reviewer UNFILLED (AD-5). Also serves CMP.
+- page_id: INS-RELNOTES
+  title: Insurance — Release Notes
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-REPORT-01
+  title: Insurance Reporting & Operations Dashboard — Operating Procedure
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: REPORT
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28901377'
+  confluence_parent_id: '28770305'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: '2026-07-17'
+  review_cycle: per_release
+  next_review: '2026-10-17'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated staff dashboard SOP (Phase 8).
+- page_id: INS-RULES-CE
+  title: Insurance — Continuing-Education Validation Rule Set
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RULES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: AD-5 BLOCKED regulated rule set — Regulated CE validation. Not authored; never publishable while
+    reviewer UNFILLED.
+- page_id: INS-RULES-LICENSING
+  title: Insurance — Licensing Validation Rule Set
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RULES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: AD-5 BLOCKED regulated rule set — Regulated producer-licensing validation. Not authored; never
+    publishable while reviewer UNFILLED.
+- page_id: INS-RULES-REPLACEMENT
+  title: Insurance — Replacement / 1035 Rule Set
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RULES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: AD-5 BLOCKED regulated rule set — Regulated replacement/1035 recommendation logic. Not authored;
+    never publishable while reviewer UNFILLED.
+- page_id: INS-RULES-SUITABILITY
+  title: Insurance — Suitability Rule Set
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: RULES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: AD-5 BLOCKED regulated rule set — Regulated suitability determination logic. Not authored; never
+    publishable while reviewer UNFILLED.
+- page_id: INS-SEC
+  title: Insurance — Security & Permissions
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-SOP
+  title: Insurance — SOP
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-SOP-01
+  title: Insurance Commissions — Operating Procedure
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28803073'
+  confluence_parent_id: '28770305'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: '2026-07-17'
+  review_cycle: per_release
+  next_review: '2026-10-17'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated operational SOP (Phase 5). Also serves ACCT.
+- page_id: INS-SOP-02
+  title: Insurance Exceptions & Work Queues — Operating Procedure
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28835841'
+  confluence_parent_id: '28770305'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: '2026-07-17'
+  review_cycle: per_release
+  next_review: '2026-10-17'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated operational SOP (Phase 6). Also serves CMP.
+- page_id: INS-SOP-03
+  title: Insurance Policyholder Portal — Operating Procedure
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28868609'
+  confluence_parent_id: '28770305'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: '2026-07-17'
+  review_cycle: per_release
+  next_review: '2026-10-17'
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Non-regulated operational SOP (Phase 7). Also serves DOC.
+- page_id: INS-SOP-04
+  title: New Business Case Management
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operational pipeline/requirements only. Suitability determination excluded (AD-5).
+- page_id: INS-SOP-05
+  title: In-Force Policy Servicing
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operational servicing only. Replacement/1035 recommendation excluded (AD-5).
+- page_id: INS-SOP-06
+  title: Insurance Reviews and Obligations
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Review lifecycle/obligation calendar only; no suitability determination (AD-5).
+- page_id: INS-SOP-07
+  title: Producer Licensing and Continuing Education
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: draft
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Records + expiry reminders only; licensing/CE VALIDATION excluded (AD-5). Also serves CMP.
+- page_id: INS-USERGUIDE
+  title: Insurance — User Guide
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: INS-USERGUIDE-01
+  title: Insurance Policy Management
+  area: INS
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operational CRUD/lifecycle only (Phase 1). Draft proposal.
+- page_id: MANUAL-NODE-10
+  title: 10 · Client-Facing Operations
+  area: MANUAL
+  node: '10'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28999681'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: RET-ARCH
+  title: Retirement Plans — Architecture
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-CALENDAR
+  title: Retirement Plans — Operating Calendar
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-CHANGELOG
+  title: Retirement Plans — Change Log / Record
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-CHECKLIST
+  title: Retirement Plans — Checklist
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-DATA
+  title: Retirement Plans — Data Model
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-EXEC
+  title: Retirement Plans — Executive Overview
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: G
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-POLICY
+  title: Retirement Plans — Policy
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-PURPOSE
+  title: Retirement Plans — Business Purpose
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-RACI
+  title: Retirement Plans — Roles & Responsibilities (RACI)
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-RELNOTES
+  title: Retirement Plans — Release Notes
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-SEC
+  title: Retirement Plans — Security & Permissions
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-SOP
+  title: Retirement Plans — SOP
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RET-USERGUIDE
+  title: Retirement Plans — User Guide
+  area: RET
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-ARCH
+  title: Reporting — Architecture
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-CALENDAR
+  title: Reporting — Operating Calendar
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-CHANGELOG
+  title: Reporting — Change Log / Record
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-CHECKLIST
+  title: Reporting — Checklist
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-DATA
+  title: Reporting — Data Model
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-EXEC
+  title: Reporting — Executive Overview
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-BIZ-INTEL
+  title: 📊 Business Intelligence
+  area: RPT
+  node: '10'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23035917'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: BIZ-INTEL
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move/link under RPT; manual review.
+- page_id: RPT-POLICY
+  title: Reporting — Policy
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-PURPOSE
+  title: Reporting — Business Purpose
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-RACI
+  title: Reporting — Roles & Responsibilities (RACI)
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-RELNOTES
+  title: Reporting — Release Notes
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-SEC
+  title: Reporting — Security & Permissions
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-SOP
+  title: Reporting — SOP
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RPT-USERGUIDE
+  title: Reporting — User Guide
+  area: RPT
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-ARCH
+  title: Tax Operations — Architecture
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-CALENDAR
+  title: Tax Operations — Operating Calendar
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-CHANGELOG
+  title: Tax Operations — Change Log / Record
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-CHECKLIST
+  title: Tax Operations — Checklist
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-DATA
+  title: Tax Operations — Data Model
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-EXEC
+  title: Tax Operations — Executive Overview
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: D
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP004-TAX
+  title: 🧾 Tax Operations
+  area: TAXOPS
+  node: '10'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23494657'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-004
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move/link under TAXOPS; process = Confluence-canonical.
+- page_id: TAXOPS-POLICY
+  title: Tax Operations — Policy
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-PURPOSE
+  title: Tax Operations — Business Purpose
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-RACI
+  title: Tax Operations — Roles & Responsibilities (RACI)
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-RELNOTES
+  title: Tax Operations — Release Notes
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-SEC
+  title: Tax Operations — Security & Permissions
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-SOP
+  title: Tax Operations — SOP
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-USERGUIDE
+  title: Tax Operations — User Guide
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-ARCH
+  title: Wealth Management — Architecture
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-CALENDAR
+  title: Wealth Management — Operating Calendar
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-CHANGELOG
+  title: Wealth Management — Change Log / Record
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-CHECKLIST
+  title: Wealth Management — Checklist
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-DATA
+  title: Wealth Management — Data Model
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-EXEC
+  title: Wealth Management — Executive Overview
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: E
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP002-SCHWAB
+  title: 📈 Schwab Operations
+  area: WLTH
+  node: '10'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23330825'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-002
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move/link under WLTH.
+- page_id: LEGACY-CAP003-ASSETMARK
+  title: 📊 AssetMark Operations
+  area: WLTH
+  node: '10'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23265282'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-003
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move/link under WLTH.
+- page_id: WLTH-POLICY
+  title: Wealth Management — Policy
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-PURPOSE
+  title: Wealth Management — Business Purpose
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-RACI
+  title: Wealth Management — Roles & Responsibilities (RACI)
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-RELNOTES
+  title: Wealth Management — Release Notes
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-SEC
+  title: Wealth Management — Security & Permissions
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-SOP
+  title: Wealth Management — SOP
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-USERGUIDE
+  title: Wealth Management — User Guide
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-ARCH
+  title: Work Management — Architecture
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-CALENDAR
+  title: Work Management — Operating Calendar
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-CHANGELOG
+  title: Work Management — Change Log / Record
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-CHECKLIST
+  title: Work Management — Checklist
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-DATA
+  title: Work Management — Data Model
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: DATA
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-EXEC
+  title: Work Management — Executive Overview
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-POLICY
+  title: Work Management — Policy
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-PURPOSE
+  title: Work Management — Business Purpose
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-RACI
+  title: Work Management — Roles & Responsibilities (RACI)
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-RELNOTES
+  title: Work Management — Release Notes
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: RELNOTES
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-SEC
+  title: Work Management — Security & Permissions
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-SOP
+  title: Work Management — SOP
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WORK-USERGUIDE
+  title: Work Management — User Guide
+  area: WORK
+  node: '10'
+  profile: hybrid
+  doc_type: USERGUIDE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-ARCH
+  title: Active Directory — Architecture
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-ASSET
+  title: Active Directory — Asset & Config Inventory
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-BCDR
+  title: Active Directory — Business Continuity & DR
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-CHANGELOG
+  title: Active Directory — Change Log / Record
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-EXEC
+  title: Active Directory — Executive Overview
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-RUNBOOK
+  title: Active Directory — Runbook
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: AD-SEC
+  title: Active Directory — Security & Permissions
+  area: AD
+  node: '20'
+  profile: infrastructure
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DR-ARCH
+  title: Disaster Recovery — Architecture
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DR-ASSET
+  title: Disaster Recovery — Asset & Config Inventory
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DR-BCDR
+  title: Disaster Recovery — Business Continuity & DR
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DR-CHANGELOG
+  title: Disaster Recovery — Change Log / Record
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DR-EXEC
+  title: Disaster Recovery — Executive Overview
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP012-BCP
+  title: 🛡️ Business Continuity
+  area: DR
+  node: '20'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '24510526'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-012
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move -> link (DR is git-canonical in governance/dr).
+- page_id: DR-RUNBOOK
+  title: Disaster Recovery — Runbook
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: DR-SEC
+  title: Disaster Recovery — Security & Permissions
+  area: DR
+  node: '20'
+  profile: infrastructure
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-ARCH
+  title: Microsoft 365 — Architecture
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-ASSET
+  title: Microsoft 365 — Asset & Config Inventory
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-BCDR
+  title: Microsoft 365 — Business Continuity & DR
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-CHANGELOG
+  title: Microsoft 365 — Change Log / Record
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-EXEC
+  title: Microsoft 365 — Executive Overview
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-RUNBOOK
+  title: Microsoft 365 — Runbook
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: M365-SEC
+  title: Microsoft 365 — Security & Permissions
+  area: M365
+  node: '20'
+  profile: infrastructure
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MANUAL-NODE-20
+  title: 20 · Technology & Infrastructure
+  area: MANUAL
+  node: '20'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '29032449'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: NET-ARCH
+  title: Networking — Architecture
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: NET-ASSET
+  title: Networking — Asset & Config Inventory
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: NET-BCDR
+  title: Networking — Business Continuity & DR
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: NET-CHANGELOG
+  title: Networking — Change Log / Record
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: NET-EXEC
+  title: Networking — Executive Overview
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: NET-RUNBOOK
+  title: Networking — Runbook
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: NET-SEC
+  title: Networking — Security & Permissions
+  area: NET
+  node: '20'
+  profile: infrastructure
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SEC-ARCH
+  title: Security — Architecture
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SEC-ASSET
+  title: Security — Asset & Config Inventory
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SEC-BCDR
+  title: Security — Business Continuity & DR
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SEC-CHANGELOG
+  title: Security — Change Log / Record
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SEC-EXEC
+  title: Security — Executive Overview
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: L
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP006-TECH
+  title: 💻 Technology Operations
+  area: SEC
+  node: '20'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '24051794'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-006
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Published legacy; 1->many split across node 20; requires manual
+    review.
+- page_id: SEC-RUNBOOK
+  title: Security — Runbook
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SEC-SEC
+  title: Security — Security & Permissions
+  area: SEC
+  node: '20'
+  profile: infrastructure
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-ARCH
+  title: Servers — Architecture
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-ASSET
+  title: Servers — Asset & Config Inventory
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-BCDR
+  title: Servers — Business Continuity & DR
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-CHANGELOG
+  title: Servers — Change Log / Record
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: CHANGELOG
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-EXEC
+  title: Servers — Executive Overview
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-RUNBOOK
+  title: Servers — Runbook
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SRV-SEC
+  title: Servers — Security & Permissions
+  area: SRV
+  node: '20'
+  profile: infrastructure
+  doc_type: SEC
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: ACCT-CALENDAR
+  title: Accounting — Operating Calendar
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: ACCT-CHECKLIST
+  title: Accounting — Checklist
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: ACCT-EXEC
+  title: Accounting — Executive Overview
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: I
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP009-FIN
+  title: 💰 Finance Operations
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '24510485'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-009
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move under ACCT.
+- page_id: ACCT-POLICY
+  title: Accounting — Policy
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: ACCT-PURPOSE
+  title: Accounting — Business Purpose
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: ACCT-RACI
+  title: Accounting — Roles & Responsibilities (RACI)
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: ACCT-SOP
+  title: Accounting — SOP
+  area: ACCT
+  node: '30'
+  profile: operations
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CMP-CALENDAR
+  title: Compliance — Operating Calendar
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CMP-CHECKLIST
+  title: Compliance — Checklist
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CMP-CONTROLS
+  title: Compliance — Controls & Compliance Register
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: CONTROLS
+  canonical_source: git
+  repository_path: governance/controls/ (planned)
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Regulated compliance controls — AD-5 gated; never published while reviewer UNFILLED.
+- page_id: CMP-EXEC
+  title: Compliance — Executive Overview
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: K
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP005-CMP
+  title: ⚖️ Compliance
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23560193'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-005
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move; AD-5 relevant; controls are git-canonical.
+- page_id: LEGACY-CAP013-RISK
+  title: ⚠️ Risk Management
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '25886741'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-013
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. No 1:1 framework area (risk cross-cutting); requires manual
+    review.
+- page_id: CMP-POLICY
+  title: Compliance — Policy
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Regulated compliance policy — AD-5 gated.
+- page_id: CMP-PURPOSE
+  title: Compliance — Business Purpose
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CMP-RACI
+  title: Compliance — Roles & Responsibilities (RACI)
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: CMP-SOP
+  title: Compliance — SOP
+  area: CMP
+  node: '30'
+  profile: operations
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: HR-CALENDAR
+  title: HR — Operating Calendar
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: HR-CHECKLIST
+  title: HR — Checklist
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: HR-EXEC
+  title: HR — Executive Overview
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: J
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP007-HR
+  title: 👥 HR / People Operations
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23560201'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-007
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move/link under HR.
+- page_id: HR-POLICY
+  title: HR — Policy
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: HR-PURPOSE
+  title: HR — Business Purpose
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: HR-RACI
+  title: HR — Roles & Responsibilities (RACI)
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: HR-SOP
+  title: HR — SOP
+  area: HR
+  node: '30'
+  profile: operations
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MANUAL-NODE-30
+  title: 30 · Business Operations
+  area: MANUAL
+  node: '30'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '29032469'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: MKT-CALENDAR
+  title: Marketing — Operating Calendar
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MKT-CHECKLIST
+  title: Marketing — Checklist
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MKT-EXEC
+  title: Marketing — Executive Overview
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: B
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP010-MKT
+  title: 📣 Marketing Operations
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '25034803'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-010
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move under MKT.
+- page_id: MKT-POLICY
+  title: Marketing — Policy
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MKT-PURPOSE
+  title: Marketing — Business Purpose
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MKT-RACI
+  title: Marketing — Roles & Responsibilities (RACI)
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MKT-SOP
+  title: Marketing — SOP
+  area: MKT
+  node: '30'
+  profile: operations
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: OFFICE-CALENDAR
+  title: Office Operations — Operating Calendar
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: OFFICE-CHECKLIST
+  title: Office Operations — Checklist
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: OFFICE-EXEC
+  title: Office Operations — Executive Overview
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: M
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-OFFICE
+  title: 💼 Office Operations
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23625729'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: OFFICE-OPS
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Eventually move under OFFICE.
+- page_id: OFFICE-POLICY
+  title: Office Operations — Policy
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: OFFICE-PURPOSE
+  title: Office Operations — Business Purpose
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: OFFICE-RACI
+  title: Office Operations — Roles & Responsibilities (RACI)
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: OFFICE-SOP
+  title: Office Operations — SOP
+  area: OFFICE
+  node: '30'
+  profile: operations
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: VEND-CALENDAR
+  title: Vendor Management — Operating Calendar
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: VEND-CHECKLIST
+  title: Vendor Management — Checklist
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: CHECKLIST
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: VEND-EXEC
+  title: Vendor Management — Executive Overview
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-CAP011-VEND
+  title: 🤝 Vendor Management
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '24510566'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: CAP-011
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Published legacy; eventually move/link under VEND.
+- page_id: VEND-POLICY
+  title: Vendor Management — Policy
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: VEND-PURPOSE
+  title: Vendor Management — Business Purpose
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: VEND-RACI
+  title: Vendor Management — Roles & Responsibilities (RACI)
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: RACI
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: VEND-SOP
+  title: Vendor Management — SOP
+  area: VEND
+  node: '30'
+  profile: operations
+  doc_type: SOP
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: MANUAL-NODE-40
+  title: 40 · Cross-Platform & Shared
+  area: MANUAL
+  node: '40'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28868631'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: SHARED-ADR-INDEX
+  title: Architecture Decisions (ADR/DEC) Index
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-DESIGN-SYSTEM
+  title: Design System / UI
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: docs/UI_DESIGN_SYSTEM.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-PLATFORM-ARCH
+  title: Platform Architecture
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: ARCH
+  canonical_source: git
+  repository_path: docs/PRODUCTION_ARCHITECTURE.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-CALENDAR
+  title: Operating Calendar & Key Dates
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: governance/calendar/
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-EXCEPTION-ENGINE
+  title: Global Exception Engine
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: EXC
+  canonical_source: git
+  repository_path: docs/ADR_EXCEPTION_ENGINE_SCOPE.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-GLOSSARY
+  title: Glossary & Definitions
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: GLOSSARY
+  canonical_source: git
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-GLOBAL-SEC
+  title: Global Security & Identity
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: SEC
+  canonical_source: git
+  repository_path: docs/IDENTITY_AUTHORIZATION_AUDIT.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: SHARED-WORKFLOW-ENGINE
+  title: Global Workflow Engine
+  area: SHARED
+  node: '40'
+  profile: operations
+  doc_type: WF
+  canonical_source: git
+  repository_path: docs/WORKFLOW_PROCESS_AUTOMATION.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Shared singleton — documented once, linked from every area (never copied).
+- page_id: MANUAL-NODE-80
+  title: 80 · Libraries & Programs
+  area: MANUAL
+  node: '80'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28835881'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
+- page_id: RELMGMT-EXEC
+  title: Release Management — Executive Overview
+  area: RELMGMT
+  node: '80'
+  profile: library
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RELMGMT-PROCESS
+  title: Release Management — Process Guide
+  area: RELMGMT
+  node: '80'
+  profile: library
+  doc_type: PROCESS
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: RELMGMT-PURPOSE
+  title: Release Management — Business Purpose
+  area: RELMGMT
+  node: '80'
+  profile: library
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SOPLIB-EXEC
+  title: SOP Library — Executive Overview
+  area: SOPLIB
+  node: '80'
+  profile: library
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: LEGACY-KNOWLEDGE-LIB
+  title: 📚 Knowledge Library
+  area: SOPLIB
+  node: '80'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23199760'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: KNOWLEDGE-LIB
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Aggregator; link/merge under node 80; manual review.
+- page_id: SOPLIB-PROCESS
+  title: SOP Library — Process Guide
+  area: SOPLIB
+  node: '80'
+  profile: library
+  doc_type: PROCESS
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: SOPLIB-PURPOSE
+  title: SOP Library — Business Purpose
+  area: SOPLIB
+  node: '80'
+  profile: library
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TRAIN-EXEC
+  title: Training — Executive Overview
+  area: TRAIN
+  node: '80'
+  profile: library
+  doc_type: EXEC
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: N
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TRAIN-PROCESS
+  title: Training — Process Guide
+  area: TRAIN
+  node: '80'
+  profile: library
+  doc_type: PROCESS
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TRAIN-PURPOSE
+  title: Training — Business Purpose
+  area: TRAIN
+  node: '80'
+  profile: library
+  doc_type: PURPOSE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: GOV-INVENTORY-README
+  title: Governance — Inventory (skeleton)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: ASSET
+  canonical_source: git
+  repository_path: governance/inventory/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: GOV-DR-README
+  title: Governance — DR (skeleton)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: BCDR
+  canonical_source: git
+  repository_path: governance/dr/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: GOV-CALENDAR-README
+  title: Governance — Calendar (skeleton)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: CALENDAR
+  canonical_source: git
+  repository_path: governance/calendar/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: GOV-CONTROLS-README
+  title: Governance — Controls (skeleton)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: CONTROLS
+  canonical_source: git
+  repository_path: governance/controls/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: LEGACY-ATLAS-ARCHIVE
+  title: 🗄️ Atlas Archive
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '25755689'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: ATLAS-ARCHIVE
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Legacy/duplicate store; recommend retain in place as archive
+    target.
+- page_id: LEGACY-ATLAS-V02
+  title: 📘 Atlas v0.2 Repository
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23822337'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: ATLAS-V02
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Meta/experimental; eventually archive or manual review.
+- page_id: LEGACY-BUILDER-PILOT
+  title: Builder Pilot
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: LEGACY
+  canonical_source: legacy_unresolved
+  repository_path: null
+  confluence_page_id: '23920682'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: BUILDER-PILOT
+  legacy_source: 360os_atlas
+  reconciliation_status: manual_review
+  notes: NON-CANONICAL legacy 360OS/Atlas page. Destination is a LIKELY mapping only; disposition pending
+    the separate reconciliation decision. Unclear purpose; requires manual review.
+- page_id: GOV-CONTRIBUTING
+  title: Governance — CONTRIBUTING
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: META
+  canonical_source: git
+  repository_path: governance/CONTRIBUTING.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: GOV-README
+  title: Governance — README
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: META
+  canonical_source: git
+  repository_path: governance/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: A
+  legacy_source: crosswalk_section_letter
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: GOV-POLICIES-README
+  title: Governance — Policies (skeleton)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: POLICY
+  canonical_source: git
+  repository_path: governance/policies/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: GOV-ASSET-REGISTER
+  title: Asset & Configuration Inventory
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Register view over pages.yml (later phase).
+- page_id: GOV-CONTROLS-REGISTER
+  title: Controls & Compliance Register
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED (compliance reviewer — AD-5)
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: AD-5
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Register view over pages.yml (later phase).
+- page_id: GOV-CROSSWALK
+  title: Documentation Crosswalk (generated view)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: docs/DOCUMENTATION_CROSSWALK.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Generated FROM pages.yml by scripts/registers/gen_crosswalk.py — do not edit by hand.
+- page_id: GOV-DOC-BACKLOG
+  title: Documentation Backlog & Gaps
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Register view over pages.yml (later phase).
+- page_id: GOV-OWNERSHIP-DIR
+  title: Ownership Directory
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Register view over pages.yml (later phase).
+- page_id: GOV-REGISTER-PAGESYML
+  title: Publication Register (canonical)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: git
+  repository_path: docs/registers/pages.yml
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: per_release
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: This file — the canonical machine-readable register (D1).
+- page_id: GOV-REVIEW-CALENDAR
+  title: Review Calendar
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Register view over pages.yml (later phase).
+- page_id: GOV-VENDOR-REGISTER
+  title: Vendor & Contract Register
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: REGISTER
+  canonical_source: generated
+  repository_path: TBD
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: planned
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Register view over pages.yml (later phase).
+- page_id: GOV-RUNBOOKS-README
+  title: Governance — Runbooks (skeleton)
+  area: GOV
+  node: '90'
+  profile: operations
+  doc_type: RUNBOOK
+  canonical_source: git
+  repository_path: governance/runbooks/README.md
+  confluence_page_id: null
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: draft
+  last_reviewed: TBD
+  review_cycle: semiannual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Phase-A governance SKELETON (guidance only; not substantive governance content).
+- page_id: MANUAL-NODE-90
+  title: 90 · Registers & Governance
+  area: MANUAL
+  node: '90'
+  profile: operations
+  doc_type: NODE
+  canonical_source: confluence
+  repository_path: null
+  confluence_page_id: '28868651'
+  confluence_parent_id: '21266602'
+  owner: Michael Shelton (business owner)
+  reviewer: UNFILLED
+  status: published
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Operations Manual structural node (P1 skeleton; verified current).
