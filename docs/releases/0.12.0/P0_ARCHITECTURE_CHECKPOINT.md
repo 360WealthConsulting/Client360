@@ -1,106 +1,126 @@
-# Release 0.12.0 — P0 Architecture Checkpoint (PROPOSED)
+# Release 0.12.0 — P0 Architecture Checkpoint (PROPOSED · Revision 2)
 
-_Architecture validation for the proposed Release 0.12 scope (`RELEASE_0.12.0_PLAN.md` /
+_Architecture validation for the **revised** Release 0.12 scope (`RELEASE_0.12.0_PLAN.md` /
 `RELEASE_SCOPE.md`). Planning/analysis only — no implementation. `v0.11.0` immutable; **decisions
 D1–D10 unchanged**; no app/migration/Confluence changes; AD-5 unresolved._
 
+> **Revision 2.** The P0 **phase** is unchanged (it remains an architecture checkpoint). This
+> **document** is updated to validate the approved **authoring-first** sequence: **Author → Review →
+> Validate → Reconcile → Automate → Publish.**
+
 ## 1. Scope of this checkpoint
 
-Validate that the proposed 0.12 theme — **operationalize the foundation** (legacy reconciliation,
-Confluence migration, `docs_sync` publishing pipeline, advisory-only) — is consistent with the
-framework, the roadmap, and the 0.11.0 architecture, **without changing any approved decision**, and
-identify the architectural risks and conditions before implementation.
+Validate that the revised 0.12 theme — **author operational knowledge first**, then review, validate,
+reconcile, automate, and publish — is consistent with the framework, the roadmap, and the 0.11.0
+architecture, **without changing any approved decision (D1–D10)**, and identify the architectural
+risks and conditions before implementation.
 
-## 2. Alignment with the framework & roadmap
+## 2. Alignment with the framework & roadmap — strengthened by this revision
 
-- **Roadmap mapping.** 0.11.0 = Phase A. 0.12 as proposed = **Phase E groundwork** (automation /
-  self-sustaining sync — `06-SYNC-AND-DEFINITION-OF-DONE.md` §3 `docs_sync verify|push|report`) **plus
-  the deferred 0.11.0 close-out** (legacy reconciliation, Confluence migration). This is a coherent,
-  bounded slice; it does **not** front-run Phase B authoring (kept out of scope for 0.13).
-- **Register-driven publishing** realizes decision **D1** (pages.yml canonical → Confluence as a
-  generated/rendered view) — the publishing half that 0.11.0 deferred. No change to D1.
-- **No new framework areas**; the taxonomy stays **26 + `SHARED` + `GOV`** (D2/D10 unchanged). Legacy
-  pages reconcile *into* existing areas; they do not create areas.
+- **Roadmap ordering restored.** `05-IMPLEMENTATION-ROADMAP.md` prescribes: *"Structure and
+  enforcement first (Phase A), then close the operational risk floor (Phase B), then backfill by
+  priority (C–D), then automate (Phase E)."* 0.11.0 = Phase A. The revised 0.12 authors the
+  **operational content (Phases B/C/D)** and sequences **automation (Phase E) last** — this is the
+  roadmap's **canonical order**. (Revision 1's automate-first sequence inverted it; Revision 2 aligns.)
+- **Priority-area mapping.** IT Ops / M365 / AD / Windows Server / SonicWall / Networking / Backup &
+  DR / Security ≈ **Phase B** (risk floor). Schwab / AssetMark / TaxDome / Wealthbox / Drake ≈ **Phase
+  C/D** (surface + author client-platform ops). Onboarding / servicing / internal SOPs ≈ **Phase D**.
+- **Populate, don't expand.** 0.12 fills the existing framework (register rows → authored content); it
+  adds **no new areas** (taxonomy stays 26 + `SHARED` + `GOV`) and **no template/architecture change**.
 
 ## 3. Decisions D1–D10 — unchanged (confirmed)
 
+The revision changes **sequencing only**; every approved decision holds:
+
 | Decision | 0.12 effect | Change? |
 |---|---|---|
-| D1 register canonical + generated crosswalk | `docs_sync` renders it to Confluence | **No** (operationalized) |
-| D2 areas = 26 + SHARED + GOV | reconciliation maps legacy into these | No |
-| D3 hybrid union | unchanged | No |
-| D4 status enum | `docs_sync` keys off it (publishes only `published`-eligible git rows) | No |
-| D5 governance skeleton | authoring deferred to 0.13 | No |
-| D6 advisory only | **stays advisory** in 0.12 (blocking still later) | No |
-| D7 semantic id + TBD | migration backfills real `confluence_page_id` | No |
+| D1 register canonical + generated crosswalk | authored pages become register rows; crosswalk regenerates | No |
+| D2 areas = 26 + SHARED + GOV | authoring populates existing areas | No |
+| D3 hybrid union | authored pages fill hybrid doc types | No |
+| D4 status enum | authored pages progress `planned → draft → published` | No |
+| D5 governance skeleton | governance areas authored (non-regulated) under the skeleton | No |
+| D6 advisory only | **stays advisory** in 0.12 | No |
+| D7 semantic id + TBD | migration/publication backfills real IDs (P6) | No |
 | D8 parallelism | phase practice | No |
-| D9 AD-5 invariant | `docs_sync` refuses to publish gated rows | No (enforced) |
-| D10 taxonomy migration | labels applied during Confluence migration | No |
+| D9 AD-5 invariant | no AD-5 content authored/published; invariant enforced | No (enforced) |
+| D10 taxonomy migration | labels applied at publication (P6) | No |
 
-**No architecture decision is modified.** 0.12 extends their enforcement into a publishing pipeline.
+**No architecture decision is modified.** The authoring standard (P2) is **editorial**, not
+structural — it does not replace the templates or the information architecture.
 
-## 4. New 0.12 architecture decisions (proposed — E-series, additive)
+## 4. 0.12 architecture decisions (proposed — revised for authoring-first)
 
 | ID | Decision | Rationale |
 |---|---|---|
-| **E1** | `docs_sync push` publishes **only git-canonical, non-gated** rows whose status is publish-eligible; it **never** publishes `draft` / `needs_review` / `compliance_gate: AD-5` rows | Enforces D6/D9 at the publishing boundary; prevents accidental draft/regulated publication |
-| **E2** | Confluence migration **preserves page IDs** — re-parent and label only, never recreate; record old/new parents | Protects the published 0.10.0 Insurance pages and their URLs |
-| **E3** | Legacy reconciliation is **archive-not-delete** (to the existing `🗄️ Atlas Archive`), per-page approved, reversible | No destructive action on real pages |
-| **E4** | Publishing is **idempotent + diff-driven + dry-run-first**; matches by `confluence_page_id` | No duplicates / clobbering |
-| **E5** | `docs_sync` **reuses** `validate_register.py` + `gen_crosswalk.py` (no re-implementation); ships as repo tooling; installs PyYAML in the advisory workflow (no app-dependency change) | Consistent with 0.11.0 P3/P4 tooling model |
+| **A1** | **Lifecycle = Author → Review → Validate → Reconcile → Automate → Publish.** Automation/publication (P5/P6) run **after** authored content passes review (P3). | Ships automation against real, reviewed content; matches the roadmap's "then automate" ordering |
+| **A2** | **Verified-facts-only authoring.** Operational content is authored **only from verified operator/SME-provided facts**; where facts are unavailable, ship the **standard-structured scaffold** marked `draft`/"SME-completion required" — **never fabricate** configs/procedures. | Infrastructure/vendor areas have **no codebase source**; the framework rule is "verified, never inferred" |
+| **A3** | **Reconcile only after replacement exists.** No legacy 360OS/Atlas page is archived until equivalent authored documentation exists; **archive-not-delete**; preserve identifiers + audit history. | No knowledge loss; reversible |
+| **A4** | **Authoring standard is editorial.** P2 defines how pages are written; it does **not** change D1–D10, the templates, or the taxonomy. | Populate, don't redesign |
+| **E1–E5** (from Rev 1, now applied at **P5/P6**) | Publishing safety: publish only git-canonical **non-gated, reviewed** rows (never draft/AD-5); preserve page IDs (re-parent/label only); idempotent + dry-run-first; reuse P3 validator/generator; PyYAML installed in the advisory workflow. | Enforces D6/D9 at the publishing boundary; protects existing pages |
 
-These are **new** decisions for 0.12, not amendments to D1–D10.
+A1–A4 are **new** 0.12 decisions (sequencing + authoring integrity); E1–E5 carry over unchanged and now
+sit at the end of the release.
 
-## 5. Confluence write-authorization boundary (key scope shift)
+## 5. Confluence write-authorization boundary (now later in the release)
 
-0.11.0 was strictly **read-only** to Confluence. **0.12 begins authorized Confluence writes** (legacy
-reconciliation execution, Insurance re-parenting, `docs_sync push`). This is the principal
-architectural change and is gated by:
-- an **approved legacy reconciliation decision** (per-page disposition) before any move/merge/archive;
-- **ID-preserving** re-parent/label operations (E2);
-- **dry-run-first, idempotent** publishing (E4);
-- the **publish-eligibility filter** (E1) so no draft/regulated page is ever written as published.
+0.11.0 was read-only to Confluence. Under the revised sequence, **authorized Confluence writes occur
+only at P4 (reconciliation: archive/merge) and P6 (controlled publication)** — **after** authoring
+(P1), the standard (P2), and quality review (P3). Every write is gated by A3 (reconcile-after-
+replacement), E2 (ID-preserving), E4 (idempotent, dry-run-first), and E1/D9 (never publish
+draft/regulated).
 
 ## 6. Security / compliance boundary
 
-- **AD-5 unchanged and unresolved.** No regulated content authored or published; `docs_sync` enforces
-  the D9 invariant. Compliance reviewer stays `UNFILLED`; Michael Shelton = business/operational owner
-  only. 0.12 does **not** resolve AD-5 or invent approvals.
-- **No secrets / client data** enter the register or `docs_sync`; publishing renders documentation
-  metadata/summaries + links only.
+- **AD-5 unchanged and unresolved.** No regulated content authored or published; regulated topics are
+  scaffolded as gated + unpublished only; the D9 invariant is enforced at publication. Compliance
+  reviewer stays `UNFILLED`; Michael Shelton = business/operational owner only. 0.12 does **not**
+  resolve AD-5 or invent approvals.
+- **No secrets / client data.** Authoring is operational procedure/knowledge; system credentials,
+  keys, and client PII are referenced by name (secret store / system of record), **never** by value —
+  the advisory DoD checker's secret scan is a backstop.
 
 ## 7. Risks (architecture-level)
 
-Carried from `RELEASE_0.12.0_PLAN.md` §5 — highest: **R1** (mis-parent a published page), **R2**
-(destroy a legacy page), **R3** (`push` duplicates/clobbers), **R5** (publish a draft/regulated page).
-All are mitigated by E1–E4 (ID preservation, archive-not-delete, idempotent dry-run, publish-eligibility
-filter). None requires changing D1–D10.
+Highest, from `RELEASE_0.12.0_PLAN.md` §5:
+- **R1 authoring accuracy** (no codebase source for infra) → **A2** verified-facts-only, scaffold-not-
+  fabricate.
+- **R2 scope size** (~16 areas) → tier + deliver a prioritized subset; remainder in 0.13.
+- **R3 author-before-standard (P1 before P2)** → P1 uses the existing templates + the Insurance-
+  Commissions exemplar as a **provisional** standard; P2 ratifies; P3 retrofits.
+- **R4 archive-without-replacement** → **A3** gate.
+- **R5 publish draft/regulated** → **E1/D9** publish-eligibility filter at P6.
+None requires changing D1–D10.
 
 ## 8. Dependencies & conditions
 
-- **Prerequisite:** an **approved legacy reconciliation decision** before P1 execution (the one hard
-  gate).
-- Confluence MCP write access (available); register + tooling (delivered in 0.11.0); CI green on
-  `v0.11.0`.
+- **Critical dependency:** **verified operational facts / SME input** for the infrastructure and
+  vendor areas — without it, P1 can only scaffold, not author. This is the gating input to P1.
+- Existing framework/templates/register/DoD tooling (delivered in 0.11.0); Confluence MCP write access
+  (P4/P6); legacy dispositions (approved at P4, after replacements).
 - **AD-5 (external, UNFILLED)** blocks only regulated content — out of scope, not a 0.12 blocker.
 
 ## 9. Recommendation
 
-**PROCEED TO PLAN-APPROVAL for 0.12 as scoped — with conditions.** The proposed scope is
-architecturally sound, maps cleanly to roadmap Phase E groundwork + 0.11.0 close-out, changes no
-approved decision (D1–D10 intact), and stays documentation/governance-focused and non-regulated. It
-adds five additive publishing-safety decisions (E1–E5).
+**PROCEED TO PLAN-APPROVAL for the revised 0.12 as scoped — with conditions.** The authoring-first
+sequence is architecturally sound and **more roadmap-aligned than Revision 1** (it restores
+Author-before-Automate), changes no approved decision (D1–D10 intact), keeps the DoD advisory (D6),
+and authors no regulated content (AD-5 gated). It adds four sequencing/integrity decisions (A1–A4);
+the publishing-safety decisions (E1–E5) move to P5/P6.
 
 **Conditions before P1 implementation:**
-1. Approve the 0.12 scope (`RELEASE_0.12.0_PLAN.md`).
-2. Approve decisions **E1–E5** (publishing-safety model).
-3. Approve the **legacy reconciliation decision** (per-page dispositions) — the gate for all
-   Confluence writes.
-4. Reaffirm: DoD stays **advisory** (D6); AD-5 stays gated; `v0.11.0` immutable.
+1. Approve the revised scope (`RELEASE_0.12.0_PLAN.md` Rev 2).
+2. Approve decisions **A1–A4** (lifecycle, verified-facts-only, reconcile-after-replacement, editorial
+   standard) and confirm E1–E5 apply at P5/P6.
+3. Provide (or commit to providing) the **verified operational facts / SME input** for P1 authoring —
+   or explicitly approve **scaffold-first** authoring where facts are pending.
+4. Confirm a **prioritized P1 subset** (recommended: the infrastructure/risk-floor tier first) given
+   the ~16-area scope; remainder to 0.13.
+5. Reaffirm: DoD stays **advisory** (D6); AD-5 stays gated; `v0.11.0` immutable.
 
-**Recommended first milestone:** **0.12-P1 — Legacy reconciliation (decision + execution)**, since it
-gates the Confluence migration and publishing; `docs_sync` (P3) may be built in parallel in dry-run.
+**Recommended first milestone:** **0.12-P1 — Operations Manual authoring** (infrastructure/risk-floor
+tier first), authored from verified facts using the existing templates + exemplar as the provisional
+standard, with scaffold-not-fabricate where facts are pending.
 
 ---
 
-_Checkpoint for review. No implementation. Awaiting approval before Phase P1._
+_Revised checkpoint for review. No implementation. Awaiting approval before Phase P1._
