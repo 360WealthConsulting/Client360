@@ -4,13 +4,18 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-**Release 0.10.0 — Insurance Operations (Phases 0–9 complete; RC-validated; not yet tagged).**
+_Nothing yet._
+
+## [0.10.0] — 2026-07-16 — Insurance Operations
+
+**Release 0.10.0 contains the completed non-regulated Insurance Operations implementation
+(Phases 0–9). AD-5-regulated functionality remains intentionally excluded pending compliance
+review and approval.**
 Individual **life insurance & annuities** (advisor-sold, in-force-managed) as a domain inside
 Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on the
-0.9.11 platform and 0.9.13 test/CI/release infrastructure. The **non-regulated Phases 0–9** are
-RC-validated by [RC-0.10.0](docs/RC_0.10.0_VALIDATION.md) (717 passed; recommended for release —
-tag awaiting approval). AD-5-regulated functionality remains intentionally excluded pending
-compliance review. Design of record:
+0.9.11 platform and 0.9.13 test/CI/release infrastructure. RC-validated by
+[RC-0.10.0](docs/RC_0.10.0_VALIDATION.md) (717 passed, 5 skipped, 0 failed) and approved by
+[RELEASE_0.10.0_APPROVAL](docs/RELEASE_0.10.0_APPROVAL.md). Design of record:
 [`docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md`](docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md).
 
 > ⚠️ **Non-regulated skeletons only.** Phases 2–4 ship the operational/non-regulated
