@@ -1,17 +1,18 @@
 # Client360 — Project Status
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
-**2026-07-16** (Release 0.10.0 — **Phase 10 RC validation complete** (`docs/RC_0.10.0_VALIDATION.md`).
-**The non-regulated Release 0.10.0 implementation (Phases 0–9) is complete and ready to enter
-Phase 10 RC validation. AD-5 remains an external release blocker for any regulated insurance
-functionality.** Recommended for release — awaiting approval to date the CHANGELOG, merge PR #27,
-and tag `v0.10.0`.)_
+**2026-07-17** (**Release 0.10.0 RELEASED** — tag `v0.10.0` on `main` (release commit `5ba60a2`);
+PR #27 merged; [GitHub Release](https://github.com/360WealthConsulting/Client360/releases/tag/v0.10.0)
+published.
+**Release 0.10.0 contains the completed non-regulated Insurance Operations implementation
+(Phases 0–9). AD-5-regulated functionality remains intentionally excluded pending compliance
+review and approval.**)_
 
 | Field | Value |
 |---|---|
-| **Current release** | **0.10.0 — Insurance Operations** (in progress; not tagged). Last tagged release: **0.9.13**. |
-| **Branch** | `feature/insurance-operations` (base: `main`) |
-| **Active PR** | [Draft PR #27](https://github.com/360WealthConsulting/Client360/pull/27) — *Draft, do not merge* |
+| **Current release** | **0.10.0 — Insurance Operations — RELEASED** (tag `v0.10.0`, 2026-07-17; release commit `5ba60a2`; [GitHub Release](https://github.com/360WealthConsulting/Client360/releases/tag/v0.10.0)). Prior tagged release: 0.9.13. |
+| **Branch** | Released from `main` (PR #27 merged). |
+| **PR** | [#27](https://github.com/360WealthConsulting/Client360/pull/27) — **MERGED** (2026-07-17). |
 | **Current Alembic head** | `d0l1n2o3i4k5` — single head; **dev `client360` and test `client360_test` both at head** |
 | **Tests** | **717 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; single head `d0l1n2o3i4k5` (Phases 7–9 have no migration); compile OK; disabled-by-default + no-external-I/O + safe-failure + audit + authorization verified; no secrets/endpoints committed; startup/shutdown clean; `git diff --check` clean. |
 | **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–9; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance SOPs drafted (commissions, exceptions & work queues, policyholder portal — all draft-only under `docs/confluence/`). |
@@ -53,19 +54,19 @@ page (Git technical, Confluence operational) — no duplication.
 ## Open risks
 
 - 🔴 **AD-5 — compliance reviewer NOT YET NAMED.** All regulated insurance logic (suitability, replacement/1035, licensing/CE validation, compliance approvals) is **blocked** and cannot pass an RC gate without a qualified, named reviewer + approved sign-off artifact. Michael Shelton is the **business** owner (operational scope) only — not regulatory certification. **Not resolvable in code.**
-- 🟠 **Release 0.10.0 RC-validated (`docs/RC_0.10.0_VALIDATION.md`), not yet tagged.** Non-regulated Phases 0–9 passed RC validation and are recommended for release; the tag step (date CHANGELOG `[0.10.0]` + merge PR #27 + tag `v0.10.0`) is **awaiting approval**.
+- ✅ **Release 0.10.0 RELEASED** (tag `v0.10.0`, 2026-07-17) — non-regulated Phases 0–9. RC-validated (`docs/RC_0.10.0_VALIDATION.md`), approved (`docs/RELEASE_0.10.0_APPROVAL.md`), PR #27 merged, GitHub Release published.
 - 🟡 **Confluence Insurance pages are draft/unpublished** — must not be published until the corresponding phase functionality is complete and (for regulated content) AD-5-cleared.
 - 🟡 **Benefits (0.9.11) Confluence pages still in draft** — awaiting page-owner approval.
 
 ## Next task
 
-**Release (approval-gated).** RC validation is complete and passed (`docs/RC_0.10.0_VALIDATION.md`).
-Awaiting approval to: (1) date the CHANGELOG `[0.10.0]` entry, (2) merge draft PR #27 into `main`,
-(3) tag `v0.10.0` (`scripts/release.sh 0.10.0`). **No AD-5-gated content is in the release** — only
-the non-regulated Phases 0–9 surface.
+**Release 0.10.0 is shipped.** Post-release: publish the in-scope non-regulated Insurance
+Confluence pages (Commissions, Exceptions & Work Queues, Policyholder Portal, Reporting &
+Dashboard, Integrations reference) — **excluding any AD-5-gated content**. The next development
+release will pick up from `main` at `v0.10.0`. **AD-5-regulated insurance functionality remains
+out of scope pending a qualified, named compliance reviewer and approved sign-off.**
 
 ---
 
-_Phase 10 RC validation is complete and stopped for review. Do not date the CHANGELOG, merge PR
-#27, or create the `v0.10.0` tag until final approval. AD-5 remains an open, non-code blocker for all
+_Release 0.10.0 (non-regulated Phases 0–9) is shipped. AD-5 remains an open, non-code blocker for all
 regulated insurance logic._
