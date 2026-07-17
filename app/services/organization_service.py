@@ -27,7 +27,7 @@ from app.services.relationships import (create_named_entity, ensure_household_en
     ensure_person_entity)
 from app.services.work_management import assign_work
 
-ORG_ENTITY_TYPES = frozenset({"business", "trust", "estate", "professional"})
+ORG_ENTITY_TYPES = frozenset({"business", "trust", "estate", "professional", "insurance_carrier"})
 _ACTIVE_STATUSES = frozenset({"prospect", "active", "inactive"})
 
 

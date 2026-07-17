@@ -21,6 +21,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "${REPO_ROOT}/scripts/lib/pyenv.sh"
+
 VERSION="${1:?usage: release.sh <version> [--dry-run]   e.g. release.sh 0.9.13 --dry-run}"
 DRY_RUN=0
 [ "${2:-}" = "--dry-run" ] && DRY_RUN=1
@@ -93,7 +96,7 @@ else
 fi
 
 # 8. CHANGELOG passes its structural lint.
-if python scripts/check_changelog.py >/dev/null 2>&1; then
+if "$PYTHON" scripts/check_changelog.py >/dev/null 2>&1; then
   pass "CHANGELOG structural lint passes"
 else
   bad "CHANGELOG structural lint fails (run scripts/check_changelog.py)"

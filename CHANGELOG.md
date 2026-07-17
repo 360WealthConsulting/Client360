@@ -6,6 +6,259 @@ All notable Client360 releases are documented here.
 
 _Nothing yet._
 
+## [0.10.0] — 2026-07-16 — Insurance Operations
+
+**Release 0.10.0 contains the completed non-regulated Insurance Operations implementation
+(Phases 0–9). AD-5-regulated functionality remains intentionally excluded pending compliance
+review and approval.**
+Individual **life insurance & annuities** (advisor-sold, in-force-managed) as a domain inside
+Client360 — not group/employer benefits (0.9.11), not P&C. Built additively on the
+0.9.11 platform and 0.9.13 test/CI/release infrastructure. RC-validated by
+[RC-0.10.0](docs/RC_0.10.0_VALIDATION.md) (717 passed, 5 skipped, 0 failed) and approved by
+[RELEASE_0.10.0_APPROVAL](docs/RELEASE_0.10.0_APPROVAL.md). Design of record:
+[`docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md`](docs/RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md).
+
+> ⚠️ **Non-regulated skeletons only.** Phases 2–4 ship the operational/non-regulated
+> plumbing only. All regulated logic — suitability determination, replacement/1035
+> recommendation, licensing/CE **validation**, and any compliance approval or
+> regulatory decision engine — is **deferred behind the AD-5 gate** and is not built
+> or enabled. A qualified, named compliance reviewer plus an approved sign-off
+> artifact is required before any regulated phase may proceed (see AD-5 below).
+
+### Added — Phase 0 · Schema foundation (`v2b3d4f5a6c7`)
+- Insurance schema foundation: product catalog (carrier profiles → product families
+  → product versions), `insurance_case` coordinator (1:1 with an engagement),
+  policy/party/producer tables.
+- `insurance.*` capabilities and roles seeded; `insurance` registered in the shared
+  Exception Engine (`SUPPORTED_DOMAINS` + CHECK) and Work Management (`work_items` domain).
+
+### Added — Phase 1 · Policies core (`w3c4e5g6b7d8`, `x4d5f6h7c8e9`)
+- Product-version evolution: carrier codes (NAIC) + rider compatibility as first-class,
+  versioned data (not hard-coded).
+- Policies core with coverages/riders/parties/values; multi-owner / multi-insured /
+  multi-beneficiary support; policy CRUD JSON API and book/detail UI.
+- Policy lifecycle statuses (issued, delivered, reinstated) and lifecycle events on the
+  **shared Timeline/Audit** (no separate history model); name-resolved UI.
+
+### Added — Phase 2 · New-business pipeline — non-regulated skeleton (`y5e6g7i8d9f0`)
+- Application/case progression (case status transitions), requirement tracking
+  (`insurance_requirements`: requested → satisfied — an operational checklist, **not** a
+  determination), underwriting-**status** tracking (records the carrier's status; the
+  platform does not decide it), document collection via the shared `documents` table,
+  workflow-driven carrier-communication orchestration, Timeline/Audit events, operational
+  pipeline reporting (counts only), case-workspace + pipeline UI, and JSON APIs.
+- **Not built (AD-5-gated):** suitability determination, replacement/1035 recommendation
+  logic, automated compliance approvals, any regulatory decision engine. A test asserts no
+  such function exists in the service.
+
+### Added — Phase 3 · In-force servicing — non-regulated skeleton (`z6f7h8j9e0g1`)
+- Policy reviews as a first-class **state machine** (due → scheduled → in_progress →
+  completed / deferred / overdue / cancelled); obligation calendar (annual reviews
+  materialize their next occurrence on completion); a scheduled/manual scan flips past-due
+  reviews to `overdue` and raises `INS_REVIEW_OVERDUE` through the **shared Exception
+  Engine** (idempotent, auto-resolving); operational review metrics (completion rate,
+  overdue/deferred counts); reviews-board UI + JSON APIs; Timeline/Audit review events.
+- **Not built (AD-5-gated):** suitability determination (the `suitability` review type and
+  `insurance.suitability` capability stay reserved), replacement/1035 recommendation logic,
+  and any compliance/regulatory decision engine. Tests assert the scan result carries no
+  compliance field. Live cron wiring of the scan is deferred to Phase 6; the callable +
+  manual endpoint ship now.
+
+### Added — Phase 4 · Producer licensing & CE — non-regulated skeleton (`a7g8i9k0f1h2`)
+- Producer **licensing records** (`insurance_licenses`) and **CE records**
+  (`insurance_ce_records`) — firm-internal, capability-gated
+  (`insurance.licensing.read`/`.write`), audited, staff-entered; date-driven expiry
+  reminders (`detect_licenses_expiring` / `detect_ce_period_ending` raise
+  `INS_LICENSE_EXPIRING` / `INS_CE_PERIOD_ENDING` through the shared Exception Engine,
+  firm-level/unanchored for oversight roles); operational licensing counts; licensing
+  dashboard UI + JSON APIs.
+- **Not built (AD-5-gated):** licensing **validation** (whether a producer may sell a
+  product in a state), CE **satisfaction determination**, sale/issue **blocking** on
+  licensing status, and any compliance/regulatory decision engine. Stored
+  `credits_required` / `credits_completed` are staff-entered figures — the platform draws
+  no conclusion from them. Tests assert no validation/determination function exists.
+
+### Added — Phase 5 · Insurance commissions — expected/received ledger & reconciliation (`b8i9k1l2g3j4`)
+- **Split-aware expected ledger.** `insurance_commissions` — one expected/received row per
+  producer split; `generate_expected` fans a commission basis across a policy's active
+  producers by `split_percentage` (an `override` role credits an upline entity), so a
+  split-commission policy credits each producer correctly. `record_expected` captures a
+  single entry. Schedules: `first_year | renewal | trail | override | other`.
+- **Received posting & reconciliation.** `record_received` posts a payment and recomputes
+  status (received / partial / variance within a one-cent tolerance). Carrier statements
+  import (`insurance_commission_statements` + `_statement_lines`) and reconcile against
+  expected rows (`reconcile_line` auto-matches by policy + schedule; `reconcile_statement`
+  rolls the whole statement up) — where variance surfaces.
+- **Operational exceptions.** `INS_COMMISSION_VARIANCE` (received ≠ expected) and
+  `INS_COMMISSION_OUTSTANDING` (expected past due, unpaid) raise through the **shared
+  Exception Engine** — idempotent, auto-resolving, anchored to the policy's owners. Callable
+  + manual scan endpoint ship now; live cron wiring is Phase 6.
+- **Revenue rollup.** `insurance_reporting.commission_report` — expected/received/outstanding/
+  variance totals by schedule and by organization, tagged with the `insurance_commissions`
+  revenue category. Operational reporting only.
+- **Surface.** JSON API (`/api/v1/insurance/commissions*`, `/commission-statements*`,
+  `/commission-lines/*`) + a `/insurance/commissions` staff console. New capability
+  `insurance.commissions.write` (read capability was seeded in Phase 0), granted to
+  administrator / insurance_agent / insurance_operations; ledger scoped by policy record scope.
+- **Non-regulated.** This is money movement and reconciliation only — no suitability,
+  replacement/1035, licensing, or CE determination; nothing is blocked. A test asserts no
+  regulated-determination function or verb leaked into the commission surface.
+
+### Fixed — Phase 5 audit & revenue-validation pass
+- **Adjustment / reversal / chargeback** — added `record_adjustment` (a signed delta applied
+  to an entry's canonical net `received_amount`, distinguished by kind in the audit trail) so
+  true-ups, reversals, and carrier chargebacks are first-class and flow through the rollup;
+  audited as `insurance.commission.adjusted`. `write_off` remains for uncollectible expected.
+- **Audit completeness** — `reconcile_statement` now writes its own
+  `insurance.commission.statement_reconciled` event for the statement-level status roll-up
+  (in addition to the per-line events). Every commission mutation is now covered by an
+  immutable audit event; a test asserts one per mutation. Variance exception open/resolve is
+  audited by the shared engine (`exception.raised` / `exception.resolved`).
+- **Timeline privacy** — commission variance/outstanding exceptions are now **firm-internal
+  (unanchored)**: they carry no person/household, so the shared engine no longer publishes a
+  client-facing "Commission variance" Timeline event. Commission/compensation activity stays
+  in the immutable audit log and the firm-internal exception queue — never the client Timeline
+  (test-enforced).
+- **Revenue source of truth** — the rollup now reads the **full scoped ledger (uncapped)** so
+  totals cannot silently truncate; it derives every figure from `insurance_commissions`
+  (`service_revenue` is never written by the ledger), is idempotent and non-duplicating on
+  repeated runs, and reflects corrections/reversals immediately. Added **producer-payout vs
+  agency-retained** and **by-producer** breakdowns, derived from the ledger + split data.
+- **Robustness** — statement→policy auto-match no longer crashes on a duplicate policy number
+  (deterministic oldest-first pick).
+
+### Added — Phase 6 · Insurance exceptions, work management & scheduled scanning (`c9k0m1n2h3j4`)
+- **Single `run_insurance_scan()`** orchestrates every insurance detector (in-force reviews,
+  producer licensing/CE expiry, commission variance/outstanding) through the **shared Exception
+  Engine** — no insurance-specific engine. Idempotent (stable dedupe), auto-resolving/reopening,
+  with **per-detector failure isolation** so one detector or one organization's bad data never
+  aborts the scan. Honest aggregate reporting: **organizations scanned, exceptions opened /
+  resolved / reopened / skipped, failures**, plus each detector's own result.
+- **Scheduled scanning** via the **existing scheduler** — `run_insurance_detector_scan`
+  registered as `insurance-detector-scan` (interval `INSURANCE_SCAN_INTERVAL_MINUTES`, default
+  30; `max_instances=1`, `coalesce=True` — no overlap). No new scheduler framework.
+- **Insurance work queues** seeded through the **existing queue framework**
+  (`work_queues.criteria`): `insurance_unassigned`, `insurance_exceptions`, `insurance_reviews`,
+  `insurance_licensing`, `insurance_commissions`, `insurance_high_priority` — projected through
+  the same `work_items` surface as tax/benefits. No new queue framework.
+- **Automatic assignment** via the **existing assignment rules** (`app/services/insurance_work.py`
+  reuses `apply_assignment_rules`) — `auto_assign_unassigned` applies rules to unassigned open
+  insurance exceptions; with no rule configured, items stay in *Insurance — Unassigned*. No new
+  assignment model.
+- **Organization-based record scope** — commission exceptions now anchor the client
+  **organization** (`related_entity_type='organization'`) for org-scoped queues/assignment while
+  keeping `person_id`/`household_id` NULL, so **no compensation ever reaches the client
+  Timeline** (client-facing exception visibility remains out of scope). Reviews keep their
+  existing org/person/household anchor.
+- **Manual twin** `POST /api/v1/insurance/scan` (capability `insurance.write`) runs the same
+  orchestrated scan + auto-assignment.
+- Non-regulated throughout: no suitability, replacement/1035, or licensing determination; the
+  **AD-5 gate is unaffected**.
+
+### Changed — Pre-Phase-7 architecture cleanup (`d0l1n2o3i4k5`)
+Behavior-preserving cleanup from the Release 0.10.0 architecture review (items #1–#3):
+- **Docs refresh** — removed stale "cron wiring is Phase 6 (future)" wording from
+  `insurance_detectors.py` and the architecture doc now that the scheduled scan is live;
+  corrected the commission-exception privacy comment to reflect the Phase 6 organization anchor.
+- **De-duplicated scan plumbing** — introduced shared `_exception_status`, `_scan_delta`, and
+  `_run_detector_deltas` helpers; the four scan functions now share one diff implementation
+  instead of four copies. **No functional change** (identical return shapes/values; all detector
+  tests unchanged).
+- **Dedicated scan authorization** — new capability **`insurance.scan`** (data-only migration
+  `d0l1n2o3i4k5`) gates the operational scans (`/scan`, `/reviews/scan`, `/commissions/scan`)
+  instead of overloading `insurance.write`/`.commissions.write`. Running a non-mutating detection
+  sweep is now its own authority. Granted to the same roles that could scan before
+  (administrator, insurance_agent, insurance_operations) — **no expansion, no weakening**; the
+  producer-licensing scan keeps its tighter `insurance.licensing.write` gate.
+
+### Added — Phase 7 · Policyholder portal surface (no migration; reuse the portal)
+- **Read-only policyholder policy view** through the **existing** portal framework
+  (`app/services/insurance_portal.py` + portal routes/template) — no insurance-specific portal
+  engine, auth, session, or scope model. Scope is **opt-in**: resolved with
+  `portal_scope(account_id, permission="insurance")`, so only a grant that allows the
+  `insurance` permission sees anything; policies match by person / shared-household /
+  organization scope.
+- **Proportional disclosure** — carrier, product, policy number, status, issue date, face
+  amount, premium, coverages, riders, and the policyholder's own owner/insured/beneficiary
+  designations. `GET /api/v1/portal/insurance/policies[/{id}]` + a `/portal/insurance` page; the
+  portal dashboard gains an `insurance_policies` slice.
+- **Out-of-scope policy ids deny existence with 404**; unauthenticated portal access → 401.
+- **Client-facing exception visibility stays out of scope** — the surface never exposes
+  producers, commissions/compensation/splits, licensing/CE, exceptions, or internal metadata.
+  Insurance exceptions cannot reach the client action-needed surface (the shared
+  `client_action_items` is hard-scoped to `domain='tax'`). Factual policy data only — no
+  suitability/replacement determination; **AD-5 unaffected**.
+- No schema change (read-only over existing tables; the `insurance` grant permission is JSON).
+
+### Added — Phase 8 · Reporting & dashboards (no migration; extend `insurance_reporting`)
+- **Consolidated operations dashboard** (`insurance_reporting.operations_dashboard` +
+  `GET /api/v1/insurance/dashboard` / `/insurance/dashboard`) — a **firm-internal staff** surface
+  that composes the existing per-domain reports (pipeline, reviews, commissions, licensing) plus
+  three new operational summaries, **proportional to the viewer's capabilities**: each optional
+  section is included only if the viewer holds its capability (commissions →
+  `insurance.commissions.read`, licensing → `insurance.licensing.read`, exceptions →
+  `exception.read`, work_queues → `work.read`, portal_adoption → `record.read_all`); the response
+  names the `sections_included`.
+- **New summaries, all derived from a scope-filtered list** (authorization before aggregation):
+  `exception_summary` (reuses `exception_engine.list_exceptions(domain="insurance")`, counts by
+  code/severity/status), `work_queue_report` (reuses Work Management `work_items` + the existing
+  queue criteria for depths), and `portal_activity_report` (firm-internal policyholder-portal
+  adoption — oversight only).
+- **Reuse only** — extends `insurance_reporting.py`; no parallel reporting engine, dashboard
+  framework, authorization system, or record-scope model. Record scope is applied before every
+  aggregation; `record.read_all` aggregates firm-wide.
+- **Firm-internal boundary** — a staff surface under `/insurance/*` (401 without auth), never the
+  client portal; producer compensation, commissions, licensing, exceptions, and queue internals
+  are shown only to staff who already hold those capabilities. The Phase 7 portal is untouched.
+- **Non-regulated** — operational counts, workflow status, and financial reconciliation only; no
+  suitability, replacement/1035, licensing-validation, sale-blocking, compliance-approval, or any
+  compliance metric. A test asserts the dashboard carries no compliance/determination content.
+  **AD-5 unaffected.** No schema change (read-only; reuses existing capabilities).
+
+### Added — Phase 9 · Integration ports as disabled stubs (no migration; reuse the provider idiom)
+- **Vendor-neutral extension points, disabled** (`app/services/insurance_integrations.py`) — six
+  ports: `carrier_policy_feed`, `case_status_feed`, `commission_statement_feed`,
+  `licensing_appointment_feed`, `document_evidence_intake` (inbound), and `operational_export_hook`
+  (outbound). Ships the neutral interfaces + **disabled** stubs only — same registry idiom as
+  `benefits_providers` / `tax_filing_providers` / `portal.providers`; **no parallel integration
+  framework**.
+- **Inert by construction** — every port reports `enabled=False` / `status='not_connected'`.
+  Calling a disabled port **fails safe** (`outcome='disabled'`, no external I/O — no HTTP, file
+  transfer, auth, polling, or vendor API call). `enabled` is hardcoded and **never read from
+  configuration or environment** — no port activates because a config value exists; activation is
+  an explicit code decision (a concrete adapter + registry row) in a future release.
+- **No secrets / endpoints / scheduled jobs** — no credentials, tokens, certificates, URLs, or
+  production config are added; no scheduler job is registered. Read-only registry/status routes
+  (`GET /api/v1/insurance/integration/ports[/{key}]`, `insurance.read`) and an inert invoke
+  (`POST …/{key}/invoke`, `insurance.write`); invoking writes an **audit-safe** event
+  (`insurance.integration.port_invoked`) with metadata only — never the payload or secrets.
+- Non-regulated transport extension points only — no suitability, replacement/1035, licensing
+  validation, sale-blocking, or compliance approval; **AD-5 unaffected**. No schema change.
+
+### Blocked / deferred
+- **AD-5 — compliance reviewer NOT YET NAMED → all regulated insurance logic BLOCKED.**
+  Michael Shelton is recorded as the **business** owner (workflow/operational scope); this
+  is **not** regulatory certification. No regulated phase passes its RC gate without a
+  completed, approved sign-off artifact from a qualified, named compliance reviewer. This
+  is not resolvable in code and remains open.
+- **Remaining phases:** 10 (RC validation + release), plus the AD-5-gated regulated portions of
+  Phases 2–4.
+
+### Infrastructure / hygiene (0.10.0 pre-Phase-5 checkpoint)
+- **Interpreter portability** — `scripts/lib/pyenv.sh` resolves a Python 3 interpreter
+  (active virtualenv → repo-local `.venv` → `python3` → `python` if Python 3, else a clear
+  failure) with no hardcoded paths; `test.sh`, `restore_rehearsal.sh`, `release.sh`,
+  `demo.sh`, `check_migrations_reversible.sh`, `check_migration_heads.sh`, and
+  `check_schema_at_head.sh` now source it and invoke `python`/`alembic`/`pytest`/`uvicorn`
+  through `$PYTHON`. Fixes the bare-`python` failure that broke the harness on
+  venv-only/py3.12 environments (previously 1 failing safety test).
+
+### Migrations
+Additive, off head `u1f9c0i9h8g7`, single head `d0l1n2o3i4k5`, reversible:
+`v2b3d4f5a6c7` → `w3c4e5g6b7d8` → `x4d5f6h7c8e9` → `y5e6g7i8d9f0` → `z6f7h8j9e0g1` →
+`a7g8i9k0f1h2` → `b8i9k1l2g3j4` → `c9k0m1n2h3j4` (Phase 6: data-only insurance work queues) →
+`d0l1n2o3i4k5` (pre-Phase-7: data-only `insurance.scan` capability).
+
 ## [0.9.13] — 2026-07-16 — Platform Foundation
 
 Developer platform, testing, and release hardening. **No product or business-logic

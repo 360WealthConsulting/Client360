@@ -15,6 +15,7 @@ from app.portal.service import (PortalPrincipal, accept_invitation, client_actio
     revoke_portal_session, send_message, require_scope)
 from app.services.documents import save_person_document
 from app.services.exception_engine import ExceptionNotFoundError
+from app.services import insurance_portal
 from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
 
 router = APIRouter(tags=["client-portal"])
@@ -114,6 +115,30 @@ async def api_portal_census_upload(organization_id: int, file: UploadFile = File
         raise HTTPException(404, "Organization not found")
     await file.close()
     return {"document_id": document_id, "status": "uploaded"}
+
+# --- Insurance policyholder surface (Phase 7) — read-only, org/person-scoped via the EXISTING
+# portal grants (permission='insurance'). Out-of-scope policies deny existence with 404. No
+# producers, commissions, licensing, or exceptions are ever exposed. Declared before the
+# /portal/{page} catch-all so /portal/insurance resolves here. ---
+@router.get("/portal/insurance", response_class=HTMLResponse)
+def portal_insurance(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    policies = insurance_portal.portal_policies(principal)
+    return templates.TemplateResponse(request=request, name="portal/insurance.html",
+                                      context={"policies": policies, "principal": principal})
+
+
+@router.get("/api/v1/portal/insurance/policies")
+def api_portal_insurance_policies(principal: PortalPrincipal = Depends(current_portal)):
+    return {"policies": insurance_portal.portal_policies(principal)}
+
+
+@router.get("/api/v1/portal/insurance/policies/{policy_id}")
+def api_portal_insurance_policy(policy_id: int, principal: PortalPrincipal = Depends(current_portal)):
+    detail = insurance_portal.portal_policy_detail(principal, policy_id)
+    if detail is None:
+        raise HTTPException(404, "Policy not found")  # out-of-scope never discloses existence
+    return detail
+
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}
 @router.get("/portal/{page:path}", response_class=HTMLResponse)

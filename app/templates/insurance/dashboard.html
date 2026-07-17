@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Insurance Operations Dashboard{% endblock %}
+{% block crumb %}<a href="/insurance">Insurance</a> / Dashboard{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Insurance Operations Dashboard</h1>
+  <p class="muted">Firm-internal, operational — no compliance conclusions. Sections shown reflect
+    your permissions and record scope.</p></div>
+{% set s = dash.sections %}
+
+<div class="card">
+  <h2>Pipeline</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="label">Policies</div><div class="value">{{ s.pipeline.policy_count }}</div></div>
+    <div class="stat"><div class="label">Cases</div><div class="value">{{ s.pipeline.case_count }}</div></div>
+    <div class="stat"><div class="label">Open requirements</div><div class="value">{{ s.pipeline.open_requirements }}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>In-force reviews</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="label">Total</div><div class="value">{{ s.reviews.total }}</div></div>
+    <div class="stat"><div class="label">Completed</div><div class="value">{{ s.reviews.completed }}</div></div>
+    <div class="stat"><div class="label">Overdue</div><div class="value">{{ s.reviews.overdue }}</div></div>
+    <div class="stat"><div class="label">Completion rate</div><div class="value">{{ '%.0f' | format(s.reviews.completion_rate * 100) }}%</div></div>
+  </div>
+</div>
+
+{% if 'exceptions' in dash.sections_included %}
+<div class="card">
+  <h2>Exceptions</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="label">Open</div><div class="value">{{ s.exceptions.open }}</div></div>
+    <div class="stat"><div class="label">Total</div><div class="value">{{ s.exceptions.total }}</div></div>
+  </div>
+  <p class="muted">By code:
+    {% for code, n in s.exceptions.by_code.items() %}{{ code }} ({{ n }}){% if not loop.last %} · {% endif %}{% else %}none{% endfor %}</p>
+</div>
+{% endif %}
+
+{% if 'work_queues' in dash.sections_included %}
+<div class="card">
+  <h2>Work queues</h2>
+  <div class="stat-grid">
+    {% for q in s.work_queues %}
+    <div class="stat"><div class="label">{{ q.name }}</div><div class="value">{{ q.count }}</div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if 'commissions' in dash.sections_included %}
+<div class="card">
+  <h2>Commissions (financial)</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="label">Expected</div><div class="value">{{ '%.2f' | format(s.commissions.expected_total) }}</div></div>
+    <div class="stat"><div class="label">Received</div><div class="value">{{ '%.2f' | format(s.commissions.received_total) }}</div></div>
+    <div class="stat"><div class="label">Outstanding</div><div class="value">{{ '%.2f' | format(s.commissions.outstanding_total) }}</div></div>
+    <div class="stat"><div class="label">Variance</div><div class="value">{{ '%.2f' | format(s.commissions.variance_total) }}</div></div>
+  </div>
+</div>
+{% endif %}
+
+{% if 'licensing' in dash.sections_included %}
+<div class="card">
+  <h2>Licensing &amp; CE</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="label">Licenses</div><div class="value">{{ s.licensing.license_count }}</div></div>
+    <div class="stat"><div class="label">Expiring soon</div><div class="value">{{ s.licensing.licenses_expiring }}</div></div>
+    <div class="stat"><div class="label">CE records</div><div class="value">{{ s.licensing.ce_count }}</div></div>
+  </div>
+</div>
+{% endif %}
+
+{% if 'portal_adoption' in dash.sections_included %}
+<div class="card">
+  <h2>Policyholder portal adoption</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="label">Accounts with insurance</div><div class="value">{{ s.portal_adoption.portal_accounts_with_insurance }}</div></div>
+    <div class="stat"><div class="label">Policies exposed</div><div class="value">{{ s.portal_adoption.policies_exposed }}</div></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

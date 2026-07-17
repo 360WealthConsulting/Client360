@@ -17,6 +17,9 @@
 # the name check only — never the production check.
 set -euo pipefail
 
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/pyenv.sh"
+
 FORCE=0
 if [ "${1:-}" = "--force" ]; then FORCE=1; shift; fi
 
@@ -36,7 +39,7 @@ if [ "$FORCE" -eq 1 ]; then
   echo "WARNING: this script is about to DROP '$DB'. Ctrl-C now if that is not a scratch database." >&2
   sleep 5
 else
-  python - "$DB" <<'PYGUARD' || exit 2
+  "$PYTHON" - "$DB" <<'PYGUARD' || exit 2
 import sys
 from app.safety import assert_rehearsal_database, RehearsalSafetyError
 try:
@@ -58,10 +61,10 @@ if pg_restore --no-owner --dbname "$DB" "$DUMP" 2>/dev/null; then :; else psql -
 export DATABASE_URL="postgresql://localhost/$DB"
 
 echo "== upgrading to current head =="
-alembic upgrade head
+"$PYTHON" -m alembic upgrade head
 
 echo "== Alembic heads (expect exactly one) =="
-alembic heads
+"$PYTHON" -m alembic heads
 
 echo "== sentinel row counts (capture before the suite mutates data) =="
 for t in people households documents portal_document_requests tax_engagement_returns; do
@@ -69,6 +72,6 @@ for t in people households documents portal_document_requests tax_engagement_ret
 done
 
 echo "== running the test suite against the restored database =="
-python -m pytest -q
+"$PYTHON" -m pytest -q
 
 echo "== restore rehearsal PASSED for $DB =="

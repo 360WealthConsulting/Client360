@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Producer Licensing{% endblock %}
+{% block crumb %}<a href="/insurance">Insurance</a> / Licensing{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Producer Licensing &amp; CE</h1></div>
+
+<div class="stat-grid">
+  <div class="stat"><div class="label">Licenses</div><div class="value">{{ report.license_count }}</div></div>
+  <div class="stat"><div class="label">Expiring soon</div><div class="value">{{ report.licenses_expiring }}</div></div>
+  <div class="stat"><div class="label">CE records</div><div class="value">{{ report.ce_count }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Licenses</h2>
+  {% if licenses %}
+  <div class="table-wrap"><div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Producer</th><th>State</th><th>License #</th><th>Lines</th><th>Status</th><th>Expires</th></tr></thead>
+    <tbody>
+    {% for l in licenses %}
+      <tr>
+        <td>{{ l.producer_name or ('User #' ~ l.producer_user_id) }}</td>
+        <td>{{ l.state }}</td>
+        <td>{{ l.license_number or '—' }}</td>
+        <td>{{ (l.lines | join(', ')) if l.lines else '—' }}</td>
+        <td><span class="badge">{{ l.status }}</span></td>
+        <td>{{ l.expiry_date or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+  {% else %}<div class="empty">No licensing records.</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Continuing education</h2>
+  {% if ce_records %}
+  <div class="table-wrap"><div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Producer</th><th>State</th><th>Period ends</th><th>Required</th><th>Completed</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in ce_records %}
+      <tr>
+        <td>{{ r.producer_name or ('User #' ~ r.producer_user_id) }}</td>
+        <td>{{ r.state or '—' }}</td>
+        <td>{{ r.period_end or '—' }}</td>
+        <td>{{ r.credits_required if r.credits_required is not none else '—' }}</td>
+        <td>{{ r.credits_completed if r.credits_completed is not none else '—' }}</td>
+        <td><span class="badge">{{ r.status.replace('_', ' ') }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+  {% else %}<div class="empty">No CE records.</div>{% endif %}
+</div>
+{% endblock %}

@@ -54,6 +54,10 @@ RULES = (
     # finer benefits.enroll / benefits.compliance / benefits.sensitive.read and record scope.
     (re.compile(r"^/organizations|^/api/v1/organizations"), "organization.read"),
     (re.compile(r"^/benefits|^/api/v1/benefits"), "benefits.read"),
+    # Insurance: coarse read; services enforce insurance.suitability / .sensitive.read
+    # / .licensing and record scope (Release 0.10.0). No SoD carve-out precedes it
+    # because suitability review is not a URL prefix — it is gated inside the service.
+    (re.compile(r"^/insurance|^/api/v1/insurance"), "insurance.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),

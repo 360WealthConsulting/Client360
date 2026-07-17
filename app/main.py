@@ -47,6 +47,7 @@ from app.routes.tax_documents import router as tax_documents_router
 from app.routes.ops import router as ops_router
 from app.routes.exceptions import router as exceptions_router
 from app.routes.benefits import router as benefits_router
+from app.routes.insurance import router as insurance_router
 
 
 @asynccontextmanager
@@ -78,6 +79,7 @@ app.include_router(dashboard_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)
 app.include_router(benefits_router)
+app.include_router(insurance_router)
 app.include_router(search_router)
 app.include_router(source_router)
 app.include_router(matches_router)

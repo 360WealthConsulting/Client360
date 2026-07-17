@@ -26,9 +26,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "${REPO_ROOT}/scripts/lib/pyenv.sh"
+
 # Refuse to run this against the dev or a production database. assert_test_database
 # raises (non-zero under set -e) unless the target name is disposable.
-db="$(python -c "from app.safety import assert_test_database; print(assert_test_database())")"
+db="$("$PYTHON" -c "from app.safety import assert_test_database; print(assert_test_database())")"
 
 # Start from a clean schema so the result is deterministic regardless of any
 # data a prior run left behind (see the append-only note above). psql is given
@@ -38,24 +41,24 @@ echo "== reset schema (${db}) =="
 psql -q "${DATABASE_URL:?DATABASE_URL must be set}" \
   -c "SET client_min_messages TO WARNING; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
-head="$(alembic heads 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
+head="$("$PYTHON" -m alembic heads 2>/dev/null | grep -oE '^[a-z0-9]+' | head -1)"
 if [ -z "$head" ]; then
   echo "FAIL: could not determine the Alembic head." >&2
   exit 1
 fi
 
 echo "== upgrade head =="
-alembic upgrade head >/dev/null
+"$PYTHON" -m alembic upgrade head >/dev/null
 
 echo "== downgrade base (exercises every migration's downgrade) =="
-if ! alembic downgrade base >/tmp/downgrade.log 2>&1; then
+if ! "$PYTHON" -m alembic downgrade base >/tmp/downgrade.log 2>&1; then
   echo "FAIL: a migration is not reversible. Downgrade output:" >&2
   tail -20 /tmp/downgrade.log >&2
   exit 1
 fi
 
 echo "== upgrade head again =="
-alembic upgrade head >/dev/null
+"$PYTHON" -m alembic upgrade head >/dev/null
 
 # Reuse the standalone read-only check as the final assertion (DRY).
 "${REPO_ROOT}/scripts/check_schema_at_head.sh"

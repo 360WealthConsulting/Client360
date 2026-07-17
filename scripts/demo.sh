@@ -20,6 +20,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Resolve a portable Python 3 interpreter into $PYTHON (see scripts/lib/pyenv.sh).
+source "${REPO_ROOT}/scripts/lib/pyenv.sh"
+
 export CLIENT360_ENVIRONMENT="${CLIENT360_ENVIRONMENT:-development}"
 export DEMO_DB_NAME="${DEMO_DB_NAME:-client360_demo}"
 export DATABASE_URL="${DEMO_DATABASE_URL:-postgresql://localhost/${DEMO_DB_NAME}}"
@@ -27,7 +30,7 @@ export DEMO_PORT="${DEMO_PORT:-8360}"
 export DEMO_HOST="${DEMO_HOST:-127.0.0.1}"
 # Local demo secrets (fictional; not production values).
 export SESSION_SECRET="${SESSION_SECRET:-demo-session-secret-not-for-production}"
-export MICROSOFT_TOKEN_KEY="${MICROSOFT_TOKEN_KEY:-$(python -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')}"
+export MICROSOFT_TOKEN_KEY="${MICROSOFT_TOKEN_KEY:-$("$PYTHON" -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')}"
 
 PIDFILE="${REPO_ROOT}/.demo-server.pid"
 LOGFILE="${REPO_ROOT}/.demo-server.log"
@@ -38,7 +41,7 @@ if [ "${CLIENT360_ENVIRONMENT}" = "production" ]; then
   exit 2
 fi
 
-_python_guard() { python -c "from app.demo.safety import assert_demo_database; print(assert_demo_database())"; }
+_python_guard() { "$PYTHON" -c "from app.demo.safety import assert_demo_database; print(assert_demo_database())"; }
 
 case "${1:-}" in
   verify)
@@ -53,8 +56,8 @@ case "${1:-}" in
     if ! psql -lqt | cut -d '|' -f1 | grep -qw "${DEMO_DB_NAME}"; then
       echo "Creating database ${DEMO_DB_NAME}..."; createdb "${DEMO_DB_NAME}"
     fi
-    echo "Applying migrations to head..."; alembic upgrade head
-    echo "Seeding demo data..."; python -m app.demo.seed
+    echo "Applying migrations to head..."; "$PYTHON" -m alembic upgrade head
+    echo "Seeding demo data..."; "$PYTHON" -m app.demo.seed
     echo "Setup complete. Start with: scripts/demo.sh start"
     ;;
 
@@ -63,8 +66,8 @@ case "${1:-}" in
     echo "Dropping and recreating ${DEMO_DB_NAME}..."
     psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DEMO_DB_NAME}';" >/dev/null 2>&1 || true
     dropdb --if-exists "${DEMO_DB_NAME}"; createdb "${DEMO_DB_NAME}"
-    echo "Applying migrations to head..."; alembic upgrade head
-    echo "Reseeding demo data..."; python -m app.demo.seed
+    echo "Applying migrations to head..."; "$PYTHON" -m alembic upgrade head
+    echo "Reseeding demo data..."; "$PYTHON" -m app.demo.seed
     echo "Reset complete."
     ;;
 
@@ -74,7 +77,7 @@ case "${1:-}" in
       echo "Demo server already running (pid $(cat "${PIDFILE}"))."; exit 0
     fi
     echo "Starting demo server on http://${DEMO_HOST}:${DEMO_PORT} ..."
-    nohup uvicorn app.demo.demo_app:app --host "${DEMO_HOST}" --port "${DEMO_PORT}" >"${LOGFILE}" 2>&1 &
+    nohup "$PYTHON" -m uvicorn app.demo.demo_app:app --host "${DEMO_HOST}" --port "${DEMO_PORT}" >"${LOGFILE}" 2>&1 &
     echo $! > "${PIDFILE}"
     sleep 2
     if kill -0 "$(cat "${PIDFILE}")" 2>/dev/null; then
@@ -107,10 +110,10 @@ case "${1:-}" in
   smoke)
     _python_guard >/dev/null
     echo "== python smoke (safety, logins, role visibility) =="
-    python -m app.demo.smoke
+    "$PYTHON" -m app.demo.smoke
     if [ -f "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null; then
       echo "== HTTP smoke (server routes) =="
-      DEMO_BASE="http://${DEMO_HOST}:${DEMO_PORT}" python - <<'PYHTTP'
+      DEMO_BASE="http://${DEMO_HOST}:${DEMO_PORT}" "$PYTHON" - <<'PYHTTP'
 import os, urllib.request, urllib.parse, http.cookiejar
 BASE=os.environ["DEMO_BASE"]
 class NoRedirect(urllib.request.HTTPRedirectHandler):

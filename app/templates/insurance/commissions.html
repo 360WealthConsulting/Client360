@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Insurance Commissions{% endblock %}
+{% block crumb %}<a href="/insurance">Insurance</a> / Commissions{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Insurance Commissions</h1></div>
+
+<div class="stat-grid">
+  <div class="stat"><div class="label">Expected</div><div class="value">{{ '%.2f' | format(report.expected_total) }}</div></div>
+  <div class="stat"><div class="label">Received</div><div class="value">{{ '%.2f' | format(report.received_total) }}</div></div>
+  <div class="stat"><div class="label">Outstanding</div><div class="value">{{ '%.2f' | format(report.outstanding_total) }}</div></div>
+  <div class="stat"><div class="label">Variance</div><div class="value">{{ '%.2f' | format(report.variance_total) }}</div></div>
+  <div class="stat"><div class="label">Producer payouts (recv)</div><div class="value">{{ '%.2f' | format(report.producer_payouts.received) }}</div></div>
+  <div class="stat"><div class="label">Agency retained (recv)</div><div class="value">{{ '%.2f' | format(report.agency_retained.received) }}</div></div>
+  <div class="stat"><div class="label">Entries</div><div class="value">{{ report.entry_count }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Commission ledger</h2>
+  {% if commissions %}
+  <div class="table-wrap"><div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Policy</th><th>Producer</th><th>Role</th><th>Schedule</th><th>Split %</th>
+      <th>Expected</th><th>Received</th><th>Variance</th><th>Status</th><th>Due</th></tr></thead>
+    <tbody>
+    {% for c in commissions %}
+      <tr>
+        <td><a href="/insurance/policies/{{ c.policy_id }}">#{{ c.policy_id }}</a></td>
+        <td>{{ c.producer_name or (c.producer_entity_type ~ ' #' ~ c.producer_entity_id) }}</td>
+        <td>{{ c.producer_role.replace('_', ' ') }}</td>
+        <td>{{ c.schedule.replace('_', ' ') }}</td>
+        <td>{{ c.split_percentage if c.split_percentage is not none else '—' }}</td>
+        <td>{{ '%.2f' | format(c.expected_amount) }}</td>
+        <td>{{ ('%.2f' | format(c.received_amount)) if c.received_amount is not none else '—' }}</td>
+        <td>{{ ('%.2f' | format(c.variance)) if c.variance is not none else '—' }}</td>
+        <td><span class="badge">{{ c.status.replace('_', ' ') }}</span></td>
+        <td>{{ c.due_date or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+  {% else %}<div class="empty">No commission entries.</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Carrier statements</h2>
+  {% if statements %}
+  <div class="table-wrap"><div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Carrier</th><th>Date</th><th>Reference</th><th>Stated total</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for s in statements %}
+      <tr>
+        <td>{{ s.carrier_name or ('Org #' ~ s.carrier_id) }}</td>
+        <td>{{ s.statement_date or '—' }}</td>
+        <td>{{ s.reference or '—' }}</td>
+        <td>{{ ('%.2f' | format(s.stated_total)) if s.stated_total is not none else '—' }}</td>
+        <td><span class="badge">{{ s.status.replace('_', ' ') }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+  {% else %}<div class="empty">No carrier statements imported.</div>{% endif %}
+</div>
+{% endblock %}

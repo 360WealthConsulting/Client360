@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Policy {{ policy.policy_number or policy.id }}{% endblock %}
+{% block crumb %}<a href="/insurance">Insurance</a> / Policy{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ policy.policy_number or ('Policy #' ~ policy.id) }}</h1>
+  <span class="badge">{{ policy.status.replace('_', ' ') }}</span>
+  <span class="subtle">{{ policy.carrier_name or 'Unknown carrier' }}</span>
+</div>
+
+<div class="stat-grid">
+  <div class="stat"><div class="label">Face amount</div>
+    <div class="value">{{ '${:,.0f}'.format(policy.face_amount) if policy.face_amount is not none else '—' }}</div></div>
+  <div class="stat"><div class="label">Premium</div>
+    <div class="value">{{ '${:,.2f}'.format(policy.premium_amount) if policy.premium_amount is not none else '—' }}
+      {{ policy.premium_mode or '' }}</div></div>
+  <div class="stat"><div class="label">Issued</div>
+    <div class="value">{{ policy.issue_date or '—' }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Parties</h2>
+  {% if policy.parties %}
+  <table class="data">
+    <thead><tr><th>Role</th><th>Party</th><th>Designation</th><th class="num">Share %</th></tr></thead>
+    <tbody>
+    {% for pt in policy.parties %}
+      <tr>
+        <td>{{ pt.party_role }}{{ ' (primary insured)' if pt.is_primary_insured else '' }}</td>
+        <td>{{ pt.party_name or (pt.party_entity_type ~ ' (unnamed)') }}</td>
+        <td>{{ pt.designation or '—' }}</td>
+        <td class="num">{{ pt.share_percentage if pt.share_percentage is not none else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No parties recorded.</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Producers</h2>
+  {% if policy.producers %}
+  <table class="data">
+    <thead><tr><th>Role</th><th>Producer</th><th class="num">Split %</th></tr></thead>
+    <tbody>
+    {% for pr in policy.producers %}
+      <tr><td>{{ pr.producer_role.replace('_', ' ') }}</td>
+      <td>{{ pr.producer_name or (pr.producer_entity_type ~ ' (unnamed)') }}</td>
+      <td class="num">{{ pr.split_percentage if pr.split_percentage is not none else '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No producers assigned.</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Coverages &amp; riders</h2>
+  {% if policy.coverages or policy.riders %}
+  <ul>
+    {% for cv in policy.coverages %}<li>Coverage: {{ cv.coverage_type }}
+      {{ '(${:,.0f})'.format(cv.face_amount) if cv.face_amount is not none else '' }}</li>{% endfor %}
+    {% for rd in policy.riders %}<li>Rider: {{ rd.rider_type }} — {{ rd.description or '' }}</li>{% endfor %}
+  </ul>
+  {% else %}<div class="empty">No coverages or riders.</div>{% endif %}
+</div>
+{% endblock %}

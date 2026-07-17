@@ -1,0 +1,14 @@
+{% extends "portal/base.html" %}{% block title %}My Policies{% endblock %}{% block content %}
+<h1>My Insurance Policies</h1>
+{% for p in policies %}
+<article class="work-card">
+  <h3>{{ p.carrier_name or 'Policy' }}{% if p.policy_number %} · {{ p.policy_number }}{% endif %}</h3>
+  <p>Status: {{ p.status.replace('_', ' ') }}
+    {% if p.face_amount is not none %} · Face amount: {{ '%.2f' | format(p.face_amount) }}{% endif %}
+    {% if p.premium_amount is not none %} · Premium: {{ '%.2f' | format(p.premium_amount) }}{% if p.premium_mode %} ({{ p.premium_mode }}){% endif %}{% endif %}
+    {% if p.issue_date %} · Issued {{ p.issue_date }}{% endif %}</p>
+</article>
+{% else %}
+<div class="empty">No policies are available in your portal.</div>
+{% endfor %}
+{% endblock %}
