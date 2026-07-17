@@ -1,0 +1,56 @@
+name: Documentation Advisory (non-blocking)
+
+# Advisory documentation Definition-of-Done check (Release 0.11.0 · P4, decision D6).
+# This workflow NEVER blocks a PR on documentation findings — the checker runs in advisory mode
+# and exits 0 after reporting. The job fails ONLY on genuine execution failures (dependency/tool
+# crash), which stay visible. It is not a required status check.
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "governance/**"
+      - "scripts/registers/**"
+      - "scripts/docs/**"
+      - ".github/pull_request_template.md"
+      - ".github/workflows/documentation-advisory.yml"
+  workflow_dispatch: {}
+
+# Least-privilege: read-only. No writes, no Confluence, no pushes.
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-advisory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  documentation-advisory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so --changed can resolve the PR base ref.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Only the one dependency the checker/register tooling needs (PyYAML). No app install.
+      - name: Install checker dependency
+        run: python -m pip install --upgrade pip pyyaml
+
+      # Advisory mode (NOT --strict): the checker exits 0 after reporting findings, so documentation
+      # findings never fail this job. A non-zero exit here means the checker itself crashed or a
+      # dependency is missing — a genuine execution failure that SHOULD be visible. No
+      # continue-on-error is used, so such failures are not hidden.
+      - name: Run documentation DoD checker (advisory)
+        run: |
+          echo "::group::Documentation DoD (advisory — does not block the PR)"
+          python3 scripts/docs/check_documentation_dod.py --changed
+          echo "::endgroup::"
+          echo "Advisory documentation check complete. Findings above are advisory only (decision D6)."
