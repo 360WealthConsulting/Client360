@@ -8,7 +8,7 @@ meta:
   generated: false
   description: Canonical machine-readable Publication Register for the 360 Wealth Consulting Operations
     Manual (Release 0.11.0 · P3). Edit THIS file; docs/DOCUMENTATION_CROSSWALK.md is generated from it.
-  row_count: 554
+  row_count: 560
 enums:
   status:
   - planned
@@ -5854,6 +5854,50 @@ pages:
   legacy_source: null
   reconciliation_status: null
   notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: TAXOPS-SOP-01
+  title: Tax Operations — TaxDome Client Intake
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/tax/taxdome-intake.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-016 (23920691).
+- page_id: TAXOPS-SOP-02
+  title: Tax Operations — 1040 Individual Return Preparation (Drake)
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/tax/tax-1040-return-workflow.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-017 (23920712).
 - page_id: TAXOPS-TRAIN
   title: Tax Operations — Training
   area: TAXOPS
@@ -6465,6 +6509,94 @@ pages:
   legacy_source: null
   reconciliation_status: null
   notes: Framework coverage row (minimum-viable set); not yet authored.
+- page_id: WLTH-SOP-01
+  title: Wealth Management — Schwab Account Opening
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/wealth/schwab-account-opening.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-006 (24772609).
+- page_id: WLTH-SOP-02
+  title: Wealth Management — Schwab Portfolio Connect Quarterly Billing & Fee Locking
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/wealth/schwab-portfolio-connect-billing.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-009 (24870913) + LL-001 control.
+- page_id: WLTH-SOP-03
+  title: Wealth Management — AssetMark Account Opening
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/wealth/assetmark-account-opening.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-013 (24838166).
+- page_id: WLTH-SOP-04
+  title: Wealth Management — AssetMark Proposal Generation
+  area: WLTH
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/wealth/assetmark-proposal-generation.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: quarterly
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-011 (25133057).
 - page_id: WLTH-TRAIN
   title: Wealth Management — Training
   area: WLTH

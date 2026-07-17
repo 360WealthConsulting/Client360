@@ -253,6 +253,35 @@ for pid, title, cid, dt, note in [
                     review_cycle="quarterly", last_reviewed="2026-07-15", next_review="2026-10-15",
                     notes=note))
 
+# ---- Release 0.12 P1B authored Operations Manual pages (git-canonical, needs_review) --------
+p1b_pages = [
+    ("WLTH-SOP-01", "Wealth Management — Schwab Account Opening", "WLTH",
+     "docs/operations-manual/wealth/schwab-account-opening.md", "quarterly",
+     "Adapted from Atlas SOP-006 (24772609)."),
+    ("WLTH-SOP-02", "Wealth Management — Schwab Portfolio Connect Quarterly Billing & Fee Locking",
+     "WLTH", "docs/operations-manual/wealth/schwab-portfolio-connect-billing.md", "quarterly",
+     "Adapted from Atlas SOP-009 (24870913) + LL-001 control."),
+    ("WLTH-SOP-03", "Wealth Management — AssetMark Account Opening", "WLTH",
+     "docs/operations-manual/wealth/assetmark-account-opening.md", "quarterly",
+     "Adapted from Atlas SOP-013 (24838166)."),
+    ("WLTH-SOP-04", "Wealth Management — AssetMark Proposal Generation", "WLTH",
+     "docs/operations-manual/wealth/assetmark-proposal-generation.md", "quarterly",
+     "Adapted from Atlas SOP-011 (25133057)."),
+    ("TAXOPS-SOP-01", "Tax Operations — TaxDome Client Intake", "TAXOPS",
+     "docs/operations-manual/tax/taxdome-intake.md", "annual",
+     "Adapted from Atlas SOP-016 (23920691)."),
+    ("TAXOPS-SOP-02", "Tax Operations — 1040 Individual Return Preparation (Drake)", "TAXOPS",
+     "docs/operations-manual/tax/tax-1040-return-workflow.md", "annual",
+     "Adapted from Atlas SOP-017 (23920712)."),
+]
+for pid, title, area, path, cyc, note in p1b_pages:
+    rows.append(row(page_id=pid, title=title, area=area, node="10", profile="hybrid", doc_type="SOP",
+                    canonical_source="git", repository_path=path, confluence_page_id="TBD",
+                    status="needs_review", review_cycle=cyc, last_reviewed="TBD", next_review="TBD",
+                    reviewer="Michael Shelton (business/operational reviewer)",
+                    notes="Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). "
+                          + note))
+
 # ---- SHARED singletons (node 40) --------------------------------------------
 for pid, title, path, dt in [
     ("SHARED-PLATFORM-ARCH", "Platform Architecture", "docs/PRODUCTION_ARCHITECTURE.md", "ARCH"),
