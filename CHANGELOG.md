@@ -6,6 +6,30 @@ All notable Client360 releases are documented here.
 
 _Nothing yet._
 
+## [0.11.0] — 2026-07-17 — Documentation Foundation
+
+**Documentation-only release (Roadmap Phase A). No application code or database migrations
+changed.** Establishes the Documentation Foundation & Governance layer for the 360 Wealth
+Consulting Operations Manual. Signed off:
+[`docs/releases/0.11.0/RELEASE_SIGNOFF.md`](docs/releases/0.11.0/RELEASE_SIGNOFF.md); RC-validated by
+[`P5_RELEASE_CANDIDATE_VALIDATION.md`](docs/releases/0.11.0/P5_RELEASE_CANDIDATE_VALIDATION.md).
+
+> ⚠️ **Foundation only — no substantive content.** Governance content authoring, legacy Atlas
+> reconciliation execution, Confluence migration, advisory→blocking enforcement, and all regulated
+> insurance rule sets remain **deferred**. **AD-5 is unresolved**; the accountable compliance
+> reviewer is UNFILLED and regulated content stays blocked (`compliance_gate: AD-5 ⇒ never
+> published`). Michael Shelton approved business/operational scope only — not regulatory certification.
+
+### Added
+- Framework ratification + architecture decisions **D1–D10** ([`P0_ARCHITECTURE_CHECKPOINT.md`](docs/releases/0.11.0/P0_ARCHITECTURE_CHECKPOINT.md)).
+- **Confluence skeleton** — 8 Operations Manual nodes + 3 Area Shell template pages ([`P1_CONFLUENCE_SKELETON_REPORT.md`](docs/releases/0.11.0/P1_CONFLUENCE_SKELETON_REPORT.md)).
+- **Git governance skeleton** — `governance/` tree (README, CONTRIBUTING, 6 directory READMEs), skeleton only ([`P2_GOVERNANCE_TREE_REPORT.md`](docs/releases/0.11.0/P2_GOVERNANCE_TREE_REPORT.md)).
+- **Canonical Publication Register** — `docs/registers/pages.yml` (554 rows: 26 areas + `SHARED` + `GOV`, complete per-profile coverage, 27-type Hybrid union) with schema, generator, and validator (`scripts/registers/`).
+- **Generated crosswalk** — `docs/DOCUMENTATION_CROSSWALK.md` is a deterministic generated view.
+- **D10 taxonomy migration** — framework area-code taxonomy; legacy crosswalk letters preserved.
+- **Legacy Atlas inventory** — 23 pre-existing pages recorded as non-canonical `manual_review` (none moved/edited).
+- **Advisory documentation DoD** — `scripts/docs/check_documentation_dod.py`, `.github/pull_request_template.md`, and a non-blocking `documentation-advisory.yml` workflow ([`P4_DOD_GATE_REPORT.md`](docs/releases/0.11.0/P4_DOD_GATE_REPORT.md)).
+
 ## [0.10.0] — 2026-07-16 — Insurance Operations
 
 **Release 0.10.0 contains the completed non-regulated Insurance Operations implementation
