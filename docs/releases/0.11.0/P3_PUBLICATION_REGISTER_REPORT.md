@@ -75,7 +75,8 @@ reviewer — AD-5)`. They are explicitly flagged as **skeleton, not substantive 
 ## 6. Confluence-page treatment (no Confluence change)
 
 Real, verified P1 IDs are recorded; **no Confluence page was created, moved, or modified**:
-- **8 nodes + 3 templates** → `MANUAL`, `status: published` (they are `current`).
+- **8 nodes + 3 templates** → area `GOV` (structural; `MANUAL` removed in remediation — see §16),
+  `status: published` (they are `current`).
 - **6 published Insurance pages** (parent `28770305` + 5 children) → `status: published`,
   `compliance_gate: none` (see §11).
 - **3 Benefits pages** (`27951106`, `27983873`, `27918338`) → `status: draft` (preserved).
