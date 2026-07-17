@@ -62,9 +62,9 @@ def render(doc) -> str:
             c[r[field]] = c.get(r[field], 0) + 1
         return " · ".join(f"{k}: {v}" for k, v in sorted(c.items()))
 
-    b.write(f"**By status:** {counts('status')}  \n")
-    b.write(f"**By canonical source:** {counts('canonical_source')}  \n")
-    b.write(f"**By compliance gate:** {counts('compliance_gate')}\n\n")
+    b.write(f"- **By status:** {counts('status')}\n")
+    b.write(f"- **By canonical source:** {counts('canonical_source')}\n")
+    b.write(f"- **By compliance gate:** {counts('compliance_gate')}\n\n")
 
     # D10 taxonomy migration legend
     b.write("## D10 taxonomy migration (legacy crosswalk letter → framework area)\n\n")

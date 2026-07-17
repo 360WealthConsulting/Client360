@@ -49,18 +49,27 @@ TYPE_LABELS = {
     "META": "Meta / Guidance", "REGISTER": "Register", "LEGACY": "Legacy Capability Page",
 }
 
-# minimum-viable ("documented") sets, framework 02 §D
-SOFTWARE_MIN = ["EXEC", "PURPOSE", "ARCH", "DATA", "USERGUIDE", "SEC", "RELNOTES", "CHANGELOG"]
-INFRA_MIN = ["EXEC", "ARCH", "ASSET", "RUNBOOK", "SEC", "BCDR", "CHANGELOG"]
-BIZOPS_MIN = ["EXEC", "PURPOSE", "POLICY", "RACI", "SOP", "CHECKLIST", "CALENDAR"]
-# hybrid = software-min UNION business-ops process types (D3), de-duplicated, order-stable
-HYBRID_MIN = SOFTWARE_MIN + [t for t in ["POLICY", "RACI", "SOP", "CHECKLIST", "CALENDAR"]
-                             if t not in SOFTWARE_MIN]
-LIBRARY_MIN = ["EXEC", "PURPOSE", "PROCESS"]
+# COMPLETE per-profile document-type sets (framework 01 §2 "Area profiles"). Core rows =
+# Executive Overview, Business Purpose, Related Capabilities, Change Record (Ownership/Review are
+# metadata; Glossary is the SHARED singleton). Each profile adds its "beyond core" list verbatim.
+CORE = ["EXEC", "PURPOSE", "RELATED", "CHANGELOG"]
+SOFTWARE_FULL = CORE + ["ARCH", "DATA", "USERGUIDE", "ADMINGUIDE", "SOP", "RULES", "SEC", "WF",
+                        "EXC", "INTEG", "REPORT", "TROUBLE", "FAQ", "TRAIN", "RELNOTES"]  # 19
+INFRA_FULL = CORE + ["ARCH", "ASSET", "RUNBOOK", "BCDR", "INCIDENT", "ADMINGUIDE", "SEC", "INTEG",
+                     "VENDOR", "KPI"]  # 14
+BIZOPS_FULL = CORE + ["POLICY", "RACI", "SOP", "CHECKLIST", "PROCESS", "CONTROLS", "CALENDAR",
+                      "VENDOR", "TRAIN", "KPI"]  # 14
+# Hybrid (node 10) = COMPLETE de-duplicated union of Software and Business-Operations requirements
+# (P3 remediation Issue 2A). Superset of the narrower 01 §2 (Software + SOP/Policy/RACI/Calendar)
+# and D3 (+ Checklist) definitions, so no requirement is dropped.
+HYBRID_FULL = SOFTWARE_FULL + [t for t in BIZOPS_FULL if t not in SOFTWARE_FULL]  # 27
+# node 80 (Libraries & Programs) carries NO profile in 01 §2 — cross-area aggregators/indexes.
+# Minimal justified set (core + index/process), not a preference-based reduction.
+LIBRARY_SET = ["EXEC", "PURPOSE", "PROCESS", "RELATED"]
 
 PROFILE_TYPES = {
-    "hybrid": HYBRID_MIN, "infrastructure": INFRA_MIN, "operations": BIZOPS_MIN,
-    "library": LIBRARY_MIN,
+    "hybrid": HYBRID_FULL, "infrastructure": INFRA_FULL, "operations": BIZOPS_FULL,
+    "library": LIBRARY_SET,
 }
 
 # git-canonical document types (framework 06 §1); everything else Confluence-canonical
@@ -103,7 +112,7 @@ AREAS = [
     ("TRAIN", "Training", "80", "library"),
     ("RELMGMT", "Release Management", "80", "library"),
 ]
-AREA_CODES = {a[0] for a in AREAS} | {"SHARED", "GOV", "MANUAL"}
+AREA_CODES = {a[0] for a in AREAS} | {"SHARED", "GOV"}  # 26 framework + SHARED + GOV (no MANUAL)
 VALID_NODES = {"00", "01", "10", "20", "30", "40", "80", "90"}
 VALID_DOCTYPES = set(TYPE_LABELS)
 
@@ -161,18 +170,17 @@ for code, name, node, profile in AREAS:
             r["legacy_source"] = "crosswalk_section_letter"
         rows.append(r)
 
-# Compliance: add a regulated CONTROLS row + mark regulated compliance rows AD-5
-rows.append(row(page_id="CMP-CONTROLS", title="Compliance — Controls & Compliance Register",
-                area="CMP", node="30", profile="operations", doc_type="CONTROLS",
-                canonical_source="git", repository_path="governance/controls/ (planned)",
-                confluence_page_id="TBD", review_cycle="semiannual", compliance_gate=AD5,
-                status="planned", reviewer="UNFILLED (compliance reviewer — AD-5)",
-                notes="Regulated compliance controls — AD-5 gated; never published while reviewer UNFILLED."))
+# AD-5 post-pass on coverage rows: regulated Insurance Business Rules, and regulated Compliance
+# Policy/Controls now exist as full-profile coverage rows — gate them (never published).
 for r in rows:
-    if r["area"] == "CMP" and r["doc_type"] == "POLICY":
+    if r["area"] == "INS" and r["doc_type"] == "RULES":
         r["compliance_gate"] = AD5
         r["reviewer"] = "UNFILLED (compliance reviewer — AD-5)"
-        r["notes"] = "Regulated compliance policy — AD-5 gated."
+        r["notes"] = "Regulated insurance business-rule set — AD-5 gated; not authored."
+    if r["area"] == "CMP" and r["doc_type"] in ("POLICY", "CONTROLS"):
+        r["compliance_gate"] = AD5
+        r["reviewer"] = "UNFILLED (compliance reviewer — AD-5)"
+        r["notes"] = "Regulated compliance content — AD-5 gated; never published while reviewer UNFILLED."
 
 # ---- Insurance: 4 explicit regulated rule-set rows (AD-5, never published) ----
 for pid, label, note in [
@@ -191,8 +199,11 @@ for pid, label, note in [
 INS_PARENT = "28770305"
 ins_pages = [
     # published (real Confluence pages) — non-regulated operational/boundary/descriptive
-    ("INS-EXEC-01", "Insurance Operations Overview", "28770305", "21266602", "EXEC", "published",
-     "none", "Section overview / staff home; non-regulated. Verified published page."),
+    ("INS-EXEC-01", "Insurance Operations — Release 0.10.0 (landing / section overview)", "28770305",
+     "21266602", "EXEC", "published", "none",
+     "Insurance area PARENT/LANDING page AND descriptive operational overview (both): it is the "
+     "section landing/navigation home and carries a non-regulated scope summary. doc_type=EXEC "
+     "(Executive Overview). NOT one of the 5 operational child SOPs. Verified published (28770305)."),
     ("INS-SOP-01", "Insurance Commissions — Operating Procedure", "28803073", INS_PARENT, "SOP",
      "published", "none", "Non-regulated operational SOP (Phase 5). Also serves ACCT."),
     ("INS-SOP-02", "Insurance Exceptions & Work Queues — Operating Procedure", "28835841", INS_PARENT,
@@ -302,39 +313,43 @@ for pid, title in [
                     reviewer=("UNFILLED (compliance reviewer — AD-5)" if gate == AD5 else UNFILLED),
                     notes="Register view over pages.yml (later phase)."))
 
-# ---- Confluence skeleton: 8 nodes + 3 templates (MANUAL, verified P1 IDs) ----
+# ---- Confluence skeleton: 8 nodes + 3 templates (structural, classified under GOV) ----
+# 'MANUAL' is NOT an approved taxonomy area; these structural manual pages are classified under
+# the approved GOV area (Registers & Governance) while retaining their true tree node.
 nodes = [
-    ("MANUAL-NODE-00", "00 · Company Home", "28966913", "00"),
-    ("MANUAL-NODE-01", "01 · How This Manual Works", "28835861", "01"),
-    ("MANUAL-NODE-10", "10 · Client-Facing Operations", "28999681", "10"),
-    ("MANUAL-NODE-20", "20 · Technology & Infrastructure", "29032449", "20"),
-    ("MANUAL-NODE-30", "30 · Business Operations", "29032469", "30"),
-    ("MANUAL-NODE-40", "40 · Cross-Platform & Shared", "28868631", "40"),
-    ("MANUAL-NODE-80", "80 · Libraries & Programs", "28835881", "80"),
-    ("MANUAL-NODE-90", "90 · Registers & Governance", "28868651", "90"),
+    ("GOV-NODE-00", "00 · Company Home", "28966913", "00"),
+    ("GOV-NODE-01", "01 · How This Manual Works", "28835861", "01"),
+    ("GOV-NODE-10", "10 · Client-Facing Operations", "28999681", "10"),
+    ("GOV-NODE-20", "20 · Technology & Infrastructure", "29032449", "20"),
+    ("GOV-NODE-30", "30 · Business Operations", "29032469", "30"),
+    ("GOV-NODE-40", "40 · Cross-Platform & Shared", "28868631", "40"),
+    ("GOV-NODE-80", "80 · Libraries & Programs", "28835881", "80"),
+    ("GOV-NODE-90", "90 · Registers & Governance", "28868651", "90"),
 ]
 for pid, title, cid, node in nodes:
-    rows.append(row(page_id=pid, title=title, area="MANUAL", node=node, profile="operations",
+    rows.append(row(page_id=pid, title=title, area="GOV", node=node, profile="operations",
                     doc_type="NODE", canonical_source="confluence", confluence_page_id=cid,
                     confluence_parent_id="21266602", status="published", review_cycle="annual",
-                    notes="Operations Manual structural node (P1 skeleton; verified current)."))
+                    notes="Operations Manual structural node (P1 skeleton; verified current). "
+                          "Classified under GOV (MANUAL is not an approved area)."))
 for pid, title, cid in [
-    ("MANUAL-TEMPLATE-SW", "Area Shell Template — Software Profile", "28966933"),
-    ("MANUAL-TEMPLATE-INFRA", "Area Shell Template — Infrastructure Profile", "28999701"),
-    ("MANUAL-TEMPLATE-BIZ", "Area Shell Template — Business Operations Profile", "28835901"),
+    ("GOV-TEMPLATE-SW", "Area Shell Template — Software Profile", "28966933"),
+    ("GOV-TEMPLATE-INFRA", "Area Shell Template — Infrastructure Profile", "28999701"),
+    ("GOV-TEMPLATE-BIZ", "Area Shell Template — Business Operations Profile", "28835901"),
 ]:
-    rows.append(row(page_id=pid, title=title, area="MANUAL", node="01", profile="operations",
+    rows.append(row(page_id=pid, title=title, area="GOV", node="01", profile="operations",
                     doc_type="TEMPLATE", canonical_source="confluence", confluence_page_id=cid,
                     confluence_parent_id="28835861", status="published", review_cycle="annual",
-                    notes="Area Shell template PAGE (not a native Confluence template)."))
+                    notes="Area Shell template PAGE (not a native Confluence template). "
+                          "Classified under GOV (MANUAL is not an approved area)."))
 
 # ---- 23 legacy 360OS/Atlas pages (non-canonical, manual_review) -------------
 HOME = "21266602"
 legacy = [
     ("LEGACY-HOME-360OS", "360OS Operations Home", "24117290", HOME, "GOV", "00", "HOME-001",
      "Overlaps 00 · Company Home; eventually merge (one canonical home)."),
-    ("LEGACY-360-STANDARDS", "\U0001F4D0 360 Standards", "23199768", HOME, "MANUAL", "01", "360-STANDARDS",
-     "Overlaps 01 · How This Manual Works; merge/link the documentation standard."),
+    ("LEGACY-360-STANDARDS", "\U0001F4D0 360 Standards", "23199768", HOME, "GOV", "01", "360-STANDARDS",
+     "Overlaps 01 · How This Manual Works; merge/link the documentation standard. Likely area GOV (non-canonical)."),
     ("LEGACY-ATLAS-ARCHIVE", "\U0001F5C4️ Atlas Archive", "25755689", HOME, "GOV", "90", "ATLAS-ARCHIVE",
      "Legacy/duplicate store; recommend retain in place as archive target."),
     ("LEGACY-CAP004-TAX", "\U0001F9FE Tax Operations", "23494657", HOME, "TAXOPS", "10", "CAP-004",
@@ -375,8 +390,8 @@ legacy = [
      "Meta/experimental; eventually archive or manual review."),
     ("LEGACY-BUILDER-PILOT", "Builder Pilot", "23920682", HOME, "GOV", "90", "BUILDER-PILOT",
      "Unclear purpose; requires manual review."),
-    ("LEGACY-HOME-LEGACY", "\U0001F3E0 Home", "23166977", HOME, "MANUAL", "00", "HOME-LEGACY",
-     "Third home-like page; overlaps 00; requires manual review."),
+    ("LEGACY-HOME-LEGACY", "\U0001F3E0 Home", "23166977", HOME, "GOV", "00", "HOME-LEGACY",
+     "Third home-like page; overlaps 00; requires manual review. Likely area GOV (non-canonical)."),
 ]
 for pid, title, cid, parent, area, node, legid, note in legacy:
     rows.append(row(page_id=pid, title=title, area=area, node=node, profile="operations",

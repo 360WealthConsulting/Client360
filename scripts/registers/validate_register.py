@@ -25,7 +25,7 @@ FRAMEWORK_AREAS = {
     "M365", "AD", "NET", "SRV", "SEC", "DR", "CMP", "VEND", "OFFICE", "HR", "ACCT", "MKT",
     "SOPLIB", "TRAIN", "RELMGMT",
 }
-PSEUDO_AREAS = {"SHARED", "GOV", "MANUAL"}
+PSEUDO_AREAS = {"SHARED", "GOV"}  # only the 26 framework codes + SHARED + GOV are valid (no MANUAL)
 VALID_AREAS = FRAMEWORK_AREAS | PSEUDO_AREAS
 DOCTYPES = {
     "EXEC", "PURPOSE", "ARCH", "DATA", "USERGUIDE", "ADMINGUIDE", "SOP", "RULES", "SEC", "WF",
@@ -127,6 +127,33 @@ def main():
         if len(types) != len(set(types)):
             dup = [t for t in set(types) if types.count(t) > 1]
             errs.append(f"area {area}: duplicate profile-union coverage rows for {dup}")
+
+    # COMPLETE required profile/document-type coverage (full 01 §2 sets)
+    _CORE = {"EXEC", "PURPOSE", "RELATED", "CHANGELOG"}
+    _SW = _CORE | {"ARCH", "DATA", "USERGUIDE", "ADMINGUIDE", "SOP", "RULES", "SEC", "WF", "EXC",
+                   "INTEG", "REPORT", "TROUBLE", "FAQ", "TRAIN", "RELNOTES"}
+    _INFRA = _CORE | {"ARCH", "ASSET", "RUNBOOK", "BCDR", "INCIDENT", "ADMINGUIDE", "SEC", "INTEG",
+                      "VENDOR", "KPI"}
+    _BIZ = _CORE | {"POLICY", "RACI", "SOP", "CHECKLIST", "PROCESS", "CONTROLS", "CALENDAR",
+                    "VENDOR", "TRAIN", "KPI"}
+    _HYBRID = _SW | _BIZ
+    _LIB = {"EXEC", "PURPOSE", "PROCESS", "RELATED"}
+    PROFILE_FULL = {"hybrid": _HYBRID, "infrastructure": _INFRA, "operations": _BIZ, "library": _LIB}
+    AREA_PROFILE = {}
+    for a in ["CLM360", "TAXOPS", "WLTH", "INS", "BEN", "RET", "CRM", "WORK", "DOC", "RPT", "AIA"]:
+        AREA_PROFILE[a] = "hybrid"
+    for a in ["M365", "AD", "NET", "SRV", "SEC", "DR"]:
+        AREA_PROFILE[a] = "infrastructure"
+    for a in ["CMP", "VEND", "OFFICE", "HR", "ACCT", "MKT"]:
+        AREA_PROFILE[a] = "operations"
+    for a in ["SOPLIB", "TRAIN", "RELMGMT"]:
+        AREA_PROFILE[a] = "library"
+    for area, prof in AREA_PROFILE.items():
+        have = set(coverage_types.get(area, []))
+        want = PROFILE_FULL[prof]
+        missing = want - have
+        if missing:
+            errs.append(f"area {area} ({prof}): missing required doc types {sorted(missing)}")
 
     # every legacy letter A-N mapped in taxonomy_migration
     mapped = {m["letter"] for m in doc.get("taxonomy_migration_d10", [])}
