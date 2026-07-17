@@ -230,8 +230,10 @@ ins_pages = [
 ]
 for pid, title, cid, parent, dt, st, gate, note in ins_pages:
     canon = "confluence" if cid else ("git" if dt in GIT_TYPES else "confluence")
+    # draft proposals have no page yet -> visible TBD (a page is expected on publication)
+    cid_val = cid if cid else ("TBD" if canon == "confluence" else None)
     rows.append(row(page_id=pid, title=title, area="INS", node="10", profile="hybrid", doc_type=dt,
-                    canonical_source=canon, confluence_page_id=cid, confluence_parent_id=parent,
+                    canonical_source=canon, confluence_page_id=cid_val, confluence_parent_id=parent,
                     repository_path=None, status=st, review_cycle="per_release", compliance_gate=gate,
                     reviewer=("UNFILLED (compliance reviewer — AD-5)" if gate == AD5 else UNFILLED),
                     last_reviewed=("2026-07-17" if st == "published" else "TBD"),

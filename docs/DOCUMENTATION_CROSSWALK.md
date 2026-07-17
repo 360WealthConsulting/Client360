@@ -253,7 +253,7 @@ _regenerate. Per **DEC-001 / decision D1**, `pages.yml` is the single source of 
 | `INS-PROCESS` | Insurance — Process Guide | PROCESS | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-PURPOSE` | Insurance — Business Purpose | PURPOSE | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-RACI` | Insurance — Roles & Responsibilities (RACI) | RACI | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
-| `INS-RACI-01` | Insurance Roles and Responsibilities | RACI | confluence:`—` | draft | AD-5 | Michael Shelton (business owner) | UNFILLED (compliance reviewer — AD-5) | — | — |
+| `INS-RACI-01` | Insurance Roles and Responsibilities | RACI | confluence:`TBD` | draft | AD-5 | Michael Shelton (business owner) | UNFILLED (compliance reviewer — AD-5) | — | — |
 | `INS-RELATED` | Insurance — Related Capabilities | RELATED | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-RELNOTES` | Insurance — Release Notes | RELNOTES | git:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-REPORT` | Insurance — Reporting | REPORT | git:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
@@ -268,14 +268,14 @@ _regenerate. Per **DEC-001 / decision D1**, `pages.yml` is the single source of 
 | `INS-SOP-01` | Insurance Commissions — Operating Procedure | SOP | confluence:`28803073` | published | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-SOP-02` | Insurance Exceptions & Work Queues — Operating Procedure | SOP | confluence:`28835841` | published | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-SOP-03` | Insurance Policyholder Portal — Operating Procedure | SOP | confluence:`28868609` | published | none | Michael Shelton (business owner) | UNFILLED | — | — |
-| `INS-SOP-04` | New Business Case Management | SOP | confluence:`—` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
-| `INS-SOP-05` | In-Force Policy Servicing | SOP | confluence:`—` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
-| `INS-SOP-06` | Insurance Reviews and Obligations | SOP | confluence:`—` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
-| `INS-SOP-07` | Producer Licensing and Continuing Education | SOP | confluence:`—` | draft | AD-5 | Michael Shelton (business owner) | UNFILLED (compliance reviewer — AD-5) | — | — |
+| `INS-SOP-04` | New Business Case Management | SOP | confluence:`TBD` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
+| `INS-SOP-05` | In-Force Policy Servicing | SOP | confluence:`TBD` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
+| `INS-SOP-06` | Insurance Reviews and Obligations | SOP | confluence:`TBD` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
+| `INS-SOP-07` | Producer Licensing and Continuing Education | SOP | confluence:`TBD` | draft | AD-5 | Michael Shelton (business owner) | UNFILLED (compliance reviewer — AD-5) | — | — |
 | `INS-TRAIN` | Insurance — Training | TRAIN | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-TROUBLE` | Insurance — Troubleshooting | TROUBLE | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-USERGUIDE` | Insurance — User Guide | USERGUIDE | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
-| `INS-USERGUIDE-01` | Insurance Policy Management | USERGUIDE | confluence:`—` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
+| `INS-USERGUIDE-01` | Insurance Policy Management | USERGUIDE | confluence:`TBD` | draft | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-VENDOR` | Insurance — Vendor & Contract Register | VENDOR | confluence:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 | `INS-WF` | Insurance — Workflows | WF | git:`TBD` | planned | none | Michael Shelton (business owner) | UNFILLED | — | — |
 
