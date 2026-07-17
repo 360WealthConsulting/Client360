@@ -15,7 +15,7 @@ review and approval.**)_
 | **PR** | [#27](https://github.com/360WealthConsulting/Client360/pull/27) — **MERGED** (2026-07-17). |
 | **Current Alembic head** | `d0l1n2o3i4k5` — single head; **dev `client360` and test `client360_test` both at head** |
 | **Tests** | **717 passed, 5 skipped, 0 failed** via `scripts/test.sh run` (standard harness). Ruff ratchet clean; single head `d0l1n2o3i4k5` (Phases 7–9 have no migration); compile OK; disabled-by-default + no-external-I/O + safe-failure + audit + authorization verified; no secrets/endpoints committed; startup/shutdown clean; `git diff --check` clean. |
-| **Documentation status** | CHANGELOG `[Unreleased]` documents Phases 0–9; architecture doc header updated (implemented / deferred-regulated / AD-5 gate); company-wide Confluence crosswalk with Insurance Operations pages (all **draft**, unpublished); Insurance SOPs drafted (commissions, exceptions & work queues, policyholder portal — all draft-only under `docs/confluence/`). |
+| **Documentation status** | CHANGELOG `[0.10.0]` dated and released; architecture doc header updated (implemented / deferred-regulated / AD-5 gate). **5 in-scope non-regulated Confluence pages PUBLISHED** (Commissions `28803073`, Exceptions & Work Queues `28835841`, Policyholder Portal `28868609`, Reporting & Dashboard `28901377`, Integrations reference `28901397`) under parent **Insurance Operations — Release 0.10.0** (`28770305`). **7 register pages remain DRAFT/deferred** (Overview, Policy Management, New Business, In-Force Servicing, Reviews & Obligations, Producer Licensing/CE, Roles & Responsibilities — Phase 0–4 skeleton and/or AD-5-gated). Full 26-area Publication Register remains a **Phase A roadmap** deliverable — not expanded in this release. |
 
 ## Completed phases (0.10.0)
 
@@ -37,8 +37,11 @@ logic remains deferred — see AD-5:
 
 ## Remaining phases (0.10.0)
 
-- **Phase 10** — RC validation + release v0.10.0 (tag). *(Next task.)*
+- **Phase 10** — RC validation + release v0.10.0 (tag). ✅ **Complete** — released 2026-07-17.
 - **Regulated portions of Phases 2–4** — blocked pending AD-5 (see below).
+
+All ten phases of Release 0.10.0 are complete; the non-regulated scope (Phases 0–9) is
+released. The regulated remainder stays out of scope under AD-5.
 
 ## Documentation standard (Definition of Done)
 
@@ -55,16 +58,22 @@ page (Git technical, Confluence operational) — no duplication.
 
 - 🔴 **AD-5 — compliance reviewer NOT YET NAMED.** All regulated insurance logic (suitability, replacement/1035, licensing/CE validation, compliance approvals) is **blocked** and cannot pass an RC gate without a qualified, named reviewer + approved sign-off artifact. Michael Shelton is the **business** owner (operational scope) only — not regulatory certification. **Not resolvable in code.**
 - ✅ **Release 0.10.0 RELEASED** (tag `v0.10.0`, 2026-07-17) — non-regulated Phases 0–9. RC-validated (`docs/RC_0.10.0_VALIDATION.md`), approved (`docs/RELEASE_0.10.0_APPROVAL.md`), PR #27 merged, GitHub Release published.
-- 🟡 **Confluence Insurance pages are draft/unpublished** — must not be published until the corresponding phase functionality is complete and (for regulated content) AD-5-cleared.
+- 🟢 **In-scope Insurance Confluence pages published** (5 non-regulated: Commissions, Exceptions & Work Queues, Policyholder Portal, Reporting & Dashboard, Integrations reference). The remaining 7 Insurance register pages (Phase 0–4 skeleton and/or AD-5-gated) **stay draft/unpublished** and must not be published until their phase is RC-validated and, for regulated content, AD-5-cleared.
 - 🟡 **Benefits (0.9.11) Confluence pages still in draft** — awaiting page-owner approval.
 
 ## Next task
 
-**Release 0.10.0 is shipped.** Post-release: publish the in-scope non-regulated Insurance
-Confluence pages (Commissions, Exceptions & Work Queues, Policyholder Portal, Reporting &
-Dashboard, Integrations reference) — **excluding any AD-5-gated content**. The next development
-release will pick up from `main` at `v0.10.0`. **AD-5-regulated insurance functionality remains
-out of scope pending a qualified, named compliance reviewer and approved sign-off.**
+**Release 0.10.0 is closed.** All closeout is done: released to `main` (tag `v0.10.0`), status
+updated, and the 5 in-scope non-regulated Insurance Confluence pages published (AD-5-gated and
+future-functionality pages held as draft).
+
+Planning transitions to the next roadmap milestone: **Phase A — Foundation & governance** of the
+360 Wealth Consulting Operations Manual (`docs/documentation-framework/05-IMPLEMENTATION-ROADMAP.md`)
+— provision the Confluence space skeleton, load the template library, add the `governance/` tree,
+and **promote `DOCUMENTATION_CROSSWALK.md` to the full 26-area Publication Register** (explicitly
+deferred out of Release 0.10.0). Product-side, the next development release picks up from `main`
+at `v0.10.0`. **AD-5-regulated insurance functionality remains out of scope pending a qualified,
+named compliance reviewer and approved sign-off.**
 
 ---
 
