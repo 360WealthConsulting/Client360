@@ -40,4 +40,10 @@ def define_identity_tables(metadata: MetaData):
         Column("entity_type", String(100), nullable=False), Column("entity_id", String(255)), Column("outcome", String(50), nullable=False, server_default="success"),
         Column("request_id", String(100), nullable=False), Column("ip_address", String(100)), Column("user_agent", String(1000)), Column("metadata", JSON, nullable=False, server_default="{}"),
         Column("occurred_at", DateTime(timezone=True), nullable=False, server_default=func.now()))
+    # NOTE: the F3.2 hash-chain columns (prev_hash, entry_hash, hash_version, chain_id)
+    # are added by migration f2h3c4a5i6n7 via ALTER TABLE and are NOT declared here.
+    # This table is created by migration c410f4a1b2c3 from this declared metadata
+    # (`metadata.tables["audit_events"].create(...)`), so declaring the columns here
+    # would make that migration pre-create them and the F3.2 ADD COLUMN would fail.
+    # app.db reflects the live schema, so runtime code sees the columns. (See docs/DATABASE.md.)
     return {t.name: t for t in (users, teams, team_memberships, capabilities, roles, role_capabilities, user_roles, assignments, sessions, audit_events)}
