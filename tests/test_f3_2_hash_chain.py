@@ -91,12 +91,15 @@ def test_verify_detects_forged_entry():
     _write(cid)
     prev = _row(_write(cid))["entry_hash"]
     # Append a forged row (INSERT is allowed; append-only blocks only UPDATE/DELETE)
-    # with a WRONG entry_hash — its content will not recompute to it.
+    # with a WRONG entry_hash — its content will not recompute to it. Use a unique
+    # 64-hex value (not a constant) so the append-only, un-cleanable row cannot
+    # collide with uq_audit_events_entry_hash on a repeat run (mirrors F3.4).
+    forged_hash = uuid.uuid4().hex + uuid.uuid4().hex  # 64 hex, will not recompute
     with engine.begin() as conn:
         forged_id = conn.execute(
             audit_events.insert().values(
                 action="forged", entity_type="t", request_id="forge", outcome="success",
-                metadata={}, chain_id=cid, prev_hash=prev, entry_hash="f" * 64, hash_version=HASH_VERSION,
+                metadata={}, chain_id=cid, prev_hash=prev, entry_hash=forged_hash, hash_version=HASH_VERSION,
             ).returning(audit_events.c.id)
         ).scalar_one()
     result = verify_chain(cid)
