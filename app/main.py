@@ -35,6 +35,7 @@ from app.routes.admin import router as admin_router
 from app.routes.session import router as session_router
 from app.security.middleware import AuthenticationMiddleware
 from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET, validate_startup_configuration
+from app.observability import configure_logging
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.work import router as work_router
@@ -52,6 +53,7 @@ from app.routes.insurance import router as insurance_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     validate_startup_configuration()
     start_scheduler()
 
