@@ -3,11 +3,10 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.jobs.microsoft_calendar_sync import sync_calendar_events
-from app.jobs.microsoft_mail_sync import sync_recent_mail
 from app.jobs.microsoft_document_sync import sync_microsoft_documents
-from app.services.workflow_automation import evaluate_sla
+from app.jobs.microsoft_mail_sync import sync_recent_mail
 from app.services.tax_intake import process_reminders
-
+from app.services.workflow_automation import evaluate_sla
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +62,8 @@ def run_benefits_detector_scan() -> None:
     escalation notifications. Overlap is prevented by APScheduler (max_instances=1, coalesce)."""
     try:
         from app.services.benefits_detectors import run_benefits_scan
-        from app.services.benefits_work import auto_assign_unassigned
         from app.services.benefits_notifications import record_scan_health
+        from app.services.benefits_work import auto_assign_unassigned
         result = run_benefits_scan()
         result["auto_assignment"] = auto_assign_unassigned()
         result["scan_health"] = record_scan_health(result)
@@ -155,9 +154,13 @@ def start_scheduler() -> None:
     )
 
     # Transactional-outbox dispatcher (E1.6 / F1.3): scheduled only when explicitly
-    # enabled, so default runtime behavior is unchanged.
+    # enabled, so default runtime behavior is unchanged. Workflow automation consumers
+    # (F4.4) are registered in the same gated block (dark launch), so no subscribers
+    # exist until the dispatcher is enabled.
     from app.config import outbox_dispatch_interval_seconds, outbox_dispatcher_enabled
     if outbox_dispatcher_enabled():
+        from app.services.workflow_automation_consumers import register_workflow_consumers
+        register_workflow_consumers()
         _scheduler.add_job(
             run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
             id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,
