@@ -89,6 +89,17 @@ advisor instruction and source documents before completion.
 Escalate ambiguous registrations to the **Lead Advisor** (Michael Shelton). `SME CONFIRMATION REQUIRED`:
 confirm approval authority and any compliance documentation requirement.
 
+## Operational unknowns (controlled placeholders)
+These operational details are **not yet confirmed** and are held as visible placeholders — not
+guessed. They do not block the documented workflow and close in the P3 quality/operational pass:
+- Current Schwab **account-opening platform** (Advisor Center vs. another current tool). `SME CONFIRMATION REQUIRED`
+- **Approval authority** and any compliance-documentation requirement for a new registration. `SME CONFIRMATION REQUIRED`
+- Whether **MoneyLink / ACAT** remain current downstream steps. `SME CONFIRMATION REQUIRED`
+
+_Externally governed policy (advisory-agreement terms, fees, ADV delivery) is referenced, not defined
+here — see the Prerequisites note. Controlled citations will be added during the Compliance Validation
+milestone._
+
 ## Related
 - `WLTH-SOP-02` — Schwab Portfolio Connect Quarterly Billing & Fee Locking
 - Queued (not yet adapted): Schwab MoneyLink Setup (SOP-007), Schwab ACAT Transfer In (SOP-008)
@@ -112,3 +123,4 @@ confirm approval authority and any compliance documentation requirement.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-006 into the framework; `needs_review`. |
+| 0.2 | 2026-07-17 | Claude (0.12 P1D) | Operational-validation pass: added external-governance note (Prerequisites) and consolidated operational unknowns as controlled placeholders; no inferred policy; no controlled-source IDs. Still `needs_review`. |

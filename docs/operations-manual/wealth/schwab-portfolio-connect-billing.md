@@ -46,8 +46,7 @@ them **as disclosed in those governing documents**:
 
 This SOP documents only the **operational execution** of billing; every step below must comply with
 the **currently effective** governing documents **without reproducing their regulatory language**.
-*(Controlled-source records `SRC-ADV-2A` / `SRC-IAA` and full validation are deferred to the future
-**Compliance Validation milestone** — see `P1D_OPERATIONAL_VALIDATION_REGISTER.md`.)*
+*(Controlled citations will be added during the **Compliance Validation milestone**.)*
 
 ## Audience
 Operations staff who prepare billing; the Lead Advisor who approves; Compliance who reviews records.
