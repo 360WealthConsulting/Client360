@@ -8,3 +8,9 @@ ruff==0.15.21
 # in pyproject.toml; new code is expected to pass, legacy is reduced over time.
 import-linter==2.13
 mypy==1.13.0
+
+# Dev/tooling + tests import PyYAML (register/docs generators; the E1.4 CI-gate and
+# E1.8 workflow-registry tests). Runtime app code does not use it, so it is declared
+# here rather than in requirements.txt. Previously present only in local envs, which
+# caused CI to fail at collection with ModuleNotFoundError: No module named 'yaml'.
+PyYAML==6.0.3
