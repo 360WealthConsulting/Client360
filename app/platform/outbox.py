@@ -30,6 +30,7 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.engine import Connection, Engine
 
 from app.database.schema import metadata
+from app.platform.events import Envelope, is_envelope
 
 logger = logging.getLogger("client360.outbox")
 
@@ -89,6 +90,25 @@ def publish(conn: Connection, name: str, payload: dict | None = None, *, event_i
     return event_id
 
 
+def publish_event(conn: Connection, envelope: Envelope) -> str:
+    """Publish a canonical event Envelope (E1.7 / F1.4) via the outbox.
+
+    The envelope is validated and serialized into the outbox row: the transport's
+    ``event_id`` and ``name`` mirror the envelope's ``event_id`` and ``event_type``
+    (so idempotency and subscriber routing are unchanged), and the full envelope
+    is stored in ``payload`` — no schema change, same outbox guarantees.
+    """
+    envelope.validate()
+    conn.execute(
+        insert(outbox_events).values(
+            event_id=envelope.event_id,
+            name=envelope.event_type,
+            payload=envelope.to_dict(),
+        )
+    )
+    return envelope.event_id
+
+
 def already_processed(conn: Connection, event_id: str, consumer: str) -> bool:
     row = conn.execute(
         select(outbox_processed_events.c.event_id).where(
@@ -131,7 +151,13 @@ def dispatch_pending(
 
 
 def _dispatch_one(engine: Engine, row, max_attempts: int, summary: dict) -> None:
-    event_view = {"event_id": row.event_id, "name": row.name, "payload": row.payload}
+    # Envelope-aware delivery (F1.4): rows published via publish_event carry a
+    # serialized Envelope and are delivered as an Envelope; legacy F1.3 rows
+    # (bare payloads) are delivered unchanged as {"event_id","name","payload"}.
+    if is_envelope(row.payload):
+        event_view = Envelope.from_dict(row.payload)
+    else:
+        event_view = {"event_id": row.event_id, "name": row.name, "payload": row.payload}
     handlers = _subscribers.get(row.name, [])
 
     for handler in handlers:
