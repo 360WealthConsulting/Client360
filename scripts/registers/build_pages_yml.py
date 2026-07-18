@@ -291,6 +291,15 @@ p1b_pages = [
     ("WLTH-SOP-10", "Wealth Management — AssetMark Billing Review", "WLTH",
      "docs/operations-manual/wealth/assetmark-billing-review.md", "quarterly",
      "Adapted from Atlas SOP-015 (25198614)."),
+    ("TAXOPS-SOP-03", "Tax Operations — Business Return Preparation", "TAXOPS",
+     "docs/operations-manual/tax/business-return-workflow.md", "annual",
+     "Adapted from Atlas SOP-018 (23986218)."),
+    ("TAXOPS-SOP-04", "Tax Operations — Tax Return Review & Delivery", "TAXOPS",
+     "docs/operations-manual/tax/tax-review-and-delivery.md", "annual",
+     "Adapted from Atlas SOP-019 (23953450)."),
+    ("TAXOPS-SOP-05", "Tax Operations — E-file Authorization & Acknowledgements", "TAXOPS",
+     "docs/operations-manual/tax/efile-authorization-and-acknowledgements.md", "annual",
+     "Adapted from Atlas SOP-020 (24182792)."),
 ]
 for pid, title, area, path, cyc, note in p1b_pages:
     rows.append(row(page_id=pid, title=title, area=area, node="10", profile="hybrid", doc_type="SOP",

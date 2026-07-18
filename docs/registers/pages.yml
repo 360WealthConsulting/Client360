@@ -8,7 +8,7 @@ meta:
   generated: false
   description: Canonical machine-readable Publication Register for the 360 Wealth Consulting Operations
     Manual (Release 0.11.0 · P3). Edit THIS file; docs/DOCUMENTATION_CROSSWALK.md is generated from it.
-  row_count: 566
+  row_count: 569
 enums:
   status:
   - planned
@@ -5898,6 +5898,72 @@ pages:
   reconciliation_status: null
   notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
     SOP-017 (23920712).
+- page_id: TAXOPS-SOP-03
+  title: Tax Operations — Business Return Preparation
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/tax/business-return-workflow.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-018 (23986218).
+- page_id: TAXOPS-SOP-04
+  title: Tax Operations — Tax Return Review & Delivery
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/tax/tax-review-and-delivery.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-019 (23953450).
+- page_id: TAXOPS-SOP-05
+  title: Tax Operations — E-file Authorization & Acknowledgements
+  area: TAXOPS
+  node: '10'
+  profile: hybrid
+  doc_type: SOP
+  canonical_source: git
+  repository_path: docs/operations-manual/tax/efile-authorization-and-acknowledgements.md
+  confluence_page_id: TBD
+  confluence_parent_id: null
+  owner: Michael Shelton (business owner)
+  reviewer: Michael Shelton (business/operational reviewer)
+  status: needs_review
+  last_reviewed: TBD
+  review_cycle: annual
+  next_review: TBD
+  compliance_gate: none
+  legacy_identifier: null
+  legacy_source: null
+  reconciliation_status: null
+  notes: Release 0.12 P1B authored git-canonical Operations Manual page (needs_review). Adapted from Atlas
+    SOP-020 (24182792).
 - page_id: TAXOPS-TRAIN
   title: Tax Operations — Training
   area: TAXOPS
