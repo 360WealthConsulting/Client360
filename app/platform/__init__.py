@@ -20,6 +20,14 @@ from app.platform.outbox import (
     publish_event,
     subscribe,
 )
+from app.platform.workflow_adapter import (
+    RegistryBinding,
+    bind_instance_template,
+    get_binding,
+    launch_from_registry,
+    resolve_registry_template,
+    set_registry_resolver,
+)
 from app.platform.workflow_registry import (
     ImmutableTemplateError,
     IncompatibleTemplateError,
@@ -52,4 +60,11 @@ __all__ = [
     "UnknownTemplateError",
     "ImmutableTemplateError",
     "IncompatibleTemplateError",
+    # workflow execution adapter (F4.1 / Epic 4, ADR-016)
+    "RegistryBinding",
+    "resolve_registry_template",
+    "bind_instance_template",
+    "get_binding",
+    "launch_from_registry",
+    "set_registry_resolver",
 ]
