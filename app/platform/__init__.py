@@ -28,8 +28,23 @@ from app.platform.workflow_adapter import (
     resolve_registry_template,
     set_registry_resolver,
 )
+from app.platform.workflow_approval_state import (
+    APPROVAL_DECISIONS,
+    APPROVAL_STATES,
+    TERMINAL_APPROVAL_STATES,
+    can_reassign,
+    check_assigned_approver,
+    check_decider_not_requester,
+    check_independent_requester,
+    validate_decidable,
+    validate_decision,
+    validate_reassignable,
+)
 from app.platform.workflow_events import (
+    APPROVAL_EVENT_TYPES,
     TRANSITION_EVENT_TYPES,
+    approval_event_type,
+    emit_approval_event,
     emit_transition_event,
     transition_event_type,
     workflow_event_id,
@@ -105,4 +120,18 @@ __all__ = [
     "transition_event_type",
     "workflow_event_id",
     "TRANSITION_EVENT_TYPES",
+    # workflow approval engine (F4.5 / Epic 4, ADR-016)
+    "APPROVAL_STATES",
+    "APPROVAL_DECISIONS",
+    "TERMINAL_APPROVAL_STATES",
+    "can_reassign",
+    "validate_decision",
+    "validate_decidable",
+    "validate_reassignable",
+    "check_independent_requester",
+    "check_decider_not_requester",
+    "check_assigned_approver",
+    "APPROVAL_EVENT_TYPES",
+    "approval_event_type",
+    "emit_approval_event",
 ]

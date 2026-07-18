@@ -18,7 +18,15 @@ from app.db import (
     workflow_template_steps,
     workflow_templates,
 )
-from app.platform.workflow_events import emit_transition_event
+from app.platform.workflow_approval_state import (
+    check_assigned_approver,
+    check_decider_not_requester,
+    check_independent_requester,
+    validate_decidable,
+    validate_decision,
+    validate_reassignable,
+)
+from app.platform.workflow_events import emit_approval_event, emit_transition_event
 from app.platform.workflow_state_machine import (
     ACTIVE_STEP_STATES,
     dependencies_satisfied,
@@ -121,24 +129,49 @@ def complete_step(step_id, *, actor_user_id, request_id=None):
         remaining = connection.scalar(select(func.count()).select_from(workflow_steps).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status.in_(ACTIVE_STEP_STATES)))
         if not remaining: connection.execute(workflow_instances.update().where(workflow_instances.c.id == step["workflow_instance_id"]).values(status="completed", completed_at=now))
 
-def request_approval(step_id, *, requested_by_user_id, approver_user_id=None, approver_team_id=None, due_at=None):
+def request_approval(step_id, *, requested_by_user_id, approver_user_id=None, approver_team_id=None, due_at=None, request_id=None):
     if not approver_user_id and not approver_team_id: raise ValueError("Approver user or team is required")
-    if approver_user_id == requested_by_user_id: raise ValueError("Independent approval cannot be self-approved")
+    check_independent_requester(requested_by_user_id, approver_user_id)
     with engine.begin() as connection:
         step = connection.execute(select(workflow_steps).where(workflow_steps.c.id == step_id)).mappings().one_or_none()
         if not step: raise ValueError("Workflow step not found")
-        return connection.execute(work_approvals.insert().values(entity_type="workflow_step", entity_id=step_id, approval_type="independent", workflow_step_id=step_id, requested_by_user_id=requested_by_user_id, approver_user_id=approver_user_id, approver_team_id=approver_team_id, due_at=due_at, requires_independent_approver=True).returning(work_approvals.c.id)).scalar_one()
+        approval_id = connection.execute(work_approvals.insert().values(entity_type="workflow_step", entity_id=step_id, approval_type="independent", workflow_step_id=step_id, requested_by_user_id=requested_by_user_id, approver_user_id=approver_user_id, approver_team_id=approver_team_id, due_at=due_at, requires_independent_approver=True).returning(work_approvals.c.id)).scalar_one()
+        event_id = _event(connection, step["workflow_instance_id"], "approval_requested", requested_by_user_id, step_id, {"approval_id": approval_id})
+        emit_approval_event(connection, kind="requested", instance_id=step["workflow_instance_id"], approval_id=approval_id, domain_event_id=event_id, step_id=step_id, actor_user_id=requested_by_user_id, payload_extra={"approver_user_id": approver_user_id, "approver_team_id": approver_team_id})
+        instance_id = step["workflow_instance_id"]
+    write_audit_event(action="workflow.approval.requested", entity_type="work_approval", entity_id=approval_id, actor_user_id=requested_by_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id})
+    return approval_id
 
-def decide_approval(approval_id, *, approver_user_id, decision, notes=None):
-    if decision not in {"approved", "rejected"}: raise ValueError("Decision must be approved or rejected")
+def decide_approval(approval_id, *, approver_user_id, decision, notes=None, request_id=None):
+    validate_decision(decision)
     with engine.begin() as connection:
         approval = connection.execute(select(work_approvals).where(work_approvals.c.id == approval_id).with_for_update()).mappings().one_or_none()
-        if not approval or approval["status"] != "pending": raise ValueError("Pending approval not found")
-        if approval["requested_by_user_id"] == approver_user_id: raise ValueError("Requester cannot approve their own work")
-        if approval["approver_user_id"] and approval["approver_user_id"] != approver_user_id: raise ValueError("Approval is assigned to another user")
+        validate_decidable(approval)
+        check_decider_not_requester(approval["requested_by_user_id"], approver_user_id)
+        check_assigned_approver(approval["approver_user_id"], approver_user_id)
         connection.execute(work_approvals.update().where(work_approvals.c.id == approval_id).values(status=decision, approver_user_id=approver_user_id, decided_at=datetime.now(UTC), decision_notes=notes))
         step = connection.execute(select(workflow_steps).where(workflow_steps.c.id == approval["workflow_step_id"])).mappings().one()
-        _event(connection, step["workflow_instance_id"], f"approval_{decision}", approver_user_id, step["id"], {"approval_id": approval_id})
+        event_id = _event(connection, step["workflow_instance_id"], f"approval_{decision}", approver_user_id, step["id"], {"approval_id": approval_id})
+        emit_approval_event(connection, kind="decided", instance_id=step["workflow_instance_id"], approval_id=approval_id, domain_event_id=event_id, step_id=step["id"], actor_user_id=approver_user_id, payload_extra={"decision": decision})
+        instance_id, decided_step_id = step["workflow_instance_id"], step["id"]
+    write_audit_event(action="workflow.approval.decided", entity_type="work_approval", entity_id=approval_id, actor_user_id=approver_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"decision": decision, "workflow_instance_id": instance_id, "workflow_step_id": decided_step_id})
+
+def reassign_approval(approval_id, *, reassigned_by_user_id, new_approver_user_id=None, new_approver_team_id=None, reason=None, request_id=None):
+    """Reassign a pending approval to a new approver/team (SoD-checked). Deterministic;
+    never changes workflow state. History is preserved in the append-only event ledger."""
+    if not new_approver_user_id and not new_approver_team_id: raise ValueError("New approver user or team is required")
+    with engine.begin() as connection:
+        approval = connection.execute(select(work_approvals).where(work_approvals.c.id == approval_id).with_for_update()).mappings().one_or_none()
+        validate_reassignable(approval)
+        check_independent_requester(approval["requested_by_user_id"], new_approver_user_id)
+        old_approver = approval["approver_user_id"]
+        connection.execute(work_approvals.update().where(work_approvals.c.id == approval_id).values(approver_user_id=new_approver_user_id, approver_team_id=new_approver_team_id))
+        step = connection.execute(select(workflow_steps).where(workflow_steps.c.id == approval["workflow_step_id"])).mappings().one()
+        event_id = _event(connection, step["workflow_instance_id"], "approval_reassigned", reassigned_by_user_id, step["id"], {"approval_id": approval_id, "from_approver": old_approver, "to_approver": new_approver_user_id})
+        emit_approval_event(connection, kind="reassigned", instance_id=step["workflow_instance_id"], approval_id=approval_id, domain_event_id=event_id, step_id=step["id"], actor_user_id=reassigned_by_user_id, payload_extra={"from_approver": old_approver, "to_approver": new_approver_user_id}, metadata_extra={"reason": reason} if reason else None)
+        instance_id, reassigned_step_id = step["workflow_instance_id"], step["id"]
+    write_audit_event(action="workflow.approval.reassigned", entity_type="work_approval", entity_id=approval_id, actor_user_id=reassigned_by_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"from_approver": old_approver, "to_approver": new_approver_user_id, "workflow_instance_id": instance_id, "workflow_step_id": reassigned_step_id})
+    return approval_id
 
 def process_event(event_type, entity_type, entity_id, payload, *, actor_user_id, idempotency_key):
     with engine.connect() as connection:

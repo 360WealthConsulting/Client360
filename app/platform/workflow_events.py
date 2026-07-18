@@ -58,6 +58,54 @@ def workflow_event_id(domain_event_id: int) -> str:
     return str(uuid.uuid5(WORKFLOW_EVENT_NAMESPACE, f"workflow_event:{domain_event_id}"))
 
 
+#: Approval business-process event kinds -> canonical event types (ADR-016 §11).
+APPROVAL_EVENT_TYPES: dict[str, str] = {
+    "requested": f"{EVENT_TYPE_PREFIX}.approval.requested",
+    "decided": f"{EVENT_TYPE_PREFIX}.approval.decided",
+    "reassigned": f"{EVENT_TYPE_PREFIX}.approval.reassigned",
+}
+
+
+def approval_event_type(kind: str) -> str:
+    """Canonical event type for an approval event kind (e.g. ``decided`` ->
+    ``workflow.approval.decided``)."""
+    return APPROVAL_EVENT_TYPES[kind]
+
+
+def emit_approval_event(
+    conn, *, kind: str, instance_id: int, approval_id: int, domain_event_id: int,
+    step_id: int | None = None, actor_user_id: int | None = None,
+    payload_extra: dict | None = None, metadata_extra: dict | None = None,
+) -> str:
+    """Publish exactly one F1.4 envelope for an approval event (idempotent).
+
+    Notification only — never changes workflow or approval state. Same deterministic,
+    duplicate-safe mechanism as :func:`emit_transition_event`.
+    """
+    event_id = workflow_event_id(domain_event_id)
+    if conn.execute(select(outbox_events.c.id).where(outbox_events.c.event_id == event_id)).first():
+        return event_id
+    payload = {"workflow_instance_id": instance_id, "approval_id": approval_id, "kind": kind}
+    if step_id is not None:
+        payload["workflow_step_id"] = step_id
+    if payload_extra:
+        payload.update(payload_extra)
+    metadata = {"domain_event_id": domain_event_id}
+    if actor_user_id is not None:
+        metadata["actor_user_id"] = actor_user_id
+    if metadata_extra:
+        metadata.update(metadata_extra)
+    envelope = new_event(
+        approval_event_type(kind), payload,
+        event_id=event_id,
+        subject_ref=f"workflow_instance:{instance_id}",
+        producer="workflow.approvals",
+        correlation_id=f"workflow_instance:{instance_id}",
+        metadata=metadata,
+    )
+    return publish_event(conn, envelope)
+
+
 def emit_transition_event(
     conn, *, instance_id: int, action: str, domain_event_id: int,
     actor_user_id: int | None = None, correlation_id: str | None = None,
