@@ -300,6 +300,15 @@ p1b_pages = [
     ("TAXOPS-SOP-05", "Tax Operations — E-file Authorization & Acknowledgements", "TAXOPS",
      "docs/operations-manual/tax/efile-authorization-and-acknowledgements.md", "annual",
      "Adapted from Atlas SOP-020 (24182792)."),
+    ("TAXOPS-SOP-06", "Tax Operations — IRS & State Notice Handling", "TAXOPS",
+     "docs/operations-manual/tax/irs-notice-handling.md", "annual",
+     "Adapted from Atlas SOP-021 (24084501)."),
+    ("TAXOPS-SOP-07", "Tax Operations — Tax Extensions", "TAXOPS",
+     "docs/operations-manual/tax/tax-extensions.md", "annual",
+     "Adapted from Atlas SOP-023 (23789643)."),
+    ("TAXOPS-SOP-08", "Tax Operations — Quarterly Estimated Payments", "TAXOPS",
+     "docs/operations-manual/tax/quarterly-estimated-payments.md", "annual",
+     "Adapted from Atlas SOP-024 (24051753)."),
 ]
 for pid, title, area, path, cyc, note in p1b_pages:
     rows.append(row(page_id=pid, title=title, area=area, node="10", profile="hybrid", doc_type="SOP",
