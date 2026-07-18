@@ -20,6 +20,15 @@ from app.platform.outbox import (
     publish_event,
     subscribe,
 )
+from app.platform.workflow_registry import (
+    ImmutableTemplateError,
+    IncompatibleTemplateError,
+    UnknownTemplateError,
+    WorkflowTemplate,
+    WorkflowTemplateRegistry,
+    build_default_registry,
+    default_registry,
+)
 
 __all__ = [
     # transport (F1.3)
@@ -35,4 +44,12 @@ __all__ = [
     "is_envelope",
     "upgrade_envelope",
     "SCHEMA_VERSION",
+    # workflow template registry (F1.5)
+    "WorkflowTemplate",
+    "WorkflowTemplateRegistry",
+    "default_registry",
+    "build_default_registry",
+    "UnknownTemplateError",
+    "ImmutableTemplateError",
+    "IncompatibleTemplateError",
 ]
