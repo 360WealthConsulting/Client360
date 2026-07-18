@@ -5,14 +5,10 @@ from sqlalchemy import func, or_, select
 from app.db import (automation_actions, automation_triggers, engine, timeline_events,
     work_approvals, work_queues, workflow_escalations, workflow_events, workflow_instances,
     workflow_step_dependencies, workflow_steps, workflow_template_steps, workflow_templates)
+from app.platform.workflow_state_machine import (
+    ACTIVE_STEP_STATES, dependencies_satisfied, validate_transition)
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
-
-WORKFLOW_ACTIONS = {
-    "active": {"pause": "paused", "cancel": "cancelled", "complete": "completed"},
-    "paused": {"resume": "active", "cancel": "cancelled"},
-    "cancelled": {"reopen": "active"}, "completed": {"reopen": "active"},
-}
 
 def _event(connection, instance_id, event_type, actor_user_id=None, step_id=None, payload=None, key=None):
     key = key or f"workflow:{instance_id}:{event_type}:{uuid.uuid4().hex}"
@@ -70,8 +66,7 @@ def transition_workflow(instance_id, action, *, actor_user_id, reason=None, requ
     with engine.begin() as connection:
         instance = connection.execute(select(workflow_instances).where(workflow_instances.c.id == instance_id).with_for_update()).mappings().one_or_none()
         if not instance: raise ValueError("Workflow not found")
-        target = WORKFLOW_ACTIONS.get(instance["status"], {}).get(action)
-        if not target: raise ValueError(f"Cannot {action} a {instance['status']} workflow")
+        target = validate_transition(instance["status"], action)
         values = {"status": target, "status_reason": reason, "updated_at": now}
         if action == "pause": values["paused_at"] = now
         if action == "cancel": values["cancelled_at"] = now
@@ -80,7 +75,7 @@ def transition_workflow(instance_id, action, *, actor_user_id, reason=None, requ
         connection.execute(workflow_instances.update().where(workflow_instances.c.id == instance_id).values(**values))
         if action == "pause": connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status == "active").values(status="paused", paused_at=now))
         if action in {"resume", "reopen"}: connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status == "paused").values(status="active", paused_at=None))
-        if action == "cancel": connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status.in_(("active", "pending", "paused"))).values(status="cancelled", cancelled_at=now))
+        if action == "cancel": connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status.in_(ACTIVE_STEP_STATES)).values(status="cancelled", cancelled_at=now))
         _event(connection, instance_id, f"workflow_{action}", actor_user_id, payload={"reason": reason})
     _publish(instance, f"workflow_{action}", f"Workflow {action}d", {"reason": reason})
     write_audit_event(action=f"workflow.{action}", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=request_id or f"workflow-{uuid.uuid4()}", metadata={"reason": reason})
@@ -100,10 +95,10 @@ def complete_step(step_id, *, actor_user_id, request_id=None):
         completed_template_ids = set(connection.scalars(select(workflow_steps.c.template_step_id).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status.in_(("completed", "skipped")))))
         for candidate in pending:
             dependencies = set(connection.scalars(select(workflow_step_dependencies.c.depends_on_step_id).where(workflow_step_dependencies.c.step_id == candidate["template_step_id"])))
-            if dependencies <= completed_template_ids:
+            if dependencies_satisfied(dependencies, completed_template_ids):
                 definition = connection.execute(select(workflow_template_steps).where(workflow_template_steps.c.id == candidate["template_step_id"])).mappings().one()
                 connection.execute(workflow_steps.update().where(workflow_steps.c.id == candidate["id"]).values(status="active", activated_at=now, sla_due_at=now + timedelta(hours=definition["sla_hours"] or 120)))
-        remaining = connection.scalar(select(func.count()).select_from(workflow_steps).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status.in_(("active", "pending", "paused"))))
+        remaining = connection.scalar(select(func.count()).select_from(workflow_steps).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status.in_(ACTIVE_STEP_STATES)))
         if not remaining: connection.execute(workflow_instances.update().where(workflow_instances.c.id == step["workflow_instance_id"]).values(status="completed", completed_at=now))
 
 def request_approval(step_id, *, requested_by_user_id, approver_user_id=None, approver_team_id=None, due_at=None):

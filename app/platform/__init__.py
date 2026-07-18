@@ -37,6 +37,20 @@ from app.platform.workflow_registry import (
     build_default_registry,
     default_registry,
 )
+from app.platform.workflow_state_machine import (
+    ACTIVE_STEP_STATES,
+    STEP_STATES,
+    WORKFLOW_ACTIONS,
+    WORKFLOW_STATES,
+    WORKFLOW_TRANSITIONS,
+    assert_lifecycle_invariants,
+    dependencies_satisfied,
+    instance_is_complete,
+    is_valid_transition,
+    next_state,
+    valid_actions,
+    validate_transition,
+)
 
 __all__ = [
     # transport (F1.3)
@@ -67,4 +81,17 @@ __all__ = [
     "get_binding",
     "launch_from_registry",
     "set_registry_resolver",
+    # workflow state machine (F4.2 / Epic 4, ADR-016)
+    "WORKFLOW_STATES",
+    "WORKFLOW_TRANSITIONS",
+    "WORKFLOW_ACTIONS",
+    "STEP_STATES",
+    "ACTIVE_STEP_STATES",
+    "next_state",
+    "is_valid_transition",
+    "valid_actions",
+    "validate_transition",
+    "dependencies_satisfied",
+    "instance_is_complete",
+    "assert_lifecycle_invariants",
 ]
