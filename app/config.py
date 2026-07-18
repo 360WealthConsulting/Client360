@@ -75,6 +75,23 @@ def insurance_scan_interval_minutes() -> int:
     return max(1, _int_env("INSURANCE_SCAN_INTERVAL_MINUTES", 30))
 
 
+def outbox_dispatcher_enabled() -> bool:
+    """Whether the transactional-outbox dispatcher runs as a scheduler job.
+
+    Default OFF (E1.6 / F1.3): the outbox mechanism ships, but nothing publishes
+    events yet, so the dispatcher is not scheduled unless explicitly enabled —
+    keeping runtime behavior unchanged by default.
+    """
+    return os.getenv("OUTBOX_DISPATCHER_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def outbox_dispatch_interval_seconds() -> int:
+    # Poll cadence for the outbox dispatcher; minimum 5s to avoid a hot loop.
+    return max(5, _int_env("OUTBOX_DISPATCH_INTERVAL_SECONDS", 30))
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 

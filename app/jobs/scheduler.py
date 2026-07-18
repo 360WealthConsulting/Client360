@@ -89,6 +89,17 @@ def run_insurance_detector_scan() -> None:
         logger.exception("Insurance detector scan failed.")
 
 
+def run_outbox_dispatch() -> None:
+    """Deliver due transactional-outbox events (E1.6 / F1.3). No-op when empty."""
+    try:
+        from app.platform.outbox import dispatch_pending
+        result = dispatch_pending()
+        if any(result.values()):
+            logger.info("Outbox dispatch result: %s", result)
+    except Exception:
+        logger.exception("Outbox dispatch failed.")
+
+
 def start_scheduler() -> None:
     if _scheduler.running:
         return
@@ -142,6 +153,15 @@ def start_scheduler() -> None:
         run_insurance_detector_scan, trigger="interval", minutes=insurance_scan_interval_minutes(),
         id="insurance-detector-scan", replace_existing=True, max_instances=1, coalesce=True,
     )
+
+    # Transactional-outbox dispatcher (E1.6 / F1.3): scheduled only when explicitly
+    # enabled, so default runtime behavior is unchanged.
+    from app.config import outbox_dispatch_interval_seconds, outbox_dispatcher_enabled
+    if outbox_dispatcher_enabled():
+        _scheduler.add_job(
+            run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
+            id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,
+        )
 
     _scheduler.start()
     logger.info("Client360 background scheduler started.")
