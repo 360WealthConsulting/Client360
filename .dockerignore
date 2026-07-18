@@ -1,0 +1,29 @@
+# Build-context excludes for the Client360 image (E1.2).
+# Keeps the image lean and prevents secrets/data/local artifacts from entering it.
+.git
+.github
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.DS_Store
+*.log
+
+# Secrets / local env — never copy into the image.
+app/.env
+**/.env
+
+# Data, reports, backups, working files (never in the image).
+01 Raw Imports
+02 Working Data
+03 Database
+06 Reports
+08 Backups
+09 Archive
+documents
+notes
+
+# Docs and tests are not needed at runtime.
+docs
+tests

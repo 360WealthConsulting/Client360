@@ -200,3 +200,16 @@ DB), `config/` (secret-free `.env.example`), `shared/` and `infrastructure/`
 Local configuration: copy values from [`config/.env.example`](config/.env.example)
 into `app/.env` (gitignored — never commit secrets). Run the suite with
 `scripts/test.sh run`.
+
+### Local development quick start
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+scripts/dev.sh setup    # install pinned deps, create the dev DB if missing, migrate
+scripts/dev.sh doctor   # validate Python, DB connectivity, schema, configuration
+scripts/dev.sh run      # http://127.0.0.1:8000
+```
+
+No local PostgreSQL? `scripts/dev.sh db-up` starts a pinned `postgres:16` via
+Docker Compose (`infrastructure/docker-compose.yml`). Full guide:
+[docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
