@@ -77,6 +77,21 @@ copy client tax data or PII into this page.
 ## Escalation
 Escalate unresponsive clients or unclear return scope to the **Tax Preparer / Lead** (Michael Shelton).
 
+## Operational unknowns (controlled placeholders)
+Held as visible placeholders — not guessed; they close in the P3 / operational pass:
+- Current **TaxDome intake platform** confirmation. `SME CONFIRMATION REQUIRED`
+- Current **organizer / questionnaire templates** for the tax year. `SME CONFIRMATION REQUIRED`
+- The **minimum-required-document list**. `SME CONFIRMATION REQUIRED`
+
+## Externally governed — tax requirements
+**No advisory-fee policy is involved.** However, tax preparation is governed by **external federal and
+state tax authorities and applicable professional requirements** — filing rules, filing/payment
+deadlines, electronic-signature and authorization requirements, IRS and state e-file rules, preparer
+obligations, record-retention, and amendment/rejection rules. These are **not defined, summarized, or
+inferred** in this SOP. **Follow the currently effective IRS and applicable state requirements** and the
+**currently effective e-file provider and taxing-authority requirements**. *(Controlled citations will
+be added during the Compliance Validation milestone.)*
+
 ## Related
 - `TAXOPS-SOP-02` — 1040 Individual Return Preparation (Drake)
 - Queued (not yet adapted): Business Return (SOP-018), Review & Delivery (SOP-019), E-file Authorization
@@ -101,3 +116,4 @@ Escalate unresponsive clients or unclear return scope to the **Tax Preparer / Le
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-016 into the framework; `needs_review`. |
+| 0.2 | 2026-07-17 | Claude (0.12 Tax QR) | Quality-review pass: consolidated operational unknowns as controlled placeholders; added "Externally governed — tax requirements" (no advisory-fee policy, but tax-law/preparer/filing/authorization/e-file/retention requirements externally governed, referenced not defined); still `needs_review`. |
