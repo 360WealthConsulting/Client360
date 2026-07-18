@@ -279,6 +279,18 @@ p1b_pages = [
     ("WLTH-SOP-06", "Wealth Management — Schwab ACAT Transfer In", "WLTH",
      "docs/operations-manual/wealth/schwab-acat-transfer-in.md", "quarterly",
      "Adapted from Atlas SOP-008 (24838145)."),
+    ("WLTH-SOP-07", "Wealth Management — AssetMark Household Setup", "WLTH",
+     "docs/operations-manual/wealth/assetmark-household-setup.md", "quarterly",
+     "Adapted from Atlas SOP-010 (25100289)."),
+    ("WLTH-SOP-08", "Wealth Management — AssetMark Model Selection", "WLTH",
+     "docs/operations-manual/wealth/assetmark-model-selection.md", "quarterly",
+     "Adapted from Atlas SOP-012 (25165825)."),
+    ("WLTH-SOP-09", "Wealth Management — AssetMark Funding & Transfers", "WLTH",
+     "docs/operations-manual/wealth/assetmark-funding-transfers.md", "quarterly",
+     "Adapted from Atlas SOP-014 (25198593)."),
+    ("WLTH-SOP-10", "Wealth Management — AssetMark Billing Review", "WLTH",
+     "docs/operations-manual/wealth/assetmark-billing-review.md", "quarterly",
+     "Adapted from Atlas SOP-015 (25198614)."),
 ]
 for pid, title, area, path, cyc, note in p1b_pages:
     rows.append(row(page_id=pid, title=title, area=area, node="10", profile="hybrid", doc_type="SOP",
