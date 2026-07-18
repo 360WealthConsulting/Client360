@@ -134,9 +134,10 @@ Escalate penalty/consequence questions, missed payments, and material recalculat
 **responsible tax professional / Advisor / Lead** (Michael Shelton).
 
 ## Related
-- `TAXOPS-SOP-02` — 1040 Preparation · `TAXOPS-SOP-03` — Business Return Preparation
-- `TAXOPS-SOP-07` — Extensions · Queued: Quarterly Estimate Checklist (CHK-020), Tax Planning
-  Opportunity (SOP-022)
+**Existing operational dependencies:** `TAXOPS-SOP-02` — 1040 Preparation · `TAXOPS-SOP-03` — Business Return Preparation · `TAXOPS-SOP-07` — Tax Extensions
+**Planned (not yet authored):** CHK-020 (Quarterly Estimate Checklist) · SOP-022 (Tax Planning Opportunity)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** IRS & applicable state tax authorities; the e-file provider; Drake (server-based) & TaxDome — externally owned/governed.
 
 ## Source assessment
 | Field | Content |
@@ -156,3 +157,4 @@ Escalate penalty/consequence questions, missed payments, and material recalculat
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-18 | Claude (0.12 Tax) | Initial adaptation from Atlas SOP-024; 12-way separation; no invented safe-harbor %/due-dates/penalty-rules/payment-methods/state-requirements; due dates captured from authoritative sources, not hard-coded; federal + each state tracked separately; no live integration implied; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

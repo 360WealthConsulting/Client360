@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-04", "WLTH-SOP-03", "WLTH-SOP-07"]
+related: ["WLTH-SOP-03", "WLTH-SOP-04", "WLTH-SOP-07", "WLTH-SOP-10"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "25165825"
@@ -89,8 +89,10 @@ Escalate model/risk mismatches to the **Lead Advisor** (Michael Shelton) before 
 - Required **investment-suitability documentation** (externally governed — where recorded). `SME CONFIRMATION REQUIRED`
 
 ## Related
-- `WLTH-SOP-04` — AssetMark Proposal Generation · `WLTH-SOP-07` — AssetMark Household Setup
-- Queued: AssetMark Model Selection Review Policy (POL-006), LL-002
+**Existing operational dependencies:** `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-04` — AssetMark Proposal Generation · `WLTH-SOP-07` — AssetMark Household Setup · `WLTH-SOP-10` — AssetMark Billing Review
+**Planned (not yet authored):** POL-006 (Model-Selection Review Policy) · LL-002 (advisor-confirmation lesson)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** AssetMark (investment platform / eWealthManager) & custodians — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -110,3 +112,4 @@ Escalate model/risk mismatches to the **Lead Advisor** (Michael Shelton) before 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1D) | Initial adaptation from Atlas SOP-012; operational selection/approval only; fees + suitability externally governed; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

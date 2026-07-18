@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-04", "WLTH-POL-01"]
+related: ["WLTH-SOP-04", "WLTH-SOP-07", "WLTH-SOP-08", "WLTH-SOP-09", "WLTH-SOP-10", "WLTH-POL-01"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "24838166"
@@ -87,9 +87,10 @@ tasks exist. No client PII/account numbers in this page.
 Escalate unclear registration or missing model approval to the **Lead Advisor** (Michael Shelton).
 
 ## Related
-- `WLTH-SOP-04` — AssetMark Proposal Generation
-- Queued (not yet adapted): Household Setup (SOP-010), Model Selection (SOP-012), Funding & Transfers
-  (SOP-014), Billing Review (SOP-015), and the AssetMark checklists/policies (CHK-008–012, POL-005/006)
+**Existing operational dependencies:** `WLTH-SOP-04` — AssetMark Proposal Generation · `WLTH-SOP-07` — AssetMark Household Setup · `WLTH-SOP-08` — AssetMark Model Selection · `WLTH-SOP-09` — AssetMark Funding & Transfers · `WLTH-SOP-10` — AssetMark Billing Review
+**Planned (not yet authored):** `WLTH-POL-01` (Wealth Documentation Policy) · CHK-008–012 (AssetMark checklists) · POL-005/006 (AssetMark policies)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** AssetMark (investment platform / eWealthManager) & custodians — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -109,3 +110,4 @@ Escalate unclear registration or missing model approval to the **Lead Advisor** 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-013 into the framework; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

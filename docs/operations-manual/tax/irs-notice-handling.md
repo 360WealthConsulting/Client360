@@ -142,8 +142,10 @@ Escalate all **interpretation** (notice meaning, codes, appeal rights, legal con
 imminent/passed deadline to the **responsible tax professional / Lead** (Michael Shelton).
 
 ## Related
-- `TAXOPS-SOP-04` — Review & Delivery · `TAXOPS-SOP-05` — E-file Authorization & Acknowledgements
-- `TAXOPS-SOP-07` — Extensions · Queued: IRS Notice Checklist (CHK-018), Tax Documentation Policy (POL-007)
+**Existing operational dependencies:** `TAXOPS-SOP-04` — Review & Delivery · `TAXOPS-SOP-05` — E-file Authorization & Acknowledgements · `TAXOPS-SOP-07` — Tax Extensions
+**Planned (not yet authored):** CHK-018 (IRS Notice Checklist) · POL-007 (Tax Documentation Policy)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** IRS & applicable state tax authorities; the e-file provider; Drake (server-based) & TaxDome — externally owned/governed.
 
 ## Source assessment
 | Field | Content |
@@ -163,3 +165,4 @@ imminent/passed deadline to the **responsible tax professional / Lead** (Michael
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-18 | Claude (0.12 Tax) | Initial adaptation from Atlas SOP-021; 14-way separation; notice preserved exactly and interpretation escalated (no codes/response-periods/appeal-rights/mailing/legal-consequences inferred); deadlines captured from the actual notice, not hard-coded; tax requirements externally governed; no live integration implied; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

@@ -86,8 +86,10 @@ Escalate registration incompatibilities and stalled transfers to the **Lead Advi
 - Expected **timeframe** / when to escalate; investment-implementation confirmation method. `SME CONFIRMATION REQUIRED`
 
 ## Related
-- `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-06` — Schwab ACAT Transfer In
-- `WLTH-SOP-10` — AssetMark Billing Review · Queued: CHK-011 (checklist)
+**Existing operational dependencies:** `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-06` — Schwab ACAT Transfer-In · `WLTH-SOP-10` — AssetMark Billing Review
+**Planned (not yet authored):** CHK-011 (Funding & Transfers Checklist)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** AssetMark (investment platform / eWealthManager) & custodians — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -107,3 +109,4 @@ Escalate registration incompatibilities and stalled transfers to the **Lead Advi
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1D) | Initial adaptation from Atlas SOP-014; operational only; controlled placeholders; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

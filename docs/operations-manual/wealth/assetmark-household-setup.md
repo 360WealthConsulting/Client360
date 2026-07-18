@@ -80,8 +80,10 @@ Escalate unclear household structure to the **Lead Advisor** (Michael Shelton).
 - AssetMark **duplicate-household** handling (merge/void) mechanics. `SME CONFIRMATION REQUIRED`
 
 ## Related
-- `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-04` — AssetMark Proposal Generation
-- `WLTH-SOP-08` — AssetMark Model Selection · Queued: CHK-008 (checklist)
+**Existing operational dependencies:** `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-04` — AssetMark Proposal Generation · `WLTH-SOP-08` — AssetMark Model Selection
+**Planned (not yet authored):** CHK-008 (Household Setup Checklist)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** AssetMark (investment platform / eWealthManager) & custodians — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -101,3 +103,4 @@ Escalate unclear household structure to the **Lead Advisor** (Michael Shelton).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1D) | Initial adaptation from Atlas SOP-010; operational only; controlled placeholders; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

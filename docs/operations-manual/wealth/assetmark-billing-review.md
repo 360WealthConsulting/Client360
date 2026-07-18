@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-03", "WLTH-SOP-08", "WLTH-SOP-02"]
+related: ["WLTH-SOP-02", "WLTH-SOP-03", "WLTH-SOP-08", "WLTH-SOP-09"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "25198614"
@@ -76,6 +76,9 @@ Held as visible placeholders — not guessed; they close in the P3 / Compliance 
 - **Billing-review cadence** (per account event vs. periodic audit). `SME CONFIRMATION REQUIRED`
 - Custodian **fee-deduction authorization** handling (platform/custodian requirement). `SME CONFIRMATION REQUIRED`
 
+## Expected results
+A documented advisory-fee/billing review with operational execution recorded, externally governed policy referenced (not reproduced), platform/custodian requirements noted, and unresolved practices held as controlled placeholders — with no fee amount or PII stored.
+
 ## Audience
 Operations (reviews billing setup, documents results); Lead Advisor (approves fee exceptions);
 Compliance (reviews billing records as required).
@@ -96,8 +99,10 @@ Escalate any billing that does **not conform** to the governing documents to the
 (Michael Shelton); compliance-sensitive items keep restricted handling.
 
 ## Related
-- `WLTH-SOP-02` — Schwab Portfolio Connect Billing (parallel billing control) · `WLTH-SOP-03` —
-  AssetMark Account Opening · `WLTH-SOP-08` — AssetMark Model Selection · Queued: CHK-012, POL-005
+**Existing operational dependencies:** `WLTH-SOP-02` — Schwab Portfolio Connect Billing · `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-08` — AssetMark Model Selection · `WLTH-SOP-09` — AssetMark Funding & Transfers
+**Planned (not yet authored):** CHK-012 (Billing Review Checklist) · POL-005 (AssetMark Billing Policy)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** AssetMark (investment platform / eWealthManager) & custodians — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -117,3 +122,4 @@ Escalate any billing that does **not conform** to the governing documents to the
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1D) | Initial adaptation from Atlas SOP-015; 4-way separation (operational / externally-governed fee policy / AssetMark-custodian requirements / unresolved practices); no fee rates stored; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

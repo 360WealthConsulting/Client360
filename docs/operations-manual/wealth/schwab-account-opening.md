@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-02", "WLTH-POL-01"]
+related: ["WLTH-SOP-02", "WLTH-SOP-05", "WLTH-SOP-06", "WLTH-POL-01"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "24772609"
@@ -101,9 +101,11 @@ here — see the Prerequisites note. Controlled citations will be added during t
 milestone._
 
 ## Related
-- `WLTH-SOP-02` — Schwab Portfolio Connect Quarterly Billing & Fee Locking
-- Queued (not yet adapted): Schwab MoneyLink Setup (SOP-007), Schwab ACAT Transfer In (SOP-008)
-- Software facet: `docs/SCHWAB_PORTFOLIO_ENGINE.md` (Client360 Schwab integration — distinct)
+**Existing operational dependencies:** `WLTH-SOP-02` — Schwab Portfolio Connect Billing · `WLTH-SOP-05` — Schwab MoneyLink Setup · `WLTH-SOP-06` — Schwab ACAT Transfer-In
+**Planned (not yet authored):** `WLTH-POL-01` (Schwab Documentation & Billing-Review Policy) · CHK-004 (Account-Opening Checklist)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** Schwab (custodian) / Schwab Portfolio Connect (advisory billing) — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
+**Software facet (Client360 — distinct):** `docs/SCHWAB_PORTFOLIO_ENGINE.md` (Client360 Schwab integration — distinct)
 
 ## Source assessment
 | Field | Content |
@@ -124,3 +126,4 @@ milestone._
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-006 into the framework; `needs_review`. |
 | 0.2 | 2026-07-17 | Claude (0.12 P1D) | Operational-validation pass: added external-governance note (Prerequisites) and consolidated operational unknowns as controlled placeholders; no inferred policy; no controlled-source IDs. Still `needs_review`. |
+| 0.3 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

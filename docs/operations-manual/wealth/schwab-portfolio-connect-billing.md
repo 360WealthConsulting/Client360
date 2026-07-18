@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-01", "WLTH-POL-01"]
+related: ["WLTH-SOP-01", "WLTH-SOP-10", "WLTH-POL-01"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "24870913"
@@ -35,7 +35,7 @@ protects billing accuracy and produces a clear audit trail.
 **In scope:** quarterly Schwab advisory billing via Portfolio Connect (or the approved Schwab billing
 workflow). **Out of scope:** non-Schwab billing and manually invoiced planning engagements.
 
-## Billing policy — externally governed
+## Externally governed — advisory-fee & billing policy
 The advisory **fee basis, billing frequency, billing in advance/arrears, valuation methodology,
 proration, minimum fees, household aggregation, excluded assets, custodian fee-deduction
 authorization, and refund/correction terms** are **governed by the current Form ADV Part 2A and the
@@ -108,9 +108,11 @@ proceeding. `SME CONFIRMATION REQUIRED`: confirm the approval authority and any 
 requirement for fee transmission.
 
 ## Related
-- `WLTH-SOP-01` — Schwab Account Opening
-- `WLTH-POL-01` — Schwab Documentation & Billing-Review Policy *(to be adapted from POL-003/POL-004)*
-- Software facet: `docs/SCHWAB_PORTFOLIO_ENGINE.md` (Client360 Schwab portfolio integration — distinct)
+**Existing operational dependencies:** `WLTH-SOP-01` — Schwab Account Opening · `WLTH-SOP-10` — AssetMark Billing Review
+**Planned (not yet authored):** `WLTH-POL-01` (Schwab Documentation & Billing-Review Policy)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** Schwab (custodian) / Schwab Portfolio Connect (advisory billing) — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
+**Software facet (Client360 — distinct):** `docs/SCHWAB_PORTFOLIO_ENGINE.md` (Client360 Schwab portfolio integration — distinct)
 
 ## Source assessment
 | Field | Content |
@@ -131,3 +133,4 @@ requirement for fee transmission.
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-009 (+LL-001 control) into the framework; `needs_review`. |
 | 0.2 | 2026-07-17 | Claude (0.12 P1D) | Marked billing **policy** externally governed (Form ADV Part 2A / Advisory Agreement references); kept the confirmed 8-step control; operational unknowns held as controlled placeholders; Controlled Source Authority deferred to the Compliance Validation milestone. Still `needs_review`. |
+| 0.3 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

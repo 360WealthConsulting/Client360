@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-03", "WLTH-POL-01"]
+related: ["WLTH-SOP-03", "WLTH-SOP-07", "WLTH-SOP-08", "WLTH-POL-01"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "25133057"
@@ -88,9 +88,10 @@ Escalate proposals that do not match advisor intent to the **Lead Advisor** (Mic
 client delivery. Per LL-002, **model selection requires advisor confirmation**.
 
 ## Related
-- `WLTH-SOP-03` — AssetMark Account Opening
-- Queued (not yet adapted): Model Selection (SOP-012), Household Setup (SOP-010), Proposal Checklist
-  (CHK-009), Model-Selection Review Policy (POL-006), LL-002 (advisor confirmation lesson)
+**Existing operational dependencies:** `WLTH-SOP-03` — AssetMark Account Opening · `WLTH-SOP-07` — AssetMark Household Setup · `WLTH-SOP-08` — AssetMark Model Selection
+**Planned (not yet authored):** CHK-009 (Proposal Checklist) · POL-006 (Model-Selection Review Policy) · LL-002 (advisor-confirmation lesson)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** AssetMark (investment platform / eWealthManager) & custodians — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -110,3 +111,4 @@ client delivery. Per LL-002, **model selection requires advisor confirmation**.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-011 into the framework; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

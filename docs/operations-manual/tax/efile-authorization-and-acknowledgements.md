@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "annual"
 next_review: "TBD"
-related: ["TAXOPS-SOP-04", "TAXOPS-SOP-02", "TAXOPS-SOP-03"]
+related: ["TAXOPS-SOP-02", "TAXOPS-SOP-03", "TAXOPS-SOP-04", "TAXOPS-SOP-06", "TAXOPS-SOP-07"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "24182792"
@@ -126,8 +126,10 @@ are received and filing evidence is retained.
 Escalate unauthorized-filing risks and unresolved rejections to the **Reviewer / Lead** (Michael Shelton).
 
 ## Related
-- `TAXOPS-SOP-04` — Review & Delivery · `TAXOPS-SOP-02/03` — Preparation
-- Queued: E-file Authorization Checklist (CHK-017), E-file Authorization Policy (POL-009)
+**Existing operational dependencies:** `TAXOPS-SOP-02` — 1040 Preparation · `TAXOPS-SOP-03` — Business Return Preparation · `TAXOPS-SOP-04` — Review & Delivery · `TAXOPS-SOP-06` — IRS & State Notice Handling · `TAXOPS-SOP-07` — Tax Extensions
+**Planned (not yet authored):** CHK-017 (E-file Authorization Checklist) · POL-009 (E-file Authorization Policy)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** IRS & applicable state tax authorities; the e-file provider; Drake (server-based) & TaxDome — externally owned/governed.
 
 ## Source assessment
 | Field | Content |
@@ -147,3 +149,4 @@ Escalate unauthorized-filing risks and unresolved rejections to the **Reviewer /
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 Tax) | Initial adaptation from Atlas SOP-020; 9-way separation + operational status ladder (transmitted ≠ accepted; per-state acks); no invented forms/timing/codes/retention; tax requirements externally governed; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

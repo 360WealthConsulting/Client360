@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "annual"
 next_review: "TBD"
-related: ["TAXOPS-SOP-01", "TAXOPS-SOP-02", "TAXOPS-SOP-04"]
+related: ["TAXOPS-SOP-01", "TAXOPS-SOP-02", "TAXOPS-SOP-04", "TAXOPS-SOP-05", "TAXOPS-SOP-07", "TAXOPS-SOP-08"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "23986218"
@@ -105,8 +105,10 @@ Validation milestone.)*
 - Drake **version**; bookkeeping-readiness threshold. `SME CONFIRMATION REQUIRED`
 
 ## Related
-- `TAXOPS-SOP-02` — 1040 Preparation · `TAXOPS-SOP-04` — Review & Delivery
-- Queued: Business Return Checklist (CHK-015), Tax Planning Opportunity (SOP-022)
+**Existing operational dependencies:** `TAXOPS-SOP-01` — TaxDome Client Intake · `TAXOPS-SOP-02` — 1040 Preparation · `TAXOPS-SOP-04` — Review & Delivery · `TAXOPS-SOP-05` — E-file Authorization & Acknowledgements · `TAXOPS-SOP-07` — Tax Extensions · `TAXOPS-SOP-08` — Quarterly Estimated Payments
+**Planned (not yet authored):** CHK-015 (Business Return Checklist) · SOP-022 (Tax Planning Opportunity)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** IRS & applicable state tax authorities; the e-file provider; Drake (server-based) & TaxDome — externally owned/governed.
 
 ## Source assessment
 | Field | Content |
@@ -126,3 +128,4 @@ Validation milestone.)*
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 Tax) | Initial adaptation from Atlas SOP-018; operational entity branches; tax requirements externally governed; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

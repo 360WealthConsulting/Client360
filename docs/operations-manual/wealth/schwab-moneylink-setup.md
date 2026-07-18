@@ -92,9 +92,10 @@ Held as visible placeholders — not guessed; they do not block the workflow and
 - Any second-reviewer / authorization-retention requirement. `SME CONFIRMATION REQUIRED`
 
 ## Related
-- `WLTH-SOP-01` — Schwab Account Opening
-- `WLTH-SOP-06` — Schwab ACAT Transfer In
-- Queued: Schwab MoneyLink Checklist (CHK-005)
+**Existing operational dependencies:** `WLTH-SOP-01` — Schwab Account Opening · `WLTH-SOP-06` — Schwab ACAT Transfer-In
+**Planned (not yet authored):** CHK-005 (MoneyLink Checklist)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** Schwab (custodian) / Schwab Portfolio Connect (advisory billing) — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -114,3 +115,4 @@ Held as visible placeholders — not guessed; they do not block the workflow and
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1D) | Initial adaptation from Atlas SOP-007 into the framework; operational only; controlled placeholders; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

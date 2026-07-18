@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "annual"
 next_review: "TBD"
-related: ["TAXOPS-SOP-01", "TAXOPS-POL-01"]
+related: ["TAXOPS-SOP-01", "TAXOPS-SOP-03", "TAXOPS-SOP-04", "TAXOPS-SOP-05", "TAXOPS-SOP-07", "TAXOPS-SOP-08", "TAXOPS-POL-01"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "23920712"
@@ -103,11 +103,11 @@ inferred** in this SOP. **Follow the currently effective IRS and applicable stat
 be added during the Compliance Validation milestone.)*
 
 ## Related
-- `TAXOPS-SOP-01` — TaxDome Client Intake
-- Queued (not yet adapted): Review & Delivery (SOP-019), E-file Authorization & Acknowledgements
-  (SOP-020), Business Return (SOP-018), IRS Notice (SOP-021)
-- Software facet: `docs/EPIC_5_TAX_PRACTICE_PLATFORM.md`, `docs/TAX_RETURN_LIFECYCLE.md` (Client360 —
-  distinct; not a live Drake connector)
+**Existing operational dependencies:** `TAXOPS-SOP-01` — TaxDome Client Intake · `TAXOPS-SOP-03` — Business Return Preparation · `TAXOPS-SOP-04` — Review & Delivery · `TAXOPS-SOP-05` — E-file Authorization & Acknowledgements · `TAXOPS-SOP-07` — Tax Extensions · `TAXOPS-SOP-08` — Quarterly Estimated Payments
+**Planned (not yet authored):** `TAXOPS-POL-01` (Tax Documentation Policy) · CHK-014 (1040 Checklist)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** IRS & applicable state tax authorities; the e-file provider; Drake (server-based) & TaxDome — externally owned/governed.
+**Software facet (Client360 — distinct):** `docs/EPIC_5_TAX_PRACTICE_PLATFORM.md`, `docs/TAX_RETURN_LIFECYCLE.md` (Client360 — distinct; not a live Drake connector)
 
 ## Source assessment
 | Field | Content |
@@ -128,3 +128,4 @@ be added during the Compliance Validation milestone.)*
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-017; added the "no live integration implied" caution; `needs_review`. |
 | 0.2 | 2026-07-17 | Claude (0.12 Tax QR) | Quality-review pass: consolidated operational unknowns as controlled placeholders; restated business-confirmed Drake-on-server / no-live-integration facts; added "Externally governed — tax requirements" (no advisory-fee policy, but tax-law/preparer/filing/authorization/e-file/retention requirements externally governed, referenced not defined); still `needs_review`. |
+| 0.3 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |

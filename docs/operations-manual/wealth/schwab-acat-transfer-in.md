@@ -14,7 +14,7 @@ effective_or_release: "v0.12.0 (draft)"
 last_reviewed: "TBD"
 review_cycle: "quarterly"
 next_review: "TBD"
-related: ["WLTH-SOP-01", "WLTH-SOP-05"]
+related: ["WLTH-SOP-01", "WLTH-SOP-05", "WLTH-SOP-09"]
 compliance_gate: "none"
 source_system: "360os_atlas"
 source_page_id: "24838145"
@@ -93,9 +93,10 @@ Held as visible placeholders — not guessed:
 - Expected transfer **timeframe** / when to escalate a stall. `SME CONFIRMATION REQUIRED`
 
 ## Related
-- `WLTH-SOP-01` — Schwab Account Opening
-- `WLTH-SOP-05` — Schwab MoneyLink Setup
-- Queued: Schwab ACAT Transfer Checklist (CHK-006)
+**Existing operational dependencies:** `WLTH-SOP-01` — Schwab Account Opening · `WLTH-SOP-05` — Schwab MoneyLink Setup · `WLTH-SOP-09` — AssetMark Funding & Transfers
+**Planned (not yet authored):** CHK-006 (ACAT Transfer Checklist)
+**Deferred:** Controlled citations for governing sources (Form ADV Part 2A / Advisory Agreement, IRS / state requirements) — Compliance Validation milestone.
+**External (referenced, not owned):** Schwab (custodian) / Schwab Portfolio Connect (advisory billing) — externally owned; Form ADV Part 2A / Advisory Agreement — externally governed.
 
 ## Source assessment
 | Field | Content |
@@ -115,3 +116,4 @@ Held as visible placeholders — not guessed:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1D) | Initial adaptation from Atlas SOP-008 into the framework; operational only; controlled placeholders; `needs_review`. |
+| 0.2 | 2026-07-18 | Claude (0.12 Stabilization) | Editorial stabilization: standardized externally-governed heading pattern; categorized Related into existing/planned/deferred/external; bidirectional cross-references; no operational change; still `needs_review`. |
