@@ -43,6 +43,9 @@ Compliance (documentation/disclosures).
 - Signed advisory agreement; household setup complete; account type, approved model, and fee schedule
   confirmed; beneficiary and funding/transfer instructions as applicable.
 
+_The advisory agreement, **fee schedule**, and billing terms are **externally governed** — see current
+**Advisory Agreement** / **Form ADV Part 2A**; this SOP does not define them (operational procedure only)._
+
 ## Required systems & permissions
 - **AssetMark eWealthManager** (account opening) and Wealthbox. `SME CONFIRMATION REQUIRED`: confirm
   "eWealthManager" is the current AssetMark platform name/portal and the current opening workflow.

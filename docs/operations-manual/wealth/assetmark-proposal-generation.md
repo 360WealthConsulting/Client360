@@ -44,6 +44,10 @@ direction, assumptions).
 - Household setup complete; discovery notes and a documented risk-tolerance discussion; investment
   objective and account type known.
 
+_Fee assumptions, the fee schedule, and any required proposal disclosures are **externally governed** —
+see current **Advisory Agreement** / **Form ADV Part 2A**; this SOP does not define them (operational
+procedure only)._
+
 ## Required systems & permissions
 - **AssetMark eWealthManager** (proposal tooling) and Wealthbox. `SME CONFIRMATION REQUIRED`: confirm
   the current AssetMark proposal workflow and any required proposal disclosures.

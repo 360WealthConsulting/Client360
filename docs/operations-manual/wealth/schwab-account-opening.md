@@ -43,6 +43,10 @@ Operations staff who prepare/submit account openings; the Lead Advisor who appro
 - Client identity and contact information verified; account type approved by the advisor; beneficiary
   information requested where applicable.
 
+_Advisory-agreement terms, fees, and ADV-delivery requirements are **externally governed** — see
+current **Advisory Agreement** / **Form ADV Part 2A**; this SOP does not define them (operational
+procedure only)._
+
 ## Required systems & permissions
 - **Charles Schwab Advisor Center** (or the approved Schwab account-opening process). `SME CONFIRMATION
   REQUIRED`: confirm Advisor Center is the current account-opening system.

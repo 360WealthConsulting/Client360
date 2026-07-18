@@ -35,6 +35,20 @@ protects billing accuracy and produces a clear audit trail.
 **In scope:** quarterly Schwab advisory billing via Portfolio Connect (or the approved Schwab billing
 workflow). **Out of scope:** non-Schwab billing and manually invoiced planning engagements.
 
+## Billing policy — externally governed
+The advisory **fee basis, billing frequency, billing in advance/arrears, valuation methodology,
+proration, minimum fees, household aggregation, excluded assets, custodian fee-deduction
+authorization, and refund/correction terms** are **governed by the current Form ADV Part 2A and the
+executed advisory agreement** — they are **not** defined, inferred, or restated by this SOP. Apply
+them **as disclosed in those governing documents**:
+- **See current Form ADV Part 2A.**
+- **See current Advisory Agreement.**
+
+This SOP documents only the **operational execution** of billing; every step below must comply with
+the **currently effective** governing documents **without reproducing their regulatory language**.
+*(Controlled-source records `SRC-ADV-2A` / `SRC-IAA` and full validation are deferred to the future
+**Compliance Validation milestone** — see `P1D_OPERATIONAL_VALIDATION_REGISTER.md`.)*
+
 ## Audience
 Operations staff who prepare billing; the Lead Advisor who approves; Compliance who reviews records.
 
@@ -55,9 +69,9 @@ Operations staff who prepare billing; the Lead Advisor who approves; Compliance 
 3. Generate or access the current fee worksheet.
 4. Review the accounts **included** in billing.
 5. Review the accounts **excluded** from billing.
-6. Confirm new clients are billed per their agreement (rate and start date).
-7. Confirm terminated clients are excluded or prorated as appropriate.
-8. Review fee rates against signed agreements.
+6. Confirm new clients are billed **per the executed advisory agreement and current Form ADV Part 2A** (proration/first-period basis is externally governed — see *Billing policy*).
+7. Confirm terminated clients are handled **as the governing documents require** (exclusion / proration / refund per the current Advisory Agreement).
+8. Review fee rates **against the executed advisory agreement and disclosed fee schedule** — see current Advisory Agreement / Form ADV Part 2A (this SOP does not set rates).
 9. Review cash availability where applicable.
 10. Investigate and resolve exceptions **before** locking fees.
 11. **Lock management fees** when the worksheet is ready.
@@ -110,10 +124,11 @@ requirement for fee transmission.
 | Duplication | overlaps POL-004 (billing-review policy) and CHK-007 (billing checklist) — to be split into a policy + checklist |
 | Contradictions | none identified |
 | Facts verified | the fee-lock → clear-filters → verify-worksheet → approve → transmit → retain-evidence control (operator-corroborated) |
-| Facts awaiting confirmation | current billing platform; billing-calendar dates; approval/compliance authority; fee-schedule specifics |
-| Disposition recommendation | **replace** SOP-009 after quality review; supersede LL-001 (control folded in) |
+| Facts awaiting confirmation | **Operational (controlled placeholders):** current billing platform; billing-calendar dates; approval authority; evidence storage/naming; transmission-failure contact; corrections process. **Policy (externally governed — not in this SOP):** fee schedule, frequency, advance/arrears, valuation, proration, minimums, aggregation, exclusions, deduction authorization, refunds → **see current Form ADV Part 2A / Advisory Agreement** |
+| Disposition recommendation | **replace** SOP-009 after quality review; supersede LL-001 (control folded in); billing policy externally governed pending the Compliance Validation milestone |
 
 ## Revision history
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Claude (0.12 P1B) | Initial adaptation from Atlas SOP-009 (+LL-001 control) into the framework; `needs_review`. |
+| 0.2 | 2026-07-17 | Claude (0.12 P1D) | Marked billing **policy** externally governed (Form ADV Part 2A / Advisory Agreement references); kept the confirmed 8-step control; operational unknowns held as controlled placeholders; Controlled Source Authority deferred to the Compliance Validation milestone. Still `needs_review`. |
