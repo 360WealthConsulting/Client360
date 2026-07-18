@@ -273,6 +273,12 @@ p1b_pages = [
     ("TAXOPS-SOP-02", "Tax Operations — 1040 Individual Return Preparation (Drake)", "TAXOPS",
      "docs/operations-manual/tax/tax-1040-return-workflow.md", "annual",
      "Adapted from Atlas SOP-017 (23920712)."),
+    ("WLTH-SOP-05", "Wealth Management — Schwab MoneyLink Setup", "WLTH",
+     "docs/operations-manual/wealth/schwab-moneylink-setup.md", "quarterly",
+     "Adapted from Atlas SOP-007 (24805377)."),
+    ("WLTH-SOP-06", "Wealth Management — Schwab ACAT Transfer In", "WLTH",
+     "docs/operations-manual/wealth/schwab-acat-transfer-in.md", "quarterly",
+     "Adapted from Atlas SOP-008 (24838145)."),
 ]
 for pid, title, area, path, cyc, note in p1b_pages:
     rows.append(row(page_id=pid, title=title, area=area, node="10", profile="hybrid", doc_type="SOP",
