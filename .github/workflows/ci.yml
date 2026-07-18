@@ -67,6 +67,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # Build reproducibility: the pinned dependency set must be internally
+      # consistent (no conflicting versions). Cheap, high-signal (E1.4).
+      - name: Dependency consistency (pip check)
+        run: python -m pip check
+
+      # Secret hygiene (E1.4): conservative, dependency-free baseline — fails on a
+      # committed real env file or unambiguous credential material. See docs/CI.md.
+      - name: Secret hygiene
+        run: python scripts/check_secrets.py
+
       # Ruff new-violation gate (0.9.13 Phase 2): fails only when a change ADDS a
       # violation. The legacy backlog is baselined in docs/ruff-baseline.json and
       # deliberately not fixed here (see scripts/ruff_gate.py).
@@ -93,6 +103,12 @@ jobs:
       - name: Compile
         run: python -m compileall app tests migrations
 
+      # Import-boundary gate (E1.1, wired in E1.4): the contract in pyproject
+      # ([tool.importlinter]) is held — domain/ingestion must not import the web
+      # layer. New boundary contracts are added gradually (ADR-013).
+      - name: Import boundaries (import-linter)
+        run: lint-imports
+
       # Whitespace errors on lines THIS PR added (not the legacy tree). Skipped on
       # push-to-main, where there is no base to diff against.
       - name: Whitespace check (PR diff)
@@ -107,6 +123,12 @@ jobs:
       # head` and the suite runs against a verified-at-head schema.
       - name: Migrations reversible (schema left at head)
         run: scripts/check_migrations_reversible.sh
+
+      # Schema-consistency gate (E1.3, wired in E1.4). Runs after the reversibility
+      # step leaves the schema at head: one head, every declared table exists, and
+      # every table has a primary key. Read-only.
+      - name: Schema consistency
+        run: python scripts/check_schema_consistency.py
 
       # Proves the Phase 0 isolation guard actually blocks pytest: collection
       # against a non-disposable database name must fail before any test runs.
