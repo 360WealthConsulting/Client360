@@ -19,6 +19,12 @@ but **unchained**; no backfill):
 | `chain_id` | Chain stream identifier (default `"default"`) |
 Indexes: `ix_audit_events_chain (chain_id, id)`; partial unique `uq_audit_events_entry_hash (entry_hash) WHERE entry_hash IS NOT NULL`.
 
+The migration uses **idempotent DDL** (`ADD COLUMN`/`CREATE INDEX IF NOT EXISTS`,
+`DROP … IF EXISTS`), so it is safe/reversible regardless of build path. The columns
+are intentionally **not** declared in `identity_tables.py` (that table is created
+from the declared metadata by migration `c410f4a1b2c3`, so declaring them would
+pre-create the columns); `app.db` reflects the live schema at runtime.
+
 ## Serialization contract (v1) — defined once
 The hashed content is a JSON object of the record's **application fields** with
 sorted keys and compact separators; the entry hash binds version, chain, previous
