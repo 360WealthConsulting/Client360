@@ -28,6 +28,12 @@ from app.platform.workflow_adapter import (
     resolve_registry_template,
     set_registry_resolver,
 )
+from app.platform.workflow_events import (
+    TRANSITION_EVENT_TYPES,
+    emit_transition_event,
+    transition_event_type,
+    workflow_event_id,
+)
 from app.platform.workflow_registry import (
     ImmutableTemplateError,
     IncompatibleTemplateError,
@@ -94,4 +100,9 @@ __all__ = [
     "dependencies_satisfied",
     "instance_is_complete",
     "assert_lifecycle_invariants",
+    # workflow event publication (F4.3 / Epic 4, ADR-016)
+    "emit_transition_event",
+    "transition_event_type",
+    "workflow_event_id",
+    "TRANSITION_EVENT_TYPES",
 ]

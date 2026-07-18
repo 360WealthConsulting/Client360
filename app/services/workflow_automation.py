@@ -1,14 +1,32 @@
-from datetime import datetime, timedelta, timezone
 import uuid
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import func, or_, select
 
-from app.db import (automation_actions, automation_triggers, engine, timeline_events,
-    work_approvals, work_queues, workflow_escalations, workflow_events, workflow_instances,
-    workflow_step_dependencies, workflow_steps, workflow_template_steps, workflow_templates)
+from app.db import (
+    automation_actions,
+    automation_triggers,
+    engine,
+    timeline_events,
+    work_approvals,
+    work_queues,
+    workflow_escalations,
+    workflow_events,
+    workflow_instances,
+    workflow_step_dependencies,
+    workflow_steps,
+    workflow_template_steps,
+    workflow_templates,
+)
+from app.platform.workflow_events import emit_transition_event
 from app.platform.workflow_state_machine import (
-    ACTIVE_STEP_STATES, dependencies_satisfied, validate_transition)
+    ACTIVE_STEP_STATES,
+    dependencies_satisfied,
+    validate_transition,
+)
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
+
 
 def _event(connection, instance_id, event_type, actor_user_id=None, step_id=None, payload=None, key=None):
     key = key or f"workflow:{instance_id}:{event_type}:{uuid.uuid4().hex}"
@@ -48,21 +66,22 @@ def launch_workflow(template_code, *, actor_user_id, person_id=None, household_i
         definitions = connection.execute(select(workflow_template_steps).where(workflow_template_steps.c.template_id == template["id"]).order_by(workflow_template_steps.c.sequence)).mappings().all()
         definition_ids = {row["id"] for row in definitions}
         dependent = set(connection.scalars(select(workflow_step_dependencies.c.step_id).where(workflow_step_dependencies.c.step_id.in_(definition_ids)))) if definition_ids else set()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for definition in definitions:
             condition_result = _matches(definition["condition"], context)
             active = definition["id"] not in dependent and condition_result
             queue_criteria = connection.execute(select(work_queues.c.criteria).where(work_queues.c.code == definition["queue_code"])).scalar_one_or_none() if definition["queue_code"] else {}
             snapshot = {key: definition[key] for key in ("step_key", "name", "sequence", "step_type", "execution_mode", "condition", "assignment_config", "queue_code", "sla_hours", "requires_independent_approval", "automation_action", "configuration")}
             connection.execute(workflow_steps.insert().values(workflow_instance_id=instance_id, name=definition["name"], sequence=definition["sequence"], status="active" if active else ("skipped" if not condition_result else "pending"), priority=priority, waiting_on=(queue_criteria or {}).get("waiting_on"), sla_due_at=now + timedelta(hours=definition["sla_hours"] or template["default_sla_hours"] or 120) if active else None, requires_approval=definition["step_type"] == "approval", template_step_id=definition["id"], definition_snapshot=snapshot, activated_at=now if active else None, condition_result=condition_result))
-        _event(connection, instance_id, "workflow_launched", actor_user_id, payload={"template": template_code, "version": template["version"]}, key=f"{idempotency_key}:launch")
+        launched_event_id = _event(connection, instance_id, "workflow_launched", actor_user_id, payload={"template": template_code, "version": template["version"]}, key=f"{idempotency_key}:launch")
+        emit_transition_event(connection, instance_id=instance_id, action="launch", domain_event_id=launched_event_id, actor_user_id=actor_user_id, correlation_id=f"workflow_instance:{instance_id}", payload_extra={"template": template_code, "version": template["version"]})
         instance = connection.execute(select(workflow_instances).where(workflow_instances.c.id == instance_id)).mappings().one()
     _publish(instance, "workflow_launched", f"{template['name']} workflow launched", {"template": template_code})
     write_audit_event(action="workflow.launched", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=request_id or idempotency_key, metadata={"template": template_code})
     return instance_id
 
 def transition_workflow(instance_id, action, *, actor_user_id, reason=None, request_id=None):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         instance = connection.execute(select(workflow_instances).where(workflow_instances.c.id == instance_id).with_for_update()).mappings().one_or_none()
         if not instance: raise ValueError("Workflow not found")
@@ -76,13 +95,14 @@ def transition_workflow(instance_id, action, *, actor_user_id, reason=None, requ
         if action == "pause": connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status == "active").values(status="paused", paused_at=now))
         if action in {"resume", "reopen"}: connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status == "paused").values(status="active", paused_at=None))
         if action == "cancel": connection.execute(workflow_steps.update().where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status.in_(ACTIVE_STEP_STATES)).values(status="cancelled", cancelled_at=now))
-        _event(connection, instance_id, f"workflow_{action}", actor_user_id, payload={"reason": reason})
+        transition_event_id = _event(connection, instance_id, f"workflow_{action}", actor_user_id, payload={"reason": reason})
+        emit_transition_event(connection, instance_id=instance_id, action=action, domain_event_id=transition_event_id, actor_user_id=actor_user_id, payload_extra={"from": instance["status"], "to": target}, metadata_extra={"reason": reason} if reason else None)
     _publish(instance, f"workflow_{action}", f"Workflow {action}d", {"reason": reason})
     write_audit_event(action=f"workflow.{action}", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=request_id or f"workflow-{uuid.uuid4()}", metadata={"reason": reason})
     return target
 
 def complete_step(step_id, *, actor_user_id, request_id=None):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         step = connection.execute(select(workflow_steps).where(workflow_steps.c.id == step_id).with_for_update()).mappings().one_or_none()
         if not step or step["status"] != "active": raise ValueError("Only an active step can be completed")
@@ -116,7 +136,7 @@ def decide_approval(approval_id, *, approver_user_id, decision, notes=None):
         if not approval or approval["status"] != "pending": raise ValueError("Pending approval not found")
         if approval["requested_by_user_id"] == approver_user_id: raise ValueError("Requester cannot approve their own work")
         if approval["approver_user_id"] and approval["approver_user_id"] != approver_user_id: raise ValueError("Approval is assigned to another user")
-        connection.execute(work_approvals.update().where(work_approvals.c.id == approval_id).values(status=decision, approver_user_id=approver_user_id, decided_at=datetime.now(timezone.utc), decision_notes=notes))
+        connection.execute(work_approvals.update().where(work_approvals.c.id == approval_id).values(status=decision, approver_user_id=approver_user_id, decided_at=datetime.now(UTC), decision_notes=notes))
         step = connection.execute(select(workflow_steps).where(workflow_steps.c.id == approval["workflow_step_id"])).mappings().one()
         _event(connection, step["workflow_instance_id"], f"approval_{decision}", approver_user_id, step["id"], {"approval_id": approval_id})
 
@@ -130,7 +150,7 @@ def process_event(event_type, entity_type, entity_id, payload, *, actor_user_id,
     return launched
 
 def evaluate_sla(now=None):
-    now = now or datetime.now(timezone.utc); created = []
+    now = now or datetime.now(UTC); created = []
     with engine.begin() as connection:
         overdue = connection.execute(select(workflow_steps).where(workflow_steps.c.status == "active", workflow_steps.c.sla_due_at < now)).mappings().all()
         for step in overdue:
@@ -154,7 +174,7 @@ def execute_automation_action(instance_id, action_type, *, step_id=None, payload
             output = {"published": True}
         else:
             raise ValueError("Unsupported automation action; register it through a domain adapter")
-        connection.execute(automation_actions.update().where(automation_actions.c.id == action_id).values(status="completed", output=output, executed_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)))
+        connection.execute(automation_actions.update().where(automation_actions.c.id == action_id).values(status="completed", output=output, executed_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
         _event(connection, instance_id, "automation_completed", step_id=step_id, payload={"action": action_type}, key=f"action:{idempotency_key}:completed")
     return action_id
 
