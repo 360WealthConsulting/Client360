@@ -3,3 +3,8 @@
 -r requirements.txt
 
 ruff==0.15.21
+
+# E1.1 (ADR-013): incremental boundary + type tooling. Configured with baselines
+# in pyproject.toml; new code is expected to pass, legacy is reduced over time.
+import-linter==2.13
+mypy==1.13.0

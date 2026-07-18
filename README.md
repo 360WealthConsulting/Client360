@@ -183,3 +183,20 @@ Sprint 4.4 Client Portal and Secure Collaboration is delivered in Release
 0.9.3. Epic 5 Tax Practice Platform is in implementation; Sprints 5.1, 5.2,
 and 5.3 are released. See
 [Epic 5 Tax Practice Platform](docs/EPIC_5_TAX_PRACTICE_PLATFORM.md).
+
+## Architecture & repository map
+
+Client360 is a modular monolith rooted at `app/` (FastAPI + SQLAlchemy,
+server-rendered UI). Architecture evolves **around** the working implementation
+(see [ADR-013](docs/architecture/adr/ADR-013-repository-reconciliation.md)); the
+canonical mapping of existing code to bounded contexts is in
+[docs/architecture/MODULE_MAP.md](docs/architecture/MODULE_MAP.md).
+
+Top-level layout: `app/` (application), `migrations/` + `alembic.ini` (schema
+history), `tests/`, `scripts/` (incl. `scripts/test.sh` for the disposable test
+DB), `config/` (secret-free `.env.example`), `shared/` and `infrastructure/`
+(scaffold placeholders), `docs/`, `governance/`, `.github/workflows/` (CI).
+
+Local configuration: copy values from [`config/.env.example`](config/.env.example)
+into `app/.env` (gitignored — never commit secrets). Run the suite with
+`scripts/test.sh run`.

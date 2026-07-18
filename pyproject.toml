@@ -35,3 +35,33 @@ ignore = ["E701", "E702", "B008"]
 # Configured and available via `ruff format`, but NOT a CI gate in Phase 2,
 # which gates lint only. line-length above governs it.
 quote-style = "double"
+
+# --- pytest (E1.1) -----------------------------------------------------------
+# Test discovery configuration. The suite's disposable-test-DB safety guard lives
+# in tests/conftest.py; run via `scripts/test.sh run`.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+# --- mypy (E1.1 baseline, ADR-013) -------------------------------------------
+# Introduced as a permissive baseline: configured but NOT yet a blocking gate.
+# Per ADR-013's quality strategy, type checking is tightened incrementally and
+# new code is expected to type-check; the legacy backlog is not fixed here.
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = false
+check_untyped_defs = false
+exclude = "(^\\.venv/|^migrations/|^01 Raw Imports/|^02 Working Data/|^03 Database/)"
+
+# --- import-linter (E1.1 baseline, ADR-013 step 3) ---------------------------
+# Boundaries are introduced GRADUALLY. Each contract is added only when it
+# currently passes, then held to prevent regression. See docs/architecture/MODULE_MAP.md.
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "Domain and ingestion layers must not import the web (routes) layer"
+type = "forbidden"
+source_modules = ["app.models", "app.matching", "app.importers"]
+forbidden_modules = ["app.routes"]
