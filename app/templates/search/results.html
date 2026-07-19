@@ -17,7 +17,7 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        <td><a class="rowlink" href="/source/{{ row.id }}">{{ row.full_name or "(No name)" }}</a></td>
+        <td><a class="rowlink" href="{% if row.person_id %}/people/{{ row.person_id }}{% else %}/source/{{ row.id }}{% endif %}">{{ row.full_name or "(No name)" }}</a></td>
         <td>{{ row.source_system or "" }}</td>
         <td>{{ row.email or "" }}</td>
         <td>{{ row.phone or "" }}</td>

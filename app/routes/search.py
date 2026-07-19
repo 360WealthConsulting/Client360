@@ -2,8 +2,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_, select
 
-from app.db import engine, source_contacts
-
+from app.db import engine, person_source_links, source_contacts
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -21,6 +20,15 @@ def _search(q: str):
                 source_contacts.c.phone,
                 source_contacts.c.city,
                 source_contacts.c.state,
+                # canonical person, when the contact has been promoted/linked, so results
+                # open the Client Profile whenever one is available (else the source record).
+                person_source_links.c.person_id,
+            )
+            .select_from(
+                source_contacts.outerjoin(
+                    person_source_links,
+                    person_source_links.c.source_contact_id == source_contacts.c.id,
+                )
             )
             .where(
                 or_(
