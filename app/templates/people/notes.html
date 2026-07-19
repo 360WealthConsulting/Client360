@@ -3,12 +3,48 @@
 {% block title %}Notes · {{ person.full_name }} | Client360{% endblock %}
 {% block crumb %}{{ person.full_name }} · Notes{% endblock %}
 {% block content %}
-{% call ui.page_head("Advisor notes", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
+{% call ui.page_head("Client notes", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
   <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
 {% endcall %}
-{% if saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Notes saved successfully.</div></div>{% endif %}
-<form method="post" action="/people/{{ person.id }}/notes" style="max-width:900px">
-  <textarea class="input" name="notes" placeholder="Enter client notes here..." style="width:100%; min-height:360px; height:auto; padding:16px; line-height:1.5; resize:vertical">{{ notes }}</textarea>
-  <div style="margin-top:12px"><button class="btn" type="submit">Save notes</button></div>
-</form>
+{% if saved == "permanent" %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Permanent client note saved.</div></div>{% endif %}
+{% if saved == "activity" %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Activity note added.</div></div>{% endif %}
+
+<section style="max-width:900px; margin-bottom:26px">
+  <h2 class="section-title">Permanent client note</h2>
+  <p class="subtle" style="margin-top:-6px">Enduring facts, preferences, family and planning context. Editable; every save is versioned and audited.</p>
+  <form method="post" action="/people/{{ person.id }}/notes">
+    <input type="hidden" name="kind" value="permanent">
+    <textarea class="input" name="body" placeholder="Enduring client context..." style="width:100%; min-height:200px; padding:14px; line-height:1.5; resize:vertical">{{ permanent.body }}</textarea>
+    <div style="margin-top:10px; display:flex; gap:10px; align-items:center">
+      <button class="btn" type="submit">Save permanent note</button>
+      {% if permanent.updated_at %}<span class="subtle">Last updated {{ permanent.updated_at }}</span>{% endif %}
+    </div>
+  </form>
+</section>
+
+<section style="max-width:900px">
+  <h2 class="section-title">Activity notes</h2>
+  <p class="subtle" style="margin-top:-6px">Calls, meetings, follow-ups and conversations. Append-only; each entry is attributed and added to the timeline.</p>
+  <form method="post" action="/people/{{ person.id }}/notes" style="margin-bottom:18px">
+    <input type="hidden" name="kind" value="activity">
+    <textarea class="input" name="note" placeholder="Log a call, meeting, or conversation..." style="width:100%; min-height:100px; padding:14px; line-height:1.5; resize:vertical" required></textarea>
+    <div style="margin-top:10px"><button class="btn" type="submit">Add activity note</button></div>
+  </form>
+  {% if activity_notes %}
+  <div class="stack">
+    {% for note in activity_notes %}
+    <article class="card" style="padding:14px 16px">
+      <div class="timeline-meta" style="display:flex; gap:10px; align-items:center; margin-bottom:6px">
+        {{ ui.badge(note.note_type|title, 'muted') }}
+        <strong>{{ note.author_name or "Unknown" }}</strong>
+        <span class="subtle">{{ note.created_at }}</span>
+      </div>
+      <div style="white-space:pre-wrap; line-height:1.5">{{ note.body }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card empty-state">No activity notes yet.</div>
+  {% endif %}
+</section>
 {% endblock %}
