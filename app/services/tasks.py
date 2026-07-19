@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import and_, insert, select, update
 
-from app.db import engine, people, tasks, users
+from app.db import engine, people, record_assignments, tasks, users
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
 
@@ -43,6 +43,37 @@ def assignable_users(conn=None):
 def _active_user_exists(c, user_id: int) -> bool:
     return c.execute(select(users.c.id).where(
         users.c.id == user_id, users.c.status == "active")).scalar_one_or_none() is not None
+
+
+def tasks_with_assignee(person_id: int, *, conn=None):
+    """A person's tasks with the current **primary** assignee resolved from the canonical
+    ``record_assignments`` model (LEFT JOIN, so legacy/unassigned tasks are preserved with a
+    NULL ``assignee_name``). This is the single assignee-resolution used by every client view —
+    the dedicated Tasks page and the Client Profile Tasks tab — so both render identically.
+    Callers display ``assignee_name or assigned_to or "Unassigned"`` to keep the legacy free-text
+    fallback for historical rows that predate canonical assignment."""
+    def _do(c):
+        return c.execute(
+            select(tasks, users.c.display_name.label("assignee_name"),
+                   record_assignments.c.user_id.label("assignee_user_id"))
+            .select_from(
+                tasks
+                .outerjoin(record_assignments, and_(
+                    record_assignments.c.entity_type == "task",
+                    record_assignments.c.entity_id == tasks.c.id,
+                    record_assignments.c.assignment_type == "primary",
+                    record_assignments.c.inactive_date.is_(None),
+                ))
+                .outerjoin(users, users.c.id == record_assignments.c.user_id)
+            )
+            .where(tasks.c.person_id == person_id)
+            .order_by(tasks.c.status, tasks.c.due_date.asc().nullslast(), tasks.c.created_at.desc())
+        ).mappings().all()
+
+    if conn is not None:
+        return _do(conn)
+    with engine.connect() as c:
+        return _do(c)
 
 
 def create_task(person_id: int, *, title: str, description: str | None = None,

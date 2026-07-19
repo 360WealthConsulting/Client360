@@ -303,7 +303,7 @@
             <div class="timeline-meta">
                 {{ task.priority.title() }}
                 ·
-                Assigned to {{ task.assigned_to or "Unassigned" }}
+                Assigned to {{ task.assignee_name or task.assigned_to or "Unassigned" }}
                 ·
                 Due {{ task.due_date or "not set" }}
             </div>

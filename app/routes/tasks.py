@@ -4,12 +4,12 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
-from app.db import engine, people, record_assignments, tasks, users
+from app.db import engine, people
 from app.security.dependencies import current_principal
 from app.security.models import Principal
-from app.services.tasks import assignable_users, complete_task, create_task
+from app.services.tasks import assignable_users, complete_task, create_task, tasks_with_assignee
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -17,25 +17,6 @@ templates = Jinja2Templates(directory="app/templates")
 
 def _request_id(request: Request) -> str | None:
     return getattr(request.state, "request_id", None)
-
-
-def _tasks_with_assignee(connection, person_id):
-    """Person's tasks with the current primary assignee resolved from record_assignments."""
-    return connection.execute(
-        select(tasks, users.c.display_name.label("assignee_name"), record_assignments.c.user_id.label("assignee_user_id"))
-        .select_from(
-            tasks
-            .outerjoin(record_assignments, and_(
-                record_assignments.c.entity_type == "task",
-                record_assignments.c.entity_id == tasks.c.id,
-                record_assignments.c.assignment_type == "primary",
-                record_assignments.c.inactive_date.is_(None),
-            ))
-            .outerjoin(users, users.c.id == record_assignments.c.user_id)
-        )
-        .where(tasks.c.person_id == person_id)
-        .order_by(tasks.c.status, tasks.c.due_date.asc().nullslast(), tasks.c.created_at.desc())
-    ).mappings().all()
 
 
 @router.get("/people/{person_id}/tasks", response_class=HTMLResponse)
@@ -46,7 +27,7 @@ def person_tasks(request: Request, person_id: int, principal: Principal = Depend
         ).mappings().one_or_none()
         if person is None:
             return HTMLResponse("<h1>Person not found</h1>", status_code=404)
-        task_rows = _tasks_with_assignee(connection, person_id)
+        task_rows = tasks_with_assignee(person_id, conn=connection)
         users_list = assignable_users(connection)
 
     return templates.TemplateResponse(
