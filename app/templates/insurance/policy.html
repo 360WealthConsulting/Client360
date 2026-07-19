@@ -6,6 +6,14 @@
   <h1>{{ policy.policy_number or ('Policy #' ~ policy.id) }}</h1>
   <span class="badge">{{ policy.status.replace('_', ' ') }}</span>
   <span class="subtle">{{ policy.carrier_name or 'Unknown carrier' }}</span>
+  {% if policy.client_name or policy.client_phone or policy.client_email %}
+  <p class="subtle contact-line">
+    Client:
+    {% if policy.client_person_id %}<a href="/people/{{ policy.client_person_id }}">{{ policy.client_name or '—' }}</a>{% else %}{{ policy.client_name or '—' }}{% endif %}
+    {% if policy.client_phone %} &middot; <a href="tel:{{ policy.client_phone }}">{{ policy.client_phone }}</a>{% endif %}
+    {% if policy.client_email %} &middot; <a href="mailto:{{ policy.client_email }}">{{ policy.client_email }}</a>{% endif %}
+  </p>
+  {% endif %}
 </div>
 
 <div class="stat-grid">

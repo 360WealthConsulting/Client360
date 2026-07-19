@@ -207,9 +207,19 @@ def get_policy(principal, policy_id):
         producers = children(insurance_policy_producers)
         for p in producers:
             p["producer_name"] = _entity_name(c, p["producer_entity_type"], p["producer_entity_id"])
+        # Surface the anchoring client's canonical contact so staff can reach them from the policy.
+        client = None
+        if policy.get("person_id"):
+            client = c.execute(select(
+                people.c.id, people.c.full_name, people.c.primary_email, people.c.primary_phone,
+            ).where(people.c.id == policy["person_id"])).mappings().first()
         return {
             **dict(policy),
             "carrier_name": _entity_name(c, "organization", policy["carrier_id"]),
+            "client_person_id": (client["id"] if client else None),
+            "client_name": (client["full_name"] if client else None),
+            "client_email": (client["primary_email"] if client else None),
+            "client_phone": (client["primary_phone"] if client else None),
             "coverages": children(insurance_coverages),
             "riders": children(insurance_riders),
             "parties": parties,
