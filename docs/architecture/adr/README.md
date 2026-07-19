@@ -11,6 +11,7 @@ decision, its alternatives, rationale, and consequences.
 | [ADR-014](ADR-014-engineering-backlog-and-roadmap-governance.md) | Engineering backlog & roadmap governance (single-source-of-truth roadmap; two-track numbering rules) | Accepted |
 | [ADR-015](ADR-015-tamper-evident-audit-architecture.md) | Tamper-evident audit architecture (in-database per-chain SHA-256 hash chain) | Accepted |
 | [ADR-016](ADR-016-workflow-orchestration-architecture.md) | Workflow orchestration architecture (Option B bounded hybrid; platform adapter over the preserved engine) | Accepted |
+| [ADR-017](ADR-017-notifications-and-communications-architecture.md) | Notifications & communications architecture (Epic 5; canonical platform notification service reconciling portal + benefits) | Accepted |
 
 > ADR-001…012 are catalogued in the frozen Enterprise Architecture Package. This
 > directory holds ADRs recorded from ADR-013 onward; earlier ADRs may be
