@@ -28,6 +28,21 @@
   <form method="post" action="/people/{{ person.id }}/notes" style="margin-bottom:18px">
     <input type="hidden" name="kind" value="activity">
     <textarea class="input" name="note" placeholder="Log a call, meeting, or conversation..." style="width:100%; min-height:100px; padding:14px; line-height:1.5; resize:vertical" required></textarea>
+    <details style="margin-top:10px">
+      <summary class="subtle" style="cursor:pointer">Also create a follow-up task</summary>
+      <div class="row" style="gap:10px; margin-top:10px; flex-wrap:wrap; align-items:flex-end">
+        <label class="row" style="gap:6px; font-size:13px"><input type="checkbox" name="create_task" value="1"> Create task</label>
+        <div class="field"><label>Task title</label><input class="input" name="task_title" placeholder="Follow up with client"></div>
+        <div class="field"><label>Assign to</label>
+          <select class="input" name="task_assigned_to_user_id">
+            <option value="">Unassigned</option>
+            {% for u in assignable_users %}<option value="{{ u.id }}">{{ u.display_name }}</option>{% endfor %}
+          </select></div>
+        <div class="field"><label>Priority</label>
+          <select class="input" name="task_priority"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+        <div class="field"><label>Due date</label><input class="input" type="date" name="task_due_date"></div>
+      </div>
+    </details>
     <div style="margin-top:10px"><button class="btn" type="submit">Add activity note</button></div>
   </form>
   {% if activity_notes %}

@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Request
@@ -16,6 +17,7 @@ from app.services.notes import (
     list_person_notes,
     save_permanent_note,
 )
+from app.services.tasks import assignable_users, create_task
 from app.services.timeline import add_timeline_event
 
 router = APIRouter()
@@ -34,12 +36,14 @@ def person_notes(request: Request, person_id: int, principal: Principal = Depend
         ).mappings().one_or_none()
         if person is None:
             return HTMLResponse("<h1>Person not found</h1>", status_code=404)
+        users_list = assignable_users(connection)
 
     return templates.TemplateResponse(
         request=request,
         name="people/notes.html",
         context={
             "person": person,
+            "assignable_users": users_list,
             "permanent": get_permanent_note(person_id),
             "activity_notes": list_person_notes(person_id),
             "saved": request.query_params.get("saved"),
@@ -89,5 +93,19 @@ async def post_person_notes(
         actor_user_id=principal.user_id, request_id=_request_id(request),
         metadata={"note_id": note_id},
     )
+
+    # optional follow-up task from the activity note (reuses the person-task service/table
+    # and the canonical user-assignment model)
+    if form.get("create_task", [""])[0] and form.get("task_title", [""])[0].strip():
+        due_text = form.get("task_due_date", [""])[0].strip()
+        assignee_raw = form.get("task_assigned_to_user_id", [""])[0].strip()
+        create_task(
+            person_id, title=form.get("task_title", [""])[0].strip(),
+            priority=form.get("task_priority", ["normal"])[0],
+            assigned_to_user_id=int(assignee_raw) if assignee_raw else None,
+            due_date=date.fromisoformat(due_text) if due_text else None,
+            actor_user_id=principal.user_id, request_id=_request_id(request),
+            source="activity_note", source_note_id=note_id,
+        )
 
     return RedirectResponse(url=f"/people/{person_id}/notes?saved=activity", status_code=303)

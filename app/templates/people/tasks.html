@@ -15,7 +15,11 @@
     <div class="field"><label for="description">Description</label><textarea class="input" id="description" name="description" style="height:auto; min-height:100px; padding:11px"></textarea></div>
     <div class="field"><label for="priority">Priority</label>
       <select class="input" id="priority" name="priority"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
-    <div class="field"><label for="assigned_to">Assigned to</label><input class="input" id="assigned_to" name="assigned_to" placeholder="Michael, Lauren, Sarah, Jessica"></div>
+    <div class="field"><label for="assigned_to_user_id">Assign to</label>
+      <select class="input" id="assigned_to_user_id" name="assigned_to_user_id">
+        <option value="">Unassigned</option>
+        {% for u in assignable_users %}<option value="{{ u.id }}">{{ u.display_name }}</option>{% endfor %}
+      </select></div>
     <div class="field"><label for="due_date">Due date</label><input class="input" id="due_date" name="due_date" type="date"></div>
     <button class="btn" type="submit">Create task</button>
   </form>
@@ -29,7 +33,7 @@
       {% if task.status == 'complete' %}{{ ui.badge('Complete','good') }}{% else %}{{ ui.badge(task.priority) }}{% endif %}
     </div>
     {% if task.description %}<div style="margin-top:6px">{{ task.description }}</div>{% endif %}
-    <div class="subtle" style="margin-top:6px">Status: {{ task.status }} · Priority: {{ task.priority }} · Assigned: {{ task.assigned_to or "Unassigned" }} · Due: {{ task.due_date or "No due date" }}</div>
+    <div class="subtle" style="margin-top:6px">Status: {{ task.status }} · Priority: {{ task.priority }} · Assigned: {{ task.assignee_name or task.assigned_to or "Unassigned" }} · Due: {{ task.due_date or "No due date" }}</div>
     {% if task.status != "complete" %}
     <form method="post" action="/people/{{ person.id }}/tasks/{{ task.id }}/complete" style="margin-top:10px"><button class="btn secondary sm" type="submit">Mark complete</button></form>
     {% endif %}
