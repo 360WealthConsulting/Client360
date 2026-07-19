@@ -26,7 +26,8 @@ from app.platform.workflow_approval_state import (
     validate_decision,
     validate_reassignable,
 )
-from app.platform.workflow_events import emit_approval_event, emit_transition_event
+from app.platform.workflow_events import emit_approval_event, emit_sla_event, emit_transition_event
+from app.platform.workflow_sla import evaluate_escalation
 from app.platform.workflow_state_machine import (
     ACTIVE_STEP_STATES,
     dependencies_satisfied,
@@ -183,14 +184,22 @@ def process_event(event_type, entity_type, entity_id, payload, *, actor_user_id,
     return launched
 
 def evaluate_sla(now=None):
-    now = now or datetime.now(UTC); created = []
+    now = now or datetime.now(UTC); created = []; escalated = []
     with engine.begin() as connection:
         overdue = connection.execute(select(workflow_steps).where(workflow_steps.c.status == "active", workflow_steps.c.sla_due_at < now)).mappings().all()
         for step in overdue:
-            existing = connection.scalar(select(workflow_escalations.c.id).where(workflow_escalations.c.workflow_step_id == step["id"], workflow_escalations.c.escalation_type == "sla_breach", workflow_escalations.c.level == 1))
+            escalation = evaluate_escalation(step["sla_due_at"], now)  # deterministic policy (observe only)
+            if escalation is None: continue
+            etype, level = escalation["escalation_type"], escalation["level"]
+            existing = connection.scalar(select(workflow_escalations.c.id).where(workflow_escalations.c.workflow_step_id == step["id"], workflow_escalations.c.escalation_type == etype, workflow_escalations.c.level == level))
             if not existing:
-                created.append(connection.execute(workflow_escalations.insert().values(workflow_instance_id=step["workflow_instance_id"], workflow_step_id=step["id"], escalation_type="sla_breach", level=1, due_at=step["sla_due_at"], metadata={"step": step["name"]}).returning(workflow_escalations.c.id)).scalar_one())
-                _event(connection, step["workflow_instance_id"], "sla_escalated", step_id=step["id"], key=f"step:{step['id']}:sla:1")
+                escalation_id = connection.execute(workflow_escalations.insert().values(workflow_instance_id=step["workflow_instance_id"], workflow_step_id=step["id"], escalation_type=etype, level=level, due_at=step["sla_due_at"], metadata={"step": step["name"]}).returning(workflow_escalations.c.id)).scalar_one()
+                created.append(escalation_id)
+                event_id = _event(connection, step["workflow_instance_id"], "sla_escalated", step_id=step["id"], key=f"step:{step['id']}:sla:{level}")
+                emit_sla_event(connection, instance_id=step["workflow_instance_id"], step_id=step["id"], escalation_id=escalation_id, escalation_type=etype, level=level, domain_event_id=event_id)
+                escalated.append((escalation_id, step["workflow_instance_id"], step["id"], etype, level))
+    for escalation_id, instance_id, step_id, etype, level in escalated:
+        write_audit_event(action="workflow.sla.escalated", entity_type="workflow_escalation", entity_id=escalation_id, actor_user_id=None, request_id=f"sla-{escalation_id}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id, "escalation_type": etype, "level": level})
     return created
 
 def execute_automation_action(instance_id, action_type, *, step_id=None, payload=None, idempotency_key):

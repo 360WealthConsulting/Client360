@@ -58,6 +58,46 @@ def workflow_event_id(domain_event_id: int) -> str:
     return str(uuid.uuid5(WORKFLOW_EVENT_NAMESPACE, f"workflow_event:{domain_event_id}"))
 
 
+#: SLA/escalation event kinds -> canonical event types (ADR-016 §11).
+SLA_EVENT_TYPES: dict[str, str] = {
+    "escalated": f"{EVENT_TYPE_PREFIX}.sla.escalated",
+}
+
+
+def sla_event_type(kind: str = "escalated") -> str:
+    """Canonical event type for an SLA event kind (e.g. ``workflow.sla.escalated``)."""
+    return SLA_EVENT_TYPES[kind]
+
+
+def emit_sla_event(
+    conn, *, instance_id: int, step_id: int, escalation_id: int, escalation_type: str,
+    level: int, domain_event_id: int, payload_extra: dict | None = None,
+) -> str:
+    """Publish exactly one F1.4 envelope for an SLA escalation (idempotent).
+
+    Notification only — never changes workflow state. Same deterministic, duplicate-safe
+    mechanism as :func:`emit_transition_event`.
+    """
+    event_id = workflow_event_id(domain_event_id)
+    if conn.execute(select(outbox_events.c.id).where(outbox_events.c.event_id == event_id)).first():
+        return event_id
+    payload = {
+        "workflow_instance_id": instance_id, "workflow_step_id": step_id,
+        "escalation_id": escalation_id, "escalation_type": escalation_type, "level": level,
+    }
+    if payload_extra:
+        payload.update(payload_extra)
+    envelope = new_event(
+        sla_event_type("escalated"), payload,
+        event_id=event_id,
+        subject_ref=f"workflow_instance:{instance_id}",
+        producer="workflow.sla",
+        correlation_id=f"workflow_instance:{instance_id}",
+        metadata={"domain_event_id": domain_event_id},
+    )
+    return publish_event(conn, envelope)
+
+
 #: Approval business-process event kinds -> canonical event types (ADR-016 §11).
 APPROVAL_EVENT_TYPES: dict[str, str] = {
     "requested": f"{EVENT_TYPE_PREFIX}.approval.requested",

@@ -42,10 +42,13 @@ from app.platform.workflow_approval_state import (
 )
 from app.platform.workflow_events import (
     APPROVAL_EVENT_TYPES,
+    SLA_EVENT_TYPES,
     TRANSITION_EVENT_TYPES,
     approval_event_type,
     emit_approval_event,
+    emit_sla_event,
     emit_transition_event,
+    sla_event_type,
     transition_event_type,
     workflow_event_id,
 )
@@ -57,6 +60,14 @@ from app.platform.workflow_registry import (
     WorkflowTemplateRegistry,
     build_default_registry,
     default_registry,
+)
+from app.platform.workflow_sla import (
+    DEFAULT_ESCALATION_LEVEL,
+    ESCALATION_TYPE_SLA_BREACH,
+    evaluate_escalation,
+    is_overdue,
+    reset_escalation_policy,
+    set_escalation_policy,
 )
 from app.platform.workflow_state_machine import (
     ACTIVE_STEP_STATES,
@@ -134,4 +145,14 @@ __all__ = [
     "APPROVAL_EVENT_TYPES",
     "approval_event_type",
     "emit_approval_event",
+    # workflow SLA & escalation engine (F4.6 / Epic 4, ADR-016)
+    "is_overdue",
+    "evaluate_escalation",
+    "set_escalation_policy",
+    "reset_escalation_policy",
+    "ESCALATION_TYPE_SLA_BREACH",
+    "DEFAULT_ESCALATION_LEVEL",
+    "SLA_EVENT_TYPES",
+    "sla_event_type",
+    "emit_sla_event",
 ]
