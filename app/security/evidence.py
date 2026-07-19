@@ -77,12 +77,17 @@ def record_evidence(
     *, evidence_type: str, source: str, checksum: str | None = None,
     classification: str = "operational", reference: str | None = None,
     metadata: dict | None = None, provenance: str | None = None,
-    audit_event_id: int | None = None, created_by: int | None = None, conn=None,
+    audit_event_id: int | None = None, created_by: int | None = None,
+    evidence_uid: str | None = None, conn=None,
 ) -> EvidenceRecord:
-    """Create an immutable evidence record. References only — never binary content."""
+    """Create an immutable evidence record. References only — never binary content.
+
+    ``evidence_uid`` may be supplied for deterministic correlation/idempotency (e.g.
+    workflow outcomes); when omitted a random uid is generated (existing behavior).
+    """
     evidence = _evidence_table()
     values = {
-        "evidence_uid": str(uuid.uuid4()),
+        "evidence_uid": evidence_uid or str(uuid.uuid4()),
         "evidence_type": evidence_type,
         "classification": classification,
         "source": source,

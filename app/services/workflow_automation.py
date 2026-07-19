@@ -35,6 +35,7 @@ from app.platform.workflow_state_machine import (
 )
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
+from app.services.workflow_evidence import record_workflow_evidence
 
 
 def _event(connection, instance_id, event_type, actor_user_id=None, step_id=None, payload=None, key=None):
@@ -75,18 +76,24 @@ def launch_workflow(template_code, *, actor_user_id, person_id=None, household_i
         definitions = connection.execute(select(workflow_template_steps).where(workflow_template_steps.c.template_id == template["id"]).order_by(workflow_template_steps.c.sequence)).mappings().all()
         definition_ids = {row["id"] for row in definitions}
         dependent = set(connection.scalars(select(workflow_step_dependencies.c.step_id).where(workflow_step_dependencies.c.step_id.in_(definition_ids)))) if definition_ids else set()
-        now = datetime.now(UTC)
+        now = datetime.now(UTC); activated_step_ids = []
         for definition in definitions:
             condition_result = _matches(definition["condition"], context)
             active = definition["id"] not in dependent and condition_result
             queue_criteria = connection.execute(select(work_queues.c.criteria).where(work_queues.c.code == definition["queue_code"])).scalar_one_or_none() if definition["queue_code"] else {}
             snapshot = {key: definition[key] for key in ("step_key", "name", "sequence", "step_type", "execution_mode", "condition", "assignment_config", "queue_code", "sla_hours", "requires_independent_approval", "automation_action", "configuration")}
-            connection.execute(workflow_steps.insert().values(workflow_instance_id=instance_id, name=definition["name"], sequence=definition["sequence"], status="active" if active else ("skipped" if not condition_result else "pending"), priority=priority, waiting_on=(queue_criteria or {}).get("waiting_on"), sla_due_at=now + timedelta(hours=definition["sla_hours"] or template["default_sla_hours"] or 120) if active else None, requires_approval=definition["step_type"] == "approval", template_step_id=definition["id"], definition_snapshot=snapshot, activated_at=now if active else None, condition_result=condition_result))
+            new_step_id = connection.execute(workflow_steps.insert().values(workflow_instance_id=instance_id, name=definition["name"], sequence=definition["sequence"], status="active" if active else ("skipped" if not condition_result else "pending"), priority=priority, waiting_on=(queue_criteria or {}).get("waiting_on"), sla_due_at=now + timedelta(hours=definition["sla_hours"] or template["default_sla_hours"] or 120) if active else None, requires_approval=definition["step_type"] == "approval", template_step_id=definition["id"], definition_snapshot=snapshot, activated_at=now if active else None, condition_result=condition_result).returning(workflow_steps.c.id)).scalar_one()
+            if active: activated_step_ids.append(new_step_id)
         launched_event_id = _event(connection, instance_id, "workflow_launched", actor_user_id, payload={"template": template_code, "version": template["version"]}, key=f"{idempotency_key}:launch")
         emit_transition_event(connection, instance_id=instance_id, action="launch", domain_event_id=launched_event_id, actor_user_id=actor_user_id, correlation_id=f"workflow_instance:{instance_id}", payload_extra={"template": template_code, "version": template["version"]})
         instance = connection.execute(select(workflow_instances).where(workflow_instances.c.id == instance_id)).mappings().one()
     _publish(instance, "workflow_launched", f"{template['name']} workflow launched", {"template": template_code})
-    write_audit_event(action="workflow.launched", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=request_id or idempotency_key, metadata={"template": template_code})
+    rid = request_id or idempotency_key
+    launch_audit_id = write_audit_event(action="workflow.launched", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=rid, metadata={"template": template_code})
+    record_workflow_evidence(outcome="launched", workflow_instance_id=instance_id, audit_event_id=launch_audit_id, actor_user_id=actor_user_id, references={"template": template_code, "domain_event_id": launched_event_id})
+    for activated_step_id in activated_step_ids:
+        step_audit_id = write_audit_event(action="workflow.step.activated", entity_type="workflow_step", entity_id=activated_step_id, actor_user_id=actor_user_id, request_id=f"{rid}:activate:{activated_step_id}", metadata={"workflow_instance_id": instance_id})
+        record_workflow_evidence(outcome="step.activated", workflow_instance_id=instance_id, step_id=activated_step_id, audit_event_id=step_audit_id, actor_user_id=actor_user_id)
     return instance_id
 
 def transition_workflow(instance_id, action, *, actor_user_id, reason=None, request_id=None):
@@ -107,28 +114,43 @@ def transition_workflow(instance_id, action, *, actor_user_id, reason=None, requ
         transition_event_id = _event(connection, instance_id, f"workflow_{action}", actor_user_id, payload={"reason": reason})
         emit_transition_event(connection, instance_id=instance_id, action=action, domain_event_id=transition_event_id, actor_user_id=actor_user_id, payload_extra={"from": instance["status"], "to": target}, metadata_extra={"reason": reason} if reason else None)
     _publish(instance, f"workflow_{action}", f"Workflow {action}d", {"reason": reason})
-    write_audit_event(action=f"workflow.{action}", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=request_id or f"workflow-{uuid.uuid4()}", metadata={"reason": reason})
+    transition_audit_id = write_audit_event(action=f"workflow.{action}", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=request_id or f"workflow-{uuid.uuid4()}", metadata={"reason": reason})
+    record_workflow_evidence(outcome=action, workflow_instance_id=instance_id, audit_event_id=transition_audit_id, actor_user_id=actor_user_id, references={"from": instance["status"], "to": target, "domain_event_id": transition_event_id})
     return target
 
 def complete_step(step_id, *, actor_user_id, request_id=None):
-    now = datetime.now(UTC)
+    now = datetime.now(UTC); activated_ids = []; auto_completed = False
     with engine.begin() as connection:
         step = connection.execute(select(workflow_steps).where(workflow_steps.c.id == step_id).with_for_update()).mappings().one_or_none()
         if not step or step["status"] != "active": raise ValueError("Only an active step can be completed")
         if step["requires_approval"]:
             approved = connection.scalar(select(work_approvals.c.id).where(work_approvals.c.workflow_step_id == step_id, work_approvals.c.status == "approved"))
             if not approved: raise ValueError("Step requires an approved independent review")
+        instance_id = step["workflow_instance_id"]
         connection.execute(workflow_steps.update().where(workflow_steps.c.id == step_id).values(status="completed", completed_at=now))
-        _event(connection, step["workflow_instance_id"], "step_completed", actor_user_id, step_id, key=f"step:{step_id}:completed")
-        pending = connection.execute(select(workflow_steps).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status == "pending")).mappings().all()
-        completed_template_ids = set(connection.scalars(select(workflow_steps.c.template_step_id).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status.in_(("completed", "skipped")))))
+        _event(connection, instance_id, "step_completed", actor_user_id, step_id, key=f"step:{step_id}:completed")
+        pending = connection.execute(select(workflow_steps).where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status == "pending")).mappings().all()
+        completed_template_ids = set(connection.scalars(select(workflow_steps.c.template_step_id).where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status.in_(("completed", "skipped")))))
         for candidate in pending:
             dependencies = set(connection.scalars(select(workflow_step_dependencies.c.depends_on_step_id).where(workflow_step_dependencies.c.step_id == candidate["template_step_id"])))
             if dependencies_satisfied(dependencies, completed_template_ids):
                 definition = connection.execute(select(workflow_template_steps).where(workflow_template_steps.c.id == candidate["template_step_id"])).mappings().one()
                 connection.execute(workflow_steps.update().where(workflow_steps.c.id == candidate["id"]).values(status="active", activated_at=now, sla_due_at=now + timedelta(hours=definition["sla_hours"] or 120)))
-        remaining = connection.scalar(select(func.count()).select_from(workflow_steps).where(workflow_steps.c.workflow_instance_id == step["workflow_instance_id"], workflow_steps.c.status.in_(ACTIVE_STEP_STATES)))
-        if not remaining: connection.execute(workflow_instances.update().where(workflow_instances.c.id == step["workflow_instance_id"]).values(status="completed", completed_at=now))
+                activated_ids.append(candidate["id"])
+        remaining = connection.scalar(select(func.count()).select_from(workflow_steps).where(workflow_steps.c.workflow_instance_id == instance_id, workflow_steps.c.status.in_(ACTIVE_STEP_STATES)))
+        if not remaining:
+            connection.execute(workflow_instances.update().where(workflow_instances.c.id == instance_id).values(status="completed", completed_at=now))
+            auto_completed = True
+    # Audit + write-once evidence for each material outcome (observe-only; never changes state).
+    rid = request_id or f"workflow-step-{step_id}-{uuid.uuid4()}"
+    completed_audit_id = write_audit_event(action="workflow.step.completed", entity_type="workflow_step", entity_id=step_id, actor_user_id=actor_user_id, request_id=rid, metadata={"workflow_instance_id": instance_id})
+    record_workflow_evidence(outcome="step.completed", workflow_instance_id=instance_id, step_id=step_id, audit_event_id=completed_audit_id, actor_user_id=actor_user_id)
+    for activated_id in activated_ids:
+        activated_audit_id = write_audit_event(action="workflow.step.activated", entity_type="workflow_step", entity_id=activated_id, actor_user_id=actor_user_id, request_id=f"{rid}:activate:{activated_id}", metadata={"workflow_instance_id": instance_id})
+        record_workflow_evidence(outcome="step.activated", workflow_instance_id=instance_id, step_id=activated_id, audit_event_id=activated_audit_id, actor_user_id=actor_user_id)
+    if auto_completed:
+        complete_audit_id = write_audit_event(action="workflow.completed", entity_type="workflow_instance", entity_id=instance_id, actor_user_id=actor_user_id, request_id=f"{rid}:autocomplete", metadata={"workflow_instance_id": instance_id, "auto": True})
+        record_workflow_evidence(outcome="completed", workflow_instance_id=instance_id, audit_event_id=complete_audit_id, actor_user_id=actor_user_id, references={"auto": True})
 
 def request_approval(step_id, *, requested_by_user_id, approver_user_id=None, approver_team_id=None, due_at=None, request_id=None):
     if not approver_user_id and not approver_team_id: raise ValueError("Approver user or team is required")
@@ -140,7 +162,8 @@ def request_approval(step_id, *, requested_by_user_id, approver_user_id=None, ap
         event_id = _event(connection, step["workflow_instance_id"], "approval_requested", requested_by_user_id, step_id, {"approval_id": approval_id})
         emit_approval_event(connection, kind="requested", instance_id=step["workflow_instance_id"], approval_id=approval_id, domain_event_id=event_id, step_id=step_id, actor_user_id=requested_by_user_id, payload_extra={"approver_user_id": approver_user_id, "approver_team_id": approver_team_id})
         instance_id = step["workflow_instance_id"]
-    write_audit_event(action="workflow.approval.requested", entity_type="work_approval", entity_id=approval_id, actor_user_id=requested_by_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id})
+    requested_audit_id = write_audit_event(action="workflow.approval.requested", entity_type="work_approval", entity_id=approval_id, actor_user_id=requested_by_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id})
+    record_workflow_evidence(outcome="approval.requested", workflow_instance_id=instance_id, step_id=step_id, audit_event_id=requested_audit_id, actor_user_id=requested_by_user_id, references={"approval_id": approval_id})
     return approval_id
 
 def decide_approval(approval_id, *, approver_user_id, decision, notes=None, request_id=None):
@@ -155,7 +178,8 @@ def decide_approval(approval_id, *, approver_user_id, decision, notes=None, requ
         event_id = _event(connection, step["workflow_instance_id"], f"approval_{decision}", approver_user_id, step["id"], {"approval_id": approval_id})
         emit_approval_event(connection, kind="decided", instance_id=step["workflow_instance_id"], approval_id=approval_id, domain_event_id=event_id, step_id=step["id"], actor_user_id=approver_user_id, payload_extra={"decision": decision})
         instance_id, decided_step_id = step["workflow_instance_id"], step["id"]
-    write_audit_event(action="workflow.approval.decided", entity_type="work_approval", entity_id=approval_id, actor_user_id=approver_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"decision": decision, "workflow_instance_id": instance_id, "workflow_step_id": decided_step_id})
+    decided_audit_id = write_audit_event(action="workflow.approval.decided", entity_type="work_approval", entity_id=approval_id, actor_user_id=approver_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"decision": decision, "workflow_instance_id": instance_id, "workflow_step_id": decided_step_id})
+    record_workflow_evidence(outcome="approval.decided", workflow_instance_id=instance_id, step_id=decided_step_id, audit_event_id=decided_audit_id, actor_user_id=approver_user_id, references={"approval_id": approval_id, "decision": decision})
 
 def reassign_approval(approval_id, *, reassigned_by_user_id, new_approver_user_id=None, new_approver_team_id=None, reason=None, request_id=None):
     """Reassign a pending approval to a new approver/team (SoD-checked). Deterministic;
@@ -171,7 +195,8 @@ def reassign_approval(approval_id, *, reassigned_by_user_id, new_approver_user_i
         event_id = _event(connection, step["workflow_instance_id"], "approval_reassigned", reassigned_by_user_id, step["id"], {"approval_id": approval_id, "from_approver": old_approver, "to_approver": new_approver_user_id})
         emit_approval_event(connection, kind="reassigned", instance_id=step["workflow_instance_id"], approval_id=approval_id, domain_event_id=event_id, step_id=step["id"], actor_user_id=reassigned_by_user_id, payload_extra={"from_approver": old_approver, "to_approver": new_approver_user_id}, metadata_extra={"reason": reason} if reason else None)
         instance_id, reassigned_step_id = step["workflow_instance_id"], step["id"]
-    write_audit_event(action="workflow.approval.reassigned", entity_type="work_approval", entity_id=approval_id, actor_user_id=reassigned_by_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"from_approver": old_approver, "to_approver": new_approver_user_id, "workflow_instance_id": instance_id, "workflow_step_id": reassigned_step_id})
+    reassigned_audit_id = write_audit_event(action="workflow.approval.reassigned", entity_type="work_approval", entity_id=approval_id, actor_user_id=reassigned_by_user_id, request_id=request_id or f"approval-{uuid.uuid4()}", metadata={"from_approver": old_approver, "to_approver": new_approver_user_id, "workflow_instance_id": instance_id, "workflow_step_id": reassigned_step_id})
+    record_workflow_evidence(outcome="approval.reassigned", workflow_instance_id=instance_id, step_id=reassigned_step_id, audit_event_id=reassigned_audit_id, actor_user_id=reassigned_by_user_id, references={"approval_id": approval_id, "from_approver": old_approver, "to_approver": new_approver_user_id})
     return approval_id
 
 def process_event(event_type, entity_type, entity_id, payload, *, actor_user_id, idempotency_key):
@@ -199,7 +224,8 @@ def evaluate_sla(now=None):
                 emit_sla_event(connection, instance_id=step["workflow_instance_id"], step_id=step["id"], escalation_id=escalation_id, escalation_type=etype, level=level, domain_event_id=event_id)
                 escalated.append((escalation_id, step["workflow_instance_id"], step["id"], etype, level))
     for escalation_id, instance_id, step_id, etype, level in escalated:
-        write_audit_event(action="workflow.sla.escalated", entity_type="workflow_escalation", entity_id=escalation_id, actor_user_id=None, request_id=f"sla-{escalation_id}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id, "escalation_type": etype, "level": level})
+        sla_audit_id = write_audit_event(action="workflow.sla.escalated", entity_type="workflow_escalation", entity_id=escalation_id, actor_user_id=None, request_id=f"sla-{escalation_id}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id, "escalation_type": etype, "level": level})
+        record_workflow_evidence(outcome="sla.escalated", workflow_instance_id=instance_id, step_id=step_id, audit_event_id=sla_audit_id, references={"escalation_id": escalation_id, "escalation_type": etype, "level": level})
     return created
 
 def execute_automation_action(instance_id, action_type, *, step_id=None, payload=None, idempotency_key):
@@ -218,6 +244,9 @@ def execute_automation_action(instance_id, action_type, *, step_id=None, payload
             raise ValueError("Unsupported automation action; register it through a domain adapter")
         connection.execute(automation_actions.update().where(automation_actions.c.id == action_id).values(status="completed", output=output, executed_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
         _event(connection, instance_id, "automation_completed", step_id=step_id, payload={"action": action_type}, key=f"action:{idempotency_key}:completed")
+    # Newly executed (the idempotent path returned above): audit + write-once evidence.
+    automation_audit_id = write_audit_event(action="workflow.automation.executed", entity_type="automation_action", entity_id=action_id, actor_user_id=None, request_id=f"automation-{idempotency_key}", metadata={"workflow_instance_id": instance_id, "workflow_step_id": step_id, "action_type": action_type})
+    record_workflow_evidence(outcome="automation.executed", workflow_instance_id=instance_id, step_id=step_id, audit_event_id=automation_audit_id, references={"automation_action_id": action_id, "action_type": action_type})
     return action_id
 
 def workflow_detail(instance_id, principal=None):
