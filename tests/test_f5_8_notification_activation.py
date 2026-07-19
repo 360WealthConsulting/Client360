@@ -109,11 +109,14 @@ def test_scope_contract_activation_only():
     assert (REPO_ROOT / "docs" / "NOTIFICATION_ACTIVATION.md").is_file()
 
 
-def test_f56_f57_f55_unmodified_in_worktree():
+def test_f57_f55_unmodified_in_worktree():
+    # F5.8 touches none of F5.5/F5.6/F5.7. NOTE: F5.9 (a later, separately-approved feature)
+    # intentionally modifies F5.6 (notification_worker.py) to relocate the shared claim
+    # contract and use claim_next_ready as the default claim, so F5.6 is no longer asserted
+    # here; F5.7 and F5.5 remain untouched.
     import subprocess
     out = subprocess.run(["git", "status", "--porcelain",
-                          "app/services/notification_worker.py",
                           "app/services/notification_retry.py",
                           "app/services/notification_dispatch.py"],
                          cwd=REPO_ROOT, capture_output=True, text=True).stdout
-    assert out.strip() == ""  # F5.6 / F5.7 / F5.5 untouched
+    assert out.strip() == ""  # F5.7 / F5.5 untouched

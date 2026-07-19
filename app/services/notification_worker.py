@@ -50,24 +50,22 @@ from sqlalchemy import select
 from app.services import notification_dispatch as dispatch
 from app.services import notifications as ledger
 
+# PendingNotificationClaim now lives in the neutral contract module (owned by neither F5.6
+# nor F5.9), keeping the dependency graph acyclic. Re-exported here so the existing import
+# path ``from app.services.notification_worker import PendingNotificationClaim`` still resolves
+# to the same class object.
+from app.services.notification_claims import PendingNotificationClaim
+
+# F5.9 ready-claim is the default claim (normal top-level import — no cycle, since F5.9 does
+# not import this module).
+from app.services.notification_ready import claim_next_ready
+
 logger = logging.getLogger("client360.notifications.worker")
 
-
-# --- the worker claim value object -------------------------------------------
-
-@dataclass(frozen=True)
-class PendingNotificationClaim:
-    """An immutable value object representing one unit of work claimed by the worker.
-
-    The worker operates on a **claim**, not a bare integer, so the interface stays stable as
-    future scalable claims extend this object (e.g. lease token, lease expiration, claim
-    timestamp, queue partition, worker ownership, priority). None of those fields exist today
-    — the single-instance implementation carries only the notification references.
-    """
-
-    notification_id: int
-    notification_uid: str | None = None
-    created_at: object = None  # notification created_at reference (informational only)
+__all__ = [
+    "PendingNotificationClaim", "DispatchCycleMetrics", "claim_next_pending",
+    "run_dispatch_cycle",
+]
 
 
 # --- content-free cycle metrics ----------------------------------------------
@@ -161,9 +159,10 @@ def run_dispatch_cycle(*, registry=None, cycle_limit: int | None = None,
     shared transaction. ``registry`` is passed to F5.5. ``cycle_limit`` bounds the number of
     notifications processed this cycle (``None`` = drain). ``stop`` is a cooperative predicate
     checked **between** notifications (never mid-dispatch). ``claim``/``dispatch_fn`` are test
-    seams defaulting to :func:`claim_next_pending` / F5.5 ``dispatch_notification``.
+    seams; ``claim`` defaults to the F5.9 :func:`claim_next_ready` (which returns only
+    currently-due work), ``dispatch_fn`` to F5.5 ``dispatch_notification``.
     """
-    claim = claim or claim_next_pending
+    claim = claim or claim_next_ready
     dispatch_fn = dispatch_fn or dispatch.dispatch_notification
     metrics = DispatchCycleMetrics()
     attempted: set[int] = set()  # cycle-local; in-memory; discarded when the cycle ends
