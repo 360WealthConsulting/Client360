@@ -1,5 +1,13 @@
 # Epic 5 — Tax Practice Platform
 
+> **HISTORICAL — Legacy product roadmap.** This is **Legacy Epic 5 (Tax Practice Platform)**,
+> a legacy-roadmap domain vertical (~55% shipped in v0.9.4–v0.9.8) — **not** the current
+> ADR-driven track's Epic 5 (which is *Notifications & Communications Foundation*). Legacy
+> numbering is distinct and frozen; this decision does not replace, rename, or invalidate
+> this work. See
+> [`architecture/REIMPLEMENTATION_ROADMAP.md`](architecture/REIMPLEMENTATION_ROADMAP.md) for
+> the active track. Retained unchanged for historical record.
+
 > Implementation status: the architecture is approved, Sprint 5.1 shipped in
 > Release v0.9.4, Sprint 5.2 shipped in Release v0.9.5, and Sprint 5.3 is in
 > draft review. See

@@ -1,5 +1,11 @@
 # Epic 4 — Practice Management Platform
 
+> **HISTORICAL — Legacy product roadmap.** This is **Legacy Epic 4 (Practice Management
+> Platform)**, part of the frozen legacy product roadmap — **not** the current ADR-driven
+> track's Epic 4 (which is *Workflow Orchestration*, ADR-016). Legacy numbering is distinct
+> and frozen. See [`architecture/REIMPLEMENTATION_ROADMAP.md`](architecture/REIMPLEMENTATION_ROADMAP.md)
+> for the active track. Retained unchanged for historical record.
+
 ## Sprint 4.2 implementation status
 
 The Operational Work Management Platform is implemented on

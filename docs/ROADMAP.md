@@ -1,5 +1,13 @@
 # Client360 Roadmap
 
+> **HISTORICAL — Legacy product roadmap (v0.9.x–1.0).** This is the legacy application's
+> product roadmap; its epic numbering (e.g. *Legacy Epic 4 — Practice Management*, *Legacy
+> Epic 5 — Tax Practice Platform*) is **frozen and distinct** from the active ADR-driven
+> re-implementation track. Legacy "Epic N" ≠ current-track "Epic N". For the active track
+> and its epic sequence, see [`architecture/REIMPLEMENTATION_ROADMAP.md`](architecture/REIMPLEMENTATION_ROADMAP.md)
+> (governed by [ADR-014](architecture/adr/ADR-014-engineering-backlog-and-roadmap-governance.md)).
+> Retained unchanged for historical record.
+
 ## Release 0.9 — Epic 4 Foundation ✅
 
 - PostgreSQL and a single linear Alembic migration history

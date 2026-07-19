@@ -1,5 +1,11 @@
 # Epic 5 — Revised Plan (post-v0.9.7)
 
+> **HISTORICAL — Legacy product roadmap.** A revised plan for **Legacy Epic 5 (Tax Practice
+> Platform)** — part of the frozen legacy roadmap, **not** the current ADR-driven track's
+> Epic 5 (*Notifications & Communications Foundation*). Legacy numbering is distinct and
+> frozen. See [`architecture/REIMPLEMENTATION_ROADMAP.md`](architecture/REIMPLEMENTATION_ROADMAP.md)
+> for the active track. Retained unchanged for historical record.
+
 **Purpose:** reassess the remainder of Epic 5 against the code that actually
 shipped (Releases v0.9.4–v0.9.7), rather than the original nine-sprint design in
 `EPIC_5_TAX_PRACTICE_PLATFORM.md`. The as-built platform diverged from the
