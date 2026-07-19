@@ -19,7 +19,15 @@ write-once and the uid is unique. Retries never create duplicate evidence.
 """
 from __future__ import annotations
 
-from app.security.evidence import EvidenceRecord, get_evidence, record_evidence
+from sqlalchemy import or_, select
+
+from app.security.evidence import (
+    EvidenceRecord,
+    _evidence_table,
+    _to_record,
+    get_evidence,
+    record_evidence,
+)
 
 #: Evidence source/type for workflow outcomes.
 WORKFLOW_EVIDENCE_SOURCE = "workflow"
@@ -68,3 +76,28 @@ def record_workflow_evidence(
         evidence_uid=uid,
         conn=conn,
     )
+
+
+def list_workflow_evidence(workflow_instance_id: int, *, limit: int = 200, conn=None) -> list[EvidenceRecord]:
+    """Retrieve the write-once evidence records for a workflow instance (and its steps).
+
+    Read-only, bounded, reference-only. Matches the instance reference and any step
+    references (``workflow_instance:<id>`` and ``workflow_instance:<id>/…``).
+    """
+    evidence = _evidence_table()
+    base = f"workflow_instance:{workflow_instance_id}"
+    query = (
+        select(evidence)
+        .where(or_(evidence.c.reference == base, evidence.c.reference.like(base + "/%")))
+        .order_by(evidence.c.id).limit(max(int(limit), 1))
+    )
+
+    def _do(c) -> list[EvidenceRecord]:
+        return [_to_record(row) for row in c.execute(query).mappings().all()]
+
+    if conn is not None:
+        return _do(conn)
+    from app.db import engine
+
+    with engine.connect() as connection:
+        return _do(connection)
