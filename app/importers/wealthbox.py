@@ -6,19 +6,20 @@ import os
 import re
 import zipfile
 from collections import namedtuple
-from functools import lru_cache
+from datetime import datetime
+from functools import cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.dialects.postgresql import insert
 
 FOLDER = Path("01 Raw Imports/Wealthbox")
 
-_Database = namedtuple("_Database", "engine source_contacts")
+_Database = namedtuple("_Database", "engine source_contacts import_jobs")
 
 
-@lru_cache(maxsize=None)
+@cache
 def _database():
     """Resolve the engine and tables on first use, never at import.
 
@@ -37,7 +38,11 @@ def _database():
     metadata = MetaData()
     metadata.reflect(bind=engine)
 
-    return _Database(engine, metadata.tables["source_contacts"])
+    return _Database(
+        engine,
+        metadata.tables["source_contacts"],
+        metadata.tables["import_jobs"],
+    )
 
 
 def find_contact_zips(folder=FOLDER):
@@ -101,6 +106,88 @@ def sanitized_row(row):
         for key, value in row.items()
         if key.lower().strip() not in sensitive_fields
     }
+
+
+def file_hash(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def start_import_job(conn, source_file, source_hash):
+    """Record the start of a Wealthbox import run (mirrors the Schwab importer)."""
+    import_jobs = _database().import_jobs
+    statement = (
+        insert(import_jobs)
+        .values(
+            source_system="Wealthbox",
+            source_file=source_file,
+            file_hash=source_hash,
+            status="started",
+        )
+        .returning(import_jobs.c.id)
+    )
+    return conn.execute(statement).scalar_one()
+
+
+def finish_import_job(conn, job_id, rows_read, rows_inserted, rows_updated=0, rows_skipped=0):
+    """Mark a Wealthbox import run complete with its row counts."""
+    import_jobs = _database().import_jobs
+    conn.execute(
+        import_jobs.update()
+        .where(import_jobs.c.id == job_id)
+        .values(
+            status="completed",
+            completed_at=datetime.now(),
+            rows_read=rows_read,
+            rows_inserted=rows_inserted,
+            rows_updated=rows_updated,
+            rows_skipped=rows_skipped,
+        )
+    )
+
+
+def validation_report(conn):
+    """Content-free post-import validation of the Wealthbox source data (counts only —
+    no names, emails, or phone numbers). Surfaces data-quality and match-review posture so
+    staff can trust the import before working the records."""
+    def scalar(sql):
+        return conn.execute(text(sql)).scalar() or 0
+
+    wb = "source_contacts.source_system = 'Wealthbox'"
+    total = scalar(f"SELECT count(*) FROM source_contacts WHERE {wb}")
+    with_email = scalar(f"SELECT count(*) FROM source_contacts WHERE {wb} AND normalized_email IS NOT NULL")
+    with_phone = scalar(f"SELECT count(*) FROM source_contacts WHERE {wb} AND normalized_phone IS NOT NULL")
+    dup_email = scalar(
+        f"SELECT count(*) FROM (SELECT normalized_email FROM source_contacts WHERE {wb} "
+        "AND normalized_email IS NOT NULL GROUP BY normalized_email HAVING count(*) > 1) d")
+    dup_phone = scalar(
+        f"SELECT count(*) FROM (SELECT normalized_phone FROM source_contacts WHERE {wb} "
+        "AND normalized_phone IS NOT NULL GROUP BY normalized_phone HAVING count(*) > 1) d")
+    linked = scalar(
+        "SELECT count(DISTINCT psl.source_contact_id) FROM person_source_links psl "
+        "JOIN source_contacts sc ON sc.id = psl.source_contact_id "
+        "WHERE sc.source_system = 'Wealthbox'")
+    pending_review = scalar(
+        "SELECT count(*) FROM match_queue mq JOIN source_contacts sc ON sc.id = mq.source_contact_id "
+        "WHERE sc.source_system = 'Wealthbox' AND mq.status = 'pending'")
+    return {
+        "wealthbox_source_contacts": total,
+        "with_email": with_email,
+        "missing_email": total - with_email,
+        "with_phone": with_phone,
+        "missing_phone": total - with_phone,
+        "duplicate_email_groups": dup_email,
+        "duplicate_phone_groups": dup_phone,
+        "linked_to_person": linked,
+        "unlinked": total - linked,
+        "pending_match_review": pending_review,
+    }
+
+
+def print_validation_report(report):
+    print()
+    print("Wealthbox import validation report")
+    for key, value in report.items():
+        print(f"  {key.replace('_', ' ')}: {value:,}")
 
 
 def import_contacts_zip(zip_path, conn):
@@ -238,15 +325,19 @@ def main(folder=FOLDER):
 
     with _database().engine.begin() as conn:
         for zip_path in zip_files:
+            job_id = start_import_job(conn, zip_path.name, file_hash(zip_path))
             read, inserted = import_contacts_zip(zip_path, conn)
+            finish_import_job(conn, job_id, rows_read=read, rows_inserted=inserted)
             rows_read += read
             rows_inserted += inserted
+        report = validation_report(conn)
 
     print()
     print("Wealthbox contact import complete.")
     print(f"Rows read: {rows_read:,}")
     print(f"Rows processed: {rows_inserted:,}")
     print("Sensitive identity and medical fields were excluded.")
+    print_validation_report(report)
 
     return {"rows_read": rows_read, "rows_inserted": rows_inserted}
 

@@ -6,7 +6,21 @@
 <div class="page-head"><div>
   <p class="eyebrow">Client</p>
   <h1>{{ person.full_name or ("Person " ~ person.id) }}</h1>
+  {% if person.primary_phone or person.primary_email or person.city or person.state %}
+  <p class="desc contact-line">
+    {% if person.primary_phone %}<a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a>{% endif %}
+    {% if person.primary_phone and person.primary_email %} &middot; {% endif %}
+    {% if person.primary_email %}<a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a>{% endif %}
+    {% if (person.primary_phone or person.primary_email) and (person.city or person.state) %} &middot; {% endif %}
+    {% if person.city or person.state %}{{ [person.city, person.state]|select|join(", ") }}{% endif %}
+  </p>
+  {% endif %}
   <p class="desc">Canonical person record #{{ person.id }} · {{ "Active" if person.active else "Inactive" }}</p>
+  <div class="quick-actions" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap">
+    <a class="btn secondary" href="/people/{{ person.id }}/notes?log=call#logform">Log Call</a>
+    <a class="btn secondary" href="/people/{{ person.id }}/notes?log=email#logform">Log Email</a>
+    <a class="btn secondary" href="/people/{{ person.id }}/notes?log=meeting#logform">Log Meeting</a>
+  </div>
 </div></div>
 
 <nav class="tabs">
@@ -289,7 +303,7 @@
             <div class="timeline-meta">
                 {{ task.priority.title() }}
                 ·
-                Assigned to {{ task.assigned_to or "Unassigned" }}
+                Assigned to {{ task.assignee_name or task.assigned_to or "Unassigned" }}
                 ·
                 Due {{ task.due_date or "not set" }}
             </div>

@@ -3,12 +3,73 @@
 {% block title %}Notes · {{ person.full_name }} | Client360{% endblock %}
 {% block crumb %}{{ person.full_name }} · Notes{% endblock %}
 {% block content %}
-{% call ui.page_head("Advisor notes", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
+{% call ui.page_head("Client notes", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
   <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
 {% endcall %}
-{% if saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Notes saved successfully.</div></div>{% endif %}
-<form method="post" action="/people/{{ person.id }}/notes" style="max-width:900px">
-  <textarea class="input" name="notes" placeholder="Enter client notes here..." style="width:100%; min-height:360px; height:auto; padding:16px; line-height:1.5; resize:vertical">{{ notes }}</textarea>
-  <div style="margin-top:12px"><button class="btn" type="submit">Save notes</button></div>
-</form>
+{% if saved == "permanent" %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Permanent client note saved.</div></div>{% endif %}
+{% if saved == "activity" %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Activity note added.</div></div>{% endif %}
+{% if saved == "logged" %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Communication logged.</div></div>{% endif %}
+
+<section style="max-width:900px; margin-bottom:26px">
+  <h2 class="section-title">Permanent client note</h2>
+  <p class="subtle" style="margin-top:-6px">Enduring facts, preferences, family and planning context. Editable; every save is versioned and audited.</p>
+  <form method="post" action="/people/{{ person.id }}/notes">
+    <input type="hidden" name="kind" value="permanent">
+    <textarea class="input" name="body" placeholder="Enduring client context..." style="width:100%; min-height:200px; padding:14px; line-height:1.5; resize:vertical">{{ permanent.body }}</textarea>
+    <div style="margin-top:10px; display:flex; gap:10px; align-items:center">
+      <button class="btn" type="submit">Save permanent note</button>
+      {% if permanent.updated_at %}<span class="subtle">Last updated {{ permanent.updated_at }}</span>{% endif %}
+    </div>
+  </form>
+</section>
+
+<section style="max-width:900px">
+  <h2 class="section-title">Activity &amp; communications</h2>
+  <p class="subtle" style="margin-top:-6px">Log calls, emails, meetings, follow-ups and conversations. Append-only; each entry is attributed, typed, and added to the timeline.</p>
+  <form method="post" action="/people/{{ person.id }}/notes" id="logform" style="margin-bottom:18px">
+    <input type="hidden" name="kind" value="activity">
+    <div class="row" style="gap:10px; margin-bottom:10px; align-items:flex-end">
+      <div class="field"><label>Type</label>
+        <select class="input" name="note_type">
+          <option value="note"{{ ' selected' if log not in ['call','email','meeting'] else '' }}>General note</option>
+          <option value="call"{{ ' selected' if log == 'call' else '' }}>Call</option>
+          <option value="email"{{ ' selected' if log == 'email' else '' }}>Email</option>
+          <option value="meeting"{{ ' selected' if log == 'meeting' else '' }}>Meeting</option>
+        </select></div>
+    </div>
+    <textarea class="input" name="note" placeholder="Log a call, email, meeting, or conversation..." style="width:100%; min-height:100px; padding:14px; line-height:1.5; resize:vertical" required></textarea>
+    <details style="margin-top:10px">
+      <summary class="subtle" style="cursor:pointer">Also create a follow-up task</summary>
+      <div class="row" style="gap:10px; margin-top:10px; flex-wrap:wrap; align-items:flex-end">
+        <label class="row" style="gap:6px; font-size:13px"><input type="checkbox" name="create_task" value="1"> Create task</label>
+        <div class="field"><label>Task title</label><input class="input" name="task_title" placeholder="Follow up with client"></div>
+        <div class="field"><label>Assign to</label>
+          <select class="input" name="task_assigned_to_user_id">
+            <option value="">Unassigned</option>
+            {% for u in assignable_users %}<option value="{{ u.id }}">{{ u.display_name }}</option>{% endfor %}
+          </select></div>
+        <div class="field"><label>Priority</label>
+          <select class="input" name="task_priority"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+        <div class="field"><label>Due date</label><input class="input" type="date" name="task_due_date"></div>
+      </div>
+    </details>
+    <div style="margin-top:10px"><button class="btn" type="submit">Save entry</button></div>
+  </form>
+  {% if activity_notes %}
+  <div class="stack">
+    {% for note in activity_notes %}
+    <article class="card" style="padding:14px 16px">
+      <div class="timeline-meta" style="display:flex; gap:10px; align-items:center; margin-bottom:6px">
+        {{ ui.badge(note.note_type|title, 'muted') }}
+        <strong>{{ note.author_name or "Unknown" }}</strong>
+        <span class="subtle">{{ note.created_at }}</span>
+      </div>
+      <div style="white-space:pre-wrap; line-height:1.5">{{ note.body }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card empty-state">No activity notes yet.</div>
+  {% endif %}
+</section>
 {% endblock %}

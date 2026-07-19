@@ -12,7 +12,6 @@ from app.db import (
     people,
     person_source_links,
     source_contacts,
-    tasks,
     relationship_types,
 )
 from app.security.authorization import accessible_person_ids
@@ -28,6 +27,7 @@ from app.services.relationships import (
     get_person_households,
 )
 from app.services.portfolio import get_person_portfolio
+from app.services.tasks import tasks_with_assignee
 
 
 router = APIRouter()
@@ -161,19 +161,6 @@ def person_profile(
         .limit(20)
     )
 
-    task_statement = (
-        select(tasks)
-        .where(
-            tasks.c.person_id == person_id,
-            tasks.c.status != "complete",
-        )
-        .order_by(
-            tasks.c.due_date.asc().nullslast(),
-            tasks.c.created_at.desc(),
-        )
-        .limit(8)
-    )
-
     with engine.connect() as connection:
         person = connection.execute(
             person_statement
@@ -199,9 +186,12 @@ def person_profile(
             account_statement
         ).mappings().all()
 
-        open_tasks = connection.execute(
-            task_statement
-        ).mappings().all()
+        # Resolve assignees through the same canonical service used by the dedicated Tasks page,
+        # so the Client Profile Tasks tab shows an identical assignee (UX-1). Open tasks only.
+        open_tasks = [
+            task for task in tasks_with_assignee(person_id, conn=connection)
+            if task["status"] != "complete"
+        ][:8]
 
         activity_rows = connection.execute(
             activity_statement

@@ -135,16 +135,25 @@ def apply_groups(connection, groups):
 		city = choose_best_value(members, "city")
 		state = choose_best_value(members, "state")
 
+		# Current schema: people uses primary_email/primary_phone (+ normalized_*), and
+		# person_source_links uses match_method/match_score/confirmed (no source_system/
+		# confidence_score). This apply step previously wrote the old, dropped columns.
+		normalized_email = choose_best_value(members, "normalized_email")
+		normalized_phone = choose_best_value(members, "normalized_phone")
+
 		person_id = connection.execute(
 			insert(people)
 			.values(
 				first_name=first_name,
 				last_name=last_name,
 				full_name=full_name,
-				email=email,
-				phone=phone,
+				primary_email=email,
+				normalized_email=normalized_email,
+				primary_phone=phone,
+				normalized_phone=normalized_phone,
 				city=city,
 				state=state,
+				active=True,
 			)
 			.returning(people.c.id)
 		).scalar_one()
@@ -156,10 +165,11 @@ def apply_groups(connection, groups):
 				insert(person_source_links).values(
 					person_id=person_id,
 					source_contact_id=member["id"],
-					source_system=member["source_system"],
 					match_method="exact_email_phone",
-					confidence_score=100,
+					match_score=100,
+					confirmed=True,
 				)
+				.on_conflict_do_nothing(constraint="uq_person_source_link")
 			)
 
 			links_created += 1

@@ -1,11 +1,28 @@
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
+
 from sqlalchemy import or_, select
 
-from app.db import (engine, exception_types, exceptions, portal_accounts, record_assignments,
-    tax_client_approvals, tax_engagement_returns, tax_engagements, tax_filing_events,
-    tax_return_lifecycle_events, tax_return_reviews, tax_review_corrections, tax_return_types,
-    tax_workflow_links, work_approvals, workflow_events, workflow_steps)
+from app.db import (
+    engine,
+    exception_types,
+    exceptions,
+    people,
+    portal_accounts,
+    record_assignments,
+    tax_client_approvals,
+    tax_engagement_returns,
+    tax_engagements,
+    tax_filing_events,
+    tax_return_lifecycle_events,
+    tax_return_reviews,
+    tax_return_types,
+    tax_review_corrections,
+    tax_workflow_links,
+    work_approvals,
+    workflow_events,
+    workflow_steps,
+)
 from app.portal.service import notify, portal_scope, require_scope
 from app.security.audit import write_audit_event
 from app.services.tax_domain import list_engagements
@@ -65,7 +82,7 @@ def _close_return_exceptions(return_id, codes, actor_user_id, resolution="source
 
 def transition_return(return_id,to_status,*,actor_user_id=None,portal_account_id=None,reason=None,request_id=None,force=False):
     if to_status not in STATES: raise ValueError("Unsupported lifecycle status")
-    now=datetime.now(timezone.utc)
+    now=datetime.now(UTC)
     blocker_override=None
     with engine.begin() as c:
         context=_context(c,return_id)
@@ -118,7 +135,7 @@ def request_review(return_id,review_type,*,requested_by_user_id,reviewer_user_id
 
 def decide_review(review_id,decision,*,reviewer_user_id,notes=None,corrections=None,request_id=None):
     if decision not in {"approved","returned"}: raise ValueError("Unsupported review decision")
-    now=datetime.now(timezone.utc)
+    now=datetime.now(UTC)
     with engine.begin() as c:
         review=c.execute(select(tax_return_reviews).where(tax_return_reviews.c.id==review_id).with_for_update()).mappings().one_or_none()
         if not review or review["status"]!="pending": raise ValueError("Pending review not found")
@@ -142,7 +159,7 @@ def correction_return_id(correction_id):
 
 def resolve_correction(correction_id,*,actor_user_id):
     with engine.begin() as c:
-        changed=c.execute(tax_review_corrections.update().where(tax_review_corrections.c.id==correction_id,tax_review_corrections.c.status=="open").values(status="resolved",resolved_by_user_id=actor_user_id,resolved_at=datetime.now(timezone.utc))).rowcount
+        changed=c.execute(tax_review_corrections.update().where(tax_review_corrections.c.id==correction_id,tax_review_corrections.c.status=="open").values(status="resolved",resolved_by_user_id=actor_user_id,resolved_at=datetime.now(UTC))).rowcount
     if not changed: raise ValueError("Open correction not found")
 
 def client_decision(return_id,approval_type,decision,*,portal_principal,notes=None,request_id=None):
@@ -154,7 +171,7 @@ def client_decision(return_id,approval_type,decision,*,portal_principal,notes=No
         row=c.execute(select(tax_client_approvals).where(tax_client_approvals.c.tax_engagement_return_id==return_id,tax_client_approvals.c.approval_type==approval_type).with_for_update()).mappings().one_or_none()
         if not row: raise ValueError("Client approval not requested")
         if row["status"]!="pending": return row["status"]
-        c.execute(tax_client_approvals.update().where(tax_client_approvals.c.id==row["id"]).values(status=decision,portal_account_id=portal_principal.account_id,decision_notes=notes,decided_at=datetime.now(timezone.utc)))
+        c.execute(tax_client_approvals.update().where(tax_client_approvals.c.id==row["id"]).values(status=decision,portal_account_id=portal_principal.account_id,decision_notes=notes,decided_at=datetime.now(UTC)))
     if decision=="rejected": target="in_preparation"
     else: target={"return_approval":"awaiting_efile_authorization","efile_authorization":"ready_to_file","delivery_acknowledgement":"completed"}[approval_type]
     return transition_return(return_id,target,portal_account_id=portal_principal.account_id,reason=notes or decision,request_id=request_id)
@@ -204,9 +221,9 @@ def production_dashboard(principal):
     authorized=list_engagements(principal); ids=[r["return_id"] for r in authorized]
     if not ids: return {"items":[],"metrics":{"total":0,"overdue":0,"awaiting_client":0,"awaiting_filing":0,"average_preparation_hours":0,"velocity_30_days":0},"by_status":{},"filing":{}}
     with engine.connect() as c:
-        rows=c.execute(select(tax_engagement_returns.c.id,tax_engagement_returns.c.status,tax_engagement_returns.c.priority,tax_engagement_returns.c.preparation_started_at,tax_engagement_returns.c.preparation_completed_at,tax_engagement_returns.c.status_entered_at,tax_engagement_returns.c.filing_status,record_assignments.c.user_id.label("assignee_user_id")).outerjoin(record_assignments, (record_assignments.c.entity_type=="tax_return")&(record_assignments.c.entity_id==tax_engagement_returns.c.id)&(record_assignments.c.inactive_date.is_(None))).where(tax_engagement_returns.c.id.in_(ids))).mappings().all()
+        rows=c.execute(select(tax_engagement_returns.c.id,tax_engagement_returns.c.status,tax_engagement_returns.c.priority,tax_engagement_returns.c.preparation_started_at,tax_engagement_returns.c.preparation_completed_at,tax_engagement_returns.c.status_entered_at,tax_engagement_returns.c.filing_status,record_assignments.c.user_id.label("assignee_user_id"),tax_engagements.c.person_id.label("taxpayer_person_id"),people.c.full_name.label("taxpayer_name"),people.c.primary_email.label("taxpayer_email"),people.c.primary_phone.label("taxpayer_phone")).outerjoin(record_assignments, (record_assignments.c.entity_type=="tax_return")&(record_assignments.c.entity_id==tax_engagement_returns.c.id)&(record_assignments.c.inactive_date.is_(None))).outerjoin(tax_engagements, tax_engagements.c.id==tax_engagement_returns.c.tax_engagement_id).outerjoin(people, people.c.id==tax_engagements.c.person_id).where(tax_engagement_returns.c.id.in_(ids))).mappings().all()
         review_rows=c.execute(select(tax_return_reviews.c.reviewer_user_id,tax_return_reviews.c.status).where(tax_return_reviews.c.tax_engagement_return_id.in_(ids))).all()
-    now=datetime.now(timezone.utc); by_status={s:sum(r["status"]==s for r in rows) for s in STATES}; durations=[(r["preparation_completed_at"]-r["preparation_started_at"]).total_seconds()/3600 for r in rows if r["preparation_started_at"] and r["preparation_completed_at"]]
+    now=datetime.now(UTC); by_status={s:sum(r["status"]==s for r in rows) for s in STATES}; durations=[(r["preparation_completed_at"]-r["preparation_started_at"]).total_seconds()/3600 for r in rows if r["preparation_started_at"] and r["preparation_completed_at"]]
     metrics={"total":len(rows),"overdue":sum((now-r["status_entered_at"]).days>7 and r["status"] not in {"completed","archived"} for r in rows),"awaiting_client":sum(r["status"] in {"awaiting_information","client_review","awaiting_efile_authorization"} for r in rows),"awaiting_filing":sum(r["status"] in {"ready_to_file","filed","rejected"} for r in rows),"average_preparation_hours":round(sum(durations)/len(durations),2) if durations else 0,"velocity_30_days":sum(r["status"] in {"delivered","completed","archived"} and (now-r["status_entered_at"]).days<=30 for r in rows)}
     preparers={str(uid):sum(r["assignee_user_id"]==uid for r in rows) for uid in {r["assignee_user_id"] for r in rows if r["assignee_user_id"]}}
     reviewers={str(uid):sum(r.reviewer_user_id==uid and r.status=="pending" for r in review_rows) for uid in {r.reviewer_user_id for r in review_rows if r.reviewer_user_id}}

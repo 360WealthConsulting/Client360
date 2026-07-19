@@ -376,3 +376,40 @@ def test_wealthbox_import_is_idempotent_on_rerun(tmp_path, cleanup):
             )
         ).mappings().all()
     assert len(rows) == 1
+
+
+def test_wealthbox_import_records_an_import_job(tmp_path, cleanup):
+    """The Wealthbox import now records an import_jobs run (like Schwab), for auditability."""
+    from sqlalchemy import text
+
+    from app.importers import wealthbox
+
+    zip_path = _write_contacts_zip(tmp_path)
+    wealthbox.main(tmp_path)
+
+    with engine.connect() as c:
+        job = c.execute(text(
+            "SELECT source_system, status, rows_read, rows_inserted FROM import_jobs "
+            "WHERE source_system = 'Wealthbox' AND source_file = :f "
+            "ORDER BY id DESC LIMIT 1"), {"f": zip_path.name}).mappings().first()
+    assert job is not None
+    assert job["source_system"] == "Wealthbox" and job["status"] == "completed"
+    assert job["rows_read"] == 1 and job["rows_inserted"] == 1
+
+
+def test_wealthbox_validation_report_is_content_free_and_consistent(tmp_path, cleanup):
+    """validation_report returns counts only (no names/emails/phones) and is internally consistent."""
+    from app.importers import wealthbox
+
+    _write_contacts_zip(tmp_path)
+    wealthbox.main(tmp_path)
+
+    with engine.connect() as c:
+        report = wealthbox.validation_report(c)
+    # internal consistency (accumulated DB -> use >= / equalities, never exact totals)
+    assert report["wealthbox_source_contacts"] >= 1
+    assert report["with_email"] + report["missing_email"] == report["wealthbox_source_contacts"]
+    assert report["with_phone"] + report["missing_phone"] == report["wealthbox_source_contacts"]
+    assert report["linked_to_person"] + report["unlinked"] == report["wealthbox_source_contacts"]
+    # content-free: values are all integers, no strings/PII
+    assert all(isinstance(v, int) for v in report.values())
