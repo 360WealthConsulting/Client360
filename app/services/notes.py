@@ -28,6 +28,14 @@ FILESYSTEM_SOURCE = "filesystem_migration"
 #: The note_type vocabulary for ``person_notes`` (shared with future timeline/communication work).
 NOTE_TYPES: frozenset[str] = frozenset({"note", "call", "meeting", "email", "task", "system"})
 
+#: Note types a staff member may create through the UI: general activity notes plus the
+#: one-click communication types (call/email/meeting). Excludes the internal ``task``/``system``
+#: types, which are written by services rather than typed by a person.
+ACTIVITY_NOTE_TYPES: frozenset[str] = frozenset({"note", "call", "email", "meeting"})
+
+#: Human labels + timeline verbs for the communication types (Task 5).
+COMMUNICATION_TYPES: frozenset[str] = frozenset({"call", "email", "meeting"})
+
 
 def _table(name: str) -> Table:
     from app.db import engine, metadata

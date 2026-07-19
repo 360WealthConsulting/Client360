@@ -12,6 +12,7 @@ from app.security.audit import write_audit_event
 from app.security.dependencies import current_principal
 from app.security.models import Principal
 from app.services.notes import (
+    ACTIVITY_NOTE_TYPES,
     add_person_note,
     get_permanent_note,
     list_person_notes,
@@ -47,6 +48,7 @@ def person_notes(request: Request, person_id: int, principal: Principal = Depend
             "permanent": get_permanent_note(person_id),
             "activity_notes": list_person_notes(person_id),
             "saved": request.query_params.get("saved"),
+            "log": request.query_params.get("log"),
         },
     )
 
@@ -77,21 +79,32 @@ async def post_person_notes(
         )
         return RedirectResponse(url=f"/people/{person_id}/notes?saved=permanent", status_code=303)
 
-    # default: add an append-only activity note (simultaneous adds never overwrite)
+    # default branch: one shared path for an append-only activity note OR a one-click logged
+    # communication (call/email/meeting), distinguished by a validated note_type. Append-only
+    # inserts mean simultaneous adds never overwrite. Timeline + audit are written here once
+    # (the notes service records neither), so there is no duplicate event.
     body = form.get("note", [""])[0].strip()
     if not body:
         return RedirectResponse(url=f"/people/{person_id}/notes", status_code=303)
-    note_id = add_person_note(person_id, body, author_user_id=principal.user_id, note_type="note")
+    note_type = form.get("note_type", ["note"])[0]
+    if note_type not in ACTIVITY_NOTE_TYPES:
+        note_type = "note"
+    note_id = add_person_note(person_id, body, author_user_id=principal.user_id, note_type=note_type)
     summary = body if len(body) <= 500 else body[:497] + "..."
+    is_comm = note_type != "note"
+    if is_comm:
+        event_type, title, audit_action = "communication_logged", f"{note_type.title()} logged", "communication.logged"
+    else:
+        event_type, title, audit_action = "activity_note_added", "Activity note added", "note.activity.added"
     add_timeline_event(
-        person_id=person_id, source="client360", event_type="activity_note_added",
-        title="Activity note added", summary=summary,
-        event_metadata={"note_id": note_id, "author_user_id": principal.user_id},
+        person_id=person_id, source="client360", event_type=event_type,
+        title=title, summary=summary,
+        event_metadata={"note_id": note_id, "note_type": note_type, "author_user_id": principal.user_id},
     )
     write_audit_event(
-        action="note.activity.added", entity_type="person", entity_id=person_id,
+        action=audit_action, entity_type="person", entity_id=person_id,
         actor_user_id=principal.user_id, request_id=_request_id(request),
-        metadata={"note_id": note_id},
+        metadata={"note_id": note_id, "note_type": note_type},
     )
 
     # optional follow-up task from the activity note (reuses the person-task service/table
@@ -108,4 +121,5 @@ async def post_person_notes(
             source="activity_note", source_note_id=note_id,
         )
 
-    return RedirectResponse(url=f"/people/{person_id}/notes?saved=activity", status_code=303)
+    return RedirectResponse(
+        url=f"/people/{person_id}/notes?saved={'logged' if is_comm else 'activity'}", status_code=303)
