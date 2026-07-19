@@ -161,6 +161,8 @@ def start_scheduler() -> None:
     if outbox_dispatcher_enabled():
         from app.services.workflow_automation_consumers import register_workflow_consumers
         register_workflow_consumers()
+        from app.services.notification_intents import register_notification_consumers
+        register_notification_consumers()
         _scheduler.add_job(
             run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
             id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,
