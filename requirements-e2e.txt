@@ -1,0 +1,7 @@
+# Browser end-to-end testing (Playwright via pytest-playwright).
+# Kept separate from requirements-dev.txt so the unit suite and its CI job do not
+# pull a browser toolchain. Install with:
+#   pip install -r requirements-e2e.txt && playwright install --with-deps chromium
+# Run with:  python -m pytest e2e/ -q   (needs a migrated disposable test DB)
+pytest-playwright==0.5.2
+playwright==1.48.0
