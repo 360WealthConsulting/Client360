@@ -1,8 +1,9 @@
-"""Tests for the advisor-facing Wealth dashboard (Phase A, PR-1).
+"""Tests for the advisor-facing Wealth dashboard at `/wealth`.
 
-A read-only firm-wide overview at `/wealth` that reuses the existing
-`get_firm_portfolio_metrics()`. It is gated exactly like `/portfolio`:
-`client.read` (middleware RULE + route dependency) plus `record.read_all`
+A read-only firm-wide overview fed by `get_wealth_dashboard()` (which reuses
+`get_firm_portfolio_metrics()`): Firm overview, Advisor attention, Recent
+activity, and Quick actions. Gated exactly like `/portfolio`: `client.read`
+(middleware RULE + route dependency) plus `record.read_all`
 (FIRM_WIDE_COLLECTION). No new capability, schema, or business policy.
 """
 import re
@@ -49,8 +50,16 @@ def test_wealth_dashboard_renders_html_for_authorized_admin():
     assert "text/html" in response.headers["content-type"]
     body = response.body.decode()
     assert "Wealth dashboard" in body
-    for label in ("Firm AUM", "Cash", "Largest household", "Accounts without a review"):
+    # Four sections and their key labels.
+    for section in ("Firm overview", "Advisor attention", "Recent activity", "Quick actions"):
+        assert section in body
+    for label in ("AUM", "Households", "Accounts", "Cash",
+                  "Missing beneficiaries", "High cash", "Accounts needing review",
+                  "Latest imports", "New households", "Recently updated accounts"):
         assert label in body
+    # Quick actions link to existing surfaces.
+    assert 'href="/portfolio"' in body
+    assert 'href="/households"' in body
 
 
 def test_wealth_path_requires_client_read_capability():
@@ -81,3 +90,42 @@ def test_unauthorized_user_sees_neither_wealth_section_nor_dashboard():
         request=_request(), principal=advisor
     )
     assert 'href="/wealth"' not in nav
+
+
+def test_get_wealth_dashboard_counts_and_recent_activity():
+    # get_wealth_dashboard reuses get_firm_portfolio_metrics and adds counts +
+    # recent activity. Assert the shape and that a high-cash account is counted.
+    import uuid
+    from decimal import Decimal
+
+    from sqlalchemy import delete
+
+    from app.db import accounts, engine, households
+    from app.services.portfolio import get_wealth_dashboard
+
+    tag = uuid.uuid4().hex[:8]
+    with engine.begin() as c:
+        hid = c.execute(households.insert().values(name=f"Dash HH {tag}").returning(households.c.id)).scalar_one()
+        # 60% cash -> counts toward high_cash.
+        acct = c.execute(accounts.insert().values(
+            household_id=hid, custodian="Schwab", account_number=f"DASH-{tag}",
+            status="open", total_value=Decimal("100000"), cash_value=Decimal("60000"),
+        ).returning(accounts.c.id)).scalar_one()
+    try:
+        d = get_wealth_dashboard()
+        # Reused metric keys are present.
+        for key in ("firm_aum", "cash_waiting", "missing_beneficiaries", "accounts_without_reviews"):
+            assert key in d
+        # New counts/lists.
+        assert d["household_count"] >= 1
+        assert d["account_count"] >= 1
+        assert d["high_cash_count"] >= 1  # our 60%-cash account
+        assert isinstance(d["recent_imports"], list)
+        assert isinstance(d["new_households"], list)
+        assert isinstance(d["recently_updated_accounts"], list)
+        # The new household appears in recent activity.
+        assert any(h["id"] == hid for h in d["new_households"])
+    finally:
+        with engine.begin() as c:
+            c.execute(delete(accounts).where(accounts.c.id == acct))
+            c.execute(delete(households).where(households.c.id == hid))

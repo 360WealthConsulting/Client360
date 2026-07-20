@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.portfolio import get_firm_portfolio_metrics
+from app.services.portfolio import get_wealth_dashboard
 
 router = APIRouter(prefix="/wealth", tags=["wealth"])
 templates = Jinja2Templates(directory="app/templates")
@@ -20,13 +20,14 @@ def wealth_dashboard(
     """Advisor-facing firm-wide wealth overview.
 
     A read-only landing page for the WEALTH section. It reuses the existing
-    firm portfolio metrics (`get_firm_portfolio_metrics`) — no new aggregation,
-    schema, or policy. Middleware additionally enforces `record.read_all`
-    (FIRM_WIDE_COLLECTION), so this is gated exactly like `/portfolio`.
+    portfolio services (`get_wealth_dashboard` → `get_firm_portfolio_metrics`) —
+    no new aggregation, schema, or policy. Middleware additionally enforces
+    `record.read_all` (FIRM_WIDE_COLLECTION), so this is gated exactly like
+    `/portfolio`.
     """
-    metrics = get_firm_portfolio_metrics()
+    dashboard = get_wealth_dashboard()
     return templates.TemplateResponse(
         request=request,
         name="wealth/dashboard.html",
-        context={"principal": principal, "metrics": metrics},
+        context={"principal": principal, "d": dashboard},
     )
