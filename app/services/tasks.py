@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import and_, insert, select, update
 
-from app.db import engine, people, record_assignments, tasks, users
+from app.db import engine, people, record_assignments, tasks, user_roles, users
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
 
@@ -27,11 +27,19 @@ def _person_exists(c, person_id: int) -> bool:
 
 
 def assignable_users(conn=None):
-    """Active users available as task assignees (the canonical user model, not free text)."""
+    """Provisioned staff available as task assignees: active users holding at least one active
+    role. Scoping to role-holders (rather than *every* active user) keeps the picker to real
+    staff and excludes system/orphan user rows — the canonical user model, never free text."""
     def _do(c):
         return c.execute(
             select(users.c.id, users.c.display_name)
-            .where(users.c.status == "active").order_by(users.c.display_name)
+            .select_from(users.join(user_roles, and_(
+                user_roles.c.user_id == users.c.id,
+                user_roles.c.inactive_date.is_(None),
+            )))
+            .where(users.c.status == "active")
+            .distinct()
+            .order_by(users.c.display_name)
         ).mappings().all()
 
     if conn is not None:
