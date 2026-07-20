@@ -26,27 +26,37 @@ scripts/test.sh reset            # migrated, disposable DB
 python -m pytest e2e/ -q
 ```
 
-## Current coverage (unauthenticated)
+## Coverage
 
-- `/health` serves.
-- Static stylesheet loads.
-- A protected record (`/people/1`) redirects an unauthenticated visitor to login.
-- The home route redirects an unauthenticated visitor to login.
+**Unauthenticated (`e2e/test_smoke.py`)**
+- `/health` serves; static stylesheet loads.
+- A protected record (`/people/1`) and the home route redirect an unauthenticated
+  visitor to login.
 
-## Authenticated E2E — blocked, needs a product decision
+**Authenticated (`e2e/test_authenticated.py`)** — signs in through the
+development-only provider (below): dashboard, people directory, households,
+search (finds a seeded client), client profile, notes, tasks, and the
+communication quick actions.
 
-The high-value flows (search → profile → notes → activity → communications →
-tasks) require an authenticated browser session. The application authenticates
-through an **external identity provider** and exposes **no test-login path**, so
-a browser cannot obtain a session in CI without one of:
+## Development-only authentication provider
 
-1. a **test-only authentication mechanism** (e.g. a seeded-session bootstrap
-   gated to non-production environments), or
-2. a **configured test IdP** in the E2E environment.
+The high-value flows need an authenticated browser session, and the app
+authenticates through an external IdP with no test-login path. Rather than a test
+IdP, `app/routes/dev_auth.py` provides a **development-only** sign-in at
+`/dev-auth/login` that issues a real session through the same
+`authenticate_claims` + `create_session` path (no RBAC bypass), for the
+deterministic personas in `app/demo/credentials.py`.
 
-Both are product/security decisions and are intentionally **not** implemented
-here. Until one is chosen, authenticated E2E coverage cannot be added. See the
-Engineering Backlog item **"Authenticated E2E: test-authentication strategy."**
+It is **impossible to enable in production**, guarded twice: `app.main` mounts the
+router only when `dev_auth_enabled()` is true, and that function returns false
+whenever `CLIENT360_ENVIRONMENT=production` regardless of the toggle; every handler
+also re-asserts the guard. Enable it with:
+
+```
+CLIENT360_ENVIRONMENT=development CLIENT360_DEV_AUTH=1
+```
+
+The `live_server` fixture sets these for the E2E server automatically.
 
 ## Promotion to a gate
 
