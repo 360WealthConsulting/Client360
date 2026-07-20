@@ -69,7 +69,7 @@ avoids coupling V1.0 to the AD-5 compliance gate.
 | O3 | Staging deploy + rollback rehearsal | Recorded rehearsal on target infra | ⛔ ops |
 | O4 | Monitoring/alerting wired to `/health`,`/readiness` | Probes registered in the monitoring system | ⛔ ops |
 | O5 | SSO/IdP + env config in target environment | Successful login in the target env | ⛔ ops |
-| D1 | Documentation | CHANGELOG, RELEASE_READINESS, PROJECT_STATUS, PRODUCT_DECISIONS, this plan current; a staff user guide exists | 🟡 (user guide pending) |
+| D1 | Documentation | CHANGELOG, RELEASE_READINESS, PROJECT_STATUS, PRODUCT_DECISIONS, this plan, and a staff user guide (`USER_GUIDE.md`) current | ✅ |
 | T1 | Test coverage of V1.0 surface | Every V1.0 route/service has service- or route-level tests | ✅ |
 | C1 | Compliance approvals | None required for the CRM scope; regulated insurance excluded (AD-5) | ✅ for scope |
 | B1 | Business decisions blocking release | None: PD-1/PD-2/PD-3 have safe defaults and are not required for V1.0 | ✅ |
@@ -83,9 +83,11 @@ O*/I1 are operational; C1/B1 are cleared for the CRM scope.
 ## 3. Remaining Engineering Work (categorized)
 
 **Required for V1.0**
-- Staff **user guide** (D1) — the one engineering-adjacent doc gap.
-- Support **E6** by making the E2E workflow eligible as a required check (it is green and stable;
-  promotion is a branch-protection action, but engineering confirms stability).
+- ~~Staff user guide (D1)~~ — **done** (`docs/USER_GUIDE.md`).
+- Support **E6** by confirming E2E stability so it can be promoted to a required check (green and
+  stable across recent PRs; promotion itself is a branch-protection action for the repo admin).
+- With those, the V1.0 **engineering** criteria (E1–E5, T1, D1) are met; remaining criteria are
+  operational (O*/I1) and are not engineering work.
 
 **Nice to have (must NOT delay V1.0)**
 - `humandt` shared-templates refactor; communication metadata (PD-3); household-derivation UI/report.
