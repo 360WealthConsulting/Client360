@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Unresolved contacts | Client360{% endblock %}
+{% block crumb %}Match Review · Unresolved{% endblock %}
+{% block content %}
+{{ ui.page_head("Unresolved contacts", eyebrow="Match Review", desc="Single-source contacts that need a human decision: link to an existing client or create a new one.") }}
+{% if saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Contact resolved.</div></div>{% endif %}
+{% if contacts %}
+<div class="stack">
+  {% for contact in contacts %}
+  <article class="card" style="padding:14px 16px; max-width:900px">
+    <div class="row" style="gap:10px; align-items:center; margin-bottom:6px">
+      <strong>{{ contact.full_name or "(No name)" }}</strong>
+      {{ ui.badge(contact.source_system or "Source", 'muted') }}
+      {{ ui.badge("Multiple candidates" if contact.reason == "multiple_candidates" else "Shared contact info", 'muted') }}
+    </div>
+    <div class="subtle" style="margin-bottom:10px">
+      {{ contact.email or "no email" }} · {{ contact.phone or "no phone" }}
+    </div>
+    <form method="post" action="/matches/unresolved/{{ contact.id }}/resolve" class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end">
+      {% if contact.candidates %}
+      <div class="field"><label>Link to existing client</label>
+        <select class="input" name="person_id">
+          {% for candidate in contact.candidates %}
+          <option value="{{ candidate.id }}">{{ candidate.full_name or ("Person " ~ candidate.id) }} — {{ candidate.primary_email or candidate.primary_phone or ("#" ~ candidate.id) }}</option>
+          {% endfor %}
+        </select></div>
+      <button class="btn" type="submit" name="action" value="link">Link</button>
+      {% endif %}
+      <button class="btn secondary" type="submit" name="action" value="create">Create new client</button>
+    </form>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+{% call ui.empty("Nothing to resolve", "No single-source contacts need a decision right now.") %}{% endcall %}
+{% endif %}
+{% endblock %}

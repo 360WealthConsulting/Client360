@@ -16,6 +16,7 @@ from app.routes.microsoft365_documents import (
 from app.routes.documents import router as documents_router
 
 from app.routes.dashboard import router as dashboard_router
+from app.routes.identity_review import router as identity_review_router
 from app.routes.matches import router as matches_router
 from app.routes.notes import router as notes_router
 from app.routes.people import router as people_router
@@ -88,6 +89,7 @@ app.include_router(insurance_router)
 app.include_router(search_router)
 app.include_router(source_router)
 app.include_router(matches_router)
+app.include_router(identity_review_router)
 app.include_router(people_router)
 app.include_router(person_edit_router)
 app.include_router(notes_router)
