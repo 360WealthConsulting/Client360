@@ -33,7 +33,7 @@
       {% if task.status == 'complete' %}{{ ui.badge('Complete','good') }}{% else %}{{ ui.badge(task.priority) }}{% endif %}
     </div>
     {% if task.description %}<div style="margin-top:6px">{{ task.description }}</div>{% endif %}
-    <div class="subtle" style="margin-top:6px">Status: {{ task.status }} · Priority: {{ task.priority }} · Assigned: {{ task.assignee_name or task.assigned_to or "Unassigned" }} · Due: {{ task.due_date or "No due date" }}</div>
+    <div class="subtle" style="margin-top:6px">Status: {{ task.status }} · Priority: {{ task.priority }} · Assigned: {{ task.assignee_name or task.assigned_to or "Unassigned" }} · Due: {{ (task.due_date | humandt) or "No due date" }}</div>
     {% if task.status != "complete" %}
     <form method="post" action="/people/{{ person.id }}/tasks/{{ task.id }}/complete" style="margin-top:10px"><button class="btn secondary sm" type="submit">Mark complete</button></form>
     {% endif %}

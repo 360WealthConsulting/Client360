@@ -18,7 +18,7 @@
     <textarea class="input" name="body" placeholder="Enduring client context..." style="width:100%; min-height:200px; padding:14px; line-height:1.5; resize:vertical">{{ permanent.body }}</textarea>
     <div style="margin-top:10px; display:flex; gap:10px; align-items:center">
       <button class="btn" type="submit">Save permanent note</button>
-      {% if permanent.updated_at %}<span class="subtle">Last updated {{ permanent.updated_at }}</span>{% endif %}
+      {% if permanent.updated_at %}<span class="subtle">Last updated {{ permanent.updated_at | humandt }}</span>{% endif %}
     </div>
   </form>
 </section>
@@ -62,7 +62,7 @@
       <div class="timeline-meta" style="display:flex; gap:10px; align-items:center; margin-bottom:6px">
         {{ ui.badge(note.note_type|title, 'muted') }}
         <strong>{{ note.author_name or "Unknown" }}</strong>
-        <span class="subtle">{{ note.created_at }}</span>
+        <span class="subtle">{{ note.created_at | humandt }}</span>
       </div>
       <div style="white-space:pre-wrap; line-height:1.5">{{ note.body }}</div>
     </article>

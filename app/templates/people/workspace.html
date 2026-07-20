@@ -307,7 +307,7 @@
                 ·
                 Assigned to {{ task.assignee_name or task.assigned_to or "Unassigned" }}
                 ·
-                Due {{ task.due_date or "not set" }}
+                Due {{ (task.due_date | humandt) or "not set" }}
             </div>
         </article>
         {% else %}
@@ -496,7 +496,7 @@
                     <div class="empty-state">
                         {{ task.priority.title() }}
                         ·
-                        Due {{ task.due_date or "not set" }}
+                        Due {{ (task.due_date | humandt) or "not set" }}
                     </div>
                 </div>
                 {% else %}
