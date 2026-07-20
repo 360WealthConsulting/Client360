@@ -12,6 +12,16 @@ EVENT_DISPLAY = {
         "label": "Advisor Note",
         "style": "note",
     },
+    "activity_note_added": {
+        "icon": "📝",
+        "label": "Activity Note",
+        "style": "note",
+    },
+    "communication_logged": {
+        "icon": "💬",
+        "label": "Communication",
+        "style": "activity",
+    },
     "task_created": {
         "icon": "＋",
         "label": "Task Created",
