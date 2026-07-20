@@ -118,6 +118,17 @@ def configuration_warnings() -> list[str]:
 
 
 def validate_startup_configuration() -> None:
-    """Emit configuration warnings at startup (called from the app lifespan)."""
+    """Fail fast on production-fatal misconfiguration, then emit warnings (called from the app
+    lifespan). Read env at call time so the checks are exercised by tests."""
+    is_production = os.getenv("CLIENT360_ENVIRONMENT", "development").strip().lower() == "production"
+    dev_auth_on = os.getenv("CLIENT360_DEV_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
+    if is_production and dev_auth_on:
+        # The dev-only sign-in provider is already refused in production (dev_auth_enabled()
+        # returns False there), but a set toggle signals a serious deployment mistake — refuse
+        # to boot rather than silently ignore it.
+        raise RuntimeError(
+            "CLIENT360_DEV_AUTH must not be enabled in production. The development-only sign-in "
+            "provider is refused in production; unset CLIENT360_DEV_AUTH before deploying."
+        )
     for message in configuration_warnings():
         logger.warning("configuration: %s", message)
