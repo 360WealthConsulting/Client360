@@ -2,51 +2,18 @@
 {% block title %}Wealth Dashboard | Client360{% endblock %}
 {% block crumb %}Wealth{% endblock %}
 {% block content %}
-<div class="page-header"><div><p class="eyebrow">Wealth</p><h1>Wealth dashboard</h1><p class="muted">Firm-wide portfolio overview across all custodial accounts.</p></div></div>
+<div class="page-header"><div><p class="eyebrow">Wealth</p><h1>Wealth dashboard</h1><p class="muted">Book triage — households and accounts that need attention.</p></div></div>
 
-<h2 class="section-title">Firm overview</h2>
-<section class="stat-grid">
-  <article class="card"><span class="detail-label">AUM</span><h2>${{ "{:,.0f}".format(d.firm_aum or 0) }}</h2></article>
-  <article class="card"><span class="detail-label">Households</span><h2>{{ d.household_count }}</h2></article>
-  <article class="card"><span class="detail-label">Accounts</span><h2>{{ d.account_count }}</h2></article>
-  <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.0f}".format(d.cash_waiting or 0) }}</h2></article>
-</section>
+{# Compact firm summary strip: context only (AUM + cash across the book). #}
+<div class="row" style="gap:12px; flex-wrap:wrap; margin-bottom:18px">
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Firm AUM</span><h2 style="margin:2px 0">${{ "{:,.0f}".format(d.firm_aum or 0) }}</h2></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Firm Cash</span><h2 style="margin:2px 0">${{ "{:,.0f}".format(d.cash_waiting or 0) }}</h2></article>
+</div>
 
 <h2 class="section-title">Advisor attention</h2>
 <section class="stat-grid">
   <a class="card" style="text-decoration:none; color:inherit" href="/portfolio?missing_beneficiary=true"><span class="detail-label">Missing beneficiaries</span><h2>{{ d.missing_beneficiaries }}</h2><p class="muted">Retirement accounts with no active beneficiary</p></a>
   <a class="card" style="text-decoration:none; color:inherit" href="/portfolio?high_cash=true"><span class="detail-label">High cash</span><h2>{{ d.high_cash_count }}</h2><p class="muted">Accounts ≥ 15% cash</p></a>
   <article class="card"><span class="detail-label">Accounts needing review</span><h2>{{ d.accounts_without_reviews }}</h2><p class="muted">No recorded review date</p></article>
-</section>
-
-<h2 class="section-title">Recent activity</h2>
-<section class="stat-grid">
-  <article class="card">
-    <h3>Latest imports</h3>
-    {% for imp in d.recent_imports %}
-      <div class="detail-row"><span>{{ imp.source_file.split("/")[-1] if imp.source_file else imp.source_type }}</span><strong>{{ imp.status }}</strong></div>
-    {% else %}<p class="muted">No imports yet.</p>{% endfor %}
-  </article>
-  <article class="card">
-    <h3>New households</h3>
-    {% for hh in d.new_households %}
-      <div class="detail-row"><span><a href="/households/{{ hh.id }}">{{ hh.name }}</a></span><strong>{{ hh.created_at.strftime("%b %-d, %Y") if hh.created_at else "" }}</strong></div>
-    {% else %}<p class="muted">No households yet.</p>{% endfor %}
-  </article>
-  <article class="card">
-    <h3>Recently updated accounts</h3>
-    {% for acct in d.recently_updated_accounts %}
-      <div class="detail-row"><span>{{ acct.account_name or acct.account_number }} · {{ acct.custodian }}</span><strong>${{ "{:,.0f}".format(acct.total_value or 0) }}</strong></div>
-    {% else %}<p class="muted">No account imports yet.</p>{% endfor %}
-  </article>
-</section>
-
-<h2 class="section-title">Quick actions</h2>
-<section class="row" style="gap:10px; flex-wrap:wrap">
-  <a class="btn" href="/portfolio">Portfolio search</a>
-  <a class="btn" href="/households">Households</a>
-  {# Beneficiary Review workspace is a Phase B deliverable; until then this points
-     at the existing missing-beneficiary portfolio filter. #}
-  <a class="btn" href="/portfolio?missing_beneficiary=true">Beneficiary review</a>
 </section>
 {% endblock %}
