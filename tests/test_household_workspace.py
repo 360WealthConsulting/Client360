@@ -100,11 +100,14 @@ def test_workspace_renders_all_sections():
         assert "Roth IRA" in body
         assert "Schwab" in body
         assert "200,000.00" in body
-        # Holdings section: full holdings.
-        assert "Holdings" in body
-        assert "150,000.00" in body
-        # Summary.
-        assert "Last import" in body
+        # Holdings: full table collapsed in a <details> (on-page, not navigated).
+        assert "<details" in body
+        assert "All holdings" in body
+        assert "150,000.00" in body  # holding value still in the DOM
+        # Admin form tucked behind a collapsible "Manage members".
+        assert "Manage members" in body
+        # "Last import" ops stat removed from the overview.
+        assert "Last import" not in body
         # Existing Members table preserved.
         assert "Household members" in body
         assert "Dana Primary" in body
