@@ -11,6 +11,7 @@ All notable Client360 releases are documented here.
 - Staff-editable canonical contact/address fields on the client profile (audited + added to the timeline).
 - Human-readable timestamps across the client surface via a shared Jinja `humandt` filter.
 - Task-submission idempotency: a DB-backed `tasks.idempotency_key` (unique) + hidden form token make a resubmitted create-task form a conflict-safe no-op (no duplicate task on browser back/resubmit or retried POST).
+- Optional inbound/outbound direction on logged communications (call/email/meeting), captured in the Log form and shown in the activity feed.
 
 ### Changed
 - Task/note assignee picker scoped to provisioned staff (active users holding an active role).

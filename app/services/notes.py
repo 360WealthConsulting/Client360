@@ -36,6 +36,9 @@ ACTIVITY_NOTE_TYPES: frozenset[str] = frozenset({"note", "call", "email", "meeti
 #: Human labels + timeline verbs for the communication types (Task 5).
 COMMUNICATION_TYPES: frozenset[str] = frozenset({"call", "email", "meeting"})
 
+#: Optional direction for a logged communication (null for general notes).
+COMMUNICATION_DIRECTIONS: frozenset[str] = frozenset({"inbound", "outbound"})
+
 
 def _table(name: str) -> Table:
     from app.db import engine, metadata
@@ -88,20 +91,24 @@ def save_permanent_note(person_id: int, body: str, *, editor_user_id: int | None
 # --- person notes (append-only, typed) ---------------------------------------
 
 def add_person_note(person_id: int, body: str, *, author_user_id: int | None = None,
-                    note_type: str = "note", conn=None) -> int:
+                    note_type: str = "note", direction: str | None = None, conn=None) -> int:
     """Append one typed person note. Returns the new note id. Reused by Task 5 (call logging)
-    and later communication features via ``note_type``."""
+    and later communication features via ``note_type``. ``direction`` (inbound/outbound) is
+    optional and only meaningful for communications."""
     body = (body or "").strip()
     if not body:
         raise ValueError("Note body is required.")
     if note_type not in NOTE_TYPES:
         raise ValueError(f"Invalid note_type: {note_type!r}")
+    direction = (direction or "").strip() or None
+    if direction is not None and direction not in COMMUNICATION_DIRECTIONS:
+        raise ValueError(f"Invalid direction: {direction!r}")
     notes = _table("person_notes")
 
     def _do(c):
         return c.execute(notes.insert().values(
             person_id=person_id, body=body, author_user_id=author_user_id,
-            note_type=note_type).returning(notes.c.id)).scalar_one()
+            note_type=note_type, direction=direction).returning(notes.c.id)).scalar_one()
 
     return _run(conn, _do)
 
@@ -114,7 +121,8 @@ def list_person_notes(person_id: int, *, note_types=None, conn=None) -> list[dic
     def _do(c):
         query = (
             select(notes.c.id, notes.c.body, notes.c.author_user_id, notes.c.note_type,
-                   notes.c.created_at, users.c.display_name.label("author_name"))
+                   notes.c.direction, notes.c.created_at,
+                   users.c.display_name.label("author_name"))
             .select_from(notes.outerjoin(users, users.c.id == notes.c.author_user_id))
             .where(notes.c.person_id == person_id)
         )
