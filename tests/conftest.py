@@ -67,10 +67,14 @@ def _usable_event_loop():
 
 def _ensure_loop() -> None:
     try:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_closed():
-            asyncio.set_event_loop(asyncio.new_event_loop())
+        with warnings.catch_warnings():
+            # Reading the current loop is deprecated in 3.12 when none is set; that is
+            # exactly the state we are repairing, so ignore the notice while we check.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            loop = asyncio.get_event_loop_policy().get_event_loop()
     except RuntimeError:
+        loop = None
+    if loop is None or loop.is_closed():
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
