@@ -86,6 +86,76 @@ def _candidate_people(conn, normalized_email, normalized_phone):
     return conn.execute(select(people.c.id).where(or_(*conditions)).distinct()).scalars().all()
 
 
+def list_ambiguous_unlinked(*, source_system: str | None = None, conn=None) -> list[dict]:
+    """Unlinked source_contacts that :func:`promote_unlinked` deliberately leaves for a human:
+    more than one candidate person (an exact email/phone match to several people), or a normalized
+    email/phone shared with another unlinked contact. Each is returned with its candidate people so
+    the Match Review "unresolved contacts" queue can offer link-to-existing / create-new. Content
+    is staff-facing (names/emails), unlike the content-free promotion report."""
+
+    def _do(c) -> list[dict]:
+        already_linked = select(person_source_links.c.source_contact_id)
+        query = select(source_contacts).where(source_contacts.c.id.notin_(already_linked))
+        if source_system:
+            query = query.where(source_contacts.c.source_system == source_system)
+        rows = c.execute(query.order_by(source_contacts.c.full_name)).mappings().all()
+        email_counts = Counter(r["normalized_email"] for r in rows if r["normalized_email"])
+        phone_counts = Counter(r["normalized_phone"] for r in rows if r["normalized_phone"])
+
+        results: list[dict] = []
+        for record in rows:
+            ne, np = record["normalized_email"], record["normalized_phone"]
+            candidate_ids = _candidate_people(c, ne, np)
+            shared = (ne and email_counts[ne] > 1) or (np and phone_counts[np] > 1)
+            if len(candidate_ids) > 1 or (len(candidate_ids) == 0 and shared):
+                candidates = []
+                if candidate_ids:
+                    candidates = [dict(p) for p in c.execute(
+                        select(people.c.id, people.c.full_name, people.c.primary_email,
+                               people.c.primary_phone).where(people.c.id.in_(candidate_ids))
+                    ).mappings().all()]
+                results.append({
+                    "id": record["id"], "full_name": record["full_name"],
+                    "source_system": record["source_system"], "email": record["email"],
+                    "phone": record["phone"],
+                    "reason": "multiple_candidates" if candidate_ids else "shared_contact_info",
+                    "candidates": candidates,
+                })
+        return results
+
+    if conn is not None:
+        return _do(conn)
+    with engine.connect() as connection:
+        return _do(connection)
+
+
+def resolve_link_to_person(source_contact_id: int, person_id: int, *, conn=None) -> None:
+    """Human resolution: link an unresolved contact to an existing person (Match Review)."""
+    def _do(c):
+        _link(c, person_id, source_contact_id, "manual_review", 100)
+
+    if conn is not None:
+        return _do(conn)
+    with engine.begin() as connection:
+        return _do(connection)
+
+
+def resolve_create_person(source_contact_id: int, *, conn=None) -> int:
+    """Human resolution: create a new canonical person from an unresolved contact and link it."""
+    def _do(c):
+        record = c.execute(
+            select(source_contacts).where(source_contacts.c.id == source_contact_id)
+        ).mappings().one()
+        person_id = _create_person(c, record)
+        _link(c, person_id, source_contact_id, "manual_review", 100)
+        return person_id
+
+    if conn is not None:
+        return _do(conn)
+    with engine.begin() as connection:
+        return _do(connection)
+
+
 def promote_unlinked(*, source_system: str | None = None, conn=None) -> PromotionReport:
     """Promote unlinked ``source_contacts`` into canonical people. Optionally scope to one
     ``source_system``. Returns a content-free :class:`PromotionReport`."""
