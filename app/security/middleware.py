@@ -130,7 +130,15 @@ def _denied(request, principal, action, entity_type, entity_id, detail):
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request.state.request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-        if request.url.path in PUBLIC_EXACT or request.url.path.startswith("/static/"):
+        # /dev-auth/* is the development-only sign-in provider. It is only *mounted*
+        # in non-production with CLIENT360_DEV_AUTH set (see app.main); in production
+        # there is no such route, so this prefix simply 404s. Treated as public so a
+        # developer can reach the sign-in without already having a session.
+        if (
+            request.url.path in PUBLIC_EXACT
+            or request.url.path.startswith("/static/")
+            or request.url.path.startswith("/dev-auth/")
+        ):
             return await call_next(request)
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             if _is_cross_site(

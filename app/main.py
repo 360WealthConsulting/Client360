@@ -31,6 +31,8 @@ from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_re
 from app.routes.timeline import router as timeline_router
 from app.routes.relationships import router as relationships_router
 from app.routes.auth import router as auth_router
+from app.routes.dev_auth import dev_auth_enabled
+from app.routes.dev_auth import router as dev_auth_router
 from app.routes.admin import router as admin_router
 from app.routes.session import router as session_router
 from app.security.middleware import AuthenticationMiddleware
@@ -104,6 +106,10 @@ app.include_router(timeline_router)
 app.include_router(relationships_router)
 app.include_router(portfolio_router)
 app.include_router(auth_router)
+# Development-only sign-in provider. dev_auth_enabled() is False in production (and
+# whenever CLIENT360_DEV_AUTH is unset), so this router is simply never mounted there.
+if dev_auth_enabled():
+    app.include_router(dev_auth_router)
 app.include_router(admin_router)
 app.include_router(session_router)
 app.include_router(work_router)

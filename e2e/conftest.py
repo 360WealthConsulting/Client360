@@ -53,6 +53,9 @@ def live_server():
         "SESSION_SECRET": os.environ.get("SESSION_SECRET", "test-session-secret-not-for-production"),
         "CLIENT360_ENVIRONMENT": "development",
         "SESSION_HTTPS_ONLY": "false",
+        # Enable the development-only sign-in provider so the browser can authenticate
+        # without an external IdP. dev_auth_enabled() still refuses under production.
+        "CLIENT360_DEV_AUTH": "1",
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
@@ -78,3 +81,49 @@ def live_server():
             proc.wait(timeout=10)
         except Exception:
             proc.kill()
+
+
+@pytest.fixture(scope="session")
+def seeded_client(live_server):
+    """Create one canonical person (+ household + linked source contact) for the
+    authenticated browser flows. Written to the same database the live server reads."""
+    import json
+    import uuid
+
+    from sqlalchemy import insert
+
+    from app.db import engine, households, people, person_source_links, source_contacts
+
+    tag = "E2E" + uuid.uuid4().hex[:6]
+    name = f"E2e Client {tag}"
+    email = f"{tag.lower()}@example.com"
+    with engine.begin() as connection:
+        household_id = connection.execute(
+            households.insert().values(name=f"E2E Household {tag}").returning(households.c.id)
+        ).scalar_one()
+        person_id = connection.execute(
+            people.insert().values(
+                household_id=household_id, full_name=name, active=True, primary_email=email
+            ).returning(people.c.id)
+        ).scalar_one()
+        source_id = connection.execute(
+            insert(source_contacts).values(
+                source_system="wealthbox", source_file="e2e.csv", source_hash=uuid.uuid4().hex,
+                raw_data=json.dumps({"name": name}), full_name=name, last_name=tag, email=email,
+            ).returning(source_contacts.c.id)
+        ).scalar_one()
+        connection.execute(insert(person_source_links).values(
+            person_id=person_id, source_contact_id=source_id,
+            match_method="e2e", match_score=100, confirmed=True))
+    return {"person_id": person_id, "name": name, "tag": tag}
+
+
+@pytest.fixture
+def app_page(page, live_server):
+    """A browser page signed in as the deterministic Administrator persona via the
+    development-only sign-in provider (real session; full RBAC)."""
+    page.goto(f"{live_server}/dev-auth/login")
+    page.click('button[data-persona="admin"]')
+    page.wait_for_load_state("networkidle")
+    assert "/auth/login" not in page.url  # signed in, not bounced to the IdP login
+    return page
