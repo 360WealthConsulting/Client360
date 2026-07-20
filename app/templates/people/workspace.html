@@ -160,7 +160,6 @@
             <article class="card"><span class="detail-label">Client AUM</span><h2>${{ "{:,.2f}".format(portfolio.total_aum) }}</h2></article>
             <article class="card"><span class="detail-label">Household AUM</span><h2>${{ "{:,.2f}".format(portfolio.household.total_aum) }}</h2></article>
             <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.2f}".format(portfolio.cash) }}</h2><p>{{ "{:.1f}".format(portfolio.cash_percent) }}%</p></article>
-            <article class="card"><span class="detail-label">Last Import</span><h3>{{ portfolio.last_import_date or "Not imported" }}</h3></article>
         </div>
         <article class="card"><h3>Accounts & Registrations</h3>{% for account in portfolio.accounts %}<div class="detail-row"><span>{{ account.account_name or account.account_number }} · {{ account.registration_type or "Unclassified" }} · {{ account.custodian }}</span><strong>${{ "{:,.2f}".format(account.total_value or 0) }}</strong></div>{% else %}<p>No portfolio accounts found.</p>{% endfor %}</article>
         <article class="card"><h3>Asset Allocation</h3>{% for name, item in portfolio.asset_allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p>No positions imported.</p>{% endfor %}</article>
