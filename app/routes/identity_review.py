@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.matching.promote import (
     list_ambiguous_unlinked,
+    promote_unlinked,
     resolve_create_person,
     resolve_link_to_person,
 )
@@ -36,8 +37,28 @@ def unresolved_contacts(request: Request, principal: Principal = Depends(current
     contacts = list_ambiguous_unlinked()
     return templates.TemplateResponse(
         request=request, name="matches/unresolved.html",
-        context={"contacts": contacts, "saved": request.query_params.get("saved") == "1"},
+        context={
+            "contacts": contacts,
+            "saved": request.query_params.get("saved") == "1",
+            "promoted": request.query_params.get("promoted"),
+        },
     )
+
+
+@router.post("/matches/promote-unlinked")
+async def run_promotion_backfill(request: Request,
+                                 principal: Principal = Depends(current_principal)):
+    """One-time / on-demand backfill: promote every unlinked single-source contact (e.g. those
+    imported before promotion was wired into the importer). Conservative — unique contacts become
+    people, exact matches link, ambiguous cases stay for review."""
+    report = promote_unlinked()
+    write_audit_event(
+        action="identity.promotion_backfill", entity_type="source_contact", entity_id="all",
+        actor_user_id=principal.user_id, request_id=_request_id(request),
+        metadata=report.to_dict(),
+    )
+    return RedirectResponse(
+        f"/matches/unresolved?promoted={report.created}", status_code=303)
 
 
 @router.post("/matches/unresolved/{source_contact_id}/resolve")
