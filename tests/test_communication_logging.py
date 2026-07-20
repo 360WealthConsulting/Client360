@@ -52,15 +52,6 @@ def _count(table, **where):
         return c.execute(q).scalar_one()
 
 
-@pytest.fixture(autouse=True)
-def _restore_event_loop():
-    # These tests drive async route handlers via asyncio.run(), which closes the loop and clears
-    # the current-loop slot. Restore a fresh loop after each test so unrelated tests later in the
-    # session that expect a current event loop are unaffected.
-    yield
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
-
 class _State:
     request_id = "req-comm"
 
