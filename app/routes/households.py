@@ -7,7 +7,6 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import (
-    accounts,
     engine,
     household_relationships,
     households,
@@ -15,6 +14,7 @@ from app.db import (
     tasks,
 )
 from app.security.authorization import accessible_person_ids
+from app.services.portfolio import get_household_portfolio
 
 
 router = APIRouter()
@@ -176,23 +176,25 @@ def household_profile(
             )
         ).mappings().all()
 
-        # Household roll-up: aggregate the members' AUM and open work in one place.
+        # Household roll-up: member count + open work. AUM is sourced from the
+        # shared portfolio service below (get_household_portfolio) rather than a
+        # second inline sum, so there is one source of aggregation truth.
         member_ids = [m["id"] for m in members]
-        household_aum = connection.execute(
-            select(func.coalesce(func.sum(accounts.c.total_value), 0))
-            .where(accounts.c.household_id == household_id)
-        ).scalar_one()
         open_task_count = 0
         if member_ids:
             open_task_count = connection.execute(
                 select(func.count()).select_from(tasks).where(
                     tasks.c.person_id.in_(member_ids), tasks.c.status != "complete")
             ).scalar_one()
-        rollup = {
-            "member_count": len(members),
-            "household_aum": household_aum,
-            "open_task_count": open_task_count,
-        }
+
+    # Reuses get_household_portfolio() (aggregate_portfolio/calculate_allocation);
+    # no duplicate aggregation. Feeds both the roll-up AUM and the Wealth Workspace.
+    portfolio = get_household_portfolio(household_id)
+    rollup = {
+        "member_count": len(members),
+        "household_aum": portfolio["aum"],
+        "open_task_count": open_task_count,
+    }
 
     return templates.TemplateResponse(
         request=request,
@@ -201,6 +203,7 @@ def household_profile(
             "household": household,
             "members": members,
             "rollup": rollup,
+            "portfolio": portfolio,
             "available_people": available_people,
             "created": request.query_params.get("created") == "1",
             "member_saved": (
