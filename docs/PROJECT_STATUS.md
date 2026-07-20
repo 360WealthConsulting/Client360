@@ -33,6 +33,12 @@ V1.0 definition & roadmap**) · [`RELEASE_READINESS.md`](RELEASE_READINESS.md) (
 - **Optional in-repo polish:** `humandt` shared-templates refactor; auth-endpoint rate limiting
   (low value — external IdP); retire legacy `tasks.assigned_to` (needs a data-migration decision).
 
+## Status by engineering category (independent)
+- **Application Engineering (V1.0 CRM scope):** complete — all defined V1.0 criteria met (E1–E5, T1, D1 ✅). Deferred/nice-to-have items are outside V1.0 scope.
+- **Release Engineering (in-repo):** complete — release tagging (`release.sh`), post-deploy smoke (`smoke.sh`, verified live), rollback (`rollback.sh`, verified end-to-end), deploy orchestration (`deploy.sh`, dry-run verified), restore rehearsal (verified), environment validation (fail-fast), and a reproducible `Dockerfile`. Only the **container image build** (needs docker → CI/ops) and a dependency lockfile remain, both CI/ops-side. See `RC_READINESS.md`.
+- **Operations (external):** mechanisms ready, execution pending — scheduled backups, staging/prod deploy, monitoring wiring, SSO/env config, image build+push, promote E2E to a required check.
+- **Product & Compliance:** pending — `PRODUCT_DECISIONS.md` PD-1/PD-2/PD-3 (non-blocking, safe defaults) and PD-4 AD-5 (out of CRM scope, reviewer UNFILLED).
+
 ## Release readiness summary (evidence-based — see `RELEASE_READINESS.md`)
 Verified: CI ✅ · E2E ✅ (advisory) · migrations reversible ✅ · 1217 tests passing ✅ ·
 backup/restore mechanism ✅ (rehearsal passed on current schema) · production session hardening ✅
