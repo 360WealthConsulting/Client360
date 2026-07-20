@@ -20,13 +20,13 @@ _Last updated against `release/0.13.0`._
 | Monitoring & health checks | 🟡 | `/health` + `/readiness` endpoints exist; not wired to monitoring/alerting. |
 | Documentation status | 🟡 | CHANGELOG current; `docs/E2E.md`; this file. User guide / ops runbook / ADRs outstanding. |
 | Known technical debt | 🟡 | See below. |
-| Outstanding business-rule decisions | ⛔ | Household auto-derivation grouping rules; automatic match-merge thresholds. |
+| Outstanding business-rule decisions | ⛔ | Tracked in [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) (PD-1 household grouping rule, PD-2 match auto-merge, PD-3 comm metadata, PD-4 AD-5 compliance). |
 | Release blockers | 🔴 | Backup/restore verification; deployment/rollback verification; promote E2E to a required check. |
 
 ## Known technical debt
 - `humandt` filter registered on 3 route envs only (notes/tasks/people); other surfaces show raw timestamps — proper fix is a shared-templates refactor (32 routers each build their own Jinja env).
 - ~~Pre-#35 backfill~~ — resolved: `POST /matches/promote-unlinked` (button on the unresolved queue) backfills contacts imported before the wiring fix.
-- `/matches/unresolved` reachable by URL but not linked from the main Match Review nav.
+- ~~`/matches/unresolved` not linked from Match Review nav~~ — resolved: linked from `/matches`.
 - Duplicate CI runs for feature→release PRs (push + pull_request both fire) — correct but wasteful.
 - ~611 baselined ruff findings (legacy), tracked in issue #26.
 - Legacy free-text `tasks.assigned_to` retained as a display fallback; retire after data migration.
