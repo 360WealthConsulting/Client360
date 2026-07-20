@@ -3,7 +3,9 @@
 {% block title %}Match Review | Client360{% endblock %}
 {% block crumb %}Match Review{% endblock %}
 {% block content %}
-{{ ui.page_head("Match review", eyebrow="Overview", desc="Potential duplicate records requiring manual review.") }}
+{% call ui.page_head("Match review", eyebrow="Overview", desc="Potential duplicate records requiring manual review.") %}
+  <a class="btn secondary" href="/matches/unresolved">Unresolved single-source contacts</a>
+{% endcall %}
 <div class="filterbar">
   {% set labels = {'all':'All','pending':'Pending','approved':'Approved','rejected':'Not a Duplicate','skipped':'Skipped'} %}
   {% for s in ['all','pending','approved','rejected','skipped'] %}

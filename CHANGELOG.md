@@ -16,6 +16,8 @@ All notable Client360 releases are documented here.
 - Household detail roll-up: member count, aggregate household AUM, and open tasks across all members.
 - `docs/RELEASE_READINESS.md` — a living release-readiness tracker maintained through Sprint 2.
 - Household-derivation engine (`app/services/household_derivation.py`): groups un-householded people by an injected policy (safe no-op default; candidate address policy provided but not enabled), with a dry-run mode. The mechanism is complete; the grouping rule and auto-apply are business decisions.
+- `docs/PRODUCT_DECISIONS.md` — authoritative register of deferred business/product-policy decisions (mechanism built, decision awaited).
+- Match Review page links to the unresolved single-source contacts queue.
 
 ### Changed
 - Task/note assignee picker scoped to provisioned staff (active users holding an active role).
