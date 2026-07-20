@@ -11,7 +11,7 @@ templates = Jinja2Templates(directory="app/templates")
 def _search(q: str):
     search_term = f"%{q.strip()}%"
     with engine.connect() as connection:
-        return connection.execute(
+        rows = connection.execute(
             select(
                 source_contacts.c.id,
                 source_contacts.c.source_system,
@@ -46,6 +46,20 @@ def _search(q: str):
             )
             .limit(100)
         ).mappings().all()
+
+    # Collapse a canonical person to a single row: a person linked to several source
+    # contacts (e.g. the same client in Wealthbox and Schwab) otherwise appears once per
+    # system, which reads as duplicates. Unlinked contacts (no person_id) are never merged.
+    seen_person_ids: set[int] = set()
+    deduped = []
+    for row in rows:
+        person_id = row["person_id"]
+        if person_id is not None:
+            if person_id in seen_person_ids:
+                continue
+            seen_person_ids.add(person_id)
+        deduped.append(row)
+    return deduped
 
 
 @router.get("/api/search")
