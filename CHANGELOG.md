@@ -23,6 +23,7 @@ All notable Client360 releases are documented here.
 - `docs/RC_READINESS.md` — Release Candidate readiness definition (build, artifact, tagging, deploy, rollback, smoke, monitoring, backup/restore, environment, acceptance) with owner/evidence/verification/status per item.
 - `scripts/smoke.sh` — post-deploy smoke test for a running instance (liveness, readiness with DB + migration-drift, static assets, auth gate); verified live.
 - `scripts/rollback.sh` — migration rollback helper (downgrade to a target revision, guarded, dry-run); verified end-to-end.
+- `docs/ENGINEERING_DECISIONS.md` — intent record: why the significant engineering choices were made (matching, household derivation, human-review boundaries, import, audit, security, release, documentation, deferred capabilities, operational boundaries), with alternatives, tradeoffs, and revisit guidance.
 - `docs/USER_GUIDE.md` — staff user guide for the v1.0 CRM (search, profile, notes, communications, tasks, households, Match Review).
 - `docs/V1_RELEASE_PLAN.md` — authoritative Version 1.0 definition: product scope (included/excluded/deferred), measurable release criteria, categorized remaining work, risk register, and staged release sequence with entry/exit criteria.
 - Verified the backup/restore mechanism against the current schema: `restore_rehearsal.sh` restored a `pg_dump` of head `d4c5o6m7d8i9` into a scratch DB with a single Alembic head and a green suite (recorded in `RELEASE_READINESS.md`).
@@ -35,6 +36,7 @@ All notable Client360 releases are documented here.
 - Production startup now fails fast if `CLIENT360_DEV_AUTH` is set — the development-only sign-in provider is refused in production, and a set toggle is treated as a deployment mistake rather than silently ignored.
 
 ### Fixed
+- Consistency: corrected a stale test count in RELEASE_READINESS (1206 -> 1217) to match PROJECT_STATUS / V1_RELEASE_PLAN.
 - Handoff: README release status now reflects Version 1.0 / Sprint 2 and links the authoritative docs (was stale at 0.9.10); disambiguated the duplicate `PROJECT_STATUS.md` (top-level is the historical release log, `docs/PROJECT_STATUS.md` is the current authoritative status).
 - Order-dependent event-loop test flakiness (global conftest fixture); a non-portable test path that failed CI.
 - Single-source contacts were never promoted to canonical people: the Wealthbox import now runs `promote_unlinked` after ingest (same transaction), so imported single-source contacts become people (ambiguous cases left for Match Review) instead of being stranded.
