@@ -318,6 +318,10 @@ def main(folder=FOLDER):
 
     All ZIPs are imported inside a single transaction, as before.
     """
+    # Lazy import: promote pulls in app.db (schema reflection), which must not happen at
+    # module-import time (this importer is import-inert).
+    from app.matching.promote import promote_unlinked
+
     zip_files = find_contact_zips(folder)
 
     rows_read = 0
@@ -330,6 +334,11 @@ def main(folder=FOLDER):
             finish_import_job(conn, job_id, rows_read=read, rows_inserted=inserted)
             rows_read += read
             rows_inserted += inserted
+        # Promote the freshly-imported single-source contacts to canonical people (same
+        # transaction, so it sees the new rows). Conservative: unique contacts become people,
+        # exact email/phone matches link to an existing person, ambiguous cases are left for
+        # Match Review. Runs after every import so single-source contacts are never stranded.
+        promotion = promote_unlinked(source_system="Wealthbox", conn=conn)
         report = validation_report(conn)
 
     print()
@@ -337,6 +346,11 @@ def main(folder=FOLDER):
     print(f"Rows read: {rows_read:,}")
     print(f"Rows processed: {rows_inserted:,}")
     print("Sensitive identity and medical fields were excluded.")
+    print(
+        f"Promotion — created {promotion.created}, "
+        f"linked {promotion.linked_existing}, ambiguous {promotion.ambiguous} "
+        f"(of {promotion.inspected} unlinked)."
+    )
     print_validation_report(report)
 
     return {"rows_read": rows_read, "rows_inserted": rows_inserted}
