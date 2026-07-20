@@ -42,6 +42,7 @@ from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET, validate_startup_conf
 from app.observability import configure_logging
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.portfolio import router as portfolio_router
+from app.routes.wealth import router as wealth_router
 from app.routes.work import router as work_router
 from app.routes.workflows import router as workflows_router
 from app.routes.portal import router as portal_router
@@ -109,6 +110,7 @@ app.include_router(microsoft365_mail_router)
 app.include_router(timeline_router)
 app.include_router(relationships_router)
 app.include_router(portfolio_router)
+app.include_router(wealth_router)
 app.include_router(auth_router)
 # Development-only sign-in provider. dev_auth_enabled() is False in production (and
 # whenever CLIENT360_DEV_AUTH is unset), so this router is simply never mounted there.
