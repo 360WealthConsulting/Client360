@@ -30,6 +30,13 @@ def test_portfolio_html_page_returns_200_and_html():
     assert "Portfolio search" in body
     for column in ("Client", "AUM", "Cash"):
         assert column in body
+    # Simplified filters: keep search + the two worklist filters; the advanced
+    # min-AUM / registration inputs were removed to reduce noise.
+    assert 'name="q"' in body
+    assert 'name="high_cash"' in body
+    assert 'name="missing_beneficiary"' in body
+    assert 'name="min_aum"' not in body
+    assert 'name="registration"' not in body
 
 
 def test_portfolio_search_still_returns_json():
