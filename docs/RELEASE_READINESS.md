@@ -32,8 +32,8 @@ _Last updated against `release/0.13.0`._
 - Legacy free-text `tasks.assigned_to` retained as a display fallback; retire after data migration.
 
 ## Outstanding business-rule / policy decisions (⛔ — engineering built up to the boundary)
-- **Household auto-derivation:** which signals define a household from import data, and the confidence threshold for auto-grouping vs. review.
-- **Automatic match-merge thresholds:** when an ambiguous contact should auto-merge vs. go to the (now-built) Match Review queue.
+- **Household auto-derivation:** the *engine* is built (`app/services/household_derivation.py`, injected policy, safe no-op default, dry-run, tested) and a candidate `group_by_normalized_address` policy is provided but **not enabled**. Awaiting the firm's decision on the grouping signal and auto-apply vs. review.
+- **Automatic match-merge thresholds:** the Match Review queue + resolution/backfill are built; only the *auto-merge* threshold policy (when to merge without a human) awaits a business decision.
 
 ## Release blockers (must clear before production; none block internal pilot except login/SSO config)
 1. Validated, encrypted backup **and** a rehearsed restore.

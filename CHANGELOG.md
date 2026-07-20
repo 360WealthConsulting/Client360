@@ -15,6 +15,7 @@ All notable Client360 releases are documented here.
 - Match Review "unresolved contacts" queue (`/matches/unresolved`): single-source contacts that promotion leaves ambiguous (multiple candidate people, or a contact detail shared with another unlinked contact) are surfaced for a human to link to an existing client or create a new one. Human decision only — no automatic merge thresholds; every resolution is audited.
 - Household detail roll-up: member count, aggregate household AUM, and open tasks across all members.
 - `docs/RELEASE_READINESS.md` — a living release-readiness tracker maintained through Sprint 2.
+- Household-derivation engine (`app/services/household_derivation.py`): groups un-householded people by an injected policy (safe no-op default; candidate address policy provided but not enabled), with a dry-run mode. The mechanism is complete; the grouping rule and auto-apply are business decisions.
 
 ### Changed
 - Task/note assignee picker scoped to provisioned staff (active users holding an active role).
