@@ -32,7 +32,8 @@ is in progress on branch `release/0.13.0`. The **authoritative current-state doc
   [Local Development](docs/LOCAL_DEVELOPMENT.md) ·
   [Engineering Decisions](docs/ENGINEERING_DECISIONS.md) (why the significant choices were made) ·
   [Program Risk Register](docs/V1_RISK_REGISTER.md) (what could still cause V1.0 to fail despite the engineering) ·
-  [Cutover Checklist](docs/V1_CUTOVER_CHECKLIST.md) (operational production-cutover execution).
+  [Cutover Checklist](docs/V1_CUTOVER_CHECKLIST.md) (operational production-cutover execution) ·
+  [Operational Ownership](docs/V1_OPERATIONAL_OWNERSHIP.md) (cutover & production roles, accountability, sign-off).
 
 _The top-level [`PROJECT_STATUS.md`](PROJECT_STATUS.md) and the tagged-release history below are
 retained as the historical release log (through 0.10.0)._

@@ -12,11 +12,19 @@ did not build the software.
 - Readiness state / owners: `docs/RELEASE_READINESS.md`, `docs/RC_READINESS.md`,
   `docs/V1_RISK_REGISTER.md`.
 
-**Owner placeholders** (repository names no individual — assign before cutover):
-`[DEPLOY-OWNER]` · `[MONITOR-OWNER]` · `[BACKUP-OWNER]` · `[INCIDENT-OWNER]` · `[SUPPORT-OWNER]` ·
-`[BUSINESS-OWNER]` · `[EXEC-SPONSOR]`.
+**Roles and owners** are defined in
+[`V1_OPERATIONAL_OWNERSHIP.md`](V1_OPERATIONAL_OWNERSHIP.md). Placeholders below are that document's
+roles (repository names no individual — assign and record acceptance before cutover):
+`[RELEASE-MANAGER]` · `[DEPLOY-OWNER]` · `[ROLLBACK-AUTHORITY]` · `[INCIDENT-OWNER]` ·
+`[MONITOR-OWNER]` · `[BACKUP-OWNER]` · `[SUPPORT-OWNER]` · `[BUSINESS-OWNER]` · `[EXEC-SPONSOR]`.
 
 Status values: **Pending** · **In progress** · **Complete** · **Blocked** · **N/A**.
+
+> ## 🚦 Release ownership gate
+> **Version 1.0 must not be tagged, deployed, or announced until every required primary owner and
+> backup owner in [`V1_OPERATIONAL_OWNERSHIP.md`](V1_OPERATIONAL_OWNERSHIP.md) has been named and
+> has recorded acceptance of responsibility.** This gate precedes Phase 1. As of now it is **NOT
+> satisfied** (no role has a named/accepted owner).
 
 ---
 
@@ -24,12 +32,12 @@ Status values: **Pending** · **In progress** · **Complete** · **Blocked** · 
 
 | # | Task | Status | Owner | Evidence | Completed | Notes |
 |---|------|--------|-------|----------|-----------|-------|
-| 1.1 | Confirm release version number (e.g. `1.0.0`) | Pending | `[EXEC-SPONSOR]` | CHANGELOG currently `[Unreleased]` | ____ | Version decision required before tagging |
-| 1.2 | Promote CHANGELOG `[Unreleased]` → dated version + publish release notes | Pending | `[DEPLOY-OWNER]` | `CHANGELOG.md`; `scripts/check_changelog.py` | ____ | |
-| 1.3 | Create annotated release tag | Pending | `[DEPLOY-OWNER]` | `scripts/release.sh <version>` (guarded; 9 preconditions) | ____ | Tag then push deliberately |
+| 1.1 | Confirm release version number (e.g. `1.0.0`) | Pending | `[RELEASE-MANAGER]` | CHANGELOG currently `[Unreleased]` | ____ | Version decision required before tagging |
+| 1.2 | Promote CHANGELOG `[Unreleased]` → dated version + publish release notes | Pending | `[RELEASE-MANAGER]` | `CHANGELOG.md`; `scripts/check_changelog.py` | ____ | |
+| 1.3 | Create annotated release tag | Pending | `[RELEASE-MANAGER]` | `scripts/release.sh <version>` (guarded; 9 preconditions) | ____ | Tag then push deliberately |
 | 1.4 | Confirm deployment window (date/time, freeze) | Pending | `[DEPLOY-OWNER]` | — | ____ | Communicate to all owners |
 | 1.5 | Notify stakeholders of the cutover window | Pending | `[BUSINESS-OWNER]` | — | ____ | Staff + owners |
-| 1.6 | Confirm rollback decision authority (who can call a rollback) | Pending | `[EXEC-SPONSOR]` | Rollback mechanism: `scripts/rollback.sh` | ____ | Name the person empowered to abort |
+| 1.6 | Confirm rollback decision authority (who can call a rollback) | Pending | `[ROLLBACK-AUTHORITY]` | Rollback mechanism: `scripts/rollback.sh` | ____ | Name the person empowered to abort |
 
 ## Phase 2 — Production Readiness
 
@@ -63,7 +71,7 @@ Status values: **Pending** · **In progress** · **Complete** · **Blocked** · 
 |---|------|--------|-------|----------|-----------|-------|
 | 4.1 | Staff login verification (each role can sign in) | Pending | `[BUSINESS-OWNER]` | — | ____ | |
 | 4.2 | Key workflows validated (search → profile → notes → communications → tasks → households) | Pending | `[BUSINESS-OWNER]` | `docs/USER_GUIDE.md` steps | ____ | Business UAT, not engineering E2E |
-| 4.3 | Acceptance approval (user-acceptance sign-off) | Pending | `[EXEC-SPONSOR]` | — | ____ | Written sign-off |
+| 4.3 | Acceptance approval (user-acceptance sign-off) | Pending | `[BUSINESS-OWNER]` | — | ____ | Written sign-off |
 | 4.4 | Support team notified and ready | Pending | `[SUPPORT-OWNER]` | — | ____ | |
 | 4.5 | Go-live announcement to staff | Pending | `[BUSINESS-OWNER]` | — | ____ | |
 
@@ -75,7 +83,7 @@ Status values: **Pending** · **In progress** · **Complete** · **Blocked** · 
 | 5.2 | Review alerts / triage anomalies | Pending | `[INCIDENT-OWNER]` | Monitoring system | ____ | |
 | 5.3 | Confirm the first scheduled backup executed successfully | Pending | `[BACKUP-OWNER]` | Backup job logs | ____ | |
 | 5.4 | Capture production issues (intake/triage) | Pending | `[SUPPORT-OWNER]` | Request-ids in the audit log for tracing | ____ | |
-| 5.5 | Formal release closeout | Pending | `[EXEC-SPONSOR]` | This checklist fully completed | ____ | Sign off; archive the completed checklist |
+| 5.5 | Formal release closeout | Pending | `[RELEASE-MANAGER]` | This checklist fully completed | ____ | Sign off; archive the completed checklist |
 
 ---
 
