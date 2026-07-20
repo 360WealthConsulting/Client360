@@ -263,5 +263,6 @@ def person_profile(
             "person_households": person_households,
             "portfolio": portfolio,
             "active_tab": tab,
+            "saved": request.query_params.get("saved") == "1",
         },
     )

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Edit · {{ person.full_name }} | Client360{% endblock %}
+{% block crumb %}{{ person.full_name }} · Edit{% endblock %}
+{% block content %}
+{% call ui.page_head("Edit client details", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
+  <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
+{% endcall %}
+<p class="subtle" style="margin-top:-6px; max-width:640px">Correct this client's contact and address details. Changes are audited and added to the timeline. Name changes are handled separately.</p>
+<form method="post" action="/people/{{ person.id }}/edit" style="max-width:640px">
+  <div class="field"><label>Preferred name</label><input class="input" name="preferred_name" value="{{ person.preferred_name or '' }}"></div>
+  <div class="field"><label>Email</label><input class="input" type="email" name="primary_email" value="{{ person.primary_email or '' }}"></div>
+  <div class="field"><label>Phone</label><input class="input" name="primary_phone" value="{{ person.primary_phone or '' }}"></div>
+  <div class="field"><label>Address line 1</label><input class="input" name="address_line_1" value="{{ person.address_line_1 or '' }}"></div>
+  <div class="field"><label>Address line 2</label><input class="input" name="address_line_2" value="{{ person.address_line_2 or '' }}"></div>
+  <div class="row" style="gap:10px; flex-wrap:wrap">
+    <div class="field"><label>City</label><input class="input" name="city" value="{{ person.city or '' }}"></div>
+    <div class="field"><label>State</label><input class="input" name="state" value="{{ person.state or '' }}"></div>
+    <div class="field"><label>Postal code</label><input class="input" name="postal_code" value="{{ person.postal_code or '' }}"></div>
+  </div>
+  <div style="margin-top:14px; display:flex; gap:10px">
+    <button class="btn" type="submit">Save changes</button>
+    <a class="btn secondary" href="/people/{{ person.id }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

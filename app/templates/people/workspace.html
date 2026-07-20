@@ -20,8 +20,10 @@
     <a class="btn secondary" href="/people/{{ person.id }}/notes?log=call#logform">Log Call</a>
     <a class="btn secondary" href="/people/{{ person.id }}/notes?log=email#logform">Log Email</a>
     <a class="btn secondary" href="/people/{{ person.id }}/notes?log=meeting#logform">Log Meeting</a>
+    <a class="btn secondary" href="/people/{{ person.id }}/edit">Edit details</a>
   </div>
 </div></div>
+{% if saved %}<div class="alert good" style="margin:0 0 14px"><span class="ico">✓</span><div>Client details updated.</div></div>{% endif %}
 
 <nav class="tabs">
   <a class="tab {{ 'active' if active_tab == 'overview' else '' }}" href="/people/{{ person.id }}?tab=overview">Overview</a>

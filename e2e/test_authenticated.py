@@ -54,3 +54,13 @@ def test_communication_quick_actions_present(app_page, live_server, seeded_clien
     app_page.goto(f"{live_server}/people/{seeded_client['person_id']}")
     content = app_page.content()
     assert "Log Call" in content and "Log Email" in content and "Log Meeting" in content
+
+
+def test_edit_client_details_saves(app_page, live_server, seeded_client):
+    person_id = seeded_client["person_id"]
+    app_page.goto(f"{live_server}/people/{person_id}/edit")
+    app_page.fill('input[name="city"]', "Springfield")
+    app_page.click('button[type="submit"]')
+    app_page.wait_for_load_state("networkidle")
+    assert f"/people/{person_id}" in app_page.url
+    assert "Springfield" in app_page.content()  # shown in the profile contact line
