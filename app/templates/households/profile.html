@@ -2,6 +2,7 @@
 {% import "components/ui.html" as ui %}
 {% block title %}{{ household.name }} | Client360{% endblock %}
 {% block crumb %}{{ household.name }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
 {% block content %}
 {{ ui.page_head(household.name, eyebrow="Household", desc=((household.city or "") ~ (", " if household.city and household.state else "") ~ (household.state or ""))) }}
 
@@ -13,6 +14,71 @@
   <article class="card" style="padding:12px 16px"><span class="detail-label">Household AUM</span><h2 style="margin:2px 0">${{ "{:,.2f}".format(rollup.household_aum) }}</h2></article>
   <article class="card" style="padding:12px 16px"><span class="detail-label">Open Tasks</span><h2 style="margin:2px 0">{{ rollup.open_task_count }}</h2></article>
 </div>
+
+{# --- Household Wealth Workspace (Phase A, PR-3) ------------------------------
+   Reuses get_household_portfolio(); presents Overview / Accounts / Holdings and
+   a compact summary. Members are shown in the existing table below. No charts,
+   trends, performance, or billing. #}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Household wealth</h2>
+
+  {# Overview #}
+  <div class="workspace-grid">
+    <article class="card"><span class="detail-label">Household AUM</span><h2>${{ "{:,.2f}".format(portfolio.aum or 0) }}</h2></article>
+    <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.2f}".format(portfolio.cash or 0) }}</h2><p class="subtle">{{ "{:.1f}".format(portfolio.cash_percent or 0) }}%</p></article>
+    <article class="card"><span class="detail-label">Concentration</span><h2>{{ "{:.1f}".format(portfolio.concentration.largest_position_percent or 0) }}%</h2><p class="subtle">Largest single position</p></article>
+    <article class="card"><span class="detail-label">Beneficiaries</span><h2>{{ portfolio.beneficiary_count }}</h2><p class="subtle">Last import: {{ portfolio.last_import_date or "Not imported" }}</p></article>
+  </div>
+
+  <div class="workspace-grid">
+    <article class="card"><h3>Asset allocation</h3>{% for name, item in portfolio.allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
+    <article class="card"><h3>Largest positions</h3>{% for holding in portfolio.largest_positions %}<div class="detail-row"><span>{{ holding.symbol }} · {{ holding.name }}</span><strong>${{ "{:,.2f}".format(holding.market_value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
+  </div>
+
+  {# Accounts #}
+  <article class="card">
+    <h3>Accounts</h3>
+    {% if portfolio.accounts %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Account</th><th>Registration</th><th>Custodian</th><th class="num">Value</th></tr></thead>
+        <tbody>
+        {% for account in portfolio.accounts %}
+          <tr>
+            <td>{{ account.account_name or account.account_number }}</td>
+            <td>{{ account.registration_type or "Unclassified" }}</td>
+            <td>{{ account.custodian }}</td>
+            <td class="num">${{ "{:,.2f}".format(account.total_value or 0) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p class="subtle">No portfolio accounts found for this household.</p>{% endif %}
+  </article>
+
+  {# Holdings #}
+  <article class="card">
+    <h3>Holdings</h3>
+    {% if portfolio.holdings %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Symbol</th><th>Name</th><th>Asset class</th><th class="num">Market value</th></tr></thead>
+        <tbody>
+        {% for holding in portfolio.holdings %}
+          <tr>
+            <td>{{ holding.symbol }}</td>
+            <td>{{ holding.name }}</td>
+            <td>{{ holding.asset_class or "Other" }}</td>
+            <td class="num">${{ "{:,.2f}".format(holding.market_value or 0) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p class="subtle">No holdings imported for this household.</p>{% endif %}
+  </article>
+</section>
 
 <div class="card" style="margin-bottom:16px">
   <h3>Add household member</h3>
