@@ -69,6 +69,7 @@ RULES = (
     (re.compile(r"/documents(?:/|$)|^/documents"), "document.read"),
     (re.compile(r"^/microsoft|^/mail|^/calendar"), "communication.read"),
     (re.compile(r"^/portfolio"), "client.read"),
+    (re.compile(r"^/wealth"), "client.read"),
     (
         re.compile(r"^/relationships|^/relationship-entities|^/api/relationships"),
         "client.read",
@@ -85,6 +86,7 @@ RECORD_PATH = re.compile(r"^/(people|households)/(\d+)")
 FIRM_WIDE_COLLECTION = re.compile(
     r"^/(?:$|api/(?:stats|search)(?:/|$)|search(?:/|$)|people/?$|households/?$|"
     r"tasks/?$|activities/?$|matches/?$|source(?:/|$)|portfolio(?:/|$)|"
+    r"wealth(?:/|$)|"
     r"relationships/search(?:/|$)|api/relationships/search(?:/|$)|"
     r"relationship-entities(?:/|$))"
 )

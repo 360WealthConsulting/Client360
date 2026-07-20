@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Wealth Dashboard | Client360{% endblock %}
+{% block crumb %}Wealth{% endblock %}
+{% block content %}
+<div class="page-header"><div><p class="eyebrow">Wealth</p><h1>Wealth dashboard</h1><p class="muted">Firm-wide portfolio overview across all custodial accounts.</p></div></div>
+
+<section class="stat-grid">
+  <article class="card"><span class="detail-label">Firm AUM</span><h2>${{ "{:,.0f}".format(metrics.firm_aum or 0) }}</h2></article>
+  <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.0f}".format(metrics.cash_waiting or 0) }}</h2></article>
+  <article class="card">
+    <span class="detail-label">Largest household</span>
+    {% if metrics.largest_household %}
+      <h3><a href="/households">{{ metrics.largest_household.name }}</a></h3>
+      <p class="muted">${{ "{:,.0f}".format(metrics.largest_household.aum or 0) }}</p>
+    {% else %}<h3 class="muted">—</h3>{% endif %}
+  </article>
+  <article class="card">
+    <span class="detail-label">Largest position</span>
+    {% if metrics.largest_position %}
+      <h3>{{ metrics.largest_position.symbol }}</h3>
+      <p class="muted">${{ "{:,.0f}".format(metrics.largest_position.value or 0) }}</p>
+    {% else %}<h3 class="muted">—</h3>{% endif %}
+  </article>
+  <article class="card"><span class="detail-label">IRAs missing beneficiary</span><h2>{{ metrics.missing_beneficiaries }}</h2><p class="muted">Retirement accounts with no active beneficiary</p></article>
+  <article class="card"><span class="detail-label">Accounts without a review</span><h2>{{ metrics.accounts_without_reviews }}</h2><p class="muted">No recorded review date</p></article>
+</section>
+
+<section class="panel">
+  <h2>Portfolios</h2>
+  <p class="muted">Search and filter client portfolios by AUM, registration, cash, or concentration.</p>
+  <p><a class="btn" href="/portfolio">Open portfolio search →</a></p>
+</section>
+{% endblock %}
