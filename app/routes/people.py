@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
-from app.templating import render_error
+from app.templating import install_filters, render_error
 
 from app.db import (
     accounts,
@@ -32,6 +32,7 @@ from app.services.tasks import tasks_with_assignee
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+install_filters(templates)
 
 
 @router.get("/people")

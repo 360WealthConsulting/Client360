@@ -5,10 +5,35 @@ users get styled error pages while API/JSON clients keep the existing JSON
 bodies. Error responses fall back to JSON for anything that isn't an HTML
 navigation.
 """
+from datetime import datetime
+
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
 
+
+def human_datetime(value):
+    """Display a datetime/date for staff: 'Jul 20, 2026 2:03 PM' / 'Jul 20, 2026'.
+
+    Returns '' for falsy values and str(value) for anything without strftime, so it is safe to
+    apply to any timeline/notes/task field regardless of type.
+    """
+    if not value:
+        return ""
+    try:
+        if isinstance(value, datetime):
+            return value.strftime("%b %-d, %Y %-I:%M %p")
+        return value.strftime("%b %-d, %Y")
+    except (ValueError, AttributeError):
+        return str(value)
+
+
+def install_filters(instance: Jinja2Templates) -> None:
+    """Register Client360's shared Jinja filters on a Jinja2Templates instance."""
+    instance.env.filters["humandt"] = human_datetime
+
+
 templates = Jinja2Templates(directory="app/templates")
+install_filters(templates)
 
 # Statuses that have a styled template under templates/errors/.
 _ERROR_TEMPLATES = {403, 404, 500}

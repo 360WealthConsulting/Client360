@@ -4,7 +4,18 @@ All notable Client360 releases are documented here.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- Index-assisted global search (pg_trgm GIN indexes) with results de-duplicated per canonical person.
+- Timeline display styling for activity-note, communication, and client-update events.
+- Development-only sign-in provider (`/dev-auth`, gated by `CLIENT360_DEV_AUTH`; impossible to enable in production) and authenticated Playwright browser E2E coverage across login, dashboard, people, households, search, notes, tasks, and communications.
+- Staff-editable canonical contact/address fields on the client profile (audited + added to the timeline).
+- Human-readable timestamps across the client surface via a shared Jinja `humandt` filter.
+
+### Changed
+- Task/note assignee picker scoped to provisioned staff (active users holding an active role).
+
+### Fixed
+- Order-dependent event-loop test flakiness (global conftest fixture); a non-portable test path that failed CI.
 
 ## [0.11.0] — 2026-07-17 — Documentation Foundation
 

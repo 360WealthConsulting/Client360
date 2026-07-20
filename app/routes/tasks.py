@@ -10,9 +10,11 @@ from app.db import engine, people
 from app.security.dependencies import current_principal
 from app.security.models import Principal
 from app.services.tasks import assignable_users, complete_task, create_task, tasks_with_assignee
+from app.templating import install_filters
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+install_filters(templates)
 
 
 def _request_id(request: Request) -> str | None:

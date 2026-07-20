@@ -20,9 +20,11 @@ from app.services.notes import (
 )
 from app.services.tasks import assignable_users, create_task
 from app.services.timeline import add_timeline_event
+from app.templating import install_filters
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+install_filters(templates)
 
 
 def _request_id(request: Request) -> str:
