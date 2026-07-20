@@ -7,10 +7,12 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import (
+    accounts,
     engine,
     household_relationships,
     households,
     people,
+    tasks,
 )
 from app.security.authorization import accessible_person_ids
 
@@ -174,12 +176,31 @@ def household_profile(
             )
         ).mappings().all()
 
+        # Household roll-up: aggregate the members' AUM and open work in one place.
+        member_ids = [m["id"] for m in members]
+        household_aum = connection.execute(
+            select(func.coalesce(func.sum(accounts.c.total_value), 0))
+            .where(accounts.c.household_id == household_id)
+        ).scalar_one()
+        open_task_count = 0
+        if member_ids:
+            open_task_count = connection.execute(
+                select(func.count()).select_from(tasks).where(
+                    tasks.c.person_id.in_(member_ids), tasks.c.status != "complete")
+            ).scalar_one()
+        rollup = {
+            "member_count": len(members),
+            "household_aum": household_aum,
+            "open_task_count": open_task_count,
+        }
+
     return templates.TemplateResponse(
         request=request,
         name="households/profile.html",
         context={
             "household": household,
             "members": members,
+            "rollup": rollup,
             "available_people": available_people,
             "created": request.query_params.get("created") == "1",
             "member_saved": (

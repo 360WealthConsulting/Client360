@@ -13,6 +13,8 @@ All notable Client360 releases are documented here.
 - Task-submission idempotency: a DB-backed `tasks.idempotency_key` (unique) + hidden form token make a resubmitted create-task form a conflict-safe no-op (no duplicate task on browser back/resubmit or retried POST).
 - Optional inbound/outbound direction on logged communications (call/email/meeting), captured in the Log form and shown in the activity feed.
 - Match Review "unresolved contacts" queue (`/matches/unresolved`): single-source contacts that promotion leaves ambiguous (multiple candidate people, or a contact detail shared with another unlinked contact) are surfaced for a human to link to an existing client or create a new one. Human decision only — no automatic merge thresholds; every resolution is audited.
+- Household detail roll-up: member count, aggregate household AUM, and open tasks across all members.
+- `docs/RELEASE_READINESS.md` — a living release-readiness tracker maintained through Sprint 2.
 
 ### Changed
 - Task/note assignee picker scoped to provisioned staff (active users holding an active role).
