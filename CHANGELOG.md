@@ -23,6 +23,7 @@ All notable Client360 releases are documented here.
 - `docs/RC_READINESS.md` — Release Candidate readiness definition (build, artifact, tagging, deploy, rollback, smoke, monitoring, backup/restore, environment, acceptance) with owner/evidence/verification/status per item.
 - `scripts/smoke.sh` — post-deploy smoke test for a running instance (liveness, readiness with DB + migration-drift, static assets, auth gate); verified live.
 - `scripts/rollback.sh` — migration rollback helper (downgrade to a target revision, guarded, dry-run); verified end-to-end.
+- `docs/V1_CUTOVER_CHECKLIST.md` — operational production-cutover checklist (5 phases: release prep, production readiness, deployment, business acceptance, stabilization) with per-item status/owner/evidence/completion/notes and owner placeholders where none is assigned.
 - `docs/V1_RISK_REGISTER.md` — authoritative home for program risks outside engineering (operational, organizational, governance) from the V1.0 pre-mortem, each with evidence/likelihood/impact/mitigation/remaining-exposure/owner/cadence.
 - `docs/ENGINEERING_DECISIONS.md` — intent record: why the significant engineering choices were made (matching, household derivation, human-review boundaries, import, audit, security, release, documentation, deferred capabilities, operational boundaries), with alternatives, tradeoffs, and revisit guidance.
 - `docs/USER_GUIDE.md` — staff user guide for the v1.0 CRM (search, profile, notes, communications, tasks, households, Match Review).

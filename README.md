@@ -31,7 +31,8 @@ is in progress on branch `release/0.13.0`. The **authoritative current-state doc
   [Product Decisions](docs/PRODUCT_DECISIONS.md) · [Staff User Guide](docs/USER_GUIDE.md) ·
   [Local Development](docs/LOCAL_DEVELOPMENT.md) ·
   [Engineering Decisions](docs/ENGINEERING_DECISIONS.md) (why the significant choices were made) ·
-  [Program Risk Register](docs/V1_RISK_REGISTER.md) (what could still cause V1.0 to fail despite the engineering).
+  [Program Risk Register](docs/V1_RISK_REGISTER.md) (what could still cause V1.0 to fail despite the engineering) ·
+  [Cutover Checklist](docs/V1_CUTOVER_CHECKLIST.md) (operational production-cutover execution).
 
 _The top-level [`PROJECT_STATUS.md`](PROJECT_STATUS.md) and the tagged-release history below are
 retained as the historical release log (through 0.10.0)._
