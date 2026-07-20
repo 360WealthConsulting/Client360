@@ -1,9 +1,9 @@
 """Tests for the advisor-facing Wealth dashboard at `/wealth`.
 
-A read-only firm-wide overview fed by `get_wealth_dashboard()` (which reuses
-`get_firm_portfolio_metrics()`): Firm overview, Advisor attention, Recent
-activity, and Quick actions. Gated exactly like `/portfolio`: `client.read`
-(middleware RULE + route dependency) plus `record.read_all`
+A lean book-triage view fed by `get_wealth_dashboard()` (which reuses
+`get_firm_portfolio_metrics()`): a compact Firm AUM / Firm Cash summary strip and
+the three Advisor attention worklists. Gated exactly like `/portfolio`:
+`client.read` (middleware RULE + route dependency) plus `record.read_all`
 (FIRM_WIDE_COLLECTION). No new capability, schema, or business policy.
 """
 import re
@@ -50,16 +50,18 @@ def test_wealth_dashboard_renders_html_for_authorized_admin():
     assert "text/html" in response.headers["content-type"]
     body = response.body.decode()
     assert "Wealth dashboard" in body
-    # Four sections and their key labels.
-    for section in ("Firm overview", "Advisor attention", "Recent activity", "Quick actions"):
-        assert section in body
-    for label in ("AUM", "Households", "Accounts", "Cash",
-                  "Missing beneficiaries", "High cash", "Accounts needing review",
-                  "Latest imports", "New households", "Recently updated accounts"):
+    # Compact firm strip + the attention worklists remain.
+    for label in ("Firm AUM", "Firm Cash", "Advisor attention",
+                  "Missing beneficiaries", "High cash", "Accounts needing review"):
         assert label in body
-    # Quick actions link to existing surfaces.
-    assert 'href="/portfolio"' in body
-    assert 'href="/households"' in body
+    # Attention tiles deep-link into the matching portfolio worklists.
+    assert 'href="/portfolio?missing_beneficiary=true"' in body
+    assert 'href="/portfolio?high_cash=true"' in body
+    # Removed noise: the Firm-overview count grid, the recent-activity changelog,
+    # and the quick-action nav (section labels that never appear in the sidebar).
+    for gone in ("Firm overview", "Recent activity", "Latest imports",
+                 "New households", "Recently updated accounts", "Quick actions"):
+        assert gone not in body
 
 
 def test_wealth_path_requires_client_read_capability():
@@ -92,9 +94,9 @@ def test_unauthorized_user_sees_neither_wealth_section_nor_dashboard():
     assert 'href="/wealth"' not in nav
 
 
-def test_get_wealth_dashboard_counts_and_recent_activity():
-    # get_wealth_dashboard reuses get_firm_portfolio_metrics and adds counts +
-    # recent activity. Assert the shape and that a high-cash account is counted.
+def test_get_wealth_dashboard_reuses_metrics_and_counts_high_cash():
+    # get_wealth_dashboard reuses get_firm_portfolio_metrics and adds a high-cash
+    # count. Assert the reused keys plus that a high-cash account is counted.
     import uuid
     from decimal import Decimal
 
@@ -113,18 +115,13 @@ def test_get_wealth_dashboard_counts_and_recent_activity():
         ).returning(accounts.c.id)).scalar_one()
     try:
         d = get_wealth_dashboard()
-        # Reused metric keys are present.
         for key in ("firm_aum", "cash_waiting", "missing_beneficiaries", "accounts_without_reviews"):
             assert key in d
-        # New counts/lists.
-        assert d["household_count"] >= 1
-        assert d["account_count"] >= 1
         assert d["high_cash_count"] >= 1  # our 60%-cash account
-        assert isinstance(d["recent_imports"], list)
-        assert isinstance(d["new_households"], list)
-        assert isinstance(d["recently_updated_accounts"], list)
-        # The new household appears in recent activity.
-        assert any(h["id"] == hid for h in d["new_households"])
+        # Removed reads are gone from the payload.
+        for gone in ("household_count", "account_count", "recent_imports",
+                     "new_households", "recently_updated_accounts"):
+            assert gone not in d
     finally:
         with engine.begin() as c:
             c.execute(delete(accounts).where(accounts.c.id == acct))
