@@ -104,13 +104,17 @@ def test_workspace_renders_all_sections():
         assert "<details" in body
         assert "All holdings" in body
         assert "150,000.00" in body  # holding value still in the DOM
+        # Open tasks reframed as the Meeting Agenda (count only), not a bare metric.
+        assert "Meeting agenda" in body
+        assert "Open Tasks" not in body
         # Admin form tucked behind a collapsible "Manage members".
         assert "Manage members" in body
         # "Last import" ops stat removed from the overview.
         assert "Last import" not in body
-        # Existing Members table preserved.
+        # Roster is visible; the collapsed manage-members admin block sits below it.
         assert "Household members" in body
         assert "Dana Primary" in body
+        assert body.index("Household members") < body.index("Manage members")
     finally:
         _teardown(ids)
 
