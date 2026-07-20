@@ -25,7 +25,7 @@ import zipfile
 import pytest
 from sqlalchemy import select
 
-from app.db import accounts, engine, source_contacts
+from app.db import accounts, engine, people, person_source_links, source_contacts
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODULES = ["app.importers.schwab", "app.importers.wealthbox", "app.importers.dave_ramsey"]
@@ -65,7 +65,19 @@ def cleanup():
     yield
     with engine.begin() as c:
         c.execute(accounts.delete().where(accounts.c.account_number == TEST_ACCOUNT))
-        c.execute(source_contacts.delete().where(source_contacts.c.source_record_id.in_([TEST_ACCOUNT, TEST_WB_ID])))
+        # The import now promotes single-source contacts to canonical people, so remove any
+        # promoted person + link before deleting the source contacts they reference.
+        sc_ids = c.execute(select(source_contacts.c.id).where(
+            source_contacts.c.source_record_id.in_([TEST_ACCOUNT, TEST_WB_ID]))).scalars().all()
+        if sc_ids:
+            person_ids = c.execute(select(person_source_links.c.person_id).where(
+                person_source_links.c.source_contact_id.in_(sc_ids))).scalars().all()
+            c.execute(person_source_links.delete().where(
+                person_source_links.c.source_contact_id.in_(sc_ids)))
+            if person_ids:
+                c.execute(people.delete().where(people.c.id.in_(person_ids)))
+        c.execute(source_contacts.delete().where(
+            source_contacts.c.source_record_id.in_([TEST_ACCOUNT, TEST_WB_ID])))
 
 
 # --- 1. importing does no work ------------------------------------------------
@@ -358,6 +370,29 @@ def test_wealthbox_import_still_works_and_strips_sensitive_fields(tmp_path, clea
     assert row["city"] == "Nashville"
     assert "ssn" not in (row["raw_data"] or {})
     assert "999-88-7777" not in str(row["raw_data"])
+
+
+def test_wealthbox_import_promotes_single_source_contact_to_person(tmp_path, cleanup):
+    """The import wires promote_unlinked, so a single-source contact becomes a canonical person."""
+    from app.importers import wealthbox
+
+    _write_contacts_zip(tmp_path)
+    wealthbox.main(tmp_path)
+
+    with engine.connect() as c:
+        sc_id = c.execute(select(source_contacts.c.id).where(
+            source_contacts.c.source_record_id == TEST_WB_ID,
+            source_contacts.c.source_system == "Wealthbox")).scalar_one()
+        person_id = c.execute(select(person_source_links.c.person_id).where(
+            person_source_links.c.source_contact_id == sc_id)).scalar_one_or_none()
+    assert person_id is not None, "single-source contact was not promoted to a canonical person"
+    with engine.connect() as c:
+        person = c.execute(select(people).where(people.c.id == person_id)).mappings().one()
+    assert person["normalized_email"] == "wb.fixture@example.com"
+    # the shared fixture only removes source_contacts; clean up the promoted person here.
+    with engine.begin() as c:
+        c.execute(person_source_links.delete().where(person_source_links.c.person_id == person_id))
+        c.execute(people.delete().where(people.c.id == person_id))
 
 
 def test_wealthbox_import_is_idempotent_on_rerun(tmp_path, cleanup):
