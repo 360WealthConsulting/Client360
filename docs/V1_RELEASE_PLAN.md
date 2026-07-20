@@ -111,20 +111,9 @@ O*/I1 are operational; C1/B1 are cleared for the CRM scope.
 | ER-2 | Baselined lint debt hides a real issue | Low | Low | Gate blocks *new* violations; burn-down tracked (#26) | Eng | No |
 | ER-3 | Data-volume performance (search/profile) at scale | Med | Med | pg_trgm index in place; load test before GA (perf 🔴) | Eng | No for pilot; **yes for GA** |
 
-**Operational risks**
-| ID | Description | Likelihood | Impact | Mitigation | Owner | Blocking |
-|----|-------------|-----------|--------|-----------|-------|----------|
-| OR-1 | No scheduled prod backups → data loss | Med | **High** | Configure encrypted backups + RPO/RTO (restore verified) | Ops | **Yes (prod)** |
-| OR-2 | Bad deploy with no rehearsed rollback | Med | High | Runbook + reversible migrations; staging rehearsal | Ops | **Yes (prod)** |
-| OR-3 | Outage undetected (monitoring not wired) | Med | High | Wire `/readiness` to alerting | Ops | **Yes (prod)** |
-| OR-4 | SSO/IdP misconfig blocks all access | Med | High | Verify login in target env before pilot | Ops | **Yes (pilot)** |
-
-**Business risks**
-| ID | Description | Likelihood | Impact | Mitigation | Owner | Blocking |
-|----|-------------|-----------|--------|-----------|-------|----------|
-| BR-1 | Wrong household grouping co-mingles clients | Low | High | Auto-derivation OFF by default; manual only (PD-1) | Business | No (safe default) |
-| BR-2 | Wrong identity merge blends clients | Low | High | Auto-merge not built; human review only (PD-2) | Business | No (safe default) |
-| BR-3 | Regulated insurance advice without review | Low | **High** | AD-5 gate; regulated logic excluded (PD-4) | Compliance | No for CRM scope |
+Operational, organizational, and governance risks (backup/deploy/monitoring ownership, adoption,
+sponsorship, compliance ownership) sit **outside engineering** and are tracked authoritatively in
+[`V1_RISK_REGISTER.md`](V1_RISK_REGISTER.md); they are not duplicated here.
 
 ---
 

@@ -35,6 +35,10 @@ _Last updated against `release/0.13.0`._
 - **Household auto-derivation:** the *engine* is built (`app/services/household_derivation.py`, injected policy, safe no-op default, dry-run, tested) and a candidate `group_by_normalized_address` policy is provided but **not enabled**. Awaiting the firm's decision on the grouping signal and auto-apply vs. review.
 - **Automatic match-merge thresholds:** the Match Review queue + resolution/backfill are built; only the *auto-merge* threshold policy (when to merge without a human) awaits a business decision.
 
+> The **ownership and program-level exposure** behind these operational blockers (who executes them,
+> and the adoption/governance risks around them) is tracked in
+> [`V1_RISK_REGISTER.md`](V1_RISK_REGISTER.md) — this checklist tracks only the release *criteria*.
+
 ## Release blockers (must clear before production; all are operational actions outside the repo)
 1. Scheduled, encrypted production backups + documented RPO/RTO (restore mechanism verified; §5–6 runbook).
 2. Staging deploy + rollback rehearsal on the target infra (runbook + reversible migrations in place).

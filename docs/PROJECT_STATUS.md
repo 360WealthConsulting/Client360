@@ -54,6 +54,9 @@ readiness can be claimed.**
 3. Promote E2E to a required status check (branch protection).
 4. Login/SSO + monitoring/alerting configured in the target environment.
 
+_Ownership and program-level risk (operational/organizational/governance) for the above:
+[`V1_RISK_REGISTER.md`](V1_RISK_REGISTER.md)._
+
 ## Outstanding product decisions (`PRODUCT_DECISIONS.md`)
 - **PD-1** household grouping rule + auto-apply-vs-review.
 - **PD-2** whether to build/enable match auto-merge + threshold.
