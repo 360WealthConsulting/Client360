@@ -15,7 +15,7 @@ _Last updated against `release/0.13.0`._
 | Test coverage | 🟡 | 1206 tests passing (service + route level). No coverage % gate yet; browser E2E is smoke-level. |
 | Backup / restore verification | 🔴 | Not yet performed. Requires an ops runbook + a rehearsed restore. **Release blocker for production** (not for internal pilot). |
 | Deployment verification | 🔴 | No CI/CD to staging, no zero-downtime deploy or rollback rehearsal. **Release blocker for production.** |
-| Security review items | 🟡 | Capability + record-scope + append-only audit in place; dev-auth impossible in production. Outstanding: enforce `SESSION_HTTPS_ONLY`, rate limiting, dependency/secret scanning cadence. |
+| Security review items | 🟡 | Capability + record-scope + append-only audit; CSRF same-origin check; secret-scan gate in CI. `SESSION_SECRET` required in production and `SESSION_HTTPS_ONLY` auto-enforced there (derived from environment); production **fails fast** if `CLIENT360_DEV_AUTH` is set. Outstanding: rate limiting (low priority — external IdP), dependency-vuln scan cadence. |
 | Performance testing | 🔴 | Search hotspot indexed (pg_trgm); no load test at target volume yet. |
 | Monitoring & health checks | 🟡 | `/health` + `/readiness` endpoints exist; not wired to monitoring/alerting. |
 | Documentation status | 🟡 | CHANGELOG current; `docs/E2E.md`; this file. User guide / ops runbook / ADRs outstanding. |
