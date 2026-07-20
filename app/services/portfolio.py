@@ -1,7 +1,7 @@
 from collections import defaultdict
 from decimal import Decimal
 from sqlalchemy import and_, func, or_, select
-from app.db import account_beneficiaries, account_holdings, accounts, engine, households, people, securities
+from app.db import account_beneficiaries, account_holdings, accounts, engine, household_relationships, households, people, securities
 
 from app.portfolio.calculations import aggregate_portfolio
 
@@ -42,6 +42,50 @@ def get_person_portfolio(person_id):
     result = _portfolio(accounts.c.person_id == person_id)
     result["household"] = _portfolio(accounts.c.household_id == household_id) if household_id else result
     return result
+
+def _household_members(household_id):
+    """Roster of people in a household, reusing the household_relationships→people
+    join (same source the household profile page uses). Primary contacts first."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                people.c.id, people.c.full_name, people.c.primary_email,
+                household_relationships.c.relationship_type,
+                household_relationships.c.is_primary,
+            )
+            .select_from(household_relationships.join(people, people.c.id == household_relationships.c.person_id))
+            .where(household_relationships.c.household_id == household_id)
+            .order_by(household_relationships.c.is_primary.desc(), people.c.full_name)
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+def get_household_portfolio(household_id):
+    """Aggregate a household's portfolio across all member accounts.
+
+    Reuses `_portfolio()` — which reuses `aggregate_portfolio()` /
+    `calculate_allocation()` — so household and person portfolios share a single
+    aggregation implementation (no duplicated logic). Adds the member roster.
+    An empty household (or one with no accounts) yields safe zeros/empties.
+    """
+    p = _portfolio(accounts.c.household_id == household_id)
+    largest = p["largest_holdings"]
+    return {
+        "household_id": household_id,
+        "aum": p["total_aum"],
+        "cash": p["cash"],
+        "cash_percent": p["cash_percent"],
+        "holdings": p["holdings"],
+        "allocation": p["asset_allocation"],
+        "largest_positions": largest,
+        "concentration": {
+            "largest_position_percent": p["largest_position_percent"],
+            "top_position": largest[0] if largest else None,
+        },
+        "accounts": p["accounts"],
+        "members": _household_members(household_id),
+        "beneficiary_count": p["beneficiary_count"],
+        "last_import_date": p["last_import_date"],
+    }
 
 def get_firm_portfolio_metrics():
     with engine.connect() as conn:
