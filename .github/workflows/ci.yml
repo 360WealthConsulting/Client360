@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - feature/**
+      - fix/**
       - release/**
   pull_request:
     branches:
       - main
+      - release/**
 
 # One in-flight run per ref; a new push cancels the previous run instead of
 # queueing behind it.
