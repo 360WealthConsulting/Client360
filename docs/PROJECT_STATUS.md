@@ -1,8 +1,9 @@
 # Client360 — Project Status
 
 _A 5-minute orientation for a new engineer or executive sponsor. Living document; updated with
-each shipped increment. Companion docs: [`RELEASE_READINESS.md`](RELEASE_READINESS.md) (ship
-readiness) · [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) (deferred business decisions) ·
+each shipped increment. Companion docs: [`V1_RELEASE_PLAN.md`](V1_RELEASE_PLAN.md) (**authoritative
+V1.0 definition & roadmap**) · [`RELEASE_READINESS.md`](RELEASE_READINESS.md) (ship readiness) ·
+[`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) (deferred business decisions) ·
 [`../CHANGELOG.md`](../CHANGELOG.md)._
 
 ## Current version
@@ -59,7 +60,9 @@ readiness can be claimed.**
 - Legacy free-text `tasks.assigned_to` retained as a display fallback.
 
 ## Recommended next work
-1. Optional in-repo polish (humandt refactor, rate limiting) while business decisions and ops
-   actions are pending.
-2. Business: resolve `PRODUCT_DECISIONS.md` PD-1/PD-2/PD-3.
-3. Ops: execute the four operational blockers above, then cut a `0.13.0` release candidate.
+Focus is now **Version 1.0** — see [`V1_RELEASE_PLAN.md`](V1_RELEASE_PLAN.md) for scope, measurable
+release criteria, risk register, and the staged release sequence. V1.0 engineering for the CRM scope
+is essentially complete; the remaining engineering item is a **staff user guide**. The path to a V1.0
+release candidate runs through the operational blockers (backups, deploy/rollback rehearsal, monitoring
+wiring, SSO) and, optionally, the deferred product decisions (safe defaults hold). Nice-to-have and
+future-enhancement work is deferred to avoid delaying V1.0.

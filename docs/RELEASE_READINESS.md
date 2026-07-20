@@ -18,7 +18,7 @@ _Last updated against `release/0.13.0`._
 | Security review items | 🟡 | Capability + record-scope + append-only audit; CSRF same-origin check; secret-scan gate in CI. `SESSION_SECRET` required in production and `SESSION_HTTPS_ONLY` auto-enforced there (derived from environment); production **fails fast** if `CLIENT360_DEV_AUTH` is set. Outstanding: rate limiting (low priority — external IdP), dependency-vuln scan cadence. |
 | Performance testing | 🔴 | Search hotspot indexed (pg_trgm); no load test at target volume yet. |
 | Monitoring & health checks | 🟡 | **Verified robust:** `/health` (liveness) → 200; `/readiness` → 200 `ready` with DB connectivity, migration-drift (current vs expected head, `in_sync`), scheduler state (8 jobs), and M365 sync-health — returns 503 when not ready so orchestrators can gate traffic. **Outstanding (ops):** wire these probes to a monitoring/alerting system. |
-| Documentation status | 🟡 | CHANGELOG current; `docs/E2E.md`; this file. User guide / ops runbook / ADRs outstanding. |
+| Documentation status | 🟡 | CHANGELOG, `RELEASE_READINESS`, `PROJECT_STATUS`, `PRODUCT_DECISIONS`, `V1_RELEASE_PLAN`, `USER_GUIDE`, `E2E.md`, and the deployment runbook all present. Outstanding: ADRs (nice-to-have). |
 | Known technical debt | 🟡 | See below. |
 | Outstanding business-rule decisions | ⛔ | Tracked in [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) (PD-1 household grouping rule, PD-2 match auto-merge, PD-3 comm metadata, PD-4 AD-5 compliance). |
 | Release blockers | 🔴 | Backup/restore verification; deployment/rollback verification; promote E2E to a required check. |
