@@ -1,11 +1,26 @@
 from collections import defaultdict
 from decimal import Decimal
-from sqlalchemy import and_, func, or_, select
-from app.db import account_beneficiaries, account_holdings, accounts, engine, household_relationships, households, people, securities
 
+from sqlalchemy import and_, func, or_, select
+
+from app.db import (
+    account_beneficiaries,
+    account_holdings,
+    accounts,
+    engine,
+    household_relationships,
+    households,
+    people,
+    portfolio_import_runs,
+    securities,
+)
 from app.portfolio.calculations import aggregate_portfolio
 
 ZERO = Decimal("0")
+# Cash/total ratio at/above which a portfolio is flagged "high cash" (advisor
+# attention). One threshold shared by the portfolio search filter and the
+# wealth dashboard count so they never diverge.
+HIGH_CASH_RATIO = Decimal("0.15")
 
 
 def _largest_position_percents(person_ids):
@@ -97,13 +112,55 @@ def get_firm_portfolio_metrics():
         without_reviews = conn.scalar(select(func.count()).select_from(accounts).where(accounts.c.last_review_date.is_(None))) or 0
     return {"firm_aum": firm_aum, "cash_waiting": cash, "largest_household": largest_household, "largest_position": largest_position, "missing_beneficiaries": missing_beneficiaries, "accounts_without_reviews": without_reviews}
 
+def get_wealth_dashboard(recent_limit=5):
+    """Firm-wide wealth overview for the advisor dashboard.
+
+    Reuses get_firm_portfolio_metrics() (AUM, cash, missing beneficiaries,
+    accounts needing review) and adds firm counts, a high-cash count, and recent
+    activity. Pure reads over existing tables — no new schema or business policy.
+    """
+    metrics = get_firm_portfolio_metrics()
+    with engine.connect() as conn:
+        household_count = conn.scalar(select(func.count()).select_from(households)) or 0
+        account_count = conn.scalar(select(func.count()).select_from(accounts)) or 0
+        high_cash_count = conn.scalar(
+            select(func.count()).select_from(accounts).where(
+                and_(accounts.c.total_value > 0,
+                     func.coalesce(accounts.c.cash_value, 0) / accounts.c.total_value >= HIGH_CASH_RATIO))
+        ) or 0
+        recent_imports = conn.execute(
+            select(portfolio_import_runs.c.source_file, portfolio_import_runs.c.source_type,
+                   portfolio_import_runs.c.status, portfolio_import_runs.c.started_at,
+                   portfolio_import_runs.c.completed_at)
+            .order_by(portfolio_import_runs.c.started_at.desc()).limit(recent_limit)
+        ).mappings().all()
+        new_households = conn.execute(
+            select(households.c.id, households.c.name, households.c.created_at)
+            .order_by(households.c.created_at.desc().nullslast()).limit(recent_limit)
+        ).mappings().all()
+        recently_updated_accounts = conn.execute(
+            select(accounts.c.id, accounts.c.account_name, accounts.c.account_number,
+                   accounts.c.custodian, accounts.c.total_value, accounts.c.last_imported_at)
+            .where(accounts.c.last_imported_at.is_not(None))
+            .order_by(accounts.c.last_imported_at.desc()).limit(recent_limit)
+        ).mappings().all()
+    return {
+        **metrics,
+        "household_count": household_count,
+        "account_count": account_count,
+        "high_cash_count": high_cash_count,
+        "recent_imports": [dict(r) for r in recent_imports],
+        "new_households": [dict(r) for r in new_households],
+        "recently_updated_accounts": [dict(r) for r in recently_updated_accounts],
+    }
+
 def search_portfolios(query="", min_aum=None, registration=None, high_cash=False, missing_beneficiary=False, concentration=None, limit=None):
     stmt = select(people.c.id, people.c.full_name, func.sum(accounts.c.total_value).label("aum"), func.sum(accounts.c.cash_value).label("cash")).join(accounts, accounts.c.person_id == people.c.id).group_by(people.c.id)
     if query: stmt = stmt.where(or_(people.c.full_name.ilike(f"%{query}%"), accounts.c.registration_type.ilike(f"%{query}%")))
     if registration: stmt = stmt.where(accounts.c.registration_type.ilike(f"%{registration}%"))
     if missing_beneficiary: stmt = stmt.outerjoin(account_beneficiaries, account_beneficiaries.c.account_id == accounts.c.id).where(account_beneficiaries.c.id.is_(None))
     if min_aum is not None: stmt = stmt.having(func.sum(accounts.c.total_value) >= min_aum)
-    if high_cash: stmt = stmt.having(func.sum(accounts.c.cash_value) / func.nullif(func.sum(accounts.c.total_value), 0) >= Decimal("0.15"))
+    if high_cash: stmt = stmt.having(func.sum(accounts.c.cash_value) / func.nullif(func.sum(accounts.c.total_value), 0) >= HIGH_CASH_RATIO)
     with engine.connect() as conn: rows = [dict(r) for r in conn.execute(stmt.order_by(func.sum(accounts.c.total_value).desc())).mappings()]
     if concentration is not None:
         percents = _largest_position_percents([r["id"] for r in rows])
