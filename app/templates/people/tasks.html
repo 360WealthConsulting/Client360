@@ -11,6 +11,7 @@
 <div class="card" style="max-width:760px; margin-bottom:16px">
   <h3>Create task</h3>
   <form method="post" action="/people/{{ person.id }}/tasks">
+    <input type="hidden" name="idempotency_key" value="{{ form_token }}">
     <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
     <div class="field"><label for="description">Description</label><textarea class="input" id="description" name="description" style="height:auto; min-height:100px; padding:11px"></textarea></div>
     <div class="field"><label for="priority">Priority</label>

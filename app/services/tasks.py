@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, select, update
+from sqlalchemy.dialects.postgresql import insert
 
 from app.db import engine, people, record_assignments, tasks, user_roles, users
 from app.security.audit import write_audit_event
@@ -88,21 +89,24 @@ def create_task(person_id: int, *, title: str, description: str | None = None,
                 priority: str = "normal", assigned_to_user_id: int | None = None,
                 due_date: date | None = None, actor_user_id: int | None = None,
                 request_id: str | None = None, source: str | None = None,
-                source_note_id: int | None = None, conn=None) -> int | None:
+                source_note_id: int | None = None, idempotency_key: str | None = None,
+                conn=None) -> int | None:
     """Create an open task for a person (reusing the ``tasks`` table). The assignee is an
     existing **user** (validated) assigned via the canonical ``record_assignments`` model
     (``work_management.assign_work``) — never free-text. Returns the task id, or ``None`` if
-    suppressed as a duplicate resubmission. Records timeline + audit."""
+    suppressed as a duplicate resubmission (either the same ``idempotency_key`` was already used,
+    or the short-window heuristic fired). Records timeline + audit only for a real insert."""
     title = (title or "").strip()
     if not title:
         raise ValueError("Task title is required.")
+    idempotency_key = (idempotency_key or "").strip() or None
 
     def _do(c):
         if not _person_exists(c, person_id):
             raise ValueError("Person not found.")
         if assigned_to_user_id is not None and not _active_user_exists(c, assigned_to_user_id):
             raise ValueError("Assignee must be an existing active user.")
-        # practical duplicate-submission guard: identical open task created moments ago.
+        # Short-window heuristic guard (covers submissions with no idempotency key).
         recent = c.execute(
             select(tasks.c.id).where(
                 tasks.c.person_id == person_id, tasks.c.title == title, tasks.c.status == "open",
@@ -111,13 +115,16 @@ def create_task(person_id: int, *, title: str, description: str | None = None,
         ).scalar()
         if recent is not None:
             return None
-        return c.execute(
-            insert(tasks).values(
-                person_id=person_id, title=title, description=(description or None), status="open",
-                priority=priority, due_date=due_date,
-                created_by_user_id=actor_user_id, updated_by_user_id=actor_user_id,
-            ).returning(tasks.c.id)
-        ).scalar_one()
+        # Definitive guard: a unique idempotency_key makes a resubmit a no-op (returns None),
+        # so a browser back/resubmit or retried POST can never create a second task.
+        statement = insert(tasks).values(
+            person_id=person_id, title=title, description=(description or None), status="open",
+            priority=priority, due_date=due_date, idempotency_key=idempotency_key,
+            created_by_user_id=actor_user_id, updated_by_user_id=actor_user_id,
+        )
+        if idempotency_key is not None:
+            statement = statement.on_conflict_do_nothing(index_elements=[tasks.c.idempotency_key])
+        return c.execute(statement.returning(tasks.c.id)).scalar_one_or_none()
 
     task_id = _run(conn, _do)
     if task_id is None:
