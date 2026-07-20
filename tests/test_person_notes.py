@@ -8,7 +8,6 @@ searchable, and safe under simultaneous adds; each staff note records a timeline
 from __future__ import annotations
 
 import asyncio
-import pathlib
 import uuid
 from urllib.parse import urlencode
 
@@ -28,8 +27,6 @@ from app.services.notes import (
     save_permanent_note,
     search_person_notes,
 )
-
-SCRATCH = pathlib.Path("/private/tmp/claude-501/-Users-mikes/5582268d-ef89-4e8b-9f85-30a00747e770/scratchpad")
 
 
 def _person():
@@ -81,24 +78,18 @@ def test_permanent_note_is_one_editable_record():
         assert c.execute(select(func.count()).select_from(pn).where(pn.c.person_id == pid)).scalar_one() == 1
 
 
-def test_legacy_filesystem_note_migrates_into_permanent_note():
+def test_legacy_filesystem_note_migrates_into_permanent_note(monkeypatch, tmp_path):
     pid = _person()
-    tmp = SCRATCH / "notes_t3b"
-    tmp.mkdir(parents=True, exist_ok=True)
-    (tmp / f"{pid}.txt").write_text("Legacy enduring note about the client.", encoding="utf-8")
-    old = notes_service.NOTES_ROOT
-    notes_service.NOTES_ROOT = tmp
-    try:
-        assert ensure_permanent_migrated(pid) is True
-        cur = get_permanent_note(pid)
-        assert cur["body"] == "Legacy enduring note about the client."   # content preserved
-        assert list_person_notes(pid) == []                              # NOT activity history
-        # idempotent + never overwrites the migrated permanent note
-        save_permanent_note(pid, "edited by staff", editor_user_id=_user("Z"))
-        assert ensure_permanent_migrated(pid) is False
-        assert get_permanent_note(pid)["body"] == "edited by staff"
-    finally:
-        notes_service.NOTES_ROOT = old
+    monkeypatch.setattr(notes_service, "NOTES_ROOT", tmp_path)
+    (tmp_path / f"{pid}.txt").write_text("Legacy enduring note about the client.", encoding="utf-8")
+    assert ensure_permanent_migrated(pid) is True
+    cur = get_permanent_note(pid)
+    assert cur["body"] == "Legacy enduring note about the client."   # content preserved
+    assert list_person_notes(pid) == []                              # NOT activity history
+    # idempotent + never overwrites the migrated permanent note
+    save_permanent_note(pid, "edited by staff", editor_user_id=_user("Z"))
+    assert ensure_permanent_migrated(pid) is False
+    assert get_permanent_note(pid)["body"] == "edited by staff"
 
 
 def test_bulk_migration_is_idempotent(monkeypatch, tmp_path):
