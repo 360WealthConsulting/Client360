@@ -5,6 +5,7 @@ tests pin the fix: a real HTML page at `/portfolio`, the JSON API preserved at
 `/portfolio/search`, and navigation pointing at the HTML page.
 """
 import pathlib
+import re
 
 from starlette.requests import Request
 
@@ -53,3 +54,73 @@ def test_portfolio_page_links_to_client_detail():
     # The template links each row to the client/portfolio detail page.
     template = pathlib.Path("app/templates/portfolio/search.html").read_text()
     assert "/people/{{ r.id }}" in template
+
+
+# --- Sidebar section: Portfolio lives under a dedicated "Wealth" group -------
+#
+# Portfolio moved out of the "Clients" group into its own top-level "Wealth"
+# section. The move preserves the capability gate (firm_client = client.read AND
+# record.read_all), so the section is admin-only exactly as the link was before.
+
+def _nav_groups(principal, path="/portfolio"):
+    """Render base.html and return {group-label: group-html-block} for each
+    *visible* nav group. Each group is `<div class="nav-group"><div class="label">
+    LABEL</div> ... </div>`; splitting on the group delimiter bounds each block to
+    its own items (up to the next group), so membership can be asserted per group.
+    """
+    from app.templating import templates
+    html = templates.env.get_template("base.html").render(
+        request=_request(path=path), principal=principal
+    )
+    groups = {}
+    for block in html.split('<div class="nav-group">')[1:]:
+        label = re.search(r'<div class="label">([^<]+)</div>', block)
+        if label:
+            groups[label.group(1).strip()] = block
+    return groups
+
+
+def _admin():
+    # Firm-wide reader: satisfies both client.read and record.read_all.
+    return Principal(1, "admin@example.com", "Admin", frozenset({"record.read_all", "client.read"}))
+
+
+def test_wealth_section_appears_for_authorized_admin():
+    groups = _nav_groups(_admin())
+    assert "Wealth" in groups
+
+
+def test_portfolio_appears_beneath_wealth():
+    groups = _nav_groups(_admin())
+    assert "Wealth" in groups
+    assert 'href="/portfolio"' in groups["Wealth"]
+    assert "Portfolio" in groups["Wealth"]
+
+
+def test_portfolio_no_longer_beneath_clients():
+    groups = _nav_groups(_admin())
+    assert "Clients" in groups
+    assert 'href="/portfolio"' not in groups["Clients"]
+    # The other Clients items are untouched by the move.
+    for href in ('href="/households"', 'href="/people"', 'href="/relationships/search"'):
+        assert href in groups["Clients"]
+
+
+def test_unauthorized_user_does_not_see_wealth_section():
+    # Advisor persona: has client.read but NOT record.read_all -> firm_client is
+    # false, so neither the Wealth heading nor the Portfolio link is rendered.
+    advisor = Principal(2, "advisor@example.com", "Advisor", frozenset({"client.read"}))
+    groups = _nav_groups(advisor)
+    assert "Wealth" not in groups
+    from app.templating import templates
+    nav = templates.env.get_template("base.html").render(
+        request=_request(), principal=advisor
+    )
+    assert 'href="/portfolio"' not in nav
+
+
+def test_portfolio_active_state_covers_nested_urls():
+    # match="/portfolio" -> path.startswith() keeps the item active on nested URLs.
+    nested = _nav_groups(_admin(), path="/portfolio/search")
+    assert 'href="/portfolio"' in nested["Wealth"]
+    assert 'aria-current="page"' in nested["Wealth"]
