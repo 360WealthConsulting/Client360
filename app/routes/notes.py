@@ -91,7 +91,12 @@ async def post_person_notes(
     note_type = form.get("note_type", ["note"])[0]
     if note_type not in ACTIVITY_NOTE_TYPES:
         note_type = "note"
-    note_id = add_person_note(person_id, body, author_user_id=principal.user_id, note_type=note_type)
+    # Direction (inbound/outbound) applies only to communications; ignored for general notes.
+    direction = form.get("direction", [""])[0].strip() or None
+    if note_type == "note" or direction not in ("inbound", "outbound"):
+        direction = None
+    note_id = add_person_note(person_id, body, author_user_id=principal.user_id,
+                              note_type=note_type, direction=direction)
     summary = body if len(body) <= 500 else body[:497] + "..."
     is_comm = note_type != "note"
     if is_comm:

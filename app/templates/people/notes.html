@@ -36,6 +36,12 @@
           <option value="email"{{ ' selected' if log == 'email' else '' }}>Email</option>
           <option value="meeting"{{ ' selected' if log == 'meeting' else '' }}>Meeting</option>
         </select></div>
+      <div class="field"><label>Direction</label>
+        <select class="input" name="direction">
+          <option value="">—</option>
+          <option value="inbound">Inbound</option>
+          <option value="outbound">Outbound</option>
+        </select></div>
     </div>
     <textarea class="input" name="note" placeholder="Log a call, email, meeting, or conversation..." style="width:100%; min-height:100px; padding:14px; line-height:1.5; resize:vertical" required></textarea>
     <details style="margin-top:10px">
@@ -61,6 +67,7 @@
     <article class="card" style="padding:14px 16px">
       <div class="timeline-meta" style="display:flex; gap:10px; align-items:center; margin-bottom:6px">
         {{ ui.badge(note.note_type|title, 'muted') }}
+        {% if note.direction %}{{ ui.badge(note.direction|title, 'muted') }}{% endif %}
         <strong>{{ note.author_name or "Unknown" }}</strong>
         <span class="subtle">{{ note.created_at | humandt }}</span>
       </div>
