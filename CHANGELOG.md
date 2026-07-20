@@ -18,6 +18,9 @@ All notable Client360 releases are documented here.
 - Household-derivation engine (`app/services/household_derivation.py`): groups un-householded people by an injected policy (safe no-op default; candidate address policy provided but not enabled), with a dry-run mode. The mechanism is complete; the grouping rule and auto-apply are business decisions.
 - `docs/PRODUCT_DECISIONS.md` — authoritative register of deferred business/product-policy decisions (mechanism built, decision awaited).
 - `docs/PROJECT_STATUS.md` — 5-minute project orientation (version, milestones, readiness, blockers, decisions, debt, next work).
+- `docs/RC_READINESS.md` — Release Candidate readiness definition (build, artifact, tagging, deploy, rollback, smoke, monitoring, backup/restore, environment, acceptance) with owner/evidence/verification/status per item.
+- `scripts/smoke.sh` — post-deploy smoke test for a running instance (liveness, readiness with DB + migration-drift, static assets, auth gate); verified live.
+- `scripts/rollback.sh` — migration rollback helper (downgrade to a target revision, guarded, dry-run); verified end-to-end.
 - `docs/USER_GUIDE.md` — staff user guide for the v1.0 CRM (search, profile, notes, communications, tasks, households, Match Review).
 - `docs/V1_RELEASE_PLAN.md` — authoritative Version 1.0 definition: product scope (included/excluded/deferred), measurable release criteria, categorized remaining work, risk register, and staged release sequence with entry/exit criteria.
 - Verified the backup/restore mechanism against the current schema: `restore_rehearsal.sh` restored a `pg_dump` of head `d4c5o6m7d8i9` into a scratch DB with a single Alembic head and a green suite (recorded in `RELEASE_READINESS.md`).
