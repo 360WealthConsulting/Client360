@@ -25,7 +25,7 @@ _Last updated against `release/0.13.0`._
 
 ## Known technical debt
 - `humandt` filter registered on 3 route envs only (notes/tasks/people); other surfaces show raw timestamps — proper fix is a shared-templates refactor (32 routers each build their own Jinja env).
-- Pre-#35 backfill: `promote_unlinked` runs on new imports only; contacts imported earlier need a one-time backfill.
+- ~~Pre-#35 backfill~~ — resolved: `POST /matches/promote-unlinked` (button on the unresolved queue) backfills contacts imported before the wiring fix.
 - `/matches/unresolved` reachable by URL but not linked from the main Match Review nav.
 - Duplicate CI runs for feature→release PRs (push + pull_request both fire) — correct but wasteful.
 - ~611 baselined ruff findings (legacy), tracked in issue #26.

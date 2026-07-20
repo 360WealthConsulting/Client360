@@ -3,8 +3,11 @@
 {% block title %}Unresolved contacts | Client360{% endblock %}
 {% block crumb %}Match Review · Unresolved{% endblock %}
 {% block content %}
-{{ ui.page_head("Unresolved contacts", eyebrow="Match Review", desc="Single-source contacts that need a human decision: link to an existing client or create a new one.") }}
+{% call ui.page_head("Unresolved contacts", eyebrow="Match Review", desc="Single-source contacts that need a human decision: link to an existing client or create a new one.") %}
+  <form method="post" action="/matches/promote-unlinked" style="display:inline"><button class="btn secondary" type="submit">Run promotion backfill</button></form>
+{% endcall %}
 {% if saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Contact resolved.</div></div>{% endif %}
+{% if promoted is not none %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Promotion backfill complete — {{ promoted }} new client(s) created. Ambiguous contacts remain below.</div></div>{% endif %}
 {% if contacts %}
 <div class="stack">
   {% for contact in contacts %}

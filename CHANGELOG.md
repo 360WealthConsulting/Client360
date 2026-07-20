@@ -22,6 +22,7 @@ All notable Client360 releases are documented here.
 ### Fixed
 - Order-dependent event-loop test flakiness (global conftest fixture); a non-portable test path that failed CI.
 - Single-source contacts were never promoted to canonical people: the Wealthbox import now runs `promote_unlinked` after ingest (same transaction), so imported single-source contacts become people (ambiguous cases left for Match Review) instead of being stranded.
+- Promotion backfill action (`POST /matches/promote-unlinked`, button on the unresolved queue) promotes contacts imported before the wiring fix; conservative and audited.
 
 ## [0.11.0] — 2026-07-17 — Documentation Foundation
 

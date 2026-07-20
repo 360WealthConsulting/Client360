@@ -94,6 +94,35 @@ def test_resolve_create_person_creates_and_links():
     assert person["full_name"] == "Shared Y" and linked == new_pid
 
 
+def test_promotion_backfill_route_promotes_unlinked_and_audits():
+    import asyncio
+
+    from app.routes.identity_review import run_promotion_backfill
+    from app.security.models import Principal
+
+    # a unique unlinked contact that should be promoted to a new person
+    sc = _contact("Backfill Unique", email=f"bf{uuid.uuid4().hex[:8]}@e.com")
+
+    class _State:
+        request_id = "bf-req"
+
+    class _Req:
+        state = _State()
+
+        async def body(self):
+            return b""
+
+    principal = Principal(1, "s@e.com", "Staff", frozenset())
+    resp = asyncio.run(run_promotion_backfill(_Req(), principal))
+    assert resp.status_code == 303
+    with engine.connect() as c:
+        linked = c.execute(select(person_source_links.c.person_id).where(
+            person_source_links.c.source_contact_id == sc)).scalar_one_or_none()
+        audited = c.execute(select(func.count()).select_from(audit_events).where(
+            audit_events.c.action == "identity.promotion_backfill")).scalar_one()
+    assert linked is not None and audited >= 1
+
+
 def test_route_resolves_and_audits():
     import asyncio
     from urllib.parse import urlencode
