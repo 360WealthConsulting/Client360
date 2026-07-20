@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 from urllib.parse import parse_qs
 
@@ -41,6 +42,9 @@ def person_tasks(request: Request, person_id: int, principal: Principal = Depend
             "assignable_users": users_list,
             "created": request.query_params.get("created") == "1",
             "completed": request.query_params.get("completed") == "1",
+            # Per-render synchronizer token: a resubmit of this form carries the same
+            # token, so create_task treats it as idempotent (no duplicate task).
+            "form_token": uuid.uuid4().hex,
         },
     )
 
@@ -62,6 +66,7 @@ async def create_person_task(request: Request, person_id: int,
             assigned_to_user_id=int(assignee_raw) if assignee_raw else None,
             due_date=date.fromisoformat(due_text) if due_text else None,
             actor_user_id=principal.user_id, request_id=_request_id(request), source="profile",
+            idempotency_key=form.get("idempotency_key", [""])[0].strip() or None,
         )
     except ValueError as exc:
         return HTMLResponse(f"<h1>{exc}</h1>", status_code=400)

@@ -10,6 +10,7 @@ All notable Client360 releases are documented here.
 - Development-only sign-in provider (`/dev-auth`, gated by `CLIENT360_DEV_AUTH`; impossible to enable in production) and authenticated Playwright browser E2E coverage across login, dashboard, people, households, search, notes, tasks, and communications.
 - Staff-editable canonical contact/address fields on the client profile (audited + added to the timeline).
 - Human-readable timestamps across the client surface via a shared Jinja `humandt` filter.
+- Task-submission idempotency: a DB-backed `tasks.idempotency_key` (unique) + hidden form token make a resubmitted create-task form a conflict-safe no-op (no duplicate task on browser back/resubmit or retried POST).
 
 ### Changed
 - Task/note assignee picker scoped to provisioned staff (active users holding an active role).

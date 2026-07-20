@@ -264,6 +264,9 @@ tasks = Table(
         onupdate=func.now(),
         nullable=False,
     ),
+    # Per-submission idempotency token (unique when set) so a resubmitted create-task
+    # form cannot produce a duplicate task. NULLs stay distinct in Postgres.
+    Column("idempotency_key", String(64)),
 )
 
 
