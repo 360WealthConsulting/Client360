@@ -19,6 +19,7 @@ Run the suite with `scripts/test.sh run` (resets the database first). See #24.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import warnings
 
@@ -46,6 +47,31 @@ def pytest_configure(config: pytest.Config) -> None:
         raise pytest.UsageError(f"{exc}\n\n{SETUP_HINT}") from exc
 
     _verify_schema(name)
+
+
+@pytest.fixture(autouse=True)
+def _usable_event_loop():
+    """Guarantee every test starts and ends with a usable current event loop.
+
+    Some tests exercise async route handlers via ``asyncio.run(...)``, which closes
+    the loop and clears the current-loop slot. A later test that calls
+    ``asyncio.get_event_loop()`` (e.g. Starlette request handling) then dies with
+    "There is no current event loop", making the suite order-dependent and flaky.
+    This restores a fresh loop around every test so that class of contamination
+    cannot occur, regardless of test order (Issue #24 follow-through).
+    """
+    _ensure_loop()
+    yield
+    _ensure_loop()
+
+
+def _ensure_loop() -> None:
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop.is_closed():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _verify_schema(name: str) -> None:
