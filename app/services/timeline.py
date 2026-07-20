@@ -22,6 +22,11 @@ EVENT_DISPLAY = {
         "label": "Communication",
         "style": "activity",
     },
+    "person_updated": {
+        "icon": "✏",
+        "label": "Client Updated",
+        "style": "note",
+    },
     "task_created": {
         "icon": "＋",
         "label": "Task Created",
