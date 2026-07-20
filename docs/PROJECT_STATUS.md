@@ -4,7 +4,8 @@ _A 5-minute orientation for a new engineer or executive sponsor. Living document
 each shipped increment. Companion docs: [`V1_RELEASE_PLAN.md`](V1_RELEASE_PLAN.md) (**authoritative
 V1.0 definition & roadmap**) · [`RELEASE_READINESS.md`](RELEASE_READINESS.md) (ship readiness) ·
 [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) (deferred business decisions) ·
-[`../CHANGELOG.md`](../CHANGELOG.md)._
+[`../CHANGELOG.md`](../CHANGELOG.md). **This is the current authoritative project status;** the
+top-level [`../PROJECT_STATUS.md`](../PROJECT_STATUS.md) is the historical release log through 0.10.0._
 
 ## Current version
 - **Working line:** `release/0.13.0` (Sprint 2 integration). Frozen baseline: `v0.10.1-sprint1`

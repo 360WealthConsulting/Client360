@@ -1,4 +1,8 @@
-# Client360 — Project Status
+# Client360 — Project Status (historical release log through 0.10.0)
+
+> **⚠️ For the CURRENT project state (Version 1.0 / Sprint 2), see
+> [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) and [`docs/V1_RELEASE_PLAN.md`](docs/V1_RELEASE_PLAN.md).**
+> This file is retained as the historical release-status log; entries below stop at Release 0.10.0.
 
 _Living status snapshot. Updated at each phase/hygiene checkpoint. Last updated:
 **2026-07-17** (**Release 0.10.0 RELEASED** — tag `v0.10.0` on `main` (release commit `5ba60a2`);

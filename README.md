@@ -21,6 +21,19 @@ See [Developer Demo Mode](docs/DEVELOPER_DEMO_MODE.md) and
 
 ## Release status
 
+**Current work — Version 1.0 (Internal CRM).** Sprint 1 shipped (tag `v0.10.1-sprint1`); Sprint 2
+is in progress on branch `release/0.13.0`. The **authoritative current-state documents** are:
+
+- [Version 1.0 Release Plan](docs/V1_RELEASE_PLAN.md) — scope, measurable release criteria, risk
+  register, staged release sequence.
+- [Project Status](docs/PROJECT_STATUS.md) — 5-minute current orientation.
+- [Release Readiness](docs/RELEASE_READINESS.md) · [RC Readiness](docs/RC_READINESS.md) ·
+  [Product Decisions](docs/PRODUCT_DECISIONS.md) · [Staff User Guide](docs/USER_GUIDE.md) ·
+  [Local Development](docs/LOCAL_DEVELOPMENT.md).
+
+_The top-level [`PROJECT_STATUS.md`](PROJECT_STATUS.md) and the tagged-release history below are
+retained as the historical release log (through 0.10.0)._
+
 **Release 0.9.10 — Exception Engine** (released; tag `v0.9.10`)
 
 Release 0.9.10 delivers the platform-wide **Exception Engine** (ADR-17) — a unified way to
