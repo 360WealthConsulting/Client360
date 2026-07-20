@@ -18,6 +18,8 @@ All notable Client360 releases are documented here.
 - Household-derivation engine (`app/services/household_derivation.py`): groups un-householded people by an injected policy (safe no-op default; candidate address policy provided but not enabled), with a dry-run mode. The mechanism is complete; the grouping rule and auto-apply are business decisions.
 - `docs/PRODUCT_DECISIONS.md` — authoritative register of deferred business/product-policy decisions (mechanism built, decision awaited).
 - `docs/PROJECT_STATUS.md` — 5-minute project orientation (version, milestones, readiness, blockers, decisions, debt, next work).
+- `Dockerfile` — reproducible python:3.12 runtime image (pinned requirements, non-root, healthcheck).
+- `scripts/deploy.sh` — deploy orchestration (migrate → start → smoke → rollback-on-failure), dry-run verified.
 - `docs/RC_READINESS.md` — Release Candidate readiness definition (build, artifact, tagging, deploy, rollback, smoke, monitoring, backup/restore, environment, acceptance) with owner/evidence/verification/status per item.
 - `scripts/smoke.sh` — post-deploy smoke test for a running instance (liveness, readiness with DB + migration-drift, static assets, auth gate); verified live.
 - `scripts/rollback.sh` — migration rollback helper (downgrade to a target revision, guarded, dry-run); verified end-to-end.
