@@ -35,6 +35,7 @@ All notable Client360 releases are documented here.
 - Production startup now fails fast if `CLIENT360_DEV_AUTH` is set — the development-only sign-in provider is refused in production, and a set toggle is treated as a deployment mistake rather than silently ignored.
 
 ### Fixed
+- Handoff: README release status now reflects Version 1.0 / Sprint 2 and links the authoritative docs (was stale at 0.9.10); disambiguated the duplicate `PROJECT_STATUS.md` (top-level is the historical release log, `docs/PROJECT_STATUS.md` is the current authoritative status).
 - Order-dependent event-loop test flakiness (global conftest fixture); a non-portable test path that failed CI.
 - Single-source contacts were never promoted to canonical people: the Wealthbox import now runs `promote_unlinked` after ingest (same transaction), so imported single-source contacts become people (ambiguous cases left for Match Review) instead of being stranded.
 - Promotion backfill action (`POST /matches/promote-unlinked`, button on the unresolved queue) promotes contacts imported before the wiring fix; conservative and audited.
