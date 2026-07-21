@@ -1,19 +1,22 @@
-"""Advisor Intelligence (D.5A framework + D.5B operational signals + D.5C opportunities).
+"""Advisor Intelligence (D.5A framework · D.5B signals · D.5C opportunities · D.5D recommendations).
 
 D.5A shipped the deterministic signal INFRASTRUCTURE: the signal model, an
 explainability model, a priority model, policy-gate placeholders, a signal
 registry, and a thin composition layer
 (``get_client_signals`` / ``get_household_signals`` / ``get_dashboard_signals``).
 
-D.5B activated that framework with **factual, deterministic, operational** signals
-(client review overdue, open client exception, overdue open task, upcoming client
-meeting). D.5C adds **advisor opportunities** — factual, evidence-backed reasons a
-client deserves attention (portfolio review approaching, insurance review due,
-missing required beneficiary). An opportunity is NOT advice, a recommendation,
-suitability, or a required action. Every producer (bottom of this module) composes
-an EXISTING authoritative, record-scoped read; none recreates a domain's status/
-cadence logic. There is deliberately no recommendation, regulated advice,
-probabilistic scoring, policy interpretation, AI/LLM/ML, vector/embedding,
+D.5B activated that framework with **factual, deterministic, operational** signals.
+D.5C added **advisor opportunities** (factual reasons a client deserves attention).
+D.5D adds **compliance-governed advisor recommendations** — advisor-facing, "X may
+be appropriate based on ..." — each originating from a REGISTERED deterministic rule
+and carrying immutable governance metadata (governing rule, version, compliance
+owner, approval status) plus a policy gate. Recommendations are informational: gates
+and approval status are DISPLAY-ONLY (no enforcement, blocking, execution, workflow,
+or persistence). A recommendation is never a client communication, automated advice,
+an automated decision, or a compliance/suitability determination. Every producer
+(bottom of this module) composes an EXISTING authoritative, record-scoped read; none
+recreates a domain's status/cadence logic. There is deliberately no regulated advice,
+probabilistic scoring, policy interpretation, AI/LLM/ML, vector/embedding, or
 historical/predictive logic here, and no writes, no persistence, and no new tables.
 
 Governance (docs/ADVISOR_WORKSPACE_ARCHITECTURE.md §4, §7): Advisor Intelligence is
@@ -152,6 +155,34 @@ class SourceRecord:
 
 
 @dataclass(frozen=True)
+class RecommendationMeta:
+    """Immutable governance metadata carried by an advisor RECOMMENDATION (Phase
+    D.5D). A recommendation is advisor-facing and informational — never a client
+    communication, automated advice, or a compliance/suitability determination.
+    Every recommendation originates from a registered deterministic rule and
+    declares that rule, its version, its compliance owner, and its approval status.
+    All of this is DISPLAY-ONLY metadata: no gate is enforced, nothing is executed,
+    nothing is persisted."""
+
+    recommendation_type: str
+    governing_rule: str
+    rule_version: str
+    compliance_owner: str
+    approval_status: str
+    created_from_rule: str  # the registry key of the rule that produced this
+
+    def to_dict(self) -> dict:
+        return {
+            "recommendation_type": self.recommendation_type,
+            "governing_rule": self.governing_rule,
+            "rule_version": self.rule_version,
+            "compliance_owner": self.compliance_owner,
+            "approval_status": self.approval_status,
+            "created_from_rule": self.created_from_rule,
+        }
+
+
+@dataclass(frozen=True)
 class Signal:
     """A deterministic, propose-only, informational signal.
 
@@ -176,12 +207,26 @@ class Signal:
     route: str | None = None
     status: str = "open"
     created_at: str | None = None
+    # Present only on advisor recommendations (category "recommendation"); None for
+    # operational signals and opportunities.
+    recommendation: RecommendationMeta | None = None
+
+    @property
+    def group(self) -> str:
+        """The top-level UI bucket a signal belongs to. Keeps the three families
+        (operational signals, opportunities, recommendations) visually separate."""
+        if self.category == "recommendation":
+            return "Advisor Recommendations"
+        if self.category == "opportunity":
+            return "Advisor Opportunities"
+        return "Operational Signals"
 
     def to_dict(self) -> dict:
         """JSON-safe serialization (enums → their values, nested models → dicts)."""
         return {
             "id": self.id,
             "category": self.category,
+            "group": self.group,
             "title": self.title,
             "summary": self.summary,
             "source_service": self.source_service,
@@ -194,6 +239,7 @@ class Signal:
             "route": self.route,
             "status": self.status,
             "created_at": self.created_at,
+            "recommendation": self.recommendation.to_dict() if self.recommendation else None,
         }
 
 
@@ -217,6 +263,11 @@ class RegisteredSignal:
     default_priority: Priority = Priority.INFORMATIONAL
     policy_gate: PolicyGate = PolicyGate.NONE
     description: str = ""
+    # Governance metadata — populated for recommendation rules (D.5D); None otherwise.
+    governing_rule: str | None = None
+    rule_version: str | None = None
+    compliance_owner: str | None = None
+    approval_status: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -226,6 +277,10 @@ class RegisteredSignal:
             "default_priority": self.default_priority.value,
             "policy_gate": self.policy_gate.value,
             "description": self.description,
+            "governing_rule": self.governing_rule,
+            "rule_version": self.rule_version,
+            "compliance_owner": self.compliance_owner,
+            "approval_status": self.approval_status,
         }
 
 
@@ -240,10 +295,15 @@ def register_signal(
     default_priority: Priority = Priority.INFORMATIONAL,
     policy_gate: PolicyGate = PolicyGate.NONE,
     description: str = "",
+    governing_rule: str | None = None,
+    rule_version: str | None = None,
+    compliance_owner: str | None = None,
+    approval_status: str | None = None,
 ) -> RegisteredSignal:
-    """Register a deterministic signal rule's metadata. Idempotent-safe: a
-    duplicate key raises, so two rules can never silently share an id. The rule
-    is NOT executed by registering it (this phase runs no rules)."""
+    """Register a deterministic rule's metadata. Idempotent-safe: a duplicate key
+    raises, so two rules can never silently share an id. Recommendation rules
+    (D.5D) additionally record their governing rule id, version, compliance owner,
+    and approval status — all informational, display-only governance metadata."""
     if not key:
         raise ValueError("signal key is required")
     if key in _REGISTRY:
@@ -255,6 +315,10 @@ def register_signal(
         default_priority=default_priority,
         policy_gate=policy_gate,
         description=description,
+        governing_rule=governing_rule,
+        rule_version=rule_version,
+        compliance_owner=compliance_owner,
+        approval_status=approval_status,
     )
     _REGISTRY[key] = registered
     return registered
@@ -707,6 +771,170 @@ def _beneficiary_review_opportunity_producer(ctx: SignalContext) -> list[Signal]
     return signals
 
 
+# --------------------------------------------------------------------------- #
+# Compliance-governed advisor RECOMMENDATION producers (Phase D.5D).
+#
+# A recommendation is advisor-facing and informational — "X may be appropriate
+# based on ...". It is NOT a client communication, automated advice, an automated
+# decision, workflow execution, or a compliance/suitability determination. Each
+# originates from a REGISTERED deterministic rule and carries immutable governance
+# metadata (governing rule, version, compliance owner, approval status) plus a
+# policy gate. Gates and approval status are DISPLAY-ONLY — nothing is enforced,
+# blocked, executed, or persisted. Only recommendation types backed by an existing
+# deterministic rule are implemented; tax-planning and retirement-plan
+# recommendations are deferred (no authoritative cadence rule exists).
+# --------------------------------------------------------------------------- #
+
+#: The role accountable for a policy-gated rule. No individual is assigned yet — the
+#: gate is display-only until a compliance owner exists (V1_RISK_REGISTER GOV-2 /
+#: PRODUCT_DECISIONS PD-4). Named honestly rather than fabricated.
+_COMPLIANCE_OWNER_ROLE = "compliance_reviewer"
+_COMPLIANCE_OWNER_UNASSIGNED = f"{_COMPLIANCE_OWNER_ROLE} (unassigned — GOV-2/PD-4)"
+_OPERATIONS_OWNER = "advisor_operations"
+
+# Approval status values (informational only).
+_APPROVED = "approved"
+_PENDING = "pending_compliance_review"
+
+
+def _recommendation(*, key, rec_type, governing_rule, rule_version, compliance_owner,
+                    approval_status, policy_gate, source_record, title, summary, why,
+                    source_service, evidence, route) -> Signal:
+    """Build one advisor recommendation Signal with its governance metadata."""
+    return Signal(
+        id=_signal_id(key, source_record.entity_type, source_record.entity_id),
+        category="recommendation",
+        title=title,
+        summary=summary,
+        source_service=source_service,
+        source_record=source_record,
+        severity="recommendation",
+        priority=Priority.MEDIUM,
+        evidence=evidence,
+        explainability=Explainability(
+            why=why, source_service=source_service, evidence=evidence,
+            confidence=1.0, policy_gate=policy_gate),
+        policy_gate=policy_gate,
+        route=route,
+        status="open",
+        recommendation=RecommendationMeta(
+            recommendation_type=rec_type, governing_rule=governing_rule,
+            rule_version=rule_version, compliance_owner=compliance_owner,
+            approval_status=approval_status, created_from_rule=key),
+    )
+
+
+def _annual_portfolio_review_recommendation_producer(ctx: SignalContext) -> list[Signal]:
+    """Annual portfolio review may be appropriate — governed by the portfolio
+    review-cadence rule (``portfolio.accounts_review_approaching``)."""
+    out: list[Signal] = []
+    for acct in accounts_review_approaching(ctx.person_ids, today=ctx.today, limit=200):
+        label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
+        evidence = (
+            f"account_id={acct['id']}",
+            f"person_id={acct.get('person_id')}",
+            f"last_review_date={acct.get('last_review_date')}",
+            "governing_rule=RULE-PORTFOLIO-REVIEW-CADENCE",
+            "rule_version=1.0.0",
+        )
+        out.append(_recommendation(
+            key="annual_portfolio_review_recommendation", rec_type="annual_portfolio_review",
+            governing_rule="RULE-PORTFOLIO-REVIEW-CADENCE", rule_version="1.0.0",
+            compliance_owner=_OPERATIONS_OWNER, approval_status=_APPROVED,
+            policy_gate=PolicyGate.NONE, source_record=SourceRecord("account", acct["id"]),
+            title=f"Annual portfolio review — {label}",
+            summary="Annual portfolio review may be appropriate based on the client's review cadence.",
+            why="Account last_review_date is within the annual review cadence window per "
+                "RULE-PORTFOLIO-REVIEW-CADENCE (portfolio.accounts_review_approaching).",
+            source_service="portfolio", evidence=evidence,
+            route=_person_route(acct.get("person_id"))))
+    return out
+
+
+def _insurance_review_recommendation_producer(ctx: SignalContext) -> list[Signal]:
+    """Annual insurance review may be appropriate — governed by the insurance
+    review-cadence rule (``insurance.reviews_due_for_people``). License-gated
+    (display only)."""
+    out: list[Signal] = []
+    for rev in reviews_due_for_people(ctx.person_ids, limit=200):
+        evidence = (
+            f"insurance_review_id={rev['id']}",
+            f"person_id={rev.get('person_id')}",
+            f"due_date={rev.get('due_date')}",
+            "governing_rule=RULE-INSURANCE-REVIEW-CADENCE",
+            "rule_version=1.0.0",
+        )
+        out.append(_recommendation(
+            key="insurance_review_recommendation", rec_type="insurance_review",
+            governing_rule="RULE-INSURANCE-REVIEW-CADENCE", rule_version="1.0.0",
+            compliance_owner=_COMPLIANCE_OWNER_UNASSIGNED, approval_status=_PENDING,
+            policy_gate=PolicyGate.LICENSE_REQUIRED,
+            source_record=SourceRecord("insurance_review", rev["id"]),
+            title="Annual insurance review",
+            summary="Annual insurance review may be appropriate based on the client's review cadence.",
+            why="An insurance servicing review is open and due within the cadence window per "
+                "RULE-INSURANCE-REVIEW-CADENCE (insurance.reviews_due_for_people).",
+            source_service="insurance", evidence=evidence,
+            route=_person_route(rev.get("person_id"))))
+    return out
+
+
+def _beneficiary_review_recommendation_producer(ctx: SignalContext) -> list[Signal]:
+    """Beneficiary review may be appropriate — governed by the required-beneficiary
+    rule (``portfolio.accounts_missing_required_beneficiary``). Compliance-gated
+    (display only)."""
+    out: list[Signal] = []
+    for acct in accounts_missing_required_beneficiary(ctx.person_ids, limit=200):
+        label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
+        evidence = (
+            f"account_id={acct['id']}",
+            f"person_id={acct.get('person_id')}",
+            f"registration_type={acct.get('registration_type')}",
+            "active_beneficiaries=0",
+            "governing_rule=RULE-BENEFICIARY-DESIGNATION-PRESENT",
+            "rule_version=1.0.0",
+        )
+        out.append(_recommendation(
+            key="beneficiary_review_recommendation", rec_type="beneficiary_review",
+            governing_rule="RULE-BENEFICIARY-DESIGNATION-PRESENT", rule_version="1.0.0",
+            compliance_owner=_COMPLIANCE_OWNER_UNASSIGNED, approval_status=_PENDING,
+            policy_gate=PolicyGate.COMPLIANCE_REQUIRED,
+            source_record=SourceRecord("account", acct["id"]),
+            title=f"Beneficiary review — {label}",
+            summary="Beneficiary review may be appropriate because required beneficiary "
+                    "information is absent.",
+            why="An IRA account has no active beneficiary designation per "
+                "RULE-BENEFICIARY-DESIGNATION-PRESENT "
+                "(portfolio.accounts_missing_required_beneficiary).",
+            source_service="portfolio", evidence=evidence,
+            route=_person_route(acct.get("person_id"))))
+    return out
+
+
+#: The approved Phase D.5D governed recommendation producers. Each registers its
+#: governing rule id, version, compliance owner, and approval status.
+_RECOMMENDATION_SIGNALS = (
+    (dict(key="annual_portfolio_review_recommendation", category="recommendation",
+          source_service="portfolio", default_priority=Priority.MEDIUM,
+          policy_gate=PolicyGate.NONE, governing_rule="RULE-PORTFOLIO-REVIEW-CADENCE",
+          rule_version="1.0.0", compliance_owner=_OPERATIONS_OWNER, approval_status=_APPROVED,
+          description="Annual portfolio review may be appropriate per the review-cadence rule."),
+     _annual_portfolio_review_recommendation_producer),
+    (dict(key="insurance_review_recommendation", category="recommendation",
+          source_service="insurance", default_priority=Priority.MEDIUM,
+          policy_gate=PolicyGate.LICENSE_REQUIRED, governing_rule="RULE-INSURANCE-REVIEW-CADENCE",
+          rule_version="1.0.0", compliance_owner=_COMPLIANCE_OWNER_UNASSIGNED, approval_status=_PENDING,
+          description="Annual insurance review may be appropriate per the review-cadence rule."),
+     _insurance_review_recommendation_producer),
+    (dict(key="beneficiary_review_recommendation", category="recommendation",
+          source_service="portfolio", default_priority=Priority.MEDIUM,
+          policy_gate=PolicyGate.COMPLIANCE_REQUIRED, governing_rule="RULE-BENEFICIARY-DESIGNATION-PRESENT",
+          rule_version="1.0.0", compliance_owner=_COMPLIANCE_OWNER_UNASSIGNED, approval_status=_PENDING,
+          description="Beneficiary review may be appropriate per the required-designation rule."),
+     _beneficiary_review_recommendation_producer),
+)
+
+
 #: The approved Phase D.5B operational producers, in registry order. Each entry is
 #: (registry metadata, producer callable). Registered/attached at import.
 _OPERATIONAL_SIGNALS = (
@@ -747,9 +975,9 @@ _OPPORTUNITY_SIGNALS = (
      _beneficiary_review_opportunity_producer),
 )
 
-#: Everything registered/attached at import — operational signals (D.5B) plus
-#: advisor opportunities (D.5C).
-_ALL_SIGNALS = _OPERATIONAL_SIGNALS + _OPPORTUNITY_SIGNALS
+#: Everything registered/attached at import — operational signals (D.5B), advisor
+#: opportunities (D.5C), and governed recommendations (D.5D).
+_ALL_SIGNALS = _OPERATIONAL_SIGNALS + _OPPORTUNITY_SIGNALS + _RECOMMENDATION_SIGNALS
 
 
 def register_operational_signals() -> None:

@@ -330,9 +330,9 @@ def test_dashboard_renders_opportunities_grouped():
                        "headers": [], "query_string": b""})
         body = workspace_dashboard(req, principal=ids["principal"]).body.decode()
         assert "Advisor Intelligence" in body
-        assert "Opportunity" in body  # category group heading
+        assert "Advisor Opportunities" in body  # bucket group heading
         assert f"/people/{ids['a']}" in body
-        for control in ("Approve", "Reject", "Dismiss", "Snooze"):
+        for control in ("Dismiss", "Snooze", "Execute", "Create task"):
             assert control not in body
     finally:
         _teardown(ids)
