@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from app.db import (
     engagements,
@@ -667,3 +667,22 @@ def list_reviews(principal, *, policy_id=None, case_id=None, status=None, limit=
             if len(out) >= limit:
                 break
     return out
+
+
+def client_policy_summary(person_id, household_id=None):
+    """Read-only factual summary of a client's insurance policies (person, or the
+    household). Counts policies and sums face amount. No in-force status filtering:
+    the "in force" status vocabulary is a business decision, so this stays factual
+    (Client 360 summary, Phase D.2). Keyed by person/household, so it only ever
+    reflects the requested client."""
+    conds = [insurance_policies.c.person_id == person_id]
+    if household_id:
+        conds.append(insurance_policies.c.household_id == household_id)
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(
+                func.count().label("n"),
+                func.coalesce(func.sum(insurance_policies.c.face_amount), 0).label("face"),
+            ).where(or_(*conds))
+        ).mappings().first()
+    return {"policy_count": row["n"] or 0, "total_face": row["face"] or 0}

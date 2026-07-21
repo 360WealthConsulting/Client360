@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.db import (engine, filing_jurisdictions, record_assignments, tax_deadline_rules,
     tax_deadlines, tax_engagement_returns, tax_engagements, tax_filing_statuses,
@@ -124,3 +124,18 @@ def override_deadline(deadline_id, due_date, reason, *, actor_user_id, request_i
         result = c.execute(tax_deadlines.update().where(tax_deadlines.c.id == deadline_id).values(due_date=due_date, override_reason=reason, overridden_by_user_id=actor_user_id))
         if not result.rowcount: raise ValueError("Deadline not found")
     write_audit_event(action="tax.deadline.overridden", entity_type="tax_deadline", entity_id=deadline_id, actor_user_id=actor_user_id, request_id=request_id, metadata={"due_date":str(due_date),"reason":reason})
+
+
+def client_engagement_summary(person_id, household_id=None):
+    """Read-only count of a client's active tax engagements (person, or household).
+    Factual composition for the Client 360 summary (Phase D.2); keyed by
+    person/household, so it only reflects the requested client."""
+    conds = [tax_engagements.c.person_id == person_id]
+    if household_id:
+        conds.append(tax_engagements.c.household_id == household_id)
+    with engine.connect() as conn:
+        n = conn.scalar(
+            select(func.count()).select_from(tax_engagements)
+            .where(or_(*conds), tax_engagements.c.status == "active")
+        ) or 0
+    return {"active": n}

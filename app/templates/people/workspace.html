@@ -376,6 +376,19 @@
 
     {% else %}
 
+    {# Client 360 summary (Phase D.2): a factual per-domain relationship snapshot,
+       shown side by side and NEVER summed into a single composite figure (the
+       units are not comparable). Read-only composition of existing services. #}
+    <h2 class="section-title">Client 360</h2>
+    <section class="stat-grid" style="margin-bottom:18px">
+      {{ wc.summary_card("Client AUM", "$" ~ "{:,.2f}".format(client_snapshot.aum)) }}
+      {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(client_snapshot.cash), "{:.1f}".format(client_snapshot.cash_percent) ~ "%") }}
+      {{ wc.summary_card("Insurance", client_snapshot.insurance.policy_count ~ (" policy" if client_snapshot.insurance.policy_count == 1 else " policies"), "$" ~ "{:,.2f}".format(client_snapshot.insurance.total_face) ~ " coverage") }}
+      {{ wc.summary_card("Tax engagements", client_snapshot.tax.active, "Active") }}
+      {{ wc.summary_card("Open exceptions", client_snapshot.open_exceptions, "Needs attention") }}
+      {{ wc.summary_card("Open tasks", client_snapshot.open_tasks, "Meeting agenda") }}
+    </section>
+
     <div class="workspace-grid">
 
         <aside class="stack">
