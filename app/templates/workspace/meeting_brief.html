@@ -45,7 +45,7 @@
    for this client. Reuses get_client_signals (never generated in-template). #}
 <h2 class="section-title">Advisor Intelligence</h2>
 <article class="card" style="margin-bottom:18px">
-  {{ intel.signals_panel(signals, compact=True) }}
+  {{ intel.signals_panel(signals, compact=True, work_index=work_index, work_person_id=b.person.id) }}
 </article>
 
 <h2 class="section-title">Meeting agenda — open tasks &amp; action items</h2>

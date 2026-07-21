@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
+from app.services import advisor_work
 from app.services.advisor_intelligence import (
     get_client_signals,
     get_dashboard_signals,
@@ -73,10 +74,13 @@ def meeting_brief(
     # Advisor Intelligence (Phase D.5C): reuse the single scoped signal producer for
     # this in-scope client. No signal generation in the template.
     signals = get_client_signals(principal, person_id)
+    # Advisor Work (Phase D.9): open-work index for the Create-work / Work-exists action.
+    work_index = (advisor_work.open_work_index(principal, person_id)
+                  if principal.can("advisor_work.read") else None)
     return templates.TemplateResponse(
         request=request,
         name="workspace/meeting_brief.html",
-        context={"principal": principal, "b": brief, "signals": signals},
+        context={"principal": principal, "b": brief, "signals": signals, "work_index": work_index},
     )
 
 

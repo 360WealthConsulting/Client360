@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Advisor Work · {{ w.recommendation_snapshot.title }} | Client360{% endblock %}
+{% block crumb %}Advisor Work{% endblock %}
+{% block content %}
+{{ ui.page_head("Advisor Work", eyebrow="Work", desc=w.recommendation_snapshot.title) }}
+
+{% if request.query_params.get("error") %}
+<div class="alert crit" style="margin-bottom:14px"><span class="ico">⚠</span><div>{{ request.query_params.get("error") }}</div></div>
+{% endif %}
+
+<section class="stat-grid" style="margin-bottom:16px">
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Status</span><h3 style="margin:2px 0">{{ w.status|replace("_"," ")|capitalize }}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Priority</span><h3 style="margin:2px 0">{{ w.priority|capitalize }}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Owner</span><h3 style="margin:2px 0">{% if w.owner_principal_id %}principal {{ w.owner_principal_id }}{% else %}<span class="subtle">Unassigned</span>{% endif %}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Policy gate</span><h3 style="margin:2px 0">{{ w.policy_gate|replace("_"," ")|capitalize }}</h3></article>
+</section>
+
+<h2 class="section-title">Recommendation snapshot</h2>
+<article class="card">
+  <div class="detail-row"><span class="detail-label">Recommendation</span><strong>{{ w.recommendation_snapshot.title }}</strong></div>
+  <div class="detail-row"><span class="detail-label">Summary</span>{{ w.recommendation_snapshot.summary }}</div>
+  <div class="detail-row"><span class="detail-label">Recommendation ID</span><span class="id-mono">{{ w.recommendation_id }}</span></div>
+  <div class="detail-row"><span class="detail-label">Governing rule</span><span class="id-mono">{{ w.governing_rule }} · {{ w.rule_version }}</span></div>
+  <div class="detail-row"><span class="detail-label">Explainability</span>{{ w.recommendation_snapshot.explainability.why }}</div>
+  <div class="detail-row"><span class="detail-label">Evidence</span><div>{% for e in w.recommendation_snapshot.evidence %}<div class="subtle id-mono">{{ e }}</div>{% endfor %}</div></div>
+  <div class="detail-row"><span class="detail-label">Client</span>{% if w.person_id %}<a class="rowlink" href="/people/{{ w.person_id }}">Person {{ w.person_id }}</a>{% else %}<span class="subtle">—</span>{% endif %}</div>
+  <div class="detail-row"><span class="detail-label">Created by</span>principal {{ w.created_by }} · {{ w.created_at }}</div>
+  {% if w.completed_at %}<div class="detail-row"><span class="detail-label">Completed</span>{{ w.completed_at }} by principal {{ w.completed_by }}{% if w.completion_notes %} — {{ w.completion_notes }}{% endif %}</div>{% endif %}
+  <p class="subtle" style="margin-top:8px">This work item is operational. Completing it never resolves, suppresses, or alters the underlying recommendation, its evidence, or its id — the recommendation continues to appear until its underlying facts change.</p>
+</article>
+
+{% if (can_assign or can_update) and w.status not in ["completed","cancelled","archived"] %}
+<h2 class="section-title">Manage</h2>
+<div class="row" style="gap:12px; flex-wrap:wrap">
+  {% if can_assign %}
+  <form class="card" method="post" action="/advisor-work/{{ w.id }}/assign" style="padding:12px 16px">
+    <input type="hidden" name="expected_status" value="{{ w.status }}">
+    <div class="field" style="margin:0 0 6px"><label>Owner principal id</label><input class="input" name="owner_principal_id" placeholder="user id"></div>
+    <button class="btn" type="submit">Assign</button></form>
+  {% endif %}
+  {% if can_update %}
+  {% if w.status in ["new","assigned","waiting"] %}<form class="card" method="post" action="/advisor-work/{{ w.id }}/start" style="padding:12px 16px"><input type="hidden" name="expected_status" value="{{ w.status }}"><button class="btn" type="submit">Start</button></form>{% endif %}
+  {% if w.status in ["assigned","in_progress"] %}<form class="card" method="post" action="/advisor-work/{{ w.id }}/wait" style="padding:12px 16px"><input type="hidden" name="expected_status" value="{{ w.status }}"><button class="btn" type="submit">Waiting</button></form>{% endif %}
+  <form class="card" method="post" action="/advisor-work/{{ w.id }}/complete" style="padding:12px 16px; min-width:240px" onsubmit="return confirm('Mark this work complete? This records advisor activity only and does not change the recommendation.');">
+    <input type="hidden" name="expected_status" value="{{ w.status }}">
+    <div class="field" style="margin:0 0 6px"><label>Completion notes</label><input class="input" name="completion_notes" placeholder="what was done"></div>
+    <button class="btn" type="submit">Complete</button></form>
+  <form class="card" method="post" action="/advisor-work/{{ w.id }}/cancel" style="padding:12px 16px" onsubmit="return confirm('Cancel this work item?');"><input type="hidden" name="expected_status" value="{{ w.status }}"><input class="input" name="note" placeholder="reason" style="margin-bottom:6px"><button class="btn" type="submit">Cancel</button></form>
+  {% endif %}
+</div>
+{% elif can_update and w.status in ["completed","cancelled"] %}
+<h2 class="section-title">Manage</h2>
+<form class="card" method="post" action="/advisor-work/{{ w.id }}/archive" style="padding:12px 16px" onsubmit="return confirm('Archive this work item?');"><input type="hidden" name="expected_status" value="{{ w.status }}"><button class="btn" type="submit">Archive</button></form>
+{% endif %}
+
+<h2 class="section-title">History</h2>
+<article class="card">
+  {% if w.events %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Event</th><th>Prior → New</th><th>Actor</th><th>When</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for e in w.events %}
+      <tr>
+        <td>{{ ui.badge(e.event_type|replace("_"," ")|capitalize) }}</td>
+        <td class="subtle">{{ e.prior_status or "—" }} → {{ e.new_status or "—" }}</td>
+        <td class="subtle">principal {{ e.actor_principal_id }}</td>
+        <td class="id-mono">{{ e.occurred_at }}</td>
+        <td class="subtle">{{ e.note or "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:8px">Append-only history. Prior events are never modified or deleted.</p>
+  {% else %}{% call ui.empty("No history") %}{% endcall %}{% endif %}
+</article>
+{% endblock %}
