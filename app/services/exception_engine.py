@@ -11,7 +11,7 @@ publishes an audit event and (when a client is in scope) a timeline event.
 No detectors, scheduler jobs, routes, UI, portal, or dashboards live here; those
 are later phases.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -67,7 +67,7 @@ class ExceptionAuthorizationError(PermissionError):
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _require(principal, capability):
@@ -753,5 +753,31 @@ def open_exceptions_for_client(person_id, household_id=None, *, limit=20):
         .order_by(exceptions.c.opened_at.desc())
         .limit(limit)
     )
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]
+
+
+def open_exceptions_for_people(person_ids, *, limit=200):
+    """Read-only list of open exceptions across a **set** of person ids — the
+    authoritative book-scoped read behind the Advisor Intelligence "open client
+    exception" signal (Phase D.5B). ``person_ids`` scopes the read exactly like
+    the other book-scoped authoritative reads: ``None`` = unrestricted
+    (record.read_all), an empty collection = no accessible people (returns ``[]``),
+    otherwise only exceptions keyed to one of those person ids (person-keyed, so
+    it is never over-inclusive — household-only/org-anchored exceptions are simply
+    out of this read's person scope). Returns the fields needed to reproduce the
+    signal: id, domain, category, severity, status, opened_at, sla_due_at, title,
+    person_id, household_id. Excludes resolved/cancelled (``CLOSED_STATUSES``)."""
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    stmt = select(
+        exceptions.c.id, exceptions.c.domain, exceptions.c.category,
+        exceptions.c.severity, exceptions.c.status, exceptions.c.opened_at,
+        exceptions.c.sla_due_at, exceptions.c.title, exceptions.c.person_id,
+        exceptions.c.household_id,
+    ).where(exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
+    if person_ids is not None:
+        stmt = stmt.where(exceptions.c.person_id.in_(tuple(person_ids)))
+    stmt = stmt.order_by(exceptions.c.opened_at.desc(), exceptions.c.id.desc()).limit(limit)
     with engine.connect() as conn:
         return [dict(r) for r in conn.execute(stmt).mappings()]

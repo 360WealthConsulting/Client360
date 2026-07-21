@@ -99,22 +99,24 @@
 
 <h2 class="section-title">Advisor Intelligence</h2>
 <article class="card">
-  {# Phase D.5A ships the framework only — no rules are registered, so this is
-     always empty. No recommendations, no scores, no AI, no generated content. #}
+  {# Deterministic, factual, propose-only operational signals (Phase D.5B). No
+     recommendations, no scores, no generated content, no action controls. #}
   {% if signals %}
   <div class="table-wrap"><table class="data">
-    <thead><tr><th>Signal</th><th>Priority</th><th>Gate</th></tr></thead>
+    <thead><tr><th>Signal</th><th>Priority</th><th>Detail</th><th>Source</th><th>Gate</th></tr></thead>
     <tbody>
     {% for s in signals %}
       <tr>
         <td>{% if s.route %}<a class="rowlink" href="{{ s.route }}">{{ s.title }}</a>{% else %}{{ s.title }}{% endif %}</td>
         <td>{{ ui.badge(s.priority.value|capitalize) }}</td>
-        <td><span class="subtle">{{ s.policy_gate.value|replace("_", " ")|capitalize }}</span></td>
+        <td class="subtle">{{ s.summary }}</td>
+        <td class="subtle">{{ s.source_service }}</td>
+        <td>{% if s.policy_gate.value != "none" %}{{ ui.badge(s.policy_gate.value|replace("_", " ")|capitalize) }}{% else %}<span class="subtle">—</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table></div>
-  {% else %}{% call ui.empty("No advisor signals", "Advisor Intelligence coming in Phase D.5B.") %}{% endcall %}{% endif %}
+  {% else %}{% call ui.empty("No advisor signals", "No operational signals for your clients right now.") %}{% endcall %}{% endif %}
 </article>
 
 <h2 class="section-title">Recent client activity</h2>
