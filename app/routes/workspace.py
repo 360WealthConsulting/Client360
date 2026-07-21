@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
+from app.services.advisor_intelligence import get_dashboard_signals
 from app.services.advisor_workspace import (
     get_daily_dashboard,
     get_meeting_brief,
@@ -33,10 +34,14 @@ def workspace_dashboard(
     domain/task/workflow/exception/notification logic, no advisor intelligence.
     """
     dashboard = get_daily_dashboard(principal)
+    # Advisor Intelligence framework (Phase D.5A) — book-scoped, deterministic,
+    # propose-only. Returns () in this phase (no rules registered); the panel
+    # renders its placeholder empty state. No recommendations, no AI.
+    signals = get_dashboard_signals(principal)
     return templates.TemplateResponse(
         request=request,
         name="workspace/dashboard.html",
-        context={"principal": principal, "d": dashboard},
+        context={"principal": principal, "d": dashboard, "signals": signals},
     )
 
 

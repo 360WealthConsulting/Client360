@@ -97,6 +97,26 @@
   {% else %}{% call ui.empty("No open exceptions", "No open exceptions for your clients.") %}{% endcall %}{% endif %}
 </article>
 
+<h2 class="section-title">Advisor Intelligence</h2>
+<article class="card">
+  {# Phase D.5A ships the framework only — no rules are registered, so this is
+     always empty. No recommendations, no scores, no AI, no generated content. #}
+  {% if signals %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Signal</th><th>Priority</th><th>Gate</th></tr></thead>
+    <tbody>
+    {% for s in signals %}
+      <tr>
+        <td>{% if s.route %}<a class="rowlink" href="{{ s.route }}">{{ s.title }}</a>{% else %}{{ s.title }}{% endif %}</td>
+        <td>{{ ui.badge(s.priority.value|capitalize) }}</td>
+        <td><span class="subtle">{{ s.policy_gate.value|replace("_", " ")|capitalize }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{% call ui.empty("No advisor signals", "Advisor Intelligence coming in Phase D.5B.") %}{% endcall %}{% endif %}
+</article>
+
 <h2 class="section-title">Recent client activity</h2>
 <article class="card">
   {% if d.activity %}
