@@ -13,6 +13,7 @@ from app.db import (
     source_contacts,
 )
 from app.security.authorization import accessible_person_ids
+from app.services import advisor_work
 from app.services.advisor_ai import build_advisor_recommendations
 from app.services.advisor_intelligence import get_client_signals, group_signals
 from app.services.advisor_workspace import get_client_snapshot
@@ -252,6 +253,11 @@ def person_profile(
     # Advisor Intelligence (Phase D.5C): reuse the single scoped signal producer;
     # this route is already record-scoped, so this person's signals are in scope.
     advisor_signals = get_client_signals(request.state.principal, person_id)
+    # Advisor Work (Phase D.9): open work items keyed by recommendation id, so each
+    # recommendation row can show "Create work" / "Work exists". None (no column) unless
+    # the principal can view advisor work — never changes the recommendations themselves.
+    advisor_work_index = (advisor_work.open_work_index(request.state.principal, person_id)
+                          if request.state.principal.can("advisor_work.read") else None)
 
     return templates.TemplateResponse(
         request=request,
@@ -259,6 +265,7 @@ def person_profile(
         context={
             "person": person,
             "advisor_signals": advisor_signals,
+            "advisor_work_index": advisor_work_index,
             "household": household,
             "sources": source_rows,
             "accounts": account_rows,

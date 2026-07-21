@@ -394,7 +394,7 @@
        for this client. Reuses get_client_signals (never generated in-template). #}
     <h2 class="section-title">Advisor Intelligence</h2>
     <section class="card" style="margin-bottom:18px">
-      {{ intel.signals_panel(advisor_signals, compact=True) }}
+      {{ intel.signals_panel(advisor_signals, compact=True, work_index=advisor_work_index, work_person_id=person.id) }}
     </section>
 
     <div class="workspace-grid">

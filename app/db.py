@@ -186,3 +186,7 @@ reviewer_authorities = metadata.tables["reviewer_authorities"]
 
 # Reviewer authority administration (Phase D.8)
 reviewer_authority_events = metadata.tables["reviewer_authority_events"]
+
+# Advisor work management (Phase D.9)
+advisor_work_items = metadata.tables["advisor_work_items"]
+advisor_work_events = metadata.tables["advisor_work_events"]

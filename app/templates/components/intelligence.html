@@ -13,7 +13,14 @@
 #}
 {% macro _gate(s) %}{% if s.policy_gate.value != "none" %}{{ ui.badge(s.policy_gate.value | replace("_", " ") | capitalize) }}{% else %}<span class="subtle">—</span>{% endif %}{% endmacro %}
 
-{% macro signals_panel(signals, compact=False) %}
+{#
+  `work_index` (Phase D.9) is OPTIONAL and default None. When None (the dashboard and the
+  D.5E golden), rendering is byte-for-byte unchanged. When a caller passes it (Client 360
+  / Meeting Workspace, single-client context) together with `work_person_id`, each
+  recommendation row gains a "Create work" / "Work exists →" action — operational only,
+  it never suppresses or alters the recommendation.
+#}
+{% macro signals_panel(signals, compact=False, work_index=None, work_person_id=None) %}
   {% if signals %}
     {# Grouping is decided in Python (advisor_intelligence.group_signals, exposed as
        the `signal_groups` Jinja global); the template only renders. #}
@@ -24,7 +31,7 @@
           <div class="table-wrap"><table class="data">
             <thead><tr>
               <th>Recommendation</th><th>Priority</th>{% if not compact %}<th>Detail</th>{% endif %}
-              <th>Gate</th><th>Governing rule</th><th>Version</th><th>Approval</th>
+              <th>Gate</th><th>Governing rule</th><th>Version</th><th>Approval</th>{% if work_index is not none %}<th>Work</th>{% endif %}
             </tr></thead>
             <tbody>
             {% for s in rows %}
@@ -35,7 +42,7 @@
                 <td>{{ _gate(s) }}</td>
                 <td class="subtle">{{ s.recommendation.governing_rule }}</td>
                 <td class="subtle">{{ s.recommendation.rule_version }}</td>
-                <td>{{ ui.badge(s.recommendation.approval_status | replace("_", " ") | capitalize) }}</td>
+                <td>{{ ui.badge(s.recommendation.approval_status | replace("_", " ") | capitalize) }}</td>{% if work_index is not none %}<td>{% set wk = work_index.get(s.id) %}{% if wk %}<a class="rowlink" href="/advisor-work/{{ wk.id }}">Work exists →</a>{% else %}<form method="post" action="/advisor-work" style="margin:0"><input type="hidden" name="person_id" value="{{ work_person_id }}"><input type="hidden" name="recommendation_id" value="{{ s.id }}"><button class="btn" type="submit" style="padding:2px 8px; font-size:12px">Create work</button></form>{% endif %}</td>{% endif %}
               </tr>
             {% endfor %}
             </tbody>

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Advisor Work | Client360{% endblock %}
+{% block crumb %}Advisor Work{% endblock %}
+{% block content %}
+{{ ui.page_head("Advisor Work", eyebrow="Work", desc="Operational work derived from Advisor Recommendations. Completing work records advisor activity only — it never changes or suppresses the underlying recommendation.") }}
+
+<form method="get" action="/advisor-work" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label>
+    <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="recommendation, rule, type"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status">
+      <option value="">All</option>
+      {% for s in ["new","assigned","in_progress","waiting","completed","cancelled","archived"] %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>{% endfor %}
+    </select></div>
+  <div class="field" style="margin:0"><label for="priority">Priority</label>
+    <select class="input" id="priority" name="priority">
+      <option value="">All</option>
+      {% for p in ["critical","high","medium","low","informational"] %}
+        <option value="{{ p }}" {% if filters.priority == p %}selected{% endif %}>{{ p|capitalize }}</option>{% endfor %}
+    </select></div>
+  <input type="hidden" name="sort" value="{{ filters.sort }}">
+  <div><button class="btn" type="submit">Apply</button>
+    {% if filters.q or filters.status or filters.priority %}<a class="btn subtle" href="/advisor-work" style="margin-left:6px">Clear</a>{% endif %}</div>
+</form>
+
+<p class="subtle" style="margin:-6px 0 10px">{{ result.total }} item(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr>
+    <th>Work</th><th>Client</th><th>Priority</th><th>Status</th><th>Owner</th>
+    <th>Governing rule</th><th>Gate</th><th>Created</th>
+  </tr></thead>
+  <tbody>
+  {% for r in result.rows %}
+    <tr>
+      <td><a class="rowlink" href="/advisor-work/{{ r.id }}">{{ r.recommendation_snapshot.title }}</a><br><span class="subtle">{{ r.recommendation_type|replace("_"," ")|capitalize }}</span></td>
+      <td>{% if r.person_id %}<a class="rowlink" href="/people/{{ r.person_id }}">Person {{ r.person_id }}</a>{% elif r.household_id %}<a class="rowlink" href="/households/{{ r.household_id }}">Household {{ r.household_id }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
+      <td>{{ ui.badge(r.priority|capitalize) }}</td>
+      <td>{% if r.status == "completed" %}{{ ui.badge("Completed","good") }}{% elif r.status in ["cancelled","archived"] %}{{ ui.badge(r.status|capitalize) }}{% else %}{{ ui.badge(r.status|replace("_"," ")|capitalize) }}{% endif %}</td>
+      <td>{% if r.owner_principal_id %}<span class="subtle">principal {{ r.owner_principal_id }}</span>{% else %}<span class="subtle">Unassigned</span>{% endif %}</td>
+      <td class="id-mono">{{ r.governing_rule }}</td>
+      <td>{% if r.policy_gate != "none" %}{{ ui.badge(r.policy_gate|replace("_"," ")|capitalize) }}{% else %}<span class="subtle">None</span>{% endif %}</td>
+      <td class="id-mono">{{ r.created_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if result.pages > 1 %}
+<div class="row" style="gap:8px; margin-top:10px">
+  {% if result.page > 1 %}<a class="btn subtle" href="/advisor-work?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&priority={{ filters.priority|urlencode }}&page={{ result.page - 1 }}">← Prev</a>{% endif %}
+  {% if result.page < result.pages %}<a class="btn subtle" href="/advisor-work?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&priority={{ filters.priority|urlencode }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+{% call ui.empty("No advisor work", "No work items for your clients. Create work from a recommendation in a client's workspace.") %}{% endcall %}
+{% endif %}
+{% endblock %}
