@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.advisor_intelligence import get_dashboard_signals
+from app.services.advisor_intelligence import get_client_signals, get_dashboard_signals
 from app.services.advisor_workspace import (
     get_daily_dashboard,
     get_meeting_brief,
@@ -64,10 +64,13 @@ def meeting_brief(
     brief = get_meeting_brief(person_id, event_id=event)
     if brief is None:
         raise HTTPException(404, "Not found")
+    # Advisor Intelligence (Phase D.5C): reuse the single scoped signal producer for
+    # this in-scope client. No signal generation in the template.
+    signals = get_client_signals(principal, person_id)
     return templates.TemplateResponse(
         request=request,
         name="workspace/meeting_brief.html",
-        context={"principal": principal, "b": brief},
+        context={"principal": principal, "b": brief, "signals": signals},
     )
 
 

@@ -1,17 +1,20 @@
-"""Advisor Intelligence (Phase D.5A framework + D.5B operational signals).
+"""Advisor Intelligence (D.5A framework + D.5B operational signals + D.5C opportunities).
 
 D.5A shipped the deterministic signal INFRASTRUCTURE: the signal model, an
 explainability model, a priority model, policy-gate placeholders, a signal
 registry, and a thin composition layer
 (``get_client_signals`` / ``get_household_signals`` / ``get_dashboard_signals``).
 
-D.5B activates that framework with a small set of **factual, deterministic,
-operational** producers (bottom of this module): client review overdue, open
-client exception, overdue open task, and upcoming client meeting. Each composes
-an EXISTING authoritative, record-scoped read; none recreates a domain's status
-logic. There is deliberately no recommendation, regulated advice, probabilistic
-scoring, policy interpretation, AI/LLM/ML, vector/embedding, historical/predictive
-logic here, and no writes, no persistence, and no new tables.
+D.5B activated that framework with **factual, deterministic, operational** signals
+(client review overdue, open client exception, overdue open task, upcoming client
+meeting). D.5C adds **advisor opportunities** — factual, evidence-backed reasons a
+client deserves attention (portfolio review approaching, insurance review due,
+missing required beneficiary). An opportunity is NOT advice, a recommendation,
+suitability, or a required action. Every producer (bottom of this module) composes
+an EXISTING authoritative, record-scoped read; none recreates a domain's status/
+cadence logic. There is deliberately no recommendation, regulated advice,
+probabilistic scoring, policy interpretation, AI/LLM/ML, vector/embedding,
+historical/predictive logic here, and no writes, no persistence, and no new tables.
 
 Governance (docs/ADVISOR_WORKSPACE_ARCHITECTURE.md §4, §7): Advisor Intelligence is
 a **deterministic, propose-only** orchestration layer. It composes existing
@@ -34,7 +37,12 @@ from app.db import engine, people
 from app.security.authorization import accessible_person_ids, record_in_scope
 from app.services.advisor_workspace import FIRM_TZ
 from app.services.exception_engine import open_exceptions_for_people
-from app.services.portfolio import accounts_due_for_review
+from app.services.insurance import reviews_due_for_people
+from app.services.portfolio import (
+    accounts_due_for_review,
+    accounts_missing_required_beneficiary,
+    accounts_review_approaching,
+)
 from app.services.tasks import open_tasks_for_people
 from app.services.timeline import recent_events
 
@@ -580,6 +588,125 @@ def _person_route(person_id) -> str | None:
     return f"/people/{person_id}" if person_id else None
 
 
+# --------------------------------------------------------------------------- #
+# Deterministic advisor OPPORTUNITY producers (Phase D.5C).
+#
+# An opportunity is a factual, evidence-backed reason a client deserves advisor
+# attention — NOT advice, a recommendation, suitability, compliance, or a required
+# action. Each composes an existing authoritative cadence read; none performs
+# coverage/tax/allocation/suitability analysis or infers anything. All are
+# category "opportunity", PolicyGate.NONE, deterministic confidence 1.0, Medium
+# priority (proactive attention — severity is never invented for an opportunity).
+# --------------------------------------------------------------------------- #
+
+
+def _portfolio_review_opportunity_producer(ctx: SignalContext) -> list[Signal]:
+    """Portfolio review approaching — from the authoritative wealth cadence read
+    (``portfolio.accounts_review_approaching``, disjoint from the D.5B overdue
+    signal). Review math is NOT recreated here."""
+    signals: list[Signal] = []
+    for acct in accounts_review_approaching(ctx.person_ids, today=ctx.today, limit=200):
+        label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
+        evidence = (
+            f"account_id={acct['id']}",
+            f"account={label}",
+            f"person_id={acct.get('person_id')}",
+            f"last_review_date={acct.get('last_review_date')}",
+        )
+        signals.append(Signal(
+            id=_signal_id("portfolio_review_opportunity", "account", acct["id"]),
+            category="opportunity",
+            title=f"Annual portfolio review is due soon — {label}",
+            summary="Annual portfolio review is approaching.",
+            source_service="portfolio",
+            source_record=SourceRecord("account", acct["id"]),
+            severity="opportunity",
+            priority=Priority.MEDIUM,
+            evidence=evidence,
+            explainability=Explainability(
+                why="Account last_review_date is within the approaching window of its "
+                    "annual cadence (not yet overdue), per portfolio.accounts_review_approaching.",
+                source_service="portfolio.accounts_review_approaching",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=_person_route(acct.get("person_id")),
+            status="open",
+        ))
+    return signals
+
+
+def _insurance_review_opportunity_producer(ctx: SignalContext) -> list[Signal]:
+    """Insurance review due — from the authoritative insurance servicing-review
+    cadence (``insurance.reviews_due_for_people``). No coverage/replacement/
+    suitability analysis."""
+    signals: list[Signal] = []
+    for rev in reviews_due_for_people(ctx.person_ids, limit=200):
+        evidence = (
+            f"insurance_review_id={rev['id']}",
+            f"review_type={rev.get('review_type')}",
+            f"status={rev.get('status')}",
+            f"due_date={rev.get('due_date')}",
+            f"person_id={rev.get('person_id')}",
+        )
+        signals.append(Signal(
+            id=_signal_id("insurance_review_opportunity", "insurance_review", rev["id"]),
+            category="opportunity",
+            title="Annual insurance review is due",
+            summary="Insurance servicing review is due.",
+            source_service="insurance",
+            source_record=SourceRecord("insurance_review", rev["id"]),
+            severity="opportunity",
+            priority=Priority.MEDIUM,
+            evidence=evidence,
+            explainability=Explainability(
+                why="An insurance servicing review is open with a due date within the "
+                    "window, per insurance.reviews_due_for_people.",
+                source_service="insurance.reviews_due_for_people",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=_person_route(rev.get("person_id")),
+            status=rev.get("status") or "open",
+        ))
+    return signals
+
+
+def _beneficiary_review_opportunity_producer(ctx: SignalContext) -> list[Signal]:
+    """Beneficiary review — from the authoritative wealth predicate for a missing
+    *required* designation (``portfolio.accounts_missing_required_beneficiary``:
+    IRA account with no active beneficiary). Missing beneficiaries are never
+    inferred beyond that explicit predicate."""
+    signals: list[Signal] = []
+    for acct in accounts_missing_required_beneficiary(ctx.person_ids, limit=200):
+        label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
+        evidence = (
+            f"account_id={acct['id']}",
+            f"account={label}",
+            f"person_id={acct.get('person_id')}",
+            f"registration_type={acct.get('registration_type')}",
+            "active_beneficiaries=0",
+        )
+        signals.append(Signal(
+            id=_signal_id("beneficiary_review_opportunity", "account", acct["id"]),
+            category="opportunity",
+            title=f"Beneficiary information is missing — {label}",
+            summary="Beneficiary information is missing on a retirement account.",
+            source_service="portfolio",
+            source_record=SourceRecord("account", acct["id"]),
+            severity="opportunity",
+            priority=Priority.MEDIUM,
+            evidence=evidence,
+            explainability=Explainability(
+                why="An IRA account has no active beneficiary designation, per "
+                    "portfolio.accounts_missing_required_beneficiary.",
+                source_service="portfolio.accounts_missing_required_beneficiary",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=_person_route(acct.get("person_id")),
+            status="open",
+        ))
+    return signals
+
+
 #: The approved Phase D.5B operational producers, in registry order. Each entry is
 #: (registry metadata, producer callable). Registered/attached at import.
 _OPERATIONAL_SIGNALS = (
@@ -601,12 +728,35 @@ _OPERATIONAL_SIGNALS = (
      _upcoming_meeting_producer),
 )
 
+#: The approved Phase D.5C advisor-opportunity producers (category "opportunity").
+#: Tax-planning and retirement-plan opportunities are intentionally NOT here: no
+#: authoritative review-cadence read exists for them (only active-count summaries),
+#: so implementing them would require inventing review logic — out of scope.
+_OPPORTUNITY_SIGNALS = (
+    (dict(key="portfolio_review_opportunity", category="opportunity", source_service="portfolio",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="Annual portfolio review is approaching per portfolio.accounts_review_approaching."),
+     _portfolio_review_opportunity_producer),
+    (dict(key="insurance_review_opportunity", category="opportunity", source_service="insurance",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="Insurance servicing review is due per insurance.reviews_due_for_people."),
+     _insurance_review_opportunity_producer),
+    (dict(key="beneficiary_review_opportunity", category="opportunity", source_service="portfolio",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="IRA account has no active beneficiary per portfolio.accounts_missing_required_beneficiary."),
+     _beneficiary_review_opportunity_producer),
+)
+
+#: Everything registered/attached at import — operational signals (D.5B) plus
+#: advisor opportunities (D.5C).
+_ALL_SIGNALS = _OPERATIONAL_SIGNALS + _OPPORTUNITY_SIGNALS
+
 
 def register_operational_signals() -> None:
-    """Register the approved operational signals' metadata and attach their
-    producers to the seam. Idempotent: skips any already-registered key so
-    repeated imports/registration are safe."""
-    for meta, producer in _OPERATIONAL_SIGNALS:
+    """Register the approved signals' metadata and attach their producers to the
+    seam. Idempotent: skips any already-registered key so repeated imports/
+    registration are safe."""
+    for meta, producer in _ALL_SIGNALS:
         if meta["key"] not in _REGISTRY:
             register_signal(**meta)
         if producer not in _PRODUCERS:

@@ -2,8 +2,6 @@ from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
-from app.templating import install_filters, render_error
-
 from app.db import (
     accounts,
     activities,
@@ -11,25 +9,26 @@ from app.db import (
     households,
     people,
     person_source_links,
-    source_contacts,
     relationship_types,
+    source_contacts,
 )
 from app.security.authorization import accessible_person_ids
 from app.services.advisor_ai import build_advisor_recommendations
+from app.services.advisor_intelligence import get_client_signals
 from app.services.advisor_workspace import get_client_snapshot
 from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
 from app.services.microsoft_documents import get_person_microsoft_documents
-from app.services.timeline import get_person_timeline
+from app.services.portfolio import get_person_portfolio
 from app.services.relationships import (
     build_relationship_graph,
     get_person_households,
 )
-from app.services.portfolio import get_person_portfolio
 from app.services.tasks import tasks_with_assignee
-
+from app.services.timeline import get_person_timeline
+from app.templating import install_filters, render_error
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -248,12 +247,16 @@ def person_profile(
         portfolio=portfolio,
         open_task_count=len(open_tasks),
     )
+    # Advisor Intelligence (Phase D.5C): reuse the single scoped signal producer;
+    # this route is already record-scoped, so this person's signals are in scope.
+    advisor_signals = get_client_signals(request.state.principal, person_id)
 
     return templates.TemplateResponse(
         request=request,
         name="people/workspace.html",
         context={
             "person": person,
+            "advisor_signals": advisor_signals,
             "household": household,
             "sources": source_rows,
             "accounts": account_rows,

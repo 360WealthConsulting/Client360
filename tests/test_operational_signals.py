@@ -137,10 +137,12 @@ def _by_type(signals, t):
 
 # --- framework & generation --------------------------------------------------
 
-def test_registry_contains_only_approved_operational_producers():
+def test_registry_contains_the_approved_operational_producers():
+    # The four operational producers are registered (D.5C adds opportunity
+    # producers alongside them; see test_advisor_opportunities.py).
     keys = {r.key for r in list_registered_signals()}
-    assert keys == {"client_review_overdue", "open_client_exception",
-                    "overdue_open_task", "upcoming_client_meeting"}
+    assert {"client_review_overdue", "open_client_exception",
+            "overdue_open_task", "upcoming_client_meeting"} <= keys
 
 
 def test_full_signal_set_is_deterministic_ids_order_and_no_dupes():

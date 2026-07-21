@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "wealth/components.html" as wc %}
+{% import "components/intelligence.html" as intel %}
 {% block title %}{{ person.full_name or ("Person " ~ person.id) }} | Client360{% endblock %}
 {% block crumb %}{{ person.full_name or ("Person " ~ person.id) }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
@@ -387,6 +388,13 @@
       {{ wc.summary_card("Tax engagements", client_snapshot.tax.active, "Active") }}
       {{ wc.summary_card("Open exceptions", client_snapshot.open_exceptions, "Needs attention") }}
       {{ wc.summary_card("Open tasks", client_snapshot.open_tasks, "Meeting agenda") }}
+    </section>
+
+    {# Advisor Intelligence (Phase D.5C): deterministic, factual signals + opportunities
+       for this client. Reuses get_client_signals (never generated in-template). #}
+    <h2 class="section-title">Advisor Intelligence</h2>
+    <section class="card" style="margin-bottom:18px">
+      {{ intel.signals_panel(advisor_signals, compact=True) }}
     </section>
 
     <div class="workspace-grid">
