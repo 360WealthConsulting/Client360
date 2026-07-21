@@ -1,0 +1,164 @@
+# Client360 Platform Architecture Manifest (Phase D.12A)
+#
+# Machine-readable architecture metadata for docs/PLATFORM_ARCHITECTURE.md.
+# tests/test_platform_architecture.py validates this manifest against the LIVE code
+# (route count, migration head, seeded capabilities, module existence, import
+# direction, schema registration) so the authoritative document cannot silently drift.
+#
+# This is architecture metadata, NOT runtime configuration — nothing in app/ imports it.
+# Verified against the repository state after Phase D.12 (release/0.13.0).
+
+meta:
+  migration_head: j0b1u2s3o4w5      # `alembic heads` / `alembic current`
+  route_count: 352                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 63    # seeded capabilities excluding e2_2.cap.* test fixtures
+  verified_by:
+    route_count: "python -c 'from app.main import app; print(len(app.routes))'"
+    migration_head: "alembic heads"
+    capabilities: "select code from capabilities"
+
+# Composition service modules that MUST exist (existence test).
+composition_service_modules:
+  - app/services/advisor_workspace.py        # Client 360 + meeting workspace
+  - app/services/activity_timeline/service.py # Activity Timeline projection
+  - app/services/annual_review.py            # Annual Review
+  - app/services/business_owner.py           # Business Owner Planning
+
+# The composition-layer module base-names. Source/producer domains must NOT import these
+# (upward-dependency test). Consumers importing producers is the ALLOWED direction.
+composition_layer_modules:
+  - annual_review
+  - business_owner
+
+# Source/producer service modules that must not import a composition layer (import-direction
+# test). advisor_intelligence must additionally not import any of its consumers; source
+# producers must not import activity_timeline.
+source_producer_modules:
+  - app/services/advisor_intelligence.py
+  - app/services/advisor_work.py
+  - app/services/compliance/reviews.py
+  - app/services/compliance/rule_catalog.py
+  - app/services/organization_service.py
+  - app/services/tax_domain.py
+  - app/services/insurance.py
+  - app/services/benefits_domain.py
+
+# advisor_intelligence must not import these consumers (D.5 invariant).
+advisor_intelligence_forbidden_imports:
+  - advisor_work
+  - annual_review
+  - business_owner
+  - activity_timeline
+
+# Declared-schema registration: each define_* must be called in app/database/schema.py.
+declared_schema_registrations:
+  - define_advisor_work_tables
+  - define_annual_review_tables
+  - define_business_planning_tables
+  - define_compliance_tables
+  - define_identity_tables
+  - define_outbox_tables
+  - define_portfolio_tables
+  - define_work_tables
+
+# Capabilities the architecture document references. Every entry MUST exist in the seeded
+# capabilities table (subset test). Grouped by domain for the human document.
+capabilities:
+  identity_admin: [identity.manage, role.manage, team.manage, assignment.manage,
+                   record.read_all, record.write_all, audit.read]
+  client: [client.read, client.write, task.read, task.write, document.read, document.write,
+           communication.read, communication.write]
+  work: [work.read, work.write, work.approve, capacity.read]
+  organization: [organization.read, organization.write]
+  benefits: [benefits.read, benefits.write, benefits.enroll, benefits.compliance,
+             benefits.sensitive.read]
+  insurance: [insurance.read, insurance.write, insurance.suitability, insurance.scan,
+              insurance.commissions.read, insurance.commissions.write,
+              insurance.licensing.read, insurance.licensing.write, insurance.sensitive.read]
+  tax: [tax.read, tax.write, tax.review, tax.deadline.manage, tax.intake.read,
+        tax.intake.write, tax.document.review]
+  exceptions: [exception.read, exception.write, exception.resolve, exception.compliance]
+  advisor_work: [advisor_work.read, advisor_work.create, advisor_work.assign, advisor_work.update]
+  compliance: [compliance.review.read, compliance.review.submit, compliance.review.assign,
+               compliance.review.decide, compliance.authority.read, compliance.authority.manage]
+  timeline: [timeline.read]
+  annual_review: [annual_review.read, annual_review.create, annual_review.update]
+  business_owner: [business_owner.read, business_owner.update, business_owner.planning_update]
+
+# Composition layers: consume, never own source data, never a source of truth.
+composition_layers:
+  advisor_workspace:
+    consumes: [portfolio, insurance, tax, benefits, tasks, exceptions, timeline]
+    persists: []                       # meeting outcomes route to owning services
+    is_source_of_truth: false
+  activity_timeline:
+    consumes: [timeline_events, advisor_work_events, compliance_reviews, compliance_decisions]
+    persists: []                       # pure read projection; no table
+    is_source_of_truth: false
+  annual_review:
+    consumes: [advisor_workspace, advisor_intelligence, advisor_work, activity_timeline,
+               compliance, portfolio]
+    persists: [annual_review_sessions] # advisor-activity record only
+    is_source_of_truth: false
+  business_owner:
+    consumes: [organization_service, tax_domain, benefits_domain, insurance,
+               advisor_intelligence, advisor_work, activity_timeline, compliance, annual_review]
+    persists: [business_planning_profiles] # succession/continuity facts with no other home
+    is_source_of_truth: false
+
+# Data with no authoritative domain — must be shown as "Not currently modeled".
+not_currently_modeled:
+  - tax_return_financial_content        # K-1, W-2 wages, guaranteed payments, distributions, QBI
+  - owner_compensation
+  - insurance_policy_purpose            # key-person / buy-sell / exec-bonus / split-dollar
+  - disability_and_ltc_insurance
+  - retirement_contribution_amounts     # incl. Cash Balance / Defined Benefit funding
+  - business_valuation
+  - per_client_servicing_advisor
+  - business_link_on_advisor_work_items
+  - business_link_on_compliance_reviews
+  - historical_household_membership_windows
+
+# Importers / external sources (do NOT claim live sync where only import infra exists).
+importers:
+  schwab: implemented          # app/importers/schwab.py
+  assetmark: implemented       # app/importers/assetmark.py
+  wealthbox: implemented       # app/importers/wealthbox.py
+  dave_ramsey: implemented     # app/importers/dave_ramsey.py (SmartVestor)
+  microsoft365: integration    # OAuth + calendar/mail/documents routes
+  taxdome: not_implemented     # SOP reference only
+  drake: not_implemented       # SOP reference only
+  betterment: stub             # disabled recordkeeper provider stub
+  guideline: not_implemented   # comment-only future example
+  gusto: not_implemented
+
+# Section headers that must be present in docs/PLATFORM_ARCHITECTURE.md (doc-structure test).
+required_doc_sections:
+  - "Purpose and authority"
+  - "Current platform overview"
+  - "Architectural principles"
+  - "Domain map"
+  - "Source-of-truth matrix"
+  - "Dependency architecture"
+  - "Composition layers"
+  - "Identity and relationship model"
+  - "Authorization and capability model"
+  - "Record-scope model"
+  - "Sensitive-data and redaction model"
+  - "Advisor Intelligence architecture"
+  - "Advisor Work architecture"
+  - "Compliance architecture"
+  - "Activity Timeline and audit architecture"
+  - "Annual Review architecture"
+  - "Business Owner Planning architecture"
+  - "Benefits, retirement, insurance, and tax boundaries"
+  - "Importers and external-source boundaries"
+  - "Routes and application surfaces"
+  - "Database and migration architecture"
+  - "Testing and architectural enforcement"
+  - "Current limitations"
+  - "Extension points"
+  - "Prohibited patterns"
+  - "Architecture change process"
+  - "Glossary"
+  - "References"
