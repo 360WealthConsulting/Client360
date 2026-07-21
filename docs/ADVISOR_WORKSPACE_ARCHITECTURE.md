@@ -399,6 +399,43 @@ detector scans) is unchanged and feeds the same canonical tables the workspace r
 
 ---
 
+## 11. Compliance gate & decision-evidence boundary (Phase D.7)
+
+A **human-controlled** compliance review layer sits above Advisor Intelligence for
+governed **Advisor Recommendations** (the `[Policy-gated]` signals of §4). It is a
+governance/evidence layer, **not** an execution or automation layer, and preserves the
+one-way dependency direction: `Advisor Intelligence → D.6 Rule Catalog → Compliance
+Review Service → append-only Decision Ledger → read-only review UI`. Advisor
+Intelligence never imports the compliance package; recommendation production never
+depends on review status; a compliance decision never changes the deterministic
+recommendation result. There is no generalized workflow engine — the lifecycle is a
+small, explicit set of allowed transitions.
+
+**Boundary invariants (non-negotiable):**
+- **Compliance is human-controlled.** No automated approval, suitability determination,
+  or regulatory certification. Approval, assignment, and every decision are recorded
+  human actions; nothing changes state by rendering or reading a page.
+- **Final regulated approval double-gates** on the `compliance.review.decide` capability
+  **and** a recorded `ReviewerAuthority` (a factual, appropriately-licensed principal)
+  **and** a Rule-Catalog version match. Absent any of these the review is
+  `blocked_pending_authorized_reviewer` and no approval is recorded. Authority is never
+  inferred from a job-title string; no reviewer is fabricated (the authority catalog is
+  seeded empty — see `V1_RISK_REGISTER.md` GOV-2 / `PRODUCT_DECISIONS.md` PD-4).
+- **Decision evidence is append-only and snapshotted.** The recommendation, its
+  evidence, the governing rule, and the rule version are snapshotted at submission; the
+  decision ledger blocks UPDATE/DELETE; corrections create a new superseding decision.
+- **Advisor-facing rendering is unchanged.** Review status is not shown in the Advisor
+  Workspace this phase (to preserve the deterministic advisor output); advisor-facing
+  status display is deferred future integration.
+
+**Sign-off artifact.** A recorded compliance sign-off is a decision-ledger row capturing
+rule-set version (governing rule + rule version), reviewer, reviewer role, date, scope
+reviewed, approval status, and comments/exceptions. **It records a human review decision;
+it is not an electronic signature and not an independent regulatory certification.** See
+`docs/PHASE_D7_COMPLIANCE_REVIEW_LEDGER.md`.
+
+---
+
 ## Cross-references
 - `WEALTH_ARCHITECTURE.md` — the exemplar workspace pattern (meeting-prep hierarchy,
   canonical contract, shared components, propose-not-act) this design generalizes.

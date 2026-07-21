@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Compliance Reviews | Client360{% endblock %}
+{% block crumb %}Compliance Reviews{% endblock %}
+{% block content %}
+{{ ui.page_head("Compliance Reviews", eyebrow="Compliance", desc="Human-controlled review of governed Advisor Recommendations. This queue records review decisions — it is not an electronic signature or regulatory certification.") }}
+
+<form method="get" action="/compliance/reviews" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label>
+    <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="recommendation, rule, type"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status">
+      <option value="">All</option>
+      {% for s in ["pending_assignment","pending_review","blocked_pending_authorized_reviewer","approved","approved_with_conditions","returned","declined","superseded","closed"] %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>{% endfor %}
+    </select></div>
+  <div class="field" style="margin:0"><label for="gate">Policy gate</label>
+    <select class="input" id="gate" name="gate">
+      <option value="">All</option>
+      {% for g in ["none","compliance_required","license_required","suitability_required"] %}
+        <option value="{{ g }}" {% if filters.gate == g %}selected{% endif %}>{{ g|replace("_"," ")|capitalize }}</option>{% endfor %}
+    </select></div>
+  <input type="hidden" name="sort" value="{{ filters.sort }}">
+  <div><button class="btn" type="submit">Apply</button>
+    {% if filters.q or filters.status or filters.gate %}<a class="btn subtle" href="/compliance/reviews" style="margin-left:6px">Clear</a>{% endif %}</div>
+</form>
+
+<p class="subtle" style="margin:-6px 0 10px">{{ result.total }} review(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr>
+    <th>Recommendation</th><th>Client</th><th>Governing rule</th><th>Version</th>
+    <th>Policy gate</th><th>Assigned reviewer</th><th>Review status</th><th>Submitted</th>
+  </tr></thead>
+  <tbody>
+  {% for r in result.rows %}
+    <tr>
+      <td><a class="rowlink" href="/compliance/reviews/{{ r.id }}">{{ r.recommendation_snapshot.title }}</a><br><span class="subtle">{{ r.recommendation_type|replace("_"," ")|capitalize }}</span></td>
+      <td>{% if r.person_id %}<a class="rowlink" href="/people/{{ r.person_id }}">Person {{ r.person_id }}</a>{% elif r.household_id %}<a class="rowlink" href="/households/{{ r.household_id }}">Household {{ r.household_id }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
+      <td class="id-mono">{{ r.governing_rule }}</td>
+      <td class="id-mono">{{ r.rule_version }}</td>
+      <td>{% if r.policy_gate != "none" %}{{ ui.badge(r.policy_gate|replace("_"," ")|capitalize) }}{% else %}<span class="subtle">None</span>{% endif %}</td>
+      <td>{% if r.assigned_reviewer_name %}{{ r.assigned_reviewer_name }}{% elif r.assigned_reviewer_role %}<span class="subtle">{{ r.assigned_reviewer_role }} · unassigned</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
+      <td>{% if r.status == "blocked_pending_authorized_reviewer" %}{{ ui.badge("Blocked · pending authorized reviewer","crit") }}{% elif r.status in ["approved"] %}{{ ui.badge(r.status|replace("_"," ")|capitalize,"good") }}{% else %}{{ ui.badge(r.status|replace("_"," ")|capitalize) }}{% endif %}</td>
+      <td class="id-mono">{{ r.submitted_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+{% if result.pages > 1 %}
+<div class="row" style="gap:8px; margin-top:10px">
+  {% if result.page > 1 %}<a class="btn subtle" href="/compliance/reviews?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&gate={{ filters.gate|urlencode }}&page={{ result.page - 1 }}">← Prev</a>{% endif %}
+  {% if result.page < result.pages %}<a class="btn subtle" href="/compliance/reviews?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&gate={{ filters.gate|urlencode }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+{% call ui.empty("No reviews", "No governed recommendations are in the review queue for your book.") %}{% endcall %}
+{% endif %}
+{% endblock %}

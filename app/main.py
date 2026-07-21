@@ -1,10 +1,27 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET, validate_startup_configuration
 from app.jobs.scheduler import start_scheduler, stop_scheduler
+from app.observability import configure_logging
+from app.routes.activities import router as activities_router
+from app.routes.activity_dashboard import router as activity_dashboard_router
+from app.routes.admin import router as admin_router
+from app.routes.auth import router as auth_router
+from app.routes.benefits import router as benefits_router
+from app.routes.compliance import router as compliance_router
+from app.routes.dashboard import router as dashboard_router
+from app.routes.dev_auth import dev_auth_enabled
+from app.routes.dev_auth import router as dev_auth_router
+from app.routes.documents import router as documents_router
+from app.routes.exceptions import router as exceptions_router
+from app.routes.households import router as households_router
+from app.routes.identity_review import router as identity_review_router
+from app.routes.insurance import router as insurance_router
+from app.routes.matches import router as matches_router
 from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
     router as microsoft365_calendar_router,
@@ -12,49 +29,31 @@ from app.routes.microsoft365_calendar import (
 from app.routes.microsoft365_documents import (
     router as microsoft365_documents_router,
 )
-
-from app.routes.documents import router as documents_router
-
-from app.routes.dashboard import router as dashboard_router
-from app.routes.identity_review import router as identity_review_router
-from app.routes.matches import router as matches_router
+from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_review_router
+from app.routes.microsoft365_mail import router as microsoft365_mail_router
+from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.notes import router as notes_router
+from app.routes.ops import router as ops_router
 from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
-from app.routes.search import router as search_router
-from app.routes.source import router as source_router
-from app.routes.tasks import router as tasks_router
-from app.routes.task_dashboard import router as task_dashboard_router
-from app.routes.activities import router as activities_router
-from app.routes.activity_dashboard import router as activity_dashboard_router
-from app.routes.households import router as households_router
-from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
-from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_review_router
-from app.routes.timeline import router as timeline_router
-from app.routes.relationships import router as relationships_router
-from app.routes.auth import router as auth_router
-from app.routes.dev_auth import dev_auth_enabled
-from app.routes.dev_auth import router as dev_auth_router
-from app.routes.admin import router as admin_router
-from app.routes.session import router as session_router
-from app.security.middleware import AuthenticationMiddleware
-from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET, validate_startup_configuration
-from app.observability import configure_logging
-from app.routes.microsoft365_mail import router as microsoft365_mail_router
-from app.routes.portfolio import router as portfolio_router
-from app.routes.wealth import router as wealth_router
-from app.routes.workspace import router as workspace_router
-from app.routes.work import router as work_router
-from app.routes.workflows import router as workflows_router
 from app.routes.portal import router as portal_router
+from app.routes.portfolio import router as portfolio_router
+from app.routes.relationships import router as relationships_router
+from app.routes.search import router as search_router
+from app.routes.session import router as session_router
+from app.routes.source import router as source_router
+from app.routes.task_dashboard import router as task_dashboard_router
+from app.routes.tasks import router as tasks_router
 from app.routes.tax import router as tax_router
+from app.routes.tax_documents import router as tax_documents_router
 from app.routes.tax_intake import router as tax_intake_router
 from app.routes.tax_returns import router as tax_returns_router
-from app.routes.tax_documents import router as tax_documents_router
-from app.routes.ops import router as ops_router
-from app.routes.exceptions import router as exceptions_router
-from app.routes.benefits import router as benefits_router
-from app.routes.insurance import router as insurance_router
+from app.routes.timeline import router as timeline_router
+from app.routes.wealth import router as wealth_router
+from app.routes.work import router as work_router
+from app.routes.workflows import router as workflows_router
+from app.routes.workspace import router as workspace_router
+from app.security.middleware import AuthenticationMiddleware
 
 
 @asynccontextmanager
@@ -84,6 +83,7 @@ app.add_middleware(
 )
 
 app.include_router(dashboard_router)
+app.include_router(compliance_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)
 app.include_router(benefits_router)
@@ -130,9 +130,11 @@ app.include_router(portal_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---
-from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
 from fastapi.responses import JSONResponse as _JSONResponse  # noqa: E402
-from app.templating import render_error as _render_error, wants_html as _wants_html  # noqa: E402
+from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
+
+from app.templating import render_error as _render_error  # noqa: E402
+from app.templating import wants_html as _wants_html  # noqa: E402
 
 
 @app.exception_handler(_StarletteHTTPException)

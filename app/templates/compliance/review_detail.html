@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Compliance Review · {{ r.recommendation_snapshot.title }} | Client360{% endblock %}
+{% block crumb %}Compliance Review{% endblock %}
+{% block content %}
+{{ ui.page_head("Compliance Review", eyebrow="Compliance", desc=r.recommendation_snapshot.title) }}
+
+{% if request.query_params.get("blocked") %}
+<div class="alert crit" style="margin-bottom:14px"><span class="ico">⚠</span><div>Approval blocked: {{ request.query_params.get("blocked") }}</div></div>
+{% endif %}
+
+{# Review status + governance snapshot #}
+<section class="stat-grid" style="margin-bottom:16px">
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Review status</span><h3 style="margin:2px 0">{{ r.status|replace("_"," ")|capitalize }}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Policy gate</span><h3 style="margin:2px 0">{{ r.policy_gate|replace("_"," ")|capitalize }}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Governing rule</span><h3 style="margin:2px 0" class="id-mono">{{ r.governing_rule }}</h3><p class="subtle">version {{ r.rule_version }} reviewed</p></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Rule Catalog</span><h3 style="margin:2px 0">{% if r.catalog.ok %}{{ ui.badge("Version matches","good") }}{% else %}{{ ui.badge("Blocks approval","crit") }}{% endif %}</h3>{% if not r.catalog.ok %}<p class="subtle">{{ r.catalog.reason }}</p>{% endif %}</article>
+</section>
+
+<h2 class="section-title">Recommendation snapshot</h2>
+<article class="card">
+  <div class="detail-row"><span class="detail-label">Recommendation</span><strong>{{ r.recommendation_snapshot.title }}</strong></div>
+  <div class="detail-row"><span class="detail-label">Summary</span>{{ r.recommendation_snapshot.summary }}</div>
+  <div class="detail-row"><span class="detail-label">Recommendation ID</span><span class="id-mono">{{ r.recommendation_id }}</span></div>
+  <div class="detail-row"><span class="detail-label">Source record</span><span class="id-mono">{{ r.source_entity_type }} {{ r.source_entity_id }}</span></div>
+  <div class="detail-row"><span class="detail-label">Explainability</span>{{ r.recommendation_snapshot.explainability.why }}</div>
+  <div class="detail-row"><span class="detail-label">Evidence</span><div>{% for e in r.evidence_snapshot %}<div class="subtle id-mono">{{ e }}</div>{% endfor %}</div></div>
+  <div class="detail-row"><span class="detail-label">Submitted</span>{{ r.submitted_at }} by user {{ r.submitted_by }}</div>
+  <div class="detail-row"><span class="detail-label">Assigned reviewer</span>{% if r.assigned_reviewer_name %}{{ r.assigned_reviewer_name }} ({{ r.assigned_reviewer_role }}){% elif r.assigned_reviewer_role %}{{ r.assigned_reviewer_role }} · unassigned{% else %}<span class="subtle">Not assigned</span>{% endif %}</div>
+</article>
+
+{% if can_assign and r.status in ["pending_assignment","pending_review","blocked_pending_authorized_reviewer"] %}
+<h2 class="section-title">Assign reviewer</h2>
+<form class="card" method="post" action="/compliance/reviews/{{ r.id }}/assign">
+  <input type="hidden" name="expected_status" value="{{ r.status }}">
+  <div class="field"><label for="reviewer_principal_id">Reviewer principal id</label>
+    <input class="input" id="reviewer_principal_id" name="reviewer_principal_id" placeholder="user id (must hold recorded authority to enable approval)"></div>
+  <div class="field"><label for="reviewer_role">Reviewer role</label>
+    <input class="input" id="reviewer_role" name="reviewer_role" value="compliance_reviewer"></div>
+  <div class="field"><label for="reviewer_name">Reviewer name (optional)</label>
+    <input class="input" id="reviewer_name" name="reviewer_name" placeholder="leave blank if unknown — never fabricate"></div>
+  <p class="subtle">Assignment becomes <em>pending review</em> only if the assigned principal has a recorded reviewer authority for this rule; otherwise it stays <em>blocked pending authorized reviewer</em>.</p>
+  <div style="margin-top:10px"><button class="btn" type="submit">Assign</button></div>
+</form>
+{% endif %}
+
+{% if can_decide %}
+<h2 class="section-title">Record decision</h2>
+<form class="card" method="post" action="/compliance/reviews/{{ r.id }}/decision" onsubmit="return confirm('Record this compliance decision? This is a recorded human review decision, not an electronic signature or regulatory certification.');">
+  <input type="hidden" name="expected_status" value="{{ r.status }}">
+  <div class="field"><label for="decision">Decision</label>
+    <select class="input" id="decision" name="decision">
+      {% for d in decision_types %}<option value="{{ d }}">{{ d|replace("_"," ")|capitalize }}</option>{% endfor %}
+    </select>
+    <p class="subtle">Approval requires an assigned, authorized reviewer and a matching Rule Catalog version. Returned/declined require comments; approved-with-conditions requires comments or exceptions.</p>
+  </div>
+  <div class="field"><label for="scope_reviewed">Scope reviewed</label>
+    <input class="input" id="scope_reviewed" name="scope_reviewed" placeholder="what was reviewed"></div>
+  <div class="field"><label for="comments">Comments</label>
+    <textarea class="input" id="comments" name="comments" style="min-height:60px"></textarea></div>
+  <div class="field"><label for="exceptions">Exceptions</label>
+    <textarea class="input" id="exceptions" name="exceptions" style="min-height:50px"></textarea></div>
+  <div style="margin-top:10px"><button class="btn" type="submit">Record decision</button></div>
+</form>
+{% endif %}
+
+<h2 class="section-title">Decision history</h2>
+<article class="card">
+  {% if r.decisions %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Decision</th><th>Reviewer</th><th>Decided</th><th>Rule / Version</th><th>Scope</th><th>Comments</th><th>Supersedes</th></tr></thead>
+    <tbody>
+    {% for d in r.decisions %}
+      <tr>
+        <td>{{ ui.badge(d.decision|replace("_"," ")|capitalize) }}</td>
+        <td>{% if d.reviewer_name %}{{ d.reviewer_name }}{% else %}<span class="subtle">{{ d.reviewer_role or "—" }}</span>{% endif %}<br><span class="subtle">principal {{ d.reviewer_principal_id }}</span></td>
+        <td class="id-mono">{{ d.decided_at }}</td>
+        <td class="id-mono">{{ d.governing_rule }} · {{ d.rule_version }}</td>
+        <td class="subtle">{{ d.scope_reviewed or "—" }}</td>
+        <td class="subtle">{{ d.comments or "" }}{% if d.exceptions %}<br><em>exceptions:</em> {{ d.exceptions }}{% endif %}</td>
+        <td>{% if d.supersedes_decision_id %}<span class="id-mono">#{{ d.supersedes_decision_id }}</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:8px">Append-only ledger. A correction creates a new decision referencing the prior; prior decisions are never modified or deleted. This records a human review decision and is not an electronic signature or independent regulatory certification.</p>
+  {% else %}{% call ui.empty("No decisions yet", "No compliance decision has been recorded for this review.") %}{% endcall %}{% endif %}
+</article>
+{% endblock %}
