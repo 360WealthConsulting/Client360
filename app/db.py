@@ -205,3 +205,13 @@ opportunity_participants = metadata.tables["opportunity_participants"]
 opportunity_events = metadata.tables["opportunity_events"]
 opportunity_activities = metadata.tables["opportunity_activities"]
 opportunity_work_links = metadata.tables["opportunity_work_links"]
+
+# Campaigns, referral sources & attribution (Phase D.14)
+campaigns = metadata.tables["campaigns"]
+campaign_events = metadata.tables["campaign_events"]
+campaign_activities = metadata.tables["campaign_activities"]
+campaign_documents = metadata.tables["campaign_documents"]
+referral_sources = metadata.tables["referral_sources"]
+referral_source_advisors = metadata.tables["referral_source_advisors"]
+referral_source_events = metadata.tables["referral_source_events"]
+opportunity_attributions = metadata.tables["opportunity_attributions"]

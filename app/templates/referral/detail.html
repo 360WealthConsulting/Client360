@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ s.name }} | Referral Sources | Client360{% endblock %}
+{% block crumb %}Referral Source{% endblock %}
+{% block content %}
+{{ ui.page_head(s.name, eyebrow="Referral source", desc=s.source_type|replace("_"," ")|capitalize) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/referral-sources">← Back to referral sources</a></p>
+{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Details</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Status</span><span>{{ ui.badge(s.status|capitalize, 'good' if s.status == 'active' else '') }}</span></div>
+    <div class="detail-row"><span class="subtle">Type</span><span>{{ s.source_type|replace("_"," ")|capitalize }}</span></div>
+    <div class="detail-row"><span class="subtle">Contact</span><span>{{ s.email or "" }}{% if s.email and s.phone %} · {% endif %}{{ s.phone or "" }}{% if not s.email and not s.phone %}—{% endif %}</span></div>
+    {% if s.person_id %}<div class="detail-row"><span class="subtle">Existing client</span><a class="rowlink" href="/people/{{ s.person_id }}">Person {{ s.person_id }}</a></div>{% endif %}
+  </div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Metrics</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Total referrals</span><strong>{{ s.metrics.total_referrals }}</strong></div>
+    <div class="detail-row"><span class="subtle">Won / lost</span><span>{{ s.metrics.won_referrals }} / {{ s.metrics.lost_referrals }}</span></div>
+    <div class="detail-row"><span class="subtle">Conversion</span><span>{% if s.metrics.conversion_rate is not none %}{{ "%.0f"|format(s.metrics.conversion_rate * 100) }}%{% else %}—{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Lifetime value</span><strong>${{ "{:,.0f}".format(s.metrics.lifetime_value) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Avg close time</span><span>{% if s.metrics.average_close_time_days is not none %}{{ s.metrics.average_close_time_days }} days{% else %}—{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Last referral</span><span>{% if s.metrics.last_referral_at %}{{ s.metrics.last_referral_at | humandt }}{% else %}—{% endif %}</span></div>
+  </div>
+</section>
+
+{% if can_edit %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Status</h2>
+  <div class="card"><form method="post" action="/referral-sources/{{ s.id }}/status" class="row" style="gap:8px; align-items:flex-end">
+    <div class="field" style="margin:0"><label for="status">Set status</label>
+      <select class="input" id="status" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+    <button class="btn secondary" type="submit">Apply</button>
+  </form></div>
+</section>
+{% endif %}
+{% endblock %}
