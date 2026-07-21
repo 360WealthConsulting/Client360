@@ -470,6 +470,40 @@ timestamp — never fabricated). The timeline is advisor-facing and curated — 
 administrative audit log (`/admin/audit`) and does not replace it. See
 `docs/PHASE_D10_CLIENT_HOUSEHOLD_ACTIVITY_TIMELINE.md`.
 
+## 13. Annual Review Workspace — composition layer (Phase D.11)
+
+A **composition layer** sits above the existing domains and assembles them into one
+advisor-facing workspace for annual client reviews, answering *"what do I need to review with
+this client today?"* It **consumes** existing services read-only — it is not a new system of
+record and duplicates no business logic.
+
+```
+Client360 · Advisor Intelligence · Advisor Work · Activity Timeline ·
+Compliance · Meeting Workspace · Portfolio  →  Annual Review Service  →  Annual Review Workspace
+```
+
+Eight read-first sections (client snapshot, advisor-intelligence summary, outstanding advisor
+work, recent activity, compliance summary, portfolio overview, meeting preparation, review
+checklist) each reuse the owning domain's service. Advisor Intelligence is **reused, never
+regenerated**; the portfolio is reused from the meeting-brief snapshot (no recomputation, no
+new calculations). Two additive, person-scoped reads (`advisor_work.person_work`,
+`compliance.reviews.person_reviews`) were added to the owning services (existing behavior
+untouched).
+
+**Dependency direction is strictly downward: source domains never import Annual Review**
+(test-enforced). The only new persistence is `annual_review_sessions` — a mutable
+advisor-activity record (notes + a presentation-only checklist) with an explicit status set
+(`draft → in_progress → completed → archived`); it never changes a source-domain record. No
+workflow engine.
+
+**Invariants:** capabilities `annual_review.read/create/update` (server-side); person **record
+scope** enforced in the service (the route is outside the `^/(people|households)` RECORD_PATH);
+`annual_review.*` is **not a bypass** — each section is gated on its owning capability
+(`advisor_work.read` / `timeline.read` / `compliance.review.read`) and omitted otherwise;
+"Start review" is idempotent (partial-unique OPEN guard); recommendation ids and all source
+domains are unchanged. Client 360 gains an **"Annual review →"** link; it is otherwise
+unchanged. See `docs/PHASE_D11_ANNUAL_REVIEW_WORKSPACE.md`.
+
 ---
 
 ## Cross-references

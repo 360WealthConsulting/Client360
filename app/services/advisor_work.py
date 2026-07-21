@@ -141,6 +141,28 @@ def open_work_index(principal, person_id: int) -> dict:
     return {r["recommendation_id"]: {"id": r["id"], "status": r["status"]} for r in rows}
 
 
+def person_work(principal, person_id: int, *, open_only: bool = True) -> list[dict]:
+    """This client's advisor-work items (Phase D.11 composition read). Scope-first.
+
+    Additive read for the Annual Review Workspace's "Outstanding Advisor Work"
+    section — it returns the person's items with the fields that section shows
+    (priority, owner, due date, status). It does NOT change any existing behavior;
+    `list_work` (book queue) and the lifecycle functions are untouched. Ordered
+    newest-first; bounded implicitly by one client's item volume.
+    """
+    if not record_in_scope(principal, "person", person_id):
+        return []
+    conds = [advisor_work_items.c.person_id == person_id]
+    if open_only:
+        conds.append(advisor_work_items.c.status.in_(tuple(OPEN_STATUSES)))
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(advisor_work_items).where(and_(*conds))
+            .order_by(advisor_work_items.c.created_at.desc(), advisor_work_items.c.id.desc())
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 # --- lifecycle ---------------------------------------------------------------
 
 def assign(principal, item_id: int, *, owner_principal_id: int | None, expected_status: str,

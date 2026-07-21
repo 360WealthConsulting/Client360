@@ -12,6 +12,7 @@ from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.activity_timeline import router as activity_timeline_router
 from app.routes.admin import router as admin_router
 from app.routes.advisor_work import router as advisor_work_router
+from app.routes.annual_review import router as annual_review_router
 from app.routes.auth import router as auth_router
 from app.routes.benefits import router as benefits_router
 from app.routes.compliance import router as compliance_router
@@ -87,6 +88,7 @@ app.add_middleware(
 app.include_router(dashboard_router)
 app.include_router(compliance_router)
 app.include_router(advisor_work_router)
+app.include_router(annual_review_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

@@ -373,3 +373,24 @@ def get_review(principal, review_id: int):
     review["decisions"] = decisions
     review["catalog"] = validate_against_catalog(review)
     return review
+
+
+def person_reviews(principal, person_id: int) -> list[dict]:
+    """This client's compliance reviews (Phase D.11 composition read). Scope-first.
+
+    Additive read for the Annual Review Workspace's "Compliance Summary" section
+    (pending / blocked / completed counts + reviewer assignments). It reuses the
+    same record-scope rule as the rest of this service and returns raw review rows;
+    it recreates no compliance logic and leaves `list_reviews` / `get_review` /
+    the decision lifecycle untouched. Bounded by one client's review volume.
+    """
+    if not record_in_scope(principal, "person", person_id):
+        return []
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(compliance_reviews)
+            .where(compliance_reviews.c.person_id == person_id)
+            .order_by(compliance_reviews.c.submitted_at.desc(),
+                      compliance_reviews.c.id.desc())
+        ).mappings().all()
+    return [dict(r) for r in rows]

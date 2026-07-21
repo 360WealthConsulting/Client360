@@ -190,3 +190,6 @@ reviewer_authority_events = metadata.tables["reviewer_authority_events"]
 # Advisor work management (Phase D.9)
 advisor_work_items = metadata.tables["advisor_work_items"]
 advisor_work_events = metadata.tables["advisor_work_events"]
+
+# Annual review workspace (Phase D.11)
+annual_review_sessions = metadata.tables["annual_review_sessions"]
