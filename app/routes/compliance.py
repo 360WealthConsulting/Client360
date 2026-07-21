@@ -29,6 +29,17 @@ router = APIRouter(prefix="/compliance", tags=["compliance"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+async def _read_form(request: Request):
+    """Parse a urlencoded POST body and return a single-value field reader that trims
+    whitespace and defaults to ``""`` (the exact behavior every POST route used)."""
+    form = parse_qs((await request.body()).decode("utf-8"))
+
+    def one(key):
+        return form.get(key, [""])[0].strip()
+
+    return one
+
+
 @router.get("/reviews", response_class=HTMLResponse)
 def review_queue(
     request: Request,
@@ -69,10 +80,7 @@ async def submit(
     request: Request,
     principal: Principal = Depends(require_capability("compliance.review.submit")),
 ):
-    form = parse_qs((await request.body()).decode("utf-8"))
-
-    def _one(key):
-        return form.get(key, [""])[0].strip()
+    _one = await _read_form(request)
 
     try:
         person_id = int(_one("person_id"))
@@ -92,10 +100,7 @@ async def assign(
     request: Request, review_id: int,
     principal: Principal = Depends(require_capability("compliance.review.assign")),
 ):
-    form = parse_qs((await request.body()).decode("utf-8"))
-
-    def _one(key):
-        return form.get(key, [""])[0].strip()
+    _one = await _read_form(request)
 
     reviewer_principal_id = _one("reviewer_principal_id")
     try:
@@ -116,10 +121,7 @@ async def decide(
     request: Request, review_id: int,
     principal: Principal = Depends(require_capability("compliance.review.decide")),
 ):
-    form = parse_qs((await request.body()).decode("utf-8"))
-
-    def _one(key):
-        return form.get(key, [""])[0].strip()
+    _one = await _read_form(request)
 
     try:
         svc.record_decision(
@@ -177,10 +179,7 @@ async def authority_create(
     request: Request,
     principal: Principal = Depends(require_capability("compliance.authority.manage")),
 ):
-    form = parse_qs((await request.body()).decode("utf-8"))
-
-    def _one(key):
-        return form.get(key, [""])[0].strip()
+    _one = await _read_form(request)
 
     try:
         pid = int(_one("principal_id"))
@@ -221,10 +220,7 @@ def _authority_action(action):
         request: Request, authority_id: int,
         principal: Principal = Depends(require_capability("compliance.authority.manage")),
     ):
-        form = parse_qs((await request.body()).decode("utf-8"))
-
-        def _one(key):
-            return form.get(key, [""])[0].strip()
+        _one = await _read_form(request)
 
         kwargs = {"expected_status": _one("expected_status")}
         try:

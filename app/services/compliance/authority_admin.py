@@ -22,11 +22,12 @@ Governance invariants enforced here:
 """
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date
 
 from sqlalchemy import and_, func, or_, select
 
 from app.db import engine, reviewer_authorities, reviewer_authority_events, users
+from app.services.compliance._common import clamp_page, load_for_update, now, page_count
 
 STATUSES = frozenset({"draft", "active", "suspended", "expired", "revoked", "superseded"})
 
@@ -67,20 +68,14 @@ class ScopeConflictError(AuthorityError):
     """An overlapping active authority already exists for this principal."""
 
 
-def _now() -> datetime:
-    return datetime.now(UTC)
+# Application timestamp for every write (shared compliance helper).
+_now = now
 
 
 def _load_for_update(conn, authority_id, expected_status):
-    row = conn.execute(
-        select(reviewer_authorities).where(reviewer_authorities.c.id == authority_id).with_for_update()
-    ).mappings().first()
-    if row is None:
-        raise AuthorityError("authority not found")
-    if expected_status is not None and row["status"] != expected_status:
-        raise StaleAuthorityError(
-            f"authority is now {row['status']!r}, not {expected_status!r}; reload and retry")
-    return row
+    return load_for_update(
+        conn, reviewer_authorities, authority_id, expected_status, noun="authority",
+        not_found_error=AuthorityError, stale_error=StaleAuthorityError)
 
 
 def _append_event(conn, authority_id, *, event_type, prior_status, new_status,
@@ -293,8 +288,7 @@ def list_authorities(*, search=None, status=None, sort="recorded_at", descending
         total = conn.scalar(
             select(func.count()).select_from(reviewer_authorities).where(where)
             if where is not None else select(func.count()).select_from(reviewer_authorities))
-        page = max(1, page)
-        page_size = max(1, min(page_size, 200))
+        page, page_size = clamp_page(page, page_size)
         stmt = select(reviewer_authorities)
         if where is not None:
             stmt = stmt.where(where)
@@ -306,7 +300,7 @@ def list_authorities(*, search=None, status=None, sort="recorded_at", descending
             d = dict(r)
             d["effective_status"] = _effective_status(r, today)
             rows.append(d)
-    pages = (total + page_size - 1) // page_size if total else 0
+    pages = page_count(total, page_size)
     return {"rows": rows, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
 
