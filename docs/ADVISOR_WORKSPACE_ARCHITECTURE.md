@@ -3,8 +3,10 @@
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
 > redaction models, and extension points), see **`docs/PLATFORM_ARCHITECTURE.md`** (Phase D.12A).
-> This document remains the **detailed advisor-workspace evolution history** for Phases
-> D.1–D.12 and is phase-specific rather than the single top-level reference.
+> For the **reasoning** behind the major architectural decisions, see the Architecture Decision
+> Records index at **`docs/adr/README.md`** (Phase D.12B). This document remains the **detailed
+> advisor-workspace evolution history** for Phases D.1–D.12 and is phase-specific rather than the
+> single top-level reference.
 
 **Status:** design / architecture reference (Phase D). No production code implied by
 this document; nothing here is built until scoped into approved PRs.
