@@ -192,7 +192,24 @@ def compose_person_workspace(principal, person_id: int) -> dict | None:
                                                   page_size=RECENT_ACTIVITY_LIMIT)
                      if principal.can("timeline.read") else None),
         "missing_information": _person_missing_information(principal, cards),
+        # Business development (Phase D.13) — read-only business opportunities for this owner
+        # and their businesses; the Opportunity domain remains the pipeline owner. Gated.
+        "opportunities": (_business_opportunities(principal, person_id, businesses)
+                          if principal.can("opportunity.view") else None),
     }
+
+
+def _business_opportunities(principal, person_id: int, businesses: list[dict]) -> dict:
+    """Read-only opportunity visibility for a business owner: opportunities targeting the
+    person plus any targeting their businesses. Never duplicates pipeline ownership."""
+    from app.services.opportunity import service as opp_svc
+    person_opps = opp_svc.opportunities_for_person(principal, person_id, limit=50)
+    business_opps = []
+    for b in businesses:
+        business_opps.extend(opp_svc.opportunities_for_organization(
+            principal, b["business_id"], limit=25))
+    return {"person": person_opps, "business": business_opps,
+            "open_count": sum(1 for o in person_opps + business_opps if o["status"] == "open")}
 
 
 def _group_recommendations(recommendations: list) -> list[dict]:

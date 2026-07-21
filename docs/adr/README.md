@@ -102,6 +102,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-015](ADR-015-no-fabricated-data-history-calculations-or-relationships.md) | No fabricated data, history, calculations, or relationships | Accepted | Integrity | D.5–D.12 |
 | [ADR-016](ADR-016-linear-migration-chain-and-declared-schema-registration.md) | Linear migration chain & declared-schema registration | Accepted | Database | D.6–D.12 |
 | [ADR-017](ADR-017-architecture-manifest-and-enforcement-tests.md) | Architecture manifest & enforcement tests | Accepted | Governance | D.12A |
+| [ADR-018](ADR-018-opportunity-pipeline-as-authoritative-domain.md) | Opportunity & Pipeline as an authoritative domain | Accepted | Domain (business development) | D.13 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

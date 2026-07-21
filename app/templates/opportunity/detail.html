@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ o.title }} | Pipeline | Client360{% endblock %}
+{% block crumb %}Opportunity{% endblock %}
+{% block content %}
+{{ ui.page_head(o.title, eyebrow="Opportunity", desc=(o.primary_service_line or "") ~ ((" · " ~ o.source) if o.source else "")) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/opportunities">← Back to pipeline</a></p>
+{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Overview</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Stage</span><strong>{{ o.stage.name if o.stage else "—" }}</strong></div>
+    <div class="detail-row"><span class="subtle">Status</span><span>{{ ui.badge(o.status|capitalize, 'good' if o.status == 'won' else '') }}</span></div>
+    <div class="detail-row"><span class="subtle">Probability</span><span>{% if o.probability is not none %}{{ "%.0f"|format(o.probability|float) }}%{% else %}—{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Expected revenue</span><span>{% if o.expected_revenue %}${{ "{:,.2f}".format(o.expected_revenue) }}{% else %}—{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Expected close</span><span>{{ o.expected_close_date or "—" }}</span></div>
+    <div class="detail-row"><span class="subtle">Target</span><span>{% if o.person_id %}<a class="rowlink" href="/people/{{ o.person_id }}">Person {{ o.person_id }}</a>{% endif %}{% if o.organization_id %} · Org {{ o.organization_id }}{% endif %}{% if not o.person_id and not o.organization_id and not o.household_id %}<span class="subtle">Prospect (no canonical record)</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Primary advisor</span><span>{{ o.primary_advisor_id or "—" }}</span></div>
+    <div class="detail-row"><span class="subtle">Next action</span><span>{{ o.next_action or "—" }}{% if o.next_action_date %} <span class="subtle">by {{ o.next_action_date }}</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Referral source</span><span>{% if o.referral_source_person_id %}Person {{ o.referral_source_person_id }}{% elif o.referral_source_text %}{{ o.referral_source_text }}{% else %}—{% endif %}</span></div>
+    {% if o.status == 'won' and o.win_reason %}<div class="detail-row"><span class="subtle">Win reason</span><span>{{ o.win_reason }}</span></div>{% endif %}
+    {% if o.status == 'lost' and o.loss_reason %}<div class="detail-row"><span class="subtle">Loss reason</span><span>{{ o.loss_reason }}</span></div>{% endif %}
+  </div>
+</section>
+
+{% if can_edit or can_assign or can_close %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Actions</h2>
+  <div class="card" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px">
+    {% if can_edit %}
+    <form method="post" action="/opportunities/{{ o.id }}/stage">
+      <div class="field"><label for="stage_id">Move to stage</label>
+        <select class="input" id="stage_id" name="stage_id">{% for s in stages %}<option value="{{ s.id }}" {% if s.id == o.stage_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+      <button class="btn secondary" type="submit" style="margin-top:8px">Change stage</button>
+    </form>{% endif %}
+    {% if can_close %}
+    <form method="post" action="/opportunities/{{ o.id }}/close">
+      <div class="field"><label for="outcome">Close as</label>
+        <select class="input" id="outcome" name="outcome"><option value="won">Won</option><option value="lost">Lost</option></select></div>
+      <input class="input" name="reason" placeholder="Win/loss reason" style="margin-top:8px">
+      <button class="btn secondary" type="submit" style="margin-top:8px">Close</button>
+    </form>{% endif %}
+    {% if can_edit %}
+    <form method="post" action="/opportunities/{{ o.id }}/activities">
+      <div class="field"><label for="activity_type">Log activity</label>
+        <select class="input" id="activity_type" name="activity_type"><option value="call">Call</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="note">Note</option></select></div>
+      <input class="input" name="subject" placeholder="Subject" style="margin-top:8px">
+      <button class="btn secondary" type="submit" style="margin-top:8px">Log</button>
+    </form>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Activity history</h2>
+  <div class="card">
+    {% if o.activities %}
+    {% for a in o.activities %}
+    <div class="detail-row" style="align-items:flex-start"><div style="flex:1"><strong>{{ a.activity_type|capitalize }}</strong>{% if a.subject %} — {{ a.subject }}{% endif %}{% if a.timeline_event_id %} {{ ui.badge('M365 linked') }}{% endif %}<br><span class="subtle">{{ a.body or "" }}</span></div><span class="subtle id-mono">{{ a.activity_date | humandt }}</span></div>
+    {% endfor %}
+    {% else %}<p class="subtle">No activities logged.</p>{% endif %}
+  </div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Status history</h2>
+  <div class="card">
+    {% for e in o.events %}
+    <div class="detail-row"><span>{{ e.event_type|replace("_"," ")|capitalize }}{% if e.note %} <span class="subtle">— {{ e.note }}</span>{% endif %}</span><span class="subtle id-mono">{{ e.occurred_at | humandt }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if o.linked_work %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Linked advisor work</h2>
+  <div class="card"><ul style="margin:0; padding-left:18px">{% for w in o.linked_work %}<li><a class="rowlink" href="/advisor-work/{{ w.advisor_work_item_id }}">{{ w.recommendation_type|replace("_"," ")|capitalize }}</a> — {{ w.status|replace("_"," ") }}</li>{% endfor %}</ul></div>
+</section>
+{% endif %}
+{% endblock %}

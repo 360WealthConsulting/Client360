@@ -196,3 +196,12 @@ annual_review_sessions = metadata.tables["annual_review_sessions"]
 
 # Business owner planning workspace (Phase D.12)
 business_planning_profiles = metadata.tables["business_planning_profiles"]
+
+# Opportunity & pipeline domain (Phase D.13)
+opportunity_pipelines = metadata.tables["opportunity_pipelines"]
+opportunity_stages = metadata.tables["opportunity_stages"]
+opportunities = metadata.tables["opportunities"]
+opportunity_participants = metadata.tables["opportunity_participants"]
+opportunity_events = metadata.tables["opportunity_events"]
+opportunity_activities = metadata.tables["opportunity_activities"]
+opportunity_work_links = metadata.tables["opportunity_work_links"]
