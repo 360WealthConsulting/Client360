@@ -482,6 +482,8 @@ Not implemented; documented so future phases don't duplicate logic.
   missing = no data recorded.
 
 ## 28. References
+- **`docs/adr/README.md`** — **Architecture Decision Records** (the *why* behind the decisions
+  described here; ADR-001…ADR-017). This document explains *what exists*; the ADRs explain *why*.
 - `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md` — advisor-workspace evolution history (D.1–D.12).
 - `docs/PHASE_D6..D12_*.md` — per-phase design records.
 - `docs/AUTHORIZATION.md`, `docs/OBJECT_SECURITY.md`, `docs/FIELD_SECURITY.md` — auth/scope/field
