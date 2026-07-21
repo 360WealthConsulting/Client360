@@ -233,7 +233,6 @@ def test_dashboard_panel_shows_empty_placeholder():
         assert resp.status_code == 200
         body = resp.body.decode()
         assert "Advisor Intelligence" in body
-        assert "No advisor signals" in body
-        assert "Phase D.5B" in body
+        assert "No advisor signals" in body  # empty-state title retained
     finally:
         _teardown(ids)

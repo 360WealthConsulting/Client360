@@ -1,33 +1,48 @@
-"""Advisor Intelligence framework (Phase D.5A).
+"""Advisor Intelligence (Phase D.5A framework + D.5B operational signals).
 
-The framework that will eventually host Advisor Intelligence — and *only* the
-framework. This phase ships deterministic signal INFRASTRUCTURE: a signal model,
-an explainability model, a priority model, policy-gate placeholders, a signal
+D.5A shipped the deterministic signal INFRASTRUCTURE: the signal model, an
+explainability model, a priority model, policy-gate placeholders, a signal
 registry, and a thin composition layer
 (``get_client_signals`` / ``get_household_signals`` / ``get_dashboard_signals``).
 
-It generates NO signals. No rules are registered with executable bodies, the
-composition accessors run no rules, and every accessor returns an empty
-collection. There is deliberately no recommendation, AI/LLM/ML, vector/embedding,
-historical/predictive, compliance, suitability, or business-rule logic here, and
-no writes and no new tables.
+D.5B activates that framework with a small set of **factual, deterministic,
+operational** producers (bottom of this module): client review overdue, open
+client exception, overdue open task, and upcoming client meeting. Each composes
+an EXISTING authoritative, record-scoped read; none recreates a domain's status
+logic. There is deliberately no recommendation, regulated advice, probabilistic
+scoring, policy interpretation, AI/LLM/ML, vector/embedding, historical/predictive
+logic here, and no writes, no persistence, and no new tables.
 
 Governance (docs/ADVISOR_WORKSPACE_ARCHITECTURE.md §4, §7): Advisor Intelligence is
 a **deterministic, propose-only** orchestration layer. It composes existing
 authoritative services and must never become a portfolio, tax, insurance,
-benefits, workflow, or compliance engine. Regulated signals are ``[Policy-gated]``
-and stay inert until the firm supplies rules and an accountable compliance owner
-exists (GOV-2 / PD-4). This module is the seam those future, governed rules will
-attach to; today it is empty.
+benefits, workflow, or compliance engine. Regulated signals remain ``[Policy-gated]``
+and are NOT implemented here; they stay inert until the firm supplies rules and an
+accountable compliance owner exists (GOV-2 / PD-4). Every operational signal in
+this phase is ``PolicyGate.NONE`` with deterministic confidence.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from datetime import datetime, time, timedelta
 from enum import StrEnum
 
-from app.db import engine
+from sqlalchemy import select
+
+from app.db import engine, people
 from app.security.authorization import accessible_person_ids, record_in_scope
+from app.services.advisor_workspace import FIRM_TZ
+from app.services.exception_engine import open_exceptions_for_people
+from app.services.portfolio import accounts_due_for_review
+from app.services.tasks import open_tasks_for_people
+from app.services.timeline import recent_events
+
+# A review this many days past due (or never reviewed) is treated as *materially*
+# overdue for priority mapping; a task this many days past due likewise. These are
+# deterministic thresholds over authoritative evidence, not scores or policy.
+_MATERIAL_REVIEW_STALE_DAYS = 365
+_MATERIAL_TASK_OVERDUE_DAYS = 30
 
 # --------------------------------------------------------------------------- #
 # Priority model — ordering only, no scoring algorithm.
@@ -92,8 +107,8 @@ class PolicyGate(StrEnum):
 class Explainability:
     """Why a signal exists, which service produced it, and the evidence used.
 
-    Every future signal MUST carry this. ``confidence`` is a **deterministic**
-    placeholder (0.0) — there is no probabilistic/AI scoring in this framework.
+    Every signal MUST carry this. ``confidence`` is **deterministic** (0.0 default;
+    operational D.5B signals set 1.0) — there is no probabilistic/AI scoring here.
     """
 
     why: str = ""
@@ -135,8 +150,8 @@ class Signal:
     A signal states a fact with its evidence and explainability; it is never a
     recommendation, never advice, and never mutates anything. ``created_at`` is
     caller-supplied (an ISO-8601 string) rather than generated, so the model
-    stays deterministic. No signals are produced in this phase — this is the
-    shape a governed D.5B rule will emit.
+    stays deterministic. This is the shape the deterministic operational
+    producers (D.5B) emit.
     """
 
     id: str
@@ -252,83 +267,350 @@ def clear_registry() -> None:
 # Composition layer — record-scoped, returns () in this phase.
 # --------------------------------------------------------------------------- #
 
-# The producer seam. In D.5B, governed deterministic rules attach here as
-# ``(SignalContext) -> Iterable[Signal]`` callables. It is EMPTY in this phase,
-# so every accessor deterministically produces no signals. Crucially, a producer
-# only ever runs AFTER the caller-provided record scope has been resolved, so a
-# future rule can never see a record outside the advisor's book.
+# The producer seam. Deterministic operational producers (Phase D.5B) attach here
+# as ``(SignalContext) -> Iterable[Signal]`` callables (see the bottom of this
+# module). A producer only ever runs AFTER the caller-provided record scope has
+# been resolved onto ``ctx.person_ids``, so it can never see a record outside the
+# advisor's book. Regulated/policy signals do NOT attach here — this phase carries
+# only factual operational awareness.
 _PRODUCERS: list[Callable[[SignalContext], Iterable[Signal]]] = []
 
 
 @dataclass(frozen=True)
 class SignalContext:
-    """The already-scoped context handed to a (future) producer. ``person_ids`` is
-    the accessible-person scope (``None`` = firm-wide reader); ``person_id`` /
-    ``household_id`` narrow to a single record when set. A producer must confine
-    its reads to this scope — the framework never widens it."""
+    """The already-scoped context handed to a producer. ``person_ids`` is the
+    resolved accessible-person scope (``None`` = firm-wide reader, a set = exactly
+    the records this call may read); every producer reads strictly by this scope,
+    so the framework never widens it. ``person_id`` / ``household_id`` name the
+    single record when the call is a client/household view. ``now`` / ``today``
+    fix the firm-timezone clock used by date-based producers (deterministic and
+    injectable for tests)."""
 
     principal: object
     person_ids: frozenset[int] | None
+    now: datetime
+    today: object  # datetime.date
     person_id: int | None = None
     household_id: int | None = None
 
 
 def _collect(ctx: SignalContext) -> tuple[Signal, ...]:
-    """Run the registered producer seam over an already-scoped context.
-
-    Empty in this phase (no rules attached) → always ``()``. This is the single
-    future dispatch point; keeping it here means scope is enforced once, at the
-    accessor boundary, before any rule can run.
-    """
-    signals: list[Signal] = []
+    """Run the producer seam over an already-scoped context, de-duplicating by
+    signal id (the same underlying fact never yields two signals) and returning a
+    deterministically ordered tuple. Scope is enforced once, at the accessor
+    boundary, before any producer runs."""
+    by_id: dict[str, Signal] = {}
     for produce in _PRODUCERS:
-        signals.extend(produce(ctx))
-    return _order(signals)
+        for signal in produce(ctx):
+            by_id.setdefault(signal.id, signal)
+    return _order(by_id.values())
 
 
-def _order(signals: Sequence[Signal]) -> tuple[Signal, ...]:
-    """Most-urgent-first, stable within a priority."""
-    return tuple(sorted(signals, key=Priority.sort_key, reverse=True))
+def _order(signals: Iterable[Signal]) -> tuple[Signal, ...]:
+    """Most-urgent-first (priority rank), then by stable signal id — fully
+    deterministic (no scoring, no time-dependent tiebreak)."""
+    return tuple(sorted(signals, key=lambda s: (-s.priority.rank, s.id)))
 
 
-def get_dashboard_signals(principal) -> tuple[Signal, ...]:
-    """Book-scoped advisor-dashboard signals. Returns ``()`` — no rules are
-    registered to run yet (Phase D.5A). Scope is still resolved so that, when
-    governed rules arrive, they can only ever run across the advisor's accessible
-    book (``accessible_person_ids``)."""
+def _firm_now(now: datetime | None) -> datetime:
+    return now or datetime.now(FIRM_TZ)
+
+
+def get_dashboard_signals(principal, *, now: datetime | None = None) -> tuple[Signal, ...]:
+    """Book-scoped advisor-dashboard signals. Scope is resolved to the advisor's
+    accessible book (``accessible_person_ids`` — ``None`` for a firm-wide reader)
+    BEFORE any producer runs, so producers only ever read across that book."""
+    stamp = _firm_now(now)
     with engine.connect() as conn:
         person_ids = accessible_person_ids(conn, principal)
     ctx = SignalContext(
         principal=principal,
         person_ids=None if person_ids is None else frozenset(person_ids),
+        now=stamp,
+        today=stamp.date(),
     )
     return _collect(ctx)
 
 
-def get_client_signals(principal, person_id: int) -> tuple[Signal, ...]:
+def get_client_signals(principal, person_id: int, *, now: datetime | None = None) -> tuple[Signal, ...]:
     """Signals for one client. Enforces person record-scope FIRST: an inaccessible
-    person yields ``()`` and never reaches a producer, so it can never expose
-    another client's data. An accessible client also yields ``()`` in this phase
-    (no rules registered)."""
+    person yields ``()`` and never reaches a producer, so producer logic can never
+    read or expose another client's data."""
     if not record_in_scope(principal, "person", person_id):
         return ()
+    stamp = _firm_now(now)
     ctx = SignalContext(
         principal=principal,
         person_ids=frozenset({person_id}),
+        now=stamp,
+        today=stamp.date(),
         person_id=person_id,
     )
     return _collect(ctx)
 
 
-def get_household_signals(principal, household_id: int) -> tuple[Signal, ...]:
+def _household_member_ids(household_id: int) -> frozenset[int]:
+    with engine.connect() as conn:
+        return frozenset(conn.scalars(
+            select(people.c.id).where(people.c.household_id == household_id)))
+
+
+def get_household_signals(principal, household_id: int, *, now: datetime | None = None) -> tuple[Signal, ...]:
     """Signals for one household. Enforces household record-scope FIRST: an
-    inaccessible household yields ``()`` and never reaches a producer. An
-    accessible household also yields ``()`` in this phase (no rules registered)."""
+    inaccessible household yields ``()`` and never reaches a producer. Scope is the
+    household's member person ids, so producers read only those records."""
     if not record_in_scope(principal, "household", household_id):
         return ()
+    stamp = _firm_now(now)
     ctx = SignalContext(
         principal=principal,
-        person_ids=None,
+        person_ids=_household_member_ids(household_id),
+        now=stamp,
+        today=stamp.date(),
         household_id=household_id,
     )
     return _collect(ctx)
+
+
+# --------------------------------------------------------------------------- #
+# Deterministic operational producers (Phase D.5B).
+#
+# Each producer composes an EXISTING authoritative, record-scoped read and emits
+# factual, propose-only signals. No producer queries a domain table directly, no
+# producer recomputes a domain's status/eligibility logic, and no producer emits
+# a recommendation, a probabilistic score, or a policy conclusion. Every emitted
+# signal is anchored to a source record within ``ctx.person_ids`` (the scope
+# resolved at the accessor boundary), so it can never expose an inaccessible
+# record. All are PolicyGate.NONE with deterministic confidence 1.0.
+# --------------------------------------------------------------------------- #
+
+# Exception severity -> priority, straight from the authoritative source label
+# (exceptions severities are blocker/high/medium/low). "blocker" is the source's
+# most-severe label, so it maps to Critical — Critical is never invented.
+_SEVERITY_PRIORITY = {
+    "blocker": Priority.CRITICAL,
+    "high": Priority.HIGH,
+    "medium": Priority.MEDIUM,
+    "low": Priority.LOW,
+}
+
+
+def _signal_id(signal_type: str, record_type: str, record_id) -> str:
+    """Stable, deterministic id: type:record_type:record_id. Globally unique per
+    underlying record, so the same fact never produces a duplicate signal."""
+    return f"{signal_type}:{record_type}:{record_id}"
+
+
+def _review_overdue_producer(ctx: SignalContext) -> list[Signal]:
+    """Client review overdue — from the authoritative wealth review-due read
+    (``portfolio.accounts_due_for_review``). The due basis is NOT recomputed here."""
+    signals: list[Signal] = []
+    for acct in accounts_due_for_review(
+        ctx.person_ids, stale_days=_MATERIAL_REVIEW_STALE_DAYS, today=ctx.today, limit=200
+    ):
+        last = acct.get("last_review_date")
+        # Never-reviewed accounts are materially overdue; otherwise ordinary.
+        priority = Priority.HIGH if last is None else Priority.MEDIUM
+        acct_label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
+        basis = "never reviewed" if last is None else f"last reviewed {last}"
+        evidence = (
+            f"account_id={acct['id']}",
+            f"account={acct_label}",
+            f"person_id={acct.get('person_id')}",
+            f"last_review_date={last}",
+            f"stale_days_threshold={_MATERIAL_REVIEW_STALE_DAYS}",
+        )
+        signals.append(Signal(
+            id=_signal_id("client_review_overdue", "account", acct["id"]),
+            category="review",
+            title=f"Account review overdue — {acct_label}",
+            summary=f"Account review is overdue ({basis}).",
+            source_service="portfolio",
+            source_record=SourceRecord("account", acct["id"]),
+            severity="review_overdue",
+            priority=priority,
+            evidence=evidence,
+            explainability=Explainability(
+                why="Account last_review_date is null or older than the review-due "
+                    "threshold, per portfolio.accounts_due_for_review.",
+                source_service="portfolio.accounts_due_for_review",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=_person_route(acct.get("person_id")),
+            status="open",
+        ))
+    return signals
+
+
+def _open_exception_producer(ctx: SignalContext) -> list[Signal]:
+    """Open client exception — from the authoritative Exception Engine read
+    (``exception_engine.open_exceptions_for_people``). Severity is preserved from
+    the source; no exception logic is recreated."""
+    signals: list[Signal] = []
+    for exc in open_exceptions_for_people(ctx.person_ids, limit=200):
+        severity = (exc.get("severity") or "").lower()
+        priority = _SEVERITY_PRIORITY.get(severity, Priority.INFORMATIONAL)
+        title = exc.get("title") or f"exception {exc['id']}"
+        evidence = (
+            f"exception_id={exc['id']}",
+            f"domain={exc.get('domain')}",
+            f"category={exc.get('category')}",
+            f"severity={exc.get('severity')}",
+            f"status={exc.get('status')}",
+            f"opened_at={exc.get('opened_at')}",
+        )
+        signals.append(Signal(
+            id=_signal_id("open_client_exception", "exception", exc["id"]),
+            category="exception",
+            title=f"Open exception — {title}",
+            summary="Exception remains open.",
+            source_service="exception_engine",
+            source_record=SourceRecord("exception", exc["id"]),
+            severity=severity or "info",
+            priority=priority,
+            evidence=evidence,
+            explainability=Explainability(
+                why="Exception status is not resolved/cancelled, per "
+                    "exception_engine.open_exceptions_for_people.",
+                source_service="exception_engine.open_exceptions_for_people",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=_person_route(exc.get("person_id")) or "/exceptions",
+            status=exc.get("status") or "open",
+        ))
+    return signals
+
+
+def _overdue_task_producer(ctx: SignalContext) -> list[Signal]:
+    """Overdue open task — from the authoritative task read
+    (``tasks.open_tasks_for_people``). "Overdue" is a factual due_date < today
+    comparison; task status comes from the stored field (not recomputed)."""
+    signals: list[Signal] = []
+    for task in open_tasks_for_people(ctx.person_ids, limit=200):
+        due = task.get("due_date")
+        if due is None or due >= ctx.today:
+            continue  # only overdue tasks
+        days_overdue = (ctx.today - due).days
+        priority = Priority.HIGH if days_overdue > _MATERIAL_TASK_OVERDUE_DAYS else Priority.MEDIUM
+        title = task.get("title") or f"task {task['id']}"
+        evidence = (
+            f"task_id={task['id']}",
+            f"title={title}",
+            f"due_date={due}",
+            f"status={task.get('status')}",
+            f"days_overdue={days_overdue}",
+        )
+        signals.append(Signal(
+            id=_signal_id("overdue_open_task", "task", task["id"]),
+            category="task",
+            title=f"Task overdue — {title}",
+            summary=f"Task is overdue by {days_overdue} day(s).",
+            source_service="tasks",
+            source_record=SourceRecord("task", task["id"]),
+            severity="task_overdue",
+            priority=priority,
+            evidence=evidence,
+            explainability=Explainability(
+                why="Task due_date is before today and status is open, per "
+                    "tasks.open_tasks_for_people.",
+                source_service="tasks.open_tasks_for_people",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=(f"{_person_route(task.get('person_id'))}?tab=tasks"
+                   if task.get("person_id") else "/tasks"),
+            status=task.get("status") or "open",
+        ))
+    return signals
+
+
+def _next_business_day(day):
+    """The next business day after ``day`` (skips Sat/Sun). Deterministic."""
+    nxt = day + timedelta(days=1)
+    while nxt.weekday() >= 5:  # 5=Sat, 6=Sun
+        nxt += timedelta(days=1)
+    return nxt
+
+
+def _upcoming_meeting_producer(ctx: SignalContext) -> list[Signal]:
+    """Upcoming client meeting requiring preparation — from the authoritative
+    calendar/timeline read (``timeline.recent_events``), limited to a near-term
+    window: today through the end of the next business day, in the firm timezone
+    (the same read/tz the Daily Dashboard uses). No scheduler/reminder created."""
+    day_start = datetime.combine(ctx.today, time.min, tzinfo=FIRM_TZ)
+    window_end = datetime.combine(
+        _next_business_day(ctx.today) + timedelta(days=1), time.min, tzinfo=FIRM_TZ)
+    signals: list[Signal] = []
+    for ev in recent_events(
+        ctx.person_ids, event_types=("calendar_event",),
+        start=day_start, end=window_end, limit=200,
+    ):
+        person_id = ev.get("person_id")
+        if not person_id:
+            continue  # a person-anchored meeting only
+        when = ev.get("event_time")
+        evidence = (
+            f"event_id={ev['id']}",
+            f"event_time={when}",
+            f"person_id={person_id}",
+            "event_type=calendar_event",
+        )
+        signals.append(Signal(
+            id=_signal_id("upcoming_client_meeting", "timeline_event", ev["id"]),
+            category="meeting",
+            title=ev.get("title") or "Upcoming client meeting",
+            summary="Meeting is scheduled within the preparation window.",
+            source_service="timeline",
+            source_record=SourceRecord("timeline_event", ev["id"]),
+            severity="info",
+            priority=Priority.MEDIUM,
+            evidence=evidence,
+            explainability=Explainability(
+                why="A calendar_event for this client falls within today through the "
+                    "next business day, per timeline.recent_events.",
+                source_service="timeline.recent_events",
+                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
+            policy_gate=PolicyGate.NONE,
+            route=f"/workspace/meetings/{person_id}?event={ev['id']}",
+            status="open",
+        ))
+    return signals
+
+
+def _person_route(person_id) -> str | None:
+    return f"/people/{person_id}" if person_id else None
+
+
+#: The approved Phase D.5B operational producers, in registry order. Each entry is
+#: (registry metadata, producer callable). Registered/attached at import.
+_OPERATIONAL_SIGNALS = (
+    (dict(key="client_review_overdue", category="review", source_service="portfolio",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="Account review is overdue per portfolio.accounts_due_for_review."),
+     _review_overdue_producer),
+    (dict(key="open_client_exception", category="exception", source_service="exception_engine",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="Client exception remains open per the Exception Engine."),
+     _open_exception_producer),
+    (dict(key="overdue_open_task", category="task", source_service="tasks",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="Open task is past its due date per tasks.open_tasks_for_people."),
+     _overdue_task_producer),
+    (dict(key="upcoming_client_meeting", category="meeting", source_service="timeline",
+          default_priority=Priority.MEDIUM, policy_gate=PolicyGate.NONE,
+          description="Client calendar meeting falls within the preparation window."),
+     _upcoming_meeting_producer),
+)
+
+
+def register_operational_signals() -> None:
+    """Register the approved operational signals' metadata and attach their
+    producers to the seam. Idempotent: skips any already-registered key so
+    repeated imports/registration are safe."""
+    for meta, producer in _OPERATIONAL_SIGNALS:
+        if meta["key"] not in _REGISTRY:
+            register_signal(**meta)
+        if producer not in _PRODUCERS:
+            _PRODUCERS.append(producer)
+
+
+register_operational_signals()

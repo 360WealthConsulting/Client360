@@ -85,6 +85,33 @@ def tasks_with_assignee(person_id: int, *, conn=None):
         return _do(c)
 
 
+#: Task statuses that are not open work (mirrors the Advisor Workspace dashboard).
+_CLOSED_TASK_STATUSES = frozenset({"complete", "completed", "closed", "cancelled", "resolved"})
+
+
+def open_tasks_for_people(person_ids, *, limit=200):
+    """Read-only list of **open** tasks across a **set** of person ids — the
+    authoritative book-scoped read behind the Advisor Intelligence "overdue open
+    task" signal (Phase D.5B). Open = status not in the closed set (the same
+    task-status vocabulary the dashboard uses; this does not recompute status, it
+    filters on the stored field). ``person_ids`` scopes the read: ``None`` =
+    unrestricted (record.read_all), an empty collection = ``[]``, otherwise only
+    tasks keyed to one of those person ids. The caller derives "overdue" from the
+    returned ``due_date`` — this read stays a plain scoped read. Returns id, title,
+    due_date, status, person_id, household_id."""
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    stmt = select(
+        tasks.c.id, tasks.c.title, tasks.c.due_date, tasks.c.status,
+        tasks.c.person_id, tasks.c.household_id,
+    ).where(tasks.c.status.notin_(tuple(_CLOSED_TASK_STATUSES)))
+    if person_ids is not None:
+        stmt = stmt.where(tasks.c.person_id.in_(tuple(person_ids)))
+    stmt = stmt.order_by(tasks.c.due_date.asc().nullslast(), tasks.c.id.asc()).limit(limit)
+    with engine.connect() as c:
+        return [dict(r) for r in c.execute(stmt).mappings()]
+
+
 def create_task(person_id: int, *, title: str, description: str | None = None,
                 priority: str = "normal", assigned_to_user_id: int | None = None,
                 due_date: date | None = None, actor_user_id: int | None = None,
