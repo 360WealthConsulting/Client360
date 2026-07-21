@@ -196,6 +196,14 @@ def household_profile(
         "open_task_count": open_task_count,
     }
 
+    # Optional, bounded business-ownership summary (Phase D.12): one ownership read plus a
+    # per-member ownership read (household size is small). Gated by business_owner.read.
+    business_ownership = None
+    if request.state.principal.can("business_owner.read"):
+        from app.services.business_owner import household_business_ownership
+        business_ownership = household_business_ownership(
+            request.state.principal, household_id)
+
     return templates.TemplateResponse(
         request=request,
         name="households/profile.html",
@@ -204,6 +212,7 @@ def household_profile(
             "members": members,
             "rollup": rollup,
             "portfolio": portfolio,
+            "business_ownership": business_ownership,
             "available_people": available_people,
             "created": request.query_params.get("created") == "1",
             "member_saved": (

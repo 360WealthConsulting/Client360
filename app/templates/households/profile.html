@@ -64,6 +64,23 @@
   </article>
 </section>
 
+{% if business_ownership and (business_ownership.owning_members or business_ownership.household_owned_businesses) %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Business ownership</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Related active businesses</span><strong>{{ business_ownership.active_business_count }}</strong></div>
+    {% if business_ownership.owning_members %}
+    <p class="subtle" style="margin:10px 0 4px">Members with validated ownership</p>
+    <ul style="margin:0; padding-left:18px">
+      {% for m in business_ownership.owning_members %}
+      <li><a class="rowlink" href="/business-owner/{{ m.person_id }}">{{ m.full_name }}</a> — {{ m.business_count }} business{{ "" if m.business_count == 1 else "es" }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <h2 class="section-title">Household members</h2>
 {% if members %}
 <div class="table-wrap">

@@ -392,6 +392,70 @@ def list_owners(organization_id, *, principal):
     return [dict(r) for r in rows]
 
 
+def _owned_businesses(c, owner_entity_id):
+    """Businesses (entity_type='business') on outgoing ownership/org-structure edges from
+    ``owner_entity_id``, joined to their organization profile + typed ownership detail.
+    Read-only; no ``ensure_*`` write side-effect."""
+    rows = c.execute(
+        select(relationship_entities.c.id.label("business_id"),
+               relationship_entities.c.name.label("business_name"),
+               relationship_entities.c.active.label("entity_active"),
+               relationships.c.id.label("relationship_id"),
+               relationships.c.effective_date, relationships.c.inactive_date,
+               relationships.c.active.label("relationship_active"),
+               relationships.c.source.label("edge_source"),
+               relationships.c.confidence_level,
+               relationship_types.c.code.label("relationship_code"),
+               relationship_ownership.c.ownership_percentage,
+               relationship_ownership.c.voting_percentage,
+               relationship_ownership.c.ownership_type, relationship_ownership.c.is_direct,
+               relationship_ownership.c.evidence_source,
+               organization_profiles.c.legal_name, organization_profiles.c.entity_form,
+               organization_profiles.c.industry, organization_profiles.c.naics_code,
+               organization_profiles.c.employee_count_band, organization_profiles.c.status,
+               organization_profiles.c.ein)
+        .select_from(relationships
+            .join(relationship_types, relationship_types.c.id == relationships.c.relationship_type_id)
+            .join(relationship_entities, relationship_entities.c.id == relationships.c.to_entity_id)
+            .outerjoin(relationship_ownership,
+                       relationship_ownership.c.relationship_id == relationships.c.id)
+            .outerjoin(organization_profiles,
+                       organization_profiles.c.relationship_entity_id == relationships.c.to_entity_id))
+        .where(relationships.c.from_entity_id == owner_entity_id,
+               relationship_types.c.category.in_(("ownership", "org_structure")),
+               relationship_entities.c.entity_type == "business")
+        .order_by(relationship_entities.c.name)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def list_person_business_ownership(person_id):
+    """PURE READ (Phase D.12): businesses a PERSON owns, via the ownership graph, with each
+    business's organization profile and typed ownership detail. Returns ``[]`` if the person
+    has no relationship entity or owns nothing. Unlike :func:`list_owned`, this never calls
+    ``ensure_person_entity`` — so rendering the workspace cannot create a person entity row
+    as a side effect. The caller enforces person record scope."""
+    with engine.connect() as c:
+        entity_id = c.scalar(select(relationship_entities.c.id).where(
+            relationship_entities.c.person_id == person_id,
+            relationship_entities.c.entity_type == "person"))
+        if entity_id is None:
+            return []
+        return _owned_businesses(c, entity_id)
+
+
+def list_household_business_ownership(household_id):
+    """PURE READ (Phase D.12): businesses owned DIRECTLY by a household entity (not by its
+    members). Returns ``[]`` if no household entity or no owned businesses. No write side
+    effect. The caller enforces household record scope."""
+    with engine.connect() as c:
+        entity_id = c.scalar(select(relationship_entities.c.id).where(
+            relationship_entities.c.household_id == household_id,
+            relationship_entities.c.entity_type == "household"))
+        if entity_id is None:
+            return []
+        return _owned_businesses(c, entity_id)
+
+
 def list_owned(*, principal, owner_person_id=None, owner_household_id=None, owner_organization_id=None):
     """Owner (person/household/organization) → organizations it owns (outgoing edges)."""
     _require(principal, "organization.read")

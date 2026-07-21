@@ -246,6 +246,26 @@ def list_policies(principal, *, status=None, carrier_id=None, limit=200):
     return out
 
 
+def business_policies(principal, organization_id, *, limit=100):
+    """Read-only (Phase D.12): policies OWNED BY a business (``insurance_policies.organization_id``),
+    filtered to the principal's insurance record scope. Requires ``insurance.read``. Bounded.
+    Policy PURPOSE (key-person/buy-sell/etc.) is NOT modeled in this domain — the workspace
+    surfaces purpose as unconfirmed rather than guessing it."""
+    _require(principal, "insurance.read")
+    with engine.connect() as c:
+        rows = [r for r in c.execute(
+            select(insurance_policies)
+            .where(insurance_policies.c.organization_id == organization_id)
+            .order_by(insurance_policies.c.id.desc())).mappings()
+            if _policy_scope_ok(principal, r, write=False, connection=c)]
+        out = []
+        for r in rows[:limit]:
+            d = dict(r)
+            d["carrier_name"] = _entity_name(c, "organization", r["carrier_id"])
+            out.append(d)
+    return out
+
+
 def update_policy_status(principal, policy_id, new_status, *, actor_user_id=None, request_id=None):
     _require(principal, "insurance.write")
     with engine.begin() as c:
