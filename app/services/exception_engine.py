@@ -13,7 +13,7 @@ are later phases.
 """
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import engine, exception_events, exception_types, exceptions
@@ -720,3 +720,18 @@ def employer_action_item(scope, exception_id):
         if item["id"] == exception_id:
             return item
     raise ExceptionNotFoundError(f"Exception {exception_id} not found")
+
+
+def open_count_for_client(person_id, household_id=None):
+    """Read-only count of a client's open exceptions (person, or household).
+    Factual composition for the Client 360 summary (Phase D.2); keyed by
+    person/household, so it only reflects the requested client. Callers reach this
+    from a record-scoped client profile, so no additional principal scoping."""
+    conds = [exceptions.c.person_id == person_id]
+    if household_id:
+        conds.append(exceptions.c.household_id == household_id)
+    with engine.connect() as conn:
+        return conn.scalar(
+            select(func.count()).select_from(exceptions)
+            .where(or_(*conds), exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
+        ) or 0

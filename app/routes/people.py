@@ -16,6 +16,7 @@ from app.db import (
 )
 from app.security.authorization import accessible_person_ids
 from app.services.advisor_ai import build_advisor_recommendations
+from app.services.advisor_workspace import get_client_snapshot
 from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
 from app.services.client_summary import get_client_summary
@@ -238,6 +239,15 @@ def person_profile(
         relationship_graph=relationship_graph,
         portfolio=portfolio,
     )
+    # Client 360 summary (Phase D.2): a factual per-domain relationship snapshot,
+    # composed read-only from existing person-keyed services. This route is already
+    # RECORD_PATH record-scoped, so composing this person's own domain data is safe.
+    client_snapshot = get_client_snapshot(
+        person_id,
+        person["household_id"],
+        portfolio=portfolio,
+        open_task_count=len(open_tasks),
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -263,6 +273,7 @@ def person_profile(
             "available_people": available_people,
             "person_households": person_households,
             "portfolio": portfolio,
+            "client_snapshot": client_snapshot,
             "active_tab": tab,
             "saved": request.query_params.get("saved") == "1",
         },

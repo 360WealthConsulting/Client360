@@ -17,7 +17,10 @@ from sqlalchemy import select
 
 from app.db import engine, households, people
 from app.security.authorization import accessible_person_ids
+from app.services.exception_engine import open_count_for_client
+from app.services.insurance import client_policy_summary
 from app.services.portfolio import accounts_due_for_review
+from app.services.tax_domain import client_engagement_summary
 from app.services.timeline import recent_events
 from app.services.work_management import work_items
 
@@ -141,4 +144,32 @@ def get_daily_dashboard(principal, *, now=None, limit=20):
             "attention": len(attention), "meetings": len(meetings), "reviews": len(reviews),
             "tasks": len(tasks), "exceptions": len(exceptions), "activity": len(activity),
         },
+    }
+
+
+def get_client_snapshot(person_id, household_id=None, *, portfolio=None, open_task_count=0):
+    """Read-only per-domain relationship snapshot for the Client 360 summary
+    (Phase D.2). Composition-only over existing person-keyed services; every value
+    is presented side by side and is NEVER summed into a single composite figure
+    (the units are not comparable). No advisor intelligence / recommendations.
+
+    `portfolio` and `open_task_count` are passed in from the already-computed
+    person-profile context to avoid recomputing them.
+    """
+    portfolio = portfolio or {}
+    household = portfolio.get("household") or {}
+    return {
+        "person_id": person_id,
+        "household_id": household_id,
+        # Wealth (reused from the person portfolio; canonical keys with legacy fallback).
+        "aum": portfolio.get("aum", portfolio.get("total_aum")) or 0,
+        "household_aum": household.get("aum", household.get("total_aum")) or 0,
+        "cash": portfolio.get("cash") or 0,
+        "cash_percent": portfolio.get("cash_percent") or 0,
+        # Insurance / tax (small authoritative reads).
+        "insurance": client_policy_summary(person_id, household_id),
+        "tax": client_engagement_summary(person_id, household_id),
+        # Attention / agenda.
+        "open_exceptions": open_count_for_client(person_id, household_id),
+        "open_tasks": open_task_count,
     }
