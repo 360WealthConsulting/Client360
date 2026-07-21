@@ -17,11 +17,14 @@ from sqlalchemy import select
 
 from app.db import engine, households, people
 from app.security.authorization import accessible_person_ids
-from app.services.exception_engine import open_count_for_client
+from app.services.benefits_domain import client_benefits_summary
+from app.services.exception_engine import open_count_for_client, open_exceptions_for_client
 from app.services.insurance import client_policy_summary
-from app.services.portfolio import accounts_due_for_review
+from app.services.notes import list_person_notes
+from app.services.portfolio import accounts_due_for_review, get_person_portfolio
+from app.services.tasks import tasks_with_assignee
 from app.services.tax_domain import client_engagement_summary
-from app.services.timeline import recent_events
+from app.services.timeline import get_event, get_person_timeline, recent_events
 from app.services.work_management import work_items
 
 # Firm timezone for "today" boundaries (matches the scheduler's zone).
@@ -114,7 +117,10 @@ def get_daily_dashboard(principal, *, now=None, limit=20):
         key=lambda e: e.get("event_time") or day_start,
     )
     for m in meetings:
-        m["link"] = _client_link(m.get("person_id"), m.get("household_id"))
+        # "Meetings today" opens the Meeting Workspace brief for that client,
+        # pre-loaded with the synced calendar event (Phase D.3 entry point).
+        m["link"] = (f"/workspace/meetings/{m['person_id']}?event={m['id']}"
+                     if m.get("person_id") else _client_link(m.get("person_id"), m.get("household_id")))
 
     # Recent client activity (scoped timeline, newest-first).
     activity = recent_events(scope, limit=limit)
@@ -172,4 +178,72 @@ def get_client_snapshot(person_id, household_id=None, *, portfolio=None, open_ta
         # Attention / agenda.
         "open_exceptions": open_count_for_client(person_id, household_id),
         "open_tasks": open_task_count,
+    }
+
+
+_CLOSED_TASK = {"complete", "completed", "closed", "cancelled"}
+
+
+def _person_row(person_id):
+    with engine.connect() as conn:
+        return conn.execute(
+            select(people.c.id, people.c.full_name, people.c.primary_email,
+                    people.c.primary_phone, people.c.household_id).where(people.c.id == person_id)
+        ).mappings().first()
+
+
+def _household_name(household_id):
+    if not household_id:
+        return None
+    with engine.connect() as conn:
+        return conn.scalar(select(households.c.name).where(households.c.id == household_id))
+
+
+def get_meeting_brief(person_id, *, event_id=None):
+    """Read-only meeting-preparation brief for one client (Phase D.3).
+
+    Composition-only over existing authoritative, PERSON-KEYED reads — no writes,
+    no meeting/task/follow-up creation, no notifications, no recommendations. All
+    lists are keyed to `person_id` (household_id NOT passed to the person-keyed
+    reads) so the brief cannot expose other household members' data. The financial
+    section is CURRENT values only (no historical change — see Phase D.3 note).
+
+    The route is responsible for record-scope on `person_id`; `event_id` is
+    validated here to belong to this person and to be a calendar event, else it is
+    ignored (a general brief is rendered).
+    """
+    person = _person_row(person_id)
+    if person is None:
+        return None
+    household_id = person["household_id"]
+
+    # Event-to-person validation: exists, is a calendar event, belongs to this
+    # person. Anything else -> no event context (never surface another client's).
+    meeting_event = None
+    if event_id is not None:
+        ev = get_event(event_id)
+        if ev and ev.get("event_type") == "calendar_event" and ev.get("person_id") == person_id:
+            meeting_event = ev
+
+    portfolio = get_person_portfolio(person_id)
+    open_tasks = [
+        t for t in tasks_with_assignee(person_id)
+        if str(t.get("status") or "").lower() not in _CLOSED_TASK
+    ]
+    # Snapshot keyed to the PERSON only (household_id=None) so counts never fold in
+    # other household members. get_client_snapshot is the Phase D.2 reuse.
+    snapshot = get_client_snapshot(person_id, None, portfolio=portfolio, open_task_count=len(open_tasks))
+
+    return {
+        "person": dict(person),
+        "household_id": household_id,
+        "household_name": _household_name(household_id),
+        "meeting_event": meeting_event,
+        "snapshot": snapshot,
+        "benefits": client_benefits_summary(person_id),
+        "open_tasks": open_tasks,
+        "open_exceptions": open_exceptions_for_client(person_id),
+        "reviews": accounts_due_for_review({person_id}),
+        "activity": get_person_timeline(person_id, limit=10),
+        "notes": list_person_notes(person_id)[:10],
     }

@@ -735,3 +735,23 @@ def open_count_for_client(person_id, household_id=None):
             select(func.count()).select_from(exceptions)
             .where(or_(*conds), exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
         ) or 0
+
+
+def open_exceptions_for_client(person_id, household_id=None, *, limit=20):
+    """Read-only list of a client's open exceptions (person, or household when a
+    household_id is given). Factual composition for the Meeting Workspace brief
+    (Phase D.3). Keyed by person/household, so it only reflects the requested
+    client; callers reach this from a record-scoped surface."""
+    conds = [exceptions.c.person_id == person_id]
+    if household_id:
+        conds.append(exceptions.c.household_id == household_id)
+    stmt = (
+        select(exceptions.c.id, exceptions.c.domain, exceptions.c.severity,
+               exceptions.c.status, exceptions.c.title, exceptions.c.person_id,
+               exceptions.c.household_id, exceptions.c.sla_due_at)
+        .where(or_(*conds), exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
+        .order_by(exceptions.c.opened_at.desc())
+        .limit(limit)
+    )
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]

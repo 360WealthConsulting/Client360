@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.advisor_workspace import get_daily_dashboard
+from app.services.advisor_workspace import get_daily_dashboard, get_meeting_brief
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 templates = Jinja2Templates(directory="app/templates")
@@ -29,4 +30,30 @@ def workspace_dashboard(
         request=request,
         name="workspace/dashboard.html",
         context={"principal": principal, "d": dashboard},
+    )
+
+
+@router.get("/meetings/{person_id}", response_class=HTMLResponse)
+def meeting_brief(
+    request: Request,
+    person_id: int,
+    event: int | None = None,
+    principal: Principal = Depends(require_capability("client.read")),
+):
+    """Meeting Workspace — read-only meeting-preparation brief for one client
+    (Phase D.3). `/workspace/meetings/{id}` is NOT covered by the middleware
+    RECORD_PATH, so this route enforces person record-scope explicitly (404 for an
+    inaccessible person, matching the person-profile behavior). The optional
+    `event` id is validated in the service to belong to this person and to be a
+    calendar event; otherwise a general brief is rendered.
+    """
+    if not record_in_scope(principal, "person", person_id):
+        raise HTTPException(404, "Not found")
+    brief = get_meeting_brief(person_id, event_id=event)
+    if brief is None:
+        raise HTTPException(404, "Not found")
+    return templates.TemplateResponse(
+        request=request,
+        name="workspace/meeting_brief.html",
+        context={"principal": principal, "b": brief},
     )

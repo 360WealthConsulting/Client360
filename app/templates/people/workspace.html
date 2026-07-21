@@ -379,7 +379,7 @@
     {# Client 360 summary (Phase D.2): a factual per-domain relationship snapshot,
        shown side by side and NEVER summed into a single composite figure (the
        units are not comparable). Read-only composition of existing services. #}
-    <h2 class="section-title">Client 360</h2>
+    <h2 class="section-title">Client 360 <a class="rowlink" style="font-size:13px; font-weight:500; margin-left:8px" href="/workspace/meetings/{{ person.id }}">Prepare for meeting →</a></h2>
     <section class="stat-grid" style="margin-bottom:18px">
       {{ wc.summary_card("Client AUM", "$" ~ "{:,.2f}".format(client_snapshot.aum)) }}
       {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(client_snapshot.cash), "{:.1f}".format(client_snapshot.cash_percent) ~ "%") }}

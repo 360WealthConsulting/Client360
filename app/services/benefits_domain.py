@@ -10,10 +10,10 @@ to the plan's Organization anchor. Every mutation writes an audit event.
 """
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from app.db import (benefit_plan_types, benefit_plan_years, benefit_plans, benefit_providers,
-    benefit_retirement_plan_details, engine)
+from app.db import (benefit_employments, benefit_plan_types, benefit_plan_years, benefit_plans,
+    benefit_providers, benefit_retirement_plan_details, engine)
 from app.security.audit import write_audit_event
 from app.security.authorization import organization_in_scope
 
@@ -247,3 +247,16 @@ def list_providers():
     with engine.connect() as c:
         return [dict(r) for r in c.execute(select(benefit_providers)
                 .order_by(benefit_providers.c.provider_type, benefit_providers.c.code)).mappings()]
+
+
+def client_benefits_summary(person_id, household_id=None):
+    """Read-only count of a client's employee-benefit relationships, keyed by the
+    PERSON (`benefit_employments.person_id`) — never by organization, so it can
+    only reflect this client and never other employees of the same employer.
+    Factual composition for the Meeting Workspace brief (Phase D.3)."""
+    with engine.connect() as conn:
+        n = conn.scalar(
+            select(func.count()).select_from(benefit_employments)
+            .where(benefit_employments.c.person_id == person_id)
+        ) or 0
+    return {"employments": n}
