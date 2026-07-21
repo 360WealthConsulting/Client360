@@ -1,17 +1,34 @@
 # Client360 — Production Architecture
 
 **Status:** authoritative architecture reference for Client360.
-**As of:** Release v0.9.8 (`main` @ `8d27e95`, Alembic head `l2c03f1e0d9b`).
-**Governs:** all subsequent design and implementation, including
-`docs/RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md`.
+**Baseline:** Release v0.9.8 (`main` @ `8d27e95`). **Refreshed against:**
+`release/0.13.0` @ `41a43f2`, Alembic head `d4c5o6m7d8i9` (single head).
+**Governs:** all subsequent design and implementation.
+
+**Releases since the v0.9.8 baseline.** The `[Implemented: 0.9.9]` markers below
+are now shipped history; later domains were added on the same platform patterns:
+0.9.9 Platform Consolidation (M365 token security, dashboard/query performance,
+backup/restore, `/readiness`); 0.9.10 platform-wide **Exception Engine** (Sprint 5.5);
+0.9.11 **Organizations + Employee Benefits** (`RELEASE_0.9.11_BENEFITS_ARCHITECTURE.md`);
+0.10.0 **Insurance** (`RELEASE_0.10.0_INSURANCE_ARCHITECTURE.md`); a canonical
+**notifications** ledger (Epic 5); and Sprint 1–2 → `0.13.0` (person notes,
+search/task/communication improvements, and the advisor-facing **Wealth**
+experience — `WEALTH_ARCHITECTURE.md`). Bounded-context code map:
+`docs/architecture/MODULE_MAP.md`; formal ADRs: `docs/architecture/adr/`.
 
 **Reading convention.** This document describes the architecture that **actually
-exists today** and marks forward-looking elements explicitly:
+exists** at the refresh point (`release/0.13.0`). Inline tags denote *release
+provenance and status*, not forward-looking promises:
 
-- **[Implemented]** — shipped and in the codebase as of v0.9.8.
-- **[Implemented: 0.9.9]** — shipped in Release 0.9.9 — Platform Consolidation.
-- **[Planned: Epic 5/6]** — later tax sprints or Epic 6.
-- **[Gap]** — a known, intentional deficiency with an owner in the roadmap.
+- **[Implemented]** — shipped by the v0.9.8 baseline; current.
+- **[Implemented: 0.9.9]** (and later `0.9.x` / `0.10.0` tags) — shipped in that
+  release and **current**. These are historical provenance; they are no longer
+  forward-looking.
+- **[Planned: Epic 5/6]** — genuinely future work, not yet shipped.
+- **[Gap]** — a *current* known, intentional deficiency with a roadmap owner.
+
+A few paragraphs retain a pre-0.9.9 "prior state" description as **history** where a
+later change superseded it; those are labeled historical and are not current state.
 
 ---
 
@@ -19,7 +36,7 @@ exists today** and marks forward-looking elements explicitly:
 
 Client360 is a unified client-intelligence and practice-management platform for
 360 Wealth Consulting and 360 Tax Solutions. It is a **modular monolith**: one
-FastAPI application, one PostgreSQL database (110 tables, single linear Alembic
+FastAPI application, one PostgreSQL database (**162 tables**, single linear Alembic
 history), server-rendered Jinja2 staff/portal UIs plus versioned JSON APIs, and
 an in-process background scheduler.
 
@@ -37,11 +54,13 @@ Core design tenets, consistently honored across nine releases:
   validation every release.
 - **Adversarial release gates** (RC-series independent validation) before merge.
 
-The platform is functionally rich and architecturally sound; the principal
-production gaps closed in Release 0.9.9 were Microsoft 365 token security
-**[Implemented: 0.9.9]** and dashboard/query performance **[Implemented: 0.9.9]**;
-the remaining focus is the operational
-readiness gates (see §20–§22).
+The platform is functionally rich and architecturally sound. The M365 token
+security and dashboard/query performance gaps were closed in 0.9.9; since then the
+Exception Engine (0.9.10), Organizations/Benefits (0.9.11), Insurance (0.10.0),
+notifications, and the Wealth experience (through `0.13.0`) all shipped on the same
+platform primitives (canonical entities, capability RBAC, append-only audit,
+reversible migrations). The remaining focus is the operational readiness gates
+(see §20–§22), tracked in `docs/RELEASE_READINESS.md` / `docs/V1_RISK_REGISTER.md`.
 
 ---
 
@@ -73,12 +92,12 @@ flowchart TB
   subgraph Edge[FastAPI application - modular monolith]
     SM[SessionMiddleware]
     AM[AuthenticationMiddleware<br/>capability + record scope]
-    Routes[~178 routes:<br/>Jinja2 pages + /api/v1 JSON]
-    Svc[Service layer<br/>22 modules]
+    Routes[315 routes:<br/>Jinja2 pages + /api/v1 JSON]
+    Svc[Service layer<br/>~62 modules]
     Sched[APScheduler<br/>in-process jobs]
   end
   subgraph Data
-    PG[(PostgreSQL<br/>110 tables, 1 Alembic head)]
+    PG[(PostgreSQL<br/>162 tables, 1 Alembic head)]
     FS[Static assets + advisor note files]
   end
   subgraph External
@@ -106,9 +125,9 @@ APScheduler 3.11; MSAL 1.37; `cryptography` 49; `psycopg2-binary`.
 
 **Layering [Implemented].**
 
-- **Routes** (`app/routes/*`, 32 modules) — HTTP boundary, capability dependencies,
-  request/response shaping. Staff HTML + `/api/v1` JSON + portal.
-- **Services** (`app/services/*`, 22 modules) — business logic; the trusted API.
+- **Routes** (`app/routes/*`, 39 modules, 315 registered routes) — HTTP boundary,
+  capability dependencies, request/response shaping. Staff HTML + `/api/v1` JSON + portal.
+- **Services** (`app/services/*`, ~62 modules) — business logic; the trusted API.
 - **Security** (`app/security/*`) — middleware, models, policy, canonical
   authorization service, audit, redaction, bootstrap, OIDC-adjacent utilities.
 - **Portal** (`app/portal/*`) — the separate client identity/messaging/signature
@@ -135,8 +154,8 @@ and `response_model`. Consolidation is Epic 7 part 2 (Release 0.9.13).
 
 ## 5. Database Architecture
 
-**Engine [Implemented].** PostgreSQL; SQLAlchemy Core; **110 tables**; one linear
-Alembic history (22 migrations; head `l2c03f1e0d9b`). Migrations are additive and
+**Engine [Implemented].** PostgreSQL; SQLAlchemy Core; **162 tables**; one linear
+Alembic history (**51 migrations; head `d4c5o6m7d8i9`**). Migrations are additive and
 reversible; each release validates clean base→head, prior-version
 upgrade/downgrade/re-upgrade, and sentinel row-count/checksum preservation.
 
@@ -149,7 +168,15 @@ rules/events/details, queues); workflow (templates, steps, dependencies, events,
 approvals, escalations, triggers, actions); portal (accounts, grants, invitations,
 sessions, threads, messages, receipts, requests, notifications, signature
 requests); Microsoft (accounts, drives, documents, matching rules, unmatched
-queues); tax (~40 tables across domain, intake, lifecycle, document intelligence).
+queues); tax (~40 tables across domain, intake, lifecycle, document intelligence);
+**exceptions** (`exceptions`/`exception_events`/`exception_types`, domain-scoped —
+0.9.10); **organizations & benefits** (organization profiles, service lines,
+engagements, enrollments — 0.9.11); **insurance** (policies, commissions ledger,
+licensing, work queues — 0.10.0); and **notifications** (canonical ledger,
+preferences/consent, delivery attempts — Epic 5). The **portfolio/wealth** family
+(Schwab accounts/holdings/lots/performance/beneficiaries/rollups) backs the Wealth
+experience; several snapshot tables exist but are not yet populated (see
+`WEALTH_ARCHITECTURE.md` §10).
 
 **Integrity patterns [Implemented].** DB-trigger-protected append-only ledgers
 (`audit_events`, workflow events, timeline, tax lifecycle/filing/document events);
@@ -158,12 +185,12 @@ unique indexes (e.g. one accepted document link per source/return); CHECK
 constraints and FK indexes on the newer tax/document tables.
 
 **Data-access split [Implemented, Gap].** `app/db.py` calls
-`metadata.reflect(bind=engine)` at import and re-exports ~103 tables (the de-facto
-runtime source of truth); `app/database/schema.py` (+ `identity_tables.py`,
-`work_tables.py`, `portfolio_tables.py`) define static `Table` models for ~half
-the schema, used mainly by migrations and `person_merge`. **[Gap]** ~50% of tables
-have no Python model; the app cannot start without a live, migrated DB.
-Consolidation is Epic 7 part 2.
+`metadata.reflect(bind=engine)` at import and re-exports all **162 tables** (the
+de-facto runtime source of truth); `app/database/*.py` (`schema.py`,
+`identity_tables.py`, `work_tables.py`, `portfolio_tables.py`, …) define static
+`Table` models for a subset of the schema, used mainly by migrations and
+`person_merge`. **[Gap]** Roughly half the tables have no Python model; the app
+cannot start without a live, migrated DB. Consolidation is Epic 7 part 2.
 
 **Known debt.** The 24 hot-path FK/hot-column indexes were added in **0.9.9**
 **[Implemented: 0.9.9]** (remaining low-value FK columns intentionally left
@@ -198,9 +225,13 @@ delivery, no portal document download (Epic 5 Sprint 5.7 / portal launch gates).
 
 ## 7. Authorization Architecture
 
-**Model [Implemented].** Capability-based RBAC: **26 capabilities** composed into
-**4 seeded roles** (administrator, advisor, operations, compliance). A `Principal`
-carries a capability frozenset; `require_capability(code)` gates routes.
+**Model [Implemented].** Capability-based RBAC: **≈46 capabilities** composed into
+**10 seeded roles** — the original administrator/advisor/operations/compliance plus
+the benefits (`benefits_advisor`/`benefits_compliance`/`benefits_operations`) and
+insurance (`insurance_agent`/`insurance_compliance`/`insurance_operations`) role
+families added with those domains. A `Principal` carries a capability frozenset;
+`require_capability(code)` gates routes. (Capability/role counts grow with each new
+domain; treat these as current-as-of-refresh, not fixed.)
 
 **Record-level scoping [Implemented].** `record_assignments` (user/team,
 effective/inactive dated) plus `record.read_all` / `record.write_all` bypass grant
@@ -259,9 +290,10 @@ connected" account; single-page mail/calendar fetches).
 
 ## 9. OAuth and Refresh-Token Lifecycle
 
-**Today [Implemented, Gap].** `acquire_token_by_auth_code_flow` returns an access
-token; `refresh_token=None` is persisted; sync jobs read the plaintext
-`access_token` and raise `RuntimeError("reconnect Microsoft 365")` on expiry.
+**Prior state (pre-0.9.9, historical).** `acquire_token_by_auth_code_flow` returned
+an access token; `refresh_token=None` was persisted; sync jobs read the plaintext
+`access_token` and raised `RuntimeError("reconnect Microsoft 365")` on expiry. This
+was replaced by the encrypted silent-refresh lifecycle below (now current).
 
 **[Implemented: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §4–5):
 
@@ -293,10 +325,14 @@ sequenceDiagram
 ## 10. Background Jobs and Scheduler Architecture
 
 **Implemented.** `APScheduler` `BackgroundScheduler` (timezone
-`America/New_York`), started/stopped in the FastAPI lifespan, running: Microsoft
-mail sync (15m), calendar sync (15m), document sync (30m), workflow SLA/escalation
-evaluation (5m), and daily tax intake reminders (9:00 AM ET). Each job is wrapped
-in a blanket `try/except` with `logger.exception`.
+`America/New_York`), started/stopped in the FastAPI lifespan. Registered jobs (as of
+`0.13.0`): Microsoft mail sync (15m), calendar sync (15m), document sync (30m),
+workflow SLA/escalation evaluation (5m), **exception SLA sweep** (5m — 0.9.10),
+**benefits detector scan** (configurable interval — 0.9.11), **insurance detector
+scan** (configurable interval — 0.10.0), daily tax intake reminders (9:00 AM ET),
+and a **feature-flagged transactional-outbox dispatcher** for notifications
+(enabled via `outbox_dispatcher_enabled()`). Each job runs `max_instances=1`,
+`coalesce=True`, and a blanket `try/except`/`logger.exception`.
 
 **[Gap].** The scheduler is **in-process with no leader election** — running
 multiple app replicas would duplicate every job (and can race the escalation
@@ -394,8 +430,8 @@ consumption/resolution are modeled but not fully wired (Epic 4 debt).
 ## 15. Queue Architecture
 
 **Implemented.** `work_queues` are reusable, criteria-driven (JSON criteria over
-work items) with a `required_capability`; **30 seeded queues** span work, tax
-production, tax document review, etc. Queue membership is computed from the
+work items) with a `required_capability`; **46 seeded queues** span work, tax
+production, tax document review, benefits, insurance, etc. Queue membership is computed from the
 authorized work-item set, so queues never bypass record scope. The same queue
 service backs My Work, Team Work, and all tax/document review queues (no
 queue-only parallel definitions).
@@ -408,9 +444,10 @@ queue-view routes; queue-item computation rides on the `work_items()` full-scan
 
 ## 16. API Architecture
 
-**Implemented.** ~178 routes; ~90 under `/api/v1` (tax, work, workflow, portal,
-session) plus staff HTML pages and a few unversioned JSON endpoints
-(`/api/stats`, `/api/search`, `/admin/*`). Every endpoint enforces capability and,
+**Implemented.** **315 registered routes**; a large share under `/api/v1` (tax, work,
+workflow, portal, session) plus staff HTML pages (incl. the Wealth surfaces
+`/wealth`, `/portfolio`, `/households`, `/people`) and a few unversioned JSON
+endpoints (`/api/stats`, `/api/search`, `/admin/*`). Every endpoint enforces capability and,
 where applicable, record/office/portal scope; mutations are audited; consistent
 `x-request-id` and security headers.
 
@@ -437,8 +474,10 @@ the former duplicate per-domain registry classes:
   reserved for Epic 5 Sprint 5.6. **[Port implemented, provider unwired]**
 - **Filing (e-file)** — `TaxFilingProvider` port, manual provider only; reserved
   for Epic 5 Sprint 5.6. **[Reserved: unwired]**
-- **Notifications** — provider-neutral hooks; email/SMS/push disabled by default.
-  **[Implemented port, stubbed delivery]**
+- **Notifications** — a canonical notification **ledger** with preferences/consent
+  and delivery-attempt tracking (Epic 5, ADR-017), dispatched by a feature-flagged
+  transactional **outbox** worker; real email/SMS/push channels remain off by
+  default. **[Implemented: ledger + dispatcher; external channels stubbed]**
 - **Schwab** — CSV/file import. **[Implemented]**
 - **Transcript / additional custodians / QuickBooks** — **[Planned: Epic 6]**
 
@@ -464,12 +503,12 @@ the former duplicate per-domain registry classes:
 
 ## 19. Encryption and Secrets Management
 
-**Today [Implemented / Gap].** In transit: TLS at the deployment edge (out of app
+**Current [Implemented / Gap].** In transit: TLS at the deployment edge (out of app
 scope). At rest: application relies on database/disk encryption; **Microsoft OAuth
-tokens are plaintext [Gap]**. Session tokens and portal tokens are stored **hashed**
-(SHA-256), which is correct. `SESSION_SECRET` required in production but has a dev
-fallback otherwise **[Gap]**. Secrets are read from the environment / `app/.env`
-(gitignored); no vault/KMS integration **[Gap]**.
+tokens are Fernet-encrypted** (MSAL cache keyed by `MICROSOFT_TOKEN_KEY`; §8–9).
+Session tokens and portal tokens are stored **hashed** (SHA-256). `SESSION_SECRET`
+is required in production but has a dev fallback otherwise **[Gap]**. Secrets are
+read from the environment / `app/.env` (gitignored); no vault/KMS integration **[Gap]**.
 
 **[Implemented: 0.9.9].** Application-level **Fernet** encryption of the MSAL
 token cache keyed by a secrets-managed `MICROSOFT_TOKEN_KEY` (fail-closed if
@@ -480,11 +519,12 @@ up separately from the database.
 
 ## 20. Backup and Disaster Recovery
 
-**Today [Gap].** No documented backup/restore procedure or rehearsal; advisor
-notes live outside the DB (flat files) and are not covered by a DB backup.
+**Historical (pre-0.9.9).** There was no documented backup/restore procedure or
+rehearsal. Advisor notes still live outside the DB (flat files) and are not covered
+by a DB backup **[Gap: still open]**.
 
 **[Implemented: 0.9.9 — backup/restore; advisor-notes-to-DB deferred]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §14):
-`pg_dump`/`pg_restore` runbook covering all 110 tables + the Alembic version
+`pg_dump`/`pg_restore` runbook covering all tables + the Alembic version
 table; a **restore rehearsal gate** (restore → confirm single Alembic head → green
 test suite → verify sentinel counts); explicit handling of the
 `MICROSOFT_TOKEN_KEY` (backed up separately, or restored tokens are
@@ -494,9 +534,11 @@ undecryptable). Advisor-notes-to-DB migration is a durability candidate for 0.9.
 
 ## 21. Monitoring and Observability
 
-**Today [Gap].** Jobs log via Python `logging`; `/health` reports config presence;
-`/microsoft365/status` reports config only (not sync health). No metrics/alerting
-integration; failures are server-log-only.
+**Baseline (pre-0.9.9) [partly superseded].** Jobs logged via Python `logging`;
+`/health` was a config-presence check; `/microsoft365/status` reported config only.
+The sync-health surfacing and `/readiness` endpoint below closed the health-probe
+gap. **[Gap: external metrics/alerting still not wired — an operational readiness
+item; failures remain server-log-only.]**
 
 **[Implemented: 0.9.9]** (governing design: `RELEASE_0.9.9_PLATFORM_CONSOLIDATION.md` §12–13):
 per-account Microsoft sync-health (`last_sync_at/status/error`) surfaced on
@@ -568,7 +610,19 @@ and outputs are explainable and human-confirmed.
 
 ## 25. Architectural Decision Records (ADR Summary)
 
-| ADR | Decision | Status | Rationale |
+> **ADR namespace note.** The **authoritative** ADR namespace is the formal,
+> zero-padded set in [`docs/architecture/adr/`](architecture/adr/README.md)
+> (`ADR-001…ADR-017`). **The table below is a self-contained local decision
+> *summary* using a legacy, non-padded numbering (`ADR-1…ADR-18`) that predates and
+> does NOT map 1:1 to the formal namespace** — e.g. legacy *ADR-13* (Fernet token
+> cache) ≠ formal *ADR-013* (repository reconciliation); legacy *ADR-17* (Exception
+> Engine) ≠ formal *ADR-017* (Notifications). **Discriminator: zero-padded `ADR-0NN`
+> = formal ADR; non-padded `ADR-N` = this summary.** The legacy↔formal crosswalk is
+> maintained in [`architecture/adr/README.md`](architecture/adr/README.md). Legacy
+> IDs are retained (they are referenced by frozen release/RC docs and code comments);
+> **new references must use the formal zero-padded namespace.**
+
+| # (legacy summary) | Decision | Status | Rationale |
 |---|---|---|---|
 | ADR-1 | Modular monolith (single FastAPI app + one PostgreSQL) | Implemented | Right scale for the firm; simpler ops than microservices |
 | ADR-2 | SQLAlchemy **Core** (not ORM) | Implemented | Explicit SQL, predictable performance; team preference |
@@ -591,6 +645,12 @@ and outputs are explainable and human-confirmed.
 
 ---
 
-*This document reflects the architecture as implemented through Release v0.9.8,
-with forward-looking elements explicitly marked. It governs subsequent design and
-implementation. No application code was modified in producing it.*
+*Baseline authored at Release v0.9.8 with forward-looking elements marked. Facts
+were refreshed against `release/0.13.0` (`41a43f2`, Alembic head `d4c5o6m7d8i9`):
+table/route/service/capability/queue/migration counts, the release timeline, and
+the domains added since (Exception Engine, Benefits, Insurance, Notifications,
+Wealth). Deep per-subsystem narratives (M365 token lifecycle, deterministic
+matching, workflow, audit) remain accurate to the design and were not rewritten;
+for the subsystem detail added since the baseline, see the linked domain documents.
+It governs subsequent design and implementation. No application code was modified in
+producing this document.*
