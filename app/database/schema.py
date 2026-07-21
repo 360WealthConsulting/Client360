@@ -2,14 +2,14 @@ import os
 
 from dotenv import load_dotenv
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     Date,
     DateTime,
     ForeignKey,
-    Integer,
     Index,
-    JSON,
+    Integer,
     MetaData,
     Numeric,
     String,
@@ -19,6 +19,8 @@ from sqlalchemy import (
     create_engine,
     func,
 )
+
+from app.database.compliance_tables import define_compliance_tables
 from app.database.identity_tables import define_identity_tables
 from app.database.outbox_tables import define_outbox_tables
 from app.database.work_tables import define_work_tables
@@ -34,7 +36,6 @@ engine = create_engine(DATABASE_URL)
 metadata = MetaData()
 
 from app.database.portfolio_tables import define_portfolio_tables
-
 
 households = Table(
     "households",
@@ -681,6 +682,7 @@ portfolio_tables = define_portfolio_tables(metadata)
 identity_tables = define_identity_tables(metadata)
 work_tables = define_work_tables(metadata)
 outbox_tables = define_outbox_tables(metadata)
+compliance_tables = define_compliance_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

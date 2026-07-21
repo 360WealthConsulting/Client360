@@ -3,7 +3,6 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, create_engine
 
-
 load_dotenv("app/.env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -179,3 +178,8 @@ insurance_ce_records = metadata.tables["insurance_ce_records"]
 insurance_commissions = metadata.tables["insurance_commissions"]
 insurance_commission_statements = metadata.tables["insurance_commission_statements"]
 insurance_commission_statement_lines = metadata.tables["insurance_commission_statement_lines"]
+
+# Compliance review + decision ledger (Phase D.7)
+compliance_reviews = metadata.tables["compliance_reviews"]
+compliance_decisions = metadata.tables["compliance_decisions"]
+reviewer_authorities = metadata.tables["reviewer_authorities"]
