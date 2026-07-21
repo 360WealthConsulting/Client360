@@ -20,12 +20,17 @@ from app.security.authorization import accessible_person_ids
 from app.services.benefits_domain import client_benefits_summary
 from app.services.exception_engine import open_count_for_client, open_exceptions_for_client
 from app.services.insurance import client_policy_summary
-from app.services.notes import list_person_notes
+from app.services.notes import add_person_note, list_person_notes
 from app.services.portfolio import accounts_due_for_review, get_person_portfolio
-from app.services.tasks import tasks_with_assignee
+from app.services.tasks import create_task, tasks_with_assignee
 from app.services.tax_domain import client_engagement_summary
-from app.services.timeline import get_event, get_person_timeline, recent_events
+from app.services.timeline import add_timeline_event, get_event, get_person_timeline, recent_events
 from app.services.work_management import work_items
+from app.services.workflow_automation import launch_workflow
+
+# Review workflow templates an advisor may schedule from a meeting outcome. Only
+# these existing templates may be launched — never an arbitrary template code.
+_REVIEW_TEMPLATES = frozenset({"annual_review", "insurance_review"})
 
 # Firm timezone for "today" boundaries (matches the scheduler's zone).
 FIRM_TZ = ZoneInfo("America/New_York")
@@ -247,3 +252,72 @@ def get_meeting_brief(person_id, *, event_id=None):
         "activity": get_person_timeline(person_id, limit=10),
         "notes": list_person_notes(person_id)[:10],
     }
+
+
+def get_meeting_outcome_context(person_id, *, event_id=None):
+    """Read-only context for the Meeting Outcome page — reuses the Phase D.3
+    meeting brief (client identity, household, Client 360 snapshot, agenda, open
+    work, exceptions). No new reads."""
+    return get_meeting_brief(person_id, event_id=event_id)
+
+
+def record_meeting_outcome(person_id, *, actor_user_id, completed=False, meeting_notes="",
+                           decisions="", comments="", follow_ups=(), next_review_code=None,
+                           request_id=None):
+    """Record factual meeting outcomes by transitioning agreed work into EXISTING
+    authoritative services (Phase D.4). Orchestration only — no new task/note/
+    timeline/workflow model, no direct table writes, no notifications, no
+    recommendations. Returns a summary of what was recorded.
+
+    - meeting completed  -> Timeline (`add_timeline_event`)
+    - notes/decisions/comments -> Notes (`add_person_note`, note_type="meeting")
+    - follow-up actions  -> Work Management (`create_task`, idempotent -> no dupes)
+    - next review        -> Workflow engine (`launch_workflow`, whitelisted template)
+
+    The caller (route) is responsible for capability + person write-scope.
+    """
+    person = _person_row(person_id)
+    if person is None:
+        return None
+    household_id = person["household_id"]
+    result = {"timeline": False, "notes": 0, "tasks": 0, "workflow": None}
+
+    if completed:
+        add_timeline_event(
+            source="advisor", event_type="meeting_completed",
+            title="Client meeting completed", person_id=person_id, household_id=household_id,
+            event_metadata={"recorded_by_user_id": actor_user_id},
+        )
+        result["timeline"] = True
+
+    for label, text in (("", meeting_notes), ("Decisions made: ", decisions),
+                        ("Additional comments: ", comments)):
+        text = (text or "").strip()
+        if text:
+            add_person_note(person_id, f"{label}{text}", author_user_id=actor_user_id, note_type="meeting")
+            result["notes"] += 1
+
+    seen = set()
+    for title in follow_ups:
+        title = (title or "").strip()
+        key = title.lower()
+        if not title or key in seen:
+            continue
+        seen.add(key)
+        # Stable idempotency key per (person, action) so a double-submit never
+        # creates duplicate tasks (create_task also applies its own guard).
+        task_id = create_task(
+            person_id, title=title, actor_user_id=actor_user_id, source="meeting_outcome",
+            idempotency_key=f"mtg-outcome:{person_id}:{key}", request_id=request_id,
+        )
+        if task_id is not None:
+            result["tasks"] += 1
+
+    if next_review_code in _REVIEW_TEMPLATES:
+        result["workflow"] = launch_workflow(
+            next_review_code, actor_user_id=actor_user_id, person_id=person_id,
+            household_id=household_id,
+            idempotency_key=f"mtg-review:{person_id}:{next_review_code}", request_id=request_id,
+        )
+
+    return result
