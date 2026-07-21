@@ -37,6 +37,18 @@ def test_portfolio_html_page_returns_200_and_html():
     assert 'name="missing_beneficiary"' in body
     assert 'name="min_aum"' not in body
     assert 'name="registration"' not in body
+    # Design-system alignment (Phase C.1 PR-1): shared page-head, section title,
+    # data table with right-aligned numeric columns, rowlink action.
+    assert 'class="page-head"' in body          # ui.page_head macro
+    assert 'class="section-title"' in body
+    assert 'class="data"' in body               # table.data, not a bare table
+    assert 'class="num"' in body                # right-aligned AUM/Cash
+    assert "rowlink" in body
+    # Legacy styling borrowed from the Work / Tax modules is gone.
+    assert 'class="filters"' not in body
+    assert 'class="panel"' not in body
+    # Terminology: "AUM", not "assets under management".
+    assert "assets under management" not in body
 
 
 def test_portfolio_search_still_returns_json():

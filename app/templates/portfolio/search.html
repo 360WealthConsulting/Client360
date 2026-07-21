@@ -1,33 +1,33 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui %}
 {% block title %}Portfolio Search | Client360{% endblock %}
+{% block crumb %}Portfolio{% endblock %}
 {% block content %}
-<div class="page-header"><div><p class="eyebrow">Wealth</p><h1>Portfolio search</h1><p class="muted">Client portfolios by assets under management. Search by name, or filter for high cash and missing beneficiaries.</p></div></div>
+{{ ui.page_head("Portfolio search", eyebrow="Wealth", desc="Client portfolios by AUM. Search by name, or filter for high cash and missing beneficiaries.") }}
 
-<form class="filters" method="get" action="/portfolio">
-  <input name="q" value="{{ filters.q }}" placeholder="Client or registration">
-  <label><input type="checkbox" name="high_cash" value="true" {{ 'checked' if filters.high_cash else '' }}> High cash</label>
-  <label><input type="checkbox" name="missing_beneficiary" value="true" {{ 'checked' if filters.missing_beneficiary else '' }}> Missing beneficiary</label>
-  <button type="submit">Search</button>
+<form class="row" method="get" action="/portfolio" style="gap:10px; flex-wrap:wrap; margin-bottom:16px">
+  <input class="input" name="q" value="{{ filters.q }}" placeholder="Client or registration" style="max-width:280px">
+  <label class="row" style="gap:8px"><input type="checkbox" name="high_cash" value="true" {{ 'checked' if filters.high_cash else '' }}> High cash</label>
+  <label class="row" style="gap:8px"><input type="checkbox" name="missing_beneficiary" value="true" {{ 'checked' if filters.missing_beneficiary else '' }}> Missing beneficiary</label>
+  <button class="btn" type="submit">Search</button>
 </form>
 
-<section class="panel">
-  <h2>Results ({{ results|length }})</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Client</th><th>AUM</th><th>Cash</th><th>Detail</th></tr></thead>
-      <tbody>
-      {% for r in results %}
-        <tr>
-          <td>{{ r.full_name }}</td>
-          <td>${{ "{:,.0f}".format(r.aum or 0) }}</td>
-          <td>${{ "{:,.0f}".format(r.cash or 0) }}</td>
-          <td><a href="/people/{{ r.id }}?tab=portfolio">View portfolio</a></td>
-        </tr>
-      {% else %}
-        <tr><td colspan="4" class="muted">No portfolios match these filters.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+<h2 class="section-title">Results ({{ results|length }})</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Client</th><th class="num">AUM</th><th class="num">Cash</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+      <tr>
+        <td>{{ r.full_name }}</td>
+        <td class="num">${{ "{:,.0f}".format(r.aum or 0) }}</td>
+        <td class="num">${{ "{:,.0f}".format(r.cash or 0) }}</td>
+        <td><a class="rowlink" href="/people/{{ r.id }}?tab=portfolio">View portfolio</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="subtle">No portfolios match these filters.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
