@@ -163,6 +163,71 @@ def accounts_due_for_review(person_ids, *, stale_days=365, limit=20, today=None)
     with engine.connect() as conn:
         return [dict(r) for r in conn.execute(stmt).mappings()]
 
+
+def accounts_review_approaching(person_ids, *, cycle_days=365, within_days=30, limit=200, today=None):
+    """Accounts whose annual review is *approaching* — reviewed on a `cycle_days`
+    cadence and now within `within_days` of the next review, but NOT yet overdue.
+    Authoritative wealth read behind the Advisor Intelligence "portfolio review
+    opportunity" (Phase D.5C); it reuses the SAME `accounts.last_review_date`
+    cadence as `accounts_due_for_review` (overdue) and is deliberately DISJOINT
+    from it (overdue accounts are excluded — those are the D.5B operational
+    signal). `person_ids` scopes the read (`None` = record.read_all, empty = `[]`).
+    Read-only; no review-workflow instances, no new cadence policy."""
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    today = today or date.today()
+    overdue_cutoff = today - timedelta(days=cycle_days)                 # older -> overdue (excluded)
+    approaching_cutoff = today - timedelta(days=cycle_days - within_days)  # newer -> not yet approaching
+    stmt = (
+        select(
+            accounts.c.id, accounts.c.person_id, accounts.c.household_id,
+            accounts.c.account_name, accounts.c.account_number, accounts.c.custodian,
+            accounts.c.last_review_date,
+        )
+        .where(
+            accounts.c.person_id.is_not(None),
+            accounts.c.last_review_date.is_not(None),
+            accounts.c.last_review_date >= overdue_cutoff,       # not overdue
+            accounts.c.last_review_date < approaching_cutoff,    # within the approaching window
+        )
+    )
+    if person_ids is not None:
+        stmt = stmt.where(accounts.c.person_id.in_(tuple(person_ids)))
+    stmt = stmt.order_by(accounts.c.last_review_date.asc()).limit(limit)
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]
+
+
+def accounts_missing_required_beneficiary(person_ids, *, limit=200):
+    """IRA accounts with NO active beneficiary — a missing *required* designation.
+    Authoritative wealth read behind the Advisor Intelligence "beneficiary review
+    opportunity" (Phase D.5C). It reuses the EXACT predicate the firm-portfolio
+    metric already uses (`registration_type ILIKE '%IRA%'` AND no active
+    `account_beneficiaries` row); it does NOT infer a missing beneficiary for
+    non-IRA registrations. `person_ids` scopes the read (`None` = record.read_all,
+    empty = `[]`). Read-only."""
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    stmt = (
+        select(
+            accounts.c.id, accounts.c.person_id, accounts.c.household_id,
+            accounts.c.account_name, accounts.c.account_number, accounts.c.registration_type,
+        )
+        .select_from(accounts.outerjoin(account_beneficiaries, and_(
+            account_beneficiaries.c.account_id == accounts.c.id,
+            account_beneficiaries.c.active.is_(True))))
+        .where(
+            accounts.c.person_id.is_not(None),
+            accounts.c.registration_type.ilike("%IRA%"),
+            account_beneficiaries.c.id.is_(None),
+        )
+    )
+    if person_ids is not None:
+        stmt = stmt.where(accounts.c.person_id.in_(tuple(person_ids)))
+    stmt = stmt.order_by(accounts.c.id.asc()).limit(limit)
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]
+
 def get_wealth_dashboard():
     """Book-triage figures for the advisor Wealth dashboard.
 

@@ -10,7 +10,7 @@ Thin HTTP wrappers live in app/routes/insurance.py; business rules live here.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, or_, select
 
@@ -667,6 +667,51 @@ def list_reviews(principal, *, policy_id=None, case_id=None, status=None, limit=
             if len(out) >= limit:
                 break
     return out
+
+
+# Review statuses that represent an OPEN (not yet done) servicing review.
+_OPEN_REVIEW_STATUSES = ("due", "scheduled", "in_progress", "overdue")
+
+
+def reviews_due_for_people(person_ids, *, within_days=45, limit=200, today=None):
+    """Open insurance servicing reviews that are due (or within `within_days` of
+    due) for a **set** of person ids — the authoritative read behind the Advisor
+    Intelligence "insurance review opportunity" (Phase D.5C). It reuses the
+    EXISTING review cadence (`insurance_policy_reviews.due_date`/`status`); it does
+    NOT compute a new cadence, and it performs NO coverage/replacement/suitability
+    analysis. The review's client is resolved from its policy/case anchor
+    (`person_id`); `person_ids` scopes the read (`None` = record.read_all, empty =
+    `[]`), so it never returns a review for an inaccessible person. Returns id,
+    review_type, status, due_date, person_id, household_id, policy_id, case_id."""
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    today = today or date.today()
+    anchor_person = func.coalesce(insurance_policies.c.person_id, insurance_cases.c.person_id)
+    anchor_household = func.coalesce(insurance_policies.c.household_id, insurance_cases.c.household_id)
+    stmt = (
+        select(
+            insurance_policy_reviews.c.id, insurance_policy_reviews.c.review_type,
+            insurance_policy_reviews.c.status, insurance_policy_reviews.c.due_date,
+            insurance_policy_reviews.c.policy_id, insurance_policy_reviews.c.case_id,
+            anchor_person.label("person_id"), anchor_household.label("household_id"),
+        )
+        .select_from(
+            insurance_policy_reviews
+            .outerjoin(insurance_policies, insurance_policies.c.id == insurance_policy_reviews.c.policy_id)
+            .outerjoin(insurance_cases, insurance_cases.c.id == insurance_policy_reviews.c.case_id))
+        .where(
+            insurance_policy_reviews.c.status.in_(_OPEN_REVIEW_STATUSES),
+            insurance_policy_reviews.c.due_date.is_not(None),
+            insurance_policy_reviews.c.due_date <= today + timedelta(days=within_days),
+            anchor_person.is_not(None),
+        )
+    )
+    if person_ids is not None:
+        stmt = stmt.where(anchor_person.in_(tuple(person_ids)))
+    stmt = stmt.order_by(insurance_policy_reviews.c.due_date.asc(),
+                         insurance_policy_reviews.c.id.asc()).limit(limit)
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]
 
 
 def client_policy_summary(person_id, household_id=None):
