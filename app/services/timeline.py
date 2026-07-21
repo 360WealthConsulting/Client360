@@ -281,3 +281,15 @@ def recent_events(
         rows = connection.execute(statement).mappings().all()
 
     return [_decorate_event(row) for row in rows]
+
+
+def get_event(event_id):
+    """Read-only fetch of a single timeline event by id, or ``None``. Used for
+    event-to-person validation when the Meeting Workspace is opened from a synced
+    calendar meeting. The caller MUST validate event_type and person ownership
+    against the requested (already record-scoped) person before trusting it."""
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(timeline_events).where(timeline_events.c.id == event_id)
+        ).mappings().first()
+    return _decorate_event(row) if row else None
