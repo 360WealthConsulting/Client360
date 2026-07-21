@@ -11,6 +11,7 @@ from app.security.audit import write_audit_event
 from app.security.policy import has_record_scope
 from app.security.service import resolve_principal
 
+
 def _is_cross_site(origin, referer, base_url):
     """Same-origin check for state-changing requests (CSRF defense-in-depth).
 
@@ -67,6 +68,7 @@ RULES = (
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
+    (re.compile(r"^/admin/rule-catalog"), "audit.read"),
     (re.compile(r"^/admin/(roles|user-roles)"), "role.manage"),
     (re.compile(r"^/admin/team-memberships"), "team.manage"),
     (re.compile(r"^/admin/assignments"), "assignment.manage"),

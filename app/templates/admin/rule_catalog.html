@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Rule Catalog | Client360{% endblock %}
+{% block crumb %}Rule Catalog{% endblock %}
+{% block content %}
+{{ ui.page_head("Rule Catalog", eyebrow="Oversight", desc="Governance view over the Advisor Intelligence rule registry — read-only. No editing, approval, or workflow.") }}
+
+{# Read-only governance view. Search + filter + sort are GET query params resolved in
+   Python (compliance.rule_catalog); this template only renders. No action controls. #}
+<form method="get" action="/admin/rule-catalog" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label>
+    <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="rule, title, description, governing rule"></div>
+  <div class="field" style="margin:0"><label for="category">Category</label>
+    <select class="input" id="category" name="category">
+      <option value="">All</option>
+      {% for c in categories %}<option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c|capitalize }}</option>{% endfor %}
+    </select></div>
+  <div class="field" style="margin:0"><label for="gate">Policy gate</label>
+    <select class="input" id="gate" name="gate">
+      <option value="">All</option>
+      {% for g in gates %}<option value="{{ g }}" {% if filters.gate == g %}selected{% endif %}>{{ g|replace("_", " ")|capitalize }}</option>{% endfor %}
+    </select></div>
+  <div class="field" style="margin:0"><label for="status">Approval</label>
+    <select class="input" id="status" name="status">
+      <option value="">All</option>
+      {% for s in statuses %}<option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace("_", " ")|capitalize }}</option>{% endfor %}
+    </select></div>
+  <input type="hidden" name="sort" value="{{ filters.sort }}">
+  <div><button class="btn" type="submit">Apply</button>
+    {% if filters.q or filters.category or filters.gate or filters.status %}<a class="btn subtle" href="/admin/rule-catalog" style="margin-left:6px">Clear</a>{% endif %}</div>
+</form>
+
+<p class="subtle" style="margin:-6px 0 10px">{{ rules|length }} of {{ total }} rule(s).</p>
+
+{% macro sortlink(key, label) %}
+  {% set is_active = filters.sort == key %}
+  {% set next_desc = 'true' if (is_active and not filters.desc) else 'false' %}
+  <a class="rowlink" href="/admin/rule-catalog?q={{ filters.q|urlencode }}&category={{ filters.category|urlencode }}&gate={{ filters.gate|urlencode }}&status={{ filters.status|urlencode }}&sort={{ key }}&desc={{ next_desc }}">{{ label }}{% if is_active %} {{ "▲" if not filters.desc else "▼" }}{% endif %}</a>
+{% endmacro %}
+
+{% if rules %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr>
+      <th>{{ sortlink("title", "Rule") }}</th>
+      <th>{{ sortlink("category", "Category") }}</th>
+      <th>{{ sortlink("version", "Version") }}</th>
+      <th>{{ sortlink("policy_gate", "Policy Gate") }}</th>
+      <th>{{ sortlink("owner", "Owner") }}</th>
+      <th>{{ sortlink("approval_status", "Approval Status") }}</th>
+      <th>Effective Date</th>
+      <th>Documentation</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr>
+        <td><strong>{{ r.title }}</strong><br><span class="subtle">{{ r.description }}</span>{% if r.governing_rule %}<br><span class="subtle id-mono">{{ r.governing_rule }}</span>{% endif %}</td>
+        <td>{{ ui.badge(r.category|capitalize) }}</td>
+        <td class="id-mono">{{ r.version }}</td>
+        <td>{% if r.policy_gate != "none" %}{{ ui.badge(r.policy_gate|replace("_", " ")|capitalize) }}{% else %}<span class="subtle">None</span>{% endif %}</td>
+        <td>{% if r.owner_name %}{{ r.owner_name }}{% elif r.owner_role %}<span class="subtle">{{ r.owner_role }} · unassigned</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{{ ui.badge(r.approval_status|replace("_", " ")|capitalize) }}</td>
+        <td>{% if r.effective_date %}{{ r.effective_date }}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>
+          {% for d in r.source_documents %}<div class="subtle">{{ d.title }}</div>{% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{% call ui.empty("No rules match", "Adjust the search or filters.") %}{% endcall %}
+{% endif %}
+{% endblock %}
