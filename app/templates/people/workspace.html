@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "wealth/components.html" as wc %}
 {% block title %}{{ person.full_name or ("Person " ~ person.id) }} | Client360{% endblock %}
 {% block crumb %}{{ person.full_name or ("Person " ~ person.id) }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
@@ -162,39 +163,22 @@
     <section class="stack">
         <h2 class="section-title">Client wealth</h2>
 
-        {# Summary: same ordering philosophy as the household workspace. #}
+        {# Summary: same ordering philosophy as the household workspace. The page
+           decides the cards/order/captions/formatting; shared macros only render.
+           Canonical vocabulary only (no compatibility aliases). #}
         <div class="workspace-grid">
-            <article class="card"><span class="detail-label">Client AUM</span><h2>${{ "{:,.2f}".format(portfolio.total_aum) }}</h2></article>
-            <article class="card"><span class="detail-label">Household AUM</span><h2>${{ "{:,.2f}".format(portfolio.household.total_aum) }}</h2></article>
-            <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.2f}".format(portfolio.cash) }}</h2><p class="subtle">{{ "{:.1f}".format(portfolio.cash_percent) }}%</p></article>
-            <article class="card"><span class="detail-label">Beneficiaries</span><h2>{{ portfolio.beneficiary_count }}</h2><p class="subtle">Active beneficiaries on file</p></article>
+            {{ wc.summary_card("Client AUM", "$" ~ "{:,.2f}".format(portfolio.aum)) }}
+            {{ wc.summary_card("Household AUM", "$" ~ "{:,.2f}".format(portfolio.household.aum)) }}
+            {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(portfolio.cash), "{:.1f}".format(portfolio.cash_percent) ~ "%") }}
+            {{ wc.summary_card("Beneficiaries", portfolio.beneficiary_count, "Active beneficiaries on file") }}
         </div>
 
         <div class="workspace-grid">
-            <article class="card"><h3>Asset allocation</h3>{% for name, item in portfolio.asset_allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
-            <article class="card"><h3>Largest positions</h3>{% for holding in portfolio.largest_holdings %}<div class="detail-row"><span>{{ holding.symbol }} · {{ holding.name }}</span><strong>${{ "{:,.2f}".format(holding.market_value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
+            {{ wc.allocation_card(portfolio.allocation) }}
+            {{ wc.positions_card(portfolio.largest_positions) }}
         </div>
 
-        <article class="card">
-            <h3>Accounts</h3>
-            {% if portfolio.accounts %}
-            <div class="table-wrap">
-              <table class="data">
-                <thead><tr><th>Account</th><th>Registration</th><th>Custodian</th><th class="num">Value</th></tr></thead>
-                <tbody>
-                {% for account in portfolio.accounts %}
-                  <tr>
-                    <td>{{ account.account_name or account.account_number }}</td>
-                    <td>{{ account.registration_type or "Unclassified" }}</td>
-                    <td>{{ account.custodian }}</td>
-                    <td class="num">${{ "{:,.2f}".format(account.total_value or 0) }}</td>
-                  </tr>
-                {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            {% else %}<p class="subtle">No portfolio accounts found for this client.</p>{% endif %}
-        </article>
+        {{ wc.accounts_table(portfolio.accounts, "client") }}
     </section>
 
     {% elif active_tab == "activities" %}

@@ -1,0 +1,19 @@
+{# Shared Wealth presentation components (Phase C.1 PR-3).
+
+   Presentation-only. Each macro receives already-prepared canonical values and
+   knows only how to render them — no business rules and no caller-varying
+   formatting decisions. The calling template decides which cards appear, their
+   order, captions, value formatting, and visibility.
+
+   Inputs are the canonical portfolio vocabulary only (PR-2): `allocation`,
+   `largest_positions`, `accounts`, plus scalar values the caller pre-formats.
+   No legacy/compatibility aliases are referenced here. Markup is byte-for-byte
+   what the Household and Client workspaces render today. #}
+
+{% macro summary_card(label, value, caption='') %}<article class="card"><span class="detail-label">{{ label }}</span><h2>{{ value }}</h2>{% if caption %}<p class="subtle">{{ caption }}</p>{% endif %}</article>{% endmacro %}
+
+{% macro allocation_card(allocation) %}<article class="card"><h3>Asset allocation</h3>{% for name, item in allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>{% endmacro %}
+
+{% macro positions_card(positions) %}<article class="card"><h3>Largest positions</h3>{% for holding in positions %}<div class="detail-row"><span>{{ holding.symbol }} · {{ holding.name }}</span><strong>${{ "{:,.2f}".format(holding.market_value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>{% endmacro %}
+
+{% macro accounts_table(accounts, scope) %}<article class="card"><h3>Accounts</h3>{% if accounts %}<div class="table-wrap"><table class="data"><thead><tr><th>Account</th><th>Registration</th><th>Custodian</th><th class="num">Value</th></tr></thead><tbody>{% for account in accounts %}<tr><td>{{ account.account_name or account.account_number }}</td><td>{{ account.registration_type or "Unclassified" }}</td><td>{{ account.custodian }}</td><td class="num">${{ "{:,.2f}".format(account.total_value or 0) }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="subtle">No portfolio accounts found for this {{ scope }}.</p>{% endif %}</article>{% endmacro %}

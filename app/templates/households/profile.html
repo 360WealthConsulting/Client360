@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
+{% import "wealth/components.html" as wc %}
 {% block title %}{{ household.name }} | Client360{% endblock %}
 {% block crumb %}{{ household.name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
@@ -17,41 +18,23 @@
 <section class="stack" style="margin-bottom:20px">
   <h2 class="section-title">Household wealth</h2>
 
-  {# Summary: owns-it metrics + the meeting agenda (open tasks, count only). #}
+  {# Summary: owns-it metrics + the meeting agenda (open tasks, count only). The
+     page decides which cards, their order, captions, and formatting; the shared
+     macro only renders. #}
   <div class="workspace-grid">
-    <article class="card"><span class="detail-label">Household AUM</span><h2>${{ "{:,.2f}".format(portfolio.aum or 0) }}</h2></article>
-    <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.2f}".format(portfolio.cash or 0) }}</h2><p class="subtle">{{ "{:.1f}".format(portfolio.cash_percent or 0) }}%</p></article>
-    <article class="card"><span class="detail-label">Concentration</span><h2>{{ "{:.1f}".format(portfolio.concentration.largest_position_percent or 0) }}%</h2><p class="subtle">Largest single position</p></article>
-    <article class="card"><span class="detail-label">Beneficiaries</span><h2>{{ portfolio.beneficiary_count }}</h2><p class="subtle">Active beneficiaries on file</p></article>
-    <article class="card"><span class="detail-label">Meeting agenda</span><h2>{{ rollup.open_task_count }}</h2><p class="subtle">Open item{{ '' if rollup.open_task_count == 1 else 's' }} to review</p></article>
+    {{ wc.summary_card("Household AUM", "$" ~ "{:,.2f}".format(portfolio.aum or 0)) }}
+    {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(portfolio.cash or 0), "{:.1f}".format(portfolio.cash_percent or 0) ~ "%") }}
+    {{ wc.summary_card("Concentration", "{:.1f}".format(portfolio.concentration.largest_position_percent or 0) ~ "%", "Largest single position") }}
+    {{ wc.summary_card("Beneficiaries", portfolio.beneficiary_count, "Active beneficiaries on file") }}
+    {{ wc.summary_card("Meeting agenda", rollup.open_task_count, "Open item" ~ ("" if rollup.open_task_count == 1 else "s") ~ " to review") }}
   </div>
 
   <div class="workspace-grid">
-    <article class="card"><h3>Asset allocation</h3>{% for name, item in portfolio.allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
-    <article class="card"><h3>Largest positions</h3>{% for holding in portfolio.largest_positions %}<div class="detail-row"><span>{{ holding.symbol }} · {{ holding.name }}</span><strong>${{ "{:,.2f}".format(holding.market_value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
+    {{ wc.allocation_card(portfolio.allocation) }}
+    {{ wc.positions_card(portfolio.largest_positions) }}
   </div>
 
-  {# Accounts #}
-  <article class="card">
-    <h3>Accounts</h3>
-    {% if portfolio.accounts %}
-    <div class="table-wrap">
-      <table class="data">
-        <thead><tr><th>Account</th><th>Registration</th><th>Custodian</th><th class="num">Value</th></tr></thead>
-        <tbody>
-        {% for account in portfolio.accounts %}
-          <tr>
-            <td>{{ account.account_name or account.account_number }}</td>
-            <td>{{ account.registration_type or "Unclassified" }}</td>
-            <td>{{ account.custodian }}</td>
-            <td class="num">${{ "{:,.2f}".format(account.total_value or 0) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}<p class="subtle">No portfolio accounts found for this household.</p>{% endif %}
-  </article>
+  {{ wc.accounts_table(portfolio.accounts, "household") }}
 
   {# Holdings — full table collapsed by default. "Largest positions" above is the
      meeting-facing summary; the full list stays on-page (native <details>, no
