@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Pipeline Reports | Client360{% endblock %}
+{% block crumb %}Pipeline Reports{% endblock %}
+{% block content %}
+{{ ui.page_head("Pipeline Reports", eyebrow="Business development", desc="Authorization-filtered pipeline aggregates over your book.") }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/opportunities">← Back to pipeline</a></p>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Overview</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Open</span><strong>{{ report.counts.open }}</strong></div>
+    <div class="detail-row"><span class="subtle">Open pipeline value</span><strong>${{ "{:,.0f}".format(report.open_value) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Won / Lost</span><span>{{ report.counts.won }} / {{ report.counts.lost }}</span></div>
+    <div class="detail-row"><span class="subtle">Win rate</span><span>{% if report.win_rate is not none %}{{ "%.0f"|format(report.win_rate * 100) }}%{% else %}<span class="subtle">n/a</span>{% endif %}</span></div>
+  </div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">By service line &amp; source</h2>
+  <div class="card">
+    <p class="subtle" style="margin-top:0">Service lines</p>
+    <ul style="margin:0 0 10px; padding-left:18px">{% for k, v in report.by_service_line.items() %}<li>{{ k|replace("_"," ")|capitalize }}: {{ v }}</li>{% endfor %}</ul>
+    <p class="subtle">Referral sources</p>
+    <ul style="margin:0; padding-left:18px">{% for k, v in report.by_source.items() %}<li>{{ k|replace("_"," ")|capitalize }}: {{ v }}</li>{% endfor %}</ul>
+  </div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Aging &amp; loss reasons</h2>
+  <div class="card">
+    <p class="subtle" style="margin-top:0">Open opportunity aging</p>
+    <ul style="margin:0 0 10px; padding-left:18px">{% for k, v in report.aging.items() %}<li>{{ k }}: {{ v }}</li>{% endfor %}</ul>
+    {% if report.loss_reasons %}<p class="subtle">Loss reasons</p>
+    <ul style="margin:0; padding-left:18px">{% for k, v in report.loss_reasons.items() %}<li>{{ k }}: {{ v }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+</section>
+
+{% if forecast %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Revenue forecast <span class="subtle" style="font-size:12px; font-weight:500">restricted</span></h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Expected revenue (open)</span><strong>${{ "{:,.0f}".format(forecast.expected_revenue_total) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Probability-weighted forecast</span><strong>${{ "{:,.0f}".format(forecast.weighted_forecast_total) }}</strong></div>
+    {% if forecast.expected_revenue_by_close_month %}
+    <p class="subtle" style="margin:10px 0 4px">By expected close month</p>
+    <ul style="margin:0; padding-left:18px">{% for k, v in forecast.expected_revenue_by_close_month.items() %}<li>{{ k }}: ${{ "{:,.0f}".format(v) }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+</section>
+{% else %}
+<p class="subtle">Revenue forecast requires the forecast capability.</p>
+{% endif %}
+{% endblock %}

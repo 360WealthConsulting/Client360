@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Pipeline | Client360{% endblock %}
+{% block crumb %}Pipeline{% endblock %}
+{% block content %}
+{{ ui.page_head("Opportunity Pipeline", eyebrow="Business development", desc="The firm's sales pipeline — prospects, referrals, and cross-sell opportunities.") }}
+
+<div class="row" style="gap:8px; margin:-6px 0 14px">
+  {% if can_report %}<a class="rowlink" href="/opportunities/reports">Pipeline reports →</a>{% endif %}
+</div>
+
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label>
+    <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="title"></div>
+  <div class="field" style="margin:0"><label for="stage_id">Stage</label>
+    <select class="input" id="stage_id" name="stage_id"><option value="">All</option>
+      {% for s in stages %}<option value="{{ s.id }}" {% if filters.stage_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option>
+      {% for st in ["open","won","lost","dormant","cancelled"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} opportunit{{ "y" if result.total == 1 else "ies" }}{% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Opportunity</th><th>Status</th><th>Service line</th><th>Expected revenue</th><th>Close</th><th></th></tr></thead>
+  <tbody>
+  {% for o in result.rows %}
+    <tr>
+      <td><strong>{{ o.title }}</strong>{% if o.source %} <span class="subtle">· {{ o.source|replace("_"," ") }}</span>{% endif %}</td>
+      <td>{{ ui.badge(o.status|capitalize, 'good' if o.status == 'won' else '') }}</td>
+      <td><span class="subtle">{{ o.primary_service_line or "—" }}</span></td>
+      <td>{% if o.expected_revenue %}${{ "{:,.0f}".format(o.expected_revenue) }}{% else %}—{% endif %}</td>
+      <td>{{ o.expected_close_date or "—" }}</td>
+      <td><a class="rowlink" href="/opportunities/{{ o.id }}">Open →</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}{% call ui.empty("No opportunities", "No opportunities match the current filters.") %}{% endcall %}{% endif %}
+
+{% if can_edit %}
+<details class="card" style="margin-top:16px">
+  <summary style="cursor:pointer; font-weight:640">New opportunity</summary>
+  <form method="post" action="/opportunities" style="margin-top:12px">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+      <div class="field"><label for="person_id">Target person id</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
+      <div class="field"><label for="organization_id">Target org id</label><input class="input" id="organization_id" name="organization_id" inputmode="numeric"></div>
+      <div class="field"><label for="primary_service_line">Service line</label><input class="input" id="primary_service_line" name="primary_service_line"></div>
+      <div class="field"><label for="source">Source</label><input class="input" id="source" name="source" placeholder="referral / coi / campaign"></div>
+      <div class="field"><label for="expected_revenue">Expected revenue</label><input class="input" id="expected_revenue" name="expected_revenue" inputmode="decimal"></div>
+      <div class="field"><label for="expected_close_date">Expected close</label><input class="input" id="expected_close_date" name="expected_close_date" type="date"></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Create opportunity</button></div>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

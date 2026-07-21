@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: j0b1u2s3o4w5      # `alembic heads` / `alembic current`
-  route_count: 352                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 63    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: k1o2p3p4t5y6      # `alembic heads` / `alembic current`
+  route_count: 362                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 70    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -57,6 +57,7 @@ declared_schema_registrations:
   - define_business_planning_tables
   - define_compliance_tables
   - define_identity_tables
+  - define_opportunity_tables
   - define_outbox_tables
   - define_portfolio_tables
   - define_work_tables
@@ -84,6 +85,8 @@ capabilities:
   timeline: [timeline.read]
   annual_review: [annual_review.read, annual_review.create, annual_review.update]
   business_owner: [business_owner.read, business_owner.update, business_owner.planning_update]
+  opportunity: [opportunity.view, opportunity.edit, opportunity.delete, opportunity.assign,
+                opportunity.close, opportunity.report, opportunity.forecast]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:

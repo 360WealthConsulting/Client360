@@ -140,6 +140,22 @@
   </div>
 </section>
 
+{# ── Business development (D.13) — read-only opportunity visibility ─────── #}
+{% if ws.business_development %}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Business development <a class="rowlink" style="font-size:13px; font-weight:500" href="/opportunities">Pipeline →</a></h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Open opportunities</span><strong>{{ ws.business_development.open|length }}</strong></div>
+    {% if ws.business_development.open %}
+    <ul style="margin:6px 0 0; padding-left:18px">
+      {% for o in ws.business_development.open %}<li><a class="rowlink" href="/opportunities/{{ o.id }}">{{ o.title }}</a>{% if o.expected_revenue %} <span class="subtle">· ${{ "{:,.0f}".format(o.expected_revenue) }}</span>{% endif %}</li>{% endfor %}
+    </ul>{% endif %}
+    {% if ws.business_development.recent_wins %}<p class="subtle" style="margin:10px 0 2px">Recent wins</p><ul style="margin:0; padding-left:18px">{% for o in ws.business_development.recent_wins %}<li>{{ o.title }}</li>{% endfor %}</ul>{% endif %}
+    {% if ws.business_development.total == 0 %}<p class="subtle" style="margin-top:6px">No opportunities recorded for this client.</p>{% endif %}
+  </div>
+</section>
+{% endif %}
+
 {# ── 8. Review Checklist + review session ──────────────────────────────── #}
 <section class="stack" style="margin-bottom:22px">
   <h2 class="section-title">Review checklist &amp; session</h2>

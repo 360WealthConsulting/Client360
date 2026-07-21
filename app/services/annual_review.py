@@ -149,7 +149,27 @@ def compose_workspace(principal, person_id: int, *, session: dict | None = None)
     # 8. Review Checklist (presentation only) bound to the session state.
     sections["checklist"] = build_checklist(session)
     sections["session"] = session
+
+    # Business development (Phase D.13) — read-only opportunity visibility for an existing
+    # client (cross-sell / pending / recent wins & losses). Reuses the Opportunity domain via
+    # an additive scoped read; the Opportunity domain remains the pipeline owner. Gated on
+    # opportunity.view, so it is omitted (None) without the capability.
+    sections["business_development"] = (_business_development(principal, person_id)
+                                        if principal.can("opportunity.view") else None)
     return sections
+
+
+def _business_development(principal, person_id: int) -> dict:
+    """Read-only opportunity summary for an existing client — never duplicates pipeline
+    ownership; the Opportunity domain stays authoritative."""
+    from app.services.opportunity import service as opp_svc
+    rows = opp_svc.opportunities_for_person(principal, person_id, limit=50)
+    return {
+        "open": [o for o in rows if o["status"] == "open"],
+        "recent_wins": [o for o in rows if o["status"] == "won"][:5],
+        "recent_losses": [o for o in rows if o["status"] == "lost"][:5],
+        "total": len(rows),
+    }
 
 
 def _client_meta(person_id: int) -> dict:

@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.12** on `release/0.13.0` (migration head `j0b1u2s3o4w5`, 352 routes, 63
+after **Phase D.13** on `release/0.13.0` (migration head `k1o2p3p4t5y6`, 362 routes, 70
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -120,6 +120,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 26 | Business Owner Planning | **composition** |
 | 27 | Notifications / Outbox | platform (dispatch infra) |
 | 28 | Workflow instances (tax/practice ops) | source (task orchestration, not a generic engine) |
+| 29 | Opportunity & Pipeline (business development) | source (authoritative sales pipeline — D.13) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -147,6 +148,7 @@ to the owning service instead.
 | Timeline | Activity Timeline | `activity_timeline` | projects `timeline_events` + ledgers | `timeline.read` | person/household | Annual Review, Business Owner | missing actors on older rows |
 | Annual-review sessions | Annual Review | `annual_review` | `annual_review_sessions` | `annual_review.read/create/update` | person | Business Owner (link) | — |
 | Business-planning profiles | Business Owner Planning | `business_owner` | `business_planning_profiles` | `business_owner.planning_update` | person + validated business | (owns) | controlled-vocab statuses |
+| Opportunities / sales pipeline | Opportunity | `opportunity.service` | `opportunities`, `opportunity_stages`, `opportunity_events`, `opportunity_activities`, `opportunity_work_links` | `opportunity.view/edit/delete/assign/close/report/forecast` | advisor-book + target-client record scope | Annual Review, Business Owner Planning (read-only) | references People/Orgs, never owns them; no business link on work items |
 | Documents / evidence | Documents | documents service | `documents`, evidence tables | `document.read/write` | person-resolved | Client360, Tax, Insurance, Benefits | — |
 | Audit records | Audit | `security.audit` | `audit_events` (append-only) | `audit.read` | firm (sensitive) | — | — |
 
@@ -230,6 +232,8 @@ Capability inventory by domain (exact codes; `*` = sensitive):
 - **Annual Review:** `annual_review.read`, `annual_review.create`, `annual_review.update`.
 - **Business Owner Planning:** `business_owner.read`, `business_owner.update`,
   `business_owner.planning_update`.
+- **Opportunity & Pipeline:** `opportunity.view`, `opportunity.edit`, `opportunity.delete*`,
+  `opportunity.assign`, `opportunity.close`, `opportunity.report`, `opportunity.forecast*`.
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -373,13 +377,14 @@ Imported records flow through source contacts/links and matching → canonical m
 synchronization.
 
 ## 20. Routes and application surfaces
-**Verified total: 352 routes** (`python -c "from app.main import app; print(len(app.routes))"`;
+**Verified total: 362 routes** (`python -c "from app.main import app; print(len(app.routes))"`;
 guarded by `tests/test_f4_8_workflow_api.py` and `tests/test_f4_7_workflow_evidence.py`). Route
 families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, `/benefits` +
 `/api/v1/benefits`, `/insurance`, `/tax` (+ `/tax/intake`, `/tax/returns`, `/tax/documents`),
 `/compliance`, `/advisor-work`, `/people/{id}/timeline` + `/households/{id}/timeline`,
-`/annual-review`, `/business-owner`, `/workspace` (meeting), `/portfolio` + `/wealth`, `/admin`
-(+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON `/api/v1/*`.
+`/annual-review`, `/business-owner`, `/opportunities` (+ `/opportunities/reports`), `/workspace`
+(meeting), `/portfolio` + `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles),
+`/microsoft365`, `/auth`, and JSON `/api/v1/*`.
 
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
@@ -387,9 +392,9 @@ families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, 
   `app/database/schema.py` (8 registered modules: advisor_work, annual_review,
   business_planning, compliance, identity, outbox, portfolio, work — plus core tables inline in
   `schema.py`).
-- **Alembic:** 57 migrations, **single head `j0b1u2s3o4w5`**; `alembic current == heads`.
+- **Alembic:** 58 migrations, **single head `k1o2p3p4t5y6`**; `alembic current == heads`.
   Recent chain: D.9 `g1w2o3r4k5m6` → D.10 `h2t3i4m5l6n7` → D.11 `i9a1n2r3e4v5` → D.12
-  `j0b1u2s3o4w5`.
+  `j0b1u2s3o4w5` → D.13 `k1o2p3p4t5y6`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its
@@ -432,7 +437,7 @@ Not implemented; documented so future phases don't duplicate logic.
 
 | Extension | Likely owner | Should consume | Must not duplicate | Prerequisite | Timing |
 |---|---|---|---|---|---|
-| Opportunity/sales pipeline | new composition layer | Advisor Intelligence, Advisor Work | recommendation/work logic | durable opportunity record + stage vocab | later |
+| Opportunity/sales pipeline | ~~future~~ **implemented D.13** (source domain) | Advisor Intelligence, Advisor Work | recommendation/work logic | done — see ADR-018 | done |
 | Household relationship intelligence | Relationships | relationship graph | ownership/relationship tables | richer relationship types | D.13+ |
 | Estate planning | new source domain | People/Households, documents | none | new structured tables | later |
 | Executive compensation | Benefits or new domain | Benefits, Organizations | benefits/plan tables | comp schema | later |

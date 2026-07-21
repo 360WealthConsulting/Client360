@@ -132,6 +132,19 @@
 </section>
 {% endif %}
 
+{# ── Business development (D.13) — read-only opportunity visibility ─────── #}
+{% if ws.opportunities %}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Business development <a class="rowlink" style="font-size:13px; font-weight:500" href="/opportunities">Pipeline →</a></h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Open opportunities</span><strong>{{ ws.opportunities.open_count }}</strong></div>
+    {% set allopps = ws.opportunities.person + ws.opportunities.business %}
+    {% if allopps %}<ul style="margin:6px 0 0; padding-left:18px">{% for o in allopps %}<li><a class="rowlink" href="/opportunities/{{ o.id }}">{{ o.title }}</a> <span class="subtle">· {{ o.status }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="subtle" style="margin-top:6px">No opportunities recorded.</p>{% endif %}
+  </div>
+</section>
+{% endif %}
+
 {# ── 15. Missing Information & Data Quality ────────────────────────────── #}
 <section class="stack" style="margin-bottom:22px">
   <h2 class="section-title">Missing information &amp; data quality</h2>
