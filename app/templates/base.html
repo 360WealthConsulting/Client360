@@ -25,7 +25,12 @@
 {% set can_ins = 'insurance.read' in caps %}
 {% set can_ins_lic = 'insurance.licensing.read' in caps %}
 {% set firm_client = ('client.read' in caps) and read_all %}
+{# Advisor Workspace is book-scoped (client.read), not firm-wide (record.read_all),
+   so advisors without record.read_all still get their daily workspace. #}
+{% set can_workspace = 'client.read' in caps %}
 {% set groups = [
+  {"label": "Workspace", "items": [
+    {"href": "/workspace", "label": "Today", "match": "/workspace", "ico": "◭", "show": can_workspace}]},
   {"label": "Overview", "items": [
     {"href": "/", "label": "Dashboard", "match": "/", "ico": "◧", "show": firm_client},
     {"href": "/activities", "label": "Activity", "match": "/activities", "ico": "◈", "show": firm_client}]},

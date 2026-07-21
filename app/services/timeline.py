@@ -244,3 +244,40 @@ def get_household_timeline(
         rows = connection.execute(statement).mappings().all()
 
     return [_decorate_event(row) for row in rows]
+
+
+def recent_events(
+    person_ids,
+    *,
+    limit: int = 20,
+    event_types=None,
+    start=None,
+    end=None,
+):
+    """Authoritative multi-person timeline read for record-scoped dashboards.
+
+    ``person_ids`` scopes the read: ``None`` = unrestricted (a ``record.read_all``
+    caller), an empty collection = no accessible people (returns ``[]``), otherwise
+    only events for those person ids. Optional ``event_types`` filter and
+    ``start``/``end`` (half-open ``[start, end)``) time window. Read-only; does not
+    create timeline data. Ordered newest-first.
+    """
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    statement = select(timeline_events)
+    if person_ids is not None:
+        statement = statement.where(timeline_events.c.person_id.in_(tuple(person_ids)))
+    if event_types:
+        statement = statement.where(timeline_events.c.event_type.in_(tuple(event_types)))
+    if start is not None:
+        statement = statement.where(timeline_events.c.event_time >= start)
+    if end is not None:
+        statement = statement.where(timeline_events.c.event_time < end)
+    statement = statement.order_by(
+        timeline_events.c.event_time.desc(), timeline_events.c.id.desc()
+    ).limit(limit)
+
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+
+    return [_decorate_event(row) for row in rows]
