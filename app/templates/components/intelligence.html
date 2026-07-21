@@ -15,8 +15,9 @@
 
 {% macro signals_panel(signals, compact=False) %}
   {% if signals %}
-    {% for group in ["Operational Signals", "Advisor Opportunities", "Advisor Recommendations"] %}
-      {% set rows = signals | selectattr("group", "equalto", group) | list %}
+    {# Grouping is decided in Python (advisor_intelligence.group_signals, exposed as
+       the `signal_groups` Jinja global); the template only renders. #}
+    {% for group, rows in signal_groups(signals) %}
       {% if rows %}
         <h3 class="detail-label" style="margin:12px 0 4px">{{ group }}</h3>
         {% if group == "Advisor Recommendations" %}

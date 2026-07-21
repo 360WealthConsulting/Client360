@@ -9,7 +9,11 @@ from fastapi.templating import Jinja2Templates
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.advisor_intelligence import get_client_signals, get_dashboard_signals
+from app.services.advisor_intelligence import (
+    get_client_signals,
+    get_dashboard_signals,
+    group_signals,
+)
 from app.services.advisor_workspace import (
     get_daily_dashboard,
     get_meeting_brief,
@@ -19,6 +23,8 @@ from app.services.advisor_workspace import (
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 templates = Jinja2Templates(directory="app/templates")
+# Grouping for the shared Advisor Intelligence renderer lives in Python (D.5E).
+templates.env.globals["signal_groups"] = group_signals
 
 
 @router.get("", response_class=HTMLResponse)
