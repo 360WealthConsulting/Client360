@@ -6,6 +6,7 @@
 {% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
 {% block content %}
 {{ ui.page_head(household.name, eyebrow="Household", desc=((household.city or "") ~ (", " if household.city and household.state else "") ~ (household.state or ""))) }}
+{% if 'timeline.read' in caps %}<p class="subtle" style="margin:-8px 0 12px"><a class="rowlink" href="/households/{{ household.id }}/timeline">Activity timeline →</a></p>{% endif %}
 
 {% if created %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Household created successfully.</div></div>{% endif %}
 {% if member_saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Household member saved.</div></div>{% endif %}

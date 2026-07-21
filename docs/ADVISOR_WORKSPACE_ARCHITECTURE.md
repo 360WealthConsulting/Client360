@@ -448,6 +448,30 @@ regulatory certification; the system does not determine legal qualification.**
 
 ---
 
+## 12. Activity Timeline projection (Phase D.10)
+
+A read-only **projection** sits beneath the existing domains and composes their events into
+one advisor-facing chronological view per client/household — it is **not** a new system of
+record. It reads existing authoritative records only (`timeline_events`, `advisor_work_events`
+/`advisor_work_items`, `compliance_reviews`/`compliance_decisions`) through explicit per-domain
+adapters, and never mutates them. Dependency direction is strictly downward: **source domains
+never import the timeline**.
+
+```
+Existing domain records  →  Activity Timeline projection  →  Client / Household Timeline
+```
+
+**Invariants:** deterministic ordering `(occurred_at desc, stable event-id desc)`; stable event
+ids; bounded queries (≤500/source, ≤100/page); `timeline.read` capability **plus** person/household
+record scope, and **not** a bypass around `advisor_work.read`/`compliance.review.read`;
+**server-side redaction** (confidential work notes and compliance comments show "Additional details
+are restricted."); Advisor Intelligence recommendations are **excluded** (no durable occurrence
+timestamp — never fabricated). The timeline is advisor-facing and curated — it is **not** the
+administrative audit log (`/admin/audit`) and does not replace it. See
+`docs/PHASE_D10_CLIENT_HOUSEHOLD_ACTIVITY_TIMELINE.md`.
+
+---
+
 ## Cross-references
 - `WEALTH_ARCHITECTURE.md` — the exemplar workspace pattern (meeting-prep hierarchy,
   canonical contract, shared components, propose-not-act) this design generalizes.

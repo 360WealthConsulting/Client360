@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Activity Timeline | Client360{% endblock %}
+{% block crumb %}Activity Timeline{% endblock %}
+{% block content %}
+{{ ui.page_head("Activity Timeline", eyebrow="Overview", desc="What has happened with this client or household — a read-only projection of events from existing domains. This is not the administrative audit log.") }}
+
+<p class="subtle" style="margin:-6px 0 12px"><a class="rowlink" href="{{ back_url }}">← Back to {{ scope_label }}</a></p>
+
+{# Filters + search resolve server-side (activity_timeline.service); the template renders. #}
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label>
+    <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="title, summary, actor"></div>
+  <div class="field" style="margin:0"><label for="source">Source</label>
+    <select class="input" id="source" name="source">
+      <option value="">All</option>
+      {% for s in source_domains %}<option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>{% endfor %}
+    </select></div>
+  <div class="field" style="margin:0"><label for="date_from">From</label>
+    <input class="input" id="date_from" name="date_from" type="date" value="{{ filters.date_from }}"></div>
+  <div class="field" style="margin:0"><label for="date_to">To</label>
+    <input class="input" id="date_to" name="date_to" type="date" value="{{ filters.date_to }}"></div>
+  <input type="hidden" name="event_type" value="{{ filters.event_type }}">
+  <div><button class="btn" type="submit">Apply</button>
+    {% if filters.q or filters.source or filters.date_from or filters.date_to %}<a class="btn subtle" href="?" style="margin-left:6px">Clear</a>{% endif %}</div>
+</form>
+
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} event(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+
+{% if result.rows %}
+<div class="card">
+  {% for e in result.rows %}
+    <div class="detail-row" style="align-items:flex-start">
+      <div style="flex:1">
+        <strong>{% if e.source_url %}<a class="rowlink" href="{{ e.source_url }}">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}</strong>
+        {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}
+        {% if e.status %}<span class="subtle" style="margin-left:4px">{{ e.status|replace("_"," ")|capitalize }}</span>{% endif %}
+        <br>
+        <span class="subtle">{% if e.redacted %}<em>Additional details are restricted.</em>{% else %}{{ e.summary }}{% endif %}</span>
+        {% if e.person_id or e.household_id %}<br><span class="subtle">{% if e.person_id %}Person {{ e.person_id }}{% endif %}{% if e.household_id %}{% if e.person_id %} · {% endif %}Household {{ e.household_id }}{% endif %}{% if e.actor_display_name %} · by {{ e.actor_display_name }}{% endif %}</span>{% endif %}
+      </div>
+      <span class="subtle id-mono" style="white-space:nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
+    </div>
+  {% endfor %}
+</div>
+
+{% if result.pages > 1 %}
+<div class="row" style="gap:8px; margin-top:10px">
+  {% if result.page > 1 %}<a class="btn subtle" href="?q={{ filters.q|urlencode }}&source={{ filters.source|urlencode }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}&page={{ result.page - 1 }}">← Prev</a>{% endif %}
+  {% if result.page < result.pages %}<a class="btn subtle" href="?q={{ filters.q|urlencode }}&source={{ filters.source|urlencode }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+{% call ui.empty("No activity", "No timeline events for this " ~ (scope_label|lower) ~ " match the current filters.") %}{% endcall %}
+{% endif %}
+{% endblock %}
