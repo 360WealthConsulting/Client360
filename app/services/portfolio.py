@@ -21,6 +21,15 @@ ZERO = Decimal("0")
 # wealth dashboard count so they never diverge.
 HIGH_CASH_RATIO = Decimal("0.15")
 
+# The canonical Wealth contract — the single vocabulary every portfolio-shaped
+# result exposes. get_person_portfolio() and get_household_portfolio() both build
+# on `_portfolio()`, so both surface exactly these concepts under exactly these
+# names. Shared Wealth components (Phase C.1 PR-3) consume only this vocabulary.
+_CANONICAL_KEYS = (
+    "aum", "cash", "cash_percent", "allocation", "largest_positions",
+    "concentration", "holdings", "accounts", "beneficiary_count", "last_import_date",
+)
+
 
 def _largest_position_percents(person_ids):
     """Bulk `largest_position_percent` for many people in a bounded number of
@@ -45,9 +54,34 @@ def _portfolio(where):
         ids = [r["id"] for r in account_rows]
         holding_rows = [] if not ids else conn.execute(select(account_holdings.c.account_id, account_holdings.c.market_value, account_holdings.c.cost_basis, account_holdings.c.unrealized_gain, securities.c.symbol, securities.c.name, securities.c.asset_class).join(securities, securities.c.id == account_holdings.c.security_id).where(account_holdings.c.account_id.in_(ids))).mappings().all()
         beneficiary_count = 0 if not ids else conn.scalar(select(func.count()).select_from(account_beneficiaries).where(and_(account_beneficiaries.c.account_id.in_(ids), account_beneficiaries.c.active.is_(True)))) or 0
-    result = aggregate_portfolio(account_rows, holding_rows)
-    result["beneficiary_count"] = beneficiary_count
-    result["last_import_date"] = max((r.get("last_imported_at") for r in account_rows if r.get("last_imported_at")), default=None)
+    agg = aggregate_portfolio(account_rows, holding_rows)
+    largest = agg["largest_holdings"]
+    last_import_date = max((r.get("last_imported_at") for r in account_rows if r.get("last_imported_at")), default=None)
+    # Build the canonical contract first — this is the single source of truth for
+    # both get_person_portfolio() and get_household_portfolio().
+    result = {
+        "aum": agg["total_aum"],
+        "cash": agg["cash"],
+        "cash_percent": agg["cash_percent"],
+        "allocation": agg["asset_allocation"],
+        "largest_positions": largest,
+        "concentration": {
+            "largest_position_percent": agg["largest_position_percent"],
+            "top_position": largest[0] if largest else None,
+        },
+        "holdings": agg["holdings"],
+        "accounts": agg["accounts"],
+        "beneficiary_count": beneficiary_count,
+        "last_import_date": last_import_date,
+    }
+    # Compatibility aliases (TEMPORARY). Legacy key names that some templates
+    # still read; they mirror the canonical values exactly and exist only to keep
+    # existing UI rendering byte-identical during the migration. Remove once every
+    # consumer reads the canonical vocabulary above (after Phase C.1 PR-3).
+    result["total_aum"] = result["aum"]
+    result["asset_allocation"] = result["allocation"]
+    result["largest_holdings"] = result["largest_positions"]
+    result["largest_position_percent"] = result["concentration"]["largest_position_percent"]
     return result
 
 def get_person_portfolio(person_id):
@@ -82,24 +116,13 @@ def get_household_portfolio(household_id):
     An empty household (or one with no accounts) yields safe zeros/empties.
     """
     p = _portfolio(accounts.c.household_id == household_id)
-    largest = p["largest_holdings"]
-    return {
-        "household_id": household_id,
-        "aum": p["total_aum"],
-        "cash": p["cash"],
-        "cash_percent": p["cash_percent"],
-        "holdings": p["holdings"],
-        "allocation": p["asset_allocation"],
-        "largest_positions": largest,
-        "concentration": {
-            "largest_position_percent": p["largest_position_percent"],
-            "top_position": largest[0] if largest else None,
-        },
-        "accounts": p["accounts"],
-        "members": _household_members(household_id),
-        "beneficiary_count": p["beneficiary_count"],
-        "last_import_date": p["last_import_date"],
-    }
+    # Pass the canonical contract straight through (no per-service renaming) and
+    # add the household-only extras. Legacy aliases are intentionally not
+    # re-exposed here — the household surface already reads canonical keys.
+    result = {k: p[k] for k in _CANONICAL_KEYS}
+    result["household_id"] = household_id
+    result["members"] = _household_members(household_id)
+    return result
 
 def get_firm_portfolio_metrics():
     with engine.connect() as conn:
