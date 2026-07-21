@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import and_, func, or_, select
@@ -133,6 +134,34 @@ def get_firm_portfolio_metrics():
         missing_beneficiaries = conn.scalar(select(func.count()).select_from(accounts.outerjoin(account_beneficiaries, and_(account_beneficiaries.c.account_id == accounts.c.id, account_beneficiaries.c.active.is_(True)))).where(and_(accounts.c.registration_type.ilike("%IRA%"), account_beneficiaries.c.id.is_(None)))) or 0
         without_reviews = conn.scalar(select(func.count()).select_from(accounts).where(accounts.c.last_review_date.is_(None))) or 0
     return {"firm_aum": firm_aum, "cash_waiting": cash, "largest_household": largest_household, "largest_position": largest_position, "missing_beneficiaries": missing_beneficiaries, "accounts_without_reviews": without_reviews}
+
+def accounts_due_for_review(person_ids, *, stale_days=365, limit=20, today=None):
+    """Accounts whose review is due — no `last_review_date`, or older than
+    `stale_days`. Authoritative wealth read for the advisor dashboard's
+    "reviews due" panel. `person_ids` scopes the read: `None` = unrestricted
+    (record.read_all), an empty collection = no accessible people (returns `[]`).
+    Read-only; sources the existing `accounts.last_review_date` field (no
+    review-workflow instances in this slice — see Phase D.1 note)."""
+    if person_ids is not None and len(person_ids) == 0:
+        return []
+    today = today or date.today()
+    cutoff = today - timedelta(days=stale_days)
+    stmt = (
+        select(
+            accounts.c.id, accounts.c.person_id, accounts.c.household_id,
+            accounts.c.account_name, accounts.c.account_number, accounts.c.custodian,
+            accounts.c.last_review_date,
+        )
+        .where(
+            accounts.c.person_id.is_not(None),
+            or_(accounts.c.last_review_date.is_(None), accounts.c.last_review_date < cutoff),
+        )
+    )
+    if person_ids is not None:
+        stmt = stmt.where(accounts.c.person_id.in_(tuple(person_ids)))
+    stmt = stmt.order_by(accounts.c.last_review_date.asc().nullsfirst()).limit(limit)
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings()]
 
 def get_wealth_dashboard():
     """Book-triage figures for the advisor Wealth dashboard.

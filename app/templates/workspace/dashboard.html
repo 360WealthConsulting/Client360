@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Advisor Workspace | Client360{% endblock %}
+{% block crumb %}Workspace{% endblock %}
+{% block content %}
+{{ ui.page_head("Advisor Workspace", eyebrow="Workspace", desc="Your day at a glance — " ~ d.today.strftime("%A, %b %-d, %Y")) }}
+
+{# Book-scoped read-only daily dashboard. Every panel composes an existing
+   authoritative, record-scoped service. No advisor-intelligence recommendations. #}
+<section class="stat-grid" style="margin-bottom:8px">
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Needs attention</span><h2 style="margin:2px 0">{{ d.counts.attention }}</h2></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Meetings today</span><h2 style="margin:2px 0">{{ d.counts.meetings }}</h2></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Reviews due</span><h2 style="margin:2px 0">{{ d.counts.reviews }}</h2></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Tasks</span><h2 style="margin:2px 0">{{ d.counts.tasks }}</h2></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Exceptions</span><h2 style="margin:2px 0">{{ d.counts.exceptions }}</h2></article>
+</section>
+
+<h2 class="section-title">My clients needing attention</h2>
+<article class="card">
+  {% if d.attention %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Client</th><th class="num">Open items</th><th>Severity</th></tr></thead>
+    <tbody>
+    {% for c in d.attention %}
+      <tr>
+        <td>{% if c.link %}<a class="rowlink" href="{{ c.link }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
+        <td class="num">{{ c.open_count }}</td>
+        <td>{% if c.top_severity %}{{ ui.badge(c.top_severity|capitalize) }}{% else %}<span class="subtle">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{% call ui.empty("Nothing needs attention", "No open exceptions for your clients right now.") %}{% endcall %}{% endif %}
+</article>
+
+<h2 class="section-title">Meetings today</h2>
+<article class="card">
+  {% if d.meetings %}
+  {% for m in d.meetings %}
+    <div class="detail-row"><span>{{ m.event_time.strftime("%-I:%M %p") if m.event_time else "" }} · {% if m.link %}<a href="{{ m.link }}">{{ m.title }}</a>{% else %}{{ m.title }}{% endif %}</span><strong class="subtle">{{ m.display_label }}</strong></div>
+  {% endfor %}
+  {% else %}{% call ui.empty("No meetings today", "Nothing on the calendar for your clients today.") %}{% endcall %}{% endif %}
+</article>
+
+<h2 class="section-title">Upcoming reviews</h2>
+<article class="card">
+  {% if d.reviews %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Account</th><th>Custodian</th><th>Last reviewed</th></tr></thead>
+    <tbody>
+    {% for r in d.reviews %}
+      <tr>
+        <td>{% if r.link %}<a class="rowlink" href="{{ r.link }}">{{ r.account_name or r.account_number }}</a>{% else %}{{ r.account_name or r.account_number }}{% endif %}</td>
+        <td>{{ r.custodian }}</td>
+        <td>{% if r.last_review_date %}{{ r.last_review_date.strftime("%b %-d, %Y") }}{% else %}{{ ui.badge("Never reviewed") }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{% call ui.empty("No reviews due", "No accounts are due for review.") %}{% endcall %}{% endif %}
+</article>
+
+<h2 class="section-title">Tasks</h2>
+<article class="card">
+  {% if d.tasks %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Task</th><th>Due</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for t in d.tasks %}
+      <tr>
+        <td><a class="rowlink" href="{{ t.link }}">{{ t.title }}</a></td>
+        <td>{% if t.due_date %}{{ t.due_date.strftime("%b %-d") }}{% if t.due_date < d.today %} {{ ui.badge("Overdue") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td><span class="subtle">{{ (t.status or "open")|capitalize }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{% call ui.empty("No open tasks", "You have no open tasks for your clients.") %}{% endcall %}{% endif %}
+</article>
+
+<h2 class="section-title">Exceptions</h2>
+<article class="card">
+  {% if d.exceptions %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Exception</th><th>Domain</th><th>Severity</th><th>Due</th></tr></thead>
+    <tbody>
+    {% for e in d.exceptions %}
+      <tr>
+        <td><a class="rowlink" href="{{ e.link }}">{{ e.title or e.code }}</a></td>
+        <td>{{ e.domain }}</td>
+        <td>{% if e.severity %}{{ ui.badge(e.severity|capitalize) }}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if e.due_date %}{{ e.due_date.strftime("%b %-d") }}{% if e.due_date < d.today %} {{ ui.badge("Overdue") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{% call ui.empty("No open exceptions", "No open exceptions for your clients.") %}{% endcall %}{% endif %}
+</article>
+
+<h2 class="section-title">Recent client activity</h2>
+<article class="card">
+  {% if d.activity %}
+  {% for a in d.activity %}
+    <div class="detail-row"><span>{{ a.display_icon }} {% if a.link %}<a href="{{ a.link }}">{{ a.title }}</a>{% else %}{{ a.title }}{% endif %}</span><strong class="subtle">{{ a.relative_time }}</strong></div>
+  {% endfor %}
+  {% else %}{% call ui.empty("No recent activity", "No recent timeline activity for your clients.") %}{% endcall %}{% endif %}
+</article>
+{% endblock %}

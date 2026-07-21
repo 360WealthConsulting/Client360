@@ -58,6 +58,12 @@ RULES = (
     # / .licensing and record scope (Release 0.10.0). No SoD carve-out precedes it
     # because suitability review is not a URL prefix — it is gated inside the service.
     (re.compile(r"^/insurance|^/api/v1/insurance"), "insurance.read"),
+    # Advisor Workspace: book-scoped (NOT a firm-wide collection). Requires
+    # client.read; the orchestration service scopes to accessible clients, so it
+    # is deliberately absent from FIRM_WIDE_COLLECTION (no record.read_all gate).
+    # MUST precede the "^/work" rule below, which would otherwise match
+    # "/workspace" by prefix and mislabel it work.read.
+    (re.compile(r"^/workspace"), "client.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
