@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
+from app.services.compliance import authority_admin as aa
 from app.services.compliance import reviews as svc
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
@@ -139,3 +140,126 @@ async def decide(
         return RedirectResponse(
             url=f"/compliance/reviews/{review_id}?blocked={exc}", status_code=303)
     return RedirectResponse(url=f"/compliance/reviews/{review_id}", status_code=303)
+
+
+# --------------------------------------------------------------------------- #
+# Reviewer Authority administration (Phase D.8). Read is a distinct capability
+# from decide; every write requires compliance.authority.manage. All actions are
+# explicit (no inline/bulk/delete), server-side, with expected_status guards.
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/authorities", response_class=HTMLResponse)
+def authority_list(
+    request: Request, q: str | None = None, status: str | None = None,
+    sort: str = "recorded_at", desc: bool = True, page: int = 1,
+    principal: Principal = Depends(require_capability("compliance.authority.read")),
+):
+    result = aa.list_authorities(search=q, status=status, sort=sort, descending=desc, page=page)
+    return templates.TemplateResponse(request=request, name="compliance/authority_list.html", context={
+        "principal": principal, "result": result,
+        "filters": {"q": q or "", "status": status or "", "sort": sort, "desc": desc},
+        "can_manage": principal.can("compliance.authority.manage"),
+    })
+
+
+@router.get("/authorities/new", response_class=HTMLResponse)
+def authority_new(
+    request: Request,
+    principal: Principal = Depends(require_capability("compliance.authority.manage")),
+):
+    return templates.TemplateResponse(request=request, name="compliance/authority_new.html",
+                                      context={"principal": principal})
+
+
+@router.post("/authorities")
+async def authority_create(
+    request: Request,
+    principal: Principal = Depends(require_capability("compliance.authority.manage")),
+):
+    form = parse_qs((await request.body()).decode("utf-8"))
+
+    def _one(key):
+        return form.get(key, [""])[0].strip()
+
+    try:
+        pid = int(_one("principal_id"))
+    except ValueError as exc:
+        raise HTTPException(400, "principal_id required") from exc
+    scope = [s.strip() for s in _one("authority_scope").replace(",", " ").split() if s.strip()]
+    try:
+        row = aa.create_draft(
+            principal.user_id, principal_id=pid, reviewer_role=_one("reviewer_role"),
+            reviewer_name=_one("reviewer_name") or None, authority_scope=scope,
+            effective_date=_one("effective_date") or None,
+            expiration_date=_one("expiration_date") or None,
+            source_reference=_one("source_reference") or None,
+            evidence_description=_one("evidence_description") or None)
+    except aa.SelfAdministrationError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except aa.UnknownPrincipalError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return RedirectResponse(url=f"/compliance/authorities/{row['id']}", status_code=303)
+
+
+@router.get("/authorities/{authority_id}", response_class=HTMLResponse)
+def authority_detail(
+    request: Request, authority_id: int,
+    principal: Principal = Depends(require_capability("compliance.authority.read")),
+):
+    row = aa.get_authority(authority_id)
+    if row is None:
+        raise HTTPException(404, "Not found")
+    return templates.TemplateResponse(request=request, name="compliance/authority_detail.html", context={
+        "principal": principal, "a": row,
+        "can_manage": principal.can("compliance.authority.manage"),
+    })
+
+
+def _authority_action(action):
+    async def handler(
+        request: Request, authority_id: int,
+        principal: Principal = Depends(require_capability("compliance.authority.manage")),
+    ):
+        form = parse_qs((await request.body()).decode("utf-8"))
+
+        def _one(key):
+            return form.get(key, [""])[0].strip()
+
+        kwargs = {"expected_status": _one("expected_status")}
+        try:
+            if action == "activate":
+                aa.activate(principal.user_id, authority_id, **kwargs)
+            elif action == "suspend":
+                aa.suspend(principal.user_id, authority_id, reason=_one("reason"), **kwargs)
+            elif action == "restore":
+                aa.restore(principal.user_id, authority_id, **kwargs)
+            elif action == "revoke":
+                aa.revoke(principal.user_id, authority_id, reason=_one("reason"), **kwargs)
+            elif action == "supersede":
+                scope = [s.strip() for s in _one("authority_scope").replace(",", " ").split() if s.strip()]
+                aa.supersede(
+                    principal.user_id, authority_id,
+                    reviewer_role=_one("reviewer_role") or None,
+                    reviewer_name=_one("reviewer_name") or None,
+                    authority_scope=scope or None,
+                    effective_date=_one("effective_date") or None,
+                    expiration_date=_one("expiration_date") or None,
+                    source_reference=_one("source_reference") or None,
+                    evidence_description=_one("evidence_description") or None,
+                    reason=_one("reason") or None, **kwargs)
+        except aa.SelfAdministrationError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except aa.StaleAuthorityError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (aa.InvalidTransitionError, aa.IncompleteEvidenceError, aa.ScopeConflictError, aa.AuthorityError) as exc:
+            return RedirectResponse(url=f"/compliance/authorities/{authority_id}?error={exc}", status_code=303)
+        return RedirectResponse(url=f"/compliance/authorities/{authority_id}", status_code=303)
+    return handler
+
+
+router.add_api_route("/authorities/{authority_id}/activate", _authority_action("activate"), methods=["POST"])
+router.add_api_route("/authorities/{authority_id}/suspend", _authority_action("suspend"), methods=["POST"])
+router.add_api_route("/authorities/{authority_id}/restore", _authority_action("restore"), methods=["POST"])
+router.add_api_route("/authorities/{authority_id}/revoke", _authority_action("revoke"), methods=["POST"])
+router.add_api_route("/authorities/{authority_id}/supersede", _authority_action("supersede"), methods=["POST"])

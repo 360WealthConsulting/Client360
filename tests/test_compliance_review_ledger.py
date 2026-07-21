@@ -450,7 +450,8 @@ def test_advisor_intelligence_does_not_import_compliance():
 
 
 def test_reviewer_authorities_seeded_empty():
+    # No fabricated authority is seeded by migrations. Any row present is test-created
+    # and carries a recorder (recorded_by); a system-seeded row would have none.
     with engine.connect() as c:
-        # No fabricated global authority exists (test-created rows are torn down).
         assert c.scalar(select(text("count(*)")).select_from(reviewer_authorities).where(
-            reviewer_authorities.c.source_reference != "test-authority")) == 0
+            reviewer_authorities.c.recorded_by.is_(None))) == 0

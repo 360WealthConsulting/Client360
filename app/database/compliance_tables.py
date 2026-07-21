@@ -85,12 +85,37 @@ def define_compliance_tables(metadata: MetaData):
         Column("authority_scope", JSONB, nullable=False, server_default="[]"),
         Column("effective_date", Date),
         Column("expiration_date", Date),
-        Column("status", Text, nullable=False, server_default="active"),
+        Column("status", Text, nullable=False, server_default="draft"),
         Column("source_reference", Text),
+        Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+        # Phase D.8 administration fields.
+        Column("evidence_description", Text),
+        Column("recorded_by", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+        Column("recorded_at", DateTime(timezone=True), server_default=func.now()),
+        Column("suspended_at", DateTime(timezone=True)),
+        Column("revoked_at", DateTime(timezone=True)),
+        Column("revocation_reason", Text),
+        Column("supersedes_authority_id", BigInteger, ForeignKey("reviewer_authorities.id", ondelete="RESTRICT")),
+        CheckConstraint("status IN ('draft', 'active', 'suspended', 'expired', 'revoked', 'superseded')",
+                        name="ck_reviewer_authorities_status"),
+    )
+    reviewer_authority_events = Table(
+        "reviewer_authority_events", metadata,
+        Column("id", BigInteger, primary_key=True),
+        Column("reviewer_authority_id", BigInteger,
+               ForeignKey("reviewer_authorities.id", ondelete="RESTRICT"), nullable=False),
+        Column("event_type", Text, nullable=False),
+        Column("prior_status", Text),
+        Column("new_status", Text),
+        Column("actor_principal_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+        Column("occurred_at", DateTime(timezone=True), nullable=False),
+        Column("reason", Text),
+        Column("evidence_snapshot", JSONB, nullable=False, server_default="{}"),
         Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     )
     return {
         "compliance_reviews": compliance_reviews,
         "compliance_decisions": compliance_decisions,
         "reviewer_authorities": reviewer_authorities,
+        "reviewer_authority_events": reviewer_authority_events,
     }

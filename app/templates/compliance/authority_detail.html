@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Reviewer Authority · {{ a.reviewer_name or a.principal_id }} | Client360{% endblock %}
+{% block crumb %}Reviewer Authority{% endblock %}
+{% block content %}
+{{ ui.page_head("Reviewer Authority", eyebrow="Compliance", desc=(a.reviewer_name or ("principal " ~ a.principal_id)) ~ " · " ~ a.reviewer_role) }}
+
+{% if request.query_params.get("error") %}
+<div class="alert crit" style="margin-bottom:14px"><span class="ico">⚠</span><div>{{ request.query_params.get("error") }}</div></div>
+{% endif %}
+
+<section class="stat-grid" style="margin-bottom:16px">
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Status</span><h3 style="margin:2px 0">{{ a.effective_status|capitalize }}</h3>{% if a.effective_status != a.status %}<p class="subtle">(stored: {{ a.status }})</p>{% endif %}</article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Effective</span><h3 style="margin:2px 0" class="id-mono">{{ a.effective_date or "—" }}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Expiration</span><h3 style="margin:2px 0" class="id-mono">{{ a.expiration_date or "—" }}</h3></article>
+  <article class="card" style="padding:12px 16px"><span class="detail-label">Recorded by</span><h3 style="margin:2px 0">principal {{ a.recorded_by }}</h3></article>
+</section>
+
+<h2 class="section-title">Authority record</h2>
+<article class="card">
+  <div class="detail-row"><span class="detail-label">Reviewer principal</span><span class="id-mono">{{ a.principal_id }}</span> — {{ a.reviewer_name or "no snapshot name" }}</div>
+  <div class="detail-row"><span class="detail-label">Reviewer role</span>{{ a.reviewer_role }}</div>
+  <div class="detail-row"><span class="detail-label">Authority scope</span><div>{% for s in a.authority_scope %}<span class="id-mono subtle">{{ s }}</span> {% endfor %}{% if not a.authority_scope %}<span class="subtle">none</span>{% endif %}</div></div>
+  <div class="detail-row"><span class="detail-label">Source reference</span>{{ a.source_reference or "—" }}</div>
+  <div class="detail-row"><span class="detail-label">Evidence description</span>{{ a.evidence_description or "—" }}</div>
+  <div class="detail-row"><span class="detail-label">Recorded at</span><span class="id-mono">{{ a.recorded_at }}</span></div>
+  {% if a.suspended_at %}<div class="detail-row"><span class="detail-label">Suspended at</span><span class="id-mono">{{ a.suspended_at }}</span></div>{% endif %}
+  {% if a.revoked_at %}<div class="detail-row"><span class="detail-label">Revoked</span><span class="id-mono">{{ a.revoked_at }}</span> — {{ a.revocation_reason }}</div>{% endif %}
+  {% if a.supersedes_authority_id %}<div class="detail-row"><span class="detail-label">Supersedes</span><a class="rowlink" href="/compliance/authorities/{{ a.supersedes_authority_id }}">#{{ a.supersedes_authority_id }}</a></div>{% endif %}
+  {% if a.successor %}<div class="detail-row"><span class="detail-label">Superseded by</span><a class="rowlink" href="/compliance/authorities/{{ a.successor }}">#{{ a.successor }}</a></div>{% endif %}
+</article>
+
+{% if can_manage %}
+<h2 class="section-title">Administer</h2>
+<div class="row" style="gap:12px; flex-wrap:wrap">
+  {% if a.status == "draft" %}
+  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/activate" style="padding:12px 16px" onsubmit="return confirm('Activate this authority? It will confer approval authority for its scope once effective.');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}"><button class="btn" type="submit">Activate</button></form>
+  {% endif %}
+  {% if a.status == "active" %}
+  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/suspend" style="padding:12px 16px" onsubmit="return confirm('Suspend this authority?');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input" name="reason" placeholder="reason (required)" style="margin-bottom:6px"><button class="btn" type="submit">Suspend</button></form>
+  {% endif %}
+  {% if a.status == "suspended" %}
+  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/restore" style="padding:12px 16px" onsubmit="return confirm('Restore this authority to active?');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}"><button class="btn" type="submit">Restore</button></form>
+  {% endif %}
+  {% if a.status in ["draft","active","suspended"] %}
+  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/revoke" style="padding:12px 16px" onsubmit="return confirm('Revoke this authority? This is prospective and permanent (history retained).');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input" name="reason" placeholder="reason (required)" style="margin-bottom:6px"><button class="btn" type="submit">Revoke</button></form>
+  {% endif %}
+  {% if a.status in ["active","suspended"] %}
+  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/supersede" style="padding:12px 16px; min-width:280px" onsubmit="return confirm('Supersede with a new active version? The prior record is retained as superseded.');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}">
+    <div class="field" style="margin:0 0 6px"><label>New scope (blank = carry forward)</label><input class="input" name="authority_scope" placeholder="rule ids / gate categories"></div>
+    <div class="field" style="margin:0 0 6px"><label>New effective date</label><input class="input" name="effective_date" type="date"></div>
+    <div class="field" style="margin:0 0 6px"><label>Reason / evidence</label><input class="input" name="reason" placeholder="reason"></div>
+    <button class="btn" type="submit">Supersede</button></form>
+  {% endif %}
+</div>
+{% endif %}
+
+<h2 class="section-title">Authority history</h2>
+<article class="card">
+  {% if a.events %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Event</th><th>Prior → New</th><th>Actor</th><th>When</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for e in a.events %}
+      <tr>
+        <td>{{ ui.badge(e.event_type|replace("_"," ")|capitalize) }}</td>
+        <td class="subtle">{{ e.prior_status or "—" }} → {{ e.new_status or "—" }}</td>
+        <td class="subtle">principal {{ e.actor_principal_id }}</td>
+        <td class="id-mono">{{ e.occurred_at }}</td>
+        <td class="subtle">{{ e.reason or "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:8px">Append-only history. Prior authority versions and events are never modified or deleted. These records are factual administrative metadata — not electronic signatures, not licensing verification, not regulatory certification.</p>
+  {% else %}{% call ui.empty("No history") %}{% endcall %}{% endif %}
+</article>
+{% endblock %}

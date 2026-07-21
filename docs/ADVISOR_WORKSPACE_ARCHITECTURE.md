@@ -434,6 +434,18 @@ reviewed, approval status, and comments/exceptions. **It records a human review 
 it is not an electronic signature and not an independent regulatory certification.** See
 `docs/PHASE_D7_COMPLIANCE_REVIEW_LEDGER.md`.
 
+**Reviewer authority boundary (Phase D.8).** Whether a final approval is *permitted* is
+governed by administratively-maintained `ReviewerAuthority` records
+(`docs/PHASE_D8_REVIEWER_AUTHORITY_ADMINISTRATION.md`): an authorized administrator
+(`compliance.authority.manage`) records authority from documented facts with segregation
+of duties (actor ≠ subject; no self-administration), an explicit lifecycle
+(draft/active/suspended/expired/revoked/superseded), and an append-only event history.
+Authority scope is a set of governed rule ids and/or policy-gate categories; an empty
+scope confers nothing and authority is never inferred from a role/title. Recording
+authority never auto-approves a blocked review. **Authority records are factual
+administrative metadata — not electronic signatures, not licensing verification, not
+regulatory certification; the system does not determine legal qualification.**
+
 ---
 
 ## Cross-references

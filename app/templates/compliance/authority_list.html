@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Reviewer Authorities | Client360{% endblock %}
+{% block crumb %}Reviewer Authorities{% endblock %}
+{% block content %}
+{{ ui.page_head("Reviewer Authorities", eyebrow="Compliance", desc="Factual administrative records of reviewer authority. Not an electronic signature, not licensing verification, not regulatory certification — the system does not determine legal qualification.") }}
+
+<div class="row" style="justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:12px">
+  <form method="get" action="/compliance/authorities" class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin:0">
+    <div class="field" style="margin:0"><label for="q">Search</label>
+      <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="reviewer, role, source"></div>
+    <div class="field" style="margin:0"><label for="status">Status</label>
+      <select class="input" id="status" name="status">
+        <option value="">All</option>
+        {% for s in ["draft","active","suspended","expired","revoked","superseded"] %}
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|capitalize }}</option>{% endfor %}
+      </select></div>
+    <input type="hidden" name="sort" value="{{ filters.sort }}">
+    <div><button class="btn" type="submit">Apply</button></div>
+  </form>
+  {% if can_manage %}<a class="btn" href="/compliance/authorities/new">New authority</a>{% endif %}
+</div>
+
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} record(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr>
+    <th>Reviewer</th><th>Role</th><th>Scope</th><th>Effective</th><th>Expiration</th>
+    <th>Status</th><th>Source</th><th>Recorded by</th><th>Recorded</th>
+  </tr></thead>
+  <tbody>
+  {% for r in result.rows %}
+    <tr>
+      <td><a class="rowlink" href="/compliance/authorities/{{ r.id }}">{{ r.reviewer_name or ("principal " ~ r.principal_id) }}</a></td>
+      <td>{{ r.reviewer_role }}</td>
+      <td>{% for s in r.authority_scope %}<span class="id-mono subtle">{{ s }}</span> {% endfor %}</td>
+      <td class="id-mono">{{ r.effective_date or "—" }}</td>
+      <td class="id-mono">{{ r.expiration_date or "—" }}</td>
+      <td>{% if r.effective_status == "active" %}{{ ui.badge("Active","good") }}{% elif r.effective_status in ["revoked","expired","superseded","suspended"] %}{{ ui.badge(r.effective_status|capitalize,"crit") }}{% else %}{{ ui.badge(r.effective_status|capitalize) }}{% endif %}</td>
+      <td class="subtle">{{ r.source_reference or "—" }}</td>
+      <td class="subtle">principal {{ r.recorded_by }}</td>
+      <td class="id-mono">{{ r.recorded_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if result.pages > 1 %}
+<div class="row" style="gap:8px; margin-top:10px">
+  {% if result.page > 1 %}<a class="btn subtle" href="/compliance/authorities?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ result.page - 1 }}">← Prev</a>{% endif %}
+  {% if result.page < result.pages %}<a class="btn subtle" href="/compliance/authorities?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+{% call ui.empty("No reviewer authorities", "No authority records exist. Final regulated approval remains blocked until factual authority is recorded.") %}{% endcall %}
+{% endif %}
+{% endblock %}
