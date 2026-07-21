@@ -504,6 +504,45 @@ scope** enforced in the service (the route is outside the `^/(people|households)
 domains are unchanged. Client 360 gains an **"Annual review →"** link; it is otherwise
 unchanged. See `docs/PHASE_D11_ANNUAL_REVIEW_WORKSPACE.md`.
 
+## 14. Business Owner Planning Workspace — composition layer (Phase D.12)
+
+A composition + structured-data layer over existing domains for business-owner clients,
+answering *"what planning opportunities, risks, obligations, and follow-up items exist across
+this client's businesses?"* It **consumes** existing services read-only and is not a planning
+engine — no tax calculation, plan design, insurance placement, valuation, or automation.
+
+```
+Business Entities · Tax · Retirement · Benefits · Insurance · Advisor Intelligence · Advisor
+Work · Activity Timeline · Compliance · Annual Review  →  Business Owner Planning Service
+                                                       →  /business-owner/{person_id}[/business/{id}]
+```
+
+The workspace is anchored to a **person** and reaches their businesses through the existing
+ownership graph (`relationship_entities`/`relationship_ownership`) via a **pure read** — never
+inferring ownership from a name/occupation/free text, and never creating an entity as a
+rendering side effect. Business-owner status comes only from an active ownership edge.
+
+The audit proved that succession / continuity / buy-sell / valuation / key-person facts have
+**no authoritative home**, so D.12 introduces exactly one table — `business_planning_profiles`
+(1:1 per business, controlled status vocabulary) — and nothing else; it duplicates no
+business/ownership/tax/retirement/benefits/insurance/work/compliance/annual-review data. Tax,
+retirement, benefits, and insurance are reused via additive person/business-scoped reads on the
+owning services (existing behavior unchanged). Owner compensation, policy purpose, and tax
+return content are **absent upstream** and shown as "Not available / not tracked" — never
+fabricated.
+
+**Invariants:** capabilities `business_owner.read/update/planning_update` (server-side); person
+record scope + a validated business relationship (ownership or org scope) gate every business
+(blocks URL enumeration); each composed section is gated on its OWNING capability
+(tax/benefits/insurance/organization/advisor_work/timeline/compliance/annual_review) —
+**restricted ≠ missing**; EIN decrypts only with `benefits.sensitive.read`, policy numbers only
+with `insurance.sensitive.read`; recommendations are reused (grouped by durable
+`recommendation_type`, no second engine); missing-information is deterministic (no AI); the only
+mutation is the planning profile, which emits durable events through the shared timeline writer
+(no second event table). Client 360 gains a "Business owner planning →" link and the household
+profile an optional bounded ownership summary; both are otherwise unchanged. See
+`docs/PHASE_D12_BUSINESS_OWNER_PLANNING_WORKSPACE.md`.
+
 ---
 
 ## Cross-references

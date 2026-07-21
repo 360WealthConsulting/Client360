@@ -126,6 +126,37 @@ def override_deadline(deadline_id, due_date, reason, *, actor_user_id, request_i
     write_audit_event(action="tax.deadline.overridden", entity_type="tax_deadline", entity_id=deadline_id, actor_user_id=actor_user_id, request_id=request_id, metadata={"due_date":str(due_date),"reason":reason})
 
 
+def business_engagements(relationship_entity_id, *, limit=50):
+    """Read-only (Phase D.12): a business entity's tax engagements + returns — form type,
+    tax year, filing status, and lifecycle status ONLY. The tax domain stores no return
+    financial content (no K-1/W-2/QBI/distributions), so those are never returned here.
+    Keyed to ``relationship_entity_id``; the caller gates on ``tax.read`` and business scope.
+    Bounded."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(tax_engagements.c.id.label("engagement_id"),
+                   tax_engagements.c.engagement_type,
+                   tax_engagements.c.status.label("engagement_status"),
+                   tax_years.c.year.label("tax_year"),
+                   tax_engagement_returns.c.id.label("return_id"),
+                   tax_engagement_returns.c.status.label("return_status"),
+                   tax_return_types.c.code.label("return_type"),
+                   tax_return_types.c.form_number,
+                   tax_filing_statuses.c.code.label("filing_status"))
+            .select_from(tax_engagements
+                .outerjoin(tax_years, tax_years.c.id == tax_engagements.c.tax_year_id)
+                .outerjoin(tax_engagement_returns,
+                           tax_engagement_returns.c.tax_engagement_id == tax_engagements.c.id)
+                .outerjoin(tax_return_types,
+                           tax_return_types.c.id == tax_engagement_returns.c.return_type_id)
+                .outerjoin(tax_filing_statuses,
+                           tax_filing_statuses.c.id == tax_engagement_returns.c.filing_status_id))
+            .where(tax_engagements.c.relationship_entity_id == relationship_entity_id)
+            .order_by(tax_years.c.year.desc().nullslast(), tax_engagements.c.id.desc())
+            .limit(limit)).mappings().all()
+    return [dict(r) for r in rows]
+
+
 def client_engagement_summary(person_id, household_id=None):
     """Read-only count of a client's active tax engagements (person, or household).
     Factual composition for the Client 360 summary (Phase D.2); keyed by

@@ -193,3 +193,6 @@ advisor_work_events = metadata.tables["advisor_work_events"]
 
 # Annual review workspace (Phase D.11)
 annual_review_sessions = metadata.tables["annual_review_sessions"]
+
+# Business owner planning workspace (Phase D.12)
+business_planning_profiles = metadata.tables["business_planning_profiles"]

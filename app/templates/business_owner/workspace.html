@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Business Owner Planning — {{ ws.person.full_name or ("Person " ~ ws.person.id) }} | Client360{% endblock %}
+{% block crumb %}Business Owner Planning{% endblock %}
+{% block content %}
+{{ ui.page_head("Business Owner Planning", eyebrow="Advisor workspace", desc="Planning opportunities, risks, obligations, and follow-up across " ~ (ws.person.full_name or ("client " ~ ws.person.id)) ~ "'s businesses. A read-first composition of existing domains — it does not calculate tax, design plans, or place insurance.") }}
+
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/people/{{ ws.person.id }}">← Back to client</a></p>
+
+{# ── 1. Owner & Household Snapshot ──────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Owner &amp; household snapshot</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Client</span><strong>{{ ws.person.full_name or ("Person " ~ ws.person.id) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Household</span><span>{% if ws.household_id %}<a class="rowlink" href="/households/{{ ws.household_id }}">{{ ws.household_name }}</a>{% else %}—{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Servicing advisor</span><span>{{ ws.advisor_name }}</span></div>
+    <div class="detail-row"><span class="subtle">Client status</span><span>{{ ui.badge(ws.snapshot.client_status, 'good' if ws.snapshot.client_status == 'Active' else '') }}</span></div>
+    <div class="detail-row"><span class="subtle">Business owner</span><span>{% if ws.is_business_owner %}{{ ui.badge('Yes — validated ownership','good') }}{% else %}{{ ui.badge('No validated ownership') }}{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Active businesses</span><span>{{ ws.snapshot.active_business_count }}</span></div>
+    <div class="detail-row"><span class="subtle">Ownership relationships</span><span>{{ ws.snapshot.ownership_relationship_count }}</span></div>
+    <div class="detail-row"><span class="subtle">Most recent annual review</span><span>{% if ws.annual_review and ws.annual_review.latest %}<a class="rowlink" href="/annual-review/session/{{ ws.annual_review.latest.id }}">{{ ws.annual_review.latest.status|replace("_"," ")|capitalize }}</a>{% elif ws.annual_review is none %}<span class="subtle">Restricted</span>{% else %}<span class="subtle">None</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Open advisor work</span><span>{% if ws.snapshot.open_work_count is none %}<span class="subtle">Restricted</span>{% else %}{{ ws.snapshot.open_work_count }}{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Pending compliance reviews</span><span>{% if ws.snapshot.pending_compliance_count is none %}<span class="subtle">Restricted</span>{% else %}{{ ws.snapshot.pending_compliance_count }}{% endif %}</span></div>
+    {% if ws.activity is not none %}<div class="detail-row"><span class="subtle">Recent activity</span><a class="rowlink" href="/people/{{ ws.person.id }}/timeline">View full timeline →</a></div>{% endif %}
+  </div>
+</section>
+
+{# ── 2. Business Portfolio ──────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Business portfolio</h2>
+  {% if ws.businesses %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Business</th><th>Entity type</th><th>EIN</th><th>Status</th><th>Ownership</th><th>Succession</th><th></th></tr></thead>
+    <tbody>
+    {% for b in ws.businesses %}
+      <tr>
+        <td><strong>{{ b.name }}</strong>{% if not b.active %} {{ ui.badge('Inactive') }}{% endif %}</td>
+        <td>{{ (b.entity_form|replace("_"," ")|upper) if b.entity_form else "—" }}</td>
+        <td>{% if b.ein %}{{ b.ein }}{% elif b.get('ein_restricted') %}<span class="subtle">Restricted</span>{% elif b.ein_present %}<span class="subtle">On file</span>{% else %}<span class="subtle">Missing</span>{% endif %}</td>
+        <td><span class="subtle">{{ (b.status or "—")|capitalize }}</span></td>
+        <td>{% if b.ownership_percentage is not none %}{{ "%.1f"|format(b.ownership_percentage|float) }}%{% else %}<span class="subtle">Unknown</span>{% endif %}{% if b.ownership_type %} <span class="subtle">({{ b.ownership_type }})</span>{% endif %}</td>
+        <td><span class="subtle">{{ b.planning.succession_plan_status|replace("_"," ")|capitalize }}</span></td>
+        <td><a class="rowlink" href="/business-owner/{{ ws.person.id }}/business/{{ b.business_id }}">Detail →</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:6px">Businesses are shown separately; unrelated businesses are never combined. Ownership shown is this client's stake — full ownership structure is on each business detail page.</p>
+  {% else %}
+  {% call ui.empty("No businesses", "No validated business ownership relationships are currently recorded.") %}{% endcall %}
+  {% endif %}
+</section>
+
+{# ── 10. Tax & Planning Opportunities (reused Advisor Intelligence) ─────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Tax &amp; planning opportunities <span class="subtle" style="font-size:12px; font-weight:500">reused recommendations · grouped by type</span></h2>
+  {% if ws.recommendation_groups %}
+  {% for g in ws.recommendation_groups %}
+  <div class="card" style="margin-bottom:10px">
+    <h3 style="margin-top:0">{{ g.label }}</h3>
+    {% for r in g.items %}
+      <div class="detail-row" style="align-items:flex-start">
+        <div style="flex:1"><strong>{{ r.title }}</strong> {{ ui.badge(r.priority.value|capitalize) }}<br><span class="subtle">{{ r.summary }}</span></div>
+        {% if r.route %}<a class="rowlink" href="{{ r.route }}">Detail →</a>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% else %}{% call ui.empty("No recommendations", "No advisor recommendations for this client.") %}{% endcall %}{% endif %}
+</section>
+
+{# ── 11. Outstanding Advisor Work ──────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Outstanding advisor work</h2>
+  {% if ws.work is none %}
+    <div class="card"><p class="subtle">Requires the advisor-work capability.</p></div>
+  {% elif ws.work %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Work</th><th>Priority</th><th>Status</th><th>Due</th><th></th></tr></thead>
+    <tbody>
+    {% for w in ws.work %}
+      <tr><td>{{ w.recommendation_type|replace("_"," ")|capitalize }}<br><span class="subtle">{{ w.governing_rule }}</span></td>
+        <td>{{ ui.badge(w.priority|capitalize) }}</td><td><span class="subtle">{{ w.status|replace("_"," ")|capitalize }}</span></td>
+        <td>{{ w.due_date or "—" }}</td><td><a class="rowlink" href="/advisor-work/{{ w.id }}">Open →</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:6px">Advisor Work is person-scoped; work items do not carry a business link in the current model.</p>
+  {% else %}{% call ui.empty("No open work", "No outstanding advisor work for this client.") %}{% endcall %}{% endif %}
+</section>
+
+{# ── 12. Compliance Summary ────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Compliance summary</h2>
+  {% if ws.compliance is none %}
+    <div class="card"><p class="subtle">Requires the compliance-review capability.</p></div>
+  {% else %}
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Pending reviews</span><strong>{{ ws.compliance.pending }}</strong></div>
+    <div class="detail-row"><span class="subtle">Blocked approvals</span><strong>{{ ws.compliance.blocked }}</strong></div>
+    <div class="detail-row"><span class="subtle">Completed decisions</span><strong>{{ ws.compliance.completed }}</strong></div>
+    {% if ws.compliance.total == 0 %}<p class="subtle" style="margin-top:8px">No compliance reviews for this client.</p>{% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{# ── 13. Annual Review Summary ─────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Annual review{% if ws.annual_review is not none %} <a class="rowlink" style="font-size:13px; font-weight:500" href="/annual-review/{{ ws.person.id }}">Open annual review →</a>{% endif %}</h2>
+  <div class="card">
+    {% if ws.annual_review is none %}<p class="subtle">Requires the annual-review capability.</p>
+    {% elif ws.annual_review.latest %}
+      <div class="detail-row"><span class="subtle">Latest session</span><a class="rowlink" href="/annual-review/session/{{ ws.annual_review.latest.id }}">Session #{{ ws.annual_review.latest.id }}</a></div>
+      <div class="detail-row"><span class="subtle">Status</span><span>{{ ws.annual_review.latest.status|replace("_"," ")|capitalize }}</span></div>
+    {% else %}<p class="subtle">No annual review sessions recorded.</p>{% endif %}
+  </div>
+</section>
+
+{# ── 14. Recent Activity ───────────────────────────────────────────────── #}
+{% if ws.activity is not none and ws.activity.rows %}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Recent activity <a class="rowlink" style="font-size:13px; font-weight:500" href="/people/{{ ws.person.id }}/timeline">View full timeline →</a></h2>
+  <div class="card">
+    {% for e in ws.activity.rows %}
+      <div class="detail-row" style="align-items:flex-start">
+        <div style="flex:1"><strong>{{ e.title }}</strong> {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}<br>
+          <span class="subtle">{% if e.redacted %}<em>Additional details are restricted.</em>{% else %}{{ e.summary }}{% endif %}</span></div>
+        <span class="subtle id-mono" style="white-space:nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ── 15. Missing Information & Data Quality ────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Missing information &amp; data quality</h2>
+  <div class="card">
+    {% if ws.missing_information %}
+    <ul style="margin:0; padding-left:18px">
+      {% for m in ws.missing_information %}<li><strong>{{ m.business }}</strong> — {{ m.issue }}</li>{% endfor %}
+    </ul>
+    <p class="subtle" style="margin-top:8px">Deterministic observations from recorded data only. Restricted data (which you lack permission to view) is never listed here as missing.</p>
+    {% else %}<p class="subtle">No objective data-quality gaps detected in the recorded business facts.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

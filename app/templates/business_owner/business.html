@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ d.business.name }} — Business Planning | Client360{% endblock %}
+{% block crumb %}Business Planning{% endblock %}
+{% block content %}
+{{ ui.page_head(d.business.name, eyebrow="Business", desc="Single-business planning detail. Factual and observational — no tax calculation, plan design, valuation, or insurance placement.") }}
+
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/business-owner/{{ d.person_id }}">← Back to business owner workspace</a></p>
+{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>Invalid value: {{ request.query_params.get('error') }}</div></div>{% endif %}
+
+{# ── Business facts ─────────────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Business facts</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Legal name</span><strong>{{ d.business.legal_name or d.business.name }}</strong></div>
+    <div class="detail-row"><span class="subtle">Entity type</span><span>{% if d.business.entity_form %}{{ d.business.entity_form|replace("_"," ")|upper }}{% else %}<span class="subtle">Unknown</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">EIN</span><span>{% if d.business.ein %}{{ d.business.ein }}{% elif d.business.get('ein_restricted') %}<span class="subtle">Restricted — requires benefits.sensitive.read</span>{% elif d.business.ein_present %}<span class="subtle">On file</span>{% else %}<span class="subtle">Missing</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Industry</span><span>{{ d.business.industry or "—" }}</span></div>
+    <div class="detail-row"><span class="subtle">Status</span><span>{{ (d.business.status or "—")|capitalize }}{% if not d.business.active %} · {{ ui.badge('Inactive') }}{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Provenance</span><span class="subtle">source: {{ d.business.provenance.edge_source or "—" }}{% if d.business.provenance.evidence_source %} · evidence: {{ d.business.provenance.evidence_source }}{% endif %}</span></div>
+  </div>
+</section>
+
+{# ── Ownership structure ───────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Ownership structure</h2>
+  {% if d.ownership.status == 'restricted' %}
+    <div class="card"><p class="subtle">Restricted — requires organization access to this business.</p></div>
+  {% elif d.ownership.owners %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Owner</th><th>Type</th><th>Ownership %</th><th>Voting %</th><th>Direct</th></tr></thead>
+    <tbody>
+    {% for o in d.ownership.owners %}
+      <tr class="{{ 'row-warn' if o.owner_entity_id in d.ownership.conflict_owner_ids else '' }}">
+        <td>{{ o.owner_name }}{% if o.owner_entity_id in d.ownership.conflict_owner_ids %} {{ ui.badge('Conflict','warn') }}{% endif %}</td>
+        <td><span class="subtle">{{ o.owner_entity_type }}{% if o.ownership_type %} / {{ o.ownership_type }}{% endif %}</span></td>
+        <td>{% if o.ownership_percentage is not none %}{{ "%.2f"|format(o.ownership_percentage|float) }}%{% else %}<span class="subtle">Missing</span>{% endif %}</td>
+        <td>{% if o.voting_percentage is not none %}{{ "%.2f"|format(o.voting_percentage|float) }}%{% else %}—{% endif %}</td>
+        <td>{{ "Yes" if o.is_direct else "No" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:6px">Total recorded ownership: {{ "%.2f"|format(d.ownership.total_percentage|float) }}%{% if d.ownership.totals_incomplete %} — {{ ui.badge('Totals do not resolve to 100%','warn') }}{% endif %}. Percentages are shown as recorded and are not auto-normalized.</p>
+  {% else %}{% call ui.empty("No owners recorded", "No ownership relationships are recorded for this business.") %}{% endcall %}{% endif %}
+</section>
+
+{# ── Entity & Tax profile ──────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Entity &amp; tax profile</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Entity / tax classification</span><span>{% if d.business.entity_form %}{{ d.business.entity_form|replace("_"," ")|upper }}{% else %}<span class="subtle">Unknown</span>{% endif %}</span></div>
+    {% if d.tax.status == 'restricted' %}
+      <p class="subtle" style="margin-top:8px">Tax engagements restricted — requires tax access.</p>
+    {% else %}
+      {% if d.tax.engagements %}
+      <div class="table-wrap" style="margin-top:8px"><table class="data">
+        <thead><tr><th>Tax year</th><th>Return type</th><th>Filing status</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for e in d.tax.engagements %}
+          <tr><td>{{ e.tax_year or "—" }}</td><td>{{ e.return_type or "—" }}{% if e.form_number %} <span class="subtle">({{ e.form_number }})</span>{% endif %}</td>
+            <td><span class="subtle">{{ (e.filing_status or "—")|upper }}</span></td><td><span class="subtle">{{ (e.return_status or e.engagement_status or "—")|replace("_"," ")|capitalize }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}<p class="subtle" style="margin-top:8px">No tax return linked to this business.</p>{% endif %}
+      <p class="subtle" style="margin-top:8px">Not tracked by the tax system (shown for transparency): {{ d.tax.untracked|join(", ") }}. These are never calculated or inferred.</p>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Owner compensation (not tracked) ──────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Owner compensation</h2>
+  <div class="card">
+    <p class="subtle">Owner compensation is not stored as structured data in the system. The following are shown as <strong>Not available</strong> rather than estimated or inferred:</p>
+    <ul style="margin:6px 0 0; padding-left:18px">
+      {% for comp in d.owner_compensation.components %}<li>{{ comp }}: <span class="subtle">Not available</span></li>{% endfor %}
+    </ul>
+  </div>
+</section>
+
+{# ── Retirement plans ──────────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Retirement plans</h2>
+  {% if d.retirement.status == 'restricted' %}
+    <div class="card"><p class="subtle">Restricted — requires benefits access to this business.</p></div>
+  {% elif d.retirement.plans %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Plan</th><th>Type</th><th>Provider</th><th>Status</th><th>Renewal</th></tr></thead>
+    <tbody>
+    {% for p in d.retirement.plans %}
+      <tr><td>{{ p.name }}</td><td>{{ p.plan_type_name or p.plan_type_code }}</td><td>{{ p.provider_id or "—" }}</td>
+        <td><span class="subtle">{{ (p.status or "—")|capitalize }}</span></td><td>{{ p.renewal_date or "—" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:6px">Contribution and plan-limit amounts are not tracked and are never calculated here.</p>
+  {% else %}{% call ui.empty("No retirement plans", "No business-sponsored retirement plans recorded.") %}{% endcall %}{% endif %}
+</section>
+
+{# ── Group benefits ────────────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Group benefits</h2>
+  {% if d.benefits.status == 'restricted' %}
+    <div class="card"><p class="subtle">Restricted — requires benefits access to this business.</p></div>
+  {% elif d.benefits.plans %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Plan</th><th>Type</th><th>Funding</th><th>Status</th><th>Renewal</th></tr></thead>
+    <tbody>
+    {% for p in d.benefits.plans %}
+      <tr><td>{{ p.name }}</td><td>{{ p.plan_type_name or p.plan_type_code }}</td><td><span class="subtle">{{ p.funding_type or "—" }}</span></td>
+        <td><span class="subtle">{{ (p.status or "—")|capitalize }}</span></td><td>{{ p.renewal_date or "—" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:6px"><a class="rowlink" href="/organizations/{{ d.business.business_id }}">Manage in Benefits →</a> Employer-contribution amounts and enrolled counts are managed in the Benefits domain.</p>
+  {% else %}{% call ui.empty("No group benefits", "No business-sponsored group benefit plans recorded.") %}{% endcall %}{% endif %}
+</section>
+
+{# ── Business insurance & risk ─────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Business insurance &amp; risk</h2>
+  {% if d.insurance.status == 'restricted' %}
+    <div class="card"><p class="subtle">Restricted — requires insurance access.</p></div>
+  {% elif d.insurance.policies %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Carrier</th><th>Policy #</th><th>Face amount</th><th>Premium</th><th>Status</th><th>Purpose</th></tr></thead>
+    <tbody>
+    {% for p in d.insurance.policies %}
+      <tr><td>{{ p.carrier_name or "—" }}</td>
+        <td>{% if p.policy_number %}{{ p.policy_number }}{% elif p.policy_number_present %}<span class="subtle">Restricted</span>{% else %}—{% endif %}</td>
+        <td>{% if p.face_amount %}${{ "{:,.0f}".format(p.face_amount) }}{% else %}—{% endif %}</td>
+        <td>{% if p.premium_amount %}${{ "{:,.2f}".format(p.premium_amount) }}{% else %}—{% endif %}</td>
+        <td><span class="subtle">{{ (p.status or "—")|replace("_"," ")|capitalize }}</span></td>
+        <td><span class="subtle">Unconfirmed</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="subtle" style="margin-top:6px">Policy purpose (key-person / buy-sell / executive bonus / split-dollar) is not modeled in the insurance domain, so it is shown as unconfirmed — never classified from data.</p>
+  {% else %}{% call ui.empty("No business policies", "No business-owned insurance policies are visible.") %}{% endcall %}{% endif %}
+</section>
+
+{# ── Succession & continuity (the editable D.12 planning record) ───────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Succession &amp; continuity</h2>
+  <div class="card">
+    <p class="subtle" style="margin-top:0">These are advisor/client-reported planning facts recorded by this workspace. Statuses use a controlled vocabulary. This is not legal validation of any agreement.</p>
+    {% if can_plan %}
+    <form method="post" action="/business-owner/{{ d.person_id }}/business/{{ d.business.business_id }}/planning">
+      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px">
+        {% for field, label in [("succession_plan_status","Succession plan"), ("buy_sell_status","Buy-sell agreement"), ("continuity_plan_status","Continuity plan"), ("key_person_risk_status","Key-person risk")] %}
+        <div class="field"><label for="{{ field }}">{{ label }}</label>
+          <select class="input" id="{{ field }}" name="{{ field }}">
+            {% for v in status_vocab %}<option value="{{ v }}" {% if (d.planning_profile and d.planning_profile[field] == v) or (not d.planning_profile and v == 'unknown') %}selected{% endif %}>{{ v|replace("_"," ")|capitalize }}</option>{% endfor %}
+          </select></div>
+        {% endfor %}
+        <div class="field"><label for="valuation_amount">Valuation amount</label>
+          <input class="input" id="valuation_amount" name="valuation_amount" inputmode="decimal" value="{{ d.planning_profile.valuation_amount if d.planning_profile and d.planning_profile.valuation_amount is not none else '' }}"></div>
+        <div class="field"><label for="valuation_as_of">Valuation as-of</label>
+          <input class="input" id="valuation_as_of" name="valuation_as_of" type="date" value="{{ d.planning_profile.valuation_as_of if d.planning_profile and d.planning_profile.valuation_as_of else '' }}"></div>
+        <div class="field"><label for="buy_sell_reviewed_at">Buy-sell reviewed</label>
+          <input class="input" id="buy_sell_reviewed_at" name="buy_sell_reviewed_at" type="date" value="{{ d.planning_profile.buy_sell_reviewed_at if d.planning_profile and d.planning_profile.buy_sell_reviewed_at else '' }}"></div>
+        <div class="field"><label for="source_type">Source</label>
+          <select class="input" id="source_type" name="source_type">
+            {% for v in source_vocab %}<option value="{{ v }}" {% if (d.planning_profile and d.planning_profile.source_type == v) or (not d.planning_profile and v == 'advisor_entered') %}selected{% endif %}>{{ v|replace("_"," ")|capitalize }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="notes">Planning notes</label>
+        <textarea class="input" id="notes" name="notes" rows="3">{{ d.planning_profile.notes if d.planning_profile else '' }}</textarea></div>
+      <div style="margin-top:12px"><button class="btn" type="submit">Save planning facts</button></div>
+    </form>
+    {% else %}
+    <div class="detail-row"><span class="subtle">Succession plan</span><span>{{ d.business.planning.succession_plan_status|replace("_"," ")|capitalize }}</span></div>
+    <div class="detail-row"><span class="subtle">Buy-sell agreement</span><span>{{ d.business.planning.buy_sell_status|replace("_"," ")|capitalize }}</span></div>
+    <div class="detail-row"><span class="subtle">Continuity plan</span><span>{{ d.business.planning.continuity_plan_status|replace("_"," ")|capitalize }}</span></div>
+    <div class="detail-row"><span class="subtle">Key-person risk</span><span>{{ d.business.planning.key_person_risk_status|replace("_"," ")|capitalize }}</span></div>
+    <p class="subtle" style="margin-top:8px">You do not have permission to edit planning facts.</p>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Data quality ──────────────────────────────────────────────────────── #}
+<section class="stack" style="margin-bottom:22px">
+  <h2 class="section-title">Data quality</h2>
+  <div class="card">
+    {% if d.missing_information %}
+    <ul style="margin:0; padding-left:18px">{% for m in d.missing_information %}<li>{{ m.issue }}</li>{% endfor %}</ul>
+    {% else %}<p class="subtle">No objective data-quality gaps detected.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}
