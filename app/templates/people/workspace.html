@@ -154,16 +154,47 @@
     </section>
 
     {% elif active_tab == "portfolio" %}
+    {# Client Wealth Workspace — the individual-client view of the meeting-prep
+       screen. Mirrors the Household Wealth Workspace (same summary ordering,
+       section styling, allocation/positions-before-accounts hierarchy, Accounts
+       table, and empty-state language). Reuses get_person_portfolio(); no new
+       queries, calculations, or functionality. #}
     <section class="stack">
-        <div><h2>Portfolio Intelligence</h2><p class="empty-state">Household-linked accounts are aggregated automatically.</p></div>
+        <h2 class="section-title">Client wealth</h2>
+
+        {# Summary: same ordering philosophy as the household workspace. #}
         <div class="workspace-grid">
             <article class="card"><span class="detail-label">Client AUM</span><h2>${{ "{:,.2f}".format(portfolio.total_aum) }}</h2></article>
             <article class="card"><span class="detail-label">Household AUM</span><h2>${{ "{:,.2f}".format(portfolio.household.total_aum) }}</h2></article>
-            <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.2f}".format(portfolio.cash) }}</h2><p>{{ "{:.1f}".format(portfolio.cash_percent) }}%</p></article>
+            <article class="card"><span class="detail-label">Cash</span><h2>${{ "{:,.2f}".format(portfolio.cash) }}</h2><p class="subtle">{{ "{:.1f}".format(portfolio.cash_percent) }}%</p></article>
+            <article class="card"><span class="detail-label">Beneficiaries</span><h2>{{ portfolio.beneficiary_count }}</h2><p class="subtle">Active beneficiaries on file</p></article>
         </div>
-        <article class="card"><h3>Accounts & Registrations</h3>{% for account in portfolio.accounts %}<div class="detail-row"><span>{{ account.account_name or account.account_number }} · {{ account.registration_type or "Unclassified" }} · {{ account.custodian }}</span><strong>${{ "{:,.2f}".format(account.total_value or 0) }}</strong></div>{% else %}<p>No portfolio accounts found.</p>{% endfor %}</article>
-        <article class="card"><h3>Asset Allocation</h3>{% for name, item in portfolio.asset_allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p>No positions imported.</p>{% endfor %}</article>
-        <article class="card"><h3>Largest Holdings</h3>{% for holding in portfolio.largest_holdings %}<div class="detail-row"><span>{{ holding.symbol }} · {{ holding.name }}</span><strong>${{ "{:,.2f}".format(holding.market_value) }}</strong></div>{% else %}<p>No positions imported.</p>{% endfor %}</article>
+
+        <div class="workspace-grid">
+            <article class="card"><h3>Asset allocation</h3>{% for name, item in portfolio.asset_allocation.items() %}<div class="detail-row"><span>{{ name }}</span><strong>{{ "{:.1f}".format(item.percent) }}% · ${{ "{:,.2f}".format(item.value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
+            <article class="card"><h3>Largest positions</h3>{% for holding in portfolio.largest_holdings %}<div class="detail-row"><span>{{ holding.symbol }} · {{ holding.name }}</span><strong>${{ "{:,.2f}".format(holding.market_value) }}</strong></div>{% else %}<p class="subtle">No positions imported.</p>{% endfor %}</article>
+        </div>
+
+        <article class="card">
+            <h3>Accounts</h3>
+            {% if portfolio.accounts %}
+            <div class="table-wrap">
+              <table class="data">
+                <thead><tr><th>Account</th><th>Registration</th><th>Custodian</th><th class="num">Value</th></tr></thead>
+                <tbody>
+                {% for account in portfolio.accounts %}
+                  <tr>
+                    <td>{{ account.account_name or account.account_number }}</td>
+                    <td>{{ account.registration_type or "Unclassified" }}</td>
+                    <td>{{ account.custodian }}</td>
+                    <td class="num">${{ "{:,.2f}".format(account.total_value or 0) }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}<p class="subtle">No portfolio accounts found for this client.</p>{% endif %}
+        </article>
     </section>
 
     {% elif active_tab == "activities" %}
