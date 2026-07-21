@@ -384,6 +384,21 @@ def _order(signals: Iterable[Signal]) -> tuple[Signal, ...]:
     return tuple(sorted(signals, key=lambda s: (-s.priority.rank, s.id)))
 
 
+#: Fixed display order for the three signal families. Business grouping lives here
+#: (Python), not in the template (D.5E) — the shared renderer just iterates.
+_GROUP_ORDER = ("Operational Signals", "Advisor Opportunities", "Advisor Recommendations")
+
+
+def group_signals(signals: Iterable[Signal]) -> list[tuple[str, list[Signal]]]:
+    """Group already-ordered signals into their display buckets in fixed order,
+    dropping empty buckets. Within a bucket the incoming order is preserved. Exposed
+    to the shared Advisor Intelligence template so grouping is decided in Python."""
+    buckets: dict[str, list[Signal]] = {label: [] for label in _GROUP_ORDER}
+    for signal in signals:
+        buckets[signal.group].append(signal)
+    return [(label, buckets[label]) for label in _GROUP_ORDER if buckets[label]]
+
+
 def _firm_now(now: datetime | None) -> datetime:
     return now or datetime.now(FIRM_TZ)
 
@@ -473,6 +488,45 @@ def _signal_id(signal_type: str, record_type: str, record_id) -> str:
     return f"{signal_type}:{record_type}:{record_id}"
 
 
+def _evidence(**pairs) -> tuple[str, ...]:
+    """Build a deterministic evidence tuple of ``"key=value"`` strings, in call
+    order. Centralizes the evidence-string construction every rule shared."""
+    return tuple(f"{key}={value}" for key, value in pairs.items())
+
+
+def _emit(*, key: str, category: str, source_record: SourceRecord, title: str,
+          summary: str, source_service: str, explain_source: str, why: str,
+          evidence: tuple[str, ...], severity: str, route: str | None,
+          priority: Priority = Priority.MEDIUM, policy_gate: PolicyGate = PolicyGate.NONE,
+          status: str = "open", recommendation: RecommendationMeta | None = None) -> Signal:
+    """The shared deterministic Signal builder — the single place a rule result
+    becomes a ``Signal`` (the "Rule → Evidence → Signal" pipeline). It owns the
+    deterministic id (derived from ``key`` + ``source_record``) and the
+    ``Explainability`` object (evidence + deterministic confidence 1.0 + policy
+    gate), so a producer supplies only its rule-specific fields. ``explain_source``
+    is the detailed read path recorded in the explainability (kept separate from the
+    short ``source_service`` shown on the signal). Output is byte-identical to the
+    pre-D.5E inline construction."""
+    return Signal(
+        id=_signal_id(key, source_record.entity_type, source_record.entity_id),
+        category=category,
+        title=title,
+        summary=summary,
+        source_service=source_service,
+        source_record=source_record,
+        severity=severity,
+        priority=priority,
+        evidence=evidence,
+        explainability=Explainability(
+            why=why, source_service=explain_source, evidence=evidence,
+            confidence=1.0, policy_gate=policy_gate),
+        policy_gate=policy_gate,
+        route=route,
+        status=status,
+        recommendation=recommendation,
+    )
+
+
 def _review_overdue_producer(ctx: SignalContext) -> list[Signal]:
     """Client review overdue — from the authoritative wealth review-due read
     (``portfolio.accounts_due_for_review``). The due basis is NOT recomputed here."""
@@ -485,32 +539,21 @@ def _review_overdue_producer(ctx: SignalContext) -> list[Signal]:
         priority = Priority.HIGH if last is None else Priority.MEDIUM
         acct_label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
         basis = "never reviewed" if last is None else f"last reviewed {last}"
-        evidence = (
-            f"account_id={acct['id']}",
-            f"account={acct_label}",
-            f"person_id={acct.get('person_id')}",
-            f"last_review_date={last}",
-            f"stale_days_threshold={_MATERIAL_REVIEW_STALE_DAYS}",
-        )
-        signals.append(Signal(
-            id=_signal_id("client_review_overdue", "account", acct["id"]),
-            category="review",
+        signals.append(_emit(
+            key="client_review_overdue", category="review",
+            source_record=SourceRecord("account", acct["id"]),
             title=f"Account review overdue — {acct_label}",
             summary=f"Account review is overdue ({basis}).",
             source_service="portfolio",
-            source_record=SourceRecord("account", acct["id"]),
-            severity="review_overdue",
-            priority=priority,
-            evidence=evidence,
-            explainability=Explainability(
-                why="Account last_review_date is null or older than the review-due "
-                    "threshold, per portfolio.accounts_due_for_review.",
-                source_service="portfolio.accounts_due_for_review",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
-            route=_person_route(acct.get("person_id")),
-            status="open",
-        ))
+            explain_source="portfolio.accounts_due_for_review",
+            why="Account last_review_date is null or older than the review-due "
+                "threshold, per portfolio.accounts_due_for_review.",
+            evidence=_evidence(
+                account_id=acct["id"], account=acct_label,
+                person_id=acct.get("person_id"), last_review_date=last,
+                stale_days_threshold=_MATERIAL_REVIEW_STALE_DAYS),
+            severity="review_overdue", priority=priority,
+            route=_person_route(acct.get("person_id"))))
     return signals
 
 
@@ -523,33 +566,22 @@ def _open_exception_producer(ctx: SignalContext) -> list[Signal]:
         severity = (exc.get("severity") or "").lower()
         priority = _SEVERITY_PRIORITY.get(severity, Priority.INFORMATIONAL)
         title = exc.get("title") or f"exception {exc['id']}"
-        evidence = (
-            f"exception_id={exc['id']}",
-            f"domain={exc.get('domain')}",
-            f"category={exc.get('category')}",
-            f"severity={exc.get('severity')}",
-            f"status={exc.get('status')}",
-            f"opened_at={exc.get('opened_at')}",
-        )
-        signals.append(Signal(
-            id=_signal_id("open_client_exception", "exception", exc["id"]),
-            category="exception",
+        signals.append(_emit(
+            key="open_client_exception", category="exception",
+            source_record=SourceRecord("exception", exc["id"]),
             title=f"Open exception — {title}",
             summary="Exception remains open.",
             source_service="exception_engine",
-            source_record=SourceRecord("exception", exc["id"]),
-            severity=severity or "info",
-            priority=priority,
-            evidence=evidence,
-            explainability=Explainability(
-                why="Exception status is not resolved/cancelled, per "
-                    "exception_engine.open_exceptions_for_people.",
-                source_service="exception_engine.open_exceptions_for_people",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
+            explain_source="exception_engine.open_exceptions_for_people",
+            why="Exception status is not resolved/cancelled, per "
+                "exception_engine.open_exceptions_for_people.",
+            evidence=_evidence(
+                exception_id=exc["id"], domain=exc.get("domain"),
+                category=exc.get("category"), severity=exc.get("severity"),
+                status=exc.get("status"), opened_at=exc.get("opened_at")),
+            severity=severity or "info", priority=priority,
             route=_person_route(exc.get("person_id")) or "/exceptions",
-            status=exc.get("status") or "open",
-        ))
+            status=exc.get("status") or "open"))
     return signals
 
 
@@ -565,33 +597,22 @@ def _overdue_task_producer(ctx: SignalContext) -> list[Signal]:
         days_overdue = (ctx.today - due).days
         priority = Priority.HIGH if days_overdue > _MATERIAL_TASK_OVERDUE_DAYS else Priority.MEDIUM
         title = task.get("title") or f"task {task['id']}"
-        evidence = (
-            f"task_id={task['id']}",
-            f"title={title}",
-            f"due_date={due}",
-            f"status={task.get('status')}",
-            f"days_overdue={days_overdue}",
-        )
-        signals.append(Signal(
-            id=_signal_id("overdue_open_task", "task", task["id"]),
-            category="task",
+        signals.append(_emit(
+            key="overdue_open_task", category="task",
+            source_record=SourceRecord("task", task["id"]),
             title=f"Task overdue — {title}",
             summary=f"Task is overdue by {days_overdue} day(s).",
             source_service="tasks",
-            source_record=SourceRecord("task", task["id"]),
-            severity="task_overdue",
-            priority=priority,
-            evidence=evidence,
-            explainability=Explainability(
-                why="Task due_date is before today and status is open, per "
-                    "tasks.open_tasks_for_people.",
-                source_service="tasks.open_tasks_for_people",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
+            explain_source="tasks.open_tasks_for_people",
+            why="Task due_date is before today and status is open, per "
+                "tasks.open_tasks_for_people.",
+            evidence=_evidence(
+                task_id=task["id"], title=title, due_date=due,
+                status=task.get("status"), days_overdue=days_overdue),
+            severity="task_overdue", priority=priority,
             route=(f"{_person_route(task.get('person_id'))}?tab=tasks"
                    if task.get("person_id") else "/tasks"),
-            status=task.get("status") or "open",
-        ))
+            status=task.get("status") or "open"))
     return signals
 
 
@@ -620,31 +641,20 @@ def _upcoming_meeting_producer(ctx: SignalContext) -> list[Signal]:
         if not person_id:
             continue  # a person-anchored meeting only
         when = ev.get("event_time")
-        evidence = (
-            f"event_id={ev['id']}",
-            f"event_time={when}",
-            f"person_id={person_id}",
-            "event_type=calendar_event",
-        )
-        signals.append(Signal(
-            id=_signal_id("upcoming_client_meeting", "timeline_event", ev["id"]),
-            category="meeting",
+        signals.append(_emit(
+            key="upcoming_client_meeting", category="meeting",
+            source_record=SourceRecord("timeline_event", ev["id"]),
             title=ev.get("title") or "Upcoming client meeting",
             summary="Meeting is scheduled within the preparation window.",
             source_service="timeline",
-            source_record=SourceRecord("timeline_event", ev["id"]),
-            severity="info",
-            priority=Priority.MEDIUM,
-            evidence=evidence,
-            explainability=Explainability(
-                why="A calendar_event for this client falls within today through the "
-                    "next business day, per timeline.recent_events.",
-                source_service="timeline.recent_events",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
-            route=f"/workspace/meetings/{person_id}?event={ev['id']}",
-            status="open",
-        ))
+            explain_source="timeline.recent_events",
+            why="A calendar_event for this client falls within today through the "
+                "next business day, per timeline.recent_events.",
+            evidence=_evidence(
+                event_id=ev["id"], event_time=when, person_id=person_id,
+                event_type="calendar_event"),
+            severity="info", priority=Priority.MEDIUM,
+            route=f"/workspace/meetings/{person_id}?event={ev['id']}"))
     return signals
 
 
@@ -671,31 +681,19 @@ def _portfolio_review_opportunity_producer(ctx: SignalContext) -> list[Signal]:
     signals: list[Signal] = []
     for acct in accounts_review_approaching(ctx.person_ids, today=ctx.today, limit=200):
         label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
-        evidence = (
-            f"account_id={acct['id']}",
-            f"account={label}",
-            f"person_id={acct.get('person_id')}",
-            f"last_review_date={acct.get('last_review_date')}",
-        )
-        signals.append(Signal(
-            id=_signal_id("portfolio_review_opportunity", "account", acct["id"]),
-            category="opportunity",
+        signals.append(_emit(
+            key="portfolio_review_opportunity", category="opportunity",
+            source_record=SourceRecord("account", acct["id"]),
             title=f"Annual portfolio review is due soon — {label}",
             summary="Annual portfolio review is approaching.",
             source_service="portfolio",
-            source_record=SourceRecord("account", acct["id"]),
-            severity="opportunity",
-            priority=Priority.MEDIUM,
-            evidence=evidence,
-            explainability=Explainability(
-                why="Account last_review_date is within the approaching window of its "
-                    "annual cadence (not yet overdue), per portfolio.accounts_review_approaching.",
-                source_service="portfolio.accounts_review_approaching",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
-            route=_person_route(acct.get("person_id")),
-            status="open",
-        ))
+            explain_source="portfolio.accounts_review_approaching",
+            why="Account last_review_date is within the approaching window of its "
+                "annual cadence (not yet overdue), per portfolio.accounts_review_approaching.",
+            evidence=_evidence(
+                account_id=acct["id"], account=label,
+                person_id=acct.get("person_id"), last_review_date=acct.get("last_review_date")),
+            severity="opportunity", route=_person_route(acct.get("person_id"))))
     return signals
 
 
@@ -705,32 +703,21 @@ def _insurance_review_opportunity_producer(ctx: SignalContext) -> list[Signal]:
     suitability analysis."""
     signals: list[Signal] = []
     for rev in reviews_due_for_people(ctx.person_ids, limit=200):
-        evidence = (
-            f"insurance_review_id={rev['id']}",
-            f"review_type={rev.get('review_type')}",
-            f"status={rev.get('status')}",
-            f"due_date={rev.get('due_date')}",
-            f"person_id={rev.get('person_id')}",
-        )
-        signals.append(Signal(
-            id=_signal_id("insurance_review_opportunity", "insurance_review", rev["id"]),
-            category="opportunity",
+        signals.append(_emit(
+            key="insurance_review_opportunity", category="opportunity",
+            source_record=SourceRecord("insurance_review", rev["id"]),
             title="Annual insurance review is due",
             summary="Insurance servicing review is due.",
             source_service="insurance",
-            source_record=SourceRecord("insurance_review", rev["id"]),
-            severity="opportunity",
-            priority=Priority.MEDIUM,
-            evidence=evidence,
-            explainability=Explainability(
-                why="An insurance servicing review is open with a due date within the "
-                    "window, per insurance.reviews_due_for_people.",
-                source_service="insurance.reviews_due_for_people",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
-            route=_person_route(rev.get("person_id")),
-            status=rev.get("status") or "open",
-        ))
+            explain_source="insurance.reviews_due_for_people",
+            why="An insurance servicing review is open with a due date within the "
+                "window, per insurance.reviews_due_for_people.",
+            evidence=_evidence(
+                insurance_review_id=rev["id"], review_type=rev.get("review_type"),
+                status=rev.get("status"), due_date=rev.get("due_date"),
+                person_id=rev.get("person_id")),
+            severity="opportunity", route=_person_route(rev.get("person_id")),
+            status=rev.get("status") or "open"))
     return signals
 
 
@@ -742,32 +729,21 @@ def _beneficiary_review_opportunity_producer(ctx: SignalContext) -> list[Signal]
     signals: list[Signal] = []
     for acct in accounts_missing_required_beneficiary(ctx.person_ids, limit=200):
         label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
-        evidence = (
-            f"account_id={acct['id']}",
-            f"account={label}",
-            f"person_id={acct.get('person_id')}",
-            f"registration_type={acct.get('registration_type')}",
-            "active_beneficiaries=0",
-        )
-        signals.append(Signal(
-            id=_signal_id("beneficiary_review_opportunity", "account", acct["id"]),
-            category="opportunity",
+        signals.append(_emit(
+            key="beneficiary_review_opportunity", category="opportunity",
+            source_record=SourceRecord("account", acct["id"]),
             title=f"Beneficiary information is missing — {label}",
             summary="Beneficiary information is missing on a retirement account.",
             source_service="portfolio",
-            source_record=SourceRecord("account", acct["id"]),
-            severity="opportunity",
-            priority=Priority.MEDIUM,
-            evidence=evidence,
-            explainability=Explainability(
-                why="An IRA account has no active beneficiary designation, per "
-                    "portfolio.accounts_missing_required_beneficiary.",
-                source_service="portfolio.accounts_missing_required_beneficiary",
-                evidence=evidence, confidence=1.0, policy_gate=PolicyGate.NONE),
-            policy_gate=PolicyGate.NONE,
-            route=_person_route(acct.get("person_id")),
-            status="open",
-        ))
+            explain_source="portfolio.accounts_missing_required_beneficiary",
+            why="An IRA account has no active beneficiary designation, per "
+                "portfolio.accounts_missing_required_beneficiary.",
+            evidence=_evidence(
+                account_id=acct["id"], account=label,
+                person_id=acct.get("person_id"),
+                registration_type=acct.get("registration_type"),
+                active_beneficiaries=0),
+            severity="opportunity", route=_person_route(acct.get("person_id"))))
     return signals
 
 
@@ -800,28 +776,19 @@ _PENDING = "pending_compliance_review"
 def _recommendation(*, key, rec_type, governing_rule, rule_version, compliance_owner,
                     approval_status, policy_gate, source_record, title, summary, why,
                     source_service, evidence, route) -> Signal:
-    """Build one advisor recommendation Signal with its governance metadata."""
-    return Signal(
-        id=_signal_id(key, source_record.entity_type, source_record.entity_id),
-        category="recommendation",
-        title=title,
-        summary=summary,
-        source_service=source_service,
-        source_record=source_record,
-        severity="recommendation",
-        priority=Priority.MEDIUM,
-        evidence=evidence,
-        explainability=Explainability(
-            why=why, source_service=source_service, evidence=evidence,
-            confidence=1.0, policy_gate=policy_gate),
-        policy_gate=policy_gate,
-        route=route,
-        status="open",
+    """Build one advisor recommendation Signal (through the shared ``_emit``
+    builder) plus its immutable governance metadata. A recommendation records the
+    same read name in the explainability as the short source service."""
+    return _emit(
+        key=key, category="recommendation", source_record=source_record,
+        title=title, summary=summary, source_service=source_service,
+        explain_source=source_service, why=why, evidence=evidence,
+        severity="recommendation", priority=Priority.MEDIUM, policy_gate=policy_gate,
+        route=route, status="open",
         recommendation=RecommendationMeta(
             recommendation_type=rec_type, governing_rule=governing_rule,
             rule_version=rule_version, compliance_owner=compliance_owner,
-            approval_status=approval_status, created_from_rule=key),
-    )
+            approval_status=approval_status, created_from_rule=key))
 
 
 def _annual_portfolio_review_recommendation_producer(ctx: SignalContext) -> list[Signal]:
@@ -830,13 +797,10 @@ def _annual_portfolio_review_recommendation_producer(ctx: SignalContext) -> list
     out: list[Signal] = []
     for acct in accounts_review_approaching(ctx.person_ids, today=ctx.today, limit=200):
         label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
-        evidence = (
-            f"account_id={acct['id']}",
-            f"person_id={acct.get('person_id')}",
-            f"last_review_date={acct.get('last_review_date')}",
-            "governing_rule=RULE-PORTFOLIO-REVIEW-CADENCE",
-            "rule_version=1.0.0",
-        )
+        evidence = _evidence(
+            account_id=acct["id"], person_id=acct.get("person_id"),
+            last_review_date=acct.get("last_review_date"),
+            governing_rule="RULE-PORTFOLIO-REVIEW-CADENCE", rule_version="1.0.0")
         out.append(_recommendation(
             key="annual_portfolio_review_recommendation", rec_type="annual_portfolio_review",
             governing_rule="RULE-PORTFOLIO-REVIEW-CADENCE", rule_version="1.0.0",
@@ -857,13 +821,10 @@ def _insurance_review_recommendation_producer(ctx: SignalContext) -> list[Signal
     (display only)."""
     out: list[Signal] = []
     for rev in reviews_due_for_people(ctx.person_ids, limit=200):
-        evidence = (
-            f"insurance_review_id={rev['id']}",
-            f"person_id={rev.get('person_id')}",
-            f"due_date={rev.get('due_date')}",
-            "governing_rule=RULE-INSURANCE-REVIEW-CADENCE",
-            "rule_version=1.0.0",
-        )
+        evidence = _evidence(
+            insurance_review_id=rev["id"], person_id=rev.get("person_id"),
+            due_date=rev.get("due_date"),
+            governing_rule="RULE-INSURANCE-REVIEW-CADENCE", rule_version="1.0.0")
         out.append(_recommendation(
             key="insurance_review_recommendation", rec_type="insurance_review",
             governing_rule="RULE-INSURANCE-REVIEW-CADENCE", rule_version="1.0.0",
@@ -886,14 +847,10 @@ def _beneficiary_review_recommendation_producer(ctx: SignalContext) -> list[Sign
     out: list[Signal] = []
     for acct in accounts_missing_required_beneficiary(ctx.person_ids, limit=200):
         label = acct.get("account_name") or acct.get("account_number") or f"account {acct['id']}"
-        evidence = (
-            f"account_id={acct['id']}",
-            f"person_id={acct.get('person_id')}",
-            f"registration_type={acct.get('registration_type')}",
-            "active_beneficiaries=0",
-            "governing_rule=RULE-BENEFICIARY-DESIGNATION-PRESENT",
-            "rule_version=1.0.0",
-        )
+        evidence = _evidence(
+            account_id=acct["id"], person_id=acct.get("person_id"),
+            registration_type=acct.get("registration_type"), active_beneficiaries=0,
+            governing_rule="RULE-BENEFICIARY-DESIGNATION-PRESENT", rule_version="1.0.0")
         out.append(_recommendation(
             key="beneficiary_review_recommendation", rec_type="beneficiary_review",
             governing_rule="RULE-BENEFICIARY-DESIGNATION-PRESENT", rule_version="1.0.0",
@@ -975,16 +932,18 @@ _OPPORTUNITY_SIGNALS = (
      _beneficiary_review_opportunity_producer),
 )
 
-#: Everything registered/attached at import — operational signals (D.5B), advisor
-#: opportunities (D.5C), and governed recommendations (D.5D).
-_ALL_SIGNALS = _OPERATIONAL_SIGNALS + _OPPORTUNITY_SIGNALS + _RECOMMENDATION_SIGNALS
+#: The single unified rule set — one model for all three families (operational
+#: signals D.5B, opportunities D.5C, governed recommendations D.5D). Each entry is
+#: ``(registry metadata, deterministic producer)``; operational/opportunity rules
+#: simply omit the governance fields. Registered/attached at import.
+_RULES = _OPERATIONAL_SIGNALS + _OPPORTUNITY_SIGNALS + _RECOMMENDATION_SIGNALS
 
 
 def register_operational_signals() -> None:
-    """Register the approved signals' metadata and attach their producers to the
-    seam. Idempotent: skips any already-registered key so repeated imports/
-    registration are safe."""
-    for meta, producer in _ALL_SIGNALS:
+    """Register every rule's metadata and attach its producer to the shared seam.
+    Idempotent: skips any already-registered key so repeated imports/registration
+    are safe. One loop over the unified ``_RULES`` — no per-category branching."""
+    for meta, producer in _RULES:
         if meta["key"] not in _REGISTRY:
             register_signal(**meta)
         if producer not in _PRODUCERS:

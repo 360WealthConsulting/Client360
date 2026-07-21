@@ -1,0 +1,421 @@
+{
+  "html": "<hN class=\"detail-label\" style=\"margin:Npx N Npx\">Operational Signals</hN> <div class=\"table-wrap\"><table class=\"data\"> <thead><tr> <th>Signal</th><th>Priority</th> <th>Detail</th><th>Source</th> <th>Gate</th> </tr></thead> <tbody> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Account review overdue \u2014 Overdue G</a></td> <td><span class=\"badge \">High</span></td> <td class=\"subtle\">Account review is overdue (never reviewed).</td> <td class=\"subtle\">portfolio</td> <td><span class=\"subtle\">\u2014</span></td> </tr> </tbody> </table></div> <hN class=\"detail-label\" style=\"margin:Npx N Npx\">Advisor Opportunities</hN> <div class=\"table-wrap\"><table class=\"data\"> <thead><tr> <th>Signal</th><th>Priority</th> <th>Detail</th><th>Source</th> <th>Gate</th> </tr></thead> <tbody> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Beneficiary information is missing \u2014 IRA G</a></td> <td><span class=\"badge \">Medium</span></td> <td class=\"subtle\">Beneficiary information is missing on a retirement account.</td> <td class=\"subtle\">portfolio</td> <td><span class=\"subtle\">\u2014</span></td> </tr> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Annual insurance review is due</a></td> <td><span class=\"badge \">Medium</span></td> <td class=\"subtle\">Insurance servicing review is due.</td> <td class=\"subtle\">insurance</td> <td><span class=\"subtle\">\u2014</span></td> </tr> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Annual portfolio review is due soon \u2014 Brokerage G</a></td> <td><span class=\"badge \">Medium</span></td> <td class=\"subtle\">Annual portfolio review is approaching.</td> <td class=\"subtle\">portfolio</td> <td><span class=\"subtle\">\u2014</span></td> </tr> </tbody> </table></div> <hN class=\"detail-label\" style=\"margin:Npx N Npx\">Advisor Recommendations</hN> <div class=\"table-wrap\"><table class=\"data\"> <thead><tr> <th>Recommendation</th><th>Priority</th><th>Detail</th> <th>Gate</th><th>Governing rule</th><th>Version</th><th>Approval</th> </tr></thead> <tbody> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Annual portfolio review \u2014 Brokerage G</a></td> <td><span class=\"badge \">Medium</span></td> <td class=\"subtle\">Annual portfolio review may be appropriate based on the client&#N;s review cadence.</td> <td><span class=\"subtle\">\u2014</span></td> <td class=\"subtle\">RULE-PORTFOLIO-REVIEW-CADENCE</td> <td class=\"subtle\">N.N.N</td> <td><span class=\"badge \">Approved</span></td> </tr> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Beneficiary review \u2014 IRA G</a></td> <td><span class=\"badge \">Medium</span></td> <td class=\"subtle\">Beneficiary review may be appropriate because required beneficiary information is absent.</td> <td><span class=\"badge \">Compliance required</span></td> <td class=\"subtle\">RULE-BENEFICIARY-DESIGNATION-PRESENT</td> <td class=\"subtle\">N.N.N</td> <td><span class=\"badge \">Pending compliance review</span></td> </tr> <tr> <td><a class=\"rowlink\" href=\"/people/N\">Annual insurance review</a></td> <td><span class=\"badge \">Medium</span></td> <td class=\"subtle\">Annual insurance review may be appropriate based on the client&#N;s review cadence.</td> <td><span class=\"badge \">License required</span></td> <td class=\"subtle\">RULE-INSURANCE-REVIEW-CADENCE</td> <td class=\"subtle\">N.N.N</td> <td><span class=\"badge \">Pending compliance review</span></td> </tr> </tbody> </table></div>",
+  "registry": [
+    {
+      "approval_status": "approved",
+      "category": "recommendation",
+      "compliance_owner": "advisor_operations",
+      "default_priority": "medium",
+      "description": "Annual portfolio review may be appropriate per the review-cadence rule.",
+      "governing_rule": "RULE-PORTFOLIO-REVIEW-CADENCE",
+      "key": "annual_portfolio_review_recommendation",
+      "policy_gate": "none",
+      "rule_version": "N.N.N",
+      "source_service": "portfolio"
+    },
+    {
+      "approval_status": null,
+      "category": "opportunity",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "IRA account has no active beneficiary per portfolio.accounts_missing_required_beneficiary.",
+      "governing_rule": null,
+      "key": "beneficiary_review_opportunity",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "portfolio"
+    },
+    {
+      "approval_status": "pending_compliance_review",
+      "category": "recommendation",
+      "compliance_owner": "compliance_reviewer (unassigned \u2014 GOV-N/PD-N)",
+      "default_priority": "medium",
+      "description": "Beneficiary review may be appropriate per the required-designation rule.",
+      "governing_rule": "RULE-BENEFICIARY-DESIGNATION-PRESENT",
+      "key": "beneficiary_review_recommendation",
+      "policy_gate": "compliance_required",
+      "rule_version": "N.N.N",
+      "source_service": "portfolio"
+    },
+    {
+      "approval_status": null,
+      "category": "review",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "Account review is overdue per portfolio.accounts_due_for_review.",
+      "governing_rule": null,
+      "key": "client_review_overdue",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "portfolio"
+    },
+    {
+      "approval_status": null,
+      "category": "opportunity",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "Insurance servicing review is due per insurance.reviews_due_for_people.",
+      "governing_rule": null,
+      "key": "insurance_review_opportunity",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "insurance"
+    },
+    {
+      "approval_status": "pending_compliance_review",
+      "category": "recommendation",
+      "compliance_owner": "compliance_reviewer (unassigned \u2014 GOV-N/PD-N)",
+      "default_priority": "medium",
+      "description": "Annual insurance review may be appropriate per the review-cadence rule.",
+      "governing_rule": "RULE-INSURANCE-REVIEW-CADENCE",
+      "key": "insurance_review_recommendation",
+      "policy_gate": "license_required",
+      "rule_version": "N.N.N",
+      "source_service": "insurance"
+    },
+    {
+      "approval_status": null,
+      "category": "exception",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "Client exception remains open per the Exception Engine.",
+      "governing_rule": null,
+      "key": "open_client_exception",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "exception_engine"
+    },
+    {
+      "approval_status": null,
+      "category": "task",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "Open task is past its due date per tasks.open_tasks_for_people.",
+      "governing_rule": null,
+      "key": "overdue_open_task",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "tasks"
+    },
+    {
+      "approval_status": null,
+      "category": "opportunity",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "Annual portfolio review is approaching per portfolio.accounts_review_approaching.",
+      "governing_rule": null,
+      "key": "portfolio_review_opportunity",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "portfolio"
+    },
+    {
+      "approval_status": null,
+      "category": "meeting",
+      "compliance_owner": null,
+      "default_priority": "medium",
+      "description": "Client calendar meeting falls within the preparation window.",
+      "governing_rule": null,
+      "key": "upcoming_client_meeting",
+      "policy_gate": "none",
+      "rule_version": null,
+      "source_service": "timeline"
+    }
+  ],
+  "signals": [
+    {
+      "category": "review",
+      "created_at": null,
+      "evidence": [
+        "account_id=N",
+        "account=Overdue G",
+        "person_id=N",
+        "last_review_date=None",
+        "stale_days_threshold=N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "account_id=N",
+          "account=Overdue G",
+          "person_id=N",
+          "last_review_date=None",
+          "stale_days_threshold=N"
+        ],
+        "policy_gate": "none",
+        "source_service": "portfolio.accounts_due_for_review",
+        "why": "Account last_review_date is null or older than the review-due threshold, per portfolio.accounts_due_for_review."
+      },
+      "group": "Operational Signals",
+      "id": "client_review_overdue:account:N",
+      "policy_gate": "none",
+      "priority": "high",
+      "recommendation": null,
+      "route": "/people/N",
+      "severity": "review_overdue",
+      "source_record": {
+        "entity_id": 174,
+        "entity_type": "account"
+      },
+      "source_service": "portfolio",
+      "status": "open",
+      "summary": "Account review is overdue (never reviewed).",
+      "title": "Account review overdue \u2014 Overdue G"
+    },
+    {
+      "category": "recommendation",
+      "created_at": null,
+      "evidence": [
+        "account_id=N",
+        "person_id=N",
+        "last_review_date=N-N-N",
+        "governing_rule=RULE-PORTFOLIO-REVIEW-CADENCE",
+        "rule_version=N.N.N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "account_id=N",
+          "person_id=N",
+          "last_review_date=N-N-N",
+          "governing_rule=RULE-PORTFOLIO-REVIEW-CADENCE",
+          "rule_version=N.N.N"
+        ],
+        "policy_gate": "none",
+        "source_service": "portfolio",
+        "why": "Account last_review_date is within the annual review cadence window per RULE-PORTFOLIO-REVIEW-CADENCE (portfolio.accounts_review_approaching)."
+      },
+      "group": "Advisor Recommendations",
+      "id": "annual_portfolio_review_recommendation:account:N",
+      "policy_gate": "none",
+      "priority": "medium",
+      "recommendation": {
+        "approval_status": "approved",
+        "compliance_owner": "advisor_operations",
+        "created_from_rule": "annual_portfolio_review_recommendation",
+        "governing_rule": "RULE-PORTFOLIO-REVIEW-CADENCE",
+        "recommendation_type": "annual_portfolio_review",
+        "rule_version": "N.N.N"
+      },
+      "route": "/people/N",
+      "severity": "recommendation",
+      "source_record": {
+        "entity_id": 173,
+        "entity_type": "account"
+      },
+      "source_service": "portfolio",
+      "status": "open",
+      "summary": "Annual portfolio review may be appropriate based on the client's review cadence.",
+      "title": "Annual portfolio review \u2014 Brokerage G"
+    },
+    {
+      "category": "opportunity",
+      "created_at": null,
+      "evidence": [
+        "account_id=N",
+        "account=IRA G",
+        "person_id=N",
+        "registration_type=Traditional IRA",
+        "active_beneficiaries=N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "account_id=N",
+          "account=IRA G",
+          "person_id=N",
+          "registration_type=Traditional IRA",
+          "active_beneficiaries=N"
+        ],
+        "policy_gate": "none",
+        "source_service": "portfolio.accounts_missing_required_beneficiary",
+        "why": "An IRA account has no active beneficiary designation, per portfolio.accounts_missing_required_beneficiary."
+      },
+      "group": "Advisor Opportunities",
+      "id": "beneficiary_review_opportunity:account:N",
+      "policy_gate": "none",
+      "priority": "medium",
+      "recommendation": null,
+      "route": "/people/N",
+      "severity": "opportunity",
+      "source_record": {
+        "entity_id": 175,
+        "entity_type": "account"
+      },
+      "source_service": "portfolio",
+      "status": "open",
+      "summary": "Beneficiary information is missing on a retirement account.",
+      "title": "Beneficiary information is missing \u2014 IRA G"
+    },
+    {
+      "category": "recommendation",
+      "created_at": null,
+      "evidence": [
+        "account_id=N",
+        "person_id=N",
+        "registration_type=Traditional IRA",
+        "active_beneficiaries=N",
+        "governing_rule=RULE-BENEFICIARY-DESIGNATION-PRESENT",
+        "rule_version=N.N.N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "account_id=N",
+          "person_id=N",
+          "registration_type=Traditional IRA",
+          "active_beneficiaries=N",
+          "governing_rule=RULE-BENEFICIARY-DESIGNATION-PRESENT",
+          "rule_version=N.N.N"
+        ],
+        "policy_gate": "compliance_required",
+        "source_service": "portfolio",
+        "why": "An IRA account has no active beneficiary designation per RULE-BENEFICIARY-DESIGNATION-PRESENT (portfolio.accounts_missing_required_beneficiary)."
+      },
+      "group": "Advisor Recommendations",
+      "id": "beneficiary_review_recommendation:account:N",
+      "policy_gate": "compliance_required",
+      "priority": "medium",
+      "recommendation": {
+        "approval_status": "pending_compliance_review",
+        "compliance_owner": "compliance_reviewer (unassigned \u2014 GOV-N/PD-N)",
+        "created_from_rule": "beneficiary_review_recommendation",
+        "governing_rule": "RULE-BENEFICIARY-DESIGNATION-PRESENT",
+        "recommendation_type": "beneficiary_review",
+        "rule_version": "N.N.N"
+      },
+      "route": "/people/N",
+      "severity": "recommendation",
+      "source_record": {
+        "entity_id": 175,
+        "entity_type": "account"
+      },
+      "source_service": "portfolio",
+      "status": "open",
+      "summary": "Beneficiary review may be appropriate because required beneficiary information is absent.",
+      "title": "Beneficiary review \u2014 IRA G"
+    },
+    {
+      "category": "opportunity",
+      "created_at": null,
+      "evidence": [
+        "insurance_review_id=N",
+        "review_type=annual",
+        "status=due",
+        "due_date=N-N-N",
+        "person_id=N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "insurance_review_id=N",
+          "review_type=annual",
+          "status=due",
+          "due_date=N-N-N",
+          "person_id=N"
+        ],
+        "policy_gate": "none",
+        "source_service": "insurance.reviews_due_for_people",
+        "why": "An insurance servicing review is open with a due date within the window, per insurance.reviews_due_for_people."
+      },
+      "group": "Advisor Opportunities",
+      "id": "insurance_review_opportunity:insurance_review:N",
+      "policy_gate": "none",
+      "priority": "medium",
+      "recommendation": null,
+      "route": "/people/N",
+      "severity": "opportunity",
+      "source_record": {
+        "entity_id": 49,
+        "entity_type": "insurance_review"
+      },
+      "source_service": "insurance",
+      "status": "due",
+      "summary": "Insurance servicing review is due.",
+      "title": "Annual insurance review is due"
+    },
+    {
+      "category": "recommendation",
+      "created_at": null,
+      "evidence": [
+        "insurance_review_id=N",
+        "person_id=N",
+        "due_date=N-N-N",
+        "governing_rule=RULE-INSURANCE-REVIEW-CADENCE",
+        "rule_version=N.N.N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "insurance_review_id=N",
+          "person_id=N",
+          "due_date=N-N-N",
+          "governing_rule=RULE-INSURANCE-REVIEW-CADENCE",
+          "rule_version=N.N.N"
+        ],
+        "policy_gate": "license_required",
+        "source_service": "insurance",
+        "why": "An insurance servicing review is open and due within the cadence window per RULE-INSURANCE-REVIEW-CADENCE (insurance.reviews_due_for_people)."
+      },
+      "group": "Advisor Recommendations",
+      "id": "insurance_review_recommendation:insurance_review:N",
+      "policy_gate": "license_required",
+      "priority": "medium",
+      "recommendation": {
+        "approval_status": "pending_compliance_review",
+        "compliance_owner": "compliance_reviewer (unassigned \u2014 GOV-N/PD-N)",
+        "created_from_rule": "insurance_review_recommendation",
+        "governing_rule": "RULE-INSURANCE-REVIEW-CADENCE",
+        "recommendation_type": "insurance_review",
+        "rule_version": "N.N.N"
+      },
+      "route": "/people/N",
+      "severity": "recommendation",
+      "source_record": {
+        "entity_id": 49,
+        "entity_type": "insurance_review"
+      },
+      "source_service": "insurance",
+      "status": "open",
+      "summary": "Annual insurance review may be appropriate based on the client's review cadence.",
+      "title": "Annual insurance review"
+    },
+    {
+      "category": "opportunity",
+      "created_at": null,
+      "evidence": [
+        "account_id=N",
+        "account=Brokerage G",
+        "person_id=N",
+        "last_review_date=N-N-N"
+      ],
+      "explainability": {
+        "confidence": 1.0,
+        "evidence": [
+          "account_id=N",
+          "account=Brokerage G",
+          "person_id=N",
+          "last_review_date=N-N-N"
+        ],
+        "policy_gate": "none",
+        "source_service": "portfolio.accounts_review_approaching",
+        "why": "Account last_review_date is within the approaching window of its annual cadence (not yet overdue), per portfolio.accounts_review_approaching."
+      },
+      "group": "Advisor Opportunities",
+      "id": "portfolio_review_opportunity:account:N",
+      "policy_gate": "none",
+      "priority": "medium",
+      "recommendation": null,
+      "route": "/people/N",
+      "severity": "opportunity",
+      "source_record": {
+        "entity_id": 173,
+        "entity_type": "account"
+      },
+      "source_service": "portfolio",
+      "status": "open",
+      "summary": "Annual portfolio review is approaching.",
+      "title": "Annual portfolio review is due soon \u2014 Brokerage G"
+    }
+  ]
+}

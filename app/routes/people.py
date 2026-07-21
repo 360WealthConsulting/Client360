@@ -14,7 +14,7 @@ from app.db import (
 )
 from app.security.authorization import accessible_person_ids
 from app.services.advisor_ai import build_advisor_recommendations
-from app.services.advisor_intelligence import get_client_signals
+from app.services.advisor_intelligence import get_client_signals, group_signals
 from app.services.advisor_workspace import get_client_snapshot
 from app.services.calendar import get_person_calendar_events
 from app.services.client_alerts import build_client_alerts
@@ -33,6 +33,8 @@ from app.templating import install_filters, render_error
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 install_filters(templates)
+# Grouping for the shared Advisor Intelligence renderer lives in Python (D.5E).
+templates.env.globals["signal_groups"] = group_signals
 
 
 @router.get("/people")
