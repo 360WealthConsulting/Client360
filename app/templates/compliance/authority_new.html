@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}New Reviewer Authority | Client360{% endblock %}
+{% block crumb %}New Authority{% endblock %}
+{% block content %}
+{{ ui.page_head("New Reviewer Authority", eyebrow="Compliance", desc="Record a DRAFT authority from documented facts. The system records the supplied evidence; it does not independently verify licensing or certify qualification. You cannot record your own authority.") }}
+
+<form class="card" method="post" action="/compliance/authorities" onsubmit="return confirm('Create this draft reviewer-authority record from the documented facts provided?');">
+  <div class="field"><label for="principal_id">Reviewer principal (user id)</label>
+    <input class="input" id="principal_id" name="principal_id" required placeholder="existing user id — must not be yourself"></div>
+  <div class="field"><label for="reviewer_name">Reviewer name (optional, snapshot)</label>
+    <input class="input" id="reviewer_name" name="reviewer_name" placeholder="display name — principal id is the authoritative identity"></div>
+  <div class="field"><label for="reviewer_role">Reviewer role</label>
+    <input class="input" id="reviewer_role" name="reviewer_role" required placeholder="e.g. chief_compliance_officer"></div>
+  <div class="field"><label for="authority_scope">Authority scope</label>
+    <input class="input" id="authority_scope" name="authority_scope" required placeholder="governed rule ids and/or policy-gate categories, space/comma separated (e.g. RULE-BENEFICIARY-DESIGNATION-PRESENT COMPLIANCE_REQUIRED)">
+    <p class="subtle" style="margin-top:4px">An empty or ambiguous scope never confers unrestricted authority. Authority is never inferred from role alone.</p></div>
+  <div class="field"><label for="effective_date">Effective date</label>
+    <input class="input" id="effective_date" name="effective_date" type="date" required></div>
+  <div class="field"><label for="expiration_date">Expiration date (optional)</label>
+    <input class="input" id="expiration_date" name="expiration_date" type="date"></div>
+  <div class="field"><label for="source_reference">Source reference</label>
+    <input class="input" id="source_reference" name="source_reference" required placeholder="controlled reference: licensing/registration/appointment/supervisory/internal doc"></div>
+  <div class="field"><label for="evidence_description">Evidence description</label>
+    <textarea class="input" id="evidence_description" name="evidence_description" required style="min-height:70px" placeholder="factual description of the supporting evidence"></textarea></div>
+  <div style="margin-top:10px"><button class="btn" type="submit">Create draft</button>
+    <a class="btn subtle" href="/compliance/authorities" style="margin-left:6px">Cancel</a></div>
+</form>
+{% endblock %}

@@ -183,3 +183,6 @@ insurance_commission_statement_lines = metadata.tables["insurance_commission_sta
 compliance_reviews = metadata.tables["compliance_reviews"]
 compliance_decisions = metadata.tables["compliance_decisions"]
 reviewer_authorities = metadata.tables["reviewer_authorities"]
+
+# Reviewer authority administration (Phase D.8)
+reviewer_authority_events = metadata.tables["reviewer_authority_events"]

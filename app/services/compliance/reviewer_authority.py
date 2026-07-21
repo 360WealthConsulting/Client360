@@ -12,21 +12,30 @@ from datetime import date
 
 from sqlalchemy import select
 
-from app.db import engine, reviewer_authorities
+from app.db import engine, reviewer_authorities, users
 
 
 def reviewer_authority(principal_id: int | None, *, rule_id: str, policy_gate: str,
                        today: date | None = None) -> dict | None:
     """Return an active ``reviewer_authorities`` record that covers this rule/gate for
-    the principal, or ``None``. An empty catalog (this phase) always yields ``None``.
+    the principal, or ``None``. An empty catalog (D.7's default) always yields ``None``.
 
-    ``authority_scope`` is a list of tokens; a record covers a rule when its scope
-    contains the ``rule_id``, the ``policy_gate``, or the wildcard ``"*"``.
+    A record confers authority only when ALL of the following hold (D.8):
+    ``status = 'active'`` (draft/suspended/revoked/superseded never qualify), the
+    principal's user is **active**, ``effective_date`` has been reached, ``expiration_date``
+    has not passed (an expired-by-date active record is treated as expired — computed,
+    not mutated), and ``authority_scope`` contains the ``rule_id``, the ``policy_gate``,
+    or the wildcard ``"*"``. An empty/ambiguous scope never confers unrestricted
+    authority (an empty scope matches nothing).
     """
     if principal_id is None:
         return None
     today = today or date.today()
     with engine.connect() as conn:
+        # The principal must be an active user for the authority to be usable.
+        if conn.scalar(select(users.c.id).where(
+                users.c.id == principal_id, users.c.status == "active")) is None:
+            return None
         rows = conn.execute(
             select(reviewer_authorities).where(
                 reviewer_authorities.c.principal_id == principal_id,

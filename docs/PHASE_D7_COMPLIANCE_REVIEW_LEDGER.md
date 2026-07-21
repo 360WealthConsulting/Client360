@@ -90,9 +90,16 @@ administration is out of scope this phase (static/seeded-empty catalog).
 **How an authorized reviewer will later be assigned:** an administratively-maintained
 `reviewer_authorities` row (principal_id + reviewer_role + reviewer_name +
 authority_scope covering the governed rule id or policy-gate category + a
-`source_reference` to the licensure/authorization record) must be inserted for the
-accountable, appropriately-licensed compliance principal. Until such a factual record
-exists, approval stays blocked.
+`source_reference` to the licensure/authorization record) must be recorded for the
+accountable, appropriately-licensed compliance principal. This administration is provided
+by **Phase D.8 — Reviewer Authority and Compliance Administration**
+(`docs/PHASE_D8_REVIEWER_AUTHORITY_ADMINISTRATION.md`): an authorized administrator
+records a draft from documented facts and activates it (with segregation of duties — no
+self-administration, actor ≠ subject, append-only history). Until such a factual **active,
+in-scope** record exists (and the D.8 lookup checks it — active status, active user,
+effective/expiration dates, scope match), approval stays blocked. D.8 does not
+auto-approve any previously blocked review; a human must return to the review, re-assign,
+and explicitly decide.
 
 ## Recommendation snapshots & deduplication
 Creating a review is idempotent — an existing OPEN review for the same
