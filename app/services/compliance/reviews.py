@@ -23,13 +23,12 @@ the prior via ``supersedes_decision_id``.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from sqlalchemy import and_, func, or_, select
 
 from app.db import compliance_decisions, compliance_reviews, engine, people
 from app.security.authorization import accessible_person_ids, record_in_scope
 from app.services.advisor_intelligence import get_client_signals
+from app.services.compliance._common import clamp_page, load_for_update, now, page_count
 from app.services.compliance.reviewer_authority import reviewer_authority
 from app.services.compliance.rule_catalog import RuleCatalog, compare_versions
 
@@ -74,8 +73,8 @@ class ApprovalBlockedError(ComplianceReviewError):
     approval decision is recorded."""
 
 
-def _now() -> datetime:
-    return datetime.now(UTC)
+# Application timestamp for every write (shared compliance helper).
+_now = now
 
 
 # --- eligibility + snapshot --------------------------------------------------
@@ -205,15 +204,9 @@ def _require_comments(decision: str, comments: str | None, exceptions: str | Non
 
 
 def _load_for_update(conn, review_id: int, expected_status: str | None):
-    review = conn.execute(
-        select(compliance_reviews).where(compliance_reviews.c.id == review_id).with_for_update()
-    ).mappings().first()
-    if review is None:
-        raise ComplianceReviewError("review not found")
-    if expected_status is not None and review["status"] != expected_status:
-        raise StaleReviewError(
-            f"review is now {review['status']!r}, not {expected_status!r}; reload and retry")
-    return review
+    return load_for_update(
+        conn, compliance_reviews, review_id, expected_status, noun="review",
+        not_found_error=ComplianceReviewError, stale_error=StaleReviewError)
 
 
 def record_decision(principal, review_id: int, *, decision: str, expected_status: str,
@@ -344,8 +337,7 @@ def list_reviews(principal, *, search=None, status=None, policy_gate=None,
         total = conn.scalar(
             select(func.count()).select_from(compliance_reviews).where(where)
             if where is not None else select(func.count()).select_from(compliance_reviews))
-        page = max(1, page)
-        page_size = max(1, min(page_size, 200))
+        page, page_size = clamp_page(page, page_size)
         stmt = select(compliance_reviews)
         if where is not None:
             stmt = stmt.where(where)
@@ -353,7 +345,7 @@ def list_reviews(principal, *, search=None, status=None, policy_gate=None,
                              compliance_reviews.c.id.desc())
         stmt = stmt.limit(page_size).offset((page - 1) * page_size)
         rows = [dict(r) for r in conn.execute(stmt).mappings()]
-    pages = (total + page_size - 1) // page_size if total else 0
+    pages = page_count(total, page_size)
     return {"rows": rows, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
 
