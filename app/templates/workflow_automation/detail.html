@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ w.workflow.name }} | Workflow | Client360{% endblock %}
+{% block crumb %}Workflow{% endblock %}
+{% block content %}
+{{ ui.page_head(w.workflow.name, eyebrow="Workflow", desc=w.workflow.workflow_type ~ " · " ~ w.workflow.status|capitalize) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/workflow-automation">← Back to workflows</a></p>
+{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
+{% if can_execute %}
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">Controls</h2>
+  <div class="card" style="display:flex; gap:10px; flex-wrap:wrap">
+    <form method="post" action="/workflow-automation/{{ w.workflow.id }}/pause"><button class="btn secondary" type="submit">Pause</button></form>
+    <form method="post" action="/workflow-automation/{{ w.workflow.id }}/resume"><button class="btn secondary" type="submit">Resume</button></form>
+    {% if can_cancel %}<form method="post" action="/workflow-automation/{{ w.workflow.id }}/cancel"><button class="btn subtle" type="submit">Cancel</button></form>{% endif %}
+  </div>
+</section>{% endif %}
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">Steps</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>#</th><th>Step</th><th>Status</th><th>Retries</th><th></th></tr></thead>
+    <tbody>{% for s in w.steps %}<tr><td>{{ s.sequence }}</td><td>{{ s.name }}{% if s.requires_approval %} {{ ui.badge('Approval') }}{% endif %}</td>
+      <td>{{ ui.badge(s.status|capitalize, 'good' if s.status == 'completed' else '') }}</td><td>{{ s.retry_count }}/{{ s.max_retries }}</td>
+      <td>{% if can_execute and s.status == 'active' %}<form method="post" action="/workflow-automation/steps/{{ s.id }}/complete" style="display:inline"><button class="btn secondary" type="submit" style="padding:2px 8px">Complete</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">History</h2>
+  <div class="card">{% for e in w.events %}<div class="detail-row"><span>{{ e.event_type|replace("_"," ")|capitalize }}</span><span class="subtle id-mono">{{ e.occurred_at | humandt }}</span></div>{% endfor %}</div>
+</section>
+{% endblock %}

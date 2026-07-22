@@ -129,6 +129,20 @@ def book_aum(principal) -> Decimal:
     return portfolio_book_aum(book_scope(principal))
 
 
+def active_workflow_count(principal) -> int:
+    """Book-scoped count of active workflow instances (Phase D.17 — Analytics consumes workflow
+    statistics; Workflow never depends on Analytics)."""
+    from app.db import workflow_instances
+    ids = book_scope(principal)
+    with engine.connect() as c:
+        stmt = select(func.count()).select_from(workflow_instances).where(workflow_instances.c.status == "active")
+        if ids is not None:
+            if not ids:
+                return 0
+            stmt = stmt.where(workflow_instances.c.person_id.in_(tuple(ids)))
+        return c.scalar(stmt) or 0
+
+
 def active_campaign_count(principal) -> int:
     with engine.connect() as c:
         return c.scalar(select(func.count()).select_from(campaigns)
