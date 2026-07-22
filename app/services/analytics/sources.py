@@ -170,6 +170,24 @@ def active_conversation_count(principal) -> int:
         return c.scalar(stmt) or 0
 
 
+def active_project_count(principal) -> int:
+    """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
+    Operations never depends on Analytics). Firm operations are not client-book-scoped."""
+    from app.db import projects
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(projects)
+                        .where(projects.c.status == "active")) or 0
+
+
+def open_operational_task_count(principal) -> int:
+    """Firm-level count of open operational tasks (Phase D.20)."""
+    from app.db import operational_tasks
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(operational_tasks)
+                        .where(operational_tasks.c.status.notin_(
+                            ("completed", "cancelled", "archived")))) or 0
+
+
 def upcoming_meeting_count(principal) -> int:
     """Book-scoped count of upcoming (scheduled/confirmed, future-dated) meetings (Phase D.19 —
     Analytics consumes scheduling statistics; Scheduling never depends on Analytics)."""

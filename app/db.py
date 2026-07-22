@@ -251,3 +251,19 @@ meeting_resource_bookings = metadata.tables["meeting_resource_bookings"]
 meeting_reminders = metadata.tables["meeting_reminders"]
 meeting_followups = metadata.tables["meeting_followups"]
 scheduling_events = metadata.tables["scheduling_events"]
+
+# Enterprise Operations platform (Phase D.20). Authoritative for firm operational metadata only;
+# every client/business link is an optional reference, never ownership. Advisor Work remains the
+# authoritative client-work domain.
+project_templates = metadata.tables["project_templates"]
+operational_resources = metadata.tables["operational_resources"]
+projects = metadata.tables["projects"]
+project_phases = metadata.tables["project_phases"]
+project_milestones = metadata.tables["project_milestones"]
+operational_tasks = metadata.tables["operational_tasks"]
+operational_task_dependencies = metadata.tables["operational_task_dependencies"]
+operational_checklist_items = metadata.tables["operational_checklist_items"]
+capacity_plans = metadata.tables["capacity_plans"]
+operational_issues = metadata.tables["operational_issues"]
+operational_comments = metadata.tables["operational_comments"]
+operations_events = metadata.tables["operations_events"]
