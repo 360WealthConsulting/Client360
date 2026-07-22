@@ -113,6 +113,17 @@ _DEFS = (
            sources.integration_sync_failure_count),
     Metric("integration_connector_errors", "Connector Errors", "operations", "count", "card", False,
            sources.integration_connector_error_count),
+    # Enterprise Security (Phase D.25 — Analytics consumes security statistics).
+    Metric("security_open_findings", "Open Security Findings", "operations", "count", "card", False,
+           sources.security_open_finding_count),
+    Metric("security_open_incidents", "Open Security Incidents", "operations", "count", "card", False,
+           sources.security_open_incident_count),
+    Metric("security_overdue_rotations", "Overdue Secret Rotations", "operations", "count", "card", False,
+           sources.security_overdue_rotation_count),
+    Metric("security_expired_certificates", "Expired Certificates", "operations", "count", "card", False,
+           sources.security_expired_certificate_count),
+    Metric("security_mfa_enabled_users", "MFA-Enabled Users", "operations", "count", "card", False,
+           sources.security_mfa_enabled_user_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

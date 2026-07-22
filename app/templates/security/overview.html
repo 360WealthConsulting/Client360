@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Security | Client360{% endblock %}
+{% block crumb %}Security{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Security", eyebrow="Policies · providers · secrets · incidents", desc="Deterministic security governance metadata — policies, identity providers, secret & certificate references, incidents, and findings. Reuses the existing authentication, RBAC, crypto, and audit; never stores a plaintext secret.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active policies</div><div style="font-size:22px; font-weight:700">{{ metrics.active_policies }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open incidents</div><div style="font-size:22px; font-weight:700">{{ metrics.open_incidents }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open findings</div><div style="font-size:22px; font-weight:700">{{ metrics.open_findings }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Overdue rotations</div><div style="font-size:22px; font-weight:700">{{ metrics.overdue_secret_rotations }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Expired certs</div><div style="font-size:22px; font-weight:700">{{ metrics.expired_certificates }}</div></article>
+  </div>
+</section>
+
+<section class="stack"><h2 class="section-title">Policies</h2>
+{% if policies %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Policy</th><th>Type</th><th>Status</th></tr></thead>
+  <tbody>{% for p in policies %}<tr><td><strong>{{ p.name }}</strong></td><td>{{ p.policy_type|replace("_"," ") }}</td>
+    <td>{{ ui.badge(p.status|capitalize, 'good' if p.status in ('active','approved') else '') }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No policies", "No security policies defined.") %}{% endcall %}{% endif %}
+</section>
+
+{% if incidents %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Incidents</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Incident</th><th>Severity</th><th>Status</th></tr></thead>
+    <tbody>{% for i in incidents %}<tr><td>{{ i.title }}</td><td>{{ i.severity }}</td>
+      <td>{{ ui.badge(i.status|replace("_"," ")|capitalize, 'bad' if i.severity in ('high','critical') and i.status not in ('resolved','closed') else 'good' if i.status in ('resolved','closed') else '') }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{% endblock %}

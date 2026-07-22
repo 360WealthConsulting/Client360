@@ -204,6 +204,52 @@ def governance_active_legal_hold_count(principal) -> int:
                         .where(governance_legal_holds.c.status == "active")) or 0
 
 
+def security_open_finding_count(principal) -> int:
+    """Firm-level count of open security findings (Phase D.25 — Analytics consumes security
+    statistics; Security never depends on Analytics)."""
+    from app.db import security_findings
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(security_findings)
+                        .where(security_findings.c.status == "open")) or 0
+
+
+def security_open_incident_count(principal) -> int:
+    """Firm-level count of unresolved security incidents (Phase D.25)."""
+    from app.db import security_incidents
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(security_incidents)
+                        .where(security_incidents.c.status.notin_(("resolved", "closed")))) or 0
+
+
+def security_overdue_rotation_count(principal) -> int:
+    """Firm-level count of active secret references past their rotation date (Phase D.25)."""
+    from datetime import UTC, datetime
+
+    from app.db import security_secret_references
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(security_secret_references).where(
+            security_secret_references.c.status == "active",
+            security_secret_references.c.next_rotation_at.is_not(None),
+            security_secret_references.c.next_rotation_at <= datetime.now(UTC))) or 0
+
+
+def security_expired_certificate_count(principal) -> int:
+    """Firm-level count of expired/revoked certificate references (Phase D.25)."""
+    from app.db import security_certificate_references
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(security_certificate_references)
+                        .where(security_certificate_references.c.status.in_(("expired", "revoked")))) or 0
+
+
+def security_mfa_enabled_user_count(principal) -> int:
+    """Firm-level count of active users with MFA enabled (Phase D.25 — MFA coverage). Reads the
+    existing ``users.mfa_enabled`` flag maintained by authentication; Security adds no auth state."""
+    from app.db import users
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(users).where(
+            users.c.status == "active", users.c.mfa_enabled.is_(True))) or 0
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

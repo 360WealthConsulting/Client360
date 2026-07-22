@@ -134,6 +134,14 @@ def _integration_sync(context):
     return integration_sync.run_due_syncs(context["principal"], actor_user_id=context["actor_user_id"])
 
 
+def _security_review(context):
+    """Run due security reviews via the Security domain (Phase D.25): flag secrets past their
+    rotation date, certificates near/after expiry, and policies due for review. Security owns the
+    metadata; this records findings/events only and performs no cryptographic operation."""
+    from app.services.security import scans as security_scans
+    return security_scans.run_due_reviews(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -160,6 +168,7 @@ DISPATCH_REGISTRY = {
     "governance_stale_scan": _governance_stale_scan,
     "governance_retention_review": _governance_retention_review,
     "integration_sync": _integration_sync,
+    "security_review": _security_review,
     "maintenance": _maintenance,
     "custom": _custom,
 }
