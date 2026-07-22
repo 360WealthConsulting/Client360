@@ -250,6 +250,47 @@ def security_mfa_enabled_user_count(principal) -> int:
             users.c.status == "active", users.c.mfa_enabled.is_(True))) or 0
 
 
+def observability_failed_health_check_count(principal) -> int:
+    """Firm-level count of health checks whose last status is unhealthy/degraded (Phase D.26 —
+    Analytics consumes observability statistics; Observability never depends on Analytics)."""
+    from app.db import observability_health_checks
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(observability_health_checks)
+                        .where(observability_health_checks.c.last_status.in_(("unhealthy", "degraded")))) or 0
+
+
+def observability_open_alert_count(principal) -> int:
+    """Firm-level count of open operational alerts (Phase D.26)."""
+    from app.db import observability_alerts
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(observability_alerts)
+                        .where(observability_alerts.c.status == "open")) or 0
+
+
+def observability_operational_service_count(principal) -> int:
+    """Firm-level count of services currently operational (Phase D.26 — service availability)."""
+    from app.db import observability_services
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(observability_services)
+                        .where(observability_services.c.status == "operational")) or 0
+
+
+def observability_diagnostic_failure_count(principal) -> int:
+    """Firm-level count of diagnostic results that failed/errored (Phase D.26)."""
+    from app.db import observability_diagnostic_results
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(observability_diagnostic_results)
+                        .where(observability_diagnostic_results.c.status.in_(("fail", "error")))) or 0
+
+
+def observability_open_reliability_incident_count(principal) -> int:
+    """Firm-level count of unresolved reliability incidents (Phase D.26)."""
+    from app.db import observability_reliability_incidents
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(observability_reliability_incidents)
+                        .where(observability_reliability_incidents.c.status.notin_(("resolved", "closed")))) or 0
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

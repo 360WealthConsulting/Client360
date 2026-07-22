@@ -142,6 +142,15 @@ def _security_review(context):
     return security_scans.run_due_reviews(context["principal"], actor_user_id=context["actor_user_id"])
 
 
+def _observability_scan(context):
+    """Run due observability scans via the Observability domain (Phase D.26): run enabled health &
+    diagnostic checks, collect telemetry, capture a runtime snapshot, and evaluate alert rules.
+    Observability owns the metadata; this records health/diagnostic/telemetry/alert metadata only and
+    reuses the existing readiness/scheduler surfaces — it performs no external monitoring."""
+    from app.services.observability import scans as observability_scans
+    return observability_scans.run_due_scans(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -169,6 +178,7 @@ DISPATCH_REGISTRY = {
     "governance_retention_review": _governance_retention_review,
     "integration_sync": _integration_sync,
     "security_review": _security_review,
+    "observability_scan": _observability_scan,
     "maintenance": _maintenance,
     "custom": _custom,
 }

@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.25** on `release/0.13.0` (migration head `w7a8b9c0d1e2`, 646 routes, 142
+after **Phase D.26** on `release/0.13.0` (migration head `x8b9c0d1e2f3`, 693 routes, 147
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -134,6 +134,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 40 | Data Governance (quality, lineage, MDM, retention) | source (authoritative governance-metadata domain; references canonical records — D.23) |
 | 41 | Enterprise Integration (connectors, webhooks, API, events) | source (authoritative integration-metadata domain; reuses providers/outbox — D.24) |
 | 42 | Enterprise Security (policies, providers, secrets, certificates, incidents, findings) | source (authoritative security-metadata domain; reuses auth/RBAC/crypto/audit — D.25) |
+| 43 | Enterprise Observability (services, health, diagnostics, telemetry, alerts, reliability) | source (authoritative platform-operations-metadata domain; reuses health/scheduler/logging — D.26) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -284,6 +285,13 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   the existing authentication/RBAC/record-scope/Fernet-crypto/audit, never replaces login/OAuth,
   never stores a plaintext secret; policy approval / secret rotation / certificate renewal / incident
   & exception decisions / running reviews require `security.execute`).
+- **Observability:** `observability.view/manage/execute/audit*/admin*` (D.26 platform-operations
+  domain; owns observability metadata only — services, health/diagnostic checks, telemetry, alerts,
+  runtime snapshots, reliability incidents/findings — reuses the existing health endpoints, scheduler
+  snapshot, logging, and notification ledger, never replaces runtime health/logging/exception
+  handling, never delivers a notification; scans / snapshot capture / alert ack-resolve / service &
+  incident lifecycle require `observability.execute`; sensitive diagnostic detail requires
+  `observability.audit`).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -439,21 +447,22 @@ families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, 
 appointments), `/operations` (D.20 firm projects/tasks/capacity), `/reporting` (D.21 dashboards & BI),
 `/automation` (D.22 jobs/schedules/runs), `/governance` (D.23 quality/lineage/retention),
 `/integration` (D.24 connectors/webhooks/API/events), `/security` (D.25 policies/providers/secrets/
-certificates/incidents/findings), `/workspace` (meeting), `/portfolio` +
+certificates/incidents/findings), `/observability` (D.26 services/health/diagnostics/telemetry/alerts/
+reliability), `/workspace` (meeting), `/portfolio` +
 `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
 `/api/v1/*`.
 
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (20 registered modules: advisor_work, analytics, annual_review,
+  `app/database/schema.py` (21 registered modules: advisor_work, analytics, annual_review,
   automation, business_planning, campaign_referral, communication, compliance, document_platform,
-  governance, identity, integration, operations, opportunity, outbox, portfolio, reporting,
-  scheduling, security, work — plus core tables inline in `schema.py`).
-- **Alembic:** 70 migrations, **single head `w7a8b9c0d1e2`**; `alembic current == heads`.
-  Recent chain: D.17 `o5f6a7b8c9d0` → D.18 `p6a7b8c9d0e1` → D.19 `q7b8c9d0e1f2` → D.20
-  `r8c9d0e1f2a3` → D.21 `s9d0e1f2a3b4` → D.22 `t0e1f2a3b4c5` → D.23 `u1f2a3b4c5d6` → D.24
-  `v2a3b4c5d6e7` → D.25 `w7a8b9c0d1e2`.
+  governance, identity, integration, observability, operations, opportunity, outbox, portfolio,
+  reporting, scheduling, security, work — plus core tables inline in `schema.py`).
+- **Alembic:** 71 migrations, **single head `x8b9c0d1e2f3`**; `alembic current == heads`.
+  Recent chain: D.18 `p6a7b8c9d0e1` → D.19 `q7b8c9d0e1f2` → D.20 `r8c9d0e1f2a3` → D.21
+  `s9d0e1f2a3b4` → D.22 `t0e1f2a3b4c5` → D.23 `u1f2a3b4c5d6` → D.24 `v2a3b4c5d6e7` → D.25
+  `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

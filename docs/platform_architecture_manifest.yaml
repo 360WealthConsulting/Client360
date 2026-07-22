@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: w7a8b9c0d1e2      # `alembic heads` / `alembic current`
-  route_count: 646                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 142    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: x8b9c0d1e2f3      # `alembic heads` / `alembic current`
+  route_count: 693                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 147    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -61,6 +61,13 @@ source_producer_modules:
   - app/services/security/providers.py
   - app/services/security/secrets.py
   - app/services/security/incidents.py
+  # Enterprise Observability (D.26) — authoritative platform-operations domain; must not import composition layers.
+  - app/services/observability/service.py
+  - app/services/observability/catalog.py
+  - app/services/observability/health.py
+  - app/services/observability/telemetry.py
+  - app/services/observability/alerts.py
+  - app/services/observability/incidents.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:
@@ -87,6 +94,7 @@ declared_schema_registrations:
   - define_opportunity_tables
   - define_outbox_tables
   - define_portfolio_tables
+  - define_observability_tables
   - define_reporting_tables
   - define_scheduling_tables
   - define_security_tables
@@ -142,6 +150,8 @@ capabilities:
   integration: [integration.view, integration.manage, integration.execute, integration.audit,
                 integration.admin]
   security: [security.view, security.manage, security.execute, security.audit, security.admin]
+  observability: [observability.view, observability.manage, observability.execute,
+                  observability.audit, observability.admin]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:

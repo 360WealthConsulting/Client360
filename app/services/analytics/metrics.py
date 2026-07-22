@@ -124,6 +124,17 @@ _DEFS = (
            sources.security_expired_certificate_count),
     Metric("security_mfa_enabled_users", "MFA-Enabled Users", "operations", "count", "card", False,
            sources.security_mfa_enabled_user_count),
+    # Enterprise Observability (Phase D.26 — Analytics consumes observability statistics).
+    Metric("observability_failed_health_checks", "Failed Health Checks", "operations", "count", "card",
+           False, sources.observability_failed_health_check_count),
+    Metric("observability_open_alerts", "Open Operational Alerts", "operations", "count", "card", False,
+           sources.observability_open_alert_count),
+    Metric("observability_operational_services", "Operational Services", "operations", "count", "card",
+           False, sources.observability_operational_service_count),
+    Metric("observability_diagnostic_failures", "Diagnostic Failures", "operations", "count", "card",
+           False, sources.observability_diagnostic_failure_count),
+    Metric("observability_reliability_incidents", "Open Reliability Incidents", "operations", "count",
+           "card", False, sources.observability_open_reliability_incident_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

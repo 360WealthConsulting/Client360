@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Observability | Client360{% endblock %}
+{% block crumb %}Observability{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Observability", eyebrow="Services · health · telemetry · alerts", desc="Deterministic platform-operations metadata — service inventory, health & diagnostics, telemetry, alerts, runtime snapshots, and reliability incidents. Reuses the existing health endpoints, scheduler, and logging; records metadata only.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Operational</div><div style="font-size:22px; font-weight:700">{{ metrics.operational_services }}/{{ metrics.total_services }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open alerts</div><div style="font-size:22px; font-weight:700">{{ metrics.open_alerts }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Failed health checks</div><div style="font-size:22px; font-weight:700">{{ metrics.failed_health_checks }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Diagnostic failures</div><div style="font-size:22px; font-weight:700">{{ metrics.diagnostic_failures }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Reliability incidents</div><div style="font-size:22px; font-weight:700">{{ metrics.reliability_incidents }}</div></article>
+  </div>
+</section>
+
+<section class="stack"><h2 class="section-title">Services</h2>
+{% if services %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Service</th><th>Type</th><th>Status</th></tr></thead>
+  <tbody>{% for s in services %}<tr><td><strong>{{ s.name }}</strong></td><td>{{ s.service_type|replace("_"," ") }}</td>
+    <td>{{ ui.badge(s.status|replace("_"," ")|capitalize, 'good' if s.status == 'operational' else ('bad' if s.status in ('degraded','down') else '')) }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No services", "No services registered in the observability inventory.") %}{% endcall %}{% endif %}
+</section>
+
+{% if alerts %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Open alerts</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Alert</th><th>Severity</th><th>Status</th></tr></thead>
+    <tbody>{% for a in alerts %}<tr><td>{{ a.title }}</td><td>{{ a.severity }}</td>
+      <td>{{ ui.badge(a.status|capitalize, 'bad' if a.severity == 'critical' else '') }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{% endblock %}
