@@ -351,3 +351,29 @@ security_exceptions = metadata.tables["security_exceptions"]
 security_incidents = metadata.tables["security_incidents"]
 security_findings = metadata.tables["security_findings"]
 security_events = metadata.tables["security_events"]
+
+# Enterprise Observability platform (Phase D.26). Authoritative platform-operations domain: owns
+# observability metadata only (services + dependencies, health checks/snapshots, diagnostics,
+# telemetry sources/metrics, alert rules/alerts/suppressions, runtime snapshots, environment/
+# deployment references, maintenance windows, reliability incidents/findings). References
+# Automation/Integration/Security/Analytics/Timeline/Audit; never a source of truth for operational
+# or business entities. Reuses the existing health endpoints, scheduler snapshot, logging, and the
+# notification ledger — never replaces runtime health/logging/exception handling.
+observability_environment_profiles = metadata.tables["observability_environment_profiles"]
+observability_deployment_references = metadata.tables["observability_deployment_references"]
+observability_services = metadata.tables["observability_services"]
+observability_service_dependencies = metadata.tables["observability_service_dependencies"]
+observability_health_checks = metadata.tables["observability_health_checks"]
+observability_health_snapshots = metadata.tables["observability_health_snapshots"]
+observability_diagnostic_checks = metadata.tables["observability_diagnostic_checks"]
+observability_diagnostic_results = metadata.tables["observability_diagnostic_results"]
+observability_telemetry_sources = metadata.tables["observability_telemetry_sources"]
+observability_telemetry_metrics = metadata.tables["observability_telemetry_metrics"]
+observability_maintenance_windows = metadata.tables["observability_maintenance_windows"]
+observability_alert_rules = metadata.tables["observability_alert_rules"]
+observability_alert_suppressions = metadata.tables["observability_alert_suppressions"]
+observability_alerts = metadata.tables["observability_alerts"]
+observability_runtime_snapshots = metadata.tables["observability_runtime_snapshots"]
+observability_reliability_incidents = metadata.tables["observability_reliability_incidents"]
+observability_reliability_findings = metadata.tables["observability_reliability_findings"]
+observability_events = metadata.tables["observability_events"]

@@ -115,6 +115,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-028](ADR-028-governance-reuses-matching-merge-retention.md) | Data Governance reuses matching/merge/retention; never an unsafe merge or hard delete | Accepted | Domain (governance) | D.23 |
 | [ADR-029](ADR-029-integration-reuses-importers-outbox-crypto.md) | Enterprise Integration reuses importers/OAuth/outbox/crypto; metadata-only, no broker, no plaintext secrets | Accepted | Domain (integration) | D.24 |
 | [ADR-030](ADR-030-security-metadata-domain-reuses-auth-crypto-audit.md) | Enterprise Security reuses auth/RBAC/crypto/audit; metadata-only, never replaces login/OAuth, never plaintext secrets | Accepted | Domain (security) | D.25 |
+| [ADR-031](ADR-031-observability-metadata-domain-reuses-health-scheduler-logging.md) | Enterprise Observability reuses health/scheduler/logging/notifications; metadata-only, never replaces runtime health/logging/exception handling | Accepted | Domain (observability) | D.26 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

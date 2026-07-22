@@ -38,7 +38,9 @@ JOB_TYPES = ("run_report_schedule", "report_schedules_sweep", "capture_analytics
              # Phase D.24 — Enterprise Integration (Automation executes scheduled synchronization).
              "integration_sync",
              # Phase D.25 — Enterprise Security (Automation runs rotation/certificate/policy reviews).
-             "security_review")
+             "security_review",
+             # Phase D.26 — Enterprise Observability (health/diagnostic scans, telemetry, alert eval).
+             "observability_scan")
 JOB_CATEGORIES = ("reporting", "analytics", "workflow", "communications", "operations",
                   "microsoft365", "maintenance", "governance", "general")
 JOB_STATUSES = ("enabled", "disabled", "paused")
