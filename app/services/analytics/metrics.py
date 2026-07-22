@@ -155,6 +155,15 @@ _DEFS = (
            sources.runtime_edition_utilization),
     Metric("runtime_active_features", "Active Runtime Features", "operations", "count", "card", False,
            sources.runtime_active_feature_count),
+    # Distributed Runtime Coordination (Phase D.29 — Analytics consumes cluster statistics).
+    Metric("runtime_active_workers", "Runtime Workers", "operations", "count", "card", False,
+           sources.runtime_active_worker_count),
+    Metric("runtime_cluster_convergence", "Cluster Convergence", "operations", "percent", "card", False,
+           sources.runtime_cluster_convergence_pct),
+    Metric("runtime_stale_workers", "Stale Runtime Workers", "operations", "count", "card", False,
+           sources.runtime_stale_worker_count),
+    Metric("runtime_generations", "Runtime Generations", "operations", "count", "card", False,
+           sources.runtime_generation_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

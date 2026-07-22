@@ -44,7 +44,9 @@ JOB_TYPES = ("run_report_schedule", "report_schedules_sweep", "capture_analytics
              # Phase D.27 — Enterprise Configuration (config validation / drift / rollout review).
              "configuration_review",
              # Phase D.28 — Runtime Configuration Engine (safe cache/snapshot refresh).
-             "runtime_refresh")
+             "runtime_refresh",
+             # Phase D.29 — Distributed Runtime Coordination (stale-worker sweep + convergence).
+             "runtime_coordination")
 JOB_CATEGORIES = ("reporting", "analytics", "workflow", "communications", "operations",
                   "microsoft365", "maintenance", "governance", "general")
 JOB_STATUSES = ("enabled", "disabled", "paused")

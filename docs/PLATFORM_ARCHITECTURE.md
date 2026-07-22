@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.28** on `release/0.13.0` (migration head `z0a1b2c3d4e5`, 761 routes, 157
+after **Phase D.29** on `release/0.13.0` (migration head `z2c3d4e5f6a7`, 771 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -137,6 +137,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 43 | Enterprise Observability (services, health, diagnostics, telemetry, alerts, reliability) | source (authoritative platform-operations-metadata domain; reuses health/scheduler/logging — D.26) |
 | 44 | Enterprise Configuration (categories, items, features, editions, preferences, changes) | source (authoritative platform-configuration-metadata domain; reuses runtime config/env — D.27) |
 | 45 | Runtime Configuration Engine (resolution, snapshots, cache, feature evaluation) | runtime evaluation layer (evaluates D.27 metadata deterministically; owns only immutable snapshots + ledger; never edits metadata — D.28) |
+| 46 | Distributed Runtime Coordination (workers, generations, convergence) | runtime coordination layer (cluster-safe convergence over the transactional outbox; owns only worker/generation/coordination metadata; never evaluates or edits metadata — D.29) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -310,6 +311,13 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   never blocks startup; every request gets one immutable runtime context. Refresh / snapshot build /
   cache rebuild require `runtime.execute`; the safety report requires `runtime.audit`; emergency
   overrides require `runtime.admin`).
+- **Runtime cluster:** `/runtime/cluster` reuses the D.28 `runtime.*` capabilities (D.29 distributed
+  coordination — makes the runtime engine cluster-safe using the transactional outbox as the sole
+  coordination bus; a worker registry + heartbeats, a runtime generation/version history, and
+  pull-based convergence off the persisted generation as the single source of truth. The engine
+  remains the sole evaluator; coordination never edits metadata; coordinated refresh requires
+  `runtime.execute`; diagnostics/event-history require `runtime.audit`; worker administration &
+  emergency synchronization require `runtime.admin`).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -467,22 +475,23 @@ appointments), `/operations` (D.20 firm projects/tasks/capacity), `/reporting` (
 `/integration` (D.24 connectors/webhooks/API/events), `/security` (D.25 policies/providers/secrets/
 certificates/incidents/findings), `/observability` (D.26 services/health/diagnostics/telemetry/alerts/
 reliability), `/configuration` (D.27 settings/features/editions/preferences/changes), `/runtime` (D.28 runtime
-engine — effective config/features/snapshots/cache), `/workspace` (meeting), `/portfolio` +
+engine — effective config/features/snapshots/cache), `/runtime/cluster` (D.29 workers/versions/
+convergence/diagnostics), `/workspace` (meeting), `/portfolio` +
 `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
 `/api/v1/*`.
 
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (23 registered modules: advisor_work, analytics, annual_review,
+  `app/database/schema.py` (24 registered modules: advisor_work, analytics, annual_review,
   automation, business_planning, campaign_referral, communication, compliance, configuration,
   document_platform, governance, identity, integration, observability, operations, opportunity,
-  outbox, portfolio, reporting, runtime, scheduling, security, work — plus core tables inline in
-  `schema.py`).
-- **Alembic:** 73 migrations, **single head `z0a1b2c3d4e5`**; `alembic current == heads`.
-  Recent chain: D.20 `r8c9d0e1f2a3` → D.21 `s9d0e1f2a3b4` → D.22 `t0e1f2a3b4c5` → D.23
-  `u1f2a3b4c5d6` → D.24 `v2a3b4c5d6e7` → D.25 `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3` → D.27
-  `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5`.
+  outbox, portfolio, reporting, runtime, runtime_coordination, scheduling, security, work — plus core
+  tables inline in `schema.py`).
+- **Alembic:** 74 migrations, **single head `z2c3d4e5f6a7`**; `alembic current == heads`.
+  Recent chain: D.21 `s9d0e1f2a3b4` → D.22 `t0e1f2a3b4c5` → D.23 `u1f2a3b4c5d6` → D.24
+  `v2a3b4c5d6e7` → D.25 `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28
+  `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

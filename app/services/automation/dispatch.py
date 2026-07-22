@@ -169,6 +169,14 @@ def _runtime_refresh(context):
     return runtime_engine.refresh(context["principal"], actor_user_id=context["actor_user_id"])
 
 
+def _runtime_coordination(context):
+    """Run a distributed runtime coordination sweep (Phase D.29): expire stale workers and converge
+    this worker onto the current runtime generation. Coordination flows through the transactional
+    outbox; this sweep never edits configuration metadata and never evaluates. Failure-isolated."""
+    from app.services.runtime import cluster
+    return cluster.coordination_sweep(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -199,6 +207,7 @@ DISPATCH_REGISTRY = {
     "observability_scan": _observability_scan,
     "configuration_review": _configuration_review,
     "runtime_refresh": _runtime_refresh,
+    "runtime_coordination": _runtime_coordination,
     "maintenance": _maintenance,
     "custom": _custom,
 }

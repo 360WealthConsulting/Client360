@@ -125,6 +125,48 @@ def runtime_refresh_interval_seconds() -> int:
     return max(15, _int_env("RUNTIME_REFRESH_INTERVAL_SECONDS", 300))
 
 
+def runtime_worker_id() -> str:
+    """A stable per-process worker id for distributed runtime coordination (Phase D.29).
+
+    Prefers an explicit ``RUNTIME_WORKER_ID`` (e.g. a pod name); otherwise derives a stable id from
+    the hostname + pid so each worker process is uniquely and reproducibly identifiable within a
+    single boot. Cluster coordination keys worker rows on this id.
+    """
+    explicit = os.getenv("RUNTIME_WORKER_ID", "").strip()
+    if explicit:
+        return explicit
+    import os as _os
+    import socket
+    try:
+        host = socket.gethostname()
+    except Exception:
+        host = "unknown"
+    return f"{host}:{_os.getpid()}"
+
+
+def runtime_coordination_enabled() -> bool:
+    """Whether the distributed runtime coordination scheduler jobs (worker heartbeat, stale-worker
+    cleanup) run (Phase D.29).
+
+    Default OFF: the coordination metadata (workers/generations/events) is always maintained on
+    demand and every worker converges via the persisted generation on refresh; the periodic
+    heartbeat/cleanup jobs register only when explicitly enabled (same posture as the outbox
+    dispatcher / runtime refresh). Cross-process invalidation still flows through the transactional
+    outbox when the outbox dispatcher is enabled.
+    """
+    return os.getenv("RUNTIME_COORDINATION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def runtime_heartbeat_interval_seconds() -> int:
+    # Cadence for a worker's coordination heartbeat + converge-if-behind check; minimum 10s.
+    return max(10, _int_env("RUNTIME_HEARTBEAT_INTERVAL_SECONDS", 30))
+
+
+def runtime_worker_ttl_seconds() -> int:
+    # A worker is considered stale after this many seconds without a heartbeat; minimum 30s.
+    return max(30, _int_env("RUNTIME_WORKER_TTL_SECONDS", 120))
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 

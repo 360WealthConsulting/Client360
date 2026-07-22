@@ -45,33 +45,69 @@ def hydrate(*, actor_user_id=None) -> dict:
         _cache_snapshot(snap)
         RUNTIME_CACHE.mark_warmed()
         _hydrated["value"] = True
+        event_id = None
         with engine.begin() as c:
             record_event(c, entity_type="engine", entity_id=0, event_type="runtime_initialized",
                          actor_user_id=actor_user_id, payload={"snapshot_version": snap["version"]})
+            event_id = _publish_coordination(c, "runtime.snapshot.created", snap)
         write_audit("runtime.initialized", entity_type="engine", entity_id=0, actor_user_id=actor_user_id)
+        _activate_generation(snap, trigger="startup", event_id=event_id, actor_user_id=actor_user_id)
         return {"hydrated": True, "snapshot_version": snap["version"]}
     except Exception:
         logger.exception("runtime config hydration failed; continuing with defaults / last-known")
         return {"hydrated": False, "error": "hydration_failed"}
 
 
-def refresh(principal=None, *, actor_user_id=None) -> dict:
-    """Safe refresh: invalidate the cache and rebuild the snapshot. On failure, keep serving the
-    last-known snapshot (never raises)."""
+def refresh(principal=None, *, actor_user_id=None, trigger="manual") -> dict:
+    """Safe refresh: invalidate the cache, rebuild the snapshot, publish the coordination events
+    through the transactional outbox (cross-process invalidation), and activate a runtime generation
+    the cluster converges on. On failure, keep serving the last-known snapshot (never raises)."""
     try:
         RUNTIME_CACHE.invalidate()
         snap = snapshots.build_snapshot(scope="refresh", source="safe-refresh", actor_user_id=actor_user_id)
         _cache_snapshot(snap)
         RUNTIME_CACHE.mark_warmed()
+        event_id = None
         with engine.begin() as c:
             record_event(c, entity_type="cache", entity_id=snap["id"], event_type="cache_rebuilt",
                          actor_user_id=actor_user_id, payload={"version": RUNTIME_CACHE.version})
+            # D.29: publish coordination events on the EXISTING outbox, atomic with the ledger write.
+            _publish_coordination(c, "runtime.cache.rebuilt", snap)
+            event_id = _publish_coordination(c, "runtime.snapshot.activated", snap)
         write_audit("runtime.refreshed", entity_type="snapshot", entity_id=snap["id"],
                     actor_user_id=actor_user_id)
-        return {"refreshed": True, "snapshot_version": snap["version"], "cache_version": RUNTIME_CACHE.version}
+        # D.29: activate a runtime generation (deduped by config_hash) + converge the local worker.
+        gen = _activate_generation(snap, trigger=trigger, event_id=event_id, actor_user_id=actor_user_id)
+        return {"refreshed": True, "snapshot_version": snap["version"],
+                "cache_version": RUNTIME_CACHE.version,
+                "generation_version": (gen["version"] if gen else None)}
     except Exception:
         logger.exception("runtime refresh failed; serving last-known snapshot")
         return {"refreshed": False, "error": "refresh_failed"}
+
+
+def _publish_coordination(c, event_type, snap):
+    """Publish a runtime coordination event on the transactional outbox (guarded, in-txn)."""
+    try:
+        from .events import publish_runtime_event
+        return publish_runtime_event(c, event_type, {
+            "snapshot_uid": snap.get("snapshot_uid"), "version": snap.get("version"),
+            "config_hash": snap.get("config_hash")})
+    except Exception:
+        return None
+
+
+def _activate_generation(snap, *, trigger, event_id=None, actor_user_id=None):
+    """Activate a runtime generation for the snapshot and converge the local worker (guarded)."""
+    try:
+        from . import coordination, generations
+        gen = generations.activate_generation(snap, trigger=trigger, event_id=event_id,
+                                               actor_user_id=actor_user_id)
+        coordination.converge_worker(gen=gen)
+        return gen
+    except Exception:
+        logger.exception("runtime generation activation failed")
+        return None
 
 
 def warm_up(*, actor_user_id=None) -> dict:

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Runtime Cluster | Client360{% endblock %}
+{% block crumb %}Runtime Cluster{% endblock %}
+{% block content %}
+{{ ui.page_head("Distributed Runtime Coordination", eyebrow="Workers · versions · convergence", desc="Cluster-safe coordination for the runtime engine — worker registry, runtime generations, and cross-process convergence over the transactional outbox. The runtime engine remains the sole evaluator; the outbox is the sole coordination bus.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">Cluster state</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active workers</div><div style="font-size:22px; font-weight:700">{{ metrics.active_workers }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Current version</div><div style="font-size:22px; font-weight:700">{% if metrics.current_version is not none %}v{{ metrics.current_version }}{% else %}—{% endif %}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Convergence</div><div style="font-size:22px; font-weight:700">{{ metrics.convergence_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Stale workers</div><div style="font-size:22px; font-weight:700">{{ metrics.stale_workers }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Generations</div><div style="font-size:22px; font-weight:700">{{ metrics.generation_count }}</div></article>
+  </div>
+  <p class="subtle" style="margin-top:8px; font-size:12px">Propagation: {{ metrics.propagation_status or "—" }} · {{ ui.badge("Converged" if metrics.converged else "Converging", 'good' if metrics.converged else '') }}</p>
+</section>
+
+<section class="stack"><h2 class="section-title">Workers</h2>
+{% if workers %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Worker</th><th>Status</th><th>Health</th><th>Runtime version</th></tr></thead>
+  <tbody>{% for w in workers %}<tr><td><strong>{{ w.worker_uid }}</strong></td>
+    <td>{{ ui.badge(w.status|capitalize, 'good' if w.status == 'active' else ('bad' if w.status in ('stale','stopped') else '')) }}</td>
+    <td>{{ w.health_status }}</td><td>v{{ w.runtime_version }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No workers", "No runtime workers have registered in the cluster.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}
