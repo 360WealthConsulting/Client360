@@ -107,6 +107,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-020](ADR-020-analytics-as-read-model.md) | Enterprise Analytics as a deterministic read-model | Accepted | Domain (analytics) | D.15 |
 | [ADR-021](ADR-021-document-platform-as-authoritative-domain.md) | Document Management as the authoritative artifact domain | Accepted | Domain (documents) | D.16 |
 | [ADR-022](ADR-022-workflow-orchestration-layer.md) | Workflow Automation as an orchestration layer over the existing engine | Accepted | Domain (workflow) | D.17 |
+| [ADR-023](ADR-023-communications-as-authoritative-domain.md) | Communications as an authoritative communication-metadata domain | Accepted | Domain (communications) | D.18 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

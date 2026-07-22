@@ -15,18 +15,16 @@ from app.routes.advisor_work import router as advisor_work_router
 from app.routes.analytics import router as analytics_router
 from app.routes.annual_review import router as annual_review_router
 from app.routes.auth import router as auth_router
+from app.routes.benefits import router as benefits_router
 from app.routes.business_development import router as business_development_router
 from app.routes.business_owner import router as business_owner_router
 from app.routes.campaign import router as campaign_router
-from app.routes.opportunity import router as opportunity_router
-from app.routes.referral import router as referral_router
-from app.routes.benefits import router as benefits_router
+from app.routes.communications import router as communications_router
 from app.routes.compliance import router as compliance_router
 from app.routes.dashboard import router as dashboard_router
-from app.routes.document_library import router as document_library_router
-from app.routes.workflow_automation import router as workflow_automation_router
 from app.routes.dev_auth import dev_auth_enabled
 from app.routes.dev_auth import router as dev_auth_router
+from app.routes.document_library import router as document_library_router
 from app.routes.documents import router as documents_router
 from app.routes.exceptions import router as exceptions_router
 from app.routes.households import router as households_router
@@ -44,11 +42,13 @@ from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_re
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.notes import router as notes_router
+from app.routes.opportunity import router as opportunity_router
 from app.routes.ops import router as ops_router
 from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
 from app.routes.portal import router as portal_router
 from app.routes.portfolio import router as portfolio_router
+from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
 from app.routes.search import router as search_router
 from app.routes.session import router as session_router
@@ -62,6 +62,7 @@ from app.routes.tax_returns import router as tax_returns_router
 from app.routes.timeline import router as timeline_router
 from app.routes.wealth import router as wealth_router
 from app.routes.work import router as work_router
+from app.routes.workflow_automation import router as workflow_automation_router
 from app.routes.workflows import router as workflows_router
 from app.routes.workspace import router as workspace_router
 from app.security.middleware import AuthenticationMiddleware
@@ -105,6 +106,7 @@ app.include_router(business_development_router)
 app.include_router(analytics_router)
 app.include_router(document_library_router)
 app.include_router(workflow_automation_router)
+app.include_router(communications_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)
