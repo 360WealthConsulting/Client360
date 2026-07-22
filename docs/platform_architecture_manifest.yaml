@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: u1f2a3b4c5d6      # `alembic heads` / `alembic current`
-  route_count: 576                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 132    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: v2a3b4c5d6e7      # `alembic heads` / `alembic current`
+  route_count: 617                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 137    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -49,6 +49,12 @@ source_producer_modules:
   - app/services/governance/quality.py
   - app/services/governance/mdm.py
   - app/services/governance/retention.py
+  # Enterprise Integration (D.24) — authoritative integration domain; must not import composition layers.
+  - app/services/integration/service.py
+  - app/services/integration/connectors.py
+  - app/services/integration/sync.py
+  - app/services/integration/webhooks.py
+  - app/services/integration/events.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:
@@ -70,6 +76,7 @@ declared_schema_registrations:
   - define_compliance_tables
   - define_governance_tables
   - define_identity_tables
+  - define_integration_tables
   - define_operations_tables
   - define_opportunity_tables
   - define_outbox_tables
@@ -125,6 +132,8 @@ capabilities:
                automation.admin]
   governance: [governance.view, governance.manage, governance.review, governance.audit,
                governance.admin]
+  integration: [integration.view, integration.manage, integration.execute, integration.audit,
+                integration.admin]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:

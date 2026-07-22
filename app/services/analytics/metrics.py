@@ -109,6 +109,10 @@ _DEFS = (
            sources.governance_open_finding_count),
     Metric("governance_legal_holds", "Active Legal Holds", "compliance", "count", "card", False,
            sources.governance_active_legal_hold_count),
+    Metric("integration_sync_failures", "Integration Sync Failures", "operations", "count", "card", False,
+           sources.integration_sync_failure_count),
+    Metric("integration_connector_errors", "Connector Errors", "operations", "count", "card", False,
+           sources.integration_connector_error_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

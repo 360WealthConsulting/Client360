@@ -126,6 +126,14 @@ def _governance_retention_review(context):
     return retention.review_due_retention(context["principal"], actor_user_id=context["actor_user_id"])
 
 
+def _integration_sync(context):
+    """Record due synchronization runs via the Integration domain (Phase D.24). Integration owns the
+    sync metadata; the actual data movement is the existing importers/M365 jobs — no provider logic
+    is duplicated here."""
+    from app.services.integration import sync as integration_sync
+    return integration_sync.run_due_syncs(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -151,6 +159,7 @@ DISPATCH_REGISTRY = {
     "governance_quality_scan": _governance_quality_scan,
     "governance_stale_scan": _governance_stale_scan,
     "governance_retention_review": _governance_retention_review,
+    "integration_sync": _integration_sync,
     "maintenance": _maintenance,
     "custom": _custom,
 }

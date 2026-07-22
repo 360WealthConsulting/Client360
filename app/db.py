@@ -315,3 +315,23 @@ governance_legal_holds = metadata.tables["governance_legal_holds"]
 governance_deletion_requests = metadata.tables["governance_deletion_requests"]
 governance_cases = metadata.tables["governance_cases"]
 governance_events = metadata.tables["governance_events"]
+
+# Enterprise Integration platform (Phase D.24). Authoritative integration domain: owns integration
+# metadata only (providers, connectors, credential references, sync profiles/runs/conflicts, webhook
+# endpoints/subscriptions/deliveries, API clients/usage, event definitions/subscriptions, data
+# profiles). References canonical records; never owns them. Reuses importers/OAuth/outbox/crypto.
+integration_providers = metadata.tables["integration_providers"]
+integration_credential_references = metadata.tables["integration_credential_references"]
+integration_connectors = metadata.tables["integration_connectors"]
+integration_sync_profiles = metadata.tables["integration_sync_profiles"]
+integration_sync_runs = metadata.tables["integration_sync_runs"]
+integration_sync_conflicts = metadata.tables["integration_sync_conflicts"]
+integration_webhook_endpoints = metadata.tables["integration_webhook_endpoints"]
+integration_webhook_subscriptions = metadata.tables["integration_webhook_subscriptions"]
+integration_webhook_deliveries = metadata.tables["integration_webhook_deliveries"]
+integration_api_clients = metadata.tables["integration_api_clients"]
+integration_api_usage = metadata.tables["integration_api_usage"]
+integration_event_definitions = metadata.tables["integration_event_definitions"]
+integration_event_subscriptions = metadata.tables["integration_event_subscriptions"]
+integration_data_profiles = metadata.tables["integration_data_profiles"]
+integration_events = metadata.tables["integration_events"]
