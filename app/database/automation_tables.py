@@ -34,7 +34,9 @@ JOB_TYPES = ("run_report_schedule", "report_schedules_sweep", "capture_analytics
              "send_communication", "m365_mail_sync", "m365_calendar_sync", "m365_document_sync",
              "maintenance", "custom",
              # Phase D.23 — Data Governance jobs (dispatch to the governance services).
-             "governance_quality_scan", "governance_stale_scan", "governance_retention_review")
+             "governance_quality_scan", "governance_stale_scan", "governance_retention_review",
+             # Phase D.24 — Enterprise Integration (Automation executes scheduled synchronization).
+             "integration_sync")
 JOB_CATEGORIES = ("reporting", "analytics", "workflow", "communications", "operations",
                   "microsoft365", "maintenance", "governance", "general")
 JOB_STATUSES = ("enabled", "disabled", "paused")

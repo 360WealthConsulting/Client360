@@ -170,6 +170,23 @@ def active_conversation_count(principal) -> int:
         return c.scalar(stmt) or 0
 
 
+def integration_sync_failure_count(principal) -> int:
+    """Firm-level count of failed/partial integration sync runs (Phase D.24 — Analytics consumes
+    integration statistics; Integration never depends on Analytics)."""
+    from app.db import integration_sync_runs
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(integration_sync_runs)
+                        .where(integration_sync_runs.c.status.in_(("failed", "partial")))) or 0
+
+
+def integration_connector_error_count(principal) -> int:
+    """Firm-level count of connectors in an error state (Phase D.24)."""
+    from app.db import integration_connectors
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(integration_connectors)
+                        .where(integration_connectors.c.status == "error")) or 0
+
+
 def governance_open_finding_count(principal) -> int:
     """Firm-level count of open data-quality findings (Phase D.23 — Analytics consumes governance
     statistics; Governance never depends on Analytics)."""
