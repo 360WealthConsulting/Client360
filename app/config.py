@@ -92,6 +92,22 @@ def outbox_dispatch_interval_seconds() -> int:
     return max(5, _int_env("OUTBOX_DISPATCH_INTERVAL_SECONDS", 30))
 
 
+def automation_enabled() -> bool:
+    """Whether the Automation runner tick runs as a scheduler job (Phase D.22).
+
+    Default OFF: the Automation platform ships (jobs/schedules/runs are managed and can be run
+    on demand via the API), but the background tick that sweeps due schedules is not registered
+    unless explicitly enabled — keeping runtime behavior unchanged by default (same posture as the
+    outbox dispatcher).
+    """
+    return os.getenv("AUTOMATION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def automation_tick_interval_seconds() -> int:
+    # Poll cadence for the Automation runner tick; minimum 5s to avoid a hot loop.
+    return max(5, _int_env("AUTOMATION_TICK_INTERVAL_SECONDS", 60))
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 
