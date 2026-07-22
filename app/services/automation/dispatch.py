@@ -160,6 +160,15 @@ def _configuration_review(context):
     return configuration_scans.run_due_reviews(context["principal"], actor_user_id=context["actor_user_id"])
 
 
+def _runtime_refresh(context):
+    """Safely refresh the Runtime Configuration Engine (Phase D.28): invalidate the cache, rebuild the
+    effective-configuration snapshot from the current D.27 metadata, and record the lifecycle events.
+    The runtime engine only evaluates — it never edits configuration metadata. Failures are isolated
+    and fall back to the last-known snapshot (never crashes the job)."""
+    from app.services.runtime import engine as runtime_engine
+    return runtime_engine.refresh(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -189,6 +198,7 @@ DISPATCH_REGISTRY = {
     "security_review": _security_review,
     "observability_scan": _observability_scan,
     "configuration_review": _configuration_review,
+    "runtime_refresh": _runtime_refresh,
     "maintenance": _maintenance,
     "custom": _custom,
 }

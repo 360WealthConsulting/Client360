@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -22,6 +23,7 @@ from app.routes.business_owner import router as business_owner_router
 from app.routes.campaign import router as campaign_router
 from app.routes.communications import router as communications_router
 from app.routes.compliance import router as compliance_router
+from app.routes.configuration import router as configuration_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.dev_auth import dev_auth_enabled
 from app.routes.dev_auth import router as dev_auth_router
@@ -33,9 +35,6 @@ from app.routes.households import router as households_router
 from app.routes.identity_review import router as identity_review_router
 from app.routes.insurance import router as insurance_router
 from app.routes.integration import router as integration_router
-from app.routes.security import router as security_router
-from app.routes.observability import router as observability_router
-from app.routes.configuration import router as configuration_router
 from app.routes.matches import router as matches_router
 from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
@@ -48,6 +47,7 @@ from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_re
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.notes import router as notes_router
+from app.routes.observability import router as observability_router
 from app.routes.operations import router as operations_router
 from app.routes.opportunity import router as opportunity_router
 from app.routes.ops import router as ops_router
@@ -58,8 +58,10 @@ from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
 from app.routes.reporting import router as reporting_router
+from app.routes.runtime import router as runtime_router
 from app.routes.scheduling import router as scheduling_router
 from app.routes.search import router as search_router
+from app.routes.security import router as security_router
 from app.routes.session import router as session_router
 from app.routes.source import router as source_router
 from app.routes.task_dashboard import router as task_dashboard_router
@@ -75,6 +77,7 @@ from app.routes.workflow_automation import router as workflow_automation_router
 from app.routes.workflows import router as workflows_router
 from app.routes.workspace import router as workspace_router
 from app.security.middleware import AuthenticationMiddleware
+from app.services.runtime.middleware import RuntimeContextMiddleware
 
 
 @asynccontextmanager
@@ -82,6 +85,15 @@ async def lifespan(app: FastAPI):
     configure_logging()
     validate_startup_configuration()
     start_scheduler()
+
+    # (D.28) Hydrate the Runtime Configuration Engine — GUARDED so a configuration failure can never
+    # prevent safe application startup (the engine falls back to defaults / the last-known snapshot).
+    try:
+        from app.services.runtime import engine as runtime_engine
+        runtime_engine.hydrate()
+    except Exception:
+        logging.getLogger("client360.runtime").exception(
+            "runtime config hydration failed at startup; continuing with defaults")
 
     try:
         yield
@@ -94,6 +106,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# (D.28) RuntimeContextMiddleware registered BEFORE AuthenticationMiddleware so it runs INNER (after
+# auth) in the request path — request.state.principal is available when it resolves the context.
+app.add_middleware(RuntimeContextMiddleware)
 app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(
     SessionMiddleware,
@@ -125,6 +140,7 @@ app.include_router(integration_router)
 app.include_router(security_router)
 app.include_router(observability_router)
 app.include_router(configuration_router)
+app.include_router(runtime_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

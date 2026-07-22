@@ -108,6 +108,23 @@ def automation_tick_interval_seconds() -> int:
     return max(5, _int_env("AUTOMATION_TICK_INTERVAL_SECONDS", 60))
 
 
+def runtime_refresh_enabled() -> bool:
+    """Whether the Runtime Configuration Engine's periodic safe-refresh runs as a scheduler job
+    (Phase D.28).
+
+    Default OFF: the runtime engine hydrates once at startup and serves the cached effective
+    configuration; the background refresh that rebuilds the snapshot on a cadence is not registered
+    unless explicitly enabled (same posture as the automation tick / outbox dispatcher). A manual
+    refresh is always available via the /runtime API.
+    """
+    return os.getenv("RUNTIME_REFRESH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def runtime_refresh_interval_seconds() -> int:
+    # Poll cadence for the Runtime Configuration Engine refresh; minimum 15s to avoid churn.
+    return max(15, _int_env("RUNTIME_REFRESH_INTERVAL_SECONDS", 300))
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 

@@ -324,6 +324,48 @@ def configuration_pending_change_count(principal) -> int:
                         .where(configuration_changes.c.status == "proposed")) or 0
 
 
+def runtime_active_snapshot_count(principal) -> int:
+    """Firm-level count of runtime effective-configuration snapshots (Phase D.28 — Analytics consumes
+    runtime statistics; the runtime engine never depends on Analytics)."""
+    from app.db import runtime_config_snapshots
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_config_snapshots)) or 0
+
+
+def runtime_cache_hit_ratio(principal):
+    """In-process runtime cache hit ratio as a percentage (Phase D.28 — cache efficiency). Returns
+    None when no lookups have occurred yet (metric compute runs in the web-app process, so the
+    in-process counter is readable)."""
+    from app.services.runtime.cache import RUNTIME_CACHE
+    ratio = RUNTIME_CACHE.stats().get("hit_ratio")
+    return round(ratio * 100, 1) if ratio is not None else None
+
+
+def runtime_configuration_resolution_count(principal) -> int:
+    """In-process count of configuration resolutions performed by the runtime engine (Phase D.28)."""
+    from app.services.runtime.cache import RUNTIME_CACHE
+    return int(RUNTIME_CACHE.stats().get("evaluations") or 0)
+
+
+def runtime_edition_utilization(principal) -> int:
+    """Firm-level count of active edition assignments (Phase D.28 — edition utilization view)."""
+    from app.db import configuration_edition_assignments
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(configuration_edition_assignments)
+                        .where(configuration_edition_assignments.c.status == "active")) or 0
+
+
+def runtime_active_feature_count(principal) -> int:
+    """Count of features enabled in the current runtime snapshot (Phase D.28 — feature utilization)."""
+    from app.db import runtime_config_snapshots
+    with engine.connect() as c:
+        row = c.execute(select(runtime_config_snapshots.c.active_features)
+                        .order_by(runtime_config_snapshots.c.version.desc()).limit(1)).first()
+    if not row or not row[0]:
+        return 0
+    return sum(1 for v in row[0].values() if isinstance(v, dict) and v.get("enabled"))
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

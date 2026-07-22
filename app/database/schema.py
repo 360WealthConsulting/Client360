@@ -38,6 +38,7 @@ from app.database.operations_tables import define_operations_tables
 from app.database.opportunity_tables import define_opportunity_tables
 from app.database.outbox_tables import define_outbox_tables
 from app.database.reporting_tables import define_reporting_tables
+from app.database.runtime_tables import define_runtime_tables
 from app.database.scheduling_tables import define_scheduling_tables
 from app.database.security_tables import define_security_tables
 from app.database.work_tables import define_work_tables
@@ -717,6 +718,7 @@ integration_tables = define_integration_tables(metadata)
 security_tables = define_security_tables(metadata)
 observability_tables = define_observability_tables(metadata)
 configuration_tables = define_configuration_tables(metadata)
+runtime_tables = define_runtime_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

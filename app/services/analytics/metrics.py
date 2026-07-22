@@ -144,6 +144,17 @@ _DEFS = (
            sources.configuration_active_edition_count),
     Metric("configuration_pending_changes", "Pending Configuration Reviews", "operations", "count",
            "card", False, sources.configuration_pending_change_count),
+    # Runtime Configuration Engine (Phase D.28 — Analytics consumes runtime statistics).
+    Metric("runtime_active_snapshots", "Runtime Snapshots", "operations", "count", "card", False,
+           sources.runtime_active_snapshot_count),
+    Metric("runtime_cache_hit_ratio", "Runtime Cache Hit Ratio", "operations", "percent", "card", False,
+           sources.runtime_cache_hit_ratio),
+    Metric("runtime_configuration_resolutions", "Configuration Resolutions", "operations", "count",
+           "card", False, sources.runtime_configuration_resolution_count),
+    Metric("runtime_edition_utilization", "Edition Utilization", "operations", "count", "card", False,
+           sources.runtime_edition_utilization),
+    Metric("runtime_active_features", "Active Runtime Features", "operations", "count", "card", False,
+           sources.runtime_active_feature_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
