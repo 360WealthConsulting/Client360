@@ -33,6 +33,7 @@ from app.routes.households import router as households_router
 from app.routes.identity_review import router as identity_review_router
 from app.routes.insurance import router as insurance_router
 from app.routes.integration import router as integration_router
+from app.routes.security import router as security_router
 from app.routes.matches import router as matches_router
 from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
@@ -119,6 +120,7 @@ app.include_router(reporting_router)
 app.include_router(automation_router)
 app.include_router(governance_router)
 app.include_router(integration_router)
+app.include_router(security_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

@@ -335,3 +335,19 @@ integration_event_definitions = metadata.tables["integration_event_definitions"]
 integration_event_subscriptions = metadata.tables["integration_event_subscriptions"]
 integration_data_profiles = metadata.tables["integration_data_profiles"]
 integration_events = metadata.tables["integration_events"]
+
+# Enterprise Security platform (Phase D.25). Authoritative security domain: owns security metadata
+# only (policies, configurations, identity/authentication/federation providers, secret references,
+# certificate references, exceptions, incidents, findings). References users/roles/capabilities/
+# auth/M365/Integration/Governance/Compliance; never a source of truth for business entities. Reuses
+# the existing authentication, RBAC, record-scope, Fernet crypto, and audit hash-chain — never
+# replaces login/OAuth and never stores a plaintext secret.
+security_policies = metadata.tables["security_policies"]
+security_configurations = metadata.tables["security_configurations"]
+security_identity_providers = metadata.tables["security_identity_providers"]
+security_secret_references = metadata.tables["security_secret_references"]
+security_certificate_references = metadata.tables["security_certificate_references"]
+security_exceptions = metadata.tables["security_exceptions"]
+security_incidents = metadata.tables["security_incidents"]
+security_findings = metadata.tables["security_findings"]
+security_events = metadata.tables["security_events"]

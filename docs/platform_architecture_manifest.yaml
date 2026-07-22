@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: v2a3b4c5d6e7      # `alembic heads` / `alembic current`
-  route_count: 617                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 137    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: w7a8b9c0d1e2      # `alembic heads` / `alembic current`
+  route_count: 646                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 142    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -55,6 +55,12 @@ source_producer_modules:
   - app/services/integration/sync.py
   - app/services/integration/webhooks.py
   - app/services/integration/events.py
+  # Enterprise Security (D.25) — authoritative security domain; must not import composition layers.
+  - app/services/security/service.py
+  - app/services/security/policies.py
+  - app/services/security/providers.py
+  - app/services/security/secrets.py
+  - app/services/security/incidents.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:
@@ -83,6 +89,7 @@ declared_schema_registrations:
   - define_portfolio_tables
   - define_reporting_tables
   - define_scheduling_tables
+  - define_security_tables
   - define_work_tables
 
 # Capabilities the architecture document references. Every entry MUST exist in the seeded
@@ -134,6 +141,7 @@ capabilities:
                governance.admin]
   integration: [integration.view, integration.manage, integration.execute, integration.audit,
                 integration.admin]
+  security: [security.view, security.manage, security.execute, security.audit, security.admin]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:

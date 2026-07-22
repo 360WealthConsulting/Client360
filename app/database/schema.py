@@ -37,6 +37,7 @@ from app.database.opportunity_tables import define_opportunity_tables
 from app.database.outbox_tables import define_outbox_tables
 from app.database.reporting_tables import define_reporting_tables
 from app.database.scheduling_tables import define_scheduling_tables
+from app.database.security_tables import define_security_tables
 from app.database.work_tables import define_work_tables
 
 load_dotenv("app/.env")
@@ -711,6 +712,7 @@ reporting_tables = define_reporting_tables(metadata)
 automation_tables = define_automation_tables(metadata)
 governance_tables = define_governance_tables(metadata)
 integration_tables = define_integration_tables(metadata)
+security_tables = define_security_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")
