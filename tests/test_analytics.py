@@ -86,12 +86,20 @@ def _adv(ids):
 
 def test_metric_book_scope_vs_firm_wide():
     ids = _setup()
+    # A second person NOT in the advisor's book, so firm-wide strictly exceeds the book
+    # regardless of how populated the database is (deterministic on a clean CI DB too).
+    with engine.begin() as c:
+        other = c.execute(people.insert().values(
+            full_name=f"Other {ids['tag']}", primary_email=f"o-{ids['tag']}@e.test",
+            normalized_email=f"o-{ids['tag']}@e.test", active=True).returning(people.c.id)).scalar_one()
     try:
-        # Advisor book = exactly their 1 assigned client; exec (read_all) = firm-wide (>1).
         adv = metrics.compute_metric(_adv(ids), "client_count")["value"]
         exe = metrics.compute_metric(_exec(ids), "client_count")["value"]
-        assert adv == 1 and exe > adv
+        assert adv == 1                       # advisor sees exactly their 1 assigned client
+        assert exe >= 2 and exe > adv         # exec (read_all) sees firm-wide, incl. the other person
     finally:
+        with engine.begin() as c:
+            c.execute(delete(people).where(people.c.id == other))
         _teardown(ids)
 
 
