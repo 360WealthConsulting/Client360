@@ -239,3 +239,15 @@ communication_recipients = metadata.tables["communication_recipients"]
 communication_deliveries = metadata.tables["communication_deliveries"]
 communication_attachments = metadata.tables["communication_attachments"]
 communication_events = metadata.tables["communication_events"]
+
+# Scheduling & Meeting Management platform (Phase D.19). Authoritative for scheduling metadata
+# only; anchors and cross-domain links (person/household/organization, opportunity, annual review,
+# conversation, workflow, advisor work, document, Microsoft 365 event) are references, not ownership.
+meeting_templates = metadata.tables["meeting_templates"]
+scheduling_resources = metadata.tables["scheduling_resources"]
+meetings = metadata.tables["meetings"]
+meeting_attendees = metadata.tables["meeting_attendees"]
+meeting_resource_bookings = metadata.tables["meeting_resource_bookings"]
+meeting_reminders = metadata.tables["meeting_reminders"]
+meeting_followups = metadata.tables["meeting_followups"]
+scheduling_events = metadata.tables["scheduling_events"]

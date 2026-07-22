@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Scheduling | Client360{% endblock %}
+{% block crumb %}Scheduling{% endblock %}
+{% block content %}
+{{ ui.page_head("Scheduling", eyebrow="Meetings & appointments", desc="Deterministic calendar orchestration — meetings, appointments, templates, resources, and availability across every domain.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Upcoming</div><div style="font-size:22px; font-weight:700">{{ metrics.upcoming }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Total meetings</div><div style="font-size:22px; font-weight:700">{{ metrics.total }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Completed</div><div style="font-size:22px; font-weight:700">{{ metrics.completed }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Cancelled</div><div style="font-size:22px; font-weight:700">{{ metrics.cancelled }}</div></article>
+  </div>
+</section>
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option>
+      {% for st in ["draft","scheduled","confirmed","checked_in","completed","cancelled","no_show","rescheduled"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|replace("_"," ")|capitalize }}</option>{% endfor %}</select></div>
+  <div class="field" style="margin:0"><label for="upcoming">Upcoming only</label>
+    <select class="input" id="upcoming" name="upcoming"><option value="0">No</option><option value="1" {% if filters.upcoming %}selected{% endif %}>Yes</option></select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} meeting(s).</p>
+{% if result.rows %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Subject</th><th>Type</th><th>Starts</th><th>Status</th><th>Priority</th><th></th></tr></thead>
+  <tbody>{% for mt in result.rows %}<tr><td><strong>{{ mt.subject }}</strong></td><td>{{ mt.meeting_type|replace("_"," ") }}</td>
+    <td>{{ mt.starts_at.strftime('%Y-%m-%d %H:%M') if mt.starts_at else '—' }}</td>
+    <td>{{ ui.badge(mt.status|replace("_"," ")|capitalize, 'good' if mt.status in ['scheduled','confirmed','completed'] else '') }}</td><td>{{ mt.priority }}</td>
+    <td><a class="rowlink" href="/scheduling/{{ mt.id }}">Open →</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No meetings", "No meetings match the current filters.") %}{% endcall %}{% endif %}
+{% if can_manage %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">New meeting</summary>
+  <form method="post" action="/scheduling" style="margin-top:12px">
+    <div class="field"><label for="subject">Subject</label><input class="input" id="subject" name="subject" required></div>
+    <div class="field"><label for="template_code">Template (optional)</label>
+      <select class="input" id="template_code" name="template_code"><option value="">— none —</option>{% for t in templates %}<option value="{{ t.code }}">{{ t.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="starts_at">Starts at (ISO)</label><input class="input" id="starts_at" name="starts_at" placeholder="2026-08-01T14:00"></div>
+    <div class="field"><label for="person_id">Person id (optional)</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Create</button></div>
+  </form>
+</details>{% endif %}
+{% if can_templates %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Meeting templates &amp; resources</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Template</th><th>Type</th><th>Duration</th></tr></thead>
+    <tbody>{% for t in templates %}<tr><td>{{ t.name }}</td><td>{{ t.meeting_type|replace("_"," ") }}</td><td>{{ t.default_duration_minutes }} min</td></tr>{% endfor %}</tbody></table></div>
+  {% if resources %}<div class="table-wrap" style="margin-top:10px"><table class="data"><thead><tr><th>Resource</th><th>Type</th><th>Capacity</th></tr></thead>
+    <tbody>{% for r in resources %}<tr><td>{{ r.name }}</td><td>{{ r.resource_type }}</td><td>{{ r.capacity or "—" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</section>{% endif %}
+{% endblock %}

@@ -170,6 +170,24 @@ def active_conversation_count(principal) -> int:
         return c.scalar(stmt) or 0
 
 
+def upcoming_meeting_count(principal) -> int:
+    """Book-scoped count of upcoming (scheduled/confirmed, future-dated) meetings (Phase D.19 —
+    Analytics consumes scheduling statistics; Scheduling never depends on Analytics)."""
+    from datetime import UTC, datetime
+
+    from app.db import meetings
+    ids = book_scope(principal)
+    with engine.connect() as c:
+        stmt = (select(func.count()).select_from(meetings).where(
+            meetings.c.status.in_(("scheduled", "confirmed")),
+            meetings.c.starts_at.is_not(None), meetings.c.starts_at >= datetime.now(UTC)))
+        if ids is not None:
+            if not ids:
+                return 0
+            stmt = stmt.where(meetings.c.person_id.in_(tuple(ids)))
+        return c.scalar(stmt) or 0
+
+
 # --- composed domain reports (principal-scoped) ------------------------------
 
 def pipeline_report(principal, *, today=None):
