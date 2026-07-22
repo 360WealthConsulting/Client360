@@ -281,3 +281,19 @@ reporting_export_profiles = metadata.tables["reporting_export_profiles"]
 report_schedules = metadata.tables["report_schedules"]
 reports = metadata.tables["reports"]
 reporting_events = metadata.tables["reporting_events"]
+
+# Enterprise Automation platform (Phase D.22). Authoritative orchestration domain: owns execution
+# metadata only (jobs, schedules, runs, queues, policies, windows, workers, locks); dispatches to
+# existing services via the job_type map. Never owns business records.
+automation_retry_policies = metadata.tables["automation_retry_policies"]
+automation_failure_policies = metadata.tables["automation_failure_policies"]
+automation_queues = metadata.tables["automation_queues"]
+automation_windows = metadata.tables["automation_windows"]
+automation_job_templates = metadata.tables["automation_job_templates"]
+automation_jobs = metadata.tables["automation_jobs"]
+automation_schedules = metadata.tables["automation_schedules"]
+automation_workers = metadata.tables["automation_workers"]
+automation_worker_heartbeats = metadata.tables["automation_worker_heartbeats"]
+automation_execution_locks = metadata.tables["automation_execution_locks"]
+automation_runs = metadata.tables["automation_runs"]
+automation_events = metadata.tables["automation_events"]

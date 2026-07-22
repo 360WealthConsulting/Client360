@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ j.name }} | Automation{% endblock %}
+{% block crumb %}<a href="/automation">Automation</a> / {{ j.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(j.name, eyebrow=j.job_type|replace("_"," "), desc=(j.description or "")) }}
+<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap; align-items:center">
+  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(j.status|capitalize, 'good' if j.status == 'enabled' else '') }}</div>
+  <div><div class="subtle" style="font-size:12px">Category</div><div>{{ j.category|replace("_"," ") }}</div></div>
+  <div><div class="subtle" style="font-size:12px">Schedules</div><div>{{ j.schedules|length }}</div></div>
+  <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    {% if can_execute %}<form method="post" action="/automation/jobs/{{ j.id }}/run"><button class="btn" type="submit">Run now</button></form>{% endif %}
+    {% if can_manage %}
+      {% if j.status == 'enabled' %}<form method="post" action="/automation/jobs/{{ j.id }}/status"><input type="hidden" name="status" value="disabled"><button class="btn btn-ghost" type="submit">Disable</button></form>
+      {% else %}<form method="post" action="/automation/jobs/{{ j.id }}/status"><input type="hidden" name="status" value="enabled"><button class="btn btn-ghost" type="submit">Enable</button></form>{% endif %}
+    {% endif %}
+  </div>
+</section>
+
+{% if j.schedules %}<section class="stack"><h2 class="section-title">Schedules</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Schedule</th><th>Frequency</th><th>Next run</th><th>Active</th></tr></thead>
+    <tbody>{% for s in j.schedules %}<tr><td>{{ s.name }}</td><td>{{ s.frequency }}</td><td>{{ s.next_run_at.strftime('%Y-%m-%d %H:%M') if s.next_run_at else '—' }}</td><td>{{ "yes" if s.active else "no" }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+
+<section class="stack"><h2 class="section-title">Recent runs</h2>
+{% if j.recent_runs %}<div class="table-wrap"><table class="data"><thead><tr><th>Run</th><th>Status</th><th>Attempts</th><th>Trigger</th><th>Duration</th></tr></thead>
+  <tbody>{% for r in j.recent_runs %}<tr><td>#{{ r.id }}</td>
+    <td>{{ ui.badge(r.status|capitalize, 'good' if r.status == 'succeeded' else ('bad' if r.status in ['failed','dead'] else '')) }}</td>
+    <td>{{ r.attempts }}/{{ r.max_attempts }}</td><td>{{ r.trigger_source }}</td><td>{{ r.duration_ms or "—" }} ms</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No runs", "This job has not run yet.") %}{% endcall %}{% endif %}
+</section>
+
+{% if can_manage %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add schedule</summary>
+  <form method="post" action="/automation/jobs/{{ j.id }}/schedules" style="margin-top:12px">
+    <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
+    <div class="field"><label for="frequency">Frequency</label>
+      <select class="input" id="frequency" name="frequency">{% for f in ["hourly","daily","weekly","monthly","quarterly"] %}<option value="{{ f }}">{{ f }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="interval_seconds">Interval seconds (optional)</label><input class="input" id="interval_seconds" name="interval_seconds" inputmode="numeric"></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Add schedule</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

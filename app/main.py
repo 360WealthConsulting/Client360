@@ -15,6 +15,7 @@ from app.routes.advisor_work import router as advisor_work_router
 from app.routes.analytics import router as analytics_router
 from app.routes.annual_review import router as annual_review_router
 from app.routes.auth import router as auth_router
+from app.routes.automation import router as automation_router
 from app.routes.benefits import router as benefits_router
 from app.routes.business_development import router as business_development_router
 from app.routes.business_owner import router as business_owner_router
@@ -113,6 +114,7 @@ app.include_router(communications_router)
 app.include_router(scheduling_router)
 app.include_router(operations_router)
 app.include_router(reporting_router)
+app.include_router(automation_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

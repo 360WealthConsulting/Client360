@@ -99,6 +99,18 @@ def run_outbox_dispatch() -> None:
         logger.exception("Outbox dispatch failed.")
 
 
+def run_automation_tick() -> None:
+    """Drive one Automation runner tick (D.22): sweep due schedules, drain runnable runs. No-op
+    when idle. Failure-isolated — a job crash never propagates."""
+    try:
+        from app.services.automation.runner import run_worker_cycle
+        result = run_worker_cycle()
+        if result.get("enqueued") or result.get("executed"):
+            logger.info("Automation tick result: %s", result)
+    except Exception:
+        logger.exception("Automation tick failed.")
+
+
 def start_scheduler() -> None:
     if _scheduler.running:
         return
@@ -166,6 +178,15 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
             id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # (D.22) Automation runner tick — gated OFF by default. When enabled, it sweeps due automation
+    # schedules and drains runnable runs (single-instance, no distributed lock, no new threads).
+    from app.config import automation_enabled, automation_tick_interval_seconds
+    if automation_enabled():
+        _scheduler.add_job(
+            run_automation_tick, trigger="interval", seconds=automation_tick_interval_seconds(),
+            id="automation-tick", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     _scheduler.start()
