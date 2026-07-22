@@ -170,6 +170,23 @@ def active_conversation_count(principal) -> int:
         return c.scalar(stmt) or 0
 
 
+def governance_open_finding_count(principal) -> int:
+    """Firm-level count of open data-quality findings (Phase D.23 — Analytics consumes governance
+    statistics; Governance never depends on Analytics)."""
+    from app.db import governance_quality_findings
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(governance_quality_findings)
+                        .where(governance_quality_findings.c.status.in_(("open", "acknowledged")))) or 0
+
+
+def governance_active_legal_hold_count(principal) -> int:
+    """Firm-level count of active legal holds (Phase D.23)."""
+    from app.db import governance_legal_holds
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(governance_legal_holds)
+                        .where(governance_legal_holds.c.status == "active")) or 0
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

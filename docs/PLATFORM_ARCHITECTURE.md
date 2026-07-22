@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.22** on `release/0.13.0` (migration head `t0e1f2a3b4c5`, 538 routes, 127
+after **Phase D.23** on `release/0.13.0` (migration head `u1f2a3b4c5d6`, 576 routes, 132
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -131,6 +131,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 37 | Enterprise Operations (projects, tasks, capacity) | source (authoritative firm-operations domain — D.20) |
 | 38 | Enterprise Reporting (dashboards, reports, BI) | **composition layer** (owns reporting metadata; composes Analytics; never a source of truth — D.21) |
 | 39 | Enterprise Automation (jobs, schedules, runs) | source (authoritative execution-metadata domain; orchestration layer — D.22) |
+| 40 | Data Governance (quality, lineage, MDM, retention) | source (authoritative governance-metadata domain; references canonical records — D.23) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -270,6 +271,9 @@ Capability inventory by domain (exact codes; `*` = sensitive):
 - **Automation:** `automation.view/manage/execute/audit*/admin*` (D.22 orchestration layer; jobs
   dispatch to existing services via the `job_type` map — never duplicating business logic; scheduled
   runs execute with a system principal; `automation.execute` gates triggering).
+- **Governance:** `governance.view/manage/review*/audit*/admin*` (D.23 governance domain; references
+  canonical records, reuses the matching/merge + document-retention infra, never performs an unsafe
+  merge or hard delete; merge apply / legal holds / deletion approval require `governance.review`).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -423,20 +427,21 @@ families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, 
 `/document-library` (platform), `/workflows` (legacy engine) + `/workflow-automation`
 (orchestration), `/communications` (D.18 client engagement), `/scheduling` (D.19 meetings &
 appointments), `/operations` (D.20 firm projects/tasks/capacity), `/reporting` (D.21 dashboards & BI),
-`/automation` (D.22 jobs/schedules/runs), `/workspace` (meeting), `/portfolio` + `/wealth`,
-`/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON `/api/v1/*`.
+`/automation` (D.22 jobs/schedules/runs), `/governance` (D.23 quality/lineage/retention),
+`/workspace` (meeting), `/portfolio` + `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles),
+`/microsoft365`, `/auth`, and JSON `/api/v1/*`.
 
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (17 registered modules: advisor_work, analytics, annual_review,
+  `app/database/schema.py` (18 registered modules: advisor_work, analytics, annual_review,
   automation, business_planning, campaign_referral, communication, compliance, document_platform,
-  identity, operations, opportunity, outbox, portfolio, reporting, scheduling, work — plus core
-  tables inline in `schema.py`).
-- **Alembic:** 67 migrations, **single head `t0e1f2a3b4c5`**; `alembic current == heads`.
-  Recent chain: D.14 `l2c3d4e5f6a7` → D.15 `m3d4e5f6a7b8` → D.16 `n4e5f6a7b8c9` → D.17
-  `o5f6a7b8c9d0` → D.18 `p6a7b8c9d0e1` → D.19 `q7b8c9d0e1f2` → D.20 `r8c9d0e1f2a3` → D.21
-  `s9d0e1f2a3b4` → D.22 `t0e1f2a3b4c5`.
+  governance, identity, operations, opportunity, outbox, portfolio, reporting, scheduling, work —
+  plus core tables inline in `schema.py`).
+- **Alembic:** 68 migrations, **single head `u1f2a3b4c5d6`**; `alembic current == heads`.
+  Recent chain: D.15 `m3d4e5f6a7b8` → D.16 `n4e5f6a7b8c9` → D.17 `o5f6a7b8c9d0` → D.18
+  `p6a7b8c9d0e1` → D.19 `q7b8c9d0e1f2` → D.20 `r8c9d0e1f2a3` → D.21 `s9d0e1f2a3b4` → D.22
+  `t0e1f2a3b4c5` → D.23 `u1f2a3b4c5d6`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

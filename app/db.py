@@ -297,3 +297,21 @@ automation_worker_heartbeats = metadata.tables["automation_worker_heartbeats"]
 automation_execution_locks = metadata.tables["automation_execution_locks"]
 automation_runs = metadata.tables["automation_runs"]
 automation_events = metadata.tables["automation_events"]
+
+# Data Governance platform (Phase D.23). Authoritative governance domain: owns governance metadata
+# only (findings, duplicates, merge decisions, retention assignments, legal holds, deletion reviews,
+# cases). References canonical records; never owns them. Reuses matching/merge/retention infra.
+governance_data_domains = metadata.tables["governance_data_domains"]
+governance_data_elements = metadata.tables["governance_data_elements"]
+governance_lineage = metadata.tables["governance_lineage"]
+governance_quality_rules = metadata.tables["governance_quality_rules"]
+governance_quality_checks = metadata.tables["governance_quality_checks"]
+governance_quality_findings = metadata.tables["governance_quality_findings"]
+governance_duplicate_candidates = metadata.tables["governance_duplicate_candidates"]
+governance_survivorship_rules = metadata.tables["governance_survivorship_rules"]
+governance_merge_decisions = metadata.tables["governance_merge_decisions"]
+governance_retention_assignments = metadata.tables["governance_retention_assignments"]
+governance_legal_holds = metadata.tables["governance_legal_holds"]
+governance_deletion_requests = metadata.tables["governance_deletion_requests"]
+governance_cases = metadata.tables["governance_cases"]
+governance_events = metadata.tables["governance_events"]
