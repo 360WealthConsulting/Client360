@@ -26,6 +26,7 @@ from app.database.annual_review_tables import define_annual_review_tables
 from app.database.business_planning_tables import define_business_planning_tables
 from app.database.campaign_referral_tables import define_campaign_referral_tables
 from app.database.compliance_tables import define_compliance_tables
+from app.database.document_platform_tables import define_document_platform_tables
 from app.database.opportunity_tables import define_opportunity_tables
 from app.database.identity_tables import define_identity_tables
 from app.database.outbox_tables import define_outbox_tables
@@ -695,6 +696,7 @@ business_planning_tables = define_business_planning_tables(metadata)
 opportunity_tables = define_opportunity_tables(metadata)
 campaign_referral_tables = define_campaign_referral_tables(metadata)
 analytics_tables = define_analytics_tables(metadata)
+document_platform_tables = define_document_platform_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

@@ -217,6 +217,12 @@ def get_opportunity(principal, opportunity_id: int) -> dict | None:
             select(opportunity_activities).where(opportunity_activities.c.opportunity_id == opportunity_id)
             .order_by(opportunity_activities.c.activity_date.desc()).limit(50)).mappings()]
         opp["linked_work"] = _linked_work(c, opportunity_id)
+        # Documents (Phase D.16) — read-only visibility of documents related to this opportunity.
+        if principal.can("documents.view"):
+            from app.services.document_platform.relationships import documents_for_entity
+            opp["documents"] = documents_for_entity(principal, "opportunity", opportunity_id, limit=25)
+        else:
+            opp["documents"] = None
         opp["participants"] = [dict(r) for r in c.execute(
             select(opportunity_participants).where(
                 opportunity_participants.c.opportunity_id == opportunity_id)).mappings()]

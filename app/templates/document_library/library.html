@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Document Library | Client360{% endblock %}
+{% block crumb %}Document Library{% endblock %}
+{% block content %}
+{{ ui.page_head("Document Library", eyebrow="Knowledge repository", desc="The authoritative repository for client, compliance, tax, insurance, planning, and operational documents.") }}
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
+  <div class="field" style="margin:0"><label for="classification">Classification</label>
+    <select class="input" id="classification" name="classification"><option value="">All</option>
+      {% for cl in ["client","compliance","tax","insurance","benefits","retirement","estate","investment","operations","marketing","legal","hr","internal"] %}<option value="{{ cl }}" {% if filters.classification == cl %}selected{% endif %}>{{ cl|capitalize }}</option>{% endfor %}</select></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option>
+      {% for st in ["draft","active","review","approved","superseded","archived"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} document(s).</p>
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Document</th><th>Classification</th><th>Status</th><th>Version</th><th></th></tr></thead>
+  <tbody>{% for d in result.rows %}
+    <tr><td><strong>{{ d.original_name }}</strong></td><td>{{ (d.classification or "—")|capitalize }}</td>
+      <td>{{ ui.badge(d.status|capitalize, 'good' if d.status == 'approved' else '') }}</td>
+      <td>v{{ d.current_version }}</td><td><a class="rowlink" href="/document-library/{{ d.id }}">Open →</a></td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% else %}{% call ui.empty("No documents", "No documents match the current filters.") %}{% endcall %}{% endif %}
+{% if can_edit %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Register document</summary>
+  <form method="post" action="/document-library" style="margin-top:12px">
+    <div class="field"><label for="original_name">Name</label><input class="input" id="original_name" name="original_name" required></div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+      <div class="field"><label for="person_id">Person id</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
+      <div class="field"><label for="classification">Classification</label>
+        <select class="input" id="classification" name="classification">{% for cl in ["client","compliance","tax","insurance","benefits","retirement","estate","investment","operations","marketing","legal","hr","internal"] %}<option value="{{ cl }}">{{ cl|capitalize }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="storage_provider">Storage</label>
+        <select class="input" id="storage_provider" name="storage_provider"><option value="local">Local</option><option value="sharepoint">SharePoint</option><option value="onedrive">OneDrive</option></select></div>
+      <div class="field"><label for="storage_uri">Storage URI</label><input class="input" id="storage_uri" name="storage_uri"></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Register</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

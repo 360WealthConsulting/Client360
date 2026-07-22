@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ d.original_name }} | Documents | Client360{% endblock %}
+{% block crumb %}Document{% endblock %}
+{% block content %}
+{{ ui.page_head(d.original_name, eyebrow="Document", desc=((d.classification or "")|capitalize) ~ " · " ~ d.status|capitalize) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/document-library">← Back to library</a></p>
+{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">Metadata</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Status</span><span>{{ ui.badge(d.status|capitalize, 'good' if d.status == 'approved' else '') }}</span></div>
+    <div class="detail-row"><span class="subtle">Classification</span><span>{{ (d.classification or "—")|capitalize }}</span></div>
+    <div class="detail-row"><span class="subtle">Current version</span><span>v{{ d.current_version }}</span></div>
+    <div class="detail-row"><span class="subtle">Storage</span><span>{{ d.storage_provider }}{% if d.storage_uri %} · {{ d.storage_uri }}{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Checksum</span><span class="subtle id-mono">{{ (d.sha256 or "—")[:16] }}</span></div>
+    <div class="detail-row"><span class="subtle">Retention / expires</span><span>{{ d.expiration_date or "—" }}</span></div>
+  </div>
+</section>
+{% if can_edit or can_approve or can_archive %}
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">Lifecycle</h2>
+  <div class="card" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+    {% if can_approve %}<form method="post" action="/document-library/{{ d.id }}/approve"><button class="btn secondary" type="submit">Approve</button></form>{% endif %}
+    {% if can_archive %}<form method="post" action="/document-library/{{ d.id }}/archive"><button class="btn secondary" type="submit">Archive</button></form>{% endif %}
+    {% if can_version %}<form method="post" action="/document-library/{{ d.id }}/versions"><input type="hidden" name="bump" value="minor"><button class="btn secondary" type="submit">New version</button></form>{% endif %}
+    {% if can_restore %}<form method="post" action="/document-library/{{ d.id }}/restore"><button class="btn secondary" type="submit">Restore</button></form>{% endif %}
+  </div>
+</section>{% endif %}
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">Versions</h2>
+  <div class="card"><ul style="margin:0; padding-left:18px">{% for v in d.versions %}<li>v{{ v.major }}.{{ v.minor }} (#{{ v.version_number }}){% if v.is_current %} {{ ui.badge('Current','good') }}{% endif %}</li>{% endfor %}</ul></div>
+</section>
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">Relationships</h2>
+  <div class="card">{% if d.relationships %}<ul style="margin:0; padding-left:18px">{% for r in d.relationships %}<li>{{ r.entity_type|replace("_"," ")|capitalize }} #{{ r.entity_id }}</li>{% endfor %}</ul>{% else %}<p class="subtle">No relationships.</p>{% endif %}</div>
+</section>
+<section class="stack" style="margin-bottom:20px"><h2 class="section-title">History</h2>
+  <div class="card">{% for e in d.events %}<div class="detail-row"><span>{{ e.event_type|replace("_"," ")|capitalize }}</span><span class="subtle id-mono">{{ e.occurred_at | humandt }}</span></div>{% endfor %}</div>
+</section>
+{% endblock %}

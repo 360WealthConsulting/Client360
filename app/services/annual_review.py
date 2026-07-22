@@ -156,6 +156,12 @@ def compose_workspace(principal, person_id: int, *, session: dict | None = None)
     # opportunity.view, so it is omitted (None) without the capability.
     sections["business_development"] = (_business_development(principal, person_id)
                                         if principal.can("opportunity.view") else None)
+    # Documents (Phase D.16) — read-only visibility of the client's documents.
+    if principal.can("documents.view"):
+        from app.services.document_platform.relationships import documents_for_entity
+        sections["documents"] = documents_for_entity(principal, "person", person_id, limit=25)
+    else:
+        sections["documents"] = None
     return sections
 
 
