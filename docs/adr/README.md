@@ -104,6 +104,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-017](ADR-017-architecture-manifest-and-enforcement-tests.md) | Architecture manifest & enforcement tests | Accepted | Governance | D.12A |
 | [ADR-018](ADR-018-opportunity-pipeline-as-authoritative-domain.md) | Opportunity & Pipeline as an authoritative domain | Accepted | Domain (business development) | D.13 |
 | [ADR-019](ADR-019-campaigns-referral-sources-and-attribution.md) | Campaigns, Referral Sources & attribution | Accepted | Domain (business development) | D.14 |
+| [ADR-020](ADR-020-analytics-as-read-model.md) | Enterprise Analytics as a deterministic read-model | Accepted | Domain (analytics) | D.15 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

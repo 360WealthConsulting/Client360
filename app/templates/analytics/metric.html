@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ metric.label }} | Analytics | Client360{% endblock %}
+{% block crumb %}{{ metric.label }}{% endblock %}
+{% block content %}
+{{ ui.page_head(metric.label, eyebrow="Metric", desc=metric.category|capitalize ~ " · " ~ metric.unit) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/analytics">← Back to analytics</a></p>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Current value</h2>
+  <div class="card">
+    {% if metric.restricted %}<p class="subtle">Restricted — requires executive analytics.</p>
+    {% elif metric.value is none %}<p class="subtle">Not available.</p>
+    {% else %}<div style="font-size:28px; font-weight:720">{% if metric.unit == 'currency' %}${{ "{:,.0f}".format(metric.value) }}{% elif metric.unit == 'percent' %}{{ metric.value }}%{% else %}{{ "{:,.0f}".format(metric.value) if metric.value is number else metric.value }}{% endif %}</div>{% endif %}
+    {% if variance and variance.status != 'unknown' %}<div class="detail-row" style="margin-top:8px"><span class="subtle">Target</span><span>{{ variance.target_value }} · {{ variance.status|replace("_"," ") }}</span></div>{% endif %}
+  </div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Trend <span class="subtle" style="font-size:12px; font-weight:500">from snapshots</span></h2>
+  <div class="card">
+    {% if trend.series %}
+    <div class="detail-row"><span class="subtle">Period-over-period</span><span>{% if trend.period_over_period_growth is not none %}{{ trend.period_over_period_growth }}%{% else %}—{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Year-over-year</span><span>{% if trend.year_over_year_growth is not none %}{{ trend.year_over_year_growth }}%{% else %}—{% endif %}</span></div>
+    <div class="table-wrap" style="margin-top:8px"><table class="data"><thead><tr><th>Period</th><th>Value</th></tr></thead>
+      <tbody>{% for s in trend.series %}<tr><td>{{ s.period }}</td><td>{{ "{:,.2f}".format(s.value) }}</td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<p class="subtle">No snapshot history yet. Capture snapshots over time to build trends (no historical data is fabricated).</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

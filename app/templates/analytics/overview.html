@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% import "analytics/_widgets.html" as widgets %}
+{% block title %}Analytics | Client360{% endblock %}
+{% block crumb %}Analytics{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Analytics", eyebrow="Executive insight", desc="Deterministic KPIs, scorecards, and firm intelligence over your book.") }}
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">{{ dashboard.name }}</h2>
+  {{ widgets.render(dashboard.widgets) }}
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Dashboards</h2>
+  <div class="card"><div class="row" style="gap:10px; flex-wrap:wrap">
+    {% for d in dashboards %}
+      {% if d.get('accessible', True) %}<a class="rowlink" href="/analytics/dashboards/{{ d.code }}">{{ d.name }} →</a>{% else %}<span class="subtle">{{ d.name }} (executive)</span>{% endif %}
+    {% endfor %}
+  </div></div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Firm intelligence <span class="subtle" style="font-size:12px; font-weight:500">deterministic</span></h2>
+  <div class="card">
+    {% if intel.observations %}<ul style="margin:0; padding-left:18px">
+      {% for o in intel.observations %}<li>{{ ui.badge(o.priority|capitalize, 'warn' if o.priority == 'high' else '') }} {{ o.title }} <span class="subtle">— {{ o.summary }}</span></li>{% endfor %}
+    </ul>{% else %}<p class="subtle">No firm-intelligence observations.</p>{% endif %}
+  </div>
+</section>
+
+{% if can_export %}<p class="subtle"><a class="rowlink" href="/analytics/export">Export metrics (JSON) →</a></p>{% endif %}
+{% endblock %}

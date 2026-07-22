@@ -215,3 +215,9 @@ referral_sources = metadata.tables["referral_sources"]
 referral_source_advisors = metadata.tables["referral_source_advisors"]
 referral_source_events = metadata.tables["referral_source_events"]
 opportunity_attributions = metadata.tables["opportunity_attributions"]
+
+# Enterprise analytics (Phase D.15)
+analytics_targets = metadata.tables["analytics_targets"]
+analytics_snapshots = metadata.tables["analytics_snapshots"]
+analytics_dashboards = metadata.tables["analytics_dashboards"]
+analytics_dashboard_widgets = metadata.tables["analytics_dashboard_widgets"]

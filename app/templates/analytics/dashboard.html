@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% import "analytics/_widgets.html" as widgets %}
+{% block title %}{{ d.name }} | Analytics | Client360{% endblock %}
+{% block crumb %}{{ d.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(d.name, eyebrow="Analytics dashboard", desc=("Executive scorecard." if d.executive_only else "Operational scorecard over your book.")) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/analytics">← Back to analytics</a></p>
+{{ widgets.render(d.widgets) }}
+{% endblock %}
