@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Data Governance | Client360{% endblock %}
+{% block crumb %}Data Governance{% endblock %}
+{% block content %}
+{{ ui.page_head("Data Governance", eyebrow="Quality · lineage · retention", desc="Deterministic governance over data quality, duplicates, survivorship, retention, legal holds, and deletion review. Canonical records remain authoritative.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open findings</div><div style="font-size:22px; font-weight:700">{{ metrics.open_findings }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Critical findings</div><div style="font-size:22px; font-weight:700">{{ metrics.critical_findings }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active legal holds</div><div style="font-size:22px; font-weight:700">{{ metrics.active_legal_holds }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Pending deletions</div><div style="font-size:22px; font-weight:700">{{ metrics.pending_deletion_reviews }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open cases</div><div style="font-size:22px; font-weight:700">{{ metrics.open_cases }}</div></article>
+  </div>
+</section>
+
+<section class="stack"><h2 class="section-title">Quality findings</h2>
+{% if findings %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Finding</th><th>Entity</th><th>Severity</th><th>Status</th></tr></thead>
+  <tbody>{% for f in findings %}<tr><td>{{ f.finding_type }}</td><td>{{ f.entity_type }} #{{ f.entity_id }}</td>
+    <td>{{ ui.badge(f.severity|capitalize, 'bad' if f.severity in ['high','critical'] else '') }}</td>
+    <td>{{ ui.badge(f.status|replace("_"," ")|capitalize, 'good' if f.status in ['resolved','false_positive'] else '') }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No open findings", "Data quality is clean, or no rules have run yet.") %}{% endcall %}{% endif %}
+{% if can_manage %}<form method="post" action="/governance/quality-scan" style="margin-top:12px"><button class="btn" type="submit">Run quality scan</button></form>{% endif %}
+</section>
+
+{% if domains %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Data domains</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Domain</th><th>Steward</th></tr></thead>
+    <tbody>{% for d in domains %}<tr><td>{{ d.name }}</td><td>{{ d.steward_user_id or "—" }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{% endblock %}

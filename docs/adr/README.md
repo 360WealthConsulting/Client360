@@ -112,6 +112,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-025](ADR-025-operations-as-authoritative-firm-domain.md) | Enterprise Operations as an authoritative firm-operations domain | Accepted | Domain (operations) | D.20 |
 | [ADR-026](ADR-026-reporting-as-composition-layer.md) | Enterprise Reporting as a composition layer over Analytics | Accepted | Composition (reporting) | D.21 |
 | [ADR-027](ADR-027-automation-as-orchestration-layer.md) | Enterprise Automation as an orchestration layer over the existing scheduler | Accepted | Domain (automation) | D.22 |
+| [ADR-028](ADR-028-governance-reuses-matching-merge-retention.md) | Data Governance reuses matching/merge/retention; never an unsafe merge or hard delete | Accepted | Domain (governance) | D.23 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

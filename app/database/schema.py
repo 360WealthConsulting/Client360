@@ -29,6 +29,7 @@ from app.database.campaign_referral_tables import define_campaign_referral_table
 from app.database.communication_tables import define_communication_tables
 from app.database.compliance_tables import define_compliance_tables
 from app.database.document_platform_tables import define_document_platform_tables
+from app.database.governance_tables import define_governance_tables
 from app.database.identity_tables import define_identity_tables
 from app.database.operations_tables import define_operations_tables
 from app.database.opportunity_tables import define_opportunity_tables
@@ -707,6 +708,7 @@ scheduling_tables = define_scheduling_tables(metadata)
 operations_tables = define_operations_tables(metadata)
 reporting_tables = define_reporting_tables(metadata)
 automation_tables = define_automation_tables(metadata)
+governance_tables = define_governance_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

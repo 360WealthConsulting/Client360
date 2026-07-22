@@ -28,6 +28,7 @@ from app.routes.dev_auth import router as dev_auth_router
 from app.routes.document_library import router as document_library_router
 from app.routes.documents import router as documents_router
 from app.routes.exceptions import router as exceptions_router
+from app.routes.governance import router as governance_router
 from app.routes.households import router as households_router
 from app.routes.identity_review import router as identity_review_router
 from app.routes.insurance import router as insurance_router
@@ -115,6 +116,7 @@ app.include_router(scheduling_router)
 app.include_router(operations_router)
 app.include_router(reporting_router)
 app.include_router(automation_router)
+app.include_router(governance_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

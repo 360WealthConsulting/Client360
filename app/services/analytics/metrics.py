@@ -105,6 +105,10 @@ _DEFS = (
            sources.upcoming_meeting_count),
     Metric("active_projects", "Active Projects", "operations", "count", "card", False,
            sources.active_project_count),
+    Metric("governance_open_findings", "Open Governance Findings", "compliance", "count", "card", False,
+           sources.governance_open_finding_count),
+    Metric("governance_legal_holds", "Active Legal Holds", "compliance", "count", "card", False,
+           sources.governance_active_legal_hold_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

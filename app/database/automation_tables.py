@@ -32,9 +32,11 @@ from sqlalchemy import (
 JOB_TYPES = ("run_report_schedule", "report_schedules_sweep", "capture_analytics_snapshots",
              "launch_workflow", "workflow_sla_sweep", "dispatch_notifications", "dispatch_outbox",
              "send_communication", "m365_mail_sync", "m365_calendar_sync", "m365_document_sync",
-             "maintenance", "custom")
+             "maintenance", "custom",
+             # Phase D.23 — Data Governance jobs (dispatch to the governance services).
+             "governance_quality_scan", "governance_stale_scan", "governance_retention_review")
 JOB_CATEGORIES = ("reporting", "analytics", "workflow", "communications", "operations",
-                  "microsoft365", "maintenance", "general")
+                  "microsoft365", "maintenance", "governance", "general")
 JOB_STATUSES = ("enabled", "disabled", "paused")
 SCHEDULE_TYPES = ("interval", "cron", "once", "manual")
 SCHEDULE_FREQUENCIES = ("manual", "hourly", "daily", "weekly", "monthly", "quarterly")

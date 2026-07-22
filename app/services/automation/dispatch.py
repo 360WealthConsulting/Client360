@@ -108,6 +108,24 @@ def _m365(sync_name):
     return handler
 
 
+def _governance_quality_scan(context):
+    """Run governance quality checks (Phase D.23) via the Governance service — never reimplements
+    quality logic here; Governance owns the findings/decisions."""
+    from app.services.governance import quality
+    return quality.run_all_active_checks(context["principal"], run_type="automation",
+                                         actor_user_id=context["actor_user_id"])
+
+
+def _governance_stale_scan(context):
+    from app.services.governance import quality
+    return quality.run_stale_scan(context["principal"], actor_user_id=context["actor_user_id"])
+
+
+def _governance_retention_review(context):
+    from app.services.governance import retention
+    return retention.review_due_retention(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -130,6 +148,9 @@ DISPATCH_REGISTRY = {
     "m365_mail_sync": _m365("m365_mail_sync"),
     "m365_calendar_sync": _m365("m365_calendar_sync"),
     "m365_document_sync": _m365("m365_document_sync"),
+    "governance_quality_scan": _governance_quality_scan,
+    "governance_stale_scan": _governance_stale_scan,
+    "governance_retention_review": _governance_retention_review,
     "maintenance": _maintenance,
     "custom": _custom,
 }
