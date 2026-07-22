@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Workflow Automation | Client360{% endblock %}
+{% block crumb %}Workflow Automation{% endblock %}
+{% block content %}
+{{ ui.page_head("Workflow Automation", eyebrow="Process engine", desc="Deterministic orchestration of work across every domain — triggers, templates, and running workflows.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px">
+    {% for st, n in metrics.by_status.items() %}<article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">{{ st|capitalize }}</div><div style="font-size:22px; font-weight:700">{{ n }}</div></article>{% endfor %}
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open escalations</div><div style="font-size:22px; font-weight:700">{{ metrics.open_escalations }}</div></article>
+  </div>
+</section>
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option>
+      {% for st in ["active","paused","completed","cancelled"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} workflow(s).</p>
+{% if result.rows %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Workflow</th><th>Type</th><th>Status</th><th>Priority</th><th></th></tr></thead>
+  <tbody>{% for w in result.rows %}<tr><td><strong>{{ w.name }}</strong></td><td>{{ w.workflow_type }}</td>
+    <td>{{ ui.badge(w.status|capitalize, 'good' if w.status == 'completed' else '') }}</td><td>{{ w.priority }}</td>
+    <td><a class="rowlink" href="/workflow-automation/{{ w.id }}">Open →</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No workflows", "No workflow instances match the current filters.") %}{% endcall %}{% endif %}
+{% if can_execute %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Launch workflow</summary>
+  <form method="post" action="/workflow-automation/launch" style="margin-top:12px">
+    <div class="field"><label for="template_code">Template</label>
+      <select class="input" id="template_code" name="template_code">{% for t in templates %}<option value="{{ t.code }}">{{ t.name }} ({{ t.code }})</option>{% endfor %}</select></div>
+    <div class="field"><label for="person_id">Person id (optional)</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Launch</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

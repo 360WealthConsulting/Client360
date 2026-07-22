@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.16** on `release/0.13.0` (migration head `n4e5f6a7b8c9`, 402 routes, 95
+after **Phase D.17** on `release/0.13.0` (migration head `o5f6a7b8c9d0`, 416 routes, 102
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -125,6 +125,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 31 | Referral Sources (business development) | source (authoritative referral-partner domain — D.14) |
 | 32 | Enterprise Analytics / KPI warehouse | **read-model** (owns no business data — D.15) |
 | 33 | Documents / Knowledge Repository | source (authoritative artifact domain — extended in D.16) |
+| 34 | Workflow Automation / Orchestration | source (process engine + D.17 orchestration layer) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -248,6 +249,8 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   `analytics.manage_targets`, `analytics.manage_dashboards`.
 - **Documents:** `document.read`/`document.write` (legacy) + `documents.view/edit/delete/version/
   approve/archive/restore/export/manage_retention` (D.16 platform).
+- **Workflow:** `work.read/write/approve` (legacy engine) + `workflow.view/edit/execute/cancel/
+  template_manage/admin*/audit*` (D.17 orchestration).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -391,15 +394,16 @@ Imported records flow through source contacts/links and matching → canonical m
 synchronization.
 
 ## 20. Routes and application surfaces
-**Verified total: 402 routes** (`python -c "from app.main import app; print(len(app.routes))"`;
+**Verified total: 416 routes** (`python -c "from app.main import app; print(len(app.routes))"`;
 guarded by `tests/test_f4_8_workflow_api.py` and `tests/test_f4_7_workflow_evidence.py`). Route
 families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, `/benefits` +
 `/api/v1/benefits`, `/insurance`, `/tax` (+ `/tax/intake`, `/tax/returns`, `/tax/documents`),
 `/compliance`, `/advisor-work`, `/people/{id}/timeline` + `/households/{id}/timeline`,
 `/annual-review`, `/business-owner`, `/opportunities` (+ `/opportunities/reports`), `/campaigns`,
 `/referral-sources`, `/business-development`, `/analytics`, `/documents` (legacy) +
-`/document-library` (platform), `/workspace` (meeting), `/portfolio` + `/wealth`, `/admin`
-(+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON `/api/v1/*`.
+`/document-library` (platform), `/workflows` (legacy engine) + `/workflow-automation`
+(orchestration), `/workspace` (meeting), `/portfolio` + `/wealth`, `/admin` (+ `/admin/audit`,
+rule-catalog, roles), `/microsoft365`, `/auth`, and JSON `/api/v1/*`.
 
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
@@ -407,10 +411,10 @@ families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, 
   `app/database/schema.py` (8 registered modules: advisor_work, annual_review,
   business_planning, compliance, identity, outbox, portfolio, work — plus core tables inline in
   `schema.py`).
-- **Alembic:** 61 migrations, **single head `n4e5f6a7b8c9`**; `alembic current == heads`.
+- **Alembic:** 62 migrations, **single head `o5f6a7b8c9d0`**; `alembic current == heads`.
   Recent chain: D.9 `g1w2o3r4k5m6` → D.10 `h2t3i4m5l6n7` → D.11 `i9a1n2r3e4v5` → D.12
   `j0b1u2s3o4w5` → D.13 `k1o2p3p4t5y6` → D.14 `l2c3d4e5f6a7` → D.15 `m3d4e5f6a7b8` → D.16
-`n4e5f6a7b8c9`.
+`n4e5f6a7b8c9` → D.17 `o5f6a7b8c9d0`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its
