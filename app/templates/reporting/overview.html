@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Reporting | Client360{% endblock %}
+{% block crumb %}Reporting{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Reporting", eyebrow="Business intelligence", desc="Deterministic dashboards, scorecards, and executive decision support — composed from the Analytics read-model, never recalculated.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Published dashboards</div><div style="font-size:22px; font-weight:700">{{ metrics.published_dashboards }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Report definitions</div><div style="font-size:22px; font-weight:700">{{ metrics.report_definitions }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Reports</div><div style="font-size:22px; font-weight:700">{{ metrics.reports }}</div></article>
+  </div>
+</section>
+
+<section class="stack"><h2 class="section-title">Dashboards</h2>
+<form method="get" class="card" style="margin-bottom:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="category">Audience</label>
+    <select class="input" id="category" name="category"><option value="">All</option>
+      {% for cat in ["executive","operations","compliance","advisor","tax","insurance","marketing","business_development","client_service","technology"] %}<option value="{{ cat }}" {% if filters.category == cat %}selected{% endif %}>{{ cat|replace("_"," ")|capitalize }}</option>{% endfor %}</select></div>
+  <div><button class="btn" type="submit">Filter</button></div>
+</form>
+{% if dashboards %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Dashboard</th><th>Audience</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for d in dashboards %}<tr><td><strong>{{ d.name }}</strong>{% if d.executive_only %} <span class="subtle">(executive)</span>{% endif %}</td><td>{{ d.category|replace("_"," ") }}</td>
+    <td>{{ ui.badge(d.status|capitalize, 'good' if d.status == 'published' else '') }}</td>
+    <td><a class="rowlink" href="/reporting/dashboards/{{ d.id }}">Open →</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No dashboards", "No dashboards match the current filter.") %}{% endcall %}{% endif %}
+</section>
+
+{% if scorecards %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Scorecards</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Scorecard</th><th>Audience</th></tr></thead>
+    <tbody>{% for s in scorecards %}<tr><td>{{ s.name }}</td><td>{{ s.category|replace("_"," ") }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+
+{% if can_manage %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">New dashboard</summary>
+  <form method="post" action="/reporting/dashboards" style="margin-top:12px">
+    <div class="field"><label for="code">Code</label><input class="input" id="code" name="code" required></div>
+    <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
+    <div class="field"><label for="dash_category">Audience</label>
+      <select class="input" id="dash_category" name="category">{% for cat in ["executive","operations","compliance","advisor","tax","insurance","marketing","business_development","client_service","technology","general"] %}<option value="{{ cat }}">{{ cat|replace("_"," ") }}</option>{% endfor %}</select></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Create</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

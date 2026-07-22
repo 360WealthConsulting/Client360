@@ -32,6 +32,7 @@ from app.database.identity_tables import define_identity_tables
 from app.database.operations_tables import define_operations_tables
 from app.database.opportunity_tables import define_opportunity_tables
 from app.database.outbox_tables import define_outbox_tables
+from app.database.reporting_tables import define_reporting_tables
 from app.database.scheduling_tables import define_scheduling_tables
 from app.database.work_tables import define_work_tables
 
@@ -703,6 +704,7 @@ document_platform_tables = define_document_platform_tables(metadata)
 communication_tables = define_communication_tables(metadata)
 scheduling_tables = define_scheduling_tables(metadata)
 operations_tables = define_operations_tables(metadata)
+reporting_tables = define_reporting_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

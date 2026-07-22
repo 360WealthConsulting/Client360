@@ -267,3 +267,17 @@ capacity_plans = metadata.tables["capacity_plans"]
 operational_issues = metadata.tables["operational_issues"]
 operational_comments = metadata.tables["operational_comments"]
 operations_events = metadata.tables["operations_events"]
+
+# Enterprise Reporting platform (Phase D.21). A composition layer: owns reporting metadata only
+# (definitions/config); KPI values are composed from Analytics at render time, never persisted.
+report_templates = metadata.tables["report_templates"]
+reporting_kpi_groups = metadata.tables["reporting_kpi_groups"]
+reporting_scorecards = metadata.tables["reporting_scorecards"]
+report_definitions = metadata.tables["report_definitions"]
+reporting_dashboards = metadata.tables["reporting_dashboards"]
+reporting_widgets = metadata.tables["reporting_widgets"]
+reporting_saved_views = metadata.tables["reporting_saved_views"]
+reporting_export_profiles = metadata.tables["reporting_export_profiles"]
+report_schedules = metadata.tables["report_schedules"]
+reports = metadata.tables["reports"]
+reporting_events = metadata.tables["reporting_events"]

@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: r8c9d0e1f2a3      # `alembic heads` / `alembic current`
-  route_count: 480                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 117    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: s9d0e1f2a3b4      # `alembic heads` / `alembic current`
+  route_count: 511                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 122    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -23,12 +23,14 @@ composition_service_modules:
   - app/services/activity_timeline/service.py # Activity Timeline projection
   - app/services/annual_review.py            # Annual Review
   - app/services/business_owner.py           # Business Owner Planning
+  - app/services/reporting/service.py        # Enterprise Reporting (D.21 composition layer)
 
 # The composition-layer module base-names. Source/producer domains must NOT import these
 # (upward-dependency test). Consumers importing producers is the ALLOWED direction.
 composition_layer_modules:
   - annual_review
   - business_owner
+  - reporting
 
 # Source/producer service modules that must not import a composition layer (import-direction
 # test). advisor_intelligence must additionally not import any of its consumers; source
@@ -65,6 +67,7 @@ declared_schema_registrations:
   - define_opportunity_tables
   - define_outbox_tables
   - define_portfolio_tables
+  - define_reporting_tables
   - define_scheduling_tables
   - define_work_tables
 
@@ -109,6 +112,8 @@ capabilities:
                scheduling.admin]
   operations: [operations.view, operations.manage, operations.templates, operations.audit,
                operations.admin]
+  reporting: [reporting.view, reporting.manage, reporting.templates, reporting.audit,
+              reporting.admin]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:
@@ -130,6 +135,13 @@ composition_layers:
                advisor_intelligence, advisor_work, activity_timeline, compliance, annual_review]
     persists: [business_planning_profiles] # succession/continuity facts with no other home
     is_source_of_truth: false
+  reporting:
+    consumes: [analytics, operations, scheduling, communications, workflow, advisor_work,
+               compliance, opportunity, campaign, referral, annual_review, business_owner, timeline]
+    persists: [report_templates, report_definitions, reports, reporting_dashboards,
+               reporting_widgets, reporting_scorecards, reporting_kpi_groups, reporting_saved_views,
+               reporting_export_profiles, report_schedules] # reporting definitions/config only
+    is_source_of_truth: false            # KPI values composed from Analytics at render time
 
 # Data with no authoritative domain — must be shown as "Not currently modeled".
 not_currently_modeled:
