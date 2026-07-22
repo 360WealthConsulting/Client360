@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ d.name }} | Reporting{% endblock %}
+{% block crumb %}<a href="/reporting">Reporting</a> / {{ d.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(d.name, eyebrow=d.category|replace("_"," "), desc=(d.description or "")) }}
+<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap; align-items:center">
+  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(d.status|capitalize, 'good' if d.status == 'published' else '') }}</div>
+  {% if d.executive_only %}<div>{{ ui.badge("Executive", 'warn') }}</div>{% endif %}
+  {% if can_manage %}<div style="margin-left:auto; display:flex; gap:8px">
+    {% if d.status != 'published' %}<form method="post" action="/reporting/dashboards/{{ d.id }}/status"><input type="hidden" name="status" value="published"><button class="btn btn-ghost" type="submit">Publish</button></form>{% endif %}
+    <form method="post" action="/reporting/dashboards/{{ d.id }}/status"><input type="hidden" name="status" value="archived"><button class="btn btn-ghost" type="submit">Archive</button></form>
+  </div>{% endif %}
+</section>
+
+{% if widgets %}
+<div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px">
+  {% for w in widgets %}
+  <article class="card" style="padding:14px">
+    <div class="subtle" style="font-size:12px">{{ w.title }}</div>
+    {% if w.value %}
+      {% if w.value.restricted %}<div style="font-size:20px; font-weight:700" class="subtle">Restricted</div>
+      {% elif w.value.value is not none %}<div style="font-size:26px; font-weight:700">{{ w.value.value }}</div>
+      {% else %}<div style="font-size:20px" class="subtle">—</div>{% endif %}
+      <div class="subtle" style="font-size:11px">{{ w.value.label }}</div>
+    {% elif w.values %}
+      <ul style="margin:6px 0 0; padding-left:16px">{% for v in w.values %}<li>{{ v.label }}: {% if v.restricted %}<span class="subtle">restricted</span>{% else %}<strong>{{ v.value if v.value is not none else "—" }}</strong>{% endif %}</li>{% endfor %}</ul>
+    {% else %}<div class="subtle" style="font-size:12px">{{ w.widget_type }} widget</div>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}{% call ui.empty("No widgets", "This dashboard has no widgets yet.") %}{% endcall %}{% endif %}
+
+{% if can_manage %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add widget</summary>
+  <form method="post" action="/reporting/dashboards/{{ d.id }}/widgets" style="margin-top:12px">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
+    <div class="field"><label for="metric_key">Metric key</label><input class="input" id="metric_key" name="metric_key" placeholder="e.g. active_projects"></div>
+    <div class="field"><label for="viz_type">Visualization</label>
+      <select class="input" id="viz_type" name="viz_type">{% for v in ["card","gauge","trendline","leaderboard","table","chart"] %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Add widget</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

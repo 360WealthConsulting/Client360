@@ -110,6 +110,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-023](ADR-023-communications-as-authoritative-domain.md) | Communications as an authoritative communication-metadata domain | Accepted | Domain (communications) | D.18 |
 | [ADR-024](ADR-024-scheduling-as-authoritative-domain.md) | Scheduling as an authoritative scheduling-metadata domain | Accepted | Domain (scheduling) | D.19 |
 | [ADR-025](ADR-025-operations-as-authoritative-firm-domain.md) | Enterprise Operations as an authoritative firm-operations domain | Accepted | Domain (operations) | D.20 |
+| [ADR-026](ADR-026-reporting-as-composition-layer.md) | Enterprise Reporting as a composition layer over Analytics | Accepted | Composition (reporting) | D.21 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

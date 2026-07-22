@@ -59,12 +59,24 @@ def _create_operational_task(context, actor_user_id):
         workflow_instance_id=context.get("workflow_instance_id"), actor_user_id=actor_user_id)
 
 
+def _run_report_schedule(context, actor_user_id):
+    """Run a reporting schedule via the Reporting domain (Phase D.21).
+
+    A workflow may SCHEDULE reports; it never owns the Reporting domain. This action invokes the
+    existing Reporting service — the workflow duplicates no reporting logic and recalculates no KPIs.
+    """
+    from app.services.reporting import schedules as reporting_schedules
+    return reporting_schedules.run_schedule(context["principal"], context["schedule_id"],
+                                            actor_user_id=actor_user_id)
+
+
 ACTION_REGISTRY = {
     "timeline_event": _timeline_event,
     "document_relationship": _document_relationship,
     "notification": _notification,
     "assign": _assign,
     "create_operational_task": _create_operational_task,
+    "run_report_schedule": _run_report_schedule,
 }
 
 
