@@ -111,6 +111,19 @@ def run_automation_tick() -> None:
         logger.exception("Automation tick failed.")
 
 
+def run_runtime_refresh() -> None:
+    """Safely refresh the Runtime Configuration Engine (D.28): invalidate the cache and rebuild the
+    effective-configuration snapshot from the current D.27 metadata. Failure-isolated — a refresh
+    crash never propagates and the engine keeps serving the last-known snapshot."""
+    try:
+        from app.services.runtime import engine as runtime_engine
+        result = runtime_engine.refresh()
+        if result.get("refreshed"):
+            logger.info("Runtime refresh: snapshot v%s", result.get("snapshot_version"))
+    except Exception:
+        logger.exception("Runtime refresh failed.")
+
+
 def start_scheduler() -> None:
     if _scheduler.running:
         return
@@ -187,6 +200,15 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_automation_tick, trigger="interval", seconds=automation_tick_interval_seconds(),
             id="automation-tick", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # (D.28) Runtime Configuration Engine periodic safe-refresh — gated OFF by default. When enabled,
+    # it rebuilds the effective-config snapshot on a cadence; a manual refresh is always available.
+    from app.config import runtime_refresh_enabled, runtime_refresh_interval_seconds
+    if runtime_refresh_enabled():
+        _scheduler.add_job(
+            run_runtime_refresh, trigger="interval", seconds=runtime_refresh_interval_seconds(),
+            id="runtime-refresh", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     _scheduler.start()

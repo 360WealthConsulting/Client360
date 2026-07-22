@@ -404,3 +404,10 @@ configuration_runtime_setting_references = metadata.tables["configuration_runtim
 configuration_snapshots = metadata.tables["configuration_snapshots"]
 configuration_changes = metadata.tables["configuration_changes"]
 configuration_events = metadata.tables["configuration_events"]
+
+# Enterprise Runtime Configuration Engine (Phase D.28). The runtime EVALUATION layer over the D.27
+# configuration metadata. Owns only its immutable effective-config snapshots and an append-only
+# lifecycle ledger; it reads the D.27 configuration_* metadata (never writes it) and reuses the
+# existing startup/middleware/scheduler/observability/analytics. Both runtime tables are append-only.
+runtime_config_snapshots = metadata.tables["runtime_config_snapshots"]
+runtime_events = metadata.tables["runtime_events"]

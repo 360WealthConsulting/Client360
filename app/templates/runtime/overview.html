@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Runtime Engine | Client360{% endblock %}
+{% block crumb %}Runtime{% endblock %}
+{% block content %}
+{{ ui.page_head("Runtime Configuration Engine", eyebrow="Resolution · snapshots · cache · features", desc="Deterministic runtime evaluation over the D.27 configuration metadata — effective configuration, feature evaluation, immutable snapshots, and the in-process cache. The engine evaluates only; it never edits configuration metadata.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Snapshots</div><div style="font-size:22px; font-weight:700">{{ metrics.snapshots }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Latest version</div><div style="font-size:22px; font-weight:700">v{{ metrics.latest_version }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Cache hit ratio</div><div style="font-size:22px; font-weight:700">{% if metrics.cache_hit_ratio is not none %}{{ (metrics.cache_hit_ratio * 100)|round(1) }}%{% else %}—{% endif %}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Resolutions</div><div style="font-size:22px; font-weight:700">{{ metrics.evaluations }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Validation</div><div style="font-size:22px; font-weight:700">{{ ui.badge("OK" if metrics.validation_ok else (metrics.issue_count ~ " issues"), 'good' if metrics.validation_ok else 'bad') }}</div></article>
+  </div>
+  <p class="subtle" style="margin-top:8px; font-size:12px">Engine hydrated: {{ "yes" if metrics.hydrated else "no" }}</p>
+</section>
+
+<section class="stack"><h2 class="section-title">Recent snapshots</h2>
+{% if snapshots %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Version</th><th>Scope</th><th>Edition</th><th>Items</th><th>Features</th></tr></thead>
+  <tbody>{% for s in snapshots %}<tr><td><strong>v{{ s.version }}</strong></td><td>{{ s.scope }}</td>
+    <td>{{ s.edition_code or "—" }}</td><td>{{ s.item_count }}</td><td>{{ s.feature_count }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No snapshots", "The runtime engine has not captured a snapshot yet.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}
