@@ -233,5 +233,5 @@ def test_workflow_audit_and_evidence_are_append_only():
 def test_no_new_routes_and_docs_present():
     from app.main import app
     # 306 through F4.7; F4.8 additively exposed 3 API routes (reassign/history/evidence).
-    assert len([r for r in app.routes]) == 432  # ... +14 workflow automation (D.17) +16 communications (D.18)
+    assert len([r for r in app.routes]) == 452  # ... +16 communications (D.18) +20 scheduling (D.19)
     assert (REPO_ROOT / "docs" / "WORKFLOW_EVIDENCE_AUDIT.md").is_file()

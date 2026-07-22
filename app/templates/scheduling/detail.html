@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ m.subject }} | Scheduling{% endblock %}
+{% block crumb %}<a href="/scheduling">Scheduling</a> / {{ m.subject }}{% endblock %}
+{% block content %}
+{{ ui.page_head(m.subject, eyebrow=m.meeting_type|replace("_"," "), desc=(m.category ~ " · " ~ m.location_type)) }}
+<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
+  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(m.status|replace("_"," ")|capitalize, 'good' if m.status in ['scheduled','confirmed','completed'] else '') }}</div>
+  <div><div class="subtle" style="font-size:12px">Starts</div><div>{{ m.starts_at.strftime('%Y-%m-%d %H:%M') if m.starts_at else '—' }}</div></div>
+  <div><div class="subtle" style="font-size:12px">Ends</div><div>{{ m.ends_at.strftime('%Y-%m-%d %H:%M') if m.ends_at else '—' }}</div></div>
+  <div><div class="subtle" style="font-size:12px">Location</div><div>{{ m.location or m.location_type }}</div></div>
+  <div><div class="subtle" style="font-size:12px">Attendees</div><div>{{ m.attendees|length }}</div></div>
+  {% if can_manage and m.status in ['scheduled','confirmed','checked_in'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <form method="post" action="/scheduling/{{ m.id }}/confirm"><button class="btn btn-ghost" type="submit">Confirm</button></form>
+    <form method="post" action="/scheduling/{{ m.id }}/checkin"><button class="btn btn-ghost" type="submit">Check in</button></form>
+    <form method="post" action="/scheduling/{{ m.id }}/cancel"><button class="btn btn-ghost" type="submit">Cancel</button></form>
+    <form method="post" action="/scheduling/{{ m.id }}/no-show"><button class="btn btn-ghost" type="submit">No-show</button></form>
+  </div>{% endif %}
+</section>
+
+{% if m.agenda %}<section class="stack"><h2 class="section-title">Agenda</h2><ul>{% for item in m.agenda %}<li>{{ item }}</li>{% endfor %}</ul></section>{% endif %}
+{% if m.preparation_checklist %}<section class="stack"><h2 class="section-title">Preparation checklist</h2><ul>{% for item in m.preparation_checklist %}<li>{{ item }}</li>{% endfor %}</ul></section>{% endif %}
+
+<section class="stack"><h2 class="section-title">Attendees</h2>
+{% if m.attendees %}<div class="table-wrap"><table class="data"><thead><tr><th>Attendee</th><th>Role</th><th>Response</th></tr></thead>
+  <tbody>{% for a in m.attendees %}<tr><td>{{ a.display_name or a.attendee_ref }}</td><td>{{ a.attendee_role }}</td><td>{{ a.response_status|replace("_"," ") }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No attendees", "No attendees added yet.") %}{% endcall %}{% endif %}
+</section>
+
+{% if m.followups %}<section class="stack"><h2 class="section-title">Follow-ups</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Description</th><th>Due</th><th>Status</th></tr></thead>
+    <tbody>{% for f in m.followups %}<tr><td>{{ f.description }}</td><td>{{ f.due_date.strftime('%Y-%m-%d') if f.due_date else '—' }}</td><td>{{ f.status }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+
+{% if m.outcome or m.outcome_notes %}<section class="stack"><h2 class="section-title">Outcome</h2>
+  <article class="card">{% if m.outcome %}<strong>{{ m.outcome }}</strong>{% endif %}{% if m.outcome_notes %}<p style="white-space:pre-wrap; margin:6px 0 0">{{ m.outcome_notes }}</p>{% endif %}</article>
+</section>{% endif %}
+
+{% if can_manage and m.status not in ['completed','cancelled','no_show'] %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add attendee</summary>
+  <form method="post" action="/scheduling/{{ m.id }}/attendees" style="margin-top:12px">
+    <div class="field"><label for="attendee_ref">Attendee (email or person id)</label><input class="input" id="attendee_ref" name="attendee_ref" required></div>
+    <div class="field"><label for="attendee_role">Role</label>
+      <select class="input" id="attendee_role" name="attendee_role">{% for r in ["required","optional","organizer","resource"] %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Add</button></div>
+  </form>
+</details>
+<details class="card" style="margin-top:10px"><summary style="cursor:pointer; font-weight:640">Record outcome</summary>
+  <form method="post" action="/scheduling/{{ m.id }}/outcome" style="margin-top:12px">
+    <div class="field"><label for="outcome">Outcome summary</label><input class="input" id="outcome" name="outcome"></div>
+    <div class="field"><label for="outcome_notes">Notes</label><textarea class="input" id="outcome_notes" name="outcome_notes" rows="3"></textarea></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Save &amp; complete</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

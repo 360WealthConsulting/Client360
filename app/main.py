@@ -50,6 +50,7 @@ from app.routes.portal import router as portal_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
+from app.routes.scheduling import router as scheduling_router
 from app.routes.search import router as search_router
 from app.routes.session import router as session_router
 from app.routes.source import router as source_router
@@ -107,6 +108,7 @@ app.include_router(analytics_router)
 app.include_router(document_library_router)
 app.include_router(workflow_automation_router)
 app.include_router(communications_router)
+app.include_router(scheduling_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

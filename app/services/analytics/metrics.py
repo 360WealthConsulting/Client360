@@ -101,6 +101,8 @@ _DEFS = (
            sources.active_workflow_count),
     Metric("active_conversations", "Active Conversations", "activity", "count", "card", False,
            sources.active_conversation_count),
+    Metric("upcoming_meetings", "Upcoming Meetings", "activity", "count", "card", False,
+           sources.upcoming_meeting_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),
