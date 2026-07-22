@@ -121,6 +121,11 @@ def get_campaign(principal, campaign_id: int) -> dict | None:
             .select_from(campaign_documents.outerjoin(
                 documents, documents.c.id == campaign_documents.c.document_id))
             .where(campaign_documents.c.campaign_id == campaign_id)).mappings()]
+    if principal.can("documents.view"):
+        from app.services.document_platform.relationships import documents_for_entity
+        campaign["related_documents"] = documents_for_entity(principal, "campaign", campaign_id, limit=25)
+    else:
+        campaign["related_documents"] = None
     return campaign
 
 

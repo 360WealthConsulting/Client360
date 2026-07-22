@@ -23,6 +23,7 @@ from app.routes.referral import router as referral_router
 from app.routes.benefits import router as benefits_router
 from app.routes.compliance import router as compliance_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.document_library import router as document_library_router
 from app.routes.dev_auth import dev_auth_enabled
 from app.routes.dev_auth import router as dev_auth_router
 from app.routes.documents import router as documents_router
@@ -101,6 +102,7 @@ app.include_router(campaign_router)
 app.include_router(referral_router)
 app.include_router(business_development_router)
 app.include_router(analytics_router)
+app.include_router(document_library_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

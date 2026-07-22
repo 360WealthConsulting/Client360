@@ -110,6 +110,20 @@ def business_plan_count(principal) -> int:
         return c.scalar(select(func.count()).select_from(business_planning_profiles)) or 0
 
 
+def document_count(principal) -> int:
+    """Book-scoped active document count (Phase D.16 — Analytics consumes document statistics;
+    Documents never depend on Analytics). Excludes soft-deleted."""
+    from app.db import documents
+    ids = book_scope(principal)
+    with engine.connect() as c:
+        stmt = select(func.count()).select_from(documents).where(documents.c.status != "deleted")
+        if ids is not None:
+            if not ids:
+                return 0
+            stmt = stmt.where(documents.c.person_id.in_(tuple(ids)))
+        return c.scalar(stmt) or 0
+
+
 def book_aum(principal) -> Decimal:
     from app.services.portfolio import book_aum as portfolio_book_aum
     return portfolio_book_aum(book_scope(principal))

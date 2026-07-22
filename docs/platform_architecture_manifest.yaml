@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: m3d4e5f6a7b8      # `alembic heads` / `alembic current`
-  route_count: 386                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 86    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: n4e5f6a7b8c9      # `alembic heads` / `alembic current`
+  route_count: 402                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 95    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -57,6 +57,7 @@ declared_schema_registrations:
   - define_annual_review_tables
   - define_business_planning_tables
   - define_campaign_referral_tables
+  - define_document_platform_tables
   - define_compliance_tables
   - define_identity_tables
   - define_opportunity_tables
@@ -94,6 +95,9 @@ capabilities:
   referral: [referral.view, referral.edit, referral.delete, referral.report]
   analytics: [analytics.view, analytics.executive, analytics.export, analytics.manage_targets,
               analytics.manage_dashboards]
+  documents: [documents.view, documents.edit, documents.delete, documents.version,
+              documents.approve, documents.archive, documents.restore, documents.export,
+              documents.manage_retention]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:

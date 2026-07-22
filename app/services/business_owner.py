@@ -196,7 +196,15 @@ def compose_person_workspace(principal, person_id: int) -> dict | None:
         # and their businesses; the Opportunity domain remains the pipeline owner. Gated.
         "opportunities": (_business_opportunities(principal, person_id, businesses)
                           if principal.can("opportunity.view") else None),
+        # Documents (Phase D.16) — read-only visibility.
+        "documents": (_person_documents(principal, person_id)
+                      if principal.can("documents.view") else None),
     }
+
+
+def _person_documents(principal, person_id):
+    from app.services.document_platform.relationships import documents_for_entity
+    return documents_for_entity(principal, "person", person_id, limit=25)
 
 
 def _business_opportunities(principal, person_id: int, businesses: list[dict]) -> dict:

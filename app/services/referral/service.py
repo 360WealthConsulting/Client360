@@ -112,6 +112,11 @@ def get_referral_source(principal, referral_source_id: int) -> dict | None:
                 referral_source_events.c.referral_source_id == referral_source_id)
             .order_by(referral_source_events.c.occurred_at.desc())).mappings()]
     src["metrics"] = referral_metrics(principal, referral_source_id)
+    if principal.can("documents.view"):
+        from app.services.document_platform.relationships import documents_for_entity
+        src["documents"] = documents_for_entity(principal, "referral_source", referral_source_id, limit=25)
+    else:
+        src["documents"] = None
     return src
 
 

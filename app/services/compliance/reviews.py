@@ -372,6 +372,13 @@ def get_review(principal, review_id: int):
         ).mappings()]
     review["decisions"] = decisions
     review["catalog"] = validate_against_catalog(review)
+    # Documents (Phase D.16) — Compliance may REFERENCE documents (read-only visibility); it
+    # never owns them.
+    if principal.can("documents.view"):
+        from app.services.document_platform.relationships import documents_for_entity
+        review["documents"] = documents_for_entity(principal, "compliance_review", review_id, limit=25)
+    else:
+        review["documents"] = None
     return review
 
 

@@ -95,6 +95,8 @@ _DEFS = (
     # Activity.
     Metric("timeline_activity", "Timeline Activity", "activity", "count", "card", False,
            sources.timeline_activity_count),
+    Metric("document_count", "Documents", "operations", "count", "card", False,
+           sources.document_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

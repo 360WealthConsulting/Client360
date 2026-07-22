@@ -221,3 +221,10 @@ analytics_targets = metadata.tables["analytics_targets"]
 analytics_snapshots = metadata.tables["analytics_snapshots"]
 analytics_dashboards = metadata.tables["analytics_dashboards"]
 analytics_dashboard_widgets = metadata.tables["analytics_dashboard_widgets"]
+
+# Document platform (Phase D.16). document_versions already exists (client portal) and is
+# bound above; D.16 extends it additively.
+document_folders = metadata.tables["document_folders"]
+document_retention_policies = metadata.tables["document_retention_policies"]
+document_relationships = metadata.tables["document_relationships"]
+document_events = metadata.tables["document_events"]
