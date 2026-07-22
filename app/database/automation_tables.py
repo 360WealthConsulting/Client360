@@ -40,7 +40,9 @@ JOB_TYPES = ("run_report_schedule", "report_schedules_sweep", "capture_analytics
              # Phase D.25 — Enterprise Security (Automation runs rotation/certificate/policy reviews).
              "security_review",
              # Phase D.26 — Enterprise Observability (health/diagnostic scans, telemetry, alert eval).
-             "observability_scan")
+             "observability_scan",
+             # Phase D.27 — Enterprise Configuration (config validation / drift / rollout review).
+             "configuration_review")
 JOB_CATEGORIES = ("reporting", "analytics", "workflow", "communications", "operations",
                   "microsoft365", "maintenance", "governance", "general")
 JOB_STATUSES = ("enabled", "disabled", "paused")
