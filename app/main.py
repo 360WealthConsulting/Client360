@@ -42,6 +42,7 @@ from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_re
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.notes import router as notes_router
+from app.routes.operations import router as operations_router
 from app.routes.opportunity import router as opportunity_router
 from app.routes.ops import router as ops_router
 from app.routes.people import router as people_router
@@ -109,6 +110,7 @@ app.include_router(document_library_router)
 app.include_router(workflow_automation_router)
 app.include_router(communications_router)
 app.include_router(scheduling_router)
+app.include_router(operations_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Operations | Client360{% endblock %}
+{% block crumb %}Operations{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Operations", eyebrow="Projects & capacity", desc="Firm-level projects, operational tasks, resource planning, and capacity management. Advisor Work remains the client-work domain.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active projects</div><div style="font-size:22px; font-weight:700">{{ metrics.active }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Total projects</div><div style="font-size:22px; font-weight:700">{{ metrics.total }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">At risk</div><div style="font-size:22px; font-weight:700">{{ metrics.at_risk }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Open tasks</div><div style="font-size:22px; font-weight:700">{{ task_metrics.open }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Over capacity</div><div style="font-size:22px; font-weight:700">{{ capacity.over_capacity_count }}</div></article>
+  </div>
+</section>
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option>
+      {% for st in ["planned","active","blocked","on_hold","completed","cancelled","archived"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|replace("_"," ")|capitalize }}</option>{% endfor %}</select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} project(s).</p>
+{% if result.rows %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Project</th><th>Category</th><th>Status</th><th>Health</th><th>Priority</th><th></th></tr></thead>
+  <tbody>{% for pr in result.rows %}<tr><td><strong>{{ pr.name }}</strong></td><td>{{ pr.category|replace("_"," ") }}</td>
+    <td>{{ ui.badge(pr.status|replace("_"," ")|capitalize, 'good' if pr.status in ['active','completed'] else '') }}</td>
+    <td>{{ ui.badge(pr.health|capitalize, 'good' if pr.health == 'green' else ('warn' if pr.health == 'yellow' else 'bad')) }}</td>
+    <td>{{ pr.priority }}</td>
+    <td><a class="rowlink" href="/operations/projects/{{ pr.id }}">Open →</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No projects", "No projects match the current filters.") %}{% endcall %}{% endif %}
+{% if can_manage %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">New project</summary>
+  <form method="post" action="/operations/projects" style="margin-top:12px">
+    <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
+    <div class="field"><label for="template_code">Template (optional)</label>
+      <select class="input" id="template_code" name="template_code"><option value="">— none —</option>{% for t in templates %}<option value="{{ t.code }}">{{ t.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="category">Category</label>
+      <select class="input" id="category" name="category">{% for cat in ["tax_season","audit","infrastructure","release","marketing","hiring","onboarding","policy","compliance","operations","general"] %}<option value="{{ cat }}">{{ cat|replace("_"," ") }}</option>{% endfor %}</select></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Create</button></div>
+  </form>
+</details>{% endif %}
+{% if capacity.resources %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Capacity &amp; workload</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Resource</th><th>Committed</th><th>Available</th><th>Utilization</th><th>Open tasks</th></tr></thead>
+    <tbody>{% for r in capacity.resources %}<tr><td>{{ r.resource_name }}</td><td>{{ r.committed_minutes }} min</td><td>{{ r.available_minutes }} min</td>
+      <td>{{ ui.badge(r.utilization_percent ~ "%", 'bad' if r.over_capacity else 'good') }}</td><td>{{ r.open_task_count }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{% endblock %}

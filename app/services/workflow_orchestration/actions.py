@@ -45,11 +45,26 @@ def _assign(context, actor_user_id):
                        actor_user_id=actor_user_id)
 
 
+def _create_operational_task(context, actor_user_id):
+    """Create a firm operational task via the Operations domain (Phase D.20).
+
+    A workflow may CREATE operational tasks; it never owns the Operations domain. This action
+    invokes the existing Operations service — the workflow duplicates no operations logic.
+    """
+    from app.services.operations import tasks as ops_tasks
+    return ops_tasks.create_task(
+        context["principal"], title=context["title"], project_id=context.get("project_id"),
+        description=context.get("description"), priority=context.get("priority", "normal"),
+        person_id=context.get("person_id"), household_id=context.get("household_id"),
+        workflow_instance_id=context.get("workflow_instance_id"), actor_user_id=actor_user_id)
+
+
 ACTION_REGISTRY = {
     "timeline_event": _timeline_event,
     "document_relationship": _document_relationship,
     "notification": _notification,
     "assign": _assign,
+    "create_operational_task": _create_operational_task,
 }
 
 

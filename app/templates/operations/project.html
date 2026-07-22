@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ p.name }} | Operations{% endblock %}
+{% block crumb %}<a href="/operations">Operations</a> / {{ p.name }}{% endblock %}
+{% block content %}
+{{ ui.page_head(p.name, eyebrow=p.category|replace("_"," "), desc=(p.description or "")) }}
+<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
+  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(p.status|replace("_"," ")|capitalize, 'good' if p.status in ['active','completed'] else '') }}</div>
+  <div><div class="subtle" style="font-size:12px">Health</div>{{ ui.badge(p.health|capitalize, 'good' if p.health == 'green' else ('warn' if p.health == 'yellow' else 'bad')) }}</div>
+  <div><div class="subtle" style="font-size:12px">Priority</div><div>{{ p.priority }}</div></div>
+  <div><div class="subtle" style="font-size:12px">Phases</div><div>{{ p.phases|length }}</div></div>
+  <div><div class="subtle" style="font-size:12px">Tasks</div><div>{{ p.tasks|length }}</div></div>
+  {% if can_manage and p.status not in ['completed','cancelled','archived'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="active"><button class="btn btn-ghost" type="submit">Activate</button></form>
+    <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="on_hold"><button class="btn btn-ghost" type="submit">Hold</button></form>
+    <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="completed"><button class="btn btn-ghost" type="submit">Complete</button></form>
+  </div>{% endif %}
+</section>
+
+{% if p.phases %}<section class="stack"><h2 class="section-title">Phases</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>#</th><th>Phase</th><th>Status</th></tr></thead>
+    <tbody>{% for ph in p.phases %}<tr><td>{{ ph.sequence }}</td><td>{{ ph.name }}</td><td>{{ ph.status|replace("_"," ") }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+
+{% if p.milestones %}<section class="stack"><h2 class="section-title">Milestones</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Milestone</th><th>Due</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for ms in p.milestones %}<tr><td>{{ ms.name }}</td><td>{{ ms.due_date or "—" }}</td><td>{{ ms.status }}</td>
+      <td>{% if can_manage and ms.status == 'pending' %}<form method="post" action="/operations/milestones/{{ ms.id }}/reach"><button class="btn btn-ghost" type="submit">Reach</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+
+<section class="stack"><h2 class="section-title">Operational tasks</h2>
+{% if p.tasks %}<div class="table-wrap"><table class="data"><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th></th></tr></thead>
+  <tbody>{% for t in p.tasks %}<tr><td>{{ t.title }}</td><td>{{ ui.badge(t.status|replace("_"," ")|capitalize, 'good' if t.status in ['active','completed'] else '') }}</td><td>{{ t.priority }}</td>
+    <td><a class="rowlink" href="/operations/items/{{ t.id }}">Open →</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No tasks", "No operational tasks in this project yet.") %}{% endcall %}{% endif %}
+</section>
+
+{% if can_manage %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add operational task</summary>
+  <form method="post" action="/operations/projects/{{ p.id }}/items" style="margin-top:12px">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
+    <div class="field"><label for="estimated_minutes">Estimated minutes</label><input class="input" id="estimated_minutes" name="estimated_minutes" inputmode="numeric"></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Add task</button></div>
+  </form>
+</details>
+<details class="card" style="margin-top:10px"><summary style="cursor:pointer; font-weight:640">Add milestone</summary>
+  <form method="post" action="/operations/projects/{{ p.id }}/milestones" style="margin-top:12px">
+    <div class="field"><label for="ms_name">Name</label><input class="input" id="ms_name" name="name" required></div>
+    <div class="field"><label for="due_date">Due date (ISO)</label><input class="input" id="due_date" name="due_date" placeholder="2026-09-01"></div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Add milestone</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}
