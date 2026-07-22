@@ -291,6 +291,39 @@ def observability_open_reliability_incident_count(principal) -> int:
                         .where(observability_reliability_incidents.c.status.notin_(("resolved", "closed")))) or 0
 
 
+def configuration_enabled_feature_flag_count(principal) -> int:
+    """Firm-level count of enabled feature flags (Phase D.27 — Analytics consumes configuration
+    statistics; Configuration never depends on Analytics)."""
+    from app.db import configuration_feature_flags
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(configuration_feature_flags)
+                        .where(configuration_feature_flags.c.enabled.is_(True))) or 0
+
+
+def configuration_drift_override_count(principal) -> int:
+    """Firm-level count of active environment overrides (Phase D.27 — configuration drift)."""
+    from app.db import configuration_environment_overrides
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(configuration_environment_overrides)
+                        .where(configuration_environment_overrides.c.active.is_(True))) or 0
+
+
+def configuration_active_edition_count(principal) -> int:
+    """Firm-level count of active editions (Phase D.27 — edition distribution)."""
+    from app.db import configuration_editions
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(configuration_editions)
+                        .where(configuration_editions.c.status == "active")) or 0
+
+
+def configuration_pending_change_count(principal) -> int:
+    """Firm-level count of pending (proposed) configuration changes (Phase D.27 — pending reviews)."""
+    from app.db import configuration_changes
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(configuration_changes)
+                        .where(configuration_changes.c.status == "proposed")) or 0
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

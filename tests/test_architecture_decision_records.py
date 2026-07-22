@@ -12,7 +12,7 @@ REPO = Path(__file__).resolve().parent.parent
 ADR_DIR = REPO / "docs" / "adr"
 README = ADR_DIR / "README.md"
 
-EXPECTED_COUNT = 31
+EXPECTED_COUNT = 32
 REQUIRED_HEADINGS = [
     "## Status", "## Date", "## Decision owners", "## Context", "## Decision",
     "## Alternatives considered", "## Reasons for the decision", "## Consequences",

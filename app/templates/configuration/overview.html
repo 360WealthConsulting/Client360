@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Configuration | Client360{% endblock %}
+{% block crumb %}Configuration{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Configuration", eyebrow="Settings · features · editions · preferences", desc="Deterministic platform-configuration governance metadata — categories, sets, items, feature flags, editions, licensing, and preferences. Reuses the existing runtime configuration; records governance metadata only, never replaces the runtime config.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Enabled features</div><div style="font-size:22px; font-weight:700">{{ metrics.enabled_feature_flags }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active editions</div><div style="font-size:22px; font-weight:700">{{ metrics.active_editions }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Config drift</div><div style="font-size:22px; font-weight:700">{{ metrics.active_overrides }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Pending reviews</div><div style="font-size:22px; font-weight:700">{{ metrics.pending_changes }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Preferences</div><div style="font-size:22px; font-weight:700">{{ metrics.preferences }}</div></article>
+  </div>
+</section>
+
+<section class="stack"><h2 class="section-title">Categories</h2>
+{% if categories %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Category</th><th>Code</th></tr></thead>
+  <tbody>{% for c in categories %}<tr><td><strong>{{ c.name }}</strong></td><td>{{ c.code }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No categories", "No configuration categories defined.") %}{% endcall %}{% endif %}
+</section>
+
+{% if editions %}
+<section class="stack" style="margin-top:18px"><h2 class="section-title">Editions</h2>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Edition</th><th>Tier</th><th>Status</th></tr></thead>
+    <tbody>{% for e in editions %}<tr><td>{{ e.name }}</td><td>{{ e.tier }}</td>
+      <td>{{ ui.badge(e.status|capitalize, 'good' if e.status == 'active' else '') }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{% endblock %}

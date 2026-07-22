@@ -135,6 +135,15 @@ _DEFS = (
            False, sources.observability_diagnostic_failure_count),
     Metric("observability_reliability_incidents", "Open Reliability Incidents", "operations", "count",
            "card", False, sources.observability_open_reliability_incident_count),
+    # Enterprise Configuration (Phase D.27 — Analytics consumes configuration statistics).
+    Metric("configuration_enabled_feature_flags", "Enabled Feature Flags", "operations", "count", "card",
+           False, sources.configuration_enabled_feature_flag_count),
+    Metric("configuration_drift_overrides", "Configuration Drift (overrides)", "operations", "count",
+           "card", False, sources.configuration_drift_override_count),
+    Metric("configuration_active_editions", "Active Editions", "operations", "count", "card", False,
+           sources.configuration_active_edition_count),
+    Metric("configuration_pending_changes", "Pending Configuration Reviews", "operations", "count",
+           "card", False, sources.configuration_pending_change_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

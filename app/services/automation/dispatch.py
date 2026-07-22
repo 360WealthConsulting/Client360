@@ -151,6 +151,15 @@ def _observability_scan(context):
     return observability_scans.run_due_scans(context["principal"], actor_user_id=context["actor_user_id"])
 
 
+def _configuration_review(context):
+    """Run due configuration reviews via the Configuration domain (Phase D.27): validate active
+    configuration items against their runtime-setting references, flag environment-override drift, and
+    review in-flight feature rollouts. Configuration owns the metadata; this records review metadata
+    only and reads the existing runtime config — it changes no runtime configuration."""
+    from app.services.configuration import scans as configuration_scans
+    return configuration_scans.run_due_reviews(context["principal"], actor_user_id=context["actor_user_id"])
+
+
 def _maintenance(context):
     """A deterministic no-op maintenance job (no side effects) — a safe scheduled heartbeat."""
     return {"maintenance": "ok"}
@@ -179,6 +188,7 @@ DISPATCH_REGISTRY = {
     "integration_sync": _integration_sync,
     "security_review": _security_review,
     "observability_scan": _observability_scan,
+    "configuration_review": _configuration_review,
     "maintenance": _maintenance,
     "custom": _custom,
 }

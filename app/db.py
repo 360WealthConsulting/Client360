@@ -377,3 +377,30 @@ observability_runtime_snapshots = metadata.tables["observability_runtime_snapsho
 observability_reliability_incidents = metadata.tables["observability_reliability_incidents"]
 observability_reliability_findings = metadata.tables["observability_reliability_findings"]
 observability_events = metadata.tables["observability_events"]
+
+# Enterprise Configuration platform (Phase D.27). Authoritative platform-configuration domain: owns
+# configuration governance metadata only (categories/sets/items/versions, environment overrides,
+# tenant/org/user preferences, feature groups/flags/rollouts, editions/edition-capabilities/license-
+# policies/edition-assignments, platform options, administrative policies, runtime-setting references,
+# snapshots, changes). References Security/Observability/Integration/Automation/Analytics/Timeline/
+# Audit and the RBAC capabilities; never the source of truth for operational/business entities and
+# never replaces the runtime configuration/env loaders.
+configuration_categories = metadata.tables["configuration_categories"]
+configuration_sets = metadata.tables["configuration_sets"]
+configuration_items = metadata.tables["configuration_items"]
+configuration_versions = metadata.tables["configuration_versions"]
+configuration_environment_overrides = metadata.tables["configuration_environment_overrides"]
+configuration_preferences = metadata.tables["configuration_preferences"]
+configuration_feature_groups = metadata.tables["configuration_feature_groups"]
+configuration_feature_flags = metadata.tables["configuration_feature_flags"]
+configuration_feature_rollouts = metadata.tables["configuration_feature_rollouts"]
+configuration_editions = metadata.tables["configuration_editions"]
+configuration_edition_capabilities = metadata.tables["configuration_edition_capabilities"]
+configuration_license_policies = metadata.tables["configuration_license_policies"]
+configuration_edition_assignments = metadata.tables["configuration_edition_assignments"]
+configuration_platform_options = metadata.tables["configuration_platform_options"]
+configuration_administrative_policies = metadata.tables["configuration_administrative_policies"]
+configuration_runtime_setting_references = metadata.tables["configuration_runtime_setting_references"]
+configuration_snapshots = metadata.tables["configuration_snapshots"]
+configuration_changes = metadata.tables["configuration_changes"]
+configuration_events = metadata.tables["configuration_events"]
