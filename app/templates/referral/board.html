@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Referral Sources | Client360{% endblock %}
+{% block crumb %}Referral Sources{% endblock %}
+{% block content %}
+{{ ui.page_head("Referral Sources", eyebrow="Business development", desc="Referral partners and centers of influence.") }}
+<div class="row" style="gap:8px; margin:-6px 0 14px">{% if can_report %}<a class="rowlink" href="/referral-sources/reports">Referral reports →</a>{% endif %}</div>
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option><option value="active" {% if filters.status=='active' %}selected{% endif %}>Active</option><option value="inactive" {% if filters.status=='inactive' %}selected{% endif %}>Inactive</option></select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} source(s).</p>
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Name</th><th>Type</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for s in result.rows %}
+    <tr><td><strong>{{ s.name }}</strong></td><td>{{ s.source_type|replace("_"," ")|capitalize }}</td>
+      <td>{{ ui.badge(s.status|capitalize, 'good' if s.status == 'active' else '') }}</td>
+      <td><a class="rowlink" href="/referral-sources/{{ s.id }}">Open →</a></td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% else %}{% call ui.empty("No referral sources", "No referral sources match the current filters.") %}{% endcall %}{% endif %}
+{% if can_edit %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">New referral source</summary>
+  <form method="post" action="/referral-sources" style="margin-top:12px">
+    <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+      <div class="field"><label for="source_type">Type</label>
+        <select class="input" id="source_type" name="source_type">{% for t in ["individual","organization","existing_client","cpa","attorney","bank","financial_advisor","insurance_agent","estate_planner","mortgage_broker","coi","employee","marketing_vendor","website","event","advertising","other"] %}<option value="{{ t }}">{{ t|replace("_"," ")|capitalize }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="email">Email</label><input class="input" id="email" name="email"></div>
+      <div class="field"><label for="phone">Phone</label><input class="input" id="phone" name="phone"></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Create referral source</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

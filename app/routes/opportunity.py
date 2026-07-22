@@ -201,6 +201,28 @@ async def log_activity(
     return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
 
 
+@router.post("/{opportunity_id}/attribution")
+async def set_attribution(
+    request: Request, opportunity_id: int,
+    principal: Principal = Depends(require_capability("opportunity.edit")),
+):
+    form = await _form(request)
+    fields = {k: _one(form, k) for k in ("origin", "lead_method", "marketing_medium",
+                                         "referral_type") if _one(form, k)}
+    try:
+        svc.set_attribution(
+            principal, opportunity_id, actor_user_id=principal.user_id,
+            campaign_id=(_int(form, "campaign_id") if "campaign_id" in form else "__keep__"),
+            referral_source_id=(_int(form, "referral_source_id")
+                                if "referral_source_id" in form else "__keep__"),
+            override=(_one(form, "override") == "1"), fields=fields)
+    except svc.OpportunityNotFound as exc:
+        raise HTTPException(404, "Not found") from exc
+    except svc.OpportunityError as exc:
+        return RedirectResponse(url=f"/opportunities/{opportunity_id}?error={exc}", status_code=303)
+    return RedirectResponse(url=f"/opportunities/{opportunity_id}", status_code=303)
+
+
 @router.post("/{opportunity_id}/delete")
 async def delete(
     request: Request, opportunity_id: int,

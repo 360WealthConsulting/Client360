@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ c.name }} | Campaigns | Client360{% endblock %}
+{% block crumb %}Campaign{% endblock %}
+{% block content %}
+{{ ui.page_head(c.name, eyebrow="Campaign", desc=(c.campaign_type or "") ~ ((" · " ~ c.marketing_channel) if c.marketing_channel else "")) }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/campaigns">← Back to campaigns</a></p>
+{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Overview</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Status</span><span>{{ ui.badge(c.status|capitalize, 'good' if c.status == 'active' else '') }}</span></div>
+    <div class="detail-row"><span class="subtle">Objective</span><span>{{ c.objective or "—" }}</span></div>
+    <div class="detail-row"><span class="subtle">Dates</span><span>{{ c.start_date or "—" }} → {{ c.end_date or "—" }}</span></div>
+    {% if can_budget %}
+    <div class="detail-row"><span class="subtle">Budget / actual cost</span><span>${{ "{:,.0f}".format(c.budget or 0) }} / ${{ "{:,.0f}".format(c.actual_cost or 0) }}</span></div>
+    {% else %}<div class="detail-row"><span class="subtle">Budget</span><span class="subtle">Restricted</span></div>{% endif %}
+    {% if can_roi %}<div class="detail-row"><span class="subtle">Expected / actual ROI</span><span>{{ c.expected_roi if c.expected_roi is not none else "—" }} / {{ c.actual_roi if c.actual_roi is not none else "—" }}</span></div>{% endif %}
+  </div>
+</section>
+
+{% if perf %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Performance</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Attributed opportunities</span><strong>{{ perf.opportunities }}</strong></div>
+    <div class="detail-row"><span class="subtle">Won</span><span>{{ perf.won }}{% if perf.conversion_rate is not none %} · {{ "%.0f"|format(perf.conversion_rate * 100) }}% conversion{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Revenue</span><strong>${{ "{:,.0f}".format(perf.revenue) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Pipeline value</span><span>${{ "{:,.0f}".format(perf.pipeline_value) }}</span></div>
+    {% if can_budget %}<div class="detail-row"><span class="subtle">ROI</span><span>{% if perf.roi is not none %}{{ "%.0f"|format(perf.roi * 100) }}%{% else %}—{% endif %}{% if perf.overspend %} {{ ui.badge('Overspend','warn') }}{% endif %}</span></div>
+    <div class="detail-row"><span class="subtle">Acquisition cost</span><span>{% if perf.acquisition_cost is not none %}${{ "{:,.0f}".format(perf.acquisition_cost) }}{% else %}—{% endif %}</span></div>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if can_edit %}
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Lifecycle</h2>
+  <div class="card"><form method="post" action="/campaigns/{{ c.id }}/status" class="row" style="gap:8px; align-items:flex-end">
+    <div class="field" style="margin:0"><label for="status">Set status</label>
+      <select class="input" id="status" name="status">{% for st in ["active","paused","completed","archived"] %}<option value="{{ st }}">{{ st|capitalize }}</option>{% endfor %}</select></div>
+    <button class="btn secondary" type="submit">Apply</button>
+  </form></div>
+</section>
+{% endif %}
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">History</h2>
+  <div class="card">{% for e in c.events %}<div class="detail-row"><span>{{ e.event_type|replace("_"," ")|capitalize }}</span><span class="subtle id-mono">{{ e.occurred_at | humandt }}</span></div>{% endfor %}</div>
+</section>
+{% endblock %}

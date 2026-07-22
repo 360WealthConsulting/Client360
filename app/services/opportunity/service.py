@@ -19,16 +19,19 @@ from sqlalchemy import and_, or_, select
 
 from app.db import (
     advisor_work_items,
+    campaigns,
     engine,
     households,
     opportunities,
     opportunity_activities,
+    opportunity_attributions,
     opportunity_events,
     opportunity_participants,
     opportunity_pipelines,
     opportunity_stages,
     opportunity_work_links,
     people,
+    referral_sources,
     relationship_entities,
     timeline_events,
     users,
@@ -284,6 +287,8 @@ def change_stage(principal, opportunity_id: int, *, new_stage_id: int, actor_use
         values = {"stage_id": stage["id"], "status": stage["category"], "updated_by": actor_user_id,
                   "updated_at": now, "probability": stage["default_probability"]}
         values["closed_at"] = now if stage["category"] in _TERMINAL else None
+        if stage["category"] in _TERMINAL:
+            values["attribution_locked"] = True   # attribution immutable after close
         c.execute(opportunities.update().where(opportunities.c.id == opportunity_id).values(**values))
         event_type = ("won" if stage["category"] == "won" else "lost" if stage["category"] == "lost"
                       else "stage_changed")
@@ -315,7 +320,7 @@ def close_opportunity(principal, opportunity_id: int, *, outcome: str, actor_use
         now = _now()
         values = {"stage_id": target["id"], "status": outcome, "closed_at": now,
                   "probability": target["default_probability"], "updated_by": actor_user_id,
-                  "updated_at": now}
+                  "updated_at": now, "attribution_locked": True}
         values["win_reason" if outcome == "won" else "loss_reason"] = reason
         c.execute(opportunities.update().where(opportunities.c.id == opportunity_id).values(**values))
         _append_event(c, opportunity_id, event_type=outcome, from_stage_id=opp["stage_id"],
@@ -354,6 +359,83 @@ def delete_opportunity(principal, opportunity_id: int) -> None:
         # Hard delete (guarded by opportunity.delete). Child events/activities/participants/
         # work-links CASCADE. Security-relevant deletion is captured separately by the audit log.
         c.execute(opportunities.delete().where(opportunities.c.id == opportunity_id))
+
+
+# --- attribution (Phase D.14 — opportunity-owned linkage to campaigns/referrals) ---
+
+_ATTR_FIELDS = frozenset({"origin", "lead_method", "marketing_medium", "referral_type"})
+
+
+def set_attribution(principal, opportunity_id: int, *, actor_user_id, campaign_id="__keep__",
+                    referral_source_id="__keep__", override=False, fields=None,
+                    secondary=None) -> dict:
+    """Set an opportunity's business-development attribution (primary campaign / referral source
+    + origin/lead-method/marketing-medium/referral-type, and optional weighted secondary
+    touchpoints). Attribution is IMMUTABLE after the opportunity closes unless ``override=True``.
+    Referenced campaigns / referral sources must exist (never created)."""
+    with engine.begin() as c:
+        opp = _load_scoped(c, principal, opportunity_id)
+        if opp.get("attribution_locked") and not override:
+            raise OpportunityError("attribution is locked (opportunity closed); pass override")
+        values = {"updated_by": actor_user_id, "updated_at": _now()}
+        if campaign_id != "__keep__":
+            if campaign_id is not None and c.scalar(
+                    select(campaigns.c.id).where(campaigns.c.id == campaign_id)) is None:
+                raise OpportunityError("campaign does not exist")
+            values["campaign_id"] = campaign_id
+        if referral_source_id != "__keep__":
+            if referral_source_id is not None and c.scalar(
+                    select(referral_sources.c.id).where(referral_sources.c.id == referral_source_id)) is None:
+                raise OpportunityError("referral source does not exist")
+            values["referral_source_id"] = referral_source_id
+        for k, v in (fields or {}).items():
+            if k in _ATTR_FIELDS:
+                values[k] = v
+        c.execute(opportunities.update().where(opportunities.c.id == opportunity_id).values(**values))
+        # Rebuild attribution touchpoints: one primary (from the resolved primary refs) + any
+        # weighted secondary entries provided.
+        updated = _reload(c, opportunity_id)
+        c.execute(opportunity_attributions.delete().where(
+            opportunity_attributions.c.opportunity_id == opportunity_id))
+        if updated.get("campaign_id") or updated.get("referral_source_id"):
+            c.execute(opportunity_attributions.insert().values(
+                opportunity_id=opportunity_id, campaign_id=updated.get("campaign_id"),
+                referral_source_id=updated.get("referral_source_id"), weight=100, is_primary=True,
+                created_at=_now()))
+        for s in (secondary or []):
+            c.execute(opportunity_attributions.insert().values(
+                opportunity_id=opportunity_id, campaign_id=s.get("campaign_id"),
+                referral_source_id=s.get("referral_source_id"), weight=s.get("weight", 0),
+                is_primary=False, created_at=_now()))
+    return updated
+
+
+def attribution_for(opportunity_id: int) -> list[dict]:
+    with engine.connect() as c:
+        return [dict(r) for r in c.execute(select(opportunity_attributions).where(
+            opportunity_attributions.c.opportunity_id == opportunity_id)
+            .order_by(opportunity_attributions.c.is_primary.desc())).mappings()]
+
+
+def opportunities_for_campaign(principal, campaign_id: int, *, limit=5000) -> list[dict]:
+    """Opportunities attributed to a campaign, scoped to the principal's pipeline."""
+    with engine.connect() as c:
+        scope = _scope_clause(principal, c)
+        conds = [opportunities.c.campaign_id == campaign_id]
+        if scope is not None:
+            conds.append(scope)
+        return [dict(r) for r in c.execute(select(opportunities).where(and_(*conds))
+                                           .limit(limit)).mappings()]
+
+
+def opportunities_for_referral_source(principal, referral_source_id: int, *, limit=5000) -> list[dict]:
+    with engine.connect() as c:
+        scope = _scope_clause(principal, c)
+        conds = [opportunities.c.referral_source_id == referral_source_id]
+        if scope is not None:
+            conds.append(scope)
+        return [dict(r) for r in c.execute(select(opportunities).where(and_(*conds))
+                                           .limit(limit)).mappings()]
 
 
 # --- activities + work links -------------------------------------------------

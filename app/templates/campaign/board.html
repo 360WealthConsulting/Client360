@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Campaigns | Client360{% endblock %}
+{% block crumb %}Campaigns{% endblock %}
+{% block content %}
+{{ ui.page_head("Campaigns", eyebrow="Business development", desc="Marketing campaigns and their performance.") }}
+<div class="row" style="gap:8px; margin:-6px 0 14px">
+  {% if can_report %}<a class="rowlink" href="/campaigns/reports">Campaign reports →</a>{% endif %}
+  <a class="rowlink" href="/business-development">Business development dashboard →</a>
+</div>
+<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field" style="margin:0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
+  <div class="field" style="margin:0"><label for="status">Status</label>
+    <select class="input" id="status" name="status"><option value="">All</option>
+      {% for st in ["draft","active","paused","completed","archived"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
+  <div><button class="btn" type="submit">Apply</button></div>
+</form>
+<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} campaign(s).</p>
+{% if result.rows %}
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Campaign</th><th>Type</th><th>Status</th><th>Channel</th><th></th></tr></thead>
+  <tbody>{% for c in result.rows %}
+    <tr><td><strong>{{ c.name }}</strong></td><td>{{ c.campaign_type or "—" }}</td>
+      <td>{{ ui.badge(c.status|capitalize, 'good' if c.status == 'active' else '') }}</td>
+      <td><span class="subtle">{{ c.marketing_channel or "—" }}</span></td>
+      <td><a class="rowlink" href="/campaigns/{{ c.id }}">Open →</a></td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% else %}{% call ui.empty("No campaigns", "No campaigns match the current filters.") %}{% endcall %}{% endif %}
+{% if can_edit %}
+<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">New campaign</summary>
+  <form method="post" action="/campaigns" style="margin-top:12px">
+    <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+      <div class="field"><label for="campaign_type">Type</label><input class="input" id="campaign_type" name="campaign_type"></div>
+      <div class="field"><label for="marketing_channel">Channel</label><input class="input" id="marketing_channel" name="marketing_channel"></div>
+      <div class="field"><label for="start_date">Start</label><input class="input" id="start_date" name="start_date" type="date"></div>
+      <div class="field"><label for="end_date">End</label><input class="input" id="end_date" name="end_date" type="date"></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" type="submit">Create campaign</button></div>
+  </form>
+</details>{% endif %}
+{% endblock %}

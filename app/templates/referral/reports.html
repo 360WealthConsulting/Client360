@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Referral Reports | Client360{% endblock %}
+{% block crumb %}Referral Reports{% endblock %}
+{% block content %}
+{{ ui.page_head("Referral Reports", eyebrow="Business development", desc="Referral leaderboard, conversion, and revenue across your book.") }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/referral-sources">← Back to referral sources</a></p>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Leaderboard</h2>
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Source</th><th>Type</th><th>Won</th><th>Conversion</th><th>Revenue</th><th>LTV</th></tr></thead>
+    <tbody>{% for r in report.leaderboard %}
+      <tr><td><a class="rowlink" href="/referral-sources/{{ r.referral_source_id }}">{{ r.name }}</a></td>
+        <td>{{ r.source_type|replace("_"," ")|capitalize }}</td><td>{{ r.won }}</td>
+        <td>{% if r.conversion_rate is not none %}{{ "%.0f"|format(r.conversion_rate * 100) }}%{% else %}—{% endif %}</td>
+        <td>${{ "{:,.0f}".format(r.revenue) }}</td><td>${{ "{:,.0f}".format(r.lifetime_value) }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Revenue by referral type</h2>
+  <div class="card"><ul style="margin:0; padding-left:18px">{% for k, v in report.revenue_by_referral_type.items() %}<li>{{ k|replace("_"," ")|capitalize }}: ${{ "{:,.0f}".format(v) }}</li>{% endfor %}</ul></div>
+</section>
+{% endblock %}

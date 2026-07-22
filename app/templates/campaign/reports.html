@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Campaign Reports | Client360{% endblock %}
+{% block crumb %}Campaign Reports{% endblock %}
+{% block content %}
+{{ ui.page_head("Campaign Reports", eyebrow="Business development", desc="ROI, conversion, and revenue attributed to campaigns across your book.") }}
+<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/campaigns">← Back to campaigns</a></p>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Overview</h2>
+  <div class="card">
+    <div class="detail-row"><span class="subtle">Total attributed revenue</span><strong>${{ "{:,.0f}".format(report.total_revenue) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Total campaign cost</span><span>${{ "{:,.0f}".format(report.total_cost) }}</span></div>
+  </div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Campaign performance</h2>
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Campaign</th><th>Opps</th><th>Won</th><th>Revenue</th><th>ROI</th></tr></thead>
+    <tbody>{% for p in report.campaigns %}
+      <tr><td><a class="rowlink" href="/campaigns/{{ p.campaign_id }}">{{ p.name }}</a>{% if p.overspend %} {{ ui.badge('Overspend','warn') }}{% endif %}</td>
+        <td>{{ p.opportunities }}</td><td>{{ p.won }}</td><td>${{ "{:,.0f}".format(p.revenue) }}</td>
+        <td>{% if p.roi is not none %}{{ "%.0f"|format(p.roi * 100) }}%{% else %}—{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="stack" style="margin-bottom:20px">
+  <h2 class="section-title">Revenue by marketing channel</h2>
+  <div class="card"><ul style="margin:0; padding-left:18px">{% for k, v in report.revenue_by_marketing_channel.items() %}<li>{{ k|replace("_"," ")|capitalize }}: ${{ "{:,.0f}".format(v) }}</li>{% endfor %}</ul></div>
+</section>
+{% endblock %}

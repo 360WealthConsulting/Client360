@@ -103,6 +103,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-016](ADR-016-linear-migration-chain-and-declared-schema-registration.md) | Linear migration chain & declared-schema registration | Accepted | Database | D.6–D.12 |
 | [ADR-017](ADR-017-architecture-manifest-and-enforcement-tests.md) | Architecture manifest & enforcement tests | Accepted | Governance | D.12A |
 | [ADR-018](ADR-018-opportunity-pipeline-as-authoritative-domain.md) | Opportunity & Pipeline as an authoritative domain | Accepted | Domain (business development) | D.13 |
+| [ADR-019](ADR-019-campaigns-referral-sources-and-attribution.md) | Campaigns, Referral Sources & attribution | Accepted | Domain (business development) | D.14 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,
