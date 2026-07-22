@@ -411,3 +411,12 @@ configuration_events = metadata.tables["configuration_events"]
 # existing startup/middleware/scheduler/observability/analytics. Both runtime tables are append-only.
 runtime_config_snapshots = metadata.tables["runtime_config_snapshots"]
 runtime_events = metadata.tables["runtime_events"]
+
+# Distributed Runtime Coordination (Phase D.29). Makes the D.28 runtime engine cluster-safe using the
+# transactional outbox as the sole coordination bus. Owns coordination metadata only — a worker
+# registry + heartbeat log, a runtime version/generation history with convergence tracking, and an
+# append-only coordination ledger. Owns no configuration metadata and performs no evaluation.
+runtime_workers = metadata.tables["runtime_workers"]
+runtime_worker_heartbeats = metadata.tables["runtime_worker_heartbeats"]
+runtime_generations = metadata.tables["runtime_generations"]
+runtime_coordination_events = metadata.tables["runtime_coordination_events"]

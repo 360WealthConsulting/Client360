@@ -117,11 +117,32 @@ def run_runtime_refresh() -> None:
     crash never propagates and the engine keeps serving the last-known snapshot."""
     try:
         from app.services.runtime import engine as runtime_engine
-        result = runtime_engine.refresh()
+        result = runtime_engine.refresh(trigger="scheduled")
         if result.get("refreshed"):
             logger.info("Runtime refresh: snapshot v%s", result.get("snapshot_version"))
     except Exception:
         logger.exception("Runtime refresh failed.")
+
+
+def run_runtime_heartbeat() -> None:
+    """Emit this worker's runtime coordination heartbeat and converge onto the current runtime
+    generation if behind (D.29). Failure-isolated — a coordination crash never propagates."""
+    try:
+        from app.services.runtime import coordination
+        coordination.heartbeat()
+    except Exception:
+        logger.exception("Runtime heartbeat failed.")
+
+
+def run_runtime_stale_cleanup() -> None:
+    """Expire stale runtime workers and recompute cluster convergence (D.29). Failure-isolated."""
+    try:
+        from app.services.runtime import cluster
+        result = cluster.coordination_sweep()
+        if result.get("expired"):
+            logger.info("Runtime stale-worker cleanup expired %s workers", result.get("expired"))
+    except Exception:
+        logger.exception("Runtime stale-worker cleanup failed.")
 
 
 def start_scheduler() -> None:
@@ -188,6 +209,10 @@ def start_scheduler() -> None:
         register_workflow_consumers()
         from app.services.notification_intents import register_notification_consumers
         register_notification_consumers()
+        # (D.29) Distributed runtime coordination consumers — dark-launched here so cross-process
+        # cache invalidation flows through the transactional outbox only when the dispatcher is on.
+        from app.services.runtime.events import register_runtime_consumers
+        register_runtime_consumers()
         _scheduler.add_job(
             run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
             id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,
@@ -209,6 +234,23 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_runtime_refresh, trigger="interval", seconds=runtime_refresh_interval_seconds(),
             id="runtime-refresh", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # (D.29) Distributed runtime coordination — gated OFF by default. When enabled, each worker
+    # heartbeats + converges on a cadence and a stale-worker sweep expires inactive workers.
+    from app.config import (
+        runtime_coordination_enabled,
+        runtime_heartbeat_interval_seconds,
+        runtime_worker_ttl_seconds,
+    )
+    if runtime_coordination_enabled():
+        _scheduler.add_job(
+            run_runtime_heartbeat, trigger="interval", seconds=runtime_heartbeat_interval_seconds(),
+            id="runtime-heartbeat", replace_existing=True, max_instances=1, coalesce=True,
+        )
+        _scheduler.add_job(
+            run_runtime_stale_cleanup, trigger="interval", seconds=max(30, runtime_worker_ttl_seconds()),
+            id="runtime-stale-cleanup", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     _scheduler.start()

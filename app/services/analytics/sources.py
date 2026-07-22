@@ -366,6 +366,46 @@ def runtime_active_feature_count(principal) -> int:
     return sum(1 for v in row[0].values() if isinstance(v, dict) and v.get("enabled"))
 
 
+def runtime_active_worker_count(principal) -> int:
+    """Firm-level count of active runtime workers in the cluster (Phase D.29 — Analytics consumes
+    coordination statistics; the runtime engine never depends on Analytics)."""
+    from app.db import runtime_workers
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_workers)
+                        .where(runtime_workers.c.status == "active")) or 0
+
+
+def runtime_stale_worker_count(principal) -> int:
+    """Firm-level count of stale/stopped runtime workers (Phase D.29)."""
+    from app.db import runtime_workers
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_workers)
+                        .where(runtime_workers.c.status.in_(("stale", "stopped")))) or 0
+
+
+def runtime_cluster_convergence_pct(principal):
+    """Cluster convergence as a percentage: active workers at the current generation version
+    (Phase D.29). Returns None when there are no active workers."""
+    from app.db import runtime_generations, runtime_workers
+    with engine.connect() as c:
+        version = c.scalar(select(func.max(runtime_generations.c.version)).where(
+            runtime_generations.c.status == "active"))
+        active = c.scalar(select(func.count()).select_from(runtime_workers)
+                          .where(runtime_workers.c.status == "active")) or 0
+        if active == 0 or version is None:
+            return None
+        converged = c.scalar(select(func.count()).select_from(runtime_workers).where(
+            runtime_workers.c.status == "active", runtime_workers.c.runtime_version >= version)) or 0
+    return round((converged / active) * 100, 1)
+
+
+def runtime_generation_count(principal) -> int:
+    """Firm-level count of runtime generations (version history depth) (Phase D.29)."""
+    from app.db import runtime_generations
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_generations)) or 0
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

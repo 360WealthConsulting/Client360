@@ -59,6 +59,7 @@ from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
 from app.routes.reporting import router as reporting_router
 from app.routes.runtime import router as runtime_router
+from app.routes.runtime_cluster import router as runtime_cluster_router
 from app.routes.scheduling import router as scheduling_router
 from app.routes.search import router as search_router
 from app.routes.security import router as security_router
@@ -94,6 +95,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         logging.getLogger("client360.runtime").exception(
             "runtime config hydration failed at startup; continuing with defaults")
+
+    # (D.29) Join the runtime cluster — register this worker + converge onto the current generation.
+    # GUARDED so a coordination failure can never prevent safe application startup.
+    try:
+        from app.services.runtime import cluster as runtime_cluster
+        runtime_cluster.initialize_cluster()
+    except Exception:
+        logging.getLogger("client360.runtime.coordination").exception(
+            "runtime cluster join failed at startup; continuing standalone")
 
     try:
         yield
@@ -141,6 +151,7 @@ app.include_router(security_router)
 app.include_router(observability_router)
 app.include_router(configuration_router)
 app.include_router(runtime_router)
+app.include_router(runtime_cluster_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)
