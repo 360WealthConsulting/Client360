@@ -1,0 +1,23 @@
+{% macro render(widgets) %}
+<div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px">
+  {% for w in widgets %}
+  <article class="card" style="padding:14px">
+    <div class="subtle" style="font-size:12px">{{ w.title }}{% if w.viz %} · {{ w.viz }}{% endif %}</div>
+    {% if w.restricted %}<div style="font-size:20px; font-weight:680; margin-top:4px" class="subtle">Restricted</div>
+    {% elif w.value is none %}<div style="font-size:20px; font-weight:680; margin-top:4px" class="subtle">n/a</div>
+    {% else %}
+      <div style="font-size:24px; font-weight:720; margin-top:4px">
+        {% if w.unit == 'currency' %}${{ "{:,.0f}".format(w.value) }}{% elif w.unit == 'percent' %}{{ w.value }}%{% else %}{{ "{:,.0f}".format(w.value) if w.value is number else w.value }}{% endif %}
+      </div>
+    {% endif %}
+    {% if w.variance and w.variance.status and w.variance.status != 'unknown' %}
+      <div style="margin-top:6px; font-size:12px" class="{{ 'subtle' if w.variance.status in ('on_track',) else '' }}">
+        Target {% if w.unit == 'currency' %}${{ "{:,.0f}".format(w.variance.target_value or 0) }}{% else %}{{ w.variance.target_value }}{% endif %}
+        · {{ w.variance.status|replace("_"," ") }}
+      </div>
+    {% endif %}
+    {% if w.metric_key %}<a class="rowlink" style="font-size:12px" href="/analytics/metrics/{{ w.metric_key }}">Details →</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endmacro %}

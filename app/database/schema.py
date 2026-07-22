@@ -21,6 +21,7 @@ from sqlalchemy import (
 )
 
 from app.database.advisor_work_tables import define_advisor_work_tables
+from app.database.analytics_tables import define_analytics_tables
 from app.database.annual_review_tables import define_annual_review_tables
 from app.database.business_planning_tables import define_business_planning_tables
 from app.database.campaign_referral_tables import define_campaign_referral_tables
@@ -693,6 +694,7 @@ annual_review_tables = define_annual_review_tables(metadata)
 business_planning_tables = define_business_planning_tables(metadata)
 opportunity_tables = define_opportunity_tables(metadata)
 campaign_referral_tables = define_campaign_referral_tables(metadata)
+analytics_tables = define_analytics_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

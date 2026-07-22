@@ -85,6 +85,20 @@ def _portfolio(where):
     result["largest_position_percent"] = result["concentration"]["largest_position_percent"]
     return result
 
+def book_aum(person_ids):
+    """Total AUM (sum of ``accounts.total_value``) across a set of person ids (Phase D.15
+    analytics read). Follows the ``person_ids`` scope convention used elsewhere in this module:
+    ``None`` -> firm-wide (all accounts); an empty set -> 0; a set -> only those clients. Bounded
+    single aggregate query; no per-account fetch."""
+    with engine.connect() as conn:
+        if person_ids is None:
+            return conn.scalar(select(func.coalesce(func.sum(accounts.c.total_value), 0))) or ZERO
+        if not person_ids:
+            return ZERO
+        return conn.scalar(select(func.coalesce(func.sum(accounts.c.total_value), 0))
+                           .where(accounts.c.person_id.in_(tuple(person_ids)))) or ZERO
+
+
 def get_person_portfolio(person_id):
     with engine.connect() as conn:
         household_id = conn.scalar(select(accounts.c.household_id).where(and_(accounts.c.person_id == person_id, accounts.c.household_id.is_not(None))).limit(1))

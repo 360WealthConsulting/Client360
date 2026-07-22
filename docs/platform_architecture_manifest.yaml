@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: l2c3d4e5f6a7      # `alembic heads` / `alembic current`
-  route_count: 379                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 81    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: m3d4e5f6a7b8      # `alembic heads` / `alembic current`
+  route_count: 386                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 86    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -53,6 +53,7 @@ advisor_intelligence_forbidden_imports:
 # Declared-schema registration: each define_* must be called in app/database/schema.py.
 declared_schema_registrations:
   - define_advisor_work_tables
+  - define_analytics_tables
   - define_annual_review_tables
   - define_business_planning_tables
   - define_campaign_referral_tables
@@ -91,6 +92,8 @@ capabilities:
   campaign: [campaign.view, campaign.edit, campaign.delete, campaign.report, campaign.archive,
              campaign.manage_budget, campaign.manage_roi]
   referral: [referral.view, referral.edit, referral.delete, referral.report]
+  analytics: [analytics.view, analytics.executive, analytics.export, analytics.manage_targets,
+              analytics.manage_dashboards]
 
 # Composition layers: consume, never own source data, never a source of truth.
 composition_layers:

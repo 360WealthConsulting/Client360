@@ -12,6 +12,7 @@ from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.activity_timeline import router as activity_timeline_router
 from app.routes.admin import router as admin_router
 from app.routes.advisor_work import router as advisor_work_router
+from app.routes.analytics import router as analytics_router
 from app.routes.annual_review import router as annual_review_router
 from app.routes.auth import router as auth_router
 from app.routes.business_development import router as business_development_router
@@ -99,6 +100,7 @@ app.include_router(opportunity_router)
 app.include_router(campaign_router)
 app.include_router(referral_router)
 app.include_router(business_development_router)
+app.include_router(analytics_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)
