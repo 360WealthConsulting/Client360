@@ -155,6 +155,21 @@ def active_referral_source_count(principal) -> int:
                         .where(referral_sources.c.status == "active")) or 0
 
 
+def active_conversation_count(principal) -> int:
+    """Book-scoped count of open communication conversations (Phase D.18 — Analytics consumes
+    communication statistics; Communications never depends on Analytics)."""
+    from app.db import communication_conversations
+    ids = book_scope(principal)
+    with engine.connect() as c:
+        stmt = (select(func.count()).select_from(communication_conversations)
+                .where(communication_conversations.c.status == "open"))
+        if ids is not None:
+            if not ids:
+                return 0
+            stmt = stmt.where(communication_conversations.c.person_id.in_(tuple(ids)))
+        return c.scalar(stmt) or 0
+
+
 # --- composed domain reports (principal-scoped) ------------------------------
 
 def pipeline_report(principal, *, today=None):

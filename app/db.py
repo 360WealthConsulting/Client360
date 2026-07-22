@@ -228,3 +228,14 @@ document_folders = metadata.tables["document_folders"]
 document_retention_policies = metadata.tables["document_retention_policies"]
 document_relationships = metadata.tables["document_relationships"]
 document_events = metadata.tables["document_events"]
+
+# Communications & Client Engagement platform (Phase D.18). Authoritative for communication
+# metadata only; anchors to people/households/organizations are references, not ownership.
+communication_templates = metadata.tables["communication_templates"]
+communication_conversations = metadata.tables["communication_conversations"]
+communication_threads = metadata.tables["communication_threads"]
+communication_messages = metadata.tables["communication_messages"]
+communication_recipients = metadata.tables["communication_recipients"]
+communication_deliveries = metadata.tables["communication_deliveries"]
+communication_attachments = metadata.tables["communication_attachments"]
+communication_events = metadata.tables["communication_events"]

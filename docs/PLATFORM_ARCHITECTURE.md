@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.17** on `release/0.13.0` (migration head `o5f6a7b8c9d0`, 416 routes, 102
+after **Phase D.18** on `release/0.13.0` (migration head `p6a7b8c9d0e1`, 432 routes, 107
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -126,6 +126,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 32 | Enterprise Analytics / KPI warehouse | **read-model** (owns no business data — D.15) |
 | 33 | Documents / Knowledge Repository | source (authoritative artifact domain — extended in D.16) |
 | 34 | Workflow Automation / Orchestration | source (process engine + D.17 orchestration layer) |
+| 35 | Communications & Client Engagement | source (authoritative communication-metadata domain — D.18) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -251,6 +252,8 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   approve/archive/restore/export/manage_retention` (D.16 platform).
 - **Workflow:** `work.read/write/approve` (legacy engine) + `workflow.view/edit/execute/cancel/
   template_manage/admin*/audit*` (D.17 orchestration).
+- **Communications:** `communications.view/send/manage_templates/audit*/admin*` (D.18 platform;
+  distinct from the legacy `communication.read/write` capabilities that gate the Microsoft 365 UI).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -394,7 +397,7 @@ Imported records flow through source contacts/links and matching → canonical m
 synchronization.
 
 ## 20. Routes and application surfaces
-**Verified total: 416 routes** (`python -c "from app.main import app; print(len(app.routes))"`;
+**Verified total: 432 routes** (`python -c "from app.main import app; print(len(app.routes))"`;
 guarded by `tests/test_f4_8_workflow_api.py` and `tests/test_f4_7_workflow_evidence.py`). Route
 families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, `/benefits` +
 `/api/v1/benefits`, `/insurance`, `/tax` (+ `/tax/intake`, `/tax/returns`, `/tax/documents`),
@@ -402,19 +405,20 @@ families: `/people`, `/households`, `/organizations` + `/api/v1/organizations`, 
 `/annual-review`, `/business-owner`, `/opportunities` (+ `/opportunities/reports`), `/campaigns`,
 `/referral-sources`, `/business-development`, `/analytics`, `/documents` (legacy) +
 `/document-library` (platform), `/workflows` (legacy engine) + `/workflow-automation`
-(orchestration), `/workspace` (meeting), `/portfolio` + `/wealth`, `/admin` (+ `/admin/audit`,
-rule-catalog, roles), `/microsoft365`, `/auth`, and JSON `/api/v1/*`.
+(orchestration), `/communications` (D.18 client engagement), `/workspace` (meeting), `/portfolio` +
+`/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
+`/api/v1/*`.
 
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (8 registered modules: advisor_work, annual_review,
-  business_planning, compliance, identity, outbox, portfolio, work — plus core tables inline in
-  `schema.py`).
-- **Alembic:** 62 migrations, **single head `o5f6a7b8c9d0`**; `alembic current == heads`.
-  Recent chain: D.9 `g1w2o3r4k5m6` → D.10 `h2t3i4m5l6n7` → D.11 `i9a1n2r3e4v5` → D.12
-  `j0b1u2s3o4w5` → D.13 `k1o2p3p4t5y6` → D.14 `l2c3d4e5f6a7` → D.15 `m3d4e5f6a7b8` → D.16
-`n4e5f6a7b8c9` → D.17 `o5f6a7b8c9d0`.
+  `app/database/schema.py` (13 registered modules: advisor_work, analytics, annual_review,
+  business_planning, campaign_referral, communication, compliance, document_platform, identity,
+  opportunity, outbox, portfolio, work — plus core tables inline in `schema.py`).
+- **Alembic:** 63 migrations, **single head `p6a7b8c9d0e1`**; `alembic current == heads`.
+  Recent chain: D.10 `h2t3i4m5l6n7` → D.11 `i9a1n2r3e4v5` → D.12 `j0b1u2s3o4w5` → D.13
+  `k1o2p3p4t5y6` → D.14 `l2c3d4e5f6a7` → D.15 `m3d4e5f6a7b8` → D.16 `n4e5f6a7b8c9` → D.17
+  `o5f6a7b8c9d0` → D.18 `p6a7b8c9d0e1`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its
