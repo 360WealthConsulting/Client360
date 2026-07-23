@@ -462,3 +462,9 @@ projection_state = metadata.tables["projection_state"]
 # (workspace_presets). No business data, no authoritative state; personal mutable settings.
 workspace_preferences = metadata.tables["workspace_preferences"]
 workspace_presets = metadata.tables["workspace_presets"]
+
+# Unified Work Queue saved views (Phase D.39). Per-user QUEUE VIEW STATE only — named saved filter/sort
+# views (work_queue_saved_views) + the user's default view / last-used filters (work_queue_preferences).
+# Presentation state; never alters a source work record.
+work_queue_saved_views = metadata.tables["work_queue_saved_views"]
+work_queue_preferences = metadata.tables["work_queue_preferences"]

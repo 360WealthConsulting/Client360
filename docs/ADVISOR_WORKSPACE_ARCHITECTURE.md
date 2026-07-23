@@ -591,6 +591,13 @@ unchanged until an operator enables + rebuilds projections. See ADR-043. Enforce
 `app/services/workspace/*`, `app/routes/workspace.py`, `app/database/workspace_tables.py`, migration
 `k2w3s4p5r6f7`, `app/templates/workspace/{dashboard,_widgets}.html`, `tests/test_advisor_workspace_home.py`.
 
+**D.39 integration:** the workspace adds five Unified Work Queue widgets — My Work, Overdue Work, Due
+Today, Unassigned Team Work, SLA Breaches — that deep-link into filtered `/work` views. They read from
+the ONE shared queue-summary service (`work_queue.summary`), so the queue query logic is not duplicated
+in the workspace, and D.38 personalization (order/hide/pin/presets) applies to them unchanged. The
+Unified Work Queue (`GET /work`) is the operational execution surface linked from this home; see
+`docs/UNIFIED_WORK_QUEUE.md` and ADR-044.
+
 ## Cross-references
 - `WEALTH_ARCHITECTURE.md` — the exemplar workspace pattern (meeting-prep hierarchy,
   canonical contract, shared components, propose-not-act) this design generalizes.

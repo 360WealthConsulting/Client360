@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.38** on `release/0.13.0` (migration head `k2w3s4p5r6f7`, 833 routes, 158
+after **Phase D.39** on `release/0.13.0` (migration head `l3q4v5w6x7y8`, 840 routes, 159
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -148,6 +148,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 52 | Read Models & Projection Engine (disposable read models, projection framework, rebuild/replay, governance) | read-model layer (consumes the D.34/D.35 domain events from the outbox to build fast, query-optimized, **disposable** read models — 12 `rm_*` tables; the write side stays the sole authoritative mutation layer; **no CQRS write model / no second event log / no event sourcing / no shadow state**; read models contain no business logic and never read authoritative tables; replay rebuilds them deterministically — D.36) |
 | 53 | Read Surface Adoption (adopt projections into read surfaces, graceful fallback, adoption governance) | read-model layer (12 read surfaces consult the projections via a read-only helper before the authoritative read; a projection is served ONLY when healthy + fresh AND on the firm-wide `record.read_all` path — scoped principals always get the authoritative scoped read, so **RBAC is never bypassed**; every adopted read **falls back to the unchanged authoritative read**, so behavior is unchanged until an operator enables + rebuilds; **READS ONLY** — writes stay authoritative, the outbox stays the sole bus; no CQRS/second log/shadow logic — D.37) |
 | 54 | Advisor Workspace Home (personalized, projection-backed advisor home; widget grid + presets + AI-ready summaries) | advisor-experience layer (extends `/workspace` with a 12-widget grid — reorder/hide/pin/saved presets — plus a TODAY summary, a deterministic PRIORITIES view, and five AI-ready summary models; count widgets read the D.37 projection-backed sources with authoritative fallback; personalization is **view state only** in `workspace_preferences`/`workspace_presets`, self-service, gated by `workspace.personalize`; every widget is capability-gated — never shown-then-403 — and RBAC/record-scope is never bypassed; no business mutation, the outbox stays the sole bus — D.38) |
+| 55 | Unified Work Queue (cross-domain composition surface at `/work`; adapters + normalized UnifiedWorkItem + action dispatch + saved views + diagnostics/governance) | work-execution layer (`GET /work` composes actionable work from 10 authoritative services — tasks/workflow/exceptions via the existing `work_management.work_items`, plus advisor-work/compliance/documents/tax/insurance/opportunity/meeting adapters — into a normalized, references-only UnifiedWorkItem; **not** a second task/workflow/exception/assignment engine and never the source of truth; every action **delegates** to the authoritative owning service (which scopes + audits + publishes to the outbox); **no new projection** — counts reuse the D.37 adoption fallback, never reading `rm_*` directly; deterministic sort, built-in + per-user saved views (presentation state only, `work_queue.saved_views`), constrained bulk (claim/assign/acknowledge, per-item, honest partial results); RBAC/record-scope preserved, adapters fail closed; workspace widgets deep-link into filtered views via a shared summary — D.39) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -426,6 +427,20 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   Meeting Prep, Opportunity Summary, Compliance Summary) are exposed as JSON at `/workspace/summaries/*`
   (record-scope enforced). No business mutation; the authoritative services + outbox are untouched. See
   `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, ADR-043.
+- **Unified Work Queue:** `GET /work` (D.39, `work.read`) is the cross-domain execution surface — a
+  read-only COMPOSITION over 10 authoritative work services (tasks/workflow/exceptions via
+  `work_management.work_items`; advisor-work/compliance/documents/tax/insurance/opportunity/meeting
+  adapters). Items are normalized into a references-only UnifiedWorkItem (source status preserved;
+  `status_group`/`sla_state` are display-only). It is **not** a second task/workflow/exception/assignment
+  engine: every action delegates via `work_queue.dispatch` to the authoritative owning service (which
+  scopes + audits + publishes to the outbox); assignment reuses `work_management.assign_work`.
+  Deterministic sort (overdue → SLA-breached → priority → due → age → key), built-in + per-user saved
+  views (`work_queue_saved_views`/`work_queue_preferences`, presentation state only, `work_queue.saved_views`),
+  constrained bulk (claim/assign/acknowledge, per-item, honest partial results). No new projection —
+  counts reuse the D.37 adoption fallback (never reading `rm_*` directly); adapters fail closed; RBAC/
+  record-scope preserved. `POST /work/action|bulk-action|views*`, `GET /work/summary` (AI-ready),
+  `GET /work/diagnostics` (`observability.audit`, + governance). See `docs/UNIFIED_WORK_QUEUE.md`,
+  `docs/WORK_QUEUE_ADAPTER_GUIDE.md`, `docs/WORK_QUEUE_ACTIONS.md`, `docs/WORK_QUEUE_GOVERNANCE.md`, ADR-044.
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -602,11 +617,12 @@ registry/health/diagnostics/governance/rebuild/replay), `/workspace`
   orchestration, outbox, portfolio, projection, reporting, runtime, runtime_behavior,
   runtime_coordination, runtime_policy, scheduling, security, work — plus core tables inline in
   `schema.py`).
-- **Alembic:** 82 migrations, **single head `k2w3s4p5r6f7`**; `alembic current == heads`.
+- **Alembic:** 83 migrations, **single head `l3q4v5w6x7y8`**; `alembic current == heads`.
   Recent chain: D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31
   `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f` → D.34 `zb1c2d3e4f5a` → D.35
   `zc2d3e4f5a6b` → D.36 `zd3e4f5a6b7c` (D.37 is code-only — no migration; head unchanged) → D.38
-  `k2w3s4p5r6f7` (advisor-workspace personalization tables + `workspace.personalize`).
+  `k2w3s4p5r6f7` (advisor-workspace personalization tables + `workspace.personalize`) → D.39
+  `l3q4v5w6x7y8` (unified-work-queue saved-view tables + `work_queue.saved_views`).
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

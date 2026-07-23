@@ -105,6 +105,33 @@ def _recent_activity(principal, **_):
     return {"rows": rows, "value": len(rows), "unit": "count"}
 
 
+# Unified Work Queue widgets (Phase D.39) — all read from the ONE shared queue-summary service so the
+# queue query logic is not duplicated in the workspace.
+def _work_summary(principal, now=None):
+    from app.services.work_queue.summary import widget_counts
+    return widget_counts(principal, now=now)
+
+
+def _work_my(principal, *, now=None, **_):
+    return {"value": int(_work_summary(principal, now)["my_open"]), "unit": "count"}
+
+
+def _work_overdue(principal, *, now=None, **_):
+    return {"value": int(_work_summary(principal, now)["my_overdue"]), "unit": "count"}
+
+
+def _work_due_today(principal, *, now=None, **_):
+    return {"value": int(_work_summary(principal, now)["due_today"]), "unit": "count"}
+
+
+def _work_unassigned(principal, *, now=None, **_):
+    return {"value": int(_work_summary(principal, now)["unassigned_team"]), "unit": "count"}
+
+
+def _work_sla_breaches(principal, *, now=None, **_):
+    return {"value": int(_work_summary(principal, now)["sla_breaches"]), "unit": "count"}
+
+
 COMPUTE = {
     "calendar_today": _calendar_today,
     "active_clients": _active_clients,
@@ -118,6 +145,11 @@ COMPUTE = {
     "benefits_pipeline": _benefits_pipeline,
     "document_review": _document_review,
     "team_workload": _team_workload,
+    "work_my": _work_my,
+    "work_overdue": _work_overdue,
+    "work_due_today": _work_due_today,
+    "work_unassigned": _work_unassigned,
+    "work_sla_breaches": _work_sla_breaches,
 }
 
 

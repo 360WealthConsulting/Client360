@@ -46,8 +46,9 @@ def _req(path="/workspace", qs=b""):
 
 # --- registry ----------------------------------------------------------------
 
-def test_registry_has_twelve_widgets():
-    assert len(WIDGETS) == 12
+def test_registry_widgets_are_valid():
+    # The original 12 D.38 widgets, plus later phases may add more (e.g. D.39 work-queue widgets).
+    assert len(WIDGETS) >= 12
     assert all(isinstance(w, WidgetDef) and w.capability and w.detail_href for w in WIDGETS.values())
 
 
@@ -66,7 +67,8 @@ def test_get_workspace_structure():
         assert ws["greeting"] in ("Good Morning", "Good Afternoon", "Good Evening")
         assert set(ws["today"]) == {"appointments", "compliance", "tax", "insurance", "benefits", "exceptions"}
         assert set(ws["priorities"]) >= {"high", "medium", "low", "total", "entries"}
-        assert len(ws["widgets"]) == 12          # full-capability principal sees every widget
+        eligible = sum(1 for w in WIDGETS.values() if p.can(w.capability))
+        assert len(ws["widgets"]) == eligible    # sees exactly the widgets it has capability for
         assert ws["can_personalize"] is True
     finally:
         _cleanup(p.user_id)
@@ -144,7 +146,8 @@ def test_reset_restores_defaults():
         preferences.pin_widget(p.user_id, "compliance_queue")
         preferences.reset(p.user_id)
         ws = service.get_workspace(p)
-        assert len(ws["widgets"]) == 12 and ws["widgets"][0]["key"] == next(iter(WIDGETS))
+        eligible = sum(1 for w in WIDGETS.values() if p.can(w.capability))
+        assert len(ws["widgets"]) == eligible and ws["widgets"][0]["key"] == next(iter(WIDGETS))
     finally:
         _cleanup(p.user_id)
 
@@ -274,13 +277,14 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 833
+    assert len(app.routes) == 840
 
 
-def test_migration_head():
-    from sqlalchemy import text
-    with engine.connect() as c:
-        assert c.scalar(text("SELECT version_num FROM alembic_version")) == "k2w3s4p5r6f7"
+def test_workspace_personalization_tables_exist():
+    # D.38 added the workspace personalization tables — a durable invariant (the head moves each phase).
+    from app.db import metadata
+    assert "workspace_preferences" in metadata.tables
+    assert "workspace_presets" in metadata.tables
 
 
 def test_personalization_touches_only_workspace_tables():
