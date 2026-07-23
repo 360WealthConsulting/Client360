@@ -143,6 +143,12 @@ def create_document(principal, *, original_name, actor_user_id, person_id=None, 
             size_bytes=doc["size_bytes"], content_type=content_type, author_user_id=actor_user_id,
             is_current=True, created_at=now))
         _publish_timeline(doc, event_type="uploaded", title=f"Document uploaded — {doc['original_name']}")
+        # (D.35) Publish the registered business FACT (references only) in the caller's transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("document.registered",
+                               {"document_id": doc["id"], "classification": doc.get("classification") or "",
+                                "status": doc["status"]}, conn=c, producer="document.platform",
+                               subject_ref=f"document:{doc['id']}")
     return doc
 
 
@@ -253,6 +259,14 @@ def _transition(c, doc, new_status, actor, note, event_type, *, extra=None, publ
     _event(c, doc["id"], event_type=event_type, from_status=doc["status"], to_status=new_status,
            actor=actor, note=note)
     updated = _reload(c, doc["id"])
+    # (D.35) Publish the status-change business FACT (references only) in the caller's transaction, only
+    # on a genuine change. Archival is a distinct business event.
+    if doc["status"] != new_status:
+        from app.services.events import publisher
+        _et = "document.archived" if new_status == "archived" else "document.status_changed"
+        publisher.publish_safe(_et,
+                               {"document_id": doc["id"], "from_status": doc["status"], "to_status": new_status},
+                               conn=c, producer="document.platform", subject_ref=f"document:{doc['id']}")
     if publish and event_type in ("approved", "archived", "restored"):
         _publish_timeline(updated, event_type=event_type,
                           title=f"Document {event_type} — {updated['original_name']}")

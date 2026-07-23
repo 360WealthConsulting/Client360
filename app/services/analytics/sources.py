@@ -643,6 +643,39 @@ def domain_event_publish_failure_count(principal) -> int:
     return int(_event_stats().get("publish_failures") or 0)
 
 
+# --- Domain Event Producer Adoption (Phase D.35) -------------------------------------------------
+
+def domain_event_producer_adoption_pct(principal):
+    """Producer-adoption coverage — the share of the D.35 target contracts with an actual publishing
+    site (Phase D.35)."""
+    from app.services.events import registry
+    return registry.producer_adoption()["adoption_pct"]
+
+
+def domain_event_active_producer_count(principal) -> int:
+    """Count of active producers (registered producers with a publishing site) (Phase D.35)."""
+    from app.services.events import registry
+    return int(registry.producer_adoption()["active_producers"])
+
+
+def domain_event_stale_producer_count(principal) -> int:
+    """Count of inactive/stale producers (registered producers with no publishing site) (Phase D.35)."""
+    from app.services.events import registry
+    return int(registry.producer_adoption()["stale_producers"])
+
+
+def domain_events_awaiting_delivery(principal) -> int:
+    """Count of domain events awaiting delivery in the outbox (status pending) (Phase D.35)."""
+    from app.services.events import diagnostics
+    return int(diagnostics.event_counts().get("by_status", {}).get("pending") or 0)
+
+
+def domain_event_adopted_domain_count(principal) -> int:
+    """Count of business domains that publish typed domain events (Phase D.35)."""
+    from app.database.event_seed import D35_DOMAINS
+    return len(D35_DOMAINS)
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

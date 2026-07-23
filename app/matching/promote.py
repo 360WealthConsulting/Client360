@@ -58,7 +58,13 @@ def _create_person(conn, record) -> int:
         "postal_code": record["postal_code"],
         "active": True,
     }
-    return conn.execute(people.insert().values(**values).returning(people.c.id)).scalar_one()
+    pid = conn.execute(people.insert().values(**values).returning(people.c.id)).scalar_one()
+    # (D.35) Publish the created business FACT (references only) in the caller's transaction. Additive +
+    # best-effort; consumers are dark-launched, so behavior is unchanged.
+    from app.services.events import publisher
+    publisher.publish_safe("people.person_created", {"person_id": pid, "match_method": "promotion"},
+                           conn=conn, producer="people.promotion", subject_ref=f"person:{pid}")
+    return pid
 
 
 def _link(conn, person_id, source_contact_id, method, score):

@@ -146,6 +146,14 @@ def create_task(principal, *, title, project_id=None, phase_id=None, milestone_i
         record_event(c, entity_type="task", entity_id=t["id"], project_id=project_id,
                      event_type="task_created", to_status="planned", actor_user_id=actor_user_id,
                      payload={"title": title})
+        # (D.35) Publish the completed business FACT to the domain-event model (references only), in the
+        # caller's transaction, best-effort so it can never corrupt the mutation. Additive; consumers are
+        # dark-launched, so behavior is unchanged.
+        from app.services.events import publisher
+        publisher.publish_safe("operations.task_created",
+                               {"task_id": t["id"], "project_id": project_id, "status": "planned",
+                                "priority": priority}, conn=c, producer="operations.tasks",
+                               subject_ref=f"operations_task:{t['id']}")
         return t
 
 
@@ -217,6 +225,13 @@ def transition_task(principal, task_id: int, status: str, *, actor_user_id=None,
                      event_type=f"task_{status}", from_status=current, to_status=status,
                      actor_user_id=actor_user_id, payload={"reason": reason})
         updated = dict(updated)
+        # (D.35) Publish the completion fact only on a genuine transition to completed.
+        if status == "completed" and current != "completed":
+            from app.services.events import publisher
+            publisher.publish_safe("operations.task_completed",
+                                   {"task_id": task_id, "from_status": current, "to_status": status},
+                                   conn=c, producer="operations.tasks",
+                                   subject_ref=f"operations_task:{task_id}")
     if status == "completed":
         publish_timeline(updated, "task_completed")
     return updated

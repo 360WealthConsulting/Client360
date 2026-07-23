@@ -104,6 +104,10 @@ def transition_return(return_id,to_status,*,actor_user_id=None,portal_account_id
         if to_status=="archived": values["archived_at"]=now
         c.execute(tax_engagement_returns.update().where(tax_engagement_returns.c.id==return_id).values(**values))
         c.execute(tax_return_lifecycle_events.insert().values(tax_engagement_return_id=return_id,from_status=current,to_status=to_status,reason=reason,actor_user_id=actor_user_id,portal_account_id=portal_account_id))
+        # (D.35) Publish the status-change business FACT (references only) in the transaction (a genuine
+        # change is guaranteed above). The authoritative tax_return_lifecycle_events ledger is unchanged.
+        from app.services.events import publisher
+        publisher.publish_safe("tax.return_status_changed",{"return_id":return_id,"from_status":current,"to_status":to_status},conn=c,producer="tax.lifecycle",subject_ref=f"tax_return:{return_id}")
         if context["workflow_instance_id"]:
             c.execute(workflow_events.insert().values(workflow_instance_id=context["workflow_instance_id"],event_type="tax_return_status_changed",idempotency_key=f"tax-status:{return_id}:{to_status}:{uuid.uuid4().hex}",actor_user_id=actor_user_id,payload={"from":current,"to":to_status,"reason":reason}))
         if to_status in {"client_review","awaiting_efile_authorization","delivered"}:
@@ -189,6 +193,13 @@ def record_filing(return_id,filing_status,*,provider_key="manual",external_id=No
         if existing: return filing_status
         c.execute(tax_filing_events.insert().values(tax_engagement_return_id=return_id,filing_status=filing_status,provider_key=provider_key,external_id=external_id,submission_id=submission_id,reason_code=reason_code,message=message,actor_user_id=actor_user_id,idempotency_key=key,metadata=metadata or {}))
         c.execute(tax_engagement_returns.update().where(tax_engagement_returns.c.id==return_id).values(filing_status=filing_status,filing_provider_key=provider_key,filing_external_id=external_id))
+        # (D.35) Publish the filing business FACT (references only) in the transaction (genuine change +
+        # idempotency guaranteed above). The authoritative tax_filing_events ledger is unchanged.
+        from app.services.events import publisher
+        if filing_status=="submitted":
+            publisher.publish_safe("tax.filing_submitted",{"return_id":return_id,"filing_status":filing_status,"provider_key":provider_key},conn=c,producer="tax.lifecycle",subject_ref=f"tax_return:{return_id}")
+        elif filing_status in ("accepted","rejected"):
+            publisher.publish_safe("tax.filing_acknowledged",{"return_id":return_id,"filing_status":filing_status},conn=c,producer="tax.lifecycle",subject_ref=f"tax_return:{return_id}")
     target={"submitted":"filed","accepted":"accepted","rejected":"rejected","resubmitted":"filed"}.get(filing_status)
     if target: transition_return(return_id,target,actor_user_id=actor_user_id,reason=message or f"Filing {filing_status}",request_id=request_id)
     return filing_status

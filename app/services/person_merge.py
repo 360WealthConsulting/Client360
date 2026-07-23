@@ -118,4 +118,10 @@ def merge_source_contacts(record_ids: Iterable[int]) -> int:
 
             conn.execute(statement)
 
+        # (D.35) Publish the identity-merged business FACT (references only) in the merge transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("people.identity_merged",
+                               {"person_id": person_id, "source_contact_count": len(normalized_ids)},
+                               conn=conn, producer="people.merge", subject_ref=f"person:{person_id}")
+
     return person_id

@@ -94,6 +94,12 @@ def create_referral_source(principal, *, name, source_type, actor_user_id, relat
         src = dict(row)
         _event(c, src["id"], event_type="added", actor=actor_user_id)
         _publish_client(src, event_type="added", title=f"Referral source added — {src['name']}")
+        # (D.35) Publish the recorded business FACT (references only) in the caller's transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("referral.recorded",
+                               {"referral_source_id": src["id"], "source_type": src["source_type"],
+                                "status": src["status"]}, conn=c, producer="referral.service",
+                               subject_ref=f"referral_source:{src['id']}")
     return src
 
 

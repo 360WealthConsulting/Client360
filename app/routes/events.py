@@ -90,6 +90,15 @@ def dead_letters(request: Request,
     return JSONResponse({"dead_letters": as_json(diagnostics.dead_letters())})
 
 
+@router.get("/producers")
+def producers(request: Request,
+              principal: Principal = Depends(require_capability("observability.view"))):
+    """Producer-adoption diagnostics (Phase D.35): active vs stale producers, adoption coverage, and the
+    per-domain event breakdown (published / awaiting delivery / dead-lettered)."""
+    return JSONResponse(as_json({"producer_adoption": registry.producer_adoption(),
+                                 "by_domain": diagnostics.events_by_domain()}))
+
+
 @router.get("/contracts/{event_type}")
 def contract_detail(event_type: str, request: Request,
                     principal: Principal = Depends(require_capability("observability.view"))):

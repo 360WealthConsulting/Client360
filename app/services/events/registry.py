@@ -90,7 +90,33 @@ def coverage() -> dict:
 def adoption(principal=None) -> dict:
     from .common import stats
     cov = coverage()
-    return {"registry": cov, "publication": stats(), "coverage_pct": cov["coverage_pct"]}
+    return {"registry": cov, "publication": stats(), "coverage_pct": cov["coverage_pct"],
+            "producers": producer_adoption()}
+
+
+def producer_adoption() -> dict:
+    """Producer-adoption coverage (Phase D.35): which registered producers actually have a publishing
+    site (active) vs none (stale/inactive), and the adoption coverage over the D.35 target contracts."""
+    from app.database.event_seed import D35_CONTRACTS_SEED
+
+    from .governance import _scan_adoption
+    referenced, _literals = _scan_adoption()
+    d35_types = {c["event_type"] for c in D35_CONTRACTS_SEED}
+    producers: dict[str, dict] = {}
+    active_d35 = [c for c in list_contracts(status="active") if c["event_type"] in d35_types]
+    for c in active_d35:
+        p = c["producer"] or "unknown"
+        rec = producers.setdefault(p, {"producer": p, "owner": c.get("owner"), "contracts": 0, "published": 0})
+        rec["contracts"] += 1
+        if c["event_type"] in referenced:
+            rec["published"] += 1
+    active = [p for p in producers.values() if p["published"] > 0]
+    stale = [p for p in producers.values() if p["published"] == 0]
+    adopted = sum(1 for c in active_d35 if c["event_type"] in referenced)
+    return {"producers": sorted(producers.values(), key=lambda r: r["producer"]),
+            "active_producers": len(active), "stale_producers": len(stale),
+            "adopted_sites": adopted, "target_sites": len(active_d35),
+            "adoption_pct": round((adopted / len(active_d35)) * 100, 1) if active_d35 else 100.0}
 
 
 # --- lifecycle ---------------------------------------------------------------

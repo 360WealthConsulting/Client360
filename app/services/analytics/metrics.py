@@ -239,6 +239,17 @@ _DEFS = (
            sources.domain_event_replay_count),
     Metric("domain_event_publish_failures", "Domain Event Publish Failures", "operations", "count",
            "card", False, sources.domain_event_publish_failure_count),
+    # Domain Event Producer Adoption (Phase D.35).
+    Metric("domain_event_producer_adoption", "Producer Adoption", "operations", "percent", "card", False,
+           sources.domain_event_producer_adoption_pct),
+    Metric("domain_event_active_producers", "Active Event Producers", "operations", "count", "card",
+           False, sources.domain_event_active_producer_count),
+    Metric("domain_event_stale_producers", "Stale Event Producers", "operations", "count", "card", False,
+           sources.domain_event_stale_producer_count),
+    Metric("domain_events_awaiting_delivery", "Domain Events Awaiting Delivery", "operations", "count",
+           "card", False, sources.domain_events_awaiting_delivery),
+    Metric("domain_event_adopted_domains", "Adopted Event Domains", "operations", "count", "card", False,
+           sources.domain_event_adopted_domain_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).

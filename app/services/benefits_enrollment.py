@@ -135,6 +135,14 @@ def enroll(principal, *, benefit_employment_id, plan_year_id, coverage_tier="emp
             ).returning(benefit_enrollments.c.id)).scalar_one()
         except IntegrityError:
             raise EnrollmentError("An enrollment already exists for this employee and plan year")
+        # (D.35) Publish the created business FACT (references only — NO PHI / coverage amounts) in the
+        # caller's transaction. A duplicate raises IntegrityError above, so this fires only on a genuine
+        # new enrollment.
+        from app.services.events import publisher
+        publisher.publish_safe("benefits.enrollment_created",
+                               {"enrollment_id": enr_id, "plan_year_id": plan_year_id,
+                                "coverage_tier": coverage_tier, "status": status}, conn=c,
+                               producer="benefits.enrollment", subject_ref=f"benefit_enrollment:{enr_id}")
     write_audit_event(action="benefit.enrollment.created", entity_type="benefit_enrollment", entity_id=enr_id,
                       actor_user_id=principal.user_id, request_id=_rid(request_id),
                       metadata={"coverage_tier": coverage_tier, "status": status, "source": source})
@@ -159,6 +167,14 @@ def set_enrollment_status(enrollment_id, status, *, principal, coverage_tier=Non
         if effective_date is not None:
             values["effective_date"] = effective_date
         c.execute(benefit_enrollments.update().where(benefit_enrollments.c.id == enrollment_id).values(**values))
+        # (D.35) Publish the status-change business FACT (references only) in the transaction, only on a
+        # genuine change.
+        if row["status"] != status:
+            from app.services.events import publisher
+            publisher.publish_safe("benefits.enrollment_status_changed",
+                                   {"enrollment_id": enrollment_id, "from_status": row["status"],
+                                    "to_status": status}, conn=c, producer="benefits.enrollment",
+                                   subject_ref=f"benefit_enrollment:{enrollment_id}")
     write_audit_event(action=_action, entity_type="benefit_enrollment", entity_id=enrollment_id,
                       actor_user_id=principal.user_id, request_id=_rid(request_id),
                       metadata={"from": row["status"], "to": status})

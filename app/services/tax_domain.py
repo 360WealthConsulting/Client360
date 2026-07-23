@@ -104,6 +104,13 @@ def create_engagement(payload, *, actor_user_id, request_id):
         if rule:
             calculated = business_due_date(year + 1, rule["month"], rule["day"])
             c.execute(tax_deadlines.insert().values(tax_engagement_return_id=return_id, deadline_rule_id=rule["id"], due_date=calculated, calculated_due_date=calculated))
+        # (D.35) Publish the engagement-created business FACT (references only) in the transaction. No
+        # financials are stored here; the payload is ids/codes only.
+        from app.services.events import publisher
+        publisher.publish_safe("tax.engagement_created",
+                               {"engagement_id": engagement_id, "return_id": return_id, "tax_year": year,
+                                "return_type_code": return_type["code"]}, conn=c, producer="tax.domain",
+                               subject_ref=f"tax_return:{return_id}")
     workflow_id = launch_workflow(return_type["workflow_template_code"], actor_user_id=actor_user_id,
         person_id=payload.get("person_id"), household_id=payload.get("household_id"), priority=payload.get("priority", "normal"),
         context={"tax_year": year, "return_type": return_type["code"], "tax_return_id": return_id},

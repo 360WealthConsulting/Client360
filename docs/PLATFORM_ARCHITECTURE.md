@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.34** on `release/0.13.0` (migration head `zb1c2d3e4f5a`, 814 routes, 157
+after **Phase D.35** on `release/0.13.0` (migration head `zc2d3e4f5a6b`, 815 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -144,7 +144,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 48 | Runtime Authority & Governance (authoritative behavior, legacy retirement, metadata governance) | authority/governance layer (the engine is authoritative for migrated behavior via seeded D.27 metadata; validates runtime metadata; never evaluates or edits metadata — D.31) |
 | 49 | Runtime Policy Engine (declarative business decisions, centralized decision services, policy governance) | policy layer (centralizes business decisions — eligibility/routing/gating/visibility — behind a declarative engine that **consumes `RuntimeContext`**; the runtime engine remains the sole evaluator; policies never bypass RBAC; a governed policy registry — D.32) |
 | 50 | Workflow Orchestration Engine (declarative workflows, deterministic state management, replay & simulation, governance) | orchestration layer (centralizes multi-stage process coordination behind a declarative, deterministic engine that **consumes `RuntimeContext`** for behavior and the **Runtime Policy Engine** for routing; the runtime engine stays the sole evaluator, the policy engine the sole decision engine; coordinates existing services, never duplicating domain behavior; deterministic replay + dry-run simulation; a governed workflow registry — D.33) |
-| 51 | Enterprise Domain Event Model (typed contracts, versioning, publishing, governance, diagnostics) | event-model layer (a typed, versioned, governed domain-event model **over the existing transactional outbox** — the sole bus; **no second event table**; producers publish contract-validated envelopes; orchestration publishes domain events; reuses the outbox delivery guarantees / dead-letter / envelope versioning; a governed contract + subscription registry — D.34) |
+| 51 | Enterprise Domain Event Model (typed contracts, versioning, publishing, governance, diagnostics) | event-model layer (a typed, versioned, governed domain-event model **over the existing transactional outbox** — the sole bus; **no second event table**; producers publish contract-validated, **references-only** envelopes; orchestration + the major business domains publish domain FACTS; reuses the outbox delivery guarantees / dead-letter / envelope versioning; a governed contract + subscription registry with producer-adoption governance — D.34, producer adoption across 11 business domains D.35) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -377,6 +377,17 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   `observability.view`; governance/diagnostics/dead-letters/replay require `observability.audit`;
   running validation requires `observability.execute`. Current: 5 contracts across 3 domains, 100%
   domain/consumer/producer coverage, 0 governance issues).
+  **(D.35 producer adoption)** the major business domains publish typed, past-tense, **references-only**
+  domain FACTS at their authoritative write boundaries (people/households, opportunity/referral,
+  operations, exceptions, documents, compliance, tax, insurance, benefits — 31 contracts across 11
+  domains). Publishing is additive + behavior-preserving (after the mutation, transactional where a
+  `conn` is available, via `publish_safe`; consumers dark-launched, so behavior is unchanged), payloads
+  are references-only (a payload-safety layer rejects PII/secrets/financials/health/tax/document
+  contents at publish time + in governance), and authoritative/regulatory ledgers are unchanged (events
+  are added after the write; consumers never become sources of truth). Governance additionally detects
+  producer-without-publishing-site, unregistered-publish-site, sensitive-field violations, duplicate
+  semantic contracts, and deprecated-contract-published. Producer-adoption diagnostics at
+  `GET /events/producers`. Current: 100% producer adoption, 0 stale producers, 0 governance issues).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -551,10 +562,10 @@ contracts/subscriptions/governance/diagnostics/replay), `/workspace`
   document_platform, event, governance, identity, integration, observability, operations, opportunity,
   orchestration, outbox, portfolio, reporting, runtime, runtime_behavior, runtime_coordination,
   runtime_policy, scheduling, security, work — plus core tables inline in `schema.py`).
-- **Alembic:** 79 migrations, **single head `zb1c2d3e4f5a`**; `alembic current == heads`.
-  Recent chain: D.26 `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29
-  `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33
-  `za0b1c2d3e4f` → D.34 `zb1c2d3e4f5a`.
+- **Alembic:** 80 migrations, **single head `zc2d3e4f5a6b`**; `alembic current == heads`.
+  Recent chain: D.27 `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30
+  `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f` → D.34
+  `zb1c2d3e4f5a` → D.35 `zc2d3e4f5a6b`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its
