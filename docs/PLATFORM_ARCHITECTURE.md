@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.33** on `release/0.13.0` (migration head `za0b1c2d3e4f`, 802 routes, 157
+after **Phase D.34** on `release/0.13.0` (migration head `zb1c2d3e4f5a`, 814 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -13,8 +13,10 @@ manifest against the live code so this document cannot silently drift.
 
 > This document separates **implemented architecture**, **known limitations**, **planned
 > extension points**, and **prohibited patterns**. Anything under "Extension points" is *not*
-> implemented. Client360 is **not** event-sourced, **not** an AI/LLM system, and has **no**
-> workflow engine, event bus, or message queue.
+> implemented. Client360 is **not** event-sourced and **not** an AI/LLM system, and has **no external
+> message broker/queue**. Its internal event bus is the single **transactional outbox** (D.34 typed
+> domain events flow over it — no second event table); workflow **orchestration** (D.33) is a
+> deterministic coordination layer over existing services, not a generic engine.
 
 ---
 
@@ -142,6 +144,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 48 | Runtime Authority & Governance (authoritative behavior, legacy retirement, metadata governance) | authority/governance layer (the engine is authoritative for migrated behavior via seeded D.27 metadata; validates runtime metadata; never evaluates or edits metadata — D.31) |
 | 49 | Runtime Policy Engine (declarative business decisions, centralized decision services, policy governance) | policy layer (centralizes business decisions — eligibility/routing/gating/visibility — behind a declarative engine that **consumes `RuntimeContext`**; the runtime engine remains the sole evaluator; policies never bypass RBAC; a governed policy registry — D.32) |
 | 50 | Workflow Orchestration Engine (declarative workflows, deterministic state management, replay & simulation, governance) | orchestration layer (centralizes multi-stage process coordination behind a declarative, deterministic engine that **consumes `RuntimeContext`** for behavior and the **Runtime Policy Engine** for routing; the runtime engine stays the sole evaluator, the policy engine the sole decision engine; coordinates existing services, never duplicating domain behavior; deterministic replay + dry-run simulation; a governed workflow registry — D.33) |
+| 51 | Enterprise Domain Event Model (typed contracts, versioning, publishing, governance, diagnostics) | event-model layer (a typed, versioned, governed domain-event model **over the existing transactional outbox** — the sole bus; **no second event table**; producers publish contract-validated envelopes; orchestration publishes domain events; reuses the outbox delivery guarantees / dead-letter / envelope versioning; a governed contract + subscription registry — D.34) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -362,6 +365,18 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   Registry/instances/diagnostics require `workflow.view`; governance/replay require `workflow.audit`;
   simulation requires `workflow.execute`; running validation requires `workflow.admin`. Current: 100%
   domain coverage, 100% adoption, 0 governance issues).
+- **Domain events:** `/events` reuses the D.26 `observability.*` capabilities (D.34 — the Enterprise
+  Domain Event Model: a typed, versioned, governed domain-event layer **over the existing transactional
+  outbox** (the sole internal event bus). It adds **no second event table** — a domain event is a
+  contract-validated `Envelope` (`app/platform/events.py`) written to `outbox_events`; delivery
+  guarantees, idempotency, dead-letter, and envelope versioning are reused, not rebuilt. Producers
+  publish through a standardized API validated against a typed contract; the orchestration engine
+  publishes `orchestration.lifecycle` (additive, best-effort, dark-launched). Governance validates the
+  model (unregistered/orphan contracts, orphan subscriptions, producers without consumers, schema
+  violations, version drift, deprecated references). Contract/subscription reads require
+  `observability.view`; governance/diagnostics/dead-letters/replay require `observability.audit`;
+  running validation requires `observability.execute`. Current: 5 contracts across 3 domains, 100%
+  domain/consumer/producer coverage, 0 governance issues).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -522,7 +537,8 @@ reliability), `/configuration` (D.27 settings/features/editions/preferences/chan
 engine — effective config/features/snapshots/cache), `/runtime/cluster` (D.29 workers/versions/
 convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registry + D.31 governance/authority), `/runtime/policy`
 (D.32 policy registry/governance/dependency-graph/diagnostics), `/orchestration` (D.33 workflow
-registry/governance/instances/diagnostics/replay/simulation), `/workspace`
+registry/governance/instances/diagnostics/replay/simulation), `/events` (D.34 domain-event
+contracts/subscriptions/governance/diagnostics/replay), `/workspace`
 (meeting), `/portfolio` +
 `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
 `/api/v1/*`.
@@ -530,15 +546,15 @@ registry/governance/instances/diagnostics/replay/simulation), `/workspace`
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (27 registered modules: advisor_work, analytics, annual_review,
+  `app/database/schema.py` (28 registered modules: advisor_work, analytics, annual_review,
   automation, business_planning, campaign_referral, communication, compliance, configuration,
-  document_platform, governance, identity, integration, observability, operations, opportunity,
+  document_platform, event, governance, identity, integration, observability, operations, opportunity,
   orchestration, outbox, portfolio, reporting, runtime, runtime_behavior, runtime_coordination,
   runtime_policy, scheduling, security, work — plus core tables inline in `schema.py`).
-- **Alembic:** 78 migrations, **single head `za0b1c2d3e4f`**; `alembic current == heads`.
-  Recent chain: D.25 `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28
-  `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3` → D.32
-  `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f`.
+- **Alembic:** 79 migrations, **single head `zb1c2d3e4f5a`**; `alembic current == heads`.
+  Recent chain: D.26 `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29
+  `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33
+  `za0b1c2d3e4f` → D.34 `zb1c2d3e4f5a`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its
@@ -599,7 +615,9 @@ Not implemented; documented so future phases don't duplicate logic.
 - Fabricating history, calculations, tax figures, contribution limits, valuations, or
   insurance needs.
 - A second recommendation engine, AI/LLM, or keyword-invented recommendation categories.
-- A workflow engine, event bus, message queue, or automatic Advisor Work creation.
+- An external message broker/queue, a second event log, or automatic Advisor Work creation. (The
+  sanctioned internal event bus is the single transactional outbox — D.34 domain events flow over it;
+  workflow orchestration is the D.33 deterministic coordination layer, not a generic engine.)
 - A second timeline-event table or treating Client360 as event-sourced.
 - Upward/circular service imports (producer importing a consumer or composition layer).
 - Write side effects during page-render reads.

@@ -225,6 +225,10 @@ def start_scheduler() -> None:
         # cache invalidation flows through the transactional outbox only when the dispatcher is on.
         from app.services.runtime.events import register_runtime_consumers
         register_runtime_consumers()
+        # (D.34) Domain-event model consumers — dark-launched here so the orchestration.lifecycle sink
+        # subscribes only when the dispatcher is on (behavior unchanged by default).
+        from app.services.events.subscriptions import register_event_consumers
+        register_event_consumers()
         _scheduler.add_job(
             run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
             id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,

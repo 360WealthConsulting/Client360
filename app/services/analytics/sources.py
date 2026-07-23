@@ -584,6 +584,65 @@ def orchestration_avg_execution_ms(principal):
     return _orch_stats().get("avg_duration_ms")
 
 
+# --- Enterprise Domain Event Model (Phase D.34 — Analytics consumes event-model statistics; the event
+#     model never imports Analytics) -----------------------------------------------------------------
+
+def _event_stats():
+    from app.services.events.common import stats
+    return stats()
+
+
+def domain_events_published(principal) -> int:
+    """In-process count of domain events published through the standardized model (Phase D.34)."""
+    return int(_event_stats().get("published") or 0)
+
+
+def domain_events_delivered(principal) -> int:
+    """In-process count of domain events delivered to the observability sink (Phase D.34)."""
+    from app.services.events.subscriptions import delivered_count
+    return int(delivered_count())
+
+
+def domain_events_dead_lettered(principal) -> int:
+    """Count of dead-lettered events in the transactional outbox (Phase D.34)."""
+    from app.services.events import diagnostics
+    return int(diagnostics.event_counts().get("dead_lettered") or 0)
+
+
+def domain_event_contract_count(principal) -> int:
+    """Count of active domain-event contracts (Phase D.34)."""
+    from app.services.events import registry
+    return int(registry.coverage().get("active") or 0)
+
+
+def domain_event_subscription_count(principal) -> int:
+    """Count of active domain-event subscriptions (Phase D.34)."""
+    from app.services.events import registry
+    return int(registry.coverage().get("active_subscriptions") or 0)
+
+
+def domain_event_governance_issue_count(principal) -> int:
+    """Count of open domain-event governance issues (Phase D.34)."""
+    from app.services.events import governance
+    return int(governance.validate()["issue_count"])
+
+
+def domain_event_coverage_pct(principal):
+    """Domain-event domain-coverage percentage (Phase D.34)."""
+    from app.services.events import registry
+    return registry.coverage()["coverage_pct"]
+
+
+def domain_event_replay_count(principal) -> int:
+    """In-process count of event replays performed (Phase D.34)."""
+    return int(_event_stats().get("replays") or 0)
+
+
+def domain_event_publish_failure_count(principal) -> int:
+    """In-process count of publish failures (unregistered / contract-violating events) (Phase D.34)."""
+    return int(_event_stats().get("publish_failures") or 0)
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

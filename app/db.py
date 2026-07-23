@@ -441,3 +441,10 @@ runtime_policies = metadata.tables["runtime_policies"]
 orchestration_definitions = metadata.tables["orchestration_definitions"]
 orchestration_instances = metadata.tables["orchestration_instances"]
 orchestration_events = metadata.tables["orchestration_events"]
+
+# Enterprise Domain Event Model (Phase D.34). A typed, versioned domain-event model OVER the existing
+# transactional outbox (the internal event bus) — no second event table: domain events are
+# contract-validated envelopes written to outbox_events. These own only discovery/governance metadata:
+# the typed contract registry and the durable subscription registry.
+domain_event_contracts = metadata.tables["domain_event_contracts"]
+domain_event_subscriptions = metadata.tables["domain_event_subscriptions"]
