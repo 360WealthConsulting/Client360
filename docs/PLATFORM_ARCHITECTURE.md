@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.35** on `release/0.13.0` (migration head `zc2d3e4f5a6b`, 815 routes, 157
+after **Phase D.36** on `release/0.13.0` (migration head `zd3e4f5a6b7c`, 824 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -145,6 +145,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 49 | Runtime Policy Engine (declarative business decisions, centralized decision services, policy governance) | policy layer (centralizes business decisions — eligibility/routing/gating/visibility — behind a declarative engine that **consumes `RuntimeContext`**; the runtime engine remains the sole evaluator; policies never bypass RBAC; a governed policy registry — D.32) |
 | 50 | Workflow Orchestration Engine (declarative workflows, deterministic state management, replay & simulation, governance) | orchestration layer (centralizes multi-stage process coordination behind a declarative, deterministic engine that **consumes `RuntimeContext`** for behavior and the **Runtime Policy Engine** for routing; the runtime engine stays the sole evaluator, the policy engine the sole decision engine; coordinates existing services, never duplicating domain behavior; deterministic replay + dry-run simulation; a governed workflow registry — D.33) |
 | 51 | Enterprise Domain Event Model (typed contracts, versioning, publishing, governance, diagnostics) | event-model layer (a typed, versioned, governed domain-event model **over the existing transactional outbox** — the sole bus; **no second event table**; producers publish contract-validated, **references-only** envelopes; orchestration + the major business domains publish domain FACTS; reuses the outbox delivery guarantees / dead-letter / envelope versioning; a governed contract + subscription registry with producer-adoption governance — D.34, producer adoption across 11 business domains D.35) |
+| 52 | Read Models & Projection Engine (disposable read models, projection framework, rebuild/replay, governance) | read-model layer (consumes the D.34/D.35 domain events from the outbox to build fast, query-optimized, **disposable** read models — 12 `rm_*` tables; the write side stays the sole authoritative mutation layer; **no CQRS write model / no second event log / no event sourcing / no shadow state**; read models contain no business logic and never read authoritative tables; replay rebuilds them deterministically — D.36) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -388,6 +389,17 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   producer-without-publishing-site, unregistered-publish-site, sensitive-field violations, duplicate
   semantic contracts, and deprecated-contract-published. Producer-adoption diagnostics at
   `GET /events/producers`. Current: 100% producer adoption, 0 stale producers, 0 governance issues).
+- **Read models / projections:** `/projections` reuses the D.26 `observability.*` capabilities (D.36 —
+  the Read Models & Projection Engine consumes the D.34/D.35 domain events from the outbox to build
+  fast, query-optimized, **disposable** read models (12 `rm_*` tables). It changes no business behavior:
+  the domain services remain the sole authoritative mutation layer and the outbox stays authoritative;
+  read models hold no business logic/state, never read authoritative tables, and are rebuildable
+  deterministically from events (replay). No CQRS write model, no second event log, no event sourcing.
+  Full rebuild / incremental / reset / replay / validate; per-event failure isolation; the incremental
+  tick is dark-launched (`PROJECTIONS_ENABLED`, off by default). Registry/health/diagnostics require
+  `observability.view`; the governance report + full diagnostics require `observability.audit`;
+  rebuild/reset/replay require `observability.execute`. Current: 12 projections, 100% event coverage,
+  0 governance issues).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -549,7 +561,8 @@ engine — effective config/features/snapshots/cache), `/runtime/cluster` (D.29 
 convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registry + D.31 governance/authority), `/runtime/policy`
 (D.32 policy registry/governance/dependency-graph/diagnostics), `/orchestration` (D.33 workflow
 registry/governance/instances/diagnostics/replay/simulation), `/events` (D.34 domain-event
-contracts/subscriptions/governance/diagnostics/replay), `/workspace`
+contracts/subscriptions/governance/diagnostics/replay), `/projections` (D.36 read-model
+registry/health/diagnostics/governance/rebuild/replay), `/workspace`
 (meeting), `/portfolio` +
 `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
 `/api/v1/*`.
@@ -557,15 +570,16 @@ contracts/subscriptions/governance/diagnostics/replay), `/workspace`
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (28 registered modules: advisor_work, analytics, annual_review,
+  `app/database/schema.py` (29 registered modules: advisor_work, analytics, annual_review,
   automation, business_planning, campaign_referral, communication, compliance, configuration,
   document_platform, event, governance, identity, integration, observability, operations, opportunity,
-  orchestration, outbox, portfolio, reporting, runtime, runtime_behavior, runtime_coordination,
-  runtime_policy, scheduling, security, work — plus core tables inline in `schema.py`).
-- **Alembic:** 80 migrations, **single head `zc2d3e4f5a6b`**; `alembic current == heads`.
-  Recent chain: D.27 `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30
-  `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f` → D.34
-  `zb1c2d3e4f5a` → D.35 `zc2d3e4f5a6b`.
+  orchestration, outbox, portfolio, projection, reporting, runtime, runtime_behavior,
+  runtime_coordination, runtime_policy, scheduling, security, work — plus core tables inline in
+  `schema.py`).
+- **Alembic:** 81 migrations, **single head `zd3e4f5a6b7c`**; `alembic current == heads`.
+  Recent chain: D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31
+  `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f` → D.34 `zb1c2d3e4f5a` → D.35
+  `zc2d3e4f5a6b` → D.36 `zd3e4f5a6b7c`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

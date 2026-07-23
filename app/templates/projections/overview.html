@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Read Models | Client360{% endblock %}
+{% block crumb %}Read Models{% endblock %}
+{% block content %}
+{{ ui.page_head("Read Models & Projection Engine", eyebrow="Projections · rebuild · replay · health", desc="Disposable, query-optimized read models built by consuming the domain events from the transactional outbox. Read models hold no authoritative state and are rebuildable from events; the domain services remain the sole mutation layer and the outbox stays authoritative.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">Coverage &amp; health</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Projections</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.active }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Event coverage</div><div style="font-size:22px; font-weight:700">{{ adoption.event_coverage_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Healthy</div><div style="font-size:22px; font-weight:700">{{ health.healthy }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Lagging</div><div style="font-size:22px; font-weight:700">{{ health.lagging }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Unbuilt</div><div style="font-size:22px; font-weight:700">{{ health.unbuilt }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Governance</div><div style="font-size:22px; font-weight:700">{{ ui.badge("OK" if governance.ok else (governance.issue_count ~ " issues"), 'good' if governance.ok else 'bad') }}</div></article>
+  </div>
+  <p class="subtle" style="margin-top:8px; font-size:12px">Events processed: {{ adoption.runtime.events_processed }} · Rebuilds: {{ adoption.runtime.rebuilds }} · Replays: {{ adoption.runtime.replays }} · Read models are disposable (rebuildable from events).</p>
+</section>
+
+<section class="stack"><h2 class="section-title">Projections</h2>
+{% if projections %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Projection</th><th>Category</th><th>Owner</th><th>Read table</th><th>Status</th><th>Events consumed</th></tr></thead>
+  <tbody>{% for p in projections %}<tr><td><strong>{{ p.name }}</strong><div class="subtle" style="font-size:11px">{{ p.projection_id }}</div></td><td>{{ p.category }}</td>
+    <td>{{ p.owner or "—" }}</td><td class="subtle" style="font-size:11px">{{ p.read_table }}</td>
+    <td>{{ ui.badge(p.status|capitalize, 'good' if p.status == 'active' else 'bad') }}</td>
+    <td>{{ (p.subscribed_events or [])|length }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No projections", "The projection registry is empty.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}

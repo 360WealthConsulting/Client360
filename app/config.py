@@ -125,6 +125,23 @@ def orchestration_tick_interval_seconds() -> int:
     return max(5, _int_env("ORCHESTRATION_TICK_INTERVAL_SECONDS", 60))
 
 
+def projections_enabled() -> bool:
+    """Whether the projection incremental tick runs as a scheduler job (Phase D.36).
+
+    Default OFF: the read-model projection engine ships (projections can be rebuilt/replayed on demand
+    via the API, and read models are always rebuildable from events), but the background tick that
+    incrementally applies new outbox events is not registered unless explicitly enabled — keeping
+    runtime behavior unchanged by default (same posture as the outbox dispatcher). Read models are
+    disposable; nothing depends on them until a read surface adopts one.
+    """
+    return os.getenv("PROJECTIONS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def projections_tick_interval_seconds() -> int:
+    # Poll cadence for the projection incremental tick; minimum 5s to avoid a hot loop.
+    return max(5, _int_env("PROJECTIONS_TICK_INTERVAL_SECONDS", 60))
+
+
 def runtime_refresh_enabled() -> bool:
     """Whether the Runtime Configuration Engine's periodic safe-refresh runs as a scheduler job
     (Phase D.28).
