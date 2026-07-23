@@ -61,6 +61,23 @@ WIDGETS: dict[str, WidgetDef] = {
     "team_workload": WidgetDef(
         "team_workload", "Team Workload", "operations", "capacity.read", "count",
         "/work/team", False, "Team members over capacity (firm-level)."),
+    # Unified Work Queue widgets (Phase D.39) — deep-link into filtered /work views; data comes from
+    # the shared queue-summary service (no duplicated queue query logic).
+    "work_my": WidgetDef(
+        "work_my", "My Work", "priorities", "work.read", "count",
+        "/work?view=my_work", False, "Open work assigned to you (unified queue)."),
+    "work_overdue": WidgetDef(
+        "work_overdue", "Overdue Work", "priorities", "work.read", "count",
+        "/work?view=overdue", False, "Overdue work across your book (unified queue)."),
+    "work_due_today": WidgetDef(
+        "work_due_today", "Due Today", "priorities", "work.read", "count",
+        "/work?view=due_today", False, "Work due today (unified queue)."),
+    "work_unassigned": WidgetDef(
+        "work_unassigned", "Unassigned Team Work", "operations", "capacity.read", "count",
+        "/work?view=unassigned", False, "Unassigned team work (unified queue)."),
+    "work_sla_breaches": WidgetDef(
+        "work_sla_breaches", "SLA Breaches", "priorities", "work.read", "count",
+        "/work?view=sla_breaches", False, "Work with a breached SLA (unified queue)."),
 }
 
 DEFAULT_ORDER = tuple(WIDGETS.keys())

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Work Queue | Client360{% endblock %}
+{% block crumb %}Work Queue{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/work_queue.css">{% endblock %}
+{% block content %}
+{{ ui.page_head("Unified Work Queue", eyebrow="Work", desc="Everything that needs action, across every domain — one governed queue.") }}
+
+{# Composition surface (D.39): every item is read-only here and deep-links into its authoritative
+   owning surface; state-changing actions delegate to the owning service (POST-redirect-GET). #}
+{% if result %}
+  <div class="banner banner-{{ 'ok' if result in ('ok','bulk') else 'warn' }}" role="status">
+    {{ message or ('Done.' if result in ('ok','bulk') else 'Action could not be completed.') }}
+  </div>
+{% endif %}
+
+<nav class="queue-tabs" aria-label="Queue views">
+  {% for t in tabs %}
+    <a class="queue-tab {% if t.key == view_key %}active{% endif %}" href="/work?view={{ t.key }}">{{ t.label }}</a>
+  {% endfor %}
+  {% for v in saved_views %}
+    <a class="queue-tab saved {% if view_key == 'user:' ~ v.id %}active{% endif %}" href="/work?view=user:{{ v.id }}">{{ v.name }}</a>
+  {% endfor %}
+</nav>
+
+<section class="stat-grid queue-stats">
+  <article class="card"><span class="detail-label">Showing</span><h2>{{ q.total }}</h2></article>
+  <article class="card"><span class="detail-label">Overdue</span><h2>{{ q.counts.overdue }}</h2></article>
+  <article class="card"><span class="detail-label">SLA breaches</span><h2>{{ q.counts.breached }}</h2></article>
+  <article class="card"><span class="detail-label">Unassigned</span><h2>{{ q.counts.unassigned }}</h2></article>
+</section>
+
+<form method="get" action="/work" class="filterbar queue-filters">
+  <input type="hidden" name="view" value="{{ view_key }}">
+  <select name="status" aria-label="Status">
+    <option value="">All statuses</option>
+    {% for s in ["open","in_progress","waiting","blocked","review","done"] %}
+      <option value="{{ s }}" {% if active_filters.status == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <select name="priority" aria-label="Priority">
+    <option value="">Any priority</option>
+    {% for p in ["urgent","high","normal","low"] %}
+      <option value="{{ p }}" {% if active_filters.priority == p %}selected{% endif %}>{{ p|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <select name="sla" aria-label="SLA state">
+    <option value="">Any SLA</option>
+    {% for s in ["breached","overdue","due_soon","escalated","on_track","unknown"] %}
+      <option value="{{ s }}" {% if active_filters.sla == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <input type="search" name="search" value="{{ active_filters.search or '' }}" placeholder="Search title…" aria-label="Search">
+  <label class="chip"><input type="checkbox" name="overdue" value="1" {% if active_filters.overdue %}checked{% endif %}> Overdue</label>
+  <label class="chip"><input type="checkbox" name="unassigned" value="1" {% if active_filters.unassigned %}checked{% endif %}> Unassigned</label>
+  <button type="submit" class="btn sm">Filter</button>
+  <a class="chip" href="/work?view={{ view_key }}">Clear</a>
+</form>
+
+{% if can_save_views %}
+<details class="queue-view-tools">
+  <summary>Views &amp; defaults</summary>
+  <div class="view-tool-row">
+    <form method="post" action="/work/views" class="inline">
+      {% for k, v in active_filters.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="text" name="name" placeholder="Save current filters as…" maxlength="60" required>
+      <button type="submit" class="btn sm">Save view</button>
+    </form>
+    <form method="post" action="/work/views/default" class="inline">
+      <input type="hidden" name="view_key" value="{{ view_key }}">
+      <button type="submit" class="btn sm">Make this my default</button>
+    </form>
+    <form method="post" action="/work/views/default" class="inline">
+      <button type="submit" class="btn sm" title="Reset default to My Work">Reset default</button>
+    </form>
+  </div>
+  {% if saved_views %}
+    <div class="view-tool-row">
+      {% for v in saved_views %}
+        <span class="chip">{{ v.name }}
+          <form method="post" action="/work/views/delete" class="inline">
+            <input type="hidden" name="view_id" value="{{ v.id }}">
+            <button type="submit" class="btn-link" aria-label="Delete view {{ v.name }}">✕</button>
+          </form>
+        </span>
+      {% endfor %}
+    </div>
+  {% endif %}
+</details>
+{% endif %}
+
+<form method="post" action="/work/bulk-action" id="bulkform">
+  <input type="hidden" name="return_to" value="/work?view={{ view_key }}">
+  {% if can_act %}
+  <div class="bulk-bar">
+    <select name="action" aria-label="Bulk action">
+      <option value="claim">Claim selected</option>
+      <option value="assign">Assign selected to…</option>
+      <option value="acknowledge">Acknowledge selected</option>
+    </select>
+    <input type="number" name="user_id" placeholder="user id (for assign)" aria-label="Assign to user id">
+    <button type="submit" class="btn sm">Apply to selected</button>
+    <span class="subtle">Bulk actions delegate to each item's owning service; partial results are reported.</span>
+  </div>
+  {% endif %}
+
+  <div class="table-wrap">
+  <table class="data queue-table">
+    <thead><tr>
+      {% if can_act %}<th aria-label="Select"></th>{% endif %}
+      <th>Item</th><th>Domain</th><th>Status</th><th>Priority</th><th>SLA</th>
+      <th>Due</th><th>Client</th><th>Assignee</th><th>Open</th>
+    </tr></thead>
+    <tbody>
+    {% for it in q.rows %}
+      <tr class="{% if it.overdue %}row-overdue{% endif %}">
+        {% if can_act %}<td><input type="checkbox" name="ids" value="{{ it.work_item_key }}" aria-label="Select {{ it.title }}"></td>{% endif %}
+        <td><a class="rowlink" href="{{ it.deep_link }}">{{ it.title }}</a>
+          {% if it.allowed_actions and it.allowed_actions|length > 1 and can_act %}
+            <details class="row-actions"><summary>Actions</summary>
+              {% for a in it.allowed_actions if a != 'open' %}
+                <form method="post" action="/work/action" class="inline">
+                  <input type="hidden" name="work_item_key" value="{{ it.work_item_key }}">
+                  <input type="hidden" name="action" value="{{ a }}">
+                  <input type="hidden" name="return_to" value="/work?view={{ view_key }}">
+                  <button type="submit" class="btn-link">{{ a|capitalize }}</button>
+                </form>
+              {% endfor %}
+            </details>
+          {% endif %}
+        </td>
+        <td>{{ ui.badge(it.source_domain|replace("_"," ")|capitalize) }}</td>
+        <td><span class="subtle">{{ (it.status or "")|replace("_"," ")|capitalize }}</span></td>
+        <td>{{ ui.badge(it.priority|capitalize, "warn" if it.priority in ("urgent","high") else "") }}</td>
+        <td><span class="sla sla-{{ it.sla_state }}">{{ it.sla_state|replace("_"," ") }}</span></td>
+        <td>{% if it.due_at %}{{ it.due_at[:10] }}{% if it.overdue %} {{ ui.badge("Overdue","warn") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if it.person_id %}<a href="/people/{{ it.person_id }}">{{ it.person_name or ("Person " ~ it.person_id) }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if it.assignee_name %}{{ it.assignee_name }}{% elif it.assignee_user_id %}#{{ it.assignee_user_id }}{% else %}<span class="subtle">Unassigned</span>{% endif %}</td>
+        <td><a href="{{ it.deep_link }}" aria-label="Open source record">↗</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ 10 if can_act else 9 }}">{% call ui.empty("Nothing here", "No work matches this view.") %}{% endcall %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+
+{% if q.pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% set base = "/work?view=" ~ view_key %}
+  {% if q.page > 1 %}<a class="btn sm" href="{{ base }}&page={{ q.page - 1 }}">← Prev</a>{% endif %}
+  <span class="subtle">Page {{ q.page }} of {{ q.pages }} · {{ q.total }} items</span>
+  {% if q.page < q.pages %}<a class="btn sm" href="{{ base }}&page={{ q.page + 1 }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}
