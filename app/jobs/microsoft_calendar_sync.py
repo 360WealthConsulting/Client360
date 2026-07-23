@@ -298,11 +298,12 @@ def sync_calendar_events(
     top: int = 100,
 ) -> dict[str, int]:
     """Sync recent and upcoming calendar events into Client360."""
-    # (D.30) Sync ENABLEMENT (behavior) is consumed from the runtime engine — behavior-preserving:
-    # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
+    # (D.32) Sync ELIGIBILITY (behavior) is decided by the centralized Runtime Policy Engine
+    # (microsoft365.sync_eligibility), which consumes the runtime engine — behavior-preserving: with no
+    # runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
     # Provider init / OAuth / credential loading are unaffected (infrastructure).
-    from app.services.runtime import consumption
-    if not consumption.feature_enabled("microsoft365.sync", default=True, shim=True):
+    from app.services.policy import evaluate as policy_evaluate
+    if not policy_evaluate("microsoft365.sync_eligibility").decision:
         return {"skipped": True, "reason": "runtime_disabled"}
     with engine.connect() as connection:
         account = connection.execute(

@@ -217,14 +217,16 @@ def execute_dispatch(job_type: str, *, config: dict, principal, actor_user_id) -
     """Deterministically dispatch a job to its existing-service handler. Raises on unknown type;
     the handler's own exceptions propagate to the caller (run_job) for retry/failure handling.
 
-    (D.30) Per-job-type enablement is consumed from the runtime engine — behavior-preserving: with no
+    (D.32) Per-job-type execution eligibility is decided by the centralized Runtime Policy Engine
+    (automation.job_execution), which consumes the runtime engine — behavior-preserving: with no
     runtime feature defined for the job type, the legacy default (enabled) is used, so dispatch is
-    unchanged. A defined-and-disabled ``automation.job.<type>`` feature skips the job at runtime."""
+    unchanged. A defined-and-disabled ``automation.job.<type>`` feature skips the job at runtime. The
+    execution architecture is unchanged — the policy only centralizes the eligibility decision."""
     fn = DISPATCH_REGISTRY.get(job_type)
     if fn is None:
         raise DispatchError(f"unknown job_type {job_type!r}")
-    from app.services.runtime import consumption
-    if not consumption.feature_enabled(f"automation.job.{job_type}", default=True, shim=True):
+    from app.services.policy import evaluate as policy_evaluate
+    if not policy_evaluate("automation.job_execution", subject=job_type).decision:
         return {"skipped": True, "reason": "runtime_disabled", "job_type": job_type}
     return fn({"config": config or {}, "principal": principal, "actor_user_id": actor_user_id})
 

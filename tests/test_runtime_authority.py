@@ -186,10 +186,13 @@ def test_governance_never_edits_metadata():
 def test_migrated_call_sites_are_shim_marked():
     import pathlib
     base = pathlib.Path(governance.__file__).parents[3]
-    for rel in ("app/services/automation/dispatch.py", "app/services/analytics/metrics.py",
-                "app/services/benefits_detectors.py", "app/services/reporting/service.py",
-                "app/jobs/microsoft_mail_sync.py", "app/jobs/microsoft_document_sync.py"):
+    # Sites still consuming the runtime engine directly keep the compatibility shim.
+    for rel in ("app/services/analytics/metrics.py", "app/services/benefits_detectors.py"):
         assert "shim=True" in (base / rel).read_text(), rel
+    # (D.32) The automation/reporting/Microsoft-365 decisions were centralized behind the Runtime
+    # Policy Engine; the compatibility shim now lives in the policy definitions, which carry it into
+    # the consumption API on behalf of those call sites.
+    assert "shim=True" in (base / "app/services/policy/definitions.py").read_text()
 
 
 def test_route_prefix_matches_no_middleware_rule():
