@@ -21,16 +21,42 @@ Tax domain is untouched. No compliance calendar, scheduled notifications, UI, po
 Work Management queues here (later phases).
 """
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 
 from app import config
-from app.db import (benefit_document_links, benefit_employments, benefit_enrollments,
-    benefit_obligations, benefit_plan_types, benefit_plan_years, benefit_plans,
-    benefit_retirement_elections, benefit_retirement_plan_details, engagements, engine,
-    exceptions, organization_profiles, organization_service_lines, people, service_lines)
+from app.db import (
+    benefit_document_links,
+    benefit_employments,
+    benefit_enrollments,
+    benefit_obligations,
+    benefit_plan_types,
+    benefit_plan_years,
+    benefit_plans,
+    benefit_retirement_elections,
+    benefit_retirement_plan_details,
+    engagements,
+    engine,
+    exceptions,
+    organization_profiles,
+    organization_service_lines,
+    people,
+    service_lines,
+)
 from app.services import exception_engine as ee
+
+
+def _cfg_days(key: str, fallback: int) -> int:
+    """(D.30) Resolve a benefits day-window through the runtime engine, falling back to the legacy
+    ``app.config`` value — behavior-preserving: with no runtime config item defined, the env-backed
+    default is used, so detector behavior is unchanged. Resolved once per detector (not per row)."""
+    from app.services.runtime import consumption
+    val = consumption.config_value(f"benefits.{key}", default=fallback)
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return fallback
 
 # Obligation type -> approved benefits exception code (date-driven detector). Types absent
 # from this map are intentionally inert — notably contribution_deposit_review, which stays
@@ -232,11 +258,12 @@ def _emp_person(ctx, emp_id):
 
 def detect_eligibility_unresolved(ctx, today, actor_user_id):
     today = _today(today)
+    new_hire_window = _cfg_days("new_hire_window_days", config.benefits_new_hire_window_days())
     cond = {}
     for eid, e in ctx["emps"].items():
         if e["status"] != "active" or e["hire_date"] is None:
             continue
-        if (today - e["hire_date"]).days <= config.benefits_new_hire_window_days():
+        if (today - e["hire_date"]).days <= new_hire_window:
             continue  # recent hires are the new-hire detector's job
         if e["org_id"] not in ctx["org_open"]["health"]:
             continue
@@ -248,11 +275,12 @@ def detect_eligibility_unresolved(ctx, today, actor_user_id):
 
 def detect_new_hire_enrollment_due(ctx, today, actor_user_id):
     today = _today(today)
+    new_hire_window = _cfg_days("new_hire_window_days", config.benefits_new_hire_window_days())
     cond = {}
     for eid, e in ctx["emps"].items():
         if e["status"] != "active" or e["hire_date"] is None:
             continue
-        if (today - e["hire_date"]).days > config.benefits_new_hire_window_days():
+        if (today - e["hire_date"]).days > new_hire_window:
             continue
         if e["org_id"] not in ctx["org_open"]["health"]:
             continue
@@ -277,6 +305,7 @@ def detect_missing_waiver(ctx, today, actor_user_id):
 
 def detect_open_enrollment_incomplete(ctx, today, actor_user_id):
     today = _today(today)
+    oe_warning = _cfg_days("open_enrollment_warning_days", config.benefits_open_enrollment_warning_days())
     handled_by_year = defaultdict(set)
     for r in ctx["enr"]:
         if r["status"] in _HANDLED_ENROLLED:
@@ -286,7 +315,7 @@ def detect_open_enrollment_incomplete(ctx, today, actor_user_id):
         p = ctx["plans"].get(y["plan_id"])
         if not p or p["line"] != "health" or y["status"] != "open_enrollment":
             continue
-        if y["oe_end"] is None or y["oe_end"] > today + timedelta(days=config.benefits_open_enrollment_warning_days()):
+        if y["oe_end"] is None or y["oe_end"] > today + timedelta(days=oe_warning):
             continue
         active_emps = {eid for eid, e in ctx["emps"].items()
                        if e["org_id"] == p["org_id"] and e["status"] == "active"}
@@ -329,7 +358,7 @@ def detect_census_overdue(ctx, today, actor_user_id):
     for eng in ctx["census_engs"]:
         if "census" not in (eng["engagement_type"] or "").lower():
             continue
-        grace = timedelta(days=config.benefits_census_grace_days())
+        grace = timedelta(days=_cfg_days("census_grace_days", config.benefits_census_grace_days()))
         if eng["status"] in ("closed", "cancelled") or eng["due_date"] is None or eng["due_date"] + grace >= today:
             continue
         if "census" in ctx["docs_by_org"].get(eng["org_id"], set()):
@@ -362,7 +391,7 @@ def _past_document_grace(plan, today):
     """A required document is only 'missing' once the configured grace period has
     elapsed since the plan became effective. Grace defaults to 0 (fire immediately —
     identical to the Phase-3 semantics); a future/unknown effective date never suppresses."""
-    grace = config.benefits_document_grace_days()
+    grace = _cfg_days("document_grace_days", config.benefits_document_grace_days())
     eff = plan["effective_date"]
     if grace <= 0 or eff is None:
         return True
@@ -395,11 +424,12 @@ def detect_sbc_missing(ctx, today, actor_user_id):
 
 def detect_renewal_at_risk(ctx, today, actor_user_id):
     today = _today(today)
+    renewal_warning = _cfg_days("renewal_warning_days", config.benefits_renewal_warning_days())
     cond = {}
     for pid, p in ctx["plans"].items():
         if p["status"] != "active" or p["renewal_date"] is None:
             continue
-        if p["renewal_date"] > today + timedelta(days=config.benefits_renewal_warning_days()):
+        if p["renewal_date"] > today + timedelta(days=renewal_warning):
             continue
         cond[f"ben:renewal_risk:{pid}"] = _scope(p["org_id"], "Renewal at risk")
     return _reconcile("ben:renewal_risk:", "BEN_RENEWAL_AT_RISK", cond, actor_user_id=actor_user_id)
@@ -479,7 +509,7 @@ def detect_adoption_agreement_missing(ctx, today, actor_user_id):
 # --- date-driven obligation detector -----------------------------------------
 
 def _due_datetime(due_date):
-    return datetime(due_date.year, due_date.month, due_date.day, 23, 59, tzinfo=timezone.utc)
+    return datetime(due_date.year, due_date.month, due_date.day, 23, 59, tzinfo=UTC)
 
 
 def detect_obligation_deadlines(ctx, today, actor_user_id):

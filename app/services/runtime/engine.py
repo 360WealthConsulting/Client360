@@ -170,7 +170,8 @@ def context_for(principal=None, *, environment="production", organization_id=Non
             snapshot_version=(snap["version"] if snap else None),
             edition_code=(edition["code"] if edition else None),
             license_code=(snap["license_code"] if snap else None),
-            effective_config=cfg, active_features=features, resolved=True)
+            effective_config=cfg, active_features=features,
+            edition_capabilities=frozenset(caps), resolved=True)
     except Exception:
         logger.exception("runtime context build failed; returning empty context")
         return EMPTY_CONTEXT

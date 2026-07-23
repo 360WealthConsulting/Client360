@@ -1,6 +1,6 @@
 from collections.abc import Callable, Iterable, Mapping
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import requests
 from sqlalchemy import select
@@ -15,22 +15,21 @@ from app.db import (
 from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
 
-
 GRAPH_CALENDAR_VIEW_URL = (
     "https://graph.microsoft.com/v1.0/me/calendarView"
 )
 
 
-def normalize_email(value: Optional[str]) -> str:
+def normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def parse_graph_datetime(value: Optional[str]) -> datetime:
+def parse_graph_datetime(value: str | None) -> datetime:
     if not value:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def build_person_email_index(
@@ -263,7 +262,7 @@ def queue_unmatched_calendar_attendee(
             constraint="uq_microsoft_calendar_event_attendee",
             set_={
                 **update_values,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             },
         )
     )
@@ -299,6 +298,12 @@ def sync_calendar_events(
     top: int = 100,
 ) -> dict[str, int]:
     """Sync recent and upcoming calendar events into Client360."""
+    # (D.30) Sync ENABLEMENT (behavior) is consumed from the runtime engine — behavior-preserving:
+    # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
+    # Provider init / OAuth / credential loading are unaffected (infrastructure).
+    from app.services.runtime import consumption
+    if not consumption.feature_enabled("microsoft365.sync", default=True):
+        return {"skipped": True, "reason": "runtime_disabled"}
     with engine.connect() as connection:
         account = connection.execute(
             select(microsoft_accounts)
@@ -322,7 +327,7 @@ def sync_calendar_events(
         record_sync_health(account["id"], "error", exc)
         raise
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     response = requests.get(
         GRAPH_CALENDAR_VIEW_URL,
         headers={

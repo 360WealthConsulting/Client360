@@ -420,3 +420,8 @@ runtime_workers = metadata.tables["runtime_workers"]
 runtime_worker_heartbeats = metadata.tables["runtime_worker_heartbeats"]
 runtime_generations = metadata.tables["runtime_generations"]
 runtime_coordination_events = metadata.tables["runtime_coordination_events"]
+
+# Runtime Behavior registry (Phase D.30). Durable catalog of which application behaviors have been
+# migrated to consume the runtime engine (adoption tracking). Owns no configuration metadata and
+# performs no evaluation — the runtime engine remains the sole evaluator.
+runtime_behaviors = metadata.tables["runtime_behaviors"]

@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import requests
 from sqlalchemy import select
@@ -14,17 +14,16 @@ from app.db import (
 from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
 
-
 GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages"
 
 
-def _normalize_email(value: Optional[str]) -> str:
+def _normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def _parse_graph_datetime(value: Optional[str]) -> datetime:
+def _parse_graph_datetime(value: str | None) -> datetime:
     if not value:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     return datetime.fromisoformat(
         value.replace("Z", "+00:00")
@@ -32,6 +31,12 @@ def _parse_graph_datetime(value: Optional[str]) -> datetime:
 
 
 def sync_recent_mail(top: int = 50) -> dict[str, Any]:
+    # (D.30) Sync ENABLEMENT (behavior) is consumed from the runtime engine — behavior-preserving:
+    # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used, so
+    # sync runs as before. Provider init / OAuth / credential loading are unaffected (infrastructure).
+    from app.services.runtime import consumption
+    if not consumption.feature_enabled("microsoft365.sync", default=True):
+        return {"skipped": True, "reason": "runtime_disabled"}
     with engine.connect() as connection:
         account = connection.execute(
             select(microsoft_accounts)
@@ -162,7 +167,7 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
                                 )
                             ),
                             "updated_at": datetime.now(
-                                timezone.utc
+                                UTC
                             ),
                         },
                     )
