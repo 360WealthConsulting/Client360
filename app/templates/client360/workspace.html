@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ ws.display_name }} · Client 360 | Client360{% endblock %}
+{% block crumb %}Client 360{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/client360.css">{% endblock %}
+{% block content %}
+{% set s = ws.snapshot %}
+{% set base = ("/client/household/" ~ ws.entity_id) if ws.entity_type == "household" else ("/client/" ~ ws.entity_id) %}
+
+{# Master client record (D.40): read-only COMPOSITION of the authoritative services. Every edit is a
+   deep link into the authoritative workflow — the workspace never mutates. #}
+<header class="c360-hero">
+  <div>
+    <span class="detail-label">{{ ws.entity_type|capitalize }}{% if ws.household_name %} · {{ ws.household_name }}{% endif %}</span>
+    <h1>{{ ws.display_name }}</h1>
+  </div>
+</header>
+
+{# Client Snapshot — compact executive summary (never summed; units differ). #}
+<section class="stat-grid c360-snapshot">
+  <article class="card"><span class="detail-label">AUM</span><h2>{{ "${:,.0f}".format(s.assets.aum|float) }}</h2></article>
+  <article class="card"><span class="detail-label">Cash</span><h2>{{ "${:,.0f}".format(s.assets.cash|float) }}</h2></article>
+  {% if s.revenue %}<article class="card"><span class="detail-label">Open pipeline</span><h2>{{ "${:,.0f}".format(s.revenue.expected_revenue|float) }}</h2></article>{% endif %}
+  <article class="card"><span class="detail-label">Insurance face</span><h2>{{ "${:,.0f}".format(s.insurance.total_face|float) }}</h2></article>
+  <article class="card"><span class="detail-label">Tax engagements</span><h2>{{ s.tax.active or 0 }}</h2></article>
+  {% if s.open_work is not none %}<article class="card"><span class="detail-label">Open work</span><h2>{{ s.open_work }}</h2></article>{% endif %}
+  {% if s.compliance %}<article class="card"><span class="detail-label">Open reviews</span><h2>{{ s.compliance.open_reviews }}</h2></article>{% endif %}
+</section>
+
+{# Quick actions — deep links into the authoritative create workflow. #}
+{% if ws.quick_actions %}
+<nav class="c360-actions" aria-label="Quick actions">
+  {% for a in ws.quick_actions %}<a class="btn sm" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+{# Role-aware tabs — a section is shown only where the principal has capability. #}
+<nav class="c360-tabs" aria-label="Sections">
+  {% for key in ws.section_keys %}
+    <a class="c360-tab {% if key == active_tab %}active{% endif %}" href="{{ base }}?tab={{ key }}">{{ key|replace("_"," ")|capitalize }}</a>
+  {% endfor %}
+</nav>
+
+{% set sec = ws.sections.get(active_tab) %}
+<section class="c360-panel">
+{% if not sec %}
+  {% call ui.empty("Section unavailable", "You do not have access to this section.") %}{% endcall %}
+{% elif sec.error %}
+  {% call ui.empty("Temporarily unavailable", sec.error) %}{% endcall %}
+
+{% elif active_tab == "summary" %}
+  <h2 class="section-title">Household &amp; assignment</h2>
+  <article class="card">
+    <div class="detail-row"><span>Household</span><strong>{{ sec.household_name or "—" }}</strong></div>
+    <div class="detail-row"><span>Members</span><strong>{{ (sec.members or [])|length }}</strong></div>
+    <div class="detail-row"><span>Last contact</span><strong>{{ sec.last_contact.title if sec.last_contact else "—" }}</strong></div>
+    <div class="detail-row"><span>Next activity</span><strong>{{ sec.next_activity.title if sec.next_activity else "—" }}</strong></div>
+    <div class="detail-row"><span>Assigned</span><strong>{{ (sec.assigned or [])|length }} advisor/team</strong></div>
+    <div class="detail-row"><span class="subtle">Status / tier / risk</span><span class="subtle">Not tracked in this platform</span></div>
+  </article>
+  {% if sec.members %}
+  <h2 class="section-title">Members</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Name</th><th>Relationship</th></tr></thead><tbody>
+    {% for m in sec.members %}<tr><td><a href="/client/{{ m.id }}">{{ m.full_name }}</a></td><td>{{ m.relationship_type or "—" }}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+  {% endif %}
+
+{% elif active_tab == "financial" %}
+  <h2 class="section-title">Financial (side by side — never summed)</h2>
+  <article class="card">
+    <div class="detail-row"><span>AUM</span><strong>{{ "${:,.0f}".format(sec.aum|float) }}</strong></div>
+    <div class="detail-row"><span>Cash ({{ sec.cash_percent or 0 }}%)</span><strong>{{ "${:,.0f}".format(sec.cash|float) }}</strong></div>
+    <div class="detail-row"><span>Household AUM</span><strong>{{ "${:,.0f}".format(sec.household_aum|float) }}</strong></div>
+    {% if sec.insurance %}<div class="detail-row"><span>Insurance face</span><strong>{{ "${:,.0f}".format(sec.insurance.total_face|float) }}</strong></div>{% endif %}
+    <div class="detail-row"><span class="subtle">Not tracked</span><span class="subtle">{{ sec.not_tracked|join(", ")|replace("_"," ") }}</span></div>
+  </article>
+
+{% elif active_tab == "relationships" %}
+  <h2 class="section-title">Relationship graph (read-only)</h2>
+  {% for cat, items in (sec.graph.categories or {}).items() %}
+    <article class="card"><span class="detail-label">{{ cat|capitalize }}</span>
+      {% for it in items %}<div class="detail-row"><span>{% if it.person_id %}<a href="/client/{{ it.person_id }}">{{ it.name }}</a>{% else %}{{ it.name }}{% endif %}</span><strong class="subtle">{{ it.label }}</strong></div>{% endfor %}
+    </article>
+  {% else %}{% call ui.empty("No relationships", "No relationships recorded for this client.") %}{% endcall %}{% endfor %}
+
+{% elif active_tab == "timeline" %}
+  <h2 class="section-title">Activity timeline (references only)</h2>
+  <article class="card">
+    {% for r in sec.rows %}<div class="detail-row"><span>{% if r.source_url %}<a href="{{ r.source_url }}">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %}</span><strong class="subtle">{{ r.source_domain }} · {{ r.occurred_at[:10] if r.occurred_at else "" }}</strong></div>
+    {% else %}{% call ui.empty("No activity", "No timeline activity for this client.") %}{% endcall %}{% endfor %}
+  </article>
+
+{% elif active_tab == "meetings" %}
+  <h2 class="section-title">Upcoming</h2>
+  <article class="card">{% for m in sec.upcoming %}<div class="detail-row"><span>{{ m.title }}</span><strong class="subtle">{{ m.event_time[:16] if m.event_time else "" }}</strong></div>{% else %}{% call ui.empty("No upcoming meetings") %}{% endcall %}{% endfor %}</article>
+  <h2 class="section-title">Previous</h2>
+  <article class="card">{% for m in sec.previous %}<div class="detail-row"><span>{{ m.title }}</span><strong class="subtle">{{ m.event_time[:16] if m.event_time else "" }}</strong></div>{% else %}{% call ui.empty("No previous meetings") %}{% endcall %}{% endfor %}</article>
+
+{% elif active_tab == "documents" %}
+  <h2 class="section-title">Documents</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Document</th><th>Classification</th><th>Status</th></tr></thead><tbody>
+    {% for d in sec.documents %}<tr><td><a href="/document-library/{{ d.id }}">{{ d.original_name or d.name or ("Document " ~ d.id) }}</a></td><td>{{ d.classification or "—" }}</td><td><span class="subtle">{{ d.status or d.review_status or "—" }}</span></td></tr>
+    {% else %}<tr><td colspan="3">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+
+{% elif active_tab == "opportunities" %}
+  <h2 class="section-title">Pipeline</h2>
+  <article class="card">{% for o in sec.pipeline %}<div class="detail-row"><span><a href="/opportunities/{{ o.id }}">{{ o.title or ("Opportunity " ~ o.id) }}</a></span><strong class="subtle">{{ o.status }}</strong></div>{% else %}{% call ui.empty("No opportunities") %}{% endcall %}{% endfor %}</article>
+  {% if sec.recommendations %}<h2 class="section-title">Recommendations</h2><article class="card">{% for r in sec.recommendations %}<div class="detail-row"><span>{{ r.title or r.get("label") }}</span></div>{% endfor %}</article>{% endif %}
+
+{% elif active_tab == "compliance" %}
+  <h2 class="section-title">Outstanding reviews</h2>
+  <article class="card">{% for r in sec.outstanding %}<div class="detail-row"><span><a href="/compliance/reviews/{{ r.id }}">{{ r.governing_rule or ("Review " ~ r.id) }}</a></span><strong class="subtle">{{ r.status }}</strong></div>{% else %}{% call ui.empty("No outstanding reviews") %}{% endcall %}{% endfor %}</article>
+  <h2 class="section-title">Open exceptions</h2>
+  <article class="card">{% for e in sec.exceptions %}<div class="detail-row"><span><a href="/exceptions/{{ e.id }}">{{ e.title or e.domain }}</a></span><strong class="subtle">{{ e.severity }}</strong></div>{% else %}{% call ui.empty("No open exceptions") %}{% endcall %}{% endfor %}</article>
+  <div class="detail-row"><span>Annual review</span><strong>{{ "In progress" if sec.annual_review_open else "None open" }}</strong></div>
+
+{% elif active_tab == "work" %}
+  <h2 class="section-title">Open advisor work</h2>
+  <article class="card">{% for w in sec.work_items %}<div class="detail-row"><span><a href="/advisor-work/{{ w.id }}">{{ w.title or w.recommendation_type or ("Work " ~ w.id) }}</a></span><strong class="subtle">{{ w.status }}</strong></div>{% else %}{% call ui.empty("No open work") %}{% endcall %}{% endfor %}</article>
+
+{% elif active_tab == "tax" %}
+  <h2 class="section-title">Tax</h2>
+  <article class="card"><div class="detail-row"><span>Active engagements</span><strong>{{ sec.engagements.active or 0 }}</strong></div></article>
+  <article class="card">{% for e in sec.open_exceptions %}<div class="detail-row"><span><a href="/exceptions/{{ e.id }}">{{ e.title or "Tax exception" }}</a></span><strong class="subtle">{{ e.severity }}</strong></div>{% else %}{% call ui.empty("No open tax items") %}{% endcall %}{% endfor %}</article>
+  <p class="subtle">{{ sec.note }}</p>
+
+{% elif active_tab == "insurance" %}
+  <h2 class="section-title">Coverage</h2>
+  <article class="card"><div class="detail-row"><span>Policies</span><strong>{{ sec.coverage.policy_count or 0 }}</strong></div><div class="detail-row"><span>Total face</span><strong>{{ "${:,.0f}".format(sec.coverage.total_face|float) }}</strong></div></article>
+  <h2 class="section-title">Renewals due</h2>
+  <article class="card">{% for r in sec.renewals %}<div class="detail-row"><span>{{ r.review_type or "Review" }}</span><strong class="subtle">{{ r.due_date }}</strong></div>{% else %}{% call ui.empty("No renewals due") %}{% endcall %}{% endfor %}</article>
+
+{% elif active_tab == "benefits" %}
+  <h2 class="section-title">Benefits</h2>
+  <article class="card"><div class="detail-row"><span>Benefit relationships</span><strong>{{ sec.summary.employments or 0 }}</strong></div>
+    <div class="detail-row"><span class="subtle">Plan detail (401k/HSA/FSA)</span><span class="subtle">Opens on the Benefits surface</span></div></article>
+
+{% else %}
+  {% call ui.empty("Section", "No renderer for this section.") %}{% endcall %}
+{% endif %}
+</section>
+{% endblock %}

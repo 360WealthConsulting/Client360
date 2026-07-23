@@ -82,6 +82,7 @@ from app.routes.work import router as work_router
 from app.routes.workflow_automation import router as workflow_automation_router
 from app.routes.workflows import router as workflows_router
 from app.routes.workspace import router as workspace_router
+from app.routes.client360 import router as client360_router
 from app.security.middleware import AuthenticationMiddleware
 from app.services.runtime.middleware import RuntimeContextMiddleware
 
@@ -192,6 +193,7 @@ app.include_router(relationships_router)
 app.include_router(portfolio_router)
 app.include_router(wealth_router)
 app.include_router(workspace_router)
+app.include_router(client360_router)
 app.include_router(auth_router)
 # Development-only sign-in provider. dev_auth_enabled() is False in production (and
 # whenever CLIENT360_DEV_AUTH is unset), so this router is simply never mounted there.

@@ -1,0 +1,13 @@
+/* Client 360 Workspace (Phase D.40) — layered on the existing design system. */
+.c360-hero { margin: 4px 0 12px; }
+.c360-hero h1 { margin: 2px 0; font-size: 1.55rem; }
+.c360-snapshot .card { padding: 10px 14px; }
+.c360-snapshot .card h2 { margin: 2px 0; font-size: 1.35rem; }
+.c360-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.c360-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb); padding-bottom: 8px; }
+.c360-tab { padding: 5px 12px; border-radius: 999px; text-decoration: none; color: inherit;
+  font-size: 0.85rem; border: 1px solid transparent; }
+.c360-tab.active { background: var(--accent, #2563eb); color: #fff; }
+.c360-panel { margin-top: 8px; }
+.c360-panel .card { margin-bottom: 10px; }
