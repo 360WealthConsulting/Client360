@@ -82,9 +82,18 @@ def coverage() -> dict:
     deterministic = counts.get("deterministic", 0)
     migratable = migrated + retired + legacy
     adoption_pct = round(((migrated + retired) / migratable) * 100, 1) if migratable else 100.0
+    with engine.connect() as c:
+        authoritative = c.scalar(select(func.count()).select_from(runtime_behaviors)
+                                 .where(runtime_behaviors.c.authoritative.is_(True))) or 0
+        shims = c.scalar(select(func.count()).select_from(runtime_behaviors)
+                         .where(runtime_behaviors.c.compatibility_shim.is_(True))) or 0
+    # (D.31) runtime authority: behaviors for which the engine is the authoritative source over the
+    # migratable set (the compatibility shims are migrated but keep a documented legacy default).
+    authority_pct = round((authoritative / migratable) * 100, 1) if migratable else 100.0
     return {"migrated": migrated, "retired": retired, "legacy": legacy, "deterministic": deterministic,
             "migratable": migratable, "total": migratable + deterministic,
-            "adoption_pct": adoption_pct}
+            "adoption_pct": adoption_pct, "authoritative": authoritative,
+            "compatibility_shims": shims, "authority_pct": authority_pct}
 
 
 def adoption(principal=None) -> dict:

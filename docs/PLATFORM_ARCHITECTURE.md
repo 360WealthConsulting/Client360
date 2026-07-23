@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.30** on `release/0.13.0` (migration head `z4e5f6a7b8c9`, 778 routes, 157
+after **Phase D.31** on `release/0.13.0` (migration head `z8a9b0c1d2e3`, 780 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -139,6 +139,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 45 | Runtime Configuration Engine (resolution, snapshots, cache, feature evaluation) | runtime evaluation layer (evaluates D.27 metadata deterministically; owns only immutable snapshots + ledger; never edits metadata — D.28) |
 | 46 | Distributed Runtime Coordination (workers, generations, convergence) | runtime coordination layer (cluster-safe convergence over the transactional outbox; owns only worker/generation/coordination metadata; never evaluates or edits metadata — D.29) |
 | 47 | Runtime Consumption (behavioral adoption of the runtime engine) | consumption layer (application behavior consumes the engine via a standardized behavior-preserving API; owns only the behavioral-migration registry; never evaluates — D.30) |
+| 48 | Runtime Authority & Governance (authoritative behavior, legacy retirement, metadata governance) | authority/governance layer (the engine is authoritative for migrated behavior via seeded D.27 metadata; validates runtime metadata; never evaluates or edits metadata — D.31) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -328,6 +329,13 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   unchanged until a runtime value is defined. Infrastructure (DB/secrets/OAuth/crypto/logging/
   scheduler-registration/M365 credentials) stays a startup concern. Adoption is tracked in the
   `runtime_behaviors` registry; recording a behavior migrated/retired requires `runtime.admin`).
+- **Runtime authority & governance:** `/runtime/behavior/governance` reuses the D.28 `runtime.*`
+  capabilities (D.31 — the engine is the **authoritative** source for migrated behaviors via seeded
+  D.27 metadata (behavior-preserving); the fixed legacy fallbacks are retired to documented
+  compatibility shims; two per-instance shims remain by policy. Governance validation checks the
+  runtime metadata — missing/orphan/deprecated definitions, invalid edition mappings, orphan
+  capabilities, definition coverage; the report requires `runtime.audit`, running validation requires
+  `runtime.admin`. Current: 100% adoption, 71.4% runtime authority, 100% definition coverage).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -486,7 +494,7 @@ appointments), `/operations` (D.20 firm projects/tasks/capacity), `/reporting` (
 certificates/incidents/findings), `/observability` (D.26 services/health/diagnostics/telemetry/alerts/
 reliability), `/configuration` (D.27 settings/features/editions/preferences/changes), `/runtime` (D.28 runtime
 engine — effective config/features/snapshots/cache), `/runtime/cluster` (D.29 workers/versions/
-convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registry), `/workspace`
+convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registry + D.31 governance/authority), `/workspace`
 (meeting), `/portfolio` +
 `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
 `/api/v1/*`.
@@ -499,10 +507,10 @@ convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registr
   document_platform, governance, identity, integration, observability, operations, opportunity,
   outbox, portfolio, reporting, runtime, runtime_behavior, runtime_coordination, scheduling, security,
   work — plus core tables inline in `schema.py`).
-- **Alembic:** 75 migrations, **single head `z4e5f6a7b8c9`**; `alembic current == heads`.
-  Recent chain: D.22 `t0e1f2a3b4c5` → D.23 `u1f2a3b4c5d6` → D.24 `v2a3b4c5d6e7` → D.25
-  `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29
-  `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9`.
+- **Alembic:** 76 migrations, **single head `z8a9b0c1d2e3`**; `alembic current == heads`.
+  Recent chain: D.23 `u1f2a3b4c5d6` → D.24 `v2a3b4c5d6e7` → D.25 `w7a8b9c0d1e2` → D.26
+  `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30
+  `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

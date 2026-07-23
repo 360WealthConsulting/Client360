@@ -176,7 +176,7 @@ def list_definitions(principal, *, report_type=None, category=None) -> list[dict
     from app.services.runtime import consumption
     ctx = consumption.runtime_context()
     return [r for r in rows
-            if consumption.feature_enabled(f"reporting.module.{r['id']}", context=ctx, default=True)]
+            if consumption.feature_enabled(f"reporting.module.{r['id']}", context=ctx, default=True, shim=True)]
 
 
 def get_definition(principal, definition_id: int) -> dict | None:

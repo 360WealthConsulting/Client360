@@ -175,6 +175,19 @@ _DEFS = (
            sources.runtime_behavior_adoption_pct),
     Metric("migrated_behavior_count", "Migrated Behaviors", "operations", "count", "card", False,
            sources.runtime_migrated_behavior_count),
+    # Runtime authority / governance (Phase D.31 — Analytics consumes authority statistics).
+    Metric("retired_behavior_count", "Retired Behaviors", "operations", "count", "card", False,
+           sources.runtime_retired_behavior_count),
+    Metric("runtime_authority_percent", "Runtime Authority", "operations", "percent", "card", False,
+           sources.runtime_authority_pct),
+    Metric("runtime_definition_coverage", "Runtime Definition Coverage", "operations", "percent",
+           "card", False, sources.runtime_definition_coverage_pct),
+    Metric("runtime_governance_issues", "Runtime Governance Issues", "operations", "count", "card",
+           False, sources.runtime_governance_issue_count),
+    Metric("compatibility_shim_count", "Compatibility Shims", "operations", "count", "card", False,
+           sources.runtime_compatibility_shim_count),
+    Metric("compatibility_fallbacks", "Compatibility Fallbacks", "operations", "count", "card", False,
+           sources.runtime_compatibility_fallback_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
@@ -208,7 +221,7 @@ def compute_metric(principal, metric_key: str) -> dict:
             return {"key": m.key, "label": m.label, "unit": m.unit, "category": m.category,
                     "viz": m.viz, "value": None, "restricted": True}
         from app.services.runtime import consumption
-        if not consumption.feature_enabled("analytics.executive_metrics", default=True):
+        if not consumption.feature_enabled("analytics.executive_metrics", default=True, shim=True):
             return {"key": m.key, "label": m.label, "unit": m.unit, "category": m.category,
                     "viz": m.viz, "value": None, "restricted": True, "reason": "runtime_disabled"}
     value = m.compute(principal)

@@ -224,7 +224,7 @@ def execute_dispatch(job_type: str, *, config: dict, principal, actor_user_id) -
     if fn is None:
         raise DispatchError(f"unknown job_type {job_type!r}")
     from app.services.runtime import consumption
-    if not consumption.feature_enabled(f"automation.job.{job_type}", default=True):
+    if not consumption.feature_enabled(f"automation.job.{job_type}", default=True, shim=True):
         return {"skipped": True, "reason": "runtime_disabled", "job_type": job_type}
     return fn({"config": config or {}, "principal": principal, "actor_user_id": actor_user_id})
 

@@ -47,6 +47,11 @@ def define_runtime_behavior_tables(metadata: MetaData):
         Column("status", Text, nullable=False, server_default="legacy"),
         Column("runtime_key", Text),                 # the feature/config code the behavior consumes
         Column("consumes_config", Boolean, nullable=False, server_default="false"),
+        # (D.31) the runtime engine is the authoritative source for this behavior (a D.27 definition
+        # exists); the legacy default remains only as a documented compatibility shim.
+        Column("authoritative", Boolean, nullable=False, server_default="false"),
+        Column("compatibility_shim", Boolean, nullable=False, server_default="false"),
+        Column("runtime_default", JSON),             # the seeded runtime default value/spec
         Column("default_behavior", JSON),            # the legacy default preserved on migration
         Column("description", Text),
         Column("migrated_at", DateTime(timezone=True)),

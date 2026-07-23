@@ -105,13 +105,22 @@ def get_daily_dashboard(principal, *, now=None, limit=20):
         scope = accessible_person_ids(conn, principal)  # None (read_all) | set
 
     # Tasks + exceptions from the authoritative, already record-scoped work read.
+    # (D.31) Section inclusion consumes the runtime engine ALONGSIDE the RBAC capability — the
+    # capability check is never bypassed (ADR-004); a section is shown only when the principal holds
+    # the capability AND the runtime section feature is enabled. Behavior-preserving: the seeded
+    # runtime feature is enabled, so behavior is unchanged.
+    from app.services.runtime import consumption
+    _rt = consumption.runtime_context()
     tasks, exceptions = [], []
-    if principal.can("work.read"):
+    if principal.can("work.read") and consumption.feature_enabled(
+            "advisor_workspace.section.work", context=_rt, default=True):
         items = work_items(principal)
-        if principal.can("task.read"):
+        if principal.can("task.read") and consumption.feature_enabled(
+                "advisor_workspace.section.tasks", context=_rt, default=True):
             tasks = [i for i in items if i.get("entity_type") == "task"
                      and str(i.get("status") or "").lower() not in _CLOSED]
-        if principal.can("exception.read"):
+        if principal.can("exception.read") and consumption.feature_enabled(
+                "advisor_workspace.section.exceptions", context=_rt, default=True):
             exceptions = [i for i in items if i.get("entity_type") == "exception"]
 
     attention = _clients_needing_attention(exceptions)

@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: z4e5f6a7b8c9      # `alembic heads` / `alembic current`
-  route_count: 778                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: z8a9b0c1d2e3      # `alembic heads` / `alembic current`
+  route_count: 780                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -90,6 +90,8 @@ source_producer_modules:
   # Runtime Consumption (D.30) — the standardized behavioral consumption layer; must not import composition layers.
   - app/services/runtime/consumption.py
   - app/services/runtime/behavior.py
+  # Runtime Governance (D.31) — validates runtime metadata; must not import composition layers.
+  - app/services/runtime/governance.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:

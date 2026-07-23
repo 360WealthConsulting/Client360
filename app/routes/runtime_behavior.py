@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.runtime import behavior
+from app.services.runtime import behavior, governance
 from app.services.runtime.coordination_common import as_json
 from app.templating import install_filters
 
@@ -36,9 +36,13 @@ def _one(form, key):
 
 @router.get("", response_class=HTMLResponse)
 def overview(request: Request, principal: Principal = Depends(require_capability("runtime.view"))):
+    gov = governance.validate()
     return templates.TemplateResponse(request=request, name="runtime/behavior.html", context={
         "principal": principal, "adoption": behavior.adoption(principal),
-        "behaviors": behavior.list_behaviors(), "can_admin": principal.can("runtime.admin")})
+        "behaviors": behavior.list_behaviors(),
+        "governance": {"ok": gov["ok"], "issue_count": gov["issue_count"],
+                       "coverage_pct": gov["coverage"]["coverage_pct"]},
+        "can_admin": principal.can("runtime.admin")})
 
 
 @router.get("/adoption")
@@ -85,3 +89,20 @@ def mark_retired(code: str, request: Request,
 def migration_completed(request: Request,
                         principal: Principal = Depends(require_capability("runtime.admin"))):
     return JSONResponse(as_json(behavior.record_migration_completed(actor_user_id=principal.user_id)))
+
+
+# --- runtime governance (D.31) -----------------------------------------------
+
+@router.get("/governance")
+def governance_report(request: Request,
+                      principal: Principal = Depends(require_capability("runtime.audit"))):
+    """The runtime-metadata governance report: missing/orphan/deprecated definitions, invalid edition
+    mappings, orphan capabilities, and definition coverage for authoritative behaviors."""
+    return JSONResponse(as_json(governance.validate()))
+
+
+@router.post("/governance/validate")
+def governance_validate(request: Request,
+                        principal: Principal = Depends(require_capability("runtime.admin"))):
+    """Run governance validation and record a firm-level governance_validation_completed event."""
+    return JSONResponse(as_json(governance.record_validation(actor_user_id=principal.user_id)))
