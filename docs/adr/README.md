@@ -123,6 +123,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-036](ADR-036-runtime-authority-and-legacy-retirement.md) | Runtime Authority: the engine is authoritative for migrated behavior; legacy fallbacks retired to documented compatibility shims; runtime metadata governed | Accepted | Runtime (authority) | D.31 |
 | [ADR-037](ADR-037-runtime-policy-engine.md) | Runtime Policy Engine: centralized, declarative business decisions that consume RuntimeContext (the engine stays the sole evaluator); a governed policy registry; policies never bypass RBAC | Accepted | Runtime (policy) | D.32 |
 | [ADR-038](ADR-038-workflow-orchestration-engine.md) | Workflow Orchestration Engine: centralized, declarative, deterministic process coordination that consumes RuntimeContext + the Policy Engine; deterministic replay + simulation; a governed workflow registry; coordinates existing services, never duplicating domain behavior | Accepted | Orchestration (workflow) | D.33 |
+| [ADR-039](ADR-039-domain-event-model.md) | Enterprise Domain Event Model: a typed, versioned, governed domain-event layer over the existing transactional outbox (the sole bus); no second event table; orchestration publishes domain events; reuses delivery guarantees / dead-letter / versioning | Accepted | Events (messaging) | D.34 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

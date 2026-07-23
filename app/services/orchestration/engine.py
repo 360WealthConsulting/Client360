@@ -85,9 +85,23 @@ def launch(definition_code, *, subject=None, inputs=None, runtime=None, person_i
     # audit hash-chain is reserved for low-frequency admin/governance actions (registry lifecycle +
     # governance validation) — routine launches/transitions are never individually written to it (the
     # same posture as the automation framework), avoiding audit-volume + user-FK coupling.
+    # (D.34) Publish a domain event so downstream modules can react asynchronously through the event bus
+    # rather than the engine invoking them directly. Additive + best-effort (the outbox dispatcher is
+    # gated off by default, so behavior is unchanged until a consumer is enabled).
+    _publish_domain_event(row, "launched")
     publish_timeline({**row, "definition_code": definition_code}, "launched",
                      title=f"{definition.name} launched")
     return row
+
+
+def _publish_domain_event(inst: dict, event: str):
+    """Emit the ``orchestration.lifecycle`` domain event (best-effort; never breaks the engine)."""
+    from app.services.events import publisher
+    publisher.publish_safe(
+        "orchestration.lifecycle",
+        {"instance_id": inst["id"], "definition": inst.get("definition_code") or "",
+         "event": event, "stage": inst.get("current_stage") or ""},
+        producer="orchestration.engine", subject_ref=f"orchestration:{inst['id']}")
 
 
 def _evaluate_route(definition, transition, wctx) -> tuple[bool, dict | None]:
@@ -171,6 +185,9 @@ def _finish_transition(definition, updated, from_stage, actor_user_id):
     # The append-only orchestration_events ledger is the lifecycle record; routine transitions are not
     # written to the shared audit hash-chain individually (see launch()). Only major lifecycle events
     # publish to the client timeline (and only for client-anchored instances).
+    # (D.34) On a terminal outcome, publish the orchestration.lifecycle domain event (best-effort).
+    if to_kind in ("completed", "failed", "cancelled", "compensated"):
+        _publish_domain_event({**updated, "definition_code": definition.code}, event_type)
     publish_timeline({**updated, "definition_code": definition.code}, event_type,
                      title=f"{definition.name}: {to_stage}")
     return updated

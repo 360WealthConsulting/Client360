@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: za0b1c2d3e4f      # `alembic heads` / `alembic current`
-  route_count: 802                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: zb1c2d3e4f5a      # `alembic heads` / `alembic current`
+  route_count: 814                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -110,6 +110,14 @@ source_producer_modules:
   - app/services/orchestration/diagnostics.py
   - app/services/orchestration/replay.py
   - app/services/orchestration/simulation.py
+  # Enterprise Domain Event Model (D.34) — a typed domain-event model over the existing outbox; must
+  # not import composition layers and nothing in the runtime/policy/orchestration engines imports it.
+  - app/services/events/publisher.py
+  - app/services/events/contracts.py
+  - app/services/events/registry.py
+  - app/services/events/governance.py
+  - app/services/events/diagnostics.py
+  - app/services/events/replay.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:
@@ -143,6 +151,7 @@ declared_schema_registrations:
   - define_runtime_coordination_tables
   - define_runtime_policy_tables
   - define_orchestration_tables
+  - define_event_tables
   - define_runtime_tables
   - define_scheduling_tables
   - define_security_tables

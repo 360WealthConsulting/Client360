@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Domain Events | Client360{% endblock %}
+{% block crumb %}Domain Events{% endblock %}
+{% block content %}
+{{ ui.page_head("Enterprise Domain Event Model", eyebrow="Typed contracts · versioning · governance", desc="Major business actions emit typed, versioned domain events that other modules consume asynchronously over the existing transactional outbox — no direct inter-module dependencies, no second event table. This tracks the contract registry, subscriptions, coverage, and governance.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">Coverage &amp; publication</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Domain coverage</div><div style="font-size:22px; font-weight:700">{{ adoption.coverage_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Consumer coverage</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.consumer_coverage_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active contracts</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.active }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Subscriptions</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.active_subscriptions }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Published</div><div style="font-size:22px; font-weight:700">{{ stats.published }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Governance</div><div style="font-size:22px; font-weight:700">{{ ui.badge("OK" if governance.ok else (governance.issue_count ~ " issues"), 'good' if governance.ok else 'bad') }}</div></article>
+  </div>
+  <p class="subtle" style="margin-top:8px; font-size:12px">Producer coverage: {{ adoption.registry.producer_coverage_pct }}% · Publish failures: {{ stats.publish_failures }} · Bus: transactional outbox (reused)</p>
+</section>
+
+<section class="stack"><h2 class="section-title">Domain-event contracts</h2>
+{% if contracts %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Event type</th><th>Category</th><th>Status</th><th>v</th><th>Producer</th><th>Payload schema</th></tr></thead>
+  <tbody>{% for c in contracts %}<tr><td><strong>{{ c.event_type }}</strong><div class="subtle" style="font-size:11px">{{ c.name }}</div></td><td>{{ c.category }}</td>
+    <td>{{ ui.badge(c.status|capitalize, 'good' if c.status == 'active' else 'bad') }}</td>
+    <td>{{ c.schema_version }}</td>
+    <td>{{ c.producer or "—" }}</td>
+    <td class="subtle" style="font-size:11px">{{ (c.payload_schema or {})|list|join(", ") or "—" }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No contracts", "The domain-event registry is empty.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}
