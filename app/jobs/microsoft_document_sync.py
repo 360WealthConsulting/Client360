@@ -213,7 +213,7 @@ def discover_drives(access_token: str) -> list[dict[str, Any]]:
     from app.services.runtime import consumption
     _raw_site_ids = consumption.config_value(
         "microsoft365.sharepoint_site_ids",
-        default=os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", ""))
+        default=os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", ""), shim=True)
     if isinstance(_raw_site_ids, (list, tuple)):
         site_ids = [str(v).strip() for v in _raw_site_ids if str(v).strip()]
     else:
@@ -299,7 +299,7 @@ def sync_microsoft_documents() -> dict[str, int]:
     # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
     # Provider init / OAuth / credential loading are unaffected (infrastructure).
     from app.services.runtime import consumption
-    if not consumption.feature_enabled("microsoft365.sync", default=True):
+    if not consumption.feature_enabled("microsoft365.sync", default=True, shim=True):
         return {"skipped": 1, "runtime_disabled": 1}
     with engine.connect() as connection:
         account = connection.execute(

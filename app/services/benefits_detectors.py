@@ -52,7 +52,7 @@ def _cfg_days(key: str, fallback: int) -> int:
     ``app.config`` value — behavior-preserving: with no runtime config item defined, the env-backed
     default is used, so detector behavior is unchanged. Resolved once per detector (not per row)."""
     from app.services.runtime import consumption
-    val = consumption.config_value(f"benefits.{key}", default=fallback)
+    val = consumption.config_value(f"benefits.{key}", default=fallback, shim=True)
     try:
         return int(val)
     except (TypeError, ValueError):

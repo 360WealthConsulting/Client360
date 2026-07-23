@@ -442,6 +442,51 @@ def runtime_migrated_behavior_count(principal) -> int:
                         .where(runtime_behaviors.c.status.in_(("migrated", "retired")))) or 0
 
 
+def runtime_retired_behavior_count(principal) -> int:
+    """Firm-level count of behaviors whose legacy fallback has been retired (Phase D.31 — Analytics
+    consumes runtime-authority statistics; the runtime engine never depends on Analytics)."""
+    from app.db import runtime_behaviors
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_behaviors)
+                        .where(runtime_behaviors.c.status == "retired")) or 0
+
+
+def runtime_authority_pct(principal):
+    """Runtime authority percentage — behaviors for which the engine is authoritative over the
+    migratable set (Phase D.31)."""
+    from app.services.runtime import behavior
+    return behavior.coverage()["authority_pct"]
+
+
+def runtime_definition_coverage_pct(principal):
+    """Governance definition coverage — authoritative behaviors whose complete runtime definition is
+    present (Phase D.31)."""
+    from app.services.runtime import governance
+    return governance.validate()["coverage"]["coverage_pct"]
+
+
+def runtime_governance_issue_count(principal) -> int:
+    """Count of open runtime-metadata governance issues (Phase D.31)."""
+    from app.services.runtime import governance
+    return int(governance.validate()["issue_count"])
+
+
+def runtime_compatibility_shim_count(principal) -> int:
+    """Firm-level count of documented compatibility shims (migrated behaviors that keep a legacy
+    default because their key space is unbounded) (Phase D.31)."""
+    from app.db import runtime_behaviors
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_behaviors)
+                        .where(runtime_behaviors.c.compatibility_shim.is_(True))) or 0
+
+
+def runtime_compatibility_fallback_count(principal) -> int:
+    """In-process count of compatibility-shim fallbacks actually served (an authoritative/shim behavior
+    served its legacy default because no runtime definition was found) (Phase D.31)."""
+    from app.services.runtime import consumption
+    return int(consumption.adoption_stats().get("compatibility_fallbacks") or 0)
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

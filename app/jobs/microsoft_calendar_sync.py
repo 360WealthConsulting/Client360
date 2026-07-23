@@ -302,7 +302,7 @@ def sync_calendar_events(
     # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
     # Provider init / OAuth / credential loading are unaffected (infrastructure).
     from app.services.runtime import consumption
-    if not consumption.feature_enabled("microsoft365.sync", default=True):
+    if not consumption.feature_enabled("microsoft365.sync", default=True, shim=True):
         return {"skipped": True, "reason": "runtime_disabled"}
     with engine.connect() as connection:
         account = connection.execute(

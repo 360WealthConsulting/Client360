@@ -7,29 +7,36 @@ behavior is identical to pre-D.30. The runtime engine remains the sole evaluator
 sole coordination layer; D.27 remains the sole metadata owner. This document is the durable inventory
 (the `runtime_behaviors` registry is the machine-readable source of truth).
 
-## Adoption
+## Adoption &amp; runtime authority (updated D.31)
 
-- **Migrated behaviors:** 6
-- **Legacy (migratable, not yet migrated):** 1
-- **Deterministic (no switch — excluded from the denominator):** 4
-- **Adoption percentage** (migrated+retired ÷ migratable): **85.7%**
+- **Adoption** (migrated+retired ÷ migratable): **100%** — every migratable behavior consumes the engine.
+- **Runtime authority** (authoritative ÷ migratable): **71.4%** — the engine is the authoritative source (a D.27 definition exists) for 5 of 7 migratable behaviors.
+- **Retired** (legacy fallback → documented compatibility shim; runtime authoritative): **4**
+- **Migrated + authoritative** (fixed, seeded): **1** (advisor workspace)
+- **Migrated + compatibility shim** (per-instance, unbounded — legacy default remains by policy): **2**
+- **Deterministic** (no switch — excluded from the denominator): **4**
+- **Governance:** definition coverage **100%**, **0** open issues.
 
-## Migrated modules
+## Authoritative / retired behaviors (runtime is the authoritative source)
 
-| Module | Behavior code | Runtime key | Call site | Legacy default |
-|---|---|---|---|---|
-| Automation | `automation.job_dispatch` | `automation.job.<type>` (feature) | `automation/dispatch.py::execute_dispatch` | enabled |
-| Analytics | `analytics.executive_metrics` | `analytics.executive_metrics` (feature) | `analytics/metrics.py::compute_metric` | enabled (capability still required) |
-| Benefits | `benefits.detector_windows` | `benefits.<window>` (config) | `benefits_detectors.py` (5 detectors, once each) | `app.config.benefits_*_days()` |
-| Reporting | `reporting.optional_modules` | `reporting.module.<id>` (feature) | `reporting/service.py::list_definitions` | included |
-| Microsoft 365 | `microsoft365.sync` | `microsoft365.sync` (feature) | `microsoft_{mail,calendar,document}_sync.py` | enabled |
-| Microsoft 365 | `microsoft365.sharepoint_scope` | `microsoft365.sharepoint_site_ids` (config) | `microsoft_document_sync.py::discover_drives` | `MICROSOFT_SHAREPOINT_SITE_IDS` env |
+| Module | Behavior code | Runtime definition seeded (D.31) | Status |
+|---|---|---|---|
+| Analytics | `analytics.executive_metrics` | feature flag `analytics.executive_metrics` (enabled) | **retired** |
+| Microsoft 365 | `microsoft365.sync` | feature flag `microsoft365.sync` (enabled) | **retired** |
+| Microsoft 365 | `microsoft365.sharepoint_scope` | config item `microsoft365.sharepoint_site_ids` (=env) | **retired** |
+| Benefits | `benefits.detector_windows` | 5 config items `benefits.<window>_days` (=app.config defaults) | **retired** |
+| Advisor workspace | `advisor_workspace.sections` | 3 flags `advisor_workspace.section.{work,tasks,exceptions}` (enabled) | **migrated + authoritative** |
 
-## Remaining legacy behavior (migratable — future work)
+Retired behaviors keep the consumption `default=` as a **documented compatibility shim** (`shim=True`):
+served only if the runtime definition is absent (e.g. after a downgrade), and counted separately
+(`compatibility_fallbacks`) so it is observable. In normal operation the engine is authoritative.
 
-| Module | Behavior code | Note |
+## Compatibility shims (per-instance, unbounded key spaces — permanent policy)
+
+| Module | Behavior code | Why the legacy default remains |
 |---|---|---|
-| Advisor workspace | `advisor_workspace.sections` | Sections are capability-gated today; a runtime section gate is a future migration candidate. |
+| Automation | `automation.job_dispatch` (`automation.job.<type>`) | The dispatch registry is extensible and has an open-ended `custom` handler; `execute_dispatch` accepts any job-type string. A new type must default enabled → `default=True` shim stays. |
+| Reporting | `reporting.optional_modules` (`reporting.module.<id>`) | Report definitions are user-created rows; the id space is unbounded → cannot pre-seed → `default=True` shim stays. |
 
 ## Deterministic / data-driven (no behavioral switch to migrate)
 

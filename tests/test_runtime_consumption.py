@@ -137,12 +137,15 @@ def test_behavior_registry_seed_and_coverage():
     assert "automation.job_dispatch" in behaviors and behaviors["automation.job_dispatch"]["status"] == "migrated"
     assert "operations.workspace" in behaviors and behaviors["operations.workspace"]["status"] == "deterministic"
     cov = behavior.coverage()
-    assert cov["migrated"] == 6 and cov["deterministic"] == 4 and cov["adoption_pct"] == 85.7
+    # After D.31: 4 retired + 3 migrated (automation/reporting shims + advisor) + 4 deterministic.
+    assert cov["migrated"] == 3 and cov["retired"] == 4 and cov["deterministic"] == 4
+    assert cov["adoption_pct"] == 100.0
 
 
 def test_behavior_mark_migrated_records_event():
-    # migrate the one legacy behavior; it records a behavioral event to the runtime_events ledger
-    row = behavior.mark_migrated("advisor_workspace.sections", actor_user_id=None)
+    # mark a behavior migrated; it records a behavioral event to the runtime_events ledger.
+    # (Use a deterministic behavior as a throwaway; restore it after so the suite state is stable.)
+    row = behavior.mark_migrated("operations.workspace", actor_user_id=None)
     assert row["status"] == "migrated"
     with engine.connect() as c:
         n = c.scalar(text("SELECT count(*) FROM runtime_events WHERE entity_type='behavior' "
@@ -150,8 +153,8 @@ def test_behavior_mark_migrated_records_event():
     assert n >= 1
     # restore for idempotency of the suite
     with engine.begin() as c:
-        c.execute(update(runtime_behaviors).where(runtime_behaviors.c.code == "advisor_workspace.sections")
-                  .values(status="legacy", migrated_at=None))
+        c.execute(update(runtime_behaviors).where(runtime_behaviors.c.code == "operations.workspace")
+                  .values(status="deterministic", migrated_at=None))
 
 
 def test_adoption_stats_counts_lookups():
@@ -159,7 +162,7 @@ def test_adoption_stats_counts_lookups():
     stats = consumption.adoption_stats()
     assert stats["feature_lookups"] >= 1 and "runtime_adoption_pct" in stats
     ad = behavior.adoption()
-    assert "registry" in ad and "consumption" in ad and ad["adoption_pct"] == 85.7
+    assert "registry" in ad and "consumption" in ad and ad["adoption_pct"] == 100.0
 
 
 # --- migrated call sites (behavior-preserving) -------------------------------
@@ -203,25 +206,33 @@ def test_reporting_optional_module_gate():
 
 
 def test_microsoft365_sync_gate_skips_when_runtime_disabled():
-    uid = _uid()
+    from app.jobs import microsoft_mail_sync
+    from app.services.runtime.cache import RUNTIME_CACHE
     try:
-        from app.jobs import microsoft_mail_sync
-        _flag(uid, "microsoft365.sync", rollout=0)   # runtime-disable sync
+        # microsoft365.sync is now seeded (D.31 authoritative) — disable it at the source, restore after.
+        with engine.begin() as c:
+            c.execute(text("UPDATE configuration_feature_flags SET rollout_percentage=0 "
+                           "WHERE code='microsoft365.sync'"))
+        RUNTIME_CACHE.invalidate()
         result = microsoft_mail_sync.sync_recent_mail()
         assert result.get("skipped") is True and result.get("reason") == "runtime_disabled"
     finally:
-        _cleanup(uid)
+        with engine.begin() as c:
+            c.execute(text("UPDATE configuration_feature_flags SET rollout_percentage=100 "
+                           "WHERE code='microsoft365.sync'"))
+        RUNTIME_CACHE.invalidate()
 
 
 def test_benefits_detector_window_consumes_runtime_config():
     uid = _uid()
     try:
         from app.services import benefits_detectors
-        # legacy default preserved when no runtime config
-        assert benefits_detectors._cfg_days("new_hire_window_days", 30) == 30
-        # runtime config overrides deterministically
-        _config_item(uid, "benefits.new_hire_window_days", "45")
-        assert benefits_detectors._cfg_days("new_hire_window_days", 30) == 45
+        # a non-seeded window key → legacy default preserved when no runtime config
+        key = f"test_window_{_tag()}"
+        assert benefits_detectors._cfg_days(key, 30) == 30
+        # runtime config item overrides deterministically
+        _config_item(uid, f"benefits.{key}", "45")
+        assert benefits_detectors._cfg_days(key, 30) == 45
     finally:
         _cleanup(uid)
 

@@ -16,7 +16,8 @@ from __future__ import annotations
 import threading
 
 _lock = threading.RLock()
-_STATS = {"runtime_decisions": 0, "legacy_fallbacks": 0, "config_lookups": 0, "feature_lookups": 0}
+_STATS = {"runtime_decisions": 0, "legacy_fallbacks": 0, "config_lookups": 0, "feature_lookups": 0,
+          "compatibility_fallbacks": 0}
 
 
 def _note(kind: str):
@@ -37,9 +38,11 @@ def runtime_context(*, organization_id=None, user_id=None, principal_roles=None)
 
 
 def feature_enabled(code: str, *, context=None, default: bool = False, organization_id=None,
-                    user_id=None, principal_roles=None) -> bool:
+                    user_id=None, principal_roles=None, shim: bool = False) -> bool:
     """Standard behavioral decision. Returns the runtime evaluation when the feature is defined, else
-    the legacy ``default``. Never raises — always returns a bool."""
+    the legacy ``default``. ``shim=True`` marks the ``default`` as a documented compatibility shim
+    (D.31) — a fallback taken then is counted separately, so authoritative behaviors serving their
+    legacy default (e.g. after a downgrade) are observable. Never raises — always returns a bool."""
     _note("feature_lookups")
     try:
         ctx = context if context is not None else runtime_context(
@@ -50,12 +53,15 @@ def feature_enabled(code: str, *, context=None, default: bool = False, organizat
     except Exception:
         pass
     _note("legacy_fallbacks")
+    if shim:
+        _note("compatibility_fallbacks")
     return bool(default)
 
 
-def config_value(key: str, *, context=None, default=None, organization_id=None, user_id=None):
+def config_value(key: str, *, context=None, default=None, organization_id=None, user_id=None,
+                 shim: bool = False):
     """Standard configuration read. Returns the effective runtime value when set, else the legacy
-    ``default``. Never raises."""
+    ``default`` (a documented compatibility shim when ``shim=True``). Never raises."""
     _note("config_lookups")
     try:
         ctx = context if context is not None else runtime_context(
@@ -67,6 +73,8 @@ def config_value(key: str, *, context=None, default=None, organization_id=None, 
     except Exception:
         pass
     _note("legacy_fallbacks")
+    if shim:
+        _note("compatibility_fallbacks")
     return default
 
 

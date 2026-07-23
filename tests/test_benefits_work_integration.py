@@ -281,7 +281,7 @@ def test_per_condition_failure_isolation_does_not_abort_scan(monkeypatch):
 
 # --- configurable thresholds -------------------------------------------------
 
-def test_configurable_new_hire_window(monkeypatch):
+def test_configurable_new_hire_window():
     a = _admin()
     # employee hired 100 days ago; default window (30) → eligibility, not new-hire
     o = _org(a)
@@ -291,10 +291,25 @@ def test_configurable_new_hire_window(monkeypatch):
     be.create_employment(a, organization_id=o, person_id=pid, hire_date=TODAY - timedelta(days=100))
     det.scan_benefits_exceptions(actor_user_id=a.user_id, today=TODAY)
     assert _exc(o, "BEN_ELIGIBILITY_UNRESOLVED") and not _exc(o, "BEN_NEW_HIRE_ENROLLMENT_DUE")
-    # widen the window past 100 → the same employee is now a "new hire", not "eligibility unresolved"
-    monkeypatch.setenv("BENEFITS_NEW_HIRE_WINDOW_DAYS", "365")
-    det.scan_benefits_exceptions(actor_user_id=a.user_id, today=TODAY)
-    assert _exc(o, "BEN_NEW_HIRE_ENROLLMENT_DUE") and not _exc(o, "BEN_ELIGIBILITY_UNRESOLVED")
+    # (D.31) the runtime engine is now the AUTHORITATIVE source for the benefits window (seeded config
+    # item). Widen the window past 100 via the runtime config item — not the env var — and the same
+    # employee is now a "new hire", not "eligibility unresolved".
+    from sqlalchemy import text as _text
+
+    from app.db import engine as _rt_engine
+    from app.services.runtime.cache import RUNTIME_CACHE
+    with _rt_engine.begin() as _c:
+        _c.execute(_text("UPDATE configuration_items SET value=CAST('365' AS json) "
+                         "WHERE code='benefits.new_hire_window_days'"))
+    RUNTIME_CACHE.invalidate()
+    try:
+        det.scan_benefits_exceptions(actor_user_id=a.user_id, today=TODAY)
+        assert _exc(o, "BEN_NEW_HIRE_ENROLLMENT_DUE") and not _exc(o, "BEN_ELIGIBILITY_UNRESOLVED")
+    finally:
+        with _rt_engine.begin() as _c:
+            _c.execute(_text("UPDATE configuration_items SET value=CAST('30' AS json) "
+                             "WHERE code='benefits.new_hire_window_days'"))
+        RUNTIME_CACHE.invalidate()
 
 
 def test_threshold_safe_defaults():
