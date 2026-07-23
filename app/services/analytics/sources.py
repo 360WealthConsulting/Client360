@@ -47,6 +47,12 @@ def _person_household_ids(c, ids):
 
 def client_count(principal) -> int:
     ids = book_scope(principal)
+    if ids is None:
+        # (D.37) firm-wide → serve from the projection when healthy+fresh, else fall back below.
+        from app.services.projections import adoption
+        pc = adoption.count("people.summary", principal, firm_level=False)
+        if pc is not None:
+            return pc
     with engine.connect() as c:
         if ids is None:
             return c.scalar(select(func.count()).select_from(people)) or 0
@@ -55,6 +61,11 @@ def client_count(principal) -> int:
 
 def household_count(principal) -> int:
     ids = book_scope(principal)
+    if ids is None:                                    # (D.37) firm-wide → projection with fallback
+        from app.services.projections import adoption
+        pc = adoption.count("household.summary", principal, firm_level=False)
+        if pc is not None:
+            return pc
     with engine.connect() as c:
         if ids is None:
             return c.scalar(select(func.count()).select_from(households)) or 0
@@ -115,6 +126,12 @@ def document_count(principal) -> int:
     Documents never depend on Analytics). Excludes soft-deleted."""
     from app.db import documents
     ids = book_scope(principal)
+    if ids is None:                                    # (D.37) firm-wide → projection with fallback
+        from app.services.projections import adoption
+        pc = adoption.count("document.status", principal, firm_level=False,
+                            status_col="status", status_not_in=("deleted",))
+        if pc is not None:
+            return pc
     with engine.connect() as c:
         stmt = select(func.count()).select_from(documents).where(documents.c.status != "deleted")
         if ids is not None:
@@ -740,9 +757,119 @@ def projection_coverage_pct(principal):
     return _proj_cov().get("event_coverage_pct")
 
 
+# --- Read Surface Adoption (Phase D.37 — projection-backed firm counts, authoritative fallback) -----
+
+def projection_open_opportunity_count(principal) -> int:
+    """Firm-level open-opportunity count — from the opportunity.pipeline projection when healthy+fresh,
+    else the authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    pc = adoption.count("opportunity.pipeline", principal, firm_level=True,
+                        status_col="status", status_in=("open",))
+    if pc is not None:
+        return pc
+    from app.db import opportunities
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(opportunities)
+                        .where(opportunities.c.status == "open")) or 0
+
+
+def projection_open_compliance_count(principal) -> int:
+    """Firm-level open-compliance-review count — from the compliance.queue projection when healthy+fresh,
+    else the authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    pc = adoption.count("compliance.queue", principal, firm_level=True, null_col="decided_at")
+    if pc is not None:
+        return pc
+    from app.db import compliance_reviews
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(compliance_reviews).where(
+            compliance_reviews.c.status.notin_(
+                ("approved", "approved_with_conditions", "returned", "declined")))) or 0
+
+
+def projection_tax_return_count(principal) -> int:
+    """Firm-level tax-return count — from the tax.pipeline projection when healthy+fresh, else the
+    authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    pc = adoption.count("tax.pipeline", principal, firm_level=True)
+    if pc is not None:
+        return pc
+    from app.db import tax_engagement_returns
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(tax_engagement_returns)) or 0
+
+
+def projection_insurance_case_count(principal) -> int:
+    """Firm-level insurance-case count — from the insurance.pipeline projection when healthy+fresh, else
+    the authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    pc = adoption.count("insurance.pipeline", principal, firm_level=True)
+    if pc is not None:
+        return pc
+    from app.db import insurance_cases
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(insurance_cases)) or 0
+
+
+def projection_benefits_enrollment_count(principal) -> int:
+    """Firm-level benefits-enrollment count — from the benefits.enrollment projection when healthy+fresh,
+    else the authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    pc = adoption.count("benefits.enrollment", principal, firm_level=True)
+    if pc is not None:
+        return pc
+    from app.db import benefit_enrollments
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(benefit_enrollments)) or 0
+
+
+def projection_open_exception_count(principal) -> int:
+    """Firm-level open-exception count — from the exception.dashboard projection when healthy+fresh, else
+    the authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    pc = adoption.count("exception.dashboard", principal, firm_level=True,
+                        status_col="status", status_not_in=("resolved", "cancelled"))
+    if pc is not None:
+        return pc
+    from app.db import exceptions
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(exceptions)
+                        .where(exceptions.c.status.notin_(("resolved", "cancelled")))) or 0
+
+
+def projection_adoption_pct(principal):
+    """Read-surface adoption utilization — projection reads ÷ (reads + fallbacks) (Phase D.37)."""
+    from app.services.projections import adoption
+    return adoption.usage_stats().get("projection_read_pct")
+
+
+def projection_fallback_count(principal) -> int:
+    """In-process count of adopted-read fallbacks to the authoritative table (Phase D.37)."""
+    from app.services.projections import adoption
+    return int(adoption.usage_stats().get("fallbacks") or 0)
+
+
+def projection_backed_read_count(principal) -> int:
+    """In-process count of adopted reads served from a projection (Phase D.37)."""
+    from app.services.projections import adoption
+    return int(adoption.usage_stats().get("reads") or 0)
+
+
+def adopted_read_surface_count(principal) -> int:
+    """Count of read surfaces adopted onto projections (Phase D.37)."""
+    from app.services.projections.adoption import ADOPTION_TARGETS
+    return len(ADOPTION_TARGETS)
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
-    Operations never depends on Analytics). Firm operations are not client-book-scoped."""
+    Operations never depends on Analytics). Firm operations are not client-book-scoped.
+    (D.37) Served from the operations.projects projection when healthy+fresh, else authoritative."""
+    from app.services.projections import adoption
+    pc = adoption.count("operations.projects", principal, firm_level=True,
+                        status_col="status", status_in=("active",))
+    if pc is not None:
+        return pc
     from app.db import projects
     with engine.connect() as c:
         return c.scalar(select(func.count()).select_from(projects)
@@ -750,7 +877,13 @@ def active_project_count(principal) -> int:
 
 
 def open_operational_task_count(principal) -> int:
-    """Firm-level count of open operational tasks (Phase D.20)."""
+    """Firm-level count of open operational tasks (Phase D.20).
+    (D.37) Served from the operations.tasks projection when healthy+fresh, else authoritative."""
+    from app.services.projections import adoption
+    pc = adoption.count("operations.tasks", principal, firm_level=True,
+                        status_col="status", status_not_in=("completed", "cancelled", "archived"))
+    if pc is not None:
+        return pc
     from app.db import operational_tasks
     with engine.connect() as c:
         return c.scalar(select(func.count()).select_from(operational_tasks)

@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.36** on `release/0.13.0` (migration head `zd3e4f5a6b7c`, 824 routes, 157
+after **Phase D.37** on `release/0.13.0` (migration head `zd3e4f5a6b7c`, 825 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -146,6 +146,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 50 | Workflow Orchestration Engine (declarative workflows, deterministic state management, replay & simulation, governance) | orchestration layer (centralizes multi-stage process coordination behind a declarative, deterministic engine that **consumes `RuntimeContext`** for behavior and the **Runtime Policy Engine** for routing; the runtime engine stays the sole evaluator, the policy engine the sole decision engine; coordinates existing services, never duplicating domain behavior; deterministic replay + dry-run simulation; a governed workflow registry — D.33) |
 | 51 | Enterprise Domain Event Model (typed contracts, versioning, publishing, governance, diagnostics) | event-model layer (a typed, versioned, governed domain-event model **over the existing transactional outbox** — the sole bus; **no second event table**; producers publish contract-validated, **references-only** envelopes; orchestration + the major business domains publish domain FACTS; reuses the outbox delivery guarantees / dead-letter / envelope versioning; a governed contract + subscription registry with producer-adoption governance — D.34, producer adoption across 11 business domains D.35) |
 | 52 | Read Models & Projection Engine (disposable read models, projection framework, rebuild/replay, governance) | read-model layer (consumes the D.34/D.35 domain events from the outbox to build fast, query-optimized, **disposable** read models — 12 `rm_*` tables; the write side stays the sole authoritative mutation layer; **no CQRS write model / no second event log / no event sourcing / no shadow state**; read models contain no business logic and never read authoritative tables; replay rebuilds them deterministically — D.36) |
+| 53 | Read Surface Adoption (adopt projections into read surfaces, graceful fallback, adoption governance) | read-model layer (12 read surfaces consult the projections via a read-only helper before the authoritative read; a projection is served ONLY when healthy + fresh AND on the firm-wide `record.read_all` path — scoped principals always get the authoritative scoped read, so **RBAC is never bypassed**; every adopted read **falls back to the unchanged authoritative read**, so behavior is unchanged until an operator enables + rebuilds; **READS ONLY** — writes stay authoritative, the outbox stays the sole bus; no CQRS/second log/shadow logic — D.37) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -400,6 +401,16 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   `observability.view`; the governance report + full diagnostics require `observability.audit`;
   rebuild/reset/replay require `observability.execute`. Current: 12 projections, 100% event coverage,
   0 governance issues).
+- **Read-surface adoption:** `GET /projections/adoption` (reuses `observability.audit`) reports the D.37
+  adoption of projections into 12 read surfaces (Activity Timeline, Opportunity Pipeline, Compliance
+  Queue, Tax/Insurance/Benefits dashboards, Operational Task Lists, Exception Dashboard, Project/Document
+  dashboards, Household/People summary). Each adopted read consults `projections/adoption.py` first and
+  is served from the projection ONLY when it is healthy + fresh (lag ≤ 100) AND on the firm-wide
+  (`record.read_all`) path — a record-scoped principal always gets the authoritative scoped read, so RBAC
+  is never bypassed; every adopted read **falls back to the unchanged authoritative read** otherwise, so
+  behavior is unchanged until an operator enables + rebuilds. READS ONLY (writes stay authoritative);
+  adoption governance detects unused/unadopted/mixed/bypass/duplicate/stale (currently 0 issues). See
+  `docs/READ_SURFACE_ADOPTION.md`, `docs/PROJECTION_USAGE_GUIDE.md`, `docs/READ_OPTIMIZATION.md`, ADR-042.
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -579,7 +590,7 @@ registry/health/diagnostics/governance/rebuild/replay), `/workspace`
 - **Alembic:** 81 migrations, **single head `zd3e4f5a6b7c`**; `alembic current == heads`.
   Recent chain: D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31
   `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f` → D.34 `zb1c2d3e4f5a` → D.35
-  `zc2d3e4f5a6b` → D.36 `zd3e4f5a6b7c`.
+  `zc2d3e4f5a6b` → D.36 `zd3e4f5a6b7c` (D.37 is code-only — no migration; head unchanged).
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

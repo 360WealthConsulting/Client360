@@ -142,6 +142,70 @@ def _authoritative_tables_referenced() -> list[str]:
     return sorted(t for t in referenced if t not in _ALLOWED_TABLES)
 
 
+def validate_adoption() -> dict:
+    """Validate the D.37 read-surface adoption: every projection is adopted somewhere, every adoption
+    target actually reads its projection (with a fallback), no target reads authoritative directly / has
+    a duplicate query / mixes reads / is stale. Read-only; never raises."""
+    findings = []
+    try:
+        import pathlib
+
+        from . import engine
+        from .adoption import ADOPTION_MODULES, ADOPTION_TARGETS, usage_stats
+        active = {d["projection_id"] for d in registry.list_definitions() if d["status"] == "active"}
+
+        # projection available but unused (an active projection not adopted by any read surface).
+        for pid in sorted(active):
+            if pid not in ADOPTION_TARGETS:
+                findings.append({"type": "projection_available_but_unused", "projection": pid})
+
+        base = pathlib.Path(__file__).resolve().parents[3]
+        per_module = {}
+        for rel in ADOPTION_MODULES:
+            try:
+                per_module[rel] = (base / rel).read_text()
+            except OSError:
+                per_module[rel] = ""
+        blob = "\n".join(per_module.values())
+
+        for pid in ADOPTION_TARGETS:
+            adopted = (f'"{pid}"' in blob or f"'{pid}'" in blob
+                       or (pid == "activity.feed" and "recent_feed(" in blob))
+            if not adopted:
+                findings.append({"type": "endpoint_reading_authoritative", "projection": pid})
+
+        # duplicate query implementations (two targets share a read function).
+        seen = {}
+        for pid, fn in ADOPTION_TARGETS.items():
+            if fn in seen:
+                findings.append({"type": "duplicate_query_implementation", "read": fn, "projection": pid})
+            else:
+                seen[fn] = pid
+
+        # projection bypass (an adoption call with no fallback guard) + mixed reads (a read-model table
+        # queried directly, bypassing the adoption helper).
+        for rel, src in per_module.items():
+            if ("adoption.count(" in src or "adoption.recent_feed(" in src) and "is not None" not in src:
+                findings.append({"type": "projection_bypass", "module": rel})
+            import re
+            for tbl in re.findall(r"""\brm_[\w]+""", src):
+                findings.append({"type": "mixed_authoritative_projection_reads", "module": rel, "table": tbl})
+
+        # projection stale beyond threshold (an adopted, built projection that has fallen far behind).
+        for pid in ADOPTION_TARGETS:
+            if pid not in active:
+                continue
+            st = engine.state(pid)
+            if st["rebuild_count"] > 0 and engine.lag(pid) > LAG_THRESHOLD:
+                findings.append({"type": "projection_stale", "projection": pid, "lag": engine.lag(pid)})
+
+        usage = usage_stats()
+    except Exception as exc:
+        return {"ok": False, "issue_count": 1,
+                "findings": [{"type": "adoption_check_error", "detail": str(exc)}], "usage": {}}
+    return {"ok": len(findings) == 0, "issue_count": len(findings), "findings": findings, "usage": usage}
+
+
 def record_validation(*, actor_user_id=None) -> dict:
     """Run projection governance validation and record a firm-level ``governance_validated`` audit event."""
     report = validate()
