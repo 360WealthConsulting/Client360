@@ -487,6 +487,48 @@ def runtime_compatibility_fallback_count(principal) -> int:
     return int(consumption.adoption_stats().get("compatibility_fallbacks") or 0)
 
 
+# --- Runtime Policy Engine (Phase D.32 — Analytics consumes policy statistics; the policy engine
+#     never imports Analytics) ------------------------------------------------------------------
+
+def policy_evaluation_count(principal) -> int:
+    """In-process count of centralized policy evaluations (routine successful evaluations are counted
+    here, never individually logged) (Phase D.32)."""
+    from app.services.policy import engine as policy_engine
+    return int(policy_engine.evaluation_stats().get("evaluations") or 0)
+
+
+def policy_cache_hit_count(principal) -> int:
+    """In-process count of policy decisions served from the deterministic policy cache (Phase D.32)."""
+    from app.services.policy import engine as policy_engine
+    return int(policy_engine.evaluation_stats().get("cache_hits") or 0)
+
+
+def policy_governance_issue_count(principal) -> int:
+    """Count of open policy-registry governance issues (Phase D.32)."""
+    from app.services.policy import governance as policy_governance
+    return int(policy_governance.validate()["issue_count"])
+
+
+def policy_coverage_pct(principal):
+    """Decision-area coverage — the share of the ten declarative decision areas registered as a policy
+    (Phase D.32)."""
+    from app.services.policy import registry as policy_registry
+    return policy_registry.coverage()["coverage_pct"]
+
+
+def policy_adoption_pct(principal):
+    """Policy adoption — active (engine-evaluated) policies over the migratable set (in-domain policies
+    are documented exceptions, excluded) (Phase D.32)."""
+    from app.services.policy import registry as policy_registry
+    return policy_registry.coverage()["adoption_pct"]
+
+
+def policy_execution_latency_us(principal):
+    """Average in-process policy-execution latency in microseconds (Phase D.32)."""
+    from app.services.policy import engine as policy_engine
+    return policy_engine.evaluation_stats().get("avg_latency_us")
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

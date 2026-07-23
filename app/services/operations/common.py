@@ -118,10 +118,16 @@ def record_event(c, *, entity_type, entity_id, event_type, project_id=None, from
 
 def publish_timeline(row: dict, kind: str):
     """Publish an approved operational lifecycle event to the shared timeline — but only when the
-    item carries a client anchor (the timeline requires person_id/household_id)."""
-    event_type = _TIMELINE_EVENTS.get(kind)
-    if event_type is None:
+    item carries a client anchor (the timeline requires person_id/household_id).
+
+    (D.32) Whether an event kind is publishable is decided by the centralized Runtime Policy Engine
+    (operations.timeline_publish), which consumes the runtime context — behavior-preserving: the
+    policy approves exactly the four operational lifecycle kinds. The anchor requirement and the
+    event-type mapping remain data concerns owned here."""
+    from app.services.policy import evaluate as policy_evaluate
+    if not policy_evaluate("operations.timeline_publish", subject=kind).decision:
         return
+    event_type = _TIMELINE_EVENTS.get(kind) or f"operations_{kind}"
     if not row.get("person_id") and not row.get("household_id"):
         return
     try:

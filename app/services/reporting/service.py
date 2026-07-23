@@ -169,14 +169,16 @@ def list_definitions(principal, *, report_type=None, category=None) -> list[dict
         if category:
             stmt = stmt.where(definitions_t.c.category == category)
         rows = [dict(r) for r in c.execute(stmt.order_by(definitions_t.c.id.desc())).mappings()]
-    # (D.30) Optional report modules are gated through the runtime engine — behavior-preserving: a
-    # definition is included unless a runtime feature ``reporting.module.<code>`` is defined AND
-    # disabled (edition/rollout restrictions on optional reports). With no runtime feature defined,
-    # the legacy default (included) is used, so the report list is unchanged.
+    # (D.32) Optional-report-module eligibility is decided by the centralized Runtime Policy Engine
+    # (reporting.module_eligibility), which consumes the runtime context (the runtime engine remains
+    # the sole evaluator) — behavior-preserving: a definition is included unless a runtime feature
+    # ``reporting.module.<id>`` is defined AND disabled. With no runtime feature defined, the legacy
+    # default (included) is used, so the report list is unchanged.
+    from app.services.policy import evaluate as policy_evaluate
     from app.services.runtime import consumption
     ctx = consumption.runtime_context()
     return [r for r in rows
-            if consumption.feature_enabled(f"reporting.module.{r['id']}", context=ctx, default=True, shim=True)]
+            if policy_evaluate("reporting.module_eligibility", context=ctx, subject=r["id"]).decision]
 
 
 def get_definition(principal, definition_id: int) -> dict | None:

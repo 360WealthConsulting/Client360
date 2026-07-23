@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Runtime Policy | Client360{% endblock %}
+{% block crumb %}Runtime Policy{% endblock %}
+{% block content %}
+{{ ui.page_head("Runtime Policy Engine", eyebrow="Declarative rules · centralized decisions · governance", desc="Business decisions (eligibility, routing, gating, visibility) are centralized behind a declarative policy engine that consumes the runtime context — the runtime engine remains the sole evaluator and policies never bypass RBAC. This tracks the policy registry, decision-area coverage, live execution, and governance.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">Coverage &amp; execution</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Decision-area coverage</div><div style="font-size:22px; font-weight:700">{{ adoption.coverage_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Adoption</div><div style="font-size:22px; font-weight:700">{{ adoption.adoption_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active policies</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.active }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">In-domain</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.in_domain }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Evaluations</div><div style="font-size:22px; font-weight:700">{{ stats.evaluations }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Cache hits</div><div style="font-size:22px; font-weight:700">{{ stats.cache_hits }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Governance</div><div style="font-size:22px; font-weight:700">{{ ui.badge("OK" if governance.ok else (governance.issue_count ~ " issues"), 'good' if governance.ok else 'bad') }}</div></article>
+  </div>
+  <p class="subtle" style="margin-top:8px; font-size:12px">Definition coverage: {{ governance.definition_coverage_pct }}% · Policy failures: {{ stats.failures }} · Avg latency: {{ stats.avg_latency_us }}µs</p>
+</section>
+
+<section class="stack"><h2 class="section-title">Policy registry</h2>
+{% if policies %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Policy</th><th>Category</th><th>Status</th><th>Owner</th><th>Consumes</th><th>Depends on</th></tr></thead>
+  <tbody>{% for p in policies %}<tr><td><strong>{{ p.name }}</strong><div class="subtle" style="font-size:11px">{{ p.code }}</div></td><td>{{ p.category }}</td>
+    <td>{{ ui.badge(p.status|replace("_"," ")|capitalize, 'good' if p.status == 'active' else ('' if p.status == 'in_domain' else 'bad')) }}</td>
+    <td>{{ p.owner or "—" }}</td>
+    <td>{{ p.consumes_feature or p.consumes_config or "—" }}</td>
+    <td>{{ (p.depends_on or [])|join(", ") or "—" }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No policies", "The policy registry is empty.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}

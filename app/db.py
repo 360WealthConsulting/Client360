@@ -425,3 +425,10 @@ runtime_coordination_events = metadata.tables["runtime_coordination_events"]
 # migrated to consume the runtime engine (adoption tracking). Owns no configuration metadata and
 # performs no evaluation — the runtime engine remains the sole evaluator.
 runtime_behaviors = metadata.tables["runtime_behaviors"]
+
+# Runtime Policy registry (Phase D.32). Durable, discoverable catalog of the declarative business-
+# decision policies centralized behind the Runtime Policy Engine — category, version, lifecycle
+# status, owner, the runtime definition each consumes, referenced capabilities, and the dependency
+# graph. Owns no configuration metadata and performs no configuration evaluation; the policy engine
+# consumes RuntimeContext (the runtime engine remains the sole evaluator).
+runtime_policies = metadata.tables["runtime_policies"]

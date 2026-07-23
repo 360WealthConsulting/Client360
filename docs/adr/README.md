@@ -121,6 +121,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-034](ADR-034-distributed-runtime-coordination.md) | Distributed Runtime Coordination: cluster-safe convergence over the transactional outbox (sole bus); the persisted generation is the single source of truth | Accepted | Runtime (coordination) | D.29 |
 | [ADR-035](ADR-035-runtime-consumption-layer.md) | Runtime Consumption Layer: application behavior consumes the engine through a standardized, behavior-preserving API; infrastructure stays a startup concern | Accepted | Runtime (consumption) | D.30 |
 | [ADR-036](ADR-036-runtime-authority-and-legacy-retirement.md) | Runtime Authority: the engine is authoritative for migrated behavior; legacy fallbacks retired to documented compatibility shims; runtime metadata governed | Accepted | Runtime (authority) | D.31 |
+| [ADR-037](ADR-037-runtime-policy-engine.md) | Runtime Policy Engine: centralized, declarative business decisions that consume RuntimeContext (the engine stays the sole evaluator); a governed policy registry; policies never bypass RBAC | Accepted | Runtime (policy) | D.32 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: z8a9b0c1d2e3      # `alembic heads` / `alembic current`
-  route_count: 780                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: z9b0c1d2e3f4      # `alembic heads` / `alembic current`
+  route_count: 790                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -92,6 +92,13 @@ source_producer_modules:
   - app/services/runtime/behavior.py
   # Runtime Governance (D.31) — validates runtime metadata; must not import composition layers.
   - app/services/runtime/governance.py
+  # Runtime Policy Engine (D.32) — centralizes business decisions; consumes RuntimeContext; must not
+  # import composition layers and nothing in the runtime engine imports it.
+  - app/services/policy/engine.py
+  - app/services/policy/definitions.py
+  - app/services/policy/registry.py
+  - app/services/policy/governance.py
+  - app/services/policy/result.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:
@@ -123,6 +130,7 @@ declared_schema_registrations:
   - define_reporting_tables
   - define_runtime_behavior_tables
   - define_runtime_coordination_tables
+  - define_runtime_policy_tables
   - define_runtime_tables
   - define_scheduling_tables
   - define_security_tables

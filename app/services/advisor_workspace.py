@@ -28,8 +28,9 @@ from app.services.timeline import add_timeline_event, get_event, get_person_time
 from app.services.work_management import work_items
 from app.services.workflow_automation import launch_workflow
 
-# Review workflow templates an advisor may schedule from a meeting outcome. Only
-# these existing templates may be launched — never an arbitrary template code.
+# Review workflow templates an advisor may schedule from a meeting outcome. The authoritative
+# decision now lives in the Runtime Policy Engine (workflow.review_routing, Phase D.32); this set is
+# retained only as the documented reference of the templates the policy approves.
 _REVIEW_TEMPLATES = frozenset({"annual_review", "insurance_review"})
 
 # Firm timezone for "today" boundaries (matches the scheduler's zone).
@@ -105,22 +106,25 @@ def get_daily_dashboard(principal, *, now=None, limit=20):
         scope = accessible_person_ids(conn, principal)  # None (read_all) | set
 
     # Tasks + exceptions from the authoritative, already record-scoped work read.
-    # (D.31) Section inclusion consumes the runtime engine ALONGSIDE the RBAC capability — the
-    # capability check is never bypassed (ADR-004); a section is shown only when the principal holds
-    # the capability AND the runtime section feature is enabled. Behavior-preserving: the seeded
-    # runtime feature is enabled, so behavior is unchanged.
+    # (D.32) Section inclusion is decided by the centralized Runtime Policy Engine, which consumes the
+    # runtime context (the runtime engine remains the sole evaluator). RBAC is preserved and NEVER
+    # bypassed (ADR-004): a section is shown only when the principal holds the capability AND the
+    # policy decision permits it. Behavior-preserving — the seeded runtime section features are
+    # enabled, so the sections are shown exactly as before. The section.tasks/exceptions policies
+    # compose section.work, matching the nested gating.
+    from app.services.policy import evaluate as policy_evaluate
     from app.services.runtime import consumption
     _rt = consumption.runtime_context()
     tasks, exceptions = [], []
-    if principal.can("work.read") and consumption.feature_enabled(
-            "advisor_workspace.section.work", context=_rt, default=True):
+    if principal.can("work.read") and policy_evaluate(
+            "advisor_workspace.section.work", context=_rt).decision:
         items = work_items(principal)
-        if principal.can("task.read") and consumption.feature_enabled(
-                "advisor_workspace.section.tasks", context=_rt, default=True):
+        if principal.can("task.read") and policy_evaluate(
+                "advisor_workspace.section.tasks", context=_rt).decision:
             tasks = [i for i in items if i.get("entity_type") == "task"
                      and str(i.get("status") or "").lower() not in _CLOSED]
-        if principal.can("exception.read") and consumption.feature_enabled(
-                "advisor_workspace.section.exceptions", context=_rt, default=True):
+        if principal.can("exception.read") and policy_evaluate(
+                "advisor_workspace.section.exceptions", context=_rt).decision:
             exceptions = [i for i in items if i.get("entity_type") == "exception"]
 
     attention = _clients_needing_attention(exceptions)
@@ -322,7 +326,11 @@ def record_meeting_outcome(person_id, *, actor_user_id, completed=False, meeting
         if task_id is not None:
             result["tasks"] += 1
 
-    if next_review_code in _REVIEW_TEMPLATES:
+    # (D.32) Which review workflow may be launched is decided by the centralized Runtime Policy Engine
+    # (workflow.review_routing) — the bounded whitelist decision is no longer embedded here. Behavior-
+    # preserving: the policy approves exactly the same templates (annual_review / insurance_review).
+    from app.services.policy import evaluate as policy_evaluate
+    if policy_evaluate("workflow.review_routing", subject=next_review_code).decision:
         result["workflow"] = launch_workflow(
             next_review_code, actor_user_id=actor_user_id, person_id=person_id,
             household_id=household_id,

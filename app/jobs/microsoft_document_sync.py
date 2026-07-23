@@ -207,13 +207,15 @@ def discover_drives(access_token: str) -> list[dict[str, Any]]:
     drives, _ = _graph_pages(f"{GRAPH_BASE_URL}/me/drives", access_token)
     discovered = [{**drive, "source_type": "onedrive", "site_id": None} for drive in drives]
 
-    # (D.30) SharePoint site scope (behavior) is consumed from the runtime engine — behavior-
-    # preserving: with no runtime config item ``microsoft365.sharepoint_site_ids`` defined, the legacy
-    # env-backed default (MICROSOFT_SHAREPOINT_SITE_IDS) is used, so the discovered scope is unchanged.
-    from app.services.runtime import consumption
-    _raw_site_ids = consumption.config_value(
-        "microsoft365.sharepoint_site_ids",
-        default=os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", ""), shim=True)
+    # (D.32) SharePoint site scope (behavior) is decided by the centralized Runtime Policy Engine
+    # (microsoft365.sharepoint_scope), which consumes the runtime config (the runtime engine remains
+    # the sole evaluator) — behavior-preserving: with no runtime config item
+    # ``microsoft365.sharepoint_site_ids`` defined, the legacy env-backed default
+    # (MICROSOFT_SHAREPOINT_SITE_IDS) is used, so the discovered scope is unchanged.
+    from app.services.policy import evaluate as policy_evaluate
+    _raw_site_ids = policy_evaluate(
+        "microsoft365.sharepoint_scope",
+        default=os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", "")).decision
     if isinstance(_raw_site_ids, (list, tuple)):
         site_ids = [str(v).strip() for v in _raw_site_ids if str(v).strip()]
     else:
@@ -295,11 +297,12 @@ def store_microsoft_document(*, drive, item, person_id, match_method):
 
 
 def sync_microsoft_documents() -> dict[str, int]:
-    # (D.30) Sync ENABLEMENT (behavior) is consumed from the runtime engine — behavior-preserving:
-    # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
+    # (D.32) Sync ELIGIBILITY (behavior) is decided by the centralized Runtime Policy Engine
+    # (microsoft365.sync_eligibility), which consumes the runtime engine — behavior-preserving: with no
+    # runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
     # Provider init / OAuth / credential loading are unaffected (infrastructure).
-    from app.services.runtime import consumption
-    if not consumption.feature_enabled("microsoft365.sync", default=True, shim=True):
+    from app.services.policy import evaluate as policy_evaluate
+    if not policy_evaluate("microsoft365.sync_eligibility").decision:
         return {"skipped": 1, "runtime_disabled": 1}
     with engine.connect() as connection:
         account = connection.execute(

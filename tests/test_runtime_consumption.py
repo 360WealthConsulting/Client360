@@ -264,19 +264,17 @@ def test_consumption_goes_through_engine_not_a_second_evaluator():
 
 
 def test_migrated_modules_default_preserve_behavior():
-    # every migrated call site consults feature_enabled/config_value with an explicit legacy default.
+    # Sites still consuming the runtime engine directly keep an explicit legacy default.
     import pathlib
-    checks = {
-        "app/services/automation/dispatch.py": "default=True",
-        "app/services/reporting/service.py": "default=True",
-        "app/jobs/microsoft_mail_sync.py": "default=True",
-        "app/jobs/microsoft_document_sync.py": "default=",
-        "app/services/analytics/metrics.py": "default=True",
-    }
     base = pathlib.Path(consumption.__file__).parents[3]
-    for rel, needle in checks.items():
+    for rel in ("app/services/analytics/metrics.py", "app/services/benefits_detectors.py"):
         src = (base / rel).read_text()
-        assert "consumption" in src and needle in src, rel
+        assert "consumption" in src and "default=" in src, rel
+    # (D.32) The automation/reporting/Microsoft-365 decisions were centralized behind the Runtime
+    # Policy Engine; the behavior-preserving legacy default now lives in the policy definitions, which
+    # pass it into the consumption API (feature_enabled/config_value) on those call sites' behalf.
+    defs = (base / "app/services/policy/definitions.py").read_text()
+    assert "consumption" in defs and "baked_default=True" in defs and "default" in defs
 
 
 def test_migration_head_and_route_prefix():
