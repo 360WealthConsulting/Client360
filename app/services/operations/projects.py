@@ -139,6 +139,12 @@ def create_project(principal, *, name, category="general", priority="normal", st
         record_event(c, entity_type="project", entity_id=p["id"], project_id=p["id"],
                      event_type="project_created", to_status=status, actor_user_id=actor_user_id,
                      payload={"category": p["category"]})
+        # (D.35) Publish the created business FACT (references only) in the caller's transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("operations.project_created",
+                               {"project_id": p["id"], "category": p["category"], "status": status},
+                               conn=c, producer="operations.projects",
+                               subject_ref=f"operations_project:{p['id']}")
         # Scaffold default phases + tasks from the template (deterministic).
         if template:
             for i, ph in enumerate(template.get("default_phases") or []):
@@ -189,6 +195,13 @@ def transition_project(principal, project_id: int, status: str, *, actor_user_id
                      event_type=f"project_{status}", from_status=current, to_status=status,
                      actor_user_id=actor_user_id, payload={"reason": reason})
         updated = dict(updated)
+        # (D.35) Publish the status-change fact only on a genuine transition.
+        if status != current:
+            from app.services.events import publisher
+            publisher.publish_safe("operations.project_status_changed",
+                                   {"project_id": project_id, "from_status": current, "to_status": status},
+                                   conn=c, producer="operations.projects",
+                                   subject_ref=f"operations_project:{project_id}")
     if status == "completed":
         publish_timeline(updated, "project_completed")
     return updated

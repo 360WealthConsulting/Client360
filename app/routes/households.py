@@ -91,6 +91,11 @@ async def create_household(request: Request):
             )
             .returning(households.c.id)
         ).scalar_one()
+        # (D.35) Publish the created business FACT (references only) in the caller's transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("households.household_created", {"household_id": household_id},
+                               conn=connection, producer="households.service",
+                               subject_ref=f"household:{household_id}")
 
     return RedirectResponse(
         url=f"/households/{household_id}?created=1",
@@ -322,6 +327,13 @@ async def save_household_member(
                 .where(people.c.id == person_id)
                 .values(household_id=household_id)
             )
+
+        # (D.35) Publish the membership-changed business FACT (references only) in the transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("households.membership_changed",
+                               {"household_id": household_id, "person_id": person_id,
+                                "relationship_type": relationship_type}, conn=connection,
+                               producer="households.service", subject_ref=f"household:{household_id}")
 
     return RedirectResponse(
         url=(

@@ -143,6 +143,15 @@ def submit_review(principal, *, person_id: int, recommendation_id: str, actor_us
                 updated_at=now,
             ).returning(compliance_reviews)
         ).mappings().one()
+        # (D.35) Publish the review-opened business FACT (references only) in the caller's transaction.
+        # The compliance_reviews record is authoritative and unchanged — this only ADDS an event.
+        from app.services.events import publisher
+        publisher.publish_safe("compliance.review_opened",
+                               {"review_id": row["id"], "status": row["status"],
+                                "governing_rule": row["governing_rule"] or "",
+                                "rule_version": str(row["rule_version"] or "")},
+                               conn=conn, producer="compliance.reviews",
+                               subject_ref=f"compliance_review:{row['id']}")
     return dict(row)
 
 
@@ -271,6 +280,15 @@ def record_decision(principal, review_id: int, *, decision: str, expected_status
             compliance_reviews.update().where(compliance_reviews.c.id == review_id).values(
                 status=decision, updated_at=now)
         )
+        # (D.35) Publish the decision business FACT (references only) AFTER the authoritative append-only
+        # compliance_decisions ledger insert, in the same transaction. A blocked/denied-by-gate path
+        # raises above and rolls back — so this only fires when a decision was durably recorded. The
+        # ledger is unchanged; regulatory approval remains inside authorized Compliance.
+        from app.services.events import publisher
+        _et = "compliance.approval_granted" if decision in _APPROVING else "compliance.approval_denied"
+        publisher.publish_safe(_et, {"review_id": review_id, "decision_id": decision_row,
+                                     "decision": decision}, conn=conn, producer="compliance.reviews",
+                               subject_ref=f"compliance_review:{review_id}")
     return {"decision_id": decision_row, "status": decision}
 
 

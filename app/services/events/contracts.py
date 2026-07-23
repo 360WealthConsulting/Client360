@@ -12,12 +12,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.database.event_seed import (
+    D35_CONTRACTS_SEED,
     DOMAIN_EVENT_CONTRACTS_SEED,
     DOMAIN_EVENT_SUBSCRIPTIONS_SEED,
     EVENT_DOMAINS,
 )
 
 _ALLOWED_TYPES = {"int", "str", "float", "bool", "list", "dict"}
+
+# The set of event types adopted by producers in Phase D.35 (governance treats these as requiring an
+# actual publishing site).
+D35_EVENT_TYPES = frozenset(c["event_type"] for c in D35_CONTRACTS_SEED)
 
 
 @dataclass(frozen=True)
@@ -27,6 +32,7 @@ class EventContract:
     name: str
     producer: str
     schema_version: int
+    owner: str | None = None
     payload_schema: dict = field(default_factory=dict)
     depends_on: tuple = ()
     description: str = ""
@@ -54,6 +60,11 @@ class EventContract:
                 problems.append(f"field {fieldname!r} declares unknown type {ftype!r}")
         return problems
 
+    def sensitive_schema_fields(self) -> list[str]:
+        """Declared schema fields that are prohibited (references-only violation, D.35)."""
+        from .payload_safety import sensitive_fields
+        return sensitive_fields((self.payload_schema or {}).keys())
+
 
 def _type_ok(val, ftype: str) -> bool:
     mapping = {"int": int, "str": str, "float": (int, float), "bool": bool, "list": list, "dict": dict}
@@ -66,14 +77,28 @@ def _type_ok(val, ftype: str) -> bool:
 
 
 def _build(row) -> EventContract:
+    """Build a D.34 contract from its seed tuple (owner defaults to the category)."""
     event_type, category, name, producer, version, payload_schema, depends_on, desc = row
     return EventContract(event_type=event_type, category=category, name=name, producer=producer,
-                         schema_version=version, payload_schema=dict(payload_schema),
+                         schema_version=version, owner=category, payload_schema=dict(payload_schema),
                          depends_on=tuple(depends_on), description=desc)
 
 
+def _build_d35(d: dict) -> EventContract:
+    """Build a D.35 contract from its seed dict (carries an explicit owner + embedded subscribers)."""
+    return EventContract(event_type=d["event_type"], category=d["category"], name=d["name"],
+                         producer=d["producer"], schema_version=d["schema_version"], owner=d.get("owner"),
+                         payload_schema=dict(d["payload_schema"]), depends_on=tuple(d.get("depends_on") or ()),
+                         description=d.get("description", ""))
+
+
 EVENT_CONTRACTS: dict[str, EventContract] = {r[0]: _build(r) for r in DOMAIN_EVENT_CONTRACTS_SEED}
-SEEDED_SUBSCRIPTIONS = tuple(DOMAIN_EVENT_SUBSCRIPTIONS_SEED)
+EVENT_CONTRACTS.update({d["event_type"]: _build_d35(d) for d in D35_CONTRACTS_SEED})
+
+# D.34 subscriptions (tuples) + D.35 subscriptions derived from each contract's embedded subscribers.
+SEEDED_SUBSCRIPTIONS = tuple(DOMAIN_EVENT_SUBSCRIPTIONS_SEED) + tuple(
+    (d["event_type"], consumer, d.get("owner"), f"Read-model projection of {d['event_type']}.")
+    for d in D35_CONTRACTS_SEED for consumer in d.get("subscribers", ()))
 DOMAINS = tuple(EVENT_DOMAINS)
 
 

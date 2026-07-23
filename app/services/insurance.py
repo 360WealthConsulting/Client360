@@ -135,6 +135,12 @@ def create_case(principal, *, case_type, household_id=None, person_id=None,
                  policy_row={"id": case_id, "person_id": person_id, "household_id": household_id},
                  actor_user_id=actor_user_id, request_id=request_id,
                  metadata={"case_type": case_type})
+        # (D.35) Publish the created business FACT (references only — NO policy numbers / premiums /
+        # amounts) in the caller's transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("insurance.case_created",
+                               {"case_id": case_id, "case_type": case_type, "status": "open"},
+                               conn=c, producer="insurance.service", subject_ref=f"insurance_case:{case_id}")
     return {"id": case_id, "engagement_id": eng}
 
 
@@ -280,6 +286,14 @@ def update_policy_status(principal, policy_id, new_status, *, actor_user_id=None
             _publish(c, action="insurance.policy.status_changed", event_type=event_type, title=title,
                      policy_row=policy, actor_user_id=actor_user_id, request_id=request_id,
                      metadata={"from": policy["status"], "to": new_status})
+        # (D.35) Publish the policy-issued business FACT (references only — NO policy number / face
+        # amount / premium) on a genuine transition to issued.
+        if new_status == "issued" and policy["status"] != "issued":
+            from app.services.events import publisher
+            publisher.publish_safe("insurance.policy_issued",
+                                   {"policy_id": policy_id, "status": "issued",
+                                    "carrier_id": policy.get("carrier_id")}, conn=c,
+                                   producer="insurance.service", subject_ref=f"insurance_policy:{policy_id}")
     return {"id": policy_id, "status": new_status}
 
 
@@ -425,6 +439,12 @@ def update_case_status(principal, case_id, new_status, *, actor_user_id=None, re
             _publish(c, action="insurance.case.status_changed", event_type=event_type, title=title,
                      policy_row=case, actor_user_id=actor_user_id, request_id=request_id,
                      metadata={"from": case["status"], "to": new_status})
+        # (D.35) Publish the application-status-changed business FACT (references only) on a genuine change.
+        if case["status"] != new_status:
+            from app.services.events import publisher
+            publisher.publish_safe("insurance.application_status_changed",
+                                   {"case_id": case_id, "from_status": case["status"], "to_status": new_status},
+                                   conn=c, producer="insurance.service", subject_ref=f"insurance_case:{case_id}")
     return {"id": case_id, "status": new_status}
 
 

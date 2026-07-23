@@ -245,6 +245,15 @@ def raise_exception(*, code, actor_user_id=None, principal=None, source="system"
     else:
         _publish(row, action="raised", event_type="opened", actor_user_id=actor_user_id,
                  portal_account_id=None, request_id=request_id, metadata=metadata)
+    # (D.35) Publish the opened business FACT (references only) — only on a genuine mutation (idempotent
+    # no-ops returned above). Post-commit best-effort (mirrors the engine's own _publish); the
+    # append-only exception ledger is untouched. One event covers every domain (code carries the domain).
+    from app.services.events import publisher
+    publisher.publish_safe("exception.opened",
+                           {"exception_id": exception_id, "code": code, "domain": row.get("domain") or "",
+                            "category": row.get("category") or "", "severity": str(row.get("severity") or ""),
+                            "status": row.get("status") or "open"},
+                           producer="exception.engine", subject_ref=f"exception:{exception_id}")
     return get_exception(exception_id, principal=principal)
 
 
@@ -362,6 +371,13 @@ def resolve(exception_id, resolution_code, *, principal, actor_user_id=None, not
     _publish(fresh, action="resolved", event_type="resolved", actor_user_id=actor_user_id,
              portal_account_id=None, request_id=request_id,
              metadata={"from": current, "resolution_code": resolution_code})
+    # (D.35) Publish the resolved business FACT (references only). Post-commit best-effort; the
+    # append-only exception ledger is untouched.
+    from app.services.events import publisher
+    publisher.publish_safe("exception.resolved",
+                           {"exception_id": exception_id, "resolution_code": resolution_code,
+                            "from_status": current, "to_status": "resolved"},
+                           producer="exception.engine", subject_ref=f"exception:{exception_id}")
     return get_exception(exception_id, principal=principal)
 
 

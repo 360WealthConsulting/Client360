@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: zb1c2d3e4f5a      # `alembic heads` / `alembic current`
-  route_count: 814                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: zc2d3e4f5a6b      # `alembic heads` / `alembic current`
+  route_count: 815                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -118,6 +118,7 @@ source_producer_modules:
   - app/services/events/governance.py
   - app/services/events/diagnostics.py
   - app/services/events/replay.py
+  - app/services/events/payload_safety.py   # D.35 references-only enforcement
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:

@@ -199,6 +199,12 @@ def create_opportunity(principal, *, title, actor_user_id, pipeline_id=None, sta
         _append_event(c, opp["id"], event_type="created", to_stage_id=stage["id"],
                       to_status=stage["category"], actor=actor_user_id, note=None)
         _publish_timeline(opp, event_type="created", title=f"Opportunity created — {opp['title']}")
+        # (D.35) Publish the created business FACT (references only) in the caller's transaction.
+        from app.services.events import publisher
+        publisher.publish_safe("opportunity.created",
+                               {"opportunity_id": opp["id"], "pipeline_id": opp.get("pipeline_id"),
+                                "stage_id": stage["id"], "status": stage["category"]},
+                               conn=c, producer="opportunity.service", subject_ref=f"opportunity:{opp['id']}")
     return opp
 
 
@@ -302,6 +308,24 @@ def change_stage(principal, opportunity_id: int, *, new_stage_id: int, actor_use
                       to_stage_id=stage["id"], from_status=opp["status"], to_status=stage["category"],
                       actor=actor_user_id, note=note)
         updated = _reload(c, opportunity_id)
+        # (D.35) Publish the business FACT (references only) only on a genuine stage change. Won/lost are
+        # first-class events; other moves are stage_changed.
+        if opp["stage_id"] != stage["id"]:
+            from app.services.events import publisher
+            _sref = f"opportunity:{opportunity_id}"
+            if event_type == "won":
+                publisher.publish_safe("opportunity.won",
+                                       {"opportunity_id": opportunity_id, "status": stage["category"]},
+                                       conn=c, producer="opportunity.service", subject_ref=_sref)
+            elif event_type == "lost":
+                publisher.publish_safe("opportunity.lost",
+                                       {"opportunity_id": opportunity_id, "status": stage["category"]},
+                                       conn=c, producer="opportunity.service", subject_ref=_sref)
+            else:
+                publisher.publish_safe("opportunity.stage_changed",
+                                       {"opportunity_id": opportunity_id, "to_stage_id": stage["id"],
+                                        "from_status": opp["status"], "to_status": stage["category"]},
+                                       conn=c, producer="opportunity.service", subject_ref=_sref)
         if stage["category"] in ("won", "lost") or stage["code"] in _TIMELINE_STAGE_CODES:
             label = {"won": "Opportunity won", "lost": "Opportunity lost",
                      "qualified": "Opportunity qualified",
@@ -333,6 +357,13 @@ def close_opportunity(principal, opportunity_id: int, *, outcome: str, actor_use
                       to_stage_id=target["id"], from_status=opp["status"], to_status=outcome,
                       actor=actor_user_id, note=reason)
         updated = _reload(c, opportunity_id)
+        # (D.35) Publish the won/lost business FACT only on a genuine close.
+        if opp["status"] != outcome:
+            from app.services.events import publisher
+            _oet = "opportunity.won" if outcome == "won" else "opportunity.lost"
+            publisher.publish_safe(_oet, {"opportunity_id": opportunity_id, "status": outcome},
+                                   conn=c, producer="opportunity.service",
+                                   subject_ref=f"opportunity:{opportunity_id}")
         _publish_timeline(updated, event_type=outcome,
                           title=f"Opportunity {outcome} — {updated['title']}")
     return updated

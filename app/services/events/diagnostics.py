@@ -46,6 +46,26 @@ def event_counts() -> dict:
     return {"by_type": by_type, "by_status": by_status, "dead_lettered": dead}
 
 
+def events_by_domain() -> dict:
+    """Per-domain (category) breakdown of published + awaiting-delivery + dead-lettered events, mapping
+    each outbox event type to its registered contract category (Phase D.35)."""
+    events_t, dl_t, _pr = _outbox()
+    cat_of = {c["event_type"]: c["category"] for c in registry.list_contracts()}
+    published, awaiting, dead = {}, {}, {}
+    with engine.connect() as c:
+        for r in c.execute(select(events_t.c.name, events_t.c.status,
+                                  func.count().label("n")).group_by(events_t.c.name, events_t.c.status)).mappings():
+            cat = cat_of.get(r["name"], "unregistered")
+            published[cat] = published.get(cat, 0) + r["n"]
+            if r["status"] == "pending":
+                awaiting[cat] = awaiting.get(cat, 0) + r["n"]
+        for r in c.execute(select(dl_t.c.name, func.count().label("n")).group_by(dl_t.c.name)).mappings():
+            cat = cat_of.get(r["name"], "unregistered")
+            dead[cat] = dead.get(cat, 0) + r["n"]
+    return {"published_by_domain": published, "awaiting_delivery_by_domain": awaiting,
+            "dead_lettered_by_domain": dead}
+
+
 def dead_letters(*, limit=100) -> list[dict]:
     _events, dl_t, _pr = _outbox()
     with engine.connect() as c:

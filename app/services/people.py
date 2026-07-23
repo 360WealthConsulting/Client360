@@ -61,7 +61,13 @@ def update_person_contact(person_id: int, updates: dict, *, actor_user_id: int |
         if "primary_phone" in changed:
             values["normalized_phone"] = _normalize_phone(changed["primary_phone"])
         c.execute(people.update().where(people.c.id == person_id).values(**values))
-        return sorted(changed.keys())
+        _changed = sorted(changed.keys())
+        # (D.35) Publish the updated business FACT — field NAMES only (never values), transactional.
+        from app.services.events import publisher
+        publisher.publish_safe("people.person_updated",
+                               {"person_id": person_id, "changed_fields": _changed}, conn=c,
+                               producer="people.service", subject_ref=f"person:{person_id}")
+        return _changed
 
     changed_fields = _run(conn, _do)
     if changed_fields:

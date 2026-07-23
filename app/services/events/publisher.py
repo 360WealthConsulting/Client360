@@ -29,6 +29,13 @@ def publish(event_type: str, payload: dict | None = None, *, conn=None, producer
     if contract is None:
         note("publish_failures")
         raise EventError(f"unregistered domain event {event_type!r}")
+    # References-only enforcement (D.35): reject a payload carrying a prohibited (PII / secret /
+    # financial / health / tax / document-content) field before it can reach the outbox.
+    from .payload_safety import sensitive_fields
+    prohibited = sensitive_fields(payload.keys())
+    if prohibited:
+        note("publish_failures")
+        raise EventError(f"payload for {event_type!r} carries prohibited sensitive fields: {prohibited}")
     problems = contract.validate_payload(payload)
     if problems:
         note("publish_failures")
@@ -47,10 +54,13 @@ def publish(event_type: str, payload: dict | None = None, *, conn=None, producer
 
 
 def publish_safe(event_type: str, payload: dict | None = None, **kwargs) -> str | None:
-    """Best-effort publish for additive background call sites (e.g. the orchestration engine): a
-    publish failure is swallowed (counted) so it never breaks the caller's operation. Returns the event
-    id, or None on failure."""
+    """Best-effort publish for additive adoption sites: a publish failure is swallowed so it can never
+    corrupt the caller's business mutation. The failure is always COUNTED (``publish_failures``) so it
+    is observable via diagnostics/analytics. Returns the event id, or None on failure."""
     try:
         return publish(event_type, payload, **kwargs)
+    except EventError:
+        return None   # already counted by publish() (unregistered / invalid / sensitive)
     except Exception:
+        note("publish_failures")
         return None
