@@ -1,0 +1,57 @@
+{# Advisor AI Assist — renders any read-only response envelope. Always shows the Review-Required label,
+   provider/model status, generated timestamp, source citations, limitations, navigation deep links,
+   and unavailable markers. Never presents output as an approved recommendation. #}
+{% import "components/ui.html" as ui %}
+
+{% macro render(env) %}
+<article class="card assist-envelope">
+  <div class="assist-head">
+    <span class="assist-review">⚠ {{ env.human_review }}</span>
+    {% if env.provider %}<span class="subtle">{{ env.provider.model }}{% if not env.provider.available %} · {{ env.provider.label }}{% endif %}</span>{% endif %}
+    <span class="subtle">{{ env.generated_at[:19] if env.generated_at else "" }}</span>
+  </div>
+
+  {% if env.refused %}
+    <div class="assist-refusal">
+      <strong>Cannot help with that.</strong> {{ env.message }}
+      <span class="subtle">({{ env.refusal_category }})</span>
+    </div>
+  {% elif env.kind == "factual_answer" %}
+    <p class="assist-answer">{{ env.answer }}</p>
+    {% if env.unsupported %}<p class="subtle">Marked unsupported — insufficient platform data.</p>{% endif %}
+  {% else %}
+    {% for section, rows in (env.sections or {}).items() %}
+      <div class="assist-section">
+        <span class="detail-label">{{ section|replace("_"," ")|capitalize }}</span>
+        {% for r in rows %}
+          <div class="detail-row">
+            <span>{% if r.deep_link %}<a href="{{ r.deep_link }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}
+              {% if not r.available %}<span class="badge">Not tracked</span>{% endif %}</span>
+            <strong class="subtle">{{ r.value }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if env.navigation %}
+    <div class="assist-nav">
+      {% for n in env.navigation %}<a class="btn sm" href="{{ n.href }}">{{ n.label }} →</a>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if env.citations %}
+    <details class="assist-cite"><summary>Sources ({{ env.citations|length }})</summary>
+      {% for c in env.citations %}<div class="detail-row"><span>{% if c.deep_link %}<a href="{{ c.deep_link }}">{{ c.source }}</a>{% else %}{{ c.source }}{% endif %}</span><strong class="subtle">{{ c.fact_keys|length }} fact(s)</strong></div>{% endfor %}
+    </details>
+  {% endif %}
+
+  {% if env.unavailable %}<p class="subtle">Unavailable: {{ env.unavailable|join(", ") }}</p>{% endif %}
+
+  {% if env.limitations %}
+    <details class="assist-limits"><summary>Limitations</summary>
+      <ul>{% for lim in env.limitations %}<li class="subtle">{{ lim }}</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+</article>
+{% endmacro %}

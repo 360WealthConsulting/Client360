@@ -964,3 +964,36 @@ def advisor_open_opportunities(principal):
     for o in rows:
         counts[o["primary_advisor_id"]] = counts.get(o["primary_advisor_id"], 0) + 1
     return counts
+
+
+# --- Advisor AI Assist (Phase D.42) — low-cardinality operational metrics (in-process counters only,
+#     never client-specific / question-text / high-cardinality data) --------------------------------
+
+def ai_assist_request_count(principal) -> int:
+    from app.services.ai_assist.common import assist_stats
+    return int(assist_stats().get("requests") or 0)
+
+
+def ai_assist_refusal_count(principal) -> int:
+    from app.services.ai_assist.common import assist_stats
+    return int(assist_stats().get("refusals") or 0)
+
+
+def ai_assist_success_rate(principal):
+    from app.services.ai_assist.common import assist_stats
+    return assist_stats().get("success_rate")
+
+
+def ai_assist_avg_latency_ms(principal):
+    from app.services.ai_assist.common import assist_stats
+    return assist_stats().get("avg_latency_ms")
+
+
+def ai_assist_citation_coverage(principal):
+    from app.services.ai_assist.common import assist_stats
+    return assist_stats().get("citation_coverage")
+
+
+def ai_assist_provider_failures(principal) -> int:
+    from app.services.ai_assist.common import assist_stats
+    return int(assist_stats().get("provider_failures") or 0)

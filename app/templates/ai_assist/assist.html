@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% import "ai_assist/_envelope.html" as ai %}
+{% block title %}Advisor Assist | Client360{% endblock %}
+{% block crumb %}Advisor Assist{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/ai_assist.css">{% endblock %}
+{% block content %}
+{{ ui.page_head("Advisor Assist", eyebrow="AI Assist", desc="Read-only briefing intelligence — grounded in your platform data, human review required.") }}
+
+<p class="assist-banner">⚠ Advisor Assist — Review Required. This is a read-only summary; it takes no
+action. Open the authoritative workflow to create, approve, assign, file, submit, send, or complete
+anything.</p>
+
+<h2 class="section-title">Ask a factual question</h2>
+<article class="card">
+  <form method="post" action="/workspace/assist/query" class="assist-query">
+    <input type="text" name="question" placeholder="e.g. How much overdue work do I have?" required
+           value="{{ query_result.question if query_result else '' }}" aria-label="Question">
+    <button type="submit" class="btn sm">Ask</button>
+  </form>
+  <p class="subtle">Grounded only in your authorized platform data. Regulated requests (trade, tax,
+    legal, compliance approval, suitability) are declined.</p>
+</article>
+
+{% if query_result %}
+  <h2 class="section-title">Answer</h2>
+  {{ ai.render(query_result) }}
+{% endif %}
+
+<h2 class="section-title">Daily Brief</h2>
+{{ ai.render(brief) }}
+
+<h2 class="section-title">More briefs</h2>
+<article class="card">
+  <p class="subtle">Open a client or household and choose <strong>AI Brief ✨</strong>, or open a work
+    item's <strong>Explain</strong> link. Meeting prep is available from a client's meeting workspace.</p>
+  <div class="assist-nav">
+    <a class="btn sm" href="/workspace">Advisor Workspace →</a>
+    <a class="btn sm" href="/work">Unified Work Queue →</a>
+  </div>
+</article>
+{% endblock %}

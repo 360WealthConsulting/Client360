@@ -12,7 +12,7 @@
    healthy+fresh, else fall back to the authoritative scoped read. No writes, no business logic. #}
 <header class="workspace-hero">
   <h1>{{ ws.greeting }}, {{ ws.display_name }}</h1>
-  <p class="subtle">{{ ws.date.strftime("%A, %B %-d, %Y") }}</p>
+  <p class="subtle">{{ ws.date.strftime("%A, %B %-d, %Y") }} · <a href="/workspace/assist">Advisor Assist ✨ (review required)</a></p>
 </header>
 
 <h2 class="section-title">Today</h2>

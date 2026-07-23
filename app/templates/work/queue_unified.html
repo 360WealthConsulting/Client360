@@ -136,7 +136,8 @@
         <td>{% if it.due_at %}{{ it.due_at[:10] }}{% if it.overdue %} {{ ui.badge("Overdue","warn") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td>{% if it.person_id %}<a href="/people/{{ it.person_id }}">{{ it.person_name or ("Person " ~ it.person_id) }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td>{% if it.assignee_name %}{{ it.assignee_name }}{% elif it.assignee_user_id %}#{{ it.assignee_user_id }}{% else %}<span class="subtle">Unassigned</span>{% endif %}</td>
-        <td><a href="{{ it.deep_link }}" aria-label="Open source record">↗</a></td>
+        <td><a href="{{ it.deep_link }}" aria-label="Open source record">↗</a>
+          <a href="/work/{{ it.source_domain }}/{{ it.source_id }}/explain" title="Explain (AI Assist, review required)" aria-label="Explain">✨</a></td>
       </tr>
     {% else %}
       <tr><td colspan="{{ 10 if can_act else 9 }}">{% call ui.empty("Nothing here", "No work matches this view.") %}{% endcall %}</td></tr>
