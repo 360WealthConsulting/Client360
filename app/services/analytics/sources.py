@@ -676,6 +676,70 @@ def domain_event_adopted_domain_count(principal) -> int:
     return len(D35_DOMAINS)
 
 
+# --- Read Models & Projection Engine (Phase D.36 — Analytics consumes projection statistics; the
+#     projection engine never imports Analytics) -----------------------------------------------------
+
+def _proj_cov():
+    from app.services.projections import registry
+    return registry.coverage()
+
+
+def _proj_stats():
+    from app.services.projections import engine
+    return engine.stats()
+
+
+def projection_count(principal) -> int:
+    """Count of active read-model projections (Phase D.36)."""
+    return int(_proj_cov().get("active") or 0)
+
+
+def healthy_projection_count(principal) -> int:
+    """Count of healthy projections (Phase D.36)."""
+    return int(_proj_cov().get("healthy") or 0)
+
+
+def lagging_projection_count(principal) -> int:
+    """Count of lagging projections (behind the outbox) (Phase D.36)."""
+    return int(_proj_cov().get("lagging") or 0)
+
+
+def projection_events_processed(principal) -> int:
+    """In-process count of events applied to projections (Phase D.36)."""
+    return int(_proj_stats().get("events_processed") or 0)
+
+
+def projection_avg_latency_ms(principal):
+    """Average in-process per-event projection latency in milliseconds (Phase D.36)."""
+    return _proj_stats().get("avg_process_ms")
+
+
+def largest_projection_size(principal) -> int:
+    """Row count of the largest read model (Phase D.36)."""
+    from app.services.projections import diagnostics
+    return int(diagnostics.largest_projection().get("size") or 0)
+
+
+def projection_rebuild_count(principal) -> int:
+    """In-process count of projection rebuilds (Phase D.36)."""
+    return int(_proj_stats().get("rebuilds") or 0)
+
+
+def projection_replay_count(principal) -> int:
+    """In-process count of projection replays (Phase D.36)."""
+    return int(_proj_stats().get("replays") or 0)
+
+
+def projection_failure_count(principal) -> int:
+    """In-process count of failed events during projection processing (Phase D.36)."""
+    return int(_proj_stats().get("failed_events") or 0)
+
+
+def projection_coverage_pct(principal):
+    """Projection event-coverage — domain-event contracts consumed by a projection (Phase D.36)."""
+    return _proj_cov().get("event_coverage_pct")
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

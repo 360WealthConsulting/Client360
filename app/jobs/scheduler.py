@@ -123,6 +123,18 @@ def run_orchestration_tick() -> None:
         logger.exception("Orchestration tick failed.")
 
 
+def run_projection_tick() -> None:
+    """Drive one projection incremental tick (D.36): apply new outbox events to the read models. No-op
+    when idle. Failure-isolated — projection failures never propagate to business transactions."""
+    try:
+        from app.services.projections import engine as projections
+        result = projections.tick()
+        if result.get("processed"):
+            logger.info("Projection tick result: %s", result)
+    except Exception:
+        logger.exception("Projection tick failed.")
+
+
 def run_runtime_refresh() -> None:
     """Safely refresh the Runtime Configuration Engine (D.28): invalidate the cache and rebuild the
     effective-configuration snapshot from the current D.27 metadata. Failure-isolated — a refresh
@@ -251,6 +263,16 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_orchestration_tick, trigger="interval", seconds=orchestration_tick_interval_seconds(),
             id="orchestration-tick", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # (D.36) Projection incremental tick — gated OFF by default. When enabled, it applies new outbox
+    # events to the disposable read models. Read models are rebuildable from events; nothing depends on
+    # them until a read surface adopts one, so runtime behavior is unchanged by default.
+    from app.config import projections_enabled, projections_tick_interval_seconds
+    if projections_enabled():
+        _scheduler.add_job(
+            run_projection_tick, trigger="interval", seconds=projections_tick_interval_seconds(),
+            id="projection-tick", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     # (D.28) Runtime Configuration Engine periodic safe-refresh — gated OFF by default. When enabled,

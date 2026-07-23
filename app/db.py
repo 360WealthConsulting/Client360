@@ -448,3 +448,11 @@ orchestration_events = metadata.tables["orchestration_events"]
 # the typed contract registry and the durable subscription registry.
 domain_event_contracts = metadata.tables["domain_event_contracts"]
 domain_event_subscriptions = metadata.tables["domain_event_subscriptions"]
+
+# Read Models & Projection Engine (Phase D.36). Disposable, query-optimized read models built by
+# consuming the D.34/D.35 domain events from the transactional outbox (the sole event bus + log). The
+# registry (projection_definitions) + runtime checkpoint/health (projection_state) + 12 read-model
+# tables (rm_*). Read models contain no authoritative business logic/state and are rebuildable from
+# events; the domain services remain the sole authoritative mutation layer.
+projection_definitions = metadata.tables["projection_definitions"]
+projection_state = metadata.tables["projection_state"]

@@ -43,6 +43,7 @@ from app.database.runtime_coordination_tables import define_runtime_coordination
 from app.database.runtime_policy_tables import define_runtime_policy_tables
 from app.database.orchestration_tables import define_orchestration_tables
 from app.database.event_tables import define_event_tables
+from app.database.projection_tables import define_projection_tables
 from app.database.runtime_tables import define_runtime_tables
 from app.database.scheduling_tables import define_scheduling_tables
 from app.database.security_tables import define_security_tables
@@ -729,6 +730,7 @@ runtime_behavior_tables = define_runtime_behavior_tables(metadata)
 runtime_policy_tables = define_runtime_policy_tables(metadata)
 orchestration_tables = define_orchestration_tables(metadata)
 event_tables = define_event_tables(metadata)
+projection_tables = define_projection_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")
