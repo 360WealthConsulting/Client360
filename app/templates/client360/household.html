@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ ws.display_name }} · Household 360 | Client360{% endblock %}
+{% block crumb %}Household 360{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/client360.css">{% endblock %}
+{% block content %}
+{% set s = ws.snapshot %}
+{% set base = "/client/household/" ~ ws.entity_id %}
+
+{# Household 360 (D.41): read-only COMPOSITION over the authoritative services. Rollup + navigation; the
+   person workspace (/client/{id}) remains the member-detail surface. Every edit deep-links out. #}
+<header class="c360-hero">
+  <div>
+    <span class="detail-label">Household · {{ ws.context.member_count }} members
+      {% if ws.context.active_client_count != ws.context.member_count %}· {{ ws.context.active_client_count }} visible{% endif %}</span>
+    <h1>{{ ws.display_name }}</h1>
+    {% if ws.context.primary_member %}<p class="subtle">Primary: <a href="/client/{{ ws.context.primary_member.id }}">{{ ws.context.primary_member.name }}</a></p>{% endif %}
+  </div>
+</header>
+
+{# Household snapshot — incompatible figures side by side; never a composite score. #}
+<section class="stat-grid c360-snapshot">
+  <article class="card"><span class="detail-label">Portfolio assets</span><h2>{{ "${:,.0f}".format(s.portfolio_assets|float) }}</h2></article>
+  <article class="card"><span class="detail-label">Members</span><h2>{{ s.member_count }}</h2></article>
+  <article class="card"><span class="detail-label">Open work</span><h2>{{ s.open_work }}</h2></article>
+  <article class="card"><span class="detail-label">Opportunities</span><h2>{{ s.open_opportunities }}</h2></article>
+  <article class="card"><span class="detail-label">Upcoming meetings</span><h2>{{ s.upcoming_meetings }}</h2></article>
+  <article class="card"><span class="detail-label">Compliance items</span><h2>{{ s.compliance_items }}</h2></article>
+</section>
+
+{% if ws.quick_actions %}
+<nav class="c360-actions" aria-label="Quick actions">
+  {% for a in ws.quick_actions %}<a class="btn sm" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+<nav class="c360-tabs" aria-label="Sections">
+  {% for key in ws.section_keys %}
+    <a class="c360-tab {% if key == active_tab %}active{% endif %}" href="{{ base }}?tab={{ key }}">{{ key|replace("_"," ")|capitalize }}</a>
+  {% endfor %}
+</nav>
+
+{% set sec = ws.sections.get(active_tab) %}
+<section class="c360-panel">
+{% if not sec %}
+  {% call ui.empty("Section unavailable", "You do not have access to this section.") %}{% endcall %}
+{% elif sec.error %}
+  {% call ui.empty("Temporarily unavailable", sec.error) %}{% endcall %}
+
+{% elif active_tab == "summary" %}
+  <article class="card">
+    <div class="detail-row"><span>Household</span><strong>{{ sec.household_name or "—" }}</strong></div>
+    <div class="detail-row"><span>Members</span><strong>{{ sec.member_count }} ({{ sec.active_client_count }} visible)</strong></div>
+    <div class="detail-row"><span>Assigned</span><strong>{{ (sec.assigned or [])|length }} advisor/team</strong></div>
+    <div class="detail-row"><span>Last activity</span><strong>{{ sec.last_activity.title if sec.last_activity else "—" }}</strong></div>
+    <div class="detail-row"><span>Next activity</span><strong>{{ sec.next_activity.title if sec.next_activity else "—" }}</strong></div>
+    <div class="detail-row"><span class="subtle">Status / tier / risk</span><span class="subtle">Not tracked in this platform</span></div>
+  </article>
+
+{% elif active_tab == "members" %}
+  <h2 class="section-title">Household members</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Member</th><th>Relationship</th><th>Indicators</th><th></th></tr></thead><tbody>
+    {% for m in sec.directory %}
+      <tr>
+        <td>{% if m.in_scope %}<a href="{{ m.deep_link }}">{{ m.name }}</a>{% else %}{{ m.name }}{% endif %}{% if m.is_primary %} {{ ui.badge("Primary") }}{% endif %}</td>
+        <td>{{ m.relationship or "—" }}</td>
+        <td>{% if m.in_scope and m.indicators %}<span class="subtle">Tax {{ m.indicators.tax if m.indicators.tax is defined else "—" }} · Ins {{ m.indicators.insurance if m.indicators.insurance is defined else "—" }} · Work {{ m.indicators.work if m.indicators.work is defined else "—" }}</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if m.in_scope %}<a href="{{ m.deep_link }}" aria-label="Open member workspace">↗</a>{% else %}<span class="subtle">Restricted</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div></article>
+  {% if sec.suppressed %}<p class="subtle">{{ sec.suppressed|length }} member(s) outside your record scope are not shown.</p>{% endif %}
+
+{% elif active_tab == "financial" %}
+  <h2 class="section-title">Financial rollup (side by side — never summed)</h2>
+  <article class="card">
+    <div class="detail-row"><span>Household AUM (authoritative)</span><strong>{{ "${:,.0f}".format(sec.household_aum|float) }}</strong></div>
+    <div class="detail-row"><span>Household cash</span><strong>{{ "${:,.0f}".format(sec.household_cash|float) }}</strong></div>
+    <div class="detail-row"><span class="subtle">Not tracked</span><span class="subtle">{{ sec.not_tracked|join(", ")|replace("_"," ") }}</span></div>
+  </article>
+  <h2 class="section-title">By member</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Member</th><th class="num">AUM</th><th class="num">Contribution</th></tr></thead><tbody>
+    {% for m in sec.members %}<tr><td><a href="/client/{{ m.person_id }}">{{ m.name }}</a></td><td class="num">{{ "${:,.0f}".format(m.aum|float) }}</td><td class="num">{{ (m.contribution_pct ~ "%") if m.contribution_pct is not none else "—" }}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+
+{% elif active_tab == "relationships" %}
+  <h2 class="section-title">Household relationship graph (read-only)</h2>
+  <article class="card">
+    <div class="detail-row"><span>Nodes</span><strong>{{ sec.graph.node_count }}</strong></div>
+    <div class="detail-row"><span>Edges</span><strong>{{ sec.graph.edge_count }}</strong></div>
+    <div class="detail-row"><span class="subtle">Depth limit / cycle protection</span><span class="subtle">{{ sec.graph.depth_limit }} hop · protected</span></div>
+  </article>
+  <article class="card">
+    {% for e in sec.graph.edges %}<div class="detail-row"><span>{{ e.label or e.code }}</span><strong class="subtle">{{ e.code }}</strong></div>{% else %}{% call ui.empty("No relationships") %}{% endcall %}{% endfor %}
+  </article>
+
+{% elif active_tab == "timeline" %}
+  <h2 class="section-title">Household activity (references only · deduped by event)</h2>
+  <article class="card">
+    {% for r in sec.rows %}<div class="detail-row"><span>{% if r.source_url %}<a href="{{ r.source_url }}">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %}</span><strong class="subtle">{{ r.source_domain }} · {{ r.occurred_at[:10] if r.occurred_at else "" }}</strong></div>
+    {% else %}{% call ui.empty("No activity") %}{% endcall %}{% endfor %}
+  </article>
+
+{% elif active_tab == "meetings" %}
+  <h2 class="section-title">Upcoming</h2>
+  <article class="card">{% for m in sec.upcoming %}<div class="detail-row"><span>{{ m.title }}</span><strong class="subtle">{{ m.event_time[:16] if m.event_time else "" }}</strong></div>{% else %}{% call ui.empty("No upcoming meetings") %}{% endcall %}{% endfor %}</article>
+  <h2 class="section-title">Previous</h2>
+  <article class="card">{% for m in sec.previous %}<div class="detail-row"><span>{{ m.title }}</span><strong class="subtle">{{ m.event_time[:16] if m.event_time else "" }}</strong></div>{% else %}{% call ui.empty("No previous meetings") %}{% endcall %}{% endfor %}</article>
+
+{% elif active_tab == "documents" %}
+  <h2 class="section-title">Documents ({{ sec.count }})</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Document</th><th>Provenance</th></tr></thead><tbody>
+    {% for d in sec.documents %}<tr><td><a href="/document-library/{{ d.id }}">{{ d.original_name or d.name or ("Document " ~ d.id) }}</a></td><td><span class="subtle">{{ d.provenance }}</span></td></tr>
+    {% else %}<tr><td colspan="2">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+
+{% elif active_tab == "opportunities" %}
+  <h2 class="section-title">Opportunities (member-attributed)</h2>
+  <article class="card">{% for o in sec.opportunities %}<div class="detail-row"><span><a href="/opportunities/{{ o.id }}">{{ o.title or ("Opportunity " ~ o.id) }}</a> <span class="subtle">· {{ o.member_name or "" }}</span></span><strong class="subtle">{{ o.status }}</strong></div>{% else %}{% call ui.empty("No opportunities") %}{% endcall %}{% endfor %}</article>
+
+{% elif active_tab == "compliance" %}
+  <h2 class="section-title">Outstanding reviews (member-level)</h2>
+  <article class="card">{% for r in sec.outstanding_reviews %}<div class="detail-row"><span><a href="/compliance/reviews/{{ r.id }}">{{ r.governing_rule or ("Review " ~ r.id) }}</a> <span class="subtle">· {{ r.member_name }}</span></span><strong class="subtle">{{ r.status }}</strong></div>{% else %}{% call ui.empty("No outstanding reviews") %}{% endcall %}{% endfor %}</article>
+  <div class="detail-row"><span>Household open exceptions</span><strong>{{ sec.household_open_exception_count }}</strong></div>
+
+{% elif active_tab == "work" %}
+  <h2 class="section-title">Household work ({{ sec.total }}) — via the Unified Work Queue</h2>
+  <article class="card">{% for w in sec.rows %}<div class="detail-row"><span><a href="{{ w.deep_link }}">{{ w.title }}</a> <span class="subtle">· {{ w.member_name or "household" }}</span></span><strong class="subtle">{{ w.source_domain }}</strong></div>{% else %}{% call ui.empty("No household work") %}{% endcall %}{% endfor %}</article>
+  <p class="subtle"><a href="/work?household_id={{ ws.entity_id }}">Open in Work Queue →</a></p>
+
+{% elif active_tab == "tax" %}
+  <h2 class="section-title">Tax by member</h2>
+  <article class="card">{% for m in sec.members %}<div class="detail-row"><span><a href="/client/{{ m.person_id }}?tab=tax">{{ m.name }}</a></span><strong class="subtle">{{ m.engagements }} engagement(s)</strong></div>{% else %}{% call ui.empty("No tax records") %}{% endcall %}{% endfor %}</article>
+  <p class="subtle">{{ sec.note }}</p>
+
+{% elif active_tab == "insurance" %}
+  <h2 class="section-title">Insurance by member</h2>
+  <article class="card">{% for m in sec.members %}<div class="detail-row"><span><a href="/client/{{ m.person_id }}?tab=insurance">{{ m.name }}</a></span><strong class="subtle">{{ m.coverage.policy_count }} policies · {{ "${:,.0f}".format(m.coverage.total_face|float) }}</strong></div>{% else %}{% call ui.empty("No insurance") %}{% endcall %}{% endfor %}</article>
+
+{% elif active_tab == "benefits" %}
+  <h2 class="section-title">Benefits by member</h2>
+  <article class="card">{% for m in sec.members %}<div class="detail-row"><span><a href="/client/{{ m.person_id }}?tab=benefits">{{ m.name }}</a></span><strong class="subtle">{{ m.summary.employments }} relationship(s)</strong></div>{% else %}{% call ui.empty("No benefits") %}{% endcall %}{% endfor %}</article>
+
+{% else %}
+  {% call ui.empty("Section", "No renderer for this section.") %}{% endcall %}
+{% endif %}
+</section>
+{% endblock %}

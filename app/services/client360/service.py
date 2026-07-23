@@ -67,11 +67,15 @@ def _event_matches(e, ctx):
 
 
 def get_workspace(principal, *, person_id=None, household_id=None, page=1, section_timings=True):
-    """Compose the Client 360 workspace. Returns None if the client is out of record scope."""
+    """Compose the Client 360 workspace. Returns None if the client is out of record scope.
+
+    The household path (Phase D.41) delegates to the full Household 360 workspace builder — one entry
+    point, no forked household implementation."""
     if person_id:
         entity_type, entity_id = "person", int(person_id)
     elif household_id:
-        entity_type, entity_id = "household", int(household_id)
+        from .household import get_household_workspace
+        return get_household_workspace(principal, household_id, page=page)
     else:
         return None
     if not record_in_scope(principal, entity_type, entity_id):

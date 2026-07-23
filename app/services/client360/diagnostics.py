@@ -41,3 +41,43 @@ def client360_diagnostics(principal, *, person_id=None, household_id=None) -> di
         "fallback_usage": {"note": "per-client sections read authoritative tables directly"},
         "quick_action_count": len(ws["quick_actions"]),
     }
+
+
+def household_diagnostics(principal, *, household_id) -> dict:
+    """Household 360 composition diagnostics (Phase D.41). Read-only."""
+    from .household import HOUSEHOLD_SECTIONS, get_household_workspace
+    ws = get_household_workspace(principal, household_id)
+    if ws is None:
+        return {"available": False, "reason": "out of record scope or not found",
+                "record_scope_validated": True}
+    timings = ws["timings"]
+    stale = [k for k, v in ws["sections"].items() if isinstance(v, dict) and v.get("error")]
+    graph = ws.get("relationship_graph") or {}
+    tl = ws["sections"].get("timeline") or {}
+    try:
+        from app.services.projections.adoption import usage_stats
+        proj = usage_stats()
+    except Exception:
+        proj = {}
+    return {
+        "entity_type": "household", "household_id": ws["entity_id"],
+        "composition_timings_ms": timings,
+        "total_composition_ms": round(sum(timings.values()), 1),
+        "member_count": ws["context"]["member_count"],
+        "scoped_member_count": ws["context"]["active_client_count"],
+        "suppressed_members": ws["suppressed_members"],
+        "sections_built": len(ws["sections"]),
+        "suppressed_sections": ws["suppressed_sections"],
+        "failed_adapters": stale,
+        "stale_sources": stale,
+        "missing_adapters": [k for k, _ in HOUSEHOLD_SECTIONS if k not in ws["sections"]
+                             and k not in ws["suppressed_sections"]],
+        "timeline_dedup_count": tl.get("dedup_count", 0),
+        "graph_node_count": graph.get("node_count", 0),
+        "graph_edge_count": graph.get("edge_count", 0),
+        "graph_cycle_protection": graph.get("cycle_protection", True),
+        "record_scope_validated": True,
+        "projection_usage": proj,
+        "fallback_usage": {"note": "per-member sections read authoritative tables directly"},
+        "quick_action_availability": len(ws["quick_actions"]),
+    }

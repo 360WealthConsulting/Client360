@@ -91,6 +91,90 @@ def _sample(principal):
     return out
 
 
+def validate_household360(principal=None) -> dict:
+    """Household 360 governance (Phase D.41) — the workspace stays a composition surface: no direct
+    mutation / outbox / audit writes, no shadow household or duplicate person model, no direct rm_*
+    access, no duplicate portfolio aggregation, no fabricated net worth, no inferred filing/dependency
+    relationships, every section capability-gated, every quick action deep-links, reciprocal nav,
+    record scope enforced, read-model inventory unchanged. Read-only; never raises."""
+    findings = []
+    try:
+        from .household import _SECTION_BUILDERS, HOUSEHOLD_SECTIONS
+        src = _src("household.py")
+
+        # every section has a builder + a capability slot.
+        for key, _cap in HOUSEHOLD_SECTIONS:
+            if key not in _SECTION_BUILDERS:
+                findings.append({"type": "missing_adapter", "section": key})
+
+        # no mutation / outbox / audit / shadow table / rm_ reads in the household composition module.
+        for m in re.findall(r"\brm_[a-z]\w*", src):
+            findings.append({"type": "direct_projection_table_read", "table": m})
+        for verb in (".insert(", ".update(", ".delete("):
+            if verb in src:
+                findings.append({"type": "direct_mutation", "op": verb})
+        if "publish_safe" in src or "write_audit_event" in src:
+            findings.append({"type": "outbox_or_audit_write_in_composition"})
+        if re.search(r"\bTable\s*\(", src):
+            findings.append({"type": "shadow_household_or_person_table"})
+
+        # no duplicate portfolio aggregation — must reuse get_household_portfolio, not re-sum members.
+        if "aggregate_portfolio" in src:
+            findings.append({"type": "duplicate_portfolio_aggregation"})
+        if "get_household_portfolio" not in src:
+            findings.append({"type": "household_portfolio_not_reused"})
+
+        # no fabricated net worth — net_worth appears only in a "not_tracked" marker, never computed.
+        if "not_tracked" not in src or "net_worth" not in src:
+            findings.append({"type": "net_worth_not_marked_untracked"})
+        # no inferred filing/dependency relationships from membership.
+        if "inferred_relationships" not in src:
+            findings.append({"type": "tax_inference_guard_missing"})
+
+        # record scope enforced at the boundary; work reuses D.39.
+        if "record_in_scope" not in src:
+            findings.append({"type": "record_scope_not_enforced"})
+        if "compose_queue" not in src:
+            findings.append({"type": "work_not_reusing_unified_queue"})
+
+        # read-model inventory unchanged (still the D.36 twelve; no household projection).
+        try:
+            from app.database.projection_tables import READ_MODEL_TABLES
+            if len(READ_MODEL_TABLES) != 12 or "rm_household360" in READ_MODEL_TABLES:
+                findings.append({"type": "duplicate_projection"})
+        except Exception:
+            pass
+
+        if principal is not None:
+            findings.extend(_household_sample(principal))
+    except Exception as exc:
+        return {"ok": False, "issue_count": 1,
+                "findings": [{"type": "governance_check_error", "detail": str(exc)}]}
+    return {"ok": len(findings) == 0, "issue_count": len(findings), "findings": findings}
+
+
+def _household_sample(principal):
+    out = []
+    try:
+        from sqlalchemy import select
+
+        from app.db import engine, households
+
+        from .household import get_household_workspace
+        with engine.connect() as c:
+            hid = c.scalar(select(households.c.id).limit(1))
+        if hid is not None and principal.can("record.read_all"):
+            ws = get_household_workspace(principal, hid)
+            if ws and not ws.get("quick_actions"):
+                out.append({"type": "no_quick_actions_composed"})
+            # every quick action must deep-link.
+            if ws and any(not a.get("href") for a in ws.get("quick_actions", [])):
+                out.append({"type": "quick_action_without_deep_link"})
+    except Exception:
+        pass
+    return out
+
+
 def record_validation(*, actor_user_id=None) -> dict:
     report = validate_client360()
     try:
