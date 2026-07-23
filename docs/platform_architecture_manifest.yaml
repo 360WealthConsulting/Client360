@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: zd3e4f5a6b7c      # `alembic heads` / `alembic current`
-  route_count: 825                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: k2w3s4p5r6f7      # `alembic heads` / `alembic current`
+  route_count: 833                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -164,6 +164,7 @@ declared_schema_registrations:
   - define_orchestration_tables
   - define_event_tables
   - define_projection_tables
+  - define_workspace_tables
   - define_runtime_tables
   - define_scheduling_tables
   - define_security_tables

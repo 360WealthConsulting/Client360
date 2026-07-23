@@ -553,6 +553,44 @@ profile an optional bounded ownership summary; both are otherwise unchanged. See
 
 ---
 
+## 15. Personalized Advisor Home — widget grid, personalization & AI-ready summaries (Phase D.38)
+
+D.38 turns `/workspace` from a fixed daily dashboard into the **personalized advisor home**, on top of
+the D.36/D.37 read infrastructure. It **extends** the existing surface (no new home, no forked engine)
+and adds three things, all composition/read-only:
+
+**Widget grid (12 widgets).** `app/services/workspace/registry.py` declares 12 widgets — Today's
+Calendar, Active Clients, Workflow Exceptions, Operational Tasks, Recent Activity, Revenue Pipeline,
+Compliance Queue, Tax / Insurance / Benefits pipelines, Document Review, Team Workload. Each declares
+the capability that gates it, its section, and a deep link into the owning surface (no dead-end tiles).
+`widgets.py` computes each: **count** widgets read the D.37 projection-backed analytics sources (served
+from a projection when healthy+fresh on the firm-wide `record.read_all` path, else the authoritative,
+record-scoped fallback — behavior unchanged by default); **list** widgets call the existing
+record-scoped read services. A widget the principal cannot open is never assembled (no shown-then-403);
+a widget that raises is isolated so it can never break the home. Above the grid: a greeting, a **TODAY**
+summary row, and a **PRIORITIES** panel (deterministic High/Medium/Low bucketing of the daily
+dashboard's attention items — no AI, no new data).
+
+**Personalization (view state only).** Two new tables — `workspace_preferences` (one row per user:
+widget order / hidden / pinned / remembered filters) and `workspace_presets` (named saved layouts).
+These store UI settings, not business data: no authoritative state, no ledger, self-service (always the
+acting user's own `user_id`), gated by a new non-sensitive capability `workspace.personalize` (the page
+stays `client.read`). Reorder / hide / pin / reset / save-preset / apply-preset are **POST-form**
+(POST-redirect-GET) at `/workspace/customize|presets|reset`, matching the app's no-JS convention — no
+client-side framework introduced.
+
+**AI-ready summary models.** `summaries.py` exposes five clean, structured, read-only dicts a future
+natural-language assistant can consume without changing the dashboard: **Daily Brief**, **Client
+Snapshot**, **Meeting Prep**, **Opportunity Summary**, **Compliance Summary** — served as JSON at
+`/workspace/summaries/*` (person-scoped summaries enforce record-scope → 404 out of scope). No AI logic
+is added in this phase; only the consumable shape.
+
+Invariants: the authoritative services remain the sole mutation layer; the transactional outbox remains
+the sole event bus; projections stay disposable; RBAC/record-scope is never bypassed; behavior is
+unchanged until an operator enables + rebuilds projections. See ADR-043. Enforcement:
+`app/services/workspace/*`, `app/routes/workspace.py`, `app/database/workspace_tables.py`, migration
+`k2w3s4p5r6f7`, `app/templates/workspace/{dashboard,_widgets}.html`, `tests/test_advisor_workspace_home.py`.
+
 ## Cross-references
 - `WEALTH_ARCHITECTURE.md` — the exemplar workspace pattern (meeting-prep hierarchy,
   canonical contract, shared components, propose-not-act) this design generalizes.

@@ -1,20 +1,107 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% import "components/intelligence.html" as intel %}
+{% import "workspace/_widgets.html" as wg %}
 {% block title %}Advisor Workspace | Client360{% endblock %}
 {% block crumb %}Workspace{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
 {% block content %}
-{{ ui.page_head("Advisor Workspace", eyebrow="Workspace", desc="Your day at a glance — " ~ d.today.strftime("%A, %b %-d, %Y")) }}
 
-{# Book-scoped read-only daily dashboard. Every panel composes an existing
-   authoritative, record-scoped service. No advisor-intelligence recommendations. #}
-<section class="stat-grid" style="margin-bottom:8px">
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Needs attention</span><h2 style="margin:2px 0">{{ d.counts.attention }}</h2></article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Meetings today</span><h2 style="margin:2px 0">{{ d.counts.meetings }}</h2></article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Reviews due</span><h2 style="margin:2px 0">{{ d.counts.reviews }}</h2></article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Tasks</span><h2 style="margin:2px 0">{{ d.counts.tasks }}</h2></article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Exceptions</span><h2 style="margin:2px 0">{{ d.counts.exceptions }}</h2></article>
+{# Advisor home (Phase D.38): greeting, TODAY summary, PRIORITIES, and the personalized widget grid.
+   Every read is record-scoped and capability-gated; count widgets read the D.36/D.37 projections when
+   healthy+fresh, else fall back to the authoritative scoped read. No writes, no business logic. #}
+<header class="workspace-hero">
+  <h1>{{ ws.greeting }}, {{ ws.display_name }}</h1>
+  <p class="subtle">{{ ws.date.strftime("%A, %B %-d, %Y") }}</p>
+</header>
+
+<h2 class="section-title">Today</h2>
+<section class="stat-grid workspace-today">
+  <article class="card"><span class="detail-label">Appointments</span><h2>{{ ws.today.appointments }}</h2></article>
+  <article class="card"><span class="detail-label">Compliance</span><h2>{{ ws.today.compliance }}</h2></article>
+  <article class="card"><span class="detail-label">Tax returns</span><h2>{{ ws.today.tax }}</h2></article>
+  <article class="card"><span class="detail-label">Insurance</span><h2>{{ ws.today.insurance }}</h2></article>
+  <article class="card"><span class="detail-label">Benefits</span><h2>{{ ws.today.benefits }}</h2></article>
+  <article class="card"><span class="detail-label">Exceptions</span><h2>{{ ws.today.exceptions }}</h2></article>
 </section>
+
+<h2 class="section-title">Priorities</h2>
+<article class="card workspace-priorities">
+  <div class="priority-counts">
+    <span class="priority-chip priority-high">🔴 High <strong>{{ ws.priorities.high }}</strong></span>
+    <span class="priority-chip priority-medium">🟡 Medium <strong>{{ ws.priorities.medium }}</strong></span>
+    <span class="priority-chip priority-low">🟢 Low <strong>{{ ws.priorities.low }}</strong></span>
+  </div>
+  {% if ws.priorities.entries %}
+    <div class="priority-list">
+    {% for it in ws.priorities.entries %}
+      <div class="detail-row">
+        <span>{{ ui.badge(it.priority|capitalize, "high" if it.priority=="high" else "") }}
+          {% if it.link %}<a href="{{ it.link }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}</span>
+        <strong class="subtle">{{ it.kind|capitalize }}{% if it.overdue %} · Overdue{% endif %}</strong>
+      </div>
+    {% endfor %}
+    </div>
+  {% else %}{% call ui.empty("Nothing urgent", "No high or medium priority items right now.") %}{% endcall %}{% endif %}
+</article>
+
+<div class="workspace-toolbar">
+  <h2 class="section-title" style="margin:0">Your Workspace</h2>
+  {% if ws.can_personalize %}
+    {% if customize %}
+      <span class="workspace-tools">
+        <a class="btn-small" href="/workspace">Done</a>
+        <form method="post" action="/workspace/reset" style="display:inline">
+          <button type="submit" class="btn-small" title="Reset to defaults">Reset layout</button>
+        </form>
+      </span>
+    {% else %}
+      <a class="btn-small" href="/workspace?customize=1">Customize ⚙</a>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% if customize %}
+<article class="card workspace-customize">
+  <p class="subtle">Reorder, pin, or hide widgets. Save the current layout as a preset to switch quickly later.</p>
+  <form method="post" action="/workspace/presets" class="preset-save">
+    <input type="hidden" name="action" value="save">
+    <input type="text" name="name" placeholder="Preset name (e.g. Morning triage)" maxlength="60" required>
+    <button type="submit" class="btn-small">Save preset</button>
+  </form>
+  {% if ws.presets %}
+    <div class="preset-list">
+      {% for pr in ws.presets %}
+        <span class="preset-item {% if pr.id == ws.active_preset_id %}preset-active{% endif %}">
+          {{ pr.name }}{% if pr.is_favorite %} ★{% endif %}
+          <form method="post" action="/workspace/presets" style="display:inline">
+            <input type="hidden" name="preset_id" value="{{ pr.id }}">
+            <button type="submit" name="action" value="apply" class="btn-link">Apply</button>
+            <button type="submit" name="action" value="delete" class="btn-link">Delete</button>
+          </form>
+        </span>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if ws.hidden_widgets %}
+    <div class="hidden-widgets">
+      <span class="detail-label">Hidden:</span>
+      {% for hw in ws.hidden_widgets %}
+        <form method="post" action="/workspace/customize" style="display:inline">
+          <input type="hidden" name="key" value="{{ hw.key }}">
+          <button type="submit" name="action" value="show" class="btn-link">+ {{ hw.title }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+</article>
+{% endif %}
+
+{% if ws.widgets %}
+  {{ wg.grid(ws.widgets, customize) }}
+{% else %}
+  {% call ui.empty("No widgets", "No workspace widgets are available to you.") %}{% endcall %}
+{% endif %}
 
 <h2 class="section-title">My clients needing attention</h2>
 <article class="card">

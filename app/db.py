@@ -456,3 +456,9 @@ domain_event_subscriptions = metadata.tables["domain_event_subscriptions"]
 # events; the domain services remain the sole authoritative mutation layer.
 projection_definitions = metadata.tables["projection_definitions"]
 projection_state = metadata.tables["projection_state"]
+
+# Advisor Workspace personalization (Phase D.38). Per-advisor UI VIEW STATE only — widget order /
+# hidden / pinned / remembered filters (workspace_preferences, one row per user) + named saved layouts
+# (workspace_presets). No business data, no authoritative state; personal mutable settings.
+workspace_preferences = metadata.tables["workspace_preferences"]
+workspace_presets = metadata.tables["workspace_presets"]
