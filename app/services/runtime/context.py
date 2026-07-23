@@ -20,21 +20,43 @@ class RuntimeContext:
     license_code: str | None
     effective_config: dict = field(default_factory=dict)
     active_features: dict = field(default_factory=dict)
+    edition_capabilities: frozenset = field(default_factory=frozenset)
     resolved: bool = True
 
+    # --- the standardized runtime consumption API (Phase D.30) ---------------
+
     def config(self, key: str, default=None):
+        """Resolve an effective configuration value (default when unset)."""
         entry = (self.effective_config or {}).get(key)
         return entry.get("value") if entry else default
 
-    def feature_enabled(self, code: str) -> bool:
+    def feature_enabled(self, code: str, default: bool = False) -> bool:
+        """Whether a feature is enabled in this context; ``default`` when the feature is undefined."""
         entry = (self.active_features or {}).get(code)
-        return bool(entry and entry.get("enabled"))
+        if entry is None:
+            return bool(default)
+        return bool(entry.get("enabled"))
+
+    def feature_defined(self, code: str) -> bool:
+        return code in (self.active_features or {})
+
+    def edition(self) -> str | None:
+        return self.edition_code
+
+    def license(self) -> str | None:
+        return self.license_code
+
+    def capabilities(self) -> frozenset:
+        """The set of capability codes the resolved edition includes (edition-gating view; RBAC
+        remains the sole access authority)."""
+        return self.edition_capabilities or frozenset()
 
     def to_dict(self) -> dict:
         return {"snapshot_id": self.snapshot_id, "snapshot_uid": self.snapshot_uid,
                 "snapshot_version": self.snapshot_version, "edition_code": self.edition_code,
                 "license_code": self.license_code, "active_features": self.active_features,
-                "effective_config": self.effective_config, "resolved": self.resolved}
+                "effective_config": self.effective_config,
+                "edition_capabilities": sorted(self.edition_capabilities or ()), "resolved": self.resolved}
 
 
 EMPTY_CONTEXT = RuntimeContext(snapshot_id=None, snapshot_uid=None, snapshot_version=None,

@@ -1,8 +1,8 @@
 import os
 import re
 from collections.abc import Callable, Iterable, Mapping
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import requests
 from sqlalchemy import case, select
@@ -19,23 +19,22 @@ from app.db import (
 from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
 
-
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 
 
-def normalize_email(value: Optional[str]) -> str:
+def normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def normalize_text(value: Optional[str]) -> str:
+def normalize_text(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
 
-def parse_datetime(value: Optional[str]):
+def parse_datetime(value: str | None):
     if not value:
         return None
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def drive_item_external_id(drive_id: str, item_id: str) -> str:
@@ -51,7 +50,7 @@ def match_drive_item(
     item: Mapping[str, Any],
     people_rows: Iterable[Mapping[str, Any]],
     rules: Iterable[Mapping[str, Any]],
-) -> tuple[Optional[int], Optional[str]]:
+) -> tuple[int | None, str | None]:
     """Deterministic, exact-match ownership resolution only (Sprint 5.4 / H13).
 
     Substring/containment matching on names, folder paths, or emails has been
@@ -161,7 +160,7 @@ def process_drive_items(
             summary=item.get("name") or "Microsoft document",
             event_time=(
                 parse_datetime(item.get("lastModifiedDateTime"))
-                or datetime.now(timezone.utc)
+                or datetime.now(UTC)
             ),
             external_id=drive_item_external_id(drive_id, str(item_id)),
             event_metadata=metadata,
@@ -208,11 +207,17 @@ def discover_drives(access_token: str) -> list[dict[str, Any]]:
     drives, _ = _graph_pages(f"{GRAPH_BASE_URL}/me/drives", access_token)
     discovered = [{**drive, "source_type": "onedrive", "site_id": None} for drive in drives]
 
-    site_ids = [
-        value.strip()
-        for value in os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", "").split(",")
-        if value.strip()
-    ]
+    # (D.30) SharePoint site scope (behavior) is consumed from the runtime engine — behavior-
+    # preserving: with no runtime config item ``microsoft365.sharepoint_site_ids`` defined, the legacy
+    # env-backed default (MICROSOFT_SHAREPOINT_SITE_IDS) is used, so the discovered scope is unchanged.
+    from app.services.runtime import consumption
+    _raw_site_ids = consumption.config_value(
+        "microsoft365.sharepoint_site_ids",
+        default=os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", ""))
+    if isinstance(_raw_site_ids, (list, tuple)):
+        site_ids = [str(v).strip() for v in _raw_site_ids if str(v).strip()]
+    else:
+        site_ids = [value.strip() for value in str(_raw_site_ids or "").split(",") if value.strip()]
     for site_id in site_ids:
         site_drives, _ = _graph_pages(
             f"{GRAPH_BASE_URL}/sites/{site_id}/drives", access_token
@@ -237,7 +242,7 @@ def store_microsoft_document(*, drive, item, person_id, match_method):
                     microsoft_documents.c.microsoft_drive_id == drive_id,
                     microsoft_documents.c.microsoft_item_id == item_id,
                 )
-                .values(deleted=True, updated_at=datetime.now(timezone.utc))
+                .values(deleted=True, updated_at=datetime.now(UTC))
             )
         return
 
@@ -272,10 +277,10 @@ def store_microsoft_document(*, drive, item, person_id, match_method):
                 (microsoft_documents.c.status == "pending", "pending"),
                 else_=microsoft_documents.c.status,
             ),
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(UTC),
         }
     else:
-        update_values = {**values, "updated_at": datetime.now(timezone.utc)}
+        update_values = {**values, "updated_at": datetime.now(UTC)}
 
     statement = (
         pg_insert(microsoft_documents)
@@ -290,6 +295,12 @@ def store_microsoft_document(*, drive, item, person_id, match_method):
 
 
 def sync_microsoft_documents() -> dict[str, int]:
+    # (D.30) Sync ENABLEMENT (behavior) is consumed from the runtime engine — behavior-preserving:
+    # with no runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used.
+    # Provider init / OAuth / credential loading are unaffected (infrastructure).
+    from app.services.runtime import consumption
+    if not consumption.feature_enabled("microsoft365.sync", default=True):
+        return {"skipped": 1, "runtime_disabled": 1}
     with engine.connect() as connection:
         account = connection.execute(
             select(microsoft_accounts)
@@ -357,7 +368,7 @@ def sync_microsoft_documents() -> dict[str, int]:
             "site_id": drive.get("site_id"),
             "web_url": drive.get("webUrl"),
             "delta_link": delta_link,
-            "last_synced_at": datetime.now(timezone.utc),
+            "last_synced_at": datetime.now(UTC),
         }
         with engine.begin() as connection:
             connection.execute(
@@ -365,7 +376,7 @@ def sync_microsoft_documents() -> dict[str, int]:
                 .values(**drive_values)
                 .on_conflict_do_update(
                     index_elements=[microsoft_drives.c.microsoft_drive_id],
-                    set_={**drive_values, "updated_at": datetime.now(timezone.utc)},
+                    set_={**drive_values, "updated_at": datetime.now(UTC)},
                 )
             )
 
@@ -387,7 +398,9 @@ def bridge_microsoft_documents_to_tax(limit=1000):
     """
     from app.db import microsoft_documents, tax_document_links
     from app.services.tax_document_intelligence import (
-        ingest_microsoft_document, person_return_signals)
+        ingest_microsoft_document,
+        person_return_signals,
+    )
     with engine.connect() as connection:
         already = set(connection.scalars(
             select(tax_document_links.c.microsoft_document_id)

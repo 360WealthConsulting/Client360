@@ -168,7 +168,15 @@ def list_definitions(principal, *, report_type=None, category=None) -> list[dict
             stmt = stmt.where(definitions_t.c.report_type == report_type)
         if category:
             stmt = stmt.where(definitions_t.c.category == category)
-        return [dict(r) for r in c.execute(stmt.order_by(definitions_t.c.id.desc())).mappings()]
+        rows = [dict(r) for r in c.execute(stmt.order_by(definitions_t.c.id.desc())).mappings()]
+    # (D.30) Optional report modules are gated through the runtime engine — behavior-preserving: a
+    # definition is included unless a runtime feature ``reporting.module.<code>`` is defined AND
+    # disabled (edition/rollout restrictions on optional reports). With no runtime feature defined,
+    # the legacy default (included) is used, so the report list is unchanged.
+    from app.services.runtime import consumption
+    ctx = consumption.runtime_context()
+    return [r for r in rows
+            if consumption.feature_enabled(f"reporting.module.{r['id']}", context=ctx, default=True)]
 
 
 def get_definition(principal, definition_id: int) -> dict | None:

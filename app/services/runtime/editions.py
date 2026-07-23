@@ -18,9 +18,13 @@ def resolve_edition(*, organization_id=None, editions=None, assignments=None) ->
     assignments = metadata_reader.read_edition_assignments() if assignments is None else assignments
     by_id = {e["id"]: e for e in editions}
 
+    # Only consider assignments whose edition still resolves (an assignment to a deleted edition
+    # SET-NULLs its edition_id — it must not resolve to a null/missing edition).
     org_assign = next((a for a in assignments if a["scope"] == "organization"
-                       and a.get("organization_id") == organization_id and organization_id is not None), None)
-    tenant_assign = next((a for a in assignments if a["scope"] == "tenant"), None)
+                       and a.get("organization_id") == organization_id and organization_id is not None
+                       and a.get("edition_id") in by_id), None)
+    tenant_assign = next((a for a in assignments
+                          if a["scope"] == "tenant" and a.get("edition_id") in by_id), None)
     chosen = org_assign or tenant_assign
     if chosen is None:
         return None

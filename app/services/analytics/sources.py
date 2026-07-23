@@ -406,6 +406,42 @@ def runtime_generation_count(principal) -> int:
         return c.scalar(select(func.count()).select_from(runtime_generations)) or 0
 
 
+def runtime_feature_consumption_count(principal) -> int:
+    """In-process count of runtime feature-consumption lookups (Phase D.30 — Analytics consumes
+    runtime-adoption statistics). Metric compute runs in the web-app process, so the in-process
+    consumption counter is readable."""
+    from app.services.runtime import consumption
+    return int(consumption.adoption_stats().get("feature_lookups") or 0)
+
+
+def runtime_config_lookup_count(principal) -> int:
+    """In-process count of runtime configuration lookups (Phase D.30)."""
+    from app.services.runtime import consumption
+    return int(consumption.adoption_stats().get("config_lookups") or 0)
+
+
+def runtime_legacy_fallback_count(principal) -> int:
+    """In-process count of legacy-default fallbacks (behavior served the pre-migration default because
+    no runtime definition existed) (Phase D.30)."""
+    from app.services.runtime import consumption
+    return int(consumption.adoption_stats().get("legacy_fallbacks") or 0)
+
+
+def runtime_behavior_adoption_pct(principal):
+    """Behavioral-migration adoption percentage from the durable registry (Phase D.30). Migrated +
+    retired behaviors over the migratable set (deterministic behaviors are excluded)."""
+    from app.services.runtime import behavior
+    return behavior.coverage()["adoption_pct"]
+
+
+def runtime_migrated_behavior_count(principal) -> int:
+    """Firm-level count of behaviors migrated to the runtime engine (Phase D.30)."""
+    from app.db import runtime_behaviors
+    with engine.connect() as c:
+        return c.scalar(select(func.count()).select_from(runtime_behaviors)
+                        .where(runtime_behaviors.c.status.in_(("migrated", "retired")))) or 0
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

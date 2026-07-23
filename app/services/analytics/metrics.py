@@ -164,6 +164,17 @@ _DEFS = (
            sources.runtime_stale_worker_count),
     Metric("runtime_generations", "Runtime Generations", "operations", "count", "card", False,
            sources.runtime_generation_count),
+    # Runtime Consumption / behavioral adoption (Phase D.30 — Analytics consumes adoption statistics).
+    Metric("runtime_feature_consumption", "Runtime Feature Consumption", "operations", "count", "card",
+           False, sources.runtime_feature_consumption_count),
+    Metric("runtime_config_lookups", "Runtime Config Lookups", "operations", "count", "card", False,
+           sources.runtime_config_lookup_count),
+    Metric("legacy_fallback_count", "Legacy Fallbacks", "operations", "count", "card", False,
+           sources.runtime_legacy_fallback_count),
+    Metric("behavior_adoption_percent", "Behavior Adoption", "operations", "percent", "card", False,
+           sources.runtime_behavior_adoption_pct),
+    Metric("migrated_behavior_count", "Migrated Behaviors", "operations", "count", "card", False,
+           sources.runtime_migrated_behavior_count),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
@@ -189,9 +200,17 @@ def compute_metric(principal, metric_key: str) -> dict:
     m = METRICS.get(metric_key)
     if m is None:
         return {"key": metric_key, "value": None, "error": "unknown metric"}
-    if m.executive and not principal.can("analytics.executive"):
-        return {"key": m.key, "label": m.label, "unit": m.unit, "category": m.category,
-                "viz": m.viz, "value": None, "restricted": True}
+    # Executive metrics require the analytics.executive capability (RBAC — never bypassed) AND, when a
+    # runtime feature is defined, the runtime engine's enablement (D.30 consumption). Behavior-
+    # preserving: with no runtime feature defined, the legacy default (enabled) keeps behavior as-is.
+    if m.executive:
+        if not principal.can("analytics.executive"):
+            return {"key": m.key, "label": m.label, "unit": m.unit, "category": m.category,
+                    "viz": m.viz, "value": None, "restricted": True}
+        from app.services.runtime import consumption
+        if not consumption.feature_enabled("analytics.executive_metrics", default=True):
+            return {"key": m.key, "label": m.label, "unit": m.unit, "category": m.category,
+                    "viz": m.viz, "value": None, "restricted": True, "reason": "runtime_disabled"}
     value = m.compute(principal)
     return {"key": m.key, "label": m.label, "unit": m.unit, "category": m.category,
             "viz": m.viz, "value": (_num(value) if value is not None else None),

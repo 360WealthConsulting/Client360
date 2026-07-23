@@ -119,6 +119,7 @@ approval inside authorized Compliance; and does not rewrite prior phase history.
 | [ADR-032](ADR-032-configuration-metadata-domain-reuses-runtime-config.md) | Enterprise Configuration reuses the runtime config/env; metadata-only, no runtime feature-toggle engine, never replaces runtime configuration | Accepted | Domain (configuration) | D.27 |
 | [ADR-033](ADR-033-runtime-configuration-engine.md) | Runtime Configuration Engine: deterministic evaluation over D.27 metadata, immutable snapshots, in-process cache; never edits metadata, never blocks startup | Accepted | Runtime (configuration) | D.28 |
 | [ADR-034](ADR-034-distributed-runtime-coordination.md) | Distributed Runtime Coordination: cluster-safe convergence over the transactional outbox (sole bus); the persisted generation is the single source of truth | Accepted | Runtime (coordination) | D.29 |
+| [ADR-035](ADR-035-runtime-consumption-layer.md) | Runtime Consumption Layer: application behavior consumes the engine through a standardized, behavior-preserving API; infrastructure stays a startup concern | Accepted | Runtime (consumption) | D.30 |
 
 Related: `docs/PLATFORM_ARCHITECTURE.md`, `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_platform_architecture.py`,

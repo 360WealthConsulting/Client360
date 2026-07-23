@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Runtime Adoption | Client360{% endblock %}
+{% block crumb %}Runtime Adoption{% endblock %}
+{% block content %}
+{{ ui.page_head("Runtime Behavior Adoption", eyebrow="Consumption · migration · adoption", desc="Application behavior consumes the runtime engine through the standardized consumption API. This tracks which behaviors have migrated, live consumption vs legacy fallbacks, and the adoption percentage. The runtime engine remains the sole evaluator; infrastructure configuration stays a startup concern.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">Adoption</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Adoption</div><div style="font-size:22px; font-weight:700">{{ adoption.adoption_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Migrated</div><div style="font-size:22px; font-weight:700">{{ adoption.migrated_behaviors }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Legacy</div><div style="font-size:22px; font-weight:700">{{ adoption.legacy_behaviors }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Deterministic</div><div style="font-size:22px; font-weight:700">{{ adoption.deterministic_behaviors }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Runtime decisions</div><div style="font-size:22px; font-weight:700">{{ adoption.consumption.runtime_decisions }}</div></article>
+  </div>
+</section>
+
+<section class="stack"><h2 class="section-title">Behavioral migration registry</h2>
+{% if behaviors %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Behavior</th><th>Module</th><th>Status</th><th>Runtime key</th></tr></thead>
+  <tbody>{% for b in behaviors %}<tr><td><strong>{{ b.name }}</strong></td><td>{{ b.module }}</td>
+    <td>{{ ui.badge(b.status|capitalize, 'good' if b.status in ('migrated','retired') else ('' if b.status == 'deterministic' else 'bad')) }}</td>
+    <td>{{ b.runtime_key or "—" }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No behaviors", "The behavioral migration registry is empty.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}
