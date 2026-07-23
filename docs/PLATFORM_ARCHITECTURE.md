@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.41** on `release/0.13.0` (migration head `l3q4v5w6x7y8`, 846 routes, 159
+after **Phase D.42** on `release/0.13.0` (migration head `l3q4v5w6x7y8`, 853 routes, 159
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -151,6 +151,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 55 | Unified Work Queue (cross-domain composition surface at `/work`; adapters + normalized UnifiedWorkItem + action dispatch + saved views + diagnostics/governance) | work-execution layer (`GET /work` composes actionable work from 10 authoritative services — tasks/workflow/exceptions via the existing `work_management.work_items`, plus advisor-work/compliance/documents/tax/insurance/opportunity/meeting adapters — into a normalized, references-only UnifiedWorkItem; **not** a second task/workflow/exception/assignment engine and never the source of truth; every action **delegates** to the authoritative owning service (which scopes + audits + publishes to the outbox); **no new projection** — counts reuse the D.37 adoption fallback, never reading `rm_*` directly; deterministic sort, built-in + per-user saved views (presentation state only, `work_queue.saved_views`), constrained bulk (claim/assign/acknowledge, per-item, honest partial results); RBAC/record-scope preserved, adapters fail closed; workspace widgets deep-link into filtered views via a shared summary — D.39) |
 | 56 | Client 360 Workspace (master client record at `/client/{id}`; 12-section composition + snapshot + relationship graph + deep-link quick actions + diagnostics/governance) | client-record layer (`GET /client/{id}` composes a person/household's full picture — summary, financial, tax, insurance, benefits, opportunities, documents, meetings, compliance, activity timeline, relationships — read-only from the authoritative services; **not** a second client database and never the source of truth; record scope is verified ONCE at the boundary (404 out of scope) then sections fan out, each capability-gated (never shown-then-403) + fail-closed; the workspace **never mutates** — every edit deep-links into the authoritative create workflow; financial figures reuse the single `aggregate_portfolio` math and are presented **side by side, never summed**; unmodelled concepts (banking/retirement/outside-assets/liabilities/net-worth, status/tier/risk) are surfaced as "not tracked", never fabricated; **no migration, no new table, no new projection, no new capability**; a compact snapshot (+AI-ready JSON) + read-only relationship graph — D.40) |
 | 57 | Household 360 Workspace (upgrades `/client/household/{id}`; household context + member directory + member-level rollups + household relationship graph + snapshot + diagnostics/governance) | client-record layer (`GET /client/household/{id}` composes a household's combined operational picture — member directory, financial/tax/insurance/benefits/opportunities/documents/meetings/compliance/work rollups by member, a deduped household timeline, a cycle-protected relationship graph — read-only; **not** a second household database, no shadow record, no duplicate person model; record scope verified ONCE at the household boundary (404) then members gated by `accessible_person_ids` (household-inheriting, team-aware) — out-of-scope members **suppressed (fail closed)**; the household total **reuses the single `get_household_portfolio` aggregation** (never re-summed) and incompatible figures are **never summed** — no fabricated net worth, no inferred filing/dependency; household work **reuses D.39** `compose_queue`; the workspace **never mutates** — quick actions deep-link into the authoritative workflow; reciprocal person↔household nav; **no migration/table/projection/capability** — D.41) |
+| 58 | Advisor AI Assist (grounded, READ-ONLY briefing intelligence; context service + registry + deterministic offline provider + grounding/citations + refusals + diagnostics/governance) | advisor-experience layer (`GET /workspace/assist` + client/household/meeting **briefs** + work **explanation** + bounded factual **Q&A**; consumes the D.38–D.41 scope-guarded summaries — never re-queries domains, never reads `rm_*`; may **summarize/explain/compare/navigate only** — never creates/updates/deletes/approves/assigns/files/submits/sends/completes; every proposed action is a **deep link**; NEVER mutates, NEVER writes any DB (not even audit), NEVER publishes to the outbox; every fact is a **GroundedFact** with a class + internal **citations** + **limitations**, required fields never omitted; labelled **"Advisor Assist — Review Required"**; **refuses** regulated requests (trade/tax/legal/compliance/suitability/autonomous); no LLM infra exists → a **deterministic offline provider** (CI-safe) gated by `feature_enabled("advisor.ai_assist")`, failing closed to source facts; **no migration/table/projection/capability** — D.42) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -474,6 +475,26 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   governance). No migration/table/projection/capability. See `docs/HOUSEHOLD360_WORKSPACE.md`,
   `docs/HOUSEHOLD360_WORKSPACE_ADAPTERS.md`, `docs/HOUSEHOLD360_WORKSPACE_ACTIONS.md`,
   `docs/HOUSEHOLD360_WORKSPACE_GOVERNANCE.md`, ADR-046.
+- **Advisor AI Assist:** `GET /workspace/assist` (D.42, `client.read`) is a governed, **read-only**
+  briefing surface that consumes the D.38–D.41 scope-guarded summaries (Advisor Workspace daily brief,
+  Unified Work Queue summary, Client 360 / Household 360 snapshots, minimized meeting brief) — it never
+  re-queries domains and never reads `rm_*`. Capabilities: Daily Advisor Brief, Client Brief, Household
+  Brief, Meeting Prep, Work Explanation, and bounded Factual Q&A (a closed registry). It may
+  **summarize/explain/compare/navigate only** — every proposed action is a **deep link**; it **never
+  mutates, never writes any database (not even audit), never publishes to the outbox**. Every fact is a
+  **GroundedFact** (confirmed / derived / model-summary / missing-untracked) with internal **citations**
+  + **limitations**; required safety/provenance fields can never be omitted; every response is labelled
+  **"Advisor Assist — Review Required"**. Regulated requests (trade / tax / legal / compliance /
+  suitability / autonomous) are **refused**. No LLM infra exists → a **deterministic offline
+  `LocalProvider`** (CI-safe) is the default, gated by `runtime.consumption.feature_enabled("advisor.ai_assist")`,
+  **failing closed** to deterministic source facts on disable/timeout/failure/malformed. Sensitive fields
+  (note bodies, contact PII, account numbers) are excluded; only in-process aggregate counters are
+  recorded (no DB write). Routes: `/workspace/assist`, `POST /workspace/assist/query` (read-only),
+  `/workspace/assist/diagnostics` (`observability.audit`), `/client/{id}/brief`,
+  `/client/household/{id}/brief`, `/workspace/meetings/{id}/brief`, `/work/{type}/{id}/explain`. No
+  migration/table/projection/capability. See `docs/ADVISOR_AI_ASSIST.md`,
+  `docs/AI_ASSIST_CONTEXT_CONTRACT.md`, `docs/AI_ASSIST_PROMPT_GOVERNANCE.md`, `docs/AI_ASSIST_SECURITY.md`,
+  `docs/AI_ASSIST_PROVIDER_GUIDE.md`, ADR-047.
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;

@@ -354,7 +354,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 846
+    assert len(app.routes) == 853
 
 
 def test_migration_head():

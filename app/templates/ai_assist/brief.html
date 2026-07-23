@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% import "ai_assist/_envelope.html" as ai %}
+{% block title %}{{ title }} · Advisor Assist | Client360{% endblock %}
+{% block crumb %}Advisor Assist{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/ai_assist.css">{% endblock %}
+{% block content %}
+{{ ui.page_head(title, eyebrow="AI Assist", desc="Read-only, grounded, human review required.") }}
+<p class="assist-banner">⚠ Advisor Assist — Review Required. Read-only summary; open the authoritative
+workflow to take any action.</p>
+{{ ai.render(brief) }}
+{% endblock %}

@@ -1,0 +1,17 @@
+/* Advisor AI Assist (Phase D.42) — layered on the existing design system. */
+.assist-banner { padding: 8px 14px; border-radius: 8px; margin: 8px 0 14px; font-size: 0.9rem;
+  background: #fef3c7; color: #92400e; }
+@media (prefers-color-scheme: dark) { .assist-banner { background: #422006; color: #fde68a; } }
+.assist-envelope { display: flex; flex-direction: column; gap: 8px; }
+.assist-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.assist-review { font-weight: 600; color: #b45309; }
+.assist-section { border-top: 1px dashed var(--border, #e5e7eb); padding-top: 6px; }
+.assist-answer { font-size: 1.05rem; margin: 4px 0; }
+.assist-refusal { padding: 8px 12px; border-radius: 8px; background: #fee2e2; color: #991b1b; }
+@media (prefers-color-scheme: dark) { .assist-refusal { background: #3f1414; color: #fecaca; } }
+.assist-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.assist-query { display: flex; gap: 8px; flex-wrap: wrap; }
+.assist-query input[type=text] { flex: 1 1 320px; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--border, #d1d5db); }
+.assist-cite summary, .assist-limits summary { cursor: pointer; font-size: 0.85rem; color: var(--accent, #2563eb); }
+.assist-limits ul { margin: 6px 0 0 16px; }

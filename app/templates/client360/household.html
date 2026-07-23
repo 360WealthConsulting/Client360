@@ -15,6 +15,7 @@
       {% if ws.context.active_client_count != ws.context.member_count %}· {{ ws.context.active_client_count }} visible{% endif %}</span>
     <h1>{{ ws.display_name }}</h1>
     {% if ws.context.primary_member %}<p class="subtle">Primary: <a href="/client/{{ ws.context.primary_member.id }}">{{ ws.context.primary_member.name }}</a></p>{% endif %}
+    <p class="subtle"><a href="/client/household/{{ ws.entity_id }}/brief">AI Brief ✨ (review required)</a></p>
   </div>
 </header>
 
