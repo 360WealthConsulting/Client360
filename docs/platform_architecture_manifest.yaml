@@ -10,7 +10,7 @@
 
 meta:
   migration_head: zd3e4f5a6b7c      # `alembic heads` / `alembic current`
-  route_count: 824                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  route_count: 825                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -126,6 +126,9 @@ source_producer_modules:
   - app/services/projections/registry.py
   - app/services/projections/governance.py
   - app/services/projections/diagnostics.py
+  # Read Surface Adoption (D.37) — read-only helper consulted by read surfaces before the authoritative
+  # read; must not import composition layers; only READS its read-model table (never authoritative).
+  - app/services/projections/adoption.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:

@@ -131,3 +131,25 @@ def household_timeline(principal, household_id: int, *, event_type=None, source_
                     event_type=event_type, source_domain=source_domain,
                     date_from=_parse_date(date_from), date_to=_parse_date(date_to),
                     search=search, page=page, page_size=page_size)
+
+
+def recent_activity_feed(principal, *, limit=50):
+    """(D.37) A FIRM-WIDE recent domain-event activity feed — an additive read surface served from the
+    ``activity.feed`` projection when it is healthy + fresh, else falling back to a bounded authoritative
+    read of ``timeline_events``. Firm-wide only (references-only rows carry no record-scope anchor): a
+    record-scoped principal gets the authoritative firm feed only via ``record.read_all`` — otherwise an
+    empty list (scoped users use the per-person/household timelines above, whose behavior is unchanged).
+    This never mutates a projection, never reconstructs business logic, and never bypasses RBAC."""
+    from app.services.projections import adoption
+    rows = adoption.recent_feed(principal, limit=limit)          # projection when usable, else None
+    if rows is not None:
+        return rows
+    if principal is not None and not principal.can("record.read_all"):
+        return []                                                # scoped users: no firm-wide fallback
+    from sqlalchemy import select
+
+    from app.db import timeline_events
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(
+            select(timeline_events).order_by(timeline_events.c.event_time.desc())
+            .limit(min(500, max(1, limit)))).mappings()]

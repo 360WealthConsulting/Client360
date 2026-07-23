@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.projections import diagnostics, engine, governance, registry
+from app.services.projections import adoption, diagnostics, engine, governance, registry
 from app.services.projections.common import as_json
 from app.templating import install_filters
 
@@ -96,6 +96,15 @@ async def replay(request: Request,
     if registry.get_definition(pid) is None:
         raise HTTPException(404, f"unknown projection {pid!r}")
     return JSONResponse(as_json(engine.replay(pid)))
+
+
+@router.get("/adoption")
+def adoption_report(request: Request,
+                    principal: Principal = Depends(require_capability("observability.audit"))):
+    """The D.37 read-surface adoption report: adoption diagnostics (usage/reads/fallbacks, per-target
+    freshness, query-reduction inventory) + the adoption-governance findings. Read-only."""
+    return JSONResponse(as_json({"diagnostics": adoption.adoption_diagnostics(),
+                                 "governance": governance.validate_adoption()}))
 
 
 @router.get("/{projection_id}")
