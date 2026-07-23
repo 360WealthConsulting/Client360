@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.39** on `release/0.13.0` (migration head `l3q4v5w6x7y8`, 840 routes, 159
+after **Phase D.40** on `release/0.13.0` (migration head `l3q4v5w6x7y8`, 845 routes, 159
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -149,6 +149,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 53 | Read Surface Adoption (adopt projections into read surfaces, graceful fallback, adoption governance) | read-model layer (12 read surfaces consult the projections via a read-only helper before the authoritative read; a projection is served ONLY when healthy + fresh AND on the firm-wide `record.read_all` path — scoped principals always get the authoritative scoped read, so **RBAC is never bypassed**; every adopted read **falls back to the unchanged authoritative read**, so behavior is unchanged until an operator enables + rebuilds; **READS ONLY** — writes stay authoritative, the outbox stays the sole bus; no CQRS/second log/shadow logic — D.37) |
 | 54 | Advisor Workspace Home (personalized, projection-backed advisor home; widget grid + presets + AI-ready summaries) | advisor-experience layer (extends `/workspace` with a 12-widget grid — reorder/hide/pin/saved presets — plus a TODAY summary, a deterministic PRIORITIES view, and five AI-ready summary models; count widgets read the D.37 projection-backed sources with authoritative fallback; personalization is **view state only** in `workspace_preferences`/`workspace_presets`, self-service, gated by `workspace.personalize`; every widget is capability-gated — never shown-then-403 — and RBAC/record-scope is never bypassed; no business mutation, the outbox stays the sole bus — D.38) |
 | 55 | Unified Work Queue (cross-domain composition surface at `/work`; adapters + normalized UnifiedWorkItem + action dispatch + saved views + diagnostics/governance) | work-execution layer (`GET /work` composes actionable work from 10 authoritative services — tasks/workflow/exceptions via the existing `work_management.work_items`, plus advisor-work/compliance/documents/tax/insurance/opportunity/meeting adapters — into a normalized, references-only UnifiedWorkItem; **not** a second task/workflow/exception/assignment engine and never the source of truth; every action **delegates** to the authoritative owning service (which scopes + audits + publishes to the outbox); **no new projection** — counts reuse the D.37 adoption fallback, never reading `rm_*` directly; deterministic sort, built-in + per-user saved views (presentation state only, `work_queue.saved_views`), constrained bulk (claim/assign/acknowledge, per-item, honest partial results); RBAC/record-scope preserved, adapters fail closed; workspace widgets deep-link into filtered views via a shared summary — D.39) |
+| 56 | Client 360 Workspace (master client record at `/client/{id}`; 12-section composition + snapshot + relationship graph + deep-link quick actions + diagnostics/governance) | client-record layer (`GET /client/{id}` composes a person/household's full picture — summary, financial, tax, insurance, benefits, opportunities, documents, meetings, compliance, activity timeline, relationships — read-only from the authoritative services; **not** a second client database and never the source of truth; record scope is verified ONCE at the boundary (404 out of scope) then sections fan out, each capability-gated (never shown-then-403) + fail-closed; the workspace **never mutates** — every edit deep-links into the authoritative create workflow; financial figures reuse the single `aggregate_portfolio` math and are presented **side by side, never summed**; unmodelled concepts (banking/retirement/outside-assets/liabilities/net-worth, status/tier/risk) are surfaced as "not tracked", never fabricated; **no migration, no new table, no new projection, no new capability**; a compact snapshot (+AI-ready JSON) + read-only relationship graph — D.40) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -441,6 +442,21 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   record-scope preserved. `POST /work/action|bulk-action|views*`, `GET /work/summary` (AI-ready),
   `GET /work/diagnostics` (`observability.audit`, + governance). See `docs/UNIFIED_WORK_QUEUE.md`,
   `docs/WORK_QUEUE_ADAPTER_GUIDE.md`, `docs/WORK_QUEUE_ACTIONS.md`, `docs/WORK_QUEUE_GOVERNANCE.md`, ADR-044.
+- **Client 360 Workspace:** `GET /client/{id}` (D.40, `client.read`) is the master client record — a
+  read-only COMPOSITION of 12 domain sections (summary, financial, tax, insurance, benefits,
+  opportunities, documents, meetings, compliance, activity timeline, relationships, work) for a person
+  or household. **Not** a second client database: record scope is verified ONCE at the boundary (404 out
+  of scope), then sections fan out, each capability-gated (never shown-then-403) + fail-closed; the
+  workspace **never mutates** — the 9 quick actions (Schedule Meeting, Upload Document, Add Note, Create
+  Task, Start Tax Return, Create Opportunity, Start Insurance Case, Send Secure Message, Generate Meeting
+  Prep) deep-link into the authoritative create workflow. Financial reuses the single `aggregate_portfolio`
+  math (side by side, **never summed**); unmodelled concepts (banking/retirement/outside-assets/
+  liabilities/net-worth, status/tier/risk) are "not tracked", never fabricated. A compact snapshot
+  (`/client/{id}/snapshot`, AI-ready JSON) + a read-only relationship graph (family/business/
+  professional/estate). `GET /client/{id}/diagnostics` (`observability.audit`) reports composition
+  timings + governance. No migration, no new table/projection/capability. See
+  `docs/CLIENT360_WORKSPACE.md`, `docs/CLIENT360_WORKSPACE_ADAPTERS.md`, `docs/CLIENT360_WORKSPACE_ACTIONS.md`,
+  `docs/CLIENT360_WORKSPACE_GOVERNANCE.md`, ADR-045.
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
