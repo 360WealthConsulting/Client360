@@ -108,6 +108,23 @@ def automation_tick_interval_seconds() -> int:
     return max(5, _int_env("AUTOMATION_TICK_INTERVAL_SECONDS", 60))
 
 
+def orchestration_enabled() -> bool:
+    """Whether the Workflow Orchestration housekeeping tick runs as a scheduler job (Phase D.33).
+
+    Default OFF: the orchestration engine ships (definitions/instances are coordinated synchronously
+    through the engine, and the diagnostics/replay/simulation surfaces are always available), but the
+    background housekeeping tick is not registered unless explicitly enabled — keeping runtime behavior
+    unchanged by default (same posture as the automation tick). The scheduler infrastructure is
+    unchanged; this only launches orchestration.
+    """
+    return os.getenv("ORCHESTRATION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def orchestration_tick_interval_seconds() -> int:
+    # Poll cadence for the orchestration housekeeping tick; minimum 5s to avoid a hot loop.
+    return max(5, _int_env("ORCHESTRATION_TICK_INTERVAL_SECONDS", 60))
+
+
 def runtime_refresh_enabled() -> bool:
     """Whether the Runtime Configuration Engine's periodic safe-refresh runs as a scheduler job
     (Phase D.28).

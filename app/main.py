@@ -62,6 +62,7 @@ from app.routes.runtime import router as runtime_router
 from app.routes.runtime_cluster import router as runtime_cluster_router
 from app.routes.runtime_behavior import router as runtime_behavior_router
 from app.routes.policy import router as policy_router
+from app.routes.orchestration import router as orchestration_router
 from app.routes.scheduling import router as scheduling_router
 from app.routes.search import router as search_router
 from app.routes.security import router as security_router
@@ -156,6 +157,7 @@ app.include_router(runtime_router)
 app.include_router(runtime_cluster_router)
 app.include_router(runtime_behavior_router)
 app.include_router(policy_router)
+app.include_router(orchestration_router)
 app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)

@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: z9b0c1d2e3f4      # `alembic heads` / `alembic current`
-  route_count: 790                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: za0b1c2d3e4f      # `alembic heads` / `alembic current`
+  route_count: 802                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -99,6 +99,17 @@ source_producer_modules:
   - app/services/policy/registry.py
   - app/services/policy/governance.py
   - app/services/policy/result.py
+  # Workflow Orchestration Engine (D.33) — coordinates existing services; consumes RuntimeContext + the
+  # policy engine; must not import composition layers and nothing in the runtime/policy engines imports it.
+  - app/services/orchestration/engine.py
+  - app/services/orchestration/execution.py
+  - app/services/orchestration/state.py
+  - app/services/orchestration/definitions.py
+  - app/services/orchestration/registry.py
+  - app/services/orchestration/governance.py
+  - app/services/orchestration/diagnostics.py
+  - app/services/orchestration/replay.py
+  - app/services/orchestration/simulation.py
 
 # advisor_intelligence must not import these consumers (D.5 invariant).
 advisor_intelligence_forbidden_imports:
@@ -131,6 +142,7 @@ declared_schema_registrations:
   - define_runtime_behavior_tables
   - define_runtime_coordination_tables
   - define_runtime_policy_tables
+  - define_orchestration_tables
   - define_runtime_tables
   - define_scheduling_tables
   - define_security_tables

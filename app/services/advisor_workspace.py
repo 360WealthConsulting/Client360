@@ -326,15 +326,16 @@ def record_meeting_outcome(person_id, *, actor_user_id, completed=False, meeting
         if task_id is not None:
             result["tasks"] += 1
 
-    # (D.32) Which review workflow may be launched is decided by the centralized Runtime Policy Engine
-    # (workflow.review_routing) — the bounded whitelist decision is no longer embedded here. Behavior-
-    # preserving: the policy approves exactly the same templates (annual_review / insurance_review).
-    from app.services.policy import evaluate as policy_evaluate
-    if policy_evaluate("workflow.review_routing", subject=next_review_code).decision:
-        result["workflow"] = launch_workflow(
-            next_review_code, actor_user_id=actor_user_id, person_id=person_id,
-            household_id=household_id,
-            idempotency_key=f"mtg-review:{person_id}:{next_review_code}", request_id=request_id,
-        )
+    # (D.33) The review-workflow launch is ORCHESTRATED through the Workflow Orchestration Engine (the
+    # workflow.review definition): the routing decision (Runtime Policy Engine workflow.review_routing)
+    # and the launch are coordinated by the engine, not embedded here. Behavior-preserving: the workflow
+    # launches iff the policy permits exactly the same templates (annual_review / insurance_review), and
+    # the launched workflow-instance id is returned (else None).
+    from app.services.orchestration import execution as orchestration
+    result["workflow"] = orchestration.orchestrate_review(
+        next_review_code, actor_user_id=actor_user_id, person_id=person_id, household_id=household_id,
+        launcher=lambda: launch_workflow(
+            next_review_code, actor_user_id=actor_user_id, person_id=person_id, household_id=household_id,
+            idempotency_key=f"mtg-review:{person_id}:{next_review_code}", request_id=request_id))
 
     return result

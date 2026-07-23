@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.32** on `release/0.13.0` (migration head `z9b0c1d2e3f4`, 790 routes, 157
+after **Phase D.33** on `release/0.13.0` (migration head `za0b1c2d3e4f`, 802 routes, 157
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -141,6 +141,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 47 | Runtime Consumption (behavioral adoption of the runtime engine) | consumption layer (application behavior consumes the engine via a standardized behavior-preserving API; owns only the behavioral-migration registry; never evaluates — D.30) |
 | 48 | Runtime Authority & Governance (authoritative behavior, legacy retirement, metadata governance) | authority/governance layer (the engine is authoritative for migrated behavior via seeded D.27 metadata; validates runtime metadata; never evaluates or edits metadata — D.31) |
 | 49 | Runtime Policy Engine (declarative business decisions, centralized decision services, policy governance) | policy layer (centralizes business decisions — eligibility/routing/gating/visibility — behind a declarative engine that **consumes `RuntimeContext`**; the runtime engine remains the sole evaluator; policies never bypass RBAC; a governed policy registry — D.32) |
+| 50 | Workflow Orchestration Engine (declarative workflows, deterministic state management, replay & simulation, governance) | orchestration layer (centralizes multi-stage process coordination behind a declarative, deterministic engine that **consumes `RuntimeContext`** for behavior and the **Runtime Policy Engine** for routing; the runtime engine stays the sole evaluator, the policy engine the sole decision engine; coordinates existing services, never duplicating domain behavior; deterministic replay + dry-run simulation; a governed workflow registry — D.33) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -347,6 +348,20 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   Registry/graph reads require `runtime.view`; the governance report + diagnostics + events require
   `runtime.audit`; running validation requires `runtime.admin`. Current: 100% decision-area coverage,
   100% adoption, 100% definition coverage, 0 governance issues).
+- **Workflow orchestration:** `/orchestration` reuses the D.17 `workflow.*` capabilities (D.33 — the
+  Workflow Orchestration Engine centralizes multi-stage process coordination behind a declarative,
+  deterministic engine (seven canonical states pending/active/waiting/completed/cancelled/failed/
+  compensated). It **consumes `RuntimeContext`** for behavior and the **Runtime Policy Engine** for
+  routing (a transition may declare a policy) — the runtime engine stays the sole evaluator, the policy
+  engine the sole decision engine — and coordinates existing services, never duplicating domain
+  behavior. Two definitions are engine-driven (`automation.dispatch`, `workflow.review`, their call
+  sites coordinated through the engine, behavior-preserving); thirteen mature domain lifecycles are
+  registered `in_domain` (the workflow-template engine, compliance approval, operations/scheduling/
+  advisor/tax/exception/campaign/document/communications/notification — authoritative in-domain).
+  Deterministic replay + dry-run simulation are pure reads that never mutate production state.
+  Registry/instances/diagnostics require `workflow.view`; governance/replay require `workflow.audit`;
+  simulation requires `workflow.execute`; running validation requires `workflow.admin`. Current: 100%
+  domain coverage, 100% adoption, 0 governance issues).
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -506,7 +521,8 @@ certificates/incidents/findings), `/observability` (D.26 services/health/diagnos
 reliability), `/configuration` (D.27 settings/features/editions/preferences/changes), `/runtime` (D.28 runtime
 engine — effective config/features/snapshots/cache), `/runtime/cluster` (D.29 workers/versions/
 convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registry + D.31 governance/authority), `/runtime/policy`
-(D.32 policy registry/governance/dependency-graph/diagnostics), `/workspace`
+(D.32 policy registry/governance/dependency-graph/diagnostics), `/orchestration` (D.33 workflow
+registry/governance/instances/diagnostics/replay/simulation), `/workspace`
 (meeting), `/portfolio` +
 `/wealth`, `/admin` (+ `/admin/audit`, rule-catalog, roles), `/microsoft365`, `/auth`, and JSON
 `/api/v1/*`.
@@ -514,15 +530,15 @@ convergence/diagnostics), `/runtime/behavior` (D.30 consumption/adoption registr
 ## 21. Database and migration architecture
 - **Engine:** SQLAlchemy Core; `app/db.py` reflects the live schema; declared schema lives in
   `app/database/*_tables.py` registered via `define_*_tables(metadata)` in
-  `app/database/schema.py` (26 registered modules: advisor_work, analytics, annual_review,
+  `app/database/schema.py` (27 registered modules: advisor_work, analytics, annual_review,
   automation, business_planning, campaign_referral, communication, compliance, configuration,
   document_platform, governance, identity, integration, observability, operations, opportunity,
-  outbox, portfolio, reporting, runtime, runtime_behavior, runtime_coordination, runtime_policy,
-  scheduling, security, work — plus core tables inline in `schema.py`).
-- **Alembic:** 77 migrations, **single head `z9b0c1d2e3f4`**; `alembic current == heads`.
-  Recent chain: D.24 `v2a3b4c5d6e7` → D.25 `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3` → D.27
-  `y9c0d1e2f3a4` → D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31
-  `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4`.
+  orchestration, outbox, portfolio, reporting, runtime, runtime_behavior, runtime_coordination,
+  runtime_policy, scheduling, security, work — plus core tables inline in `schema.py`).
+- **Alembic:** 78 migrations, **single head `za0b1c2d3e4f`**; `alembic current == heads`.
+  Recent chain: D.25 `w7a8b9c0d1e2` → D.26 `x8b9c0d1e2f3` → D.27 `y9c0d1e2f3a4` → D.28
+  `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31 `z8a9b0c1d2e3` → D.32
+  `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f`.
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its
