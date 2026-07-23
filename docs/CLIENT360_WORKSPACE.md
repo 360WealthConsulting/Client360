@@ -69,7 +69,10 @@ create surface, prefilled with the client's id, shown only where the capability 
 - `GET /client/{person_id}` — person workspace (role-aware tabs, `?tab=`).
 - `GET /client/{person_id}/snapshot` — AI-ready snapshot JSON.
 - `GET /client/{person_id}/diagnostics` — composition diagnostics + governance (`observability.audit`).
-- `GET /client/household/{household_id}` + `/diagnostics` — household workspace.
+- `GET /client/household/{household_id}` (+ `/snapshot`, `/diagnostics`) — the **Household 360 Workspace**
+  (Phase D.41): member directory + member-level rollups + household relationship graph + snapshot. The
+  person workspace remains the member-detail surface; the two navigate reciprocally. See
+  [`HOUSEHOLD360_WORKSPACE.md`](HOUSEHOLD360_WORKSPACE.md), [`ADR-046`](adr/ADR-046-household360-workspace.md).
 
 ## Diagnostics
 

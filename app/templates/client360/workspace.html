@@ -11,8 +11,9 @@
    deep link into the authoritative workflow — the workspace never mutates. #}
 <header class="c360-hero">
   <div>
-    <span class="detail-label">{{ ws.entity_type|capitalize }}{% if ws.household_name %} · {{ ws.household_name }}{% endif %}</span>
+    <span class="detail-label">{{ ws.entity_type|capitalize }}{% if ws.household_name %} · {% if ws.household_id %}<a href="/client/household/{{ ws.household_id }}">{{ ws.household_name }}</a>{% else %}{{ ws.household_name }}{% endif %}{% endif %}</span>
     <h1>{{ ws.display_name }}</h1>
+    {% if ws.household_id %}<p class="subtle"><a href="/client/household/{{ ws.household_id }}">↑ Open Household 360</a></p>{% endif %}
   </div>
 </header>
 

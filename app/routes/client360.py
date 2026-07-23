@@ -32,16 +32,39 @@ def _render(request, ws, principal, tab):
 @router.get("/household/{household_id}", response_class=HTMLResponse)
 def household_workspace(request: Request, household_id: int, tab: str = "summary",
                         principal: Principal = Depends(require_capability("client.read"))):
-    ws = get_workspace(principal, household_id=household_id)
+    """Household 360 Workspace (Phase D.41) — the authoritative household surface at the D.40 route.
+    Read-only composition of member-level rollups; every edit deep-links into the domain workflow."""
+    from app.services.client360.household import get_household_workspace
+    ws = get_household_workspace(principal, household_id)
     if ws is None:
-        return render_error(request, 404, detail="Client not found.")
-    return _render(request, ws, principal, tab)
+        return render_error(request, 404, detail="Household not found.")
+    tabs = ws["section_keys"]
+    active = tab if tab in tabs else (tabs[0] if tabs else "summary")
+    return templates.TemplateResponse(request=request, name="client360/household.html", context={
+        "principal": principal, "ws": ws, "active_tab": active})
+
+
+@router.get("/household/{household_id}/snapshot")
+def household_snapshot(household_id: int,
+                       principal: Principal = Depends(require_capability("client.read"))):
+    """AI-ready compact household snapshot (JSON). 404 if out of record scope; same security as the page."""
+    from fastapi import HTTPException
+
+    from app.services.client360.household import get_household_workspace
+    ws = get_household_workspace(principal, household_id)
+    if ws is None:
+        raise HTTPException(404, "Not found")
+    return JSONResponse(as_json(ws["snapshot"]))
 
 
 @router.get("/household/{household_id}/diagnostics")
-def household_diagnostics(household_id: int,
-                          principal: Principal = Depends(require_capability("observability.audit"))):
-    return JSONResponse(as_json(client360_diagnostics(principal, household_id=household_id)))
+def household_diagnostics_route(
+        household_id: int, principal: Principal = Depends(require_capability("observability.audit"))):
+    """Household 360 composition diagnostics + governance (JSON)."""
+    from app.services.client360.diagnostics import household_diagnostics
+    from app.services.client360.governance import validate_household360
+    return JSONResponse(as_json({"diagnostics": household_diagnostics(principal, household_id=household_id),
+                                 "governance": validate_household360(principal)}))
 
 
 @router.get("/{person_id}", response_class=HTMLResponse)
