@@ -1,0 +1,54 @@
+{# Advisor Workspace widget grid (Phase D.38). Renders the personalized widget cards. Count widgets
+   show a headline figure; list widgets show a short worklist. Every widget deep-links into its owning
+   surface (no dead-end tiles). Customize controls are POST-form buttons (POST-redirect-GET), matching
+   the app's no-JS convention. #}
+{% import "components/ui.html" as ui %}
+
+{% macro controls(w) %}
+<form method="post" action="/workspace/customize" class="widget-controls">
+  <input type="hidden" name="key" value="{{ w.key }}">
+  <button type="submit" name="action" value="move_up" title="Move up" aria-label="Move up">▲</button>
+  <button type="submit" name="action" value="move_down" title="Move down" aria-label="Move down">▼</button>
+  {% if w.pinned %}
+    <button type="submit" name="action" value="unpin" title="Unpin">★ Unpin</button>
+  {% else %}
+    <button type="submit" name="action" value="pin" title="Pin to top">☆ Pin</button>
+  {% endif %}
+  <button type="submit" name="action" value="hide" title="Hide widget">✕ Hide</button>
+</form>
+{% endmacro %}
+
+{% macro tile(w, customize=False) %}
+<article class="card widget widget-{{ w.section }}">
+  <div class="widget-head">
+    <span class="detail-label">{{ w.title }}{% if w.pinned %} <span class="badge">★</span>{% endif %}</span>
+    {% if w.projection_backed %}<span class="subtle widget-src" title="Served from a read-model projection when healthy, else authoritative">◭</span>{% endif %}
+  </div>
+  {% if w.data.error %}
+    <p class="subtle">Temporarily unavailable</p>
+  {% elif w.kind == "count" %}
+    <h2 class="widget-value">{{ w.data.value }}</h2>
+  {% else %}
+    {% if w.data.rows %}
+      <div class="widget-list">
+      {% for r in w.data.rows[:5] %}
+        <div class="detail-row">
+          <span>{% if r.link %}<a href="{{ r.link }}">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %}</span>
+          <strong class="subtle">{% if r.event_time %}{{ r.event_time.strftime("%-I:%M %p") }}{% elif r.relative_time %}{{ r.relative_time }}{% endif %}</strong>
+        </div>
+      {% endfor %}
+      </div>
+    {% else %}
+      <p class="subtle">Nothing today</p>
+    {% endif %}
+  {% endif %}
+  <a class="widget-link" href="{{ w.detail_href }}">View →</a>
+  {% if customize %}{{ controls(w) }}{% endif %}
+</article>
+{% endmacro %}
+
+{% macro grid(widgets, customize=False) %}
+<section class="widget-grid">
+  {% for w in widgets %}{{ tile(w, customize) }}{% endfor %}
+</section>
+{% endmacro %}

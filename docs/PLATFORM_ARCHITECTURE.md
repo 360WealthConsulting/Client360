@@ -1,7 +1,7 @@
 # Client360 Platform Architecture
 
 **Status:** Authoritative top-level architecture reference. Reflects the code as it exists
-after **Phase D.37** on `release/0.13.0` (migration head `zd3e4f5a6b7c`, 825 routes, 157
+after **Phase D.38** on `release/0.13.0` (migration head `k2w3s4p5r6f7`, 833 routes, 158
 seeded production capabilities). Phase documents (`docs/PHASE_D*.md`,
 `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, domain release docs) remain the historical,
 phase-specific record and are not superseded.
@@ -147,6 +147,7 @@ Implemented domains (authoritative unless marked *composition*):
 | 51 | Enterprise Domain Event Model (typed contracts, versioning, publishing, governance, diagnostics) | event-model layer (a typed, versioned, governed domain-event model **over the existing transactional outbox** — the sole bus; **no second event table**; producers publish contract-validated, **references-only** envelopes; orchestration + the major business domains publish domain FACTS; reuses the outbox delivery guarantees / dead-letter / envelope versioning; a governed contract + subscription registry with producer-adoption governance — D.34, producer adoption across 11 business domains D.35) |
 | 52 | Read Models & Projection Engine (disposable read models, projection framework, rebuild/replay, governance) | read-model layer (consumes the D.34/D.35 domain events from the outbox to build fast, query-optimized, **disposable** read models — 12 `rm_*` tables; the write side stays the sole authoritative mutation layer; **no CQRS write model / no second event log / no event sourcing / no shadow state**; read models contain no business logic and never read authoritative tables; replay rebuilds them deterministically — D.36) |
 | 53 | Read Surface Adoption (adopt projections into read surfaces, graceful fallback, adoption governance) | read-model layer (12 read surfaces consult the projections via a read-only helper before the authoritative read; a projection is served ONLY when healthy + fresh AND on the firm-wide `record.read_all` path — scoped principals always get the authoritative scoped read, so **RBAC is never bypassed**; every adopted read **falls back to the unchanged authoritative read**, so behavior is unchanged until an operator enables + rebuilds; **READS ONLY** — writes stay authoritative, the outbox stays the sole bus; no CQRS/second log/shadow logic — D.37) |
+| 54 | Advisor Workspace Home (personalized, projection-backed advisor home; widget grid + presets + AI-ready summaries) | advisor-experience layer (extends `/workspace` with a 12-widget grid — reorder/hide/pin/saved presets — plus a TODAY summary, a deterministic PRIORITIES view, and five AI-ready summary models; count widgets read the D.37 projection-backed sources with authoritative fallback; personalization is **view state only** in `workspace_preferences`/`workspace_presets`, self-service, gated by `workspace.personalize`; every widget is capability-gated — never shown-then-403 — and RBAC/record-scope is never bypassed; no business mutation, the outbox stays the sole bus — D.38) |
 
 ## 5. Source-of-truth matrix
 "Mutation from composition layer?" is **No** for every source datum — composition layers link
@@ -411,6 +412,20 @@ Capability inventory by domain (exact codes; `*` = sensitive):
   behavior is unchanged until an operator enables + rebuilds. READS ONLY (writes stay authoritative);
   adoption governance detects unused/unadopted/mixed/bypass/duplicate/stale (currently 0 issues). See
   `docs/READ_SURFACE_ADOPTION.md`, `docs/PROJECTION_USAGE_GUIDE.md`, `docs/READ_OPTIMIZATION.md`, ADR-042.
+- **Advisor Workspace home:** `/workspace` (gated by `client.read`) is the personalized advisor home
+  (D.38, extending D.1–D.12). It renders a greeting, a TODAY summary, a deterministic PRIORITIES view,
+  and a **12-widget grid** (Today's Calendar, Active Clients, Workflow Exceptions, Operational Tasks,
+  Recent Activity, Revenue Pipeline, Compliance Queue, Tax / Insurance / Benefits pipelines, Document
+  Review, Team Workload). Count widgets read the D.37 projection-backed sources (projection when
+  healthy+fresh on the firm-wide path, else authoritative scoped fallback); every widget is
+  capability-gated (never shown-then-403) and a widget that errors is isolated. **Personalization is
+  view state only** — `workspace_preferences` (order/hidden/pinned/filters, one row per user) +
+  `workspace_presets` (named saved layouts); self-service, gated by `workspace.personalize`; reorder /
+  hide / pin / reset / presets are POST-form (POST-redirect-GET, no JS framework) at
+  `/workspace/customize|presets|reset`. Five **AI-ready summary models** (Daily Brief, Client Snapshot,
+  Meeting Prep, Opportunity Summary, Compliance Summary) are exposed as JSON at `/workspace/summaries/*`
+  (record-scope enforced). No business mutation; the authoritative services + outbox are untouched. See
+  `docs/ADVISOR_WORKSPACE_ARCHITECTURE.md`, ADR-043.
 
 Role seeding (as currently seeded; `administrator` holds all): advisor gets client/work/
 advisor_work/annual_review/business_owner/timeline; operations gets a read-leaning subset;
@@ -587,10 +602,11 @@ registry/health/diagnostics/governance/rebuild/replay), `/workspace`
   orchestration, outbox, portfolio, projection, reporting, runtime, runtime_behavior,
   runtime_coordination, runtime_policy, scheduling, security, work — plus core tables inline in
   `schema.py`).
-- **Alembic:** 81 migrations, **single head `zd3e4f5a6b7c`**; `alembic current == heads`.
+- **Alembic:** 82 migrations, **single head `k2w3s4p5r6f7`**; `alembic current == heads`.
   Recent chain: D.28 `z0a1b2c3d4e5` → D.29 `z2c3d4e5f6a7` → D.30 `z4e5f6a7b8c9` → D.31
   `z8a9b0c1d2e3` → D.32 `z9b0c1d2e3f4` → D.33 `za0b1c2d3e4f` → D.34 `zb1c2d3e4f5a` → D.35
-  `zc2d3e4f5a6b` → D.36 `zd3e4f5a6b7c` (D.37 is code-only — no migration; head unchanged).
+  `zc2d3e4f5a6b` → D.36 `zd3e4f5a6b7c` (D.37 is code-only — no migration; head unchanged) → D.38
+  `k2w3s4p5r6f7` (advisor-workspace personalization tables + `workspace.personalize`).
 - **Capability-seeding pattern:** each domain migration inserts its capabilities and grants
   `role_capabilities` idempotently.
 - **Downgrade expectations:** every recent migration is reversible (down removes its

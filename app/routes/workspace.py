@@ -3,7 +3,7 @@ from __future__ import annotations
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.security.authorization import record_in_scope
@@ -16,16 +16,24 @@ from app.services.advisor_intelligence import (
     group_signals,
 )
 from app.services.advisor_workspace import (
-    get_daily_dashboard,
     get_meeting_brief,
     get_meeting_outcome_context,
     record_meeting_outcome,
 )
+from app.services.workspace import get_workspace, preferences, summaries
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 templates = Jinja2Templates(directory="app/templates")
 # Grouping for the shared Advisor Intelligence renderer lives in Python (D.5E).
 templates.env.globals["signal_groups"] = group_signals
+
+_MOVE = {"move_up": ("up",), "move_down": ("down",)}
+
+
+async def _form(request):
+    from urllib.parse import parse_qs
+    form = parse_qs((await request.body()).decode("utf-8"))
+    return lambda key: form.get(key, [""])[0].strip()
 
 
 @router.get("", response_class=HTMLResponse)
@@ -33,23 +41,111 @@ def workspace_dashboard(
     request: Request,
     principal: Principal = Depends(require_capability("client.read")),
 ):
-    """Advisor Workspace — read-only Daily Dashboard (Phase D.1).
+    """Advisor Workspace — the personalized advisor home (Phase D.38, extends Phase D.1).
 
     Book-scoped (NOT a firm-wide collection): the route requires `client.read`
-    and the orchestration service scopes every panel to the advisor's accessible
-    clients via `accessible_person_ids`. Composition only — no writes, no new
-    domain/task/workflow/exception/notification logic, no advisor intelligence.
+    and every read is scoped to the advisor's accessible clients (RBAC preserved).
+    Composition + personalization only — no writes, no business logic. Widgets read
+    from the D.36/D.37 projections when healthy+fresh, else fall back to the
+    authoritative record-scoped read (behavior unchanged by default).
     """
-    dashboard = get_daily_dashboard(principal)
+    ws = get_workspace(principal)
     # Advisor Intelligence framework (Phase D.5A) — book-scoped, deterministic,
-    # propose-only. Returns () in this phase (no rules registered); the panel
-    # renders its placeholder empty state. No recommendations, no AI.
+    # propose-only. Returns () in this phase (no rules registered).
     signals = get_dashboard_signals(principal)
     return templates.TemplateResponse(
         request=request,
         name="workspace/dashboard.html",
-        context={"principal": principal, "d": dashboard, "signals": signals},
+        context={"principal": principal, "ws": ws, "d": ws["daily"], "signals": signals,
+                 "customize": request.query_params.get("customize") == "1"},
     )
+
+
+@router.post("/customize")
+async def customize(
+    request: Request,
+    principal: Principal = Depends(require_capability("workspace.personalize")),
+):
+    """Personalize the workspace layout (reorder / hide / show / pin / unpin one widget). Self-service:
+    only the acting user's own preferences are touched. POST-redirect-GET back to the workspace."""
+    f = await _form(request)
+    action, key = f("action"), f("key")
+    uid = principal.user_id
+    if action in _MOVE:
+        preferences.move_widget(uid, key, *_MOVE[action])
+    elif action == "hide":
+        preferences.hide_widget(uid, key)
+    elif action == "show":
+        preferences.show_widget(uid, key)
+    elif action == "pin":
+        preferences.pin_widget(uid, key)
+    elif action == "unpin":
+        preferences.unpin_widget(uid, key)
+    return RedirectResponse(url="/workspace?customize=1", status_code=303)
+
+
+@router.post("/presets")
+async def presets(
+    request: Request,
+    principal: Principal = Depends(require_capability("workspace.personalize")),
+):
+    """Save / apply / delete a named layout preset (self-service, own presets only)."""
+    f = await _form(request)
+    action, uid = f("action"), principal.user_id
+    if action == "save":
+        preferences.save_preset(uid, f("name"))
+    elif action == "apply" and f("preset_id"):
+        preferences.apply_preset(uid, int(f("preset_id")))
+    elif action == "delete" and f("preset_id"):
+        preferences.delete_preset(uid, int(f("preset_id")))
+    return RedirectResponse(url="/workspace?customize=1", status_code=303)
+
+
+@router.post("/reset")
+async def reset_layout(
+    principal: Principal = Depends(require_capability("workspace.personalize")),
+):
+    """Reset the workspace layout to the registry defaults (self-service)."""
+    preferences.reset(principal.user_id)
+    return RedirectResponse(url="/workspace?customize=1", status_code=303)
+
+
+@router.get("/summaries/daily")
+def summary_daily(principal: Principal = Depends(require_capability("client.read"))):
+    """AI-ready Daily Brief (JSON) — greeting, today's counts, priorities, attention. Read-only."""
+    return JSONResponse(summaries.daily_brief(principal))
+
+
+@router.get("/summaries/opportunities")
+def summary_opportunities(principal: Principal = Depends(require_capability("opportunity.read"))):
+    """AI-ready Opportunity Summary (JSON) — record-scoped pipeline report."""
+    return JSONResponse(summaries.opportunity_summary(principal))
+
+
+@router.get("/summaries/compliance")
+def summary_compliance(principal: Principal = Depends(require_capability("compliance.read"))):
+    """AI-ready Compliance Summary (JSON) — record-scoped open-review queue."""
+    return JSONResponse(summaries.compliance_summary(principal))
+
+
+@router.get("/summaries/client/{person_id}")
+def summary_client(person_id: int,
+                   principal: Principal = Depends(require_capability("client.read"))):
+    """AI-ready Client Snapshot (JSON). Enforces person record-scope (404 if out of scope)."""
+    snap = summaries.client_snapshot(principal, person_id)
+    if snap is None:
+        raise HTTPException(404, "Not found")
+    return JSONResponse(snap)
+
+
+@router.get("/summaries/meeting/{person_id}")
+def summary_meeting(person_id: int, event: int | None = None,
+                    principal: Principal = Depends(require_capability("client.read"))):
+    """AI-ready Meeting Prep (JSON). Enforces person record-scope (404 if out of scope)."""
+    prep = summaries.meeting_prep(principal, person_id, event_id=event)
+    if prep is None:
+        raise HTTPException(404, "Not found")
+    return JSONResponse(prep)
 
 
 @router.get("/meetings/{person_id}", response_class=HTMLResponse)

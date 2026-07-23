@@ -231,7 +231,7 @@ def test_adoption_route_registered():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 825
+    assert len(app.routes) == 833
 
 
 def test_adoption_route_returns_report():
@@ -248,11 +248,13 @@ def test_adoption_route_returns_report():
 
 # --- architecture invariants -------------------------------------------------
 
-def test_migration_head_unchanged():
-    # D.37 is code-only — it adds no migration; the head stays at the D.36 revision.
-    with db.connect() as c:
-        head = c.scalar(text("SELECT version_num FROM alembic_version"))
-    assert head == "zd3e4f5a6b7c"
+def test_read_surface_adoption_added_no_migration():
+    # D.37 is code-only — read-surface adoption introduced NO migration (adoption is in-process +
+    # code, on top of the D.36 read-model tables). Durable across later phases that do add migrations.
+    import pathlib
+    versions = pathlib.Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    names = [p.name for p in versions.glob("*.py")]
+    assert not any("read_surface" in n or "surface_adoption" in n for n in names)
 
 
 def test_adoption_modules_do_not_query_read_model_tables_directly():
