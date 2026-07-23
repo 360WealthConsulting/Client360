@@ -111,6 +111,18 @@ def run_automation_tick() -> None:
         logger.exception("Automation tick failed.")
 
 
+def run_orchestration_tick() -> None:
+    """Drive one Workflow Orchestration housekeeping tick (D.33): scan non-terminal orchestration
+    instances. No-op when idle. Failure-isolated — a job crash never propagates."""
+    try:
+        from app.services.orchestration import execution as orchestration
+        result = orchestration.tick()
+        if result.get("advanced"):
+            logger.info("Orchestration tick result: %s", result)
+    except Exception:
+        logger.exception("Orchestration tick failed.")
+
+
 def run_runtime_refresh() -> None:
     """Safely refresh the Runtime Configuration Engine (D.28): invalidate the cache and rebuild the
     effective-configuration snapshot from the current D.27 metadata. Failure-isolated — a refresh
@@ -225,6 +237,16 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_automation_tick, trigger="interval", seconds=automation_tick_interval_seconds(),
             id="automation-tick", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # (D.33) Workflow Orchestration housekeeping tick — gated OFF by default. When enabled, it scans
+    # non-terminal orchestration instances. The scheduler infrastructure is unchanged; this only
+    # launches orchestration (never new threads, single-instance).
+    from app.config import orchestration_enabled, orchestration_tick_interval_seconds
+    if orchestration_enabled():
+        _scheduler.add_job(
+            run_orchestration_tick, trigger="interval", seconds=orchestration_tick_interval_seconds(),
+            id="orchestration-tick", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     # (D.28) Runtime Configuration Engine periodic safe-refresh — gated OFF by default. When enabled,

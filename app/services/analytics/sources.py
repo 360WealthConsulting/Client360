@@ -529,6 +529,61 @@ def policy_execution_latency_us(principal):
     return policy_engine.evaluation_stats().get("avg_latency_us")
 
 
+# --- Workflow Orchestration Engine (Phase D.33 — Analytics consumes orchestration statistics; the
+#     orchestration engine never imports Analytics) --------------------------------------------------
+
+def _orch_stats():
+    from app.services.orchestration import engine as orchestration_engine
+    return orchestration_engine.stats()
+
+
+def orchestration_launch_count(principal) -> int:
+    """In-process count of orchestration instances launched (Phase D.33)."""
+    return int(_orch_stats().get("launches") or 0)
+
+
+def orchestration_completion_count(principal) -> int:
+    """In-process count of orchestration instances completed (Phase D.33)."""
+    return int(_orch_stats().get("completions") or 0)
+
+
+def orchestration_failure_count(principal) -> int:
+    """In-process count of orchestration failures (Phase D.33)."""
+    return int(_orch_stats().get("failures") or 0)
+
+
+def orchestration_retry_count(principal) -> int:
+    """In-process count of orchestration retries (Phase D.33)."""
+    return int(_orch_stats().get("retries") or 0)
+
+
+def orchestration_replay_count(principal) -> int:
+    """In-process count of deterministic replays performed (Phase D.33)."""
+    return int(_orch_stats().get("replays") or 0)
+
+
+def orchestration_simulation_count(principal) -> int:
+    """In-process count of dry-run simulations performed (Phase D.33)."""
+    return int(_orch_stats().get("simulations") or 0)
+
+
+def orchestration_governance_issue_count(principal) -> int:
+    """Count of open orchestration-governance issues (Phase D.33)."""
+    from app.services.orchestration import governance as orchestration_governance
+    return int(orchestration_governance.validate()["issue_count"])
+
+
+def orchestration_coverage_pct(principal):
+    """Orchestration domain-coverage percentage (Phase D.33)."""
+    from app.services.orchestration import registry as orchestration_registry
+    return orchestration_registry.coverage()["coverage_pct"]
+
+
+def orchestration_avg_execution_ms(principal):
+    """Average in-process orchestration execution time in milliseconds (Phase D.33)."""
+    return _orch_stats().get("avg_duration_ms")
+
+
 def active_project_count(principal) -> int:
     """Firm-level count of active projects (Phase D.20 — Analytics consumes operational statistics;
     Operations never depends on Analytics). Firm operations are not client-book-scoped."""

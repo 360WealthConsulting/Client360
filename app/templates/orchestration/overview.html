@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Workflow Orchestration | Client360{% endblock %}
+{% block crumb %}Workflow Orchestration{% endblock %}
+{% block content %}
+{{ ui.page_head("Workflow Orchestration Engine", eyebrow="Declarative workflows · state management · replay", desc="Multi-stage processes are coordinated by a single declarative engine that consumes the runtime context and the policy engine — the runtime engine stays the sole evaluator and the policy engine the sole decision engine. This tracks the workflow registry, orchestration coverage, live execution, and governance.") }}
+<section class="stack" style="margin-bottom:18px"><h2 class="section-title">Coverage &amp; execution</h2>
+  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Domain coverage</div><div style="font-size:22px; font-weight:700">{{ adoption.coverage_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Adoption</div><div style="font-size:22px; font-weight:700">{{ adoption.adoption_pct }}%</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Active</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.active }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">In-domain</div><div style="font-size:22px; font-weight:700">{{ adoption.registry.in_domain }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Launches</div><div style="font-size:22px; font-weight:700">{{ stats.launches }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Completions</div><div style="font-size:22px; font-weight:700">{{ stats.completions }}</div></article>
+    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Governance</div><div style="font-size:22px; font-weight:700">{{ ui.badge("OK" if governance.ok else (governance.issue_count ~ " issues"), 'good' if governance.ok else 'bad') }}</div></article>
+  </div>
+  <p class="subtle" style="margin-top:8px; font-size:12px">Failures: {{ stats.failures }} · Cancellations: {{ stats.cancellations }} · Compensations: {{ stats.compensations }} · Transitions: {{ stats.transitions }}</p>
+</section>
+
+<section class="stack"><h2 class="section-title">Workflow registry</h2>
+{% if definitions %}
+<div class="table-wrap"><table class="data"><thead><tr><th>Definition</th><th>Category</th><th>Status</th><th>Owner</th><th>Initial</th><th>Policy refs</th></tr></thead>
+  <tbody>{% for d in definitions %}<tr><td><strong>{{ d.name }}</strong><div class="subtle" style="font-size:11px">{{ d.code }}</div></td><td>{{ d.category }}</td>
+    <td>{{ ui.badge(d.status|replace("_"," ")|capitalize, 'good' if d.status == 'active' else ('' if d.status == 'in_domain' else 'bad')) }}</td>
+    <td>{{ d.owner or "—" }}</td>
+    <td>{{ d.initial_stage or "—" }}</td>
+    <td>{{ (d.policy_refs or [])|join(", ") or "—" }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% call ui.empty("No definitions", "The workflow registry is empty.") %}{% endcall %}{% endif %}
+</section>
+{% endblock %}

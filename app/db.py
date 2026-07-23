@@ -432,3 +432,12 @@ runtime_behaviors = metadata.tables["runtime_behaviors"]
 # graph. Owns no configuration metadata and performs no configuration evaluation; the policy engine
 # consumes RuntimeContext (the runtime engine remains the sole evaluator).
 runtime_policies = metadata.tables["runtime_policies"]
+
+# Enterprise Workflow Orchestration Engine (Phase D.33). The centralized orchestration layer: a
+# discoverable registry of declarative workflow definitions, running instances with deterministic
+# state, and an append-only event ledger enabling deterministic replay. It consumes RuntimeContext +
+# the Runtime Policy Engine (never evaluates config directly, never makes business decisions) and
+# coordinates existing services (never duplicating domain behavior).
+orchestration_definitions = metadata.tables["orchestration_definitions"]
+orchestration_instances = metadata.tables["orchestration_instances"]
+orchestration_events = metadata.tables["orchestration_events"]

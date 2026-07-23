@@ -228,7 +228,15 @@ def execute_dispatch(job_type: str, *, config: dict, principal, actor_user_id) -
     from app.services.policy import evaluate as policy_evaluate
     if not policy_evaluate("automation.job_execution", subject=job_type).decision:
         return {"skipped": True, "reason": "runtime_disabled", "job_type": job_type}
-    return fn({"config": config or {}, "principal": principal, "actor_user_id": actor_user_id})
+    # (D.33) The execution is ORCHESTRATED through the Workflow Orchestration Engine (the
+    # automation.dispatch definition), which coordinates the existing automation framework — it never
+    # replaces it. Behavior-preserving: the handler runs exactly once and its return/exception is
+    # unchanged; the engine records the orchestration lifecycle (launched → dispatching → running →
+    # completed/failed→compensated) for centralized diagnostics/replay.
+    from app.services.orchestration import execution as orchestration
+    return orchestration.coordinate(
+        "automation.dispatch", subject=job_type, actor_user_id=actor_user_id,
+        executor=lambda: fn({"config": config or {}, "principal": principal, "actor_user_id": actor_user_id}))
 
 
 def list_job_types() -> list[str]:
