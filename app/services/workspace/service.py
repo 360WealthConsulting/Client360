@@ -129,6 +129,15 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         integration_health = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Security Operations panel (D.54) — a read-only security summary (overview + MFA coverage + authorization
+    # failures + audit integrity) composed over the authoritative Security domain + Identity + audit log.
+    # Guarded so a gate-off never breaks home; this panel never authenticates/authorizes/alters anything.
+    try:
+        from app.services.security_operations import security_summary
+        security_operations = security_summary(principal)
+    except Exception:
+        security_operations = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -150,4 +159,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "automation_status": automation_status,
         "data_governance": data_governance,
         "integration_health": integration_health,
+        "security_operations": security_operations,
     }

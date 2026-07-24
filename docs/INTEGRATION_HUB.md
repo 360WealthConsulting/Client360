@@ -70,3 +70,12 @@ write, no second platform. Every integration count comes from the Integration Pl
 is explainable and deep-links to its authoritative surface. Enforced by
 `app/services/integration_hub/governance.py` and `tests/test_integration_hub.py`. See
 [ADR-058](adr/ADR-058-integration-hub.md).
+
+## Related: Security Operations (D.54)
+
+The D.54 Security Operations layer (`app/services/security_operations/`) provides the platform security-posture
+view (authentication / authorization / identity governance / MFA / sessions / audit) over the authoritative
+security owners — a read-only composition, never a second IAM/SIEM. Its authentication panel catalogs the same
+identity/federation providers surfaced here as connectors (`external_identities` / `service_accounts`
+compose the Integration Platform's connector auth). See [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and
+ADR-059.

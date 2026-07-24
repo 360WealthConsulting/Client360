@@ -52,6 +52,12 @@
 > by the D.53 integration-hub layer over the authoritative person lineage. Counts + source-system names only —
 > never a payload; never connects/syncs anything; never a second integration platform. See
 > [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and [`ADR-058`](adr/ADR-058-integration-hub.md).
+>
+> **D.54:** Household 360 also gains a **Security & Access** section (gated by `security.view`) — who can
+> access the household + its members' records (record-assignment access grants), composed by the D.54
+> security-operations layer over the authoritative authorization owner. Counts only — never a payload; never
+> authenticates/authorizes/alters anything; never a second IAM/RBAC engine. See
+> [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and [`ADR-059`](adr/ADR-059-security-operations.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

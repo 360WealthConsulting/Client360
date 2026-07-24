@@ -166,6 +166,12 @@ DASHBOARD_REGISTRY = (
        ("runtime_health", "operational_health"),
        ("analytics.view",), "/integration-hub",
        ("runtime", "recommendations")),
+    # Security Operations (D.54) — the executive view of platform security posture, composed from EXISTING
+    # widgets (no new widget). The full security surface lives at /security-operations.
+    _d("security_operations", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("compliance_workload", "runtime_health", "operational_health"),
+       ("analytics.view",), "/security-operations",
+       ("compliance", "runtime", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

@@ -43,6 +43,7 @@ SECTIONS = (
     SectionDef("automation_history", "Automation History", "automation.view", sections.automation_history),
     SectionDef("data_governance", "Data Governance", "governance.view", sections.data_governance),
     SectionDef("external_integrations", "External Integrations", "integration.view", sections.external_integrations),
+    SectionDef("security_access", "Security & Access", "security.view", sections.security_access),
 )
 
 SECTION_KEYS = tuple(s.key for s in SECTIONS)

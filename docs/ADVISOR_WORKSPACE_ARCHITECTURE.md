@@ -59,6 +59,13 @@
 > secret/token/credential/payload; the panel never connects/syncs/invokes/refreshes anything. The full
 > integration dashboards live at `/integration-hub`. See [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and
 > ADR-058.
+>
+> **D.54:** The advisor home also carries a **Security Operations** panel (`ws["security_operations"]`) — the
+> firm security-operations summary (overview + MFA coverage + authorization failures + audit integrity)
+> composed by the D.54 security-operations layer over the authoritative Security domain + Identity + audit
+> log. Counts + status only — never a password/secret/token/session-ID/payload; the panel never
+> authenticates/authorizes/alters anything. The full security dashboards live at `/security-operations`. See
+> [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and ADR-059.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

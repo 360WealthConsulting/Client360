@@ -88,6 +88,13 @@ the full integration surface at `/integration-hub`. The dedicated Integration Hu
 integrations / synchronization / authentication / webhooks / connectors / API health / event routing) lives in
 `app/services/integration_hub/`; see [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and ADR-058.
 
+**Security Operations (D.54):** the registry gains a `security_operations` executive dashboard composed from
+**existing** widgets (`compliance_workload`, `runtime_health`, `operational_health`) — no new widget — whose
+navigation deep-links to the full security surface at `/security-operations`. The dedicated Security
+Operations layer (firm-wide authentication / authorization / identity governance / MFA / sessions / audit /
+security posture) lives in `app/services/security_operations/`; see
+[`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and ADR-059.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.
