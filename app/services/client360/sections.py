@@ -221,6 +221,17 @@ def compliance_summary(principal, ctx):
             "source": "compliance_intelligence", "not_a_second_engine": True}
 
 
+def executive(principal, ctx):
+    """Firm executive context (KPIs + firm-intelligence observations) for an executive viewing this client,
+    composed by the D.48 executive-intelligence layer over the SINGLE Analytics Registry (never a second
+    analytics engine). Gated by analytics.executive; never mutates."""
+    from app.services.executive_intelligence import executive_summary
+    summary = executive_summary(principal)
+    return {"kpis": summary.get("kpis", {}), "observations": summary.get("observations", []),
+            "governing_services": summary.get("governing_services", []),
+            "source": "executive_intelligence", "not_a_second_analytics_engine": True}
+
+
 def relationships(principal, ctx):
     """Household members + the read-only relationship graph (beneficiaries/trustees/businesses/
     employers/dependents/advisors) + assigned advisors."""

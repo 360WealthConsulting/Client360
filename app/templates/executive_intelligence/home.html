@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Executive Reporting | Client360{% endblock %}
+{% block crumb %}Executive Reporting{% endblock %}
+{% block content %}
+{% call ui.page_head("Executive reporting", eyebrow="Firm intelligence", desc="Firm-wide operational visibility composed read-only from the authoritative services and the single Analytics Registry — never a second analytics platform. Every widget deep-links to its authoritative surface.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Dashboards">
+  {% for d in dashboards %}
+    <a href="/executive?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No executive dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.widget_count }} widget(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}</p>
+<div class="grid">
+  {% for w in board.widgets %}
+  <article class="work-card">
+    <h3>{{ w.title }}</h3>
+    {% if w.restricted %}
+      <p class="subtle">Restricted — executive access required.</p>
+    {% elif not w.available %}
+      <p class="subtle">Unavailable.</p>
+    {% else %}
+      <p><strong>{{ w.value }}</strong> <span class="subtle">({{ w.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ w.explanation }}</p>
+    {% if w.deep_link %}<a class="btn secondary" href="{{ w.deep_link }}">Open {{ w.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -21,6 +21,11 @@
 > composed by the D.47 compliance-intelligence layer (never a second compliance engine). Advisors without the
 > capability never see it. See [`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md) and
 > [`ADR-052`](adr/ADR-052-compliance-intelligence.md).
+>
+> **D.48:** Client 360 also gains an executive-only **Executive** section (gated by `analytics.executive`) —
+> firm executive context (KPIs + firm-intelligence observations) composed by the D.48 executive-intelligence
+> layer over the single Analytics Registry (never a second analytics engine). See
+> [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and [`ADR-053`](adr/ADR-053-executive-reporting.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

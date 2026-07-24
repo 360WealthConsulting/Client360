@@ -51,6 +51,12 @@ gains an advisor-visible **compliance tasks** panel; AI Assist **summarizes** su
 supervisor) and never approves/waives/suppresses/invents. The client portal is unchanged (no supervisory
 functionality; D.43 reuse only). See [`SUPERVISORY_REGISTRY.md`](SUPERVISORY_REGISTRY.md).
 
+## Relationship to executive reporting (D.48)
+The D.48 Executive Reporting layer surfaces firm compliance status via the Analytics Registry's
+`open_compliance_reviews` metric (its `compliance_workload` widget) — NOT the supervisory dashboard, so the
+firm-wide compliance dashboards expose no supervisory detail and the supervisor-vs-advisor boundary holds.
+See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
+
 ## References
 `app/services/compliance_intelligence/*`, `app/routes/compliance_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_compliance_intelligence.py`, ADR-052.

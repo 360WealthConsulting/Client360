@@ -20,6 +20,11 @@
 > (`ws["compliance_tasks"]`) — ONLY the governed advisor compliance recommendations, never supervisory
 > findings, reviewer identities, or approval state. Supervisory operations live behind `compliance.supervise`
 > at `/supervision`. See [`SUPERVISORY_WORKSPACE.md`](SUPERVISORY_WORKSPACE.md) and ADR-052.
+>
+> **D.48:** The advisor home also carries an **Executive Insights** panel (`ws["executive_insights"]`) — the
+> firm executive summary composed by the D.48 executive-intelligence layer over the single Analytics
+> Registry; a non-executive gets a non-leaking restricted envelope. The full executive dashboards live at
+> `/executive`. See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

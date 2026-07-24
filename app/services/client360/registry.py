@@ -34,6 +34,7 @@ SECTIONS = (
     SectionDef("knowledge", "Knowledge", None, sections.knowledge),
     SectionDef("recommendations", "Recommendations", None, sections.recommendations),
     SectionDef("compliance_summary", "Compliance Oversight", "compliance.supervise", sections.compliance_summary),
+    SectionDef("executive", "Executive", "analytics.executive", sections.executive),
     SectionDef("timeline", "Activity", "timeline.read", sections.timeline),
     SectionDef("relationships", "Relationships", None, sections.relationships),
     SectionDef("work", "Work", "advisor_work.read", sections.work),
