@@ -52,6 +52,13 @@
 > composed by the D.52 data-governance layer over the authoritative Governance package. Counts + status only
 > — never a client-sensitive payload; the panel never merges/alters/approves anything. The full governance
 > dashboards live at `/data-governance`. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and ADR-057.
+>
+> **D.53:** The advisor home also carries an **Integration Health** panel (`ws["integration_health"]`) — the
+> firm integration-health summary (overview + sync + connector + webhook health) composed by the D.53
+> integration-hub layer over the authoritative Integration Platform. Counts + status only — never a
+> secret/token/credential/payload; the panel never connects/syncs/invokes/refreshes anything. The full
+> integration dashboards live at `/integration-hub`. See [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and
+> ADR-058.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

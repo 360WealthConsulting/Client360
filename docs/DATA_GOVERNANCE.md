@@ -70,3 +70,12 @@ mutation, no merge, no outbox publication, no audit write, no second store. Ever
 the Governance package; every dashboard panel is explainable and deep-links to its authoritative surface.
 Enforced by `app/services/data_governance/governance.py` and `tests/test_data_governance.py`. See
 [ADR-057](adr/ADR-057-data-governance.md).
+
+## Related: Integration Hub (D.53)
+
+The D.53 Integration Hub layer (`app/services/integration_hub/`) provides the connected-platform view of
+external systems, synchronization health, and connector status over the authoritative D.24 Integration
+Platform — a read-only composition, never a second integration platform. Its per-client / per-household
+External Integrations sections compose the same authoritative person lineage
+(`source_contacts.source_system`) that Data Governance uses for provenance, framed as external-integration
+connectivity. See [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and ADR-058.

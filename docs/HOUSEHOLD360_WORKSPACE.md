@@ -46,6 +46,12 @@
 > layer over the authoritative person lineage. Counts + source systems only — never a payload; never
 > merges/duplicates an identity; never a second master-data store. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md)
 > and [`ADR-057`](adr/ADR-057-data-governance.md).
+>
+> **D.53:** Household 360 also gains an **External Integrations** section (gated by `integration.view`) — the
+> external systems the household's members connected from (source-system provenance across members), composed
+> by the D.53 integration-hub layer over the authoritative person lineage. Counts + source-system names only —
+> never a payload; never connects/syncs anything; never a second integration platform. See
+> [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and [`ADR-058`](adr/ADR-058-integration-hub.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

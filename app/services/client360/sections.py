@@ -294,6 +294,17 @@ def data_governance(principal, ctx):
             "source": "data_governance.client_governance", "not_a_second_engine": True}
 
 
+def external_integrations(principal, ctx):
+    """A compact external-integrations summary for this client (D.53) — the external systems the client's
+    data connected from, composed read-only from the authoritative person lineage. Counts + source-system
+    names only, never a payload; deep-links to the authoritative integration surface. Never connects/syncs/
+    invokes anything; never a second integration platform."""
+    from app.services.integration_hub import client_integrations
+    pid = _pid(ctx)
+    return {**(client_integrations(principal, pid) if pid else {"enabled": False, "source_systems": []}),
+            "source": "integration_hub.client_integrations", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

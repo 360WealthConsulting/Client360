@@ -41,6 +41,7 @@ _LINKS = {
         f"/workflows?person_id={person_id}" if person_id
         else (f"/workflows?household_id={household_id}" if household_id else "/automation-orchestration")),
     "data_governance": lambda **k: "/governance",
+    "integration_hub": lambda **k: "/integration",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -48,7 +49,7 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
           "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
           "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
-          "data_governance": "Data Governance"}
+          "data_governance": "Data Governance", "integration_hub": "Integration Hub"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -222,6 +223,13 @@ def _client(principal, person_id):
     if dg.get("enabled") and isinstance(dg.get("lineage_records"), int):
         facts.append(_fact("data_governance", "governance.lineage_records", dg["lineage_records"],
                            fact_class=DERIVED, deep_link="/governance"))
+    # Integration Hub — SUMMARIZED connected-external-system COUNT for this client, composed read-only over
+    # the authoritative person lineage. AI summarizes the count; it never reconnects systems, refreshes
+    # tokens, triggers synchronization, invokes mutations, bypasses authentication, or changes settings.
+    ih = (ws.get("sections") or {}).get("external_integrations") or {}
+    if ih.get("enabled") and isinstance(ih.get("connected_system_count"), int):
+        facts.append(_fact("integration_hub", "integration.connected_systems",
+                           ih["connected_system_count"], fact_class=DERIVED, deep_link="/integration"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

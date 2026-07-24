@@ -160,6 +160,12 @@ DASHBOARD_REGISTRY = (
        ("compliance_workload", "operational_health", "runtime_health"),
        ("analytics.view",), "/data-governance",
        ("compliance", "recommendations", "runtime")),
+    # Integration Health (D.53) — the executive view of connected-platform health, composed from EXISTING
+    # widgets (no new widget). The full integration surface lives at /integration-hub.
+    _d("integration_health", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("runtime_health", "operational_health"),
+       ("analytics.view",), "/integration-hub",
+       ("runtime", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Integration Hub | Client360{% endblock %}
+{% block crumb %}Integration Hub{% endblock %}
+{% block content %}
+{% call ui.page_head("Integration hub", eyebrow="Connected platform governance", desc="A single governed view of all external systems, integrations, synchronization health, API connectivity and connector status — composed read-only from the authoritative integration owners (the Integration Platform, the Event registry, the connectors). Never a second integration platform, ESB, API gateway, synchronization engine, webhook processor or event bus; never mutates an external system, triggers synchronization, invokes an API, refreshes a token or changes a setting. Counts and status only — no secrets, tokens, credentials or client payloads. Every panel deep-links to its authoritative connector owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Integration dashboards">
+  {% for d in dashboards %}
+    <a href="/integration-hub?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No integration-hub dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Unavailable.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
