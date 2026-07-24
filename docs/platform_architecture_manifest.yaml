@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: l3q4v5w6x7y8      # `alembic heads` / `alembic current`
-  route_count: 853                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: m4p5o6r7t8c9      # `alembic heads` / `alembic current`
+  route_count: 869                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
@@ -170,6 +170,7 @@ declared_schema_registrations:
   - define_scheduling_tables
   - define_security_tables
   - define_work_tables
+  - define_portal_consent_tables
 
 # Capabilities the architecture document references. Every entry MUST exist in the seeded
 # capabilities table (subset test). Grouped by domain for the human document.

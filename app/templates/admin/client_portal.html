@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Client Portal Administration | Client360{% endblock %}
+{% block crumb %}Client Portal Administration{% endblock %}
+{% block content %}
+{% call ui.page_head("Client Portal administration", eyebrow="Oversight", desc="Invite and govern external client portal access. Previewing an account shows its entitlements — it is never impersonation.") %}
+  <a class="btn secondary" href="/admin/client-portal/diagnostics">Portal diagnostics</a>
+{% endcall %}
+<h2 class="section-title">Portal accounts</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>MFA</th><th>Last login</th></tr></thead>
+    <tbody>
+    {% for a in accounts %}
+      <tr>
+        <td>{{ a.display_name }}</td>
+        <td>{{ a.email }}</td>
+        <td>{{ a.status }}</td>
+        <td>{% if a.mfa_enabled %}{{ ui.badge('Yes','good') }}{% else %}{{ ui.badge('No','warn') }}{% endif %}</td>
+        <td class="subtle">{{ a.last_login_at or "Never" }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="subtle">No portal accounts yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="subtle">External production access is blocked until the compliance sign-off gate
+(<code>portal.production_signed_off</code>) is recorded. See the portal diagnostics for gate status.</p>
+{% endblock %}

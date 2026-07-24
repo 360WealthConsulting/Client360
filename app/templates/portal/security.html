@@ -1,0 +1,33 @@
+{% extends "portal/base.html" %}{% block title %}Security Center{% endblock %}{% block content %}
+<h1>Security Center</h1>
+<section aria-labelledby="sessions-heading">
+  <h2 id="sessions-heading">Active sessions</h2>
+  <table class="data-table" aria-label="Your active sign-in sessions">
+    <thead><tr><th scope="col">Signed in</th><th scope="col">Last active</th><th scope="col">Expires</th><th scope="col">Location (IP)</th></tr></thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}</td>
+        <td>{{ s.last_seen_at.strftime('%Y-%m-%d %H:%M') if s.last_seen_at else '—' }}</td>
+        <td>{{ s.expires_at.strftime('%Y-%m-%d %H:%M') if s.expires_at else '—' }}</td>
+        <td>{{ s.ip_address or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="empty">No active sessions.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section aria-labelledby="consents-heading">
+  <h2 id="consents-heading">Agreements on file</h2>
+  <ul>
+  {% for c in consents %}
+    <li>{{ c.consent_type.replace('_', ' ') | title }} ({{ c.version }}) — {{ c.state | title }}</li>
+  {% else %}
+    <li class="empty">No agreements on file yet.</li>
+  {% endfor %}
+  </ul>
+</section>
+<p class="fine-print">If you see a session you don't recognise, contact your advisor immediately. Your
+account requires multi-factor authentication for every sign-in.</p>
+{% endblock %}

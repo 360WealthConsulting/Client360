@@ -12,7 +12,7 @@ portfolio aggregation, incompatible values never summed, record scope enforced, 
 import uuid
 
 import pytest
-from sqlalchemy import delete, insert, text
+from sqlalchemy import delete, insert
 
 from app.db import engine, household_relationships, households, people
 from app.security.models import Principal
@@ -261,7 +261,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 853
+    assert len(app.routes) == 869
 
 
 def test_household_page_renders_and_404():
@@ -278,7 +278,7 @@ def test_household_page_renders_and_404():
 
 
 def test_migration_head_unchanged_no_new_table():
-    with engine.connect() as c:
-        assert c.scalar(text("SELECT version_num FROM alembic_version")) == "l3q4v5w6x7y8"
+    # D.41 is composition-only — it introduced no schema. The durable invariant is that no household360
+    # table exists (the global migration head legitimately advances in later phases, so it is not pinned).
     from app.db import metadata
     assert "household360" not in metadata.tables and "rm_household360" not in metadata.tables

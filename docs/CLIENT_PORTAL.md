@@ -1,5 +1,18 @@
 # Client Portal and Secure Collaboration
 
+> **Phase D.43** hardened and extended this portal (secure external identity, a declarative visibility
+> registry, runtime + compliance production gates, a consent / electronic-delivery ledger, a masked
+> financial summary, internal-only diagnostics + governance, appointment-request delegation, and a
+> capability-guarded internal admin surface). See [`CLIENT_PORTAL_ARCHITECTURE.md`](CLIENT_PORTAL_ARCHITECTURE.md),
+> [`CLIENT_PORTAL_SECURITY.md`](CLIENT_PORTAL_SECURITY.md),
+> [`CLIENT_PORTAL_IDENTITY_AND_SCOPE.md`](CLIENT_PORTAL_IDENTITY_AND_SCOPE.md),
+> [`CLIENT_PORTAL_VISIBILITY_REGISTRY.md`](CLIENT_PORTAL_VISIBILITY_REGISTRY.md),
+> [`CLIENT_PORTAL_DOCUMENTS.md`](CLIENT_PORTAL_DOCUMENTS.md), [`CLIENT_PORTAL_REQUESTS.md`](CLIENT_PORTAL_REQUESTS.md),
+> [`CLIENT_PORTAL_MESSAGING.md`](CLIENT_PORTAL_MESSAGING.md), [`CLIENT_PORTAL_OPERATIONS.md`](CLIENT_PORTAL_OPERATIONS.md),
+> [`CLIENT_PORTAL_GOVERNANCE.md`](CLIENT_PORTAL_GOVERNANCE.md),
+> [`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md), and
+> [`ADR-048`](adr/ADR-048-secure-client-portal.md).
+
 ## Architecture
 
 The Client Portal is a separate security boundary within Client360. Portal accounts are not staff `users`, do not receive staff roles or capabilities, and cannot enter staff routes. The shared domain layer remains canonical: people, households, documents, workflows, meetings, timeline events, and audit events are reused rather than copied.
