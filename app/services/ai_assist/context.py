@@ -40,13 +40,15 @@ _LINKS = {
     "automation_orchestration": lambda person_id=None, household_id=None, **k: (
         f"/workflows?person_id={person_id}" if person_id
         else (f"/workflows?household_id={household_id}" if household_id else "/automation-orchestration")),
+    "data_governance": lambda **k: "/governance",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
           "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
           "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
           "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
-          "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration"}
+          "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
+          "data_governance": "Data Governance"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -212,6 +214,14 @@ def _client(principal, person_id):
     if auto.get("enabled") and isinstance(auto.get("workflow_count"), int):
         facts.append(_fact("automation_orchestration", "automation.workflow_count", auto["workflow_count"],
                            fact_class=DERIVED, deep_link=f"/workflows?person_id={person_id}"))
+    # Data Governance — SUMMARIZED provenance/lineage COUNTS for this client (source-lineage record count),
+    # composed read-only over the authoritative person lineage. AI summarizes the counts; it never merges
+    # entities, alters identities, modifies metadata, approves stewardship, changes ownership, or bypasses
+    # validation.
+    dg = (ws.get("sections") or {}).get("data_governance") or {}
+    if dg.get("enabled") and isinstance(dg.get("lineage_records"), int):
+        facts.append(_fact("data_governance", "governance.lineage_records", dg["lineage_records"],
+                           fact_class=DERIVED, deep_link="/governance"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},
