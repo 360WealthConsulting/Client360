@@ -341,6 +341,15 @@ _DEFS = (
            sources.supervisory_dashboards),
     Metric("supervisory_authorization_failures", "Supervisory Authorization Failures", "compliance", "count",
            "card", False, sources.supervisory_authorization_failures),
+    # Executive Reporting / firm intelligence (Phase D.48) — low-cardinality operational metrics.
+    Metric("executive_dashboards_composed", "Executive Dashboards Composed", "operations", "count", "card",
+           False, sources.executive_dashboards_composed),
+    Metric("executive_widgets_composed", "Executive Widgets Composed", "operations", "count", "card", False,
+           sources.executive_widgets_composed),
+    Metric("executive_widget_failures", "Executive Widget Failures", "operations", "count", "card", False,
+           sources.executive_widget_failures),
+    Metric("executive_authorization_failures", "Executive Authorization Failures", "operations", "count",
+           "card", False, sources.executive_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

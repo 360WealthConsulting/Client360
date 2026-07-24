@@ -74,6 +74,14 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         compliance_tasks = {"enabled": False, "tasks": []}
 
+    # Executive Insights panel (D.48) — firm executive summary, composed over the SINGLE Analytics Registry.
+    # A non-executive principal gets a non-leaking restricted envelope. Guarded so a gate-off never breaks home.
+    try:
+        from app.services.executive_intelligence import executive_summary
+        executive_insights = executive_summary(principal)
+    except Exception:
+        executive_insights = {"enabled": False, "authorized": False, "widgets": [], "kpis": {}}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -89,4 +97,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "daily": dashboard,
         "operational_intelligence": operational_intelligence,
         "compliance_tasks": compliance_tasks,
+        "executive_insights": executive_insights,
     }

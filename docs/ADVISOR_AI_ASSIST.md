@@ -18,6 +18,10 @@
 > supervisory counts (open reviews / open exceptions) sourced from the composed Compliance Oversight section
 > — counts only. It never approves, waives, suppresses, or invents a compliance finding, and it emits no
 > supervisory facts for a non-supervisor. See [`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md) and ADR-052.
+>
+> **D.48:** For an executive (an `analytics.executive` holder), AI Assist also summarizes firm executive KPI
+> values sourced from the composed Executive section — values only, never inventing a metric, and emitting no
+> executive facts for a non-executive. See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
 
 Advisor AI Assist is a governed, **read-only** briefing surface that consumes the deterministic,
 scope-guarded summaries and snapshots already produced by D.38–D.41 (Advisor Workspace, Unified Work

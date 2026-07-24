@@ -20,6 +20,10 @@
 > `compliance.supervise`) — the household's compliance status aggregated across members (deduplicated),
 > composed by the D.47 compliance-intelligence layer. See [`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md)
 > and [`ADR-052`](adr/ADR-052-compliance-intelligence.md).
+>
+> **D.48:** Household 360 also gains an executive-only **Executive** section (gated by `analytics.executive`)
+> — firm executive context composed by the D.48 executive-intelligence layer over the single Analytics
+> Registry. See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and [`ADR-053`](adr/ADR-053-executive-reporting.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

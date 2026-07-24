@@ -67,6 +67,12 @@ compliance TASKS surfaced in the Advisor Workspace are exactly this layer's gove
 supervisory findings are never exposed to advisors. See
 [`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md) and ADR-052.
 
+## Relationship to executive reporting (D.48)
+The D.48 Executive Reporting layer composes this layer's `workspace_recommendations` output as its
+`operational_health` widget (among the authoritative firm reads) to build the operational + executive
+dashboards — read-only, never a second analytics engine. See
+[`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
+
 ## References
 `app/services/recommendations/*`, `app/routes/recommendations.py`, `docs/platform_architecture_manifest.yaml`,
 `tests/test_operational_intelligence.py`, ADR-051.

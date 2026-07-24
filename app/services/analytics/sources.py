@@ -1082,3 +1082,25 @@ def supervisory_authorization_failures(principal) -> int:
         supervisory_authorization_failures as _r,
     )
     return _r(principal)
+
+
+# --- Executive Reporting / firm intelligence (Phase D.48) — low-cardinality in-process counters ---
+
+def executive_dashboards_composed(principal) -> int:
+    from app.services.executive_intelligence.metrics import executive_dashboards_composed as _r
+    return _r(principal)
+
+
+def executive_widgets_composed(principal) -> int:
+    from app.services.executive_intelligence.metrics import executive_widgets_composed as _r
+    return _r(principal)
+
+
+def executive_widget_failures(principal) -> int:
+    from app.services.executive_intelligence.metrics import executive_widget_failures as _r
+    return _r(principal)
+
+
+def executive_authorization_failures(principal) -> int:
+    from app.services.executive_intelligence.metrics import executive_authorization_failures as _r
+    return _r(principal)

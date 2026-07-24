@@ -30,11 +30,13 @@ _LINKS = {
         else (f"/recommendations?household_id={household_id}" if household_id else "/recommendations")),
     "compliance_intelligence": lambda person_id=None, household_id=None, **k: (
         f"/supervision?person_id={person_id}" if person_id else "/supervision"),
+    "executive_intelligence": lambda **k: "/executive",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
           "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
-          "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight"}
+          "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
+          "executive_intelligence": "Executive Reporting"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -159,6 +161,18 @@ def _client(principal, person_id):
                            csup.get("open_reviews", 0), deep_link=slink))
         facts.append(_fact("compliance_intelligence", "compliance.open_exceptions",
                            csup.get("open_exceptions", 0), deep_link=slink))
+    # Executive Reporting — SUMMARIZED firm KPI values only, and only when the composed section is present
+    # (it builds only for an analytics.executive holder). AI summarizes dashboard outputs; it never invents a
+    # metric — every value comes from the composed executive summary (the SINGLE Analytics Registry).
+    execc = (ws.get("sections") or {}).get("executive") or {}
+    ekpis = execc.get("kpis") or {}
+    if ekpis:
+        for kpi_key in ("client_growth", "operational_health", "compliance_workload"):
+            if kpi_key in ekpis:
+                val = ekpis[kpi_key]
+                facts.append(_fact("executive_intelligence", f"executive.{kpi_key}",
+                                   val if isinstance(val, (int, float)) else str(val),
+                                   fact_class=DERIVED, deep_link="/executive"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

@@ -37,6 +37,7 @@ HOUSEHOLD_SECTIONS = (
     ("knowledge", None),
     ("recommendations", None),
     ("compliance_summary", "compliance.supervise"),
+    ("executive", "analytics.executive"),
     ("work", "work.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
@@ -385,6 +386,17 @@ def _compliance_summary(principal, ctx):
             "source": "compliance_intelligence", "not_a_second_engine": True}
 
 
+def _executive(principal, ctx):
+    """Firm executive context for the household (KPIs + firm-intelligence observations), composed by the D.48
+    executive-intelligence layer over the SINGLE Analytics Registry. Gated by analytics.executive; never a
+    second analytics engine, never mutates."""
+    from app.services.executive_intelligence import executive_summary
+    summary = executive_summary(principal)
+    return {"kpis": summary.get("kpis", {}), "observations": summary.get("observations", []),
+            "governing_services": summary.get("governing_services", []),
+            "source": "executive_intelligence", "not_a_second_analytics_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -430,8 +442,8 @@ _SECTION_BUILDERS = {
     "insurance": _insurance, "benefits": _benefits, "opportunities": _opportunities,
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
-    "compliance_summary": _compliance_summary, "work": _work, "timeline": _timeline,
-    "relationships": _relationships,
+    "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
+    "timeline": _timeline, "relationships": _relationships,
 }
 
 
