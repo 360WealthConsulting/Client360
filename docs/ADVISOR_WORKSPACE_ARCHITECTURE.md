@@ -89,6 +89,14 @@
 > only — never a payroll detail / tax return / bank account number / payment credential / accounting payload;
 > the panel never bills/invoices/pays/posts anything. The full financial dashboards live at
 > `/financial-operations`. See [`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and ADR-062.
+>
+> **D.58:** The advisor home also carries an **Enterprise Risk & Controls** panel (`ws["enterprise_risk"]`) —
+> the firm enterprise-risk summary (risk posture + open compliance findings + security incidents + workflow
+> escalations + vendor risk + continuity gaps + financial-control status + control coverage) composed by the
+> D.58 enterprise-risk layer over the authoritative Compliance / Exception / Security / Vendor / Continuity /
+> Financial owners. Counts + status + severity distributions + coverage only — never sensitive evidence; the
+> panel never mutates anything and an absent finding never certifies compliance. The full risk dashboards live
+> at `/enterprise-risk`. See [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and ADR-063.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

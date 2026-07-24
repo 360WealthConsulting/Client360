@@ -57,6 +57,13 @@ The D.48 Executive Reporting layer surfaces firm compliance status via the Analy
 firm-wide compliance dashboards expose no supervisory detail and the supervisor-vs-advisor boundary holds.
 See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
 
+**Related (D.58):** the **Enterprise Risk Management** layer (`/enterprise-risk`) composes this layer's
+`supervisory_dashboard` (over the authoritative Exception Engine) for its compliance / operational risk panels
+(open findings, exception severity, remediation workload) — read-only, `compliance.supervise`. It never records
+a review decision, resolves an exception, or approves anything; Compliance Intelligence + `compliance/reviews.py`
+remain the authoritative owners. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
+[ADR-063](adr/ADR-063-enterprise-risk-management.md).
+
 ## References
 `app/services/compliance_intelligence/*`, `app/routes/compliance_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_compliance_intelligence.py`, ADR-052.

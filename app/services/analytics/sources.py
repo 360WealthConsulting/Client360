@@ -1304,3 +1304,25 @@ def financial_panel_failures(principal) -> int:
 def financial_authorization_failures(principal) -> int:
     from app.services.financial_operations.metrics import financial_authorization_failures as _r
     return _r(principal)
+
+
+# --- Enterprise Risk Management (Phase D.58) — low-cardinality in-process counters ---
+
+def risk_dashboards_composed(principal) -> int:
+    from app.services.enterprise_risk.metrics import risk_dashboards_composed as _r
+    return _r(principal)
+
+
+def risk_panels_composed(principal) -> int:
+    from app.services.enterprise_risk.metrics import risk_panels_composed as _r
+    return _r(principal)
+
+
+def risk_panel_failures(principal) -> int:
+    from app.services.enterprise_risk.metrics import risk_panel_failures as _r
+    return _r(principal)
+
+
+def risk_authorization_failures(principal) -> int:
+    from app.services.enterprise_risk.metrics import risk_authorization_failures as _r
+    return _r(principal)

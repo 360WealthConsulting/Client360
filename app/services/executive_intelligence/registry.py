@@ -190,6 +190,13 @@ DASHBOARD_REGISTRY = (
        ("revenue_kpi", "firm_aum", "operational_health"),
        ("analytics.view",), "/financial-operations",
        ("analytics", "runtime")),
+    # Enterprise Risk & Assurance (D.58) — the executive view of enterprise risk posture, composed from
+    # EXISTING widgets (compliance workload + operational + runtime health, no new widget). The full
+    # risk-management surface lives at /enterprise-risk.
+    _d("enterprise_risk_assurance", "executive_intelligence", "executive", "executive_dashboard.enabled",
+       ("compliance_workload", "operational_health", "runtime_health"),
+       ("analytics.view",), "/enterprise-risk",
+       ("compliance", "runtime", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

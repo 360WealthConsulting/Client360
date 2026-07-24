@@ -351,6 +351,18 @@ def financial_relationship(principal, ctx):
             "source": "financial_operations.client_financial", "not_a_second_engine": True}
 
 
+def risk_controls(principal, ctx):
+    """A compact risk-&-controls summary for this client (D.58) — client-relevant, authorized signals (open
+    compliance exceptions, documentation gaps, data-quality issues, integration dependencies), composed
+    read-only from ONLY the authoritative owners that support per-client record scope. Firm-wide incidents /
+    findings are never exposed here. Counts + status only, never a payload; deep-links to the authoritative
+    surface. Never a second GRC/risk engine; an absent signal never certifies compliance."""
+    from app.services.enterprise_risk import client_risk_controls
+    pid = _pid(ctx)
+    return {**(client_risk_controls(principal, pid) if pid else {"enabled": False, "signals": {}}),
+            "source": "enterprise_risk.client_risk_controls", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

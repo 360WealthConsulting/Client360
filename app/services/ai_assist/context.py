@@ -46,6 +46,7 @@ _LINKS = {
     "business_continuity": lambda **k: "/business-continuity",
     "vendor_management": lambda **k: "/vendor-management",
     "financial_operations": lambda **k: "/financial-operations",
+    "enterprise_risk": lambda **k: "/enterprise-risk",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -55,7 +56,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
           "data_governance": "Data Governance", "integration_hub": "Integration Hub",
           "security_operations": "Security Operations", "business_continuity": "Business Continuity",
-          "vendor_management": "Vendor Management", "financial_operations": "Financial Operations"}
+          "vendor_management": "Vendor Management", "financial_operations": "Financial Operations",
+          "enterprise_risk": "Enterprise Risk & Controls"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -269,6 +271,17 @@ def _client(principal, person_id):
         facts.append(_fact("financial_operations", "financial.advisory_revenue_basis",
                            fin["advisory_revenue_basis"], fact_class=DERIVED,
                            deep_link="/financial-operations"))
+    # Enterprise Risk & Controls — SUMMARIZED client-relevant risk signal COUNT (open compliance exceptions),
+    # composed read-only from the authoritative per-client owners. AI summarizes the count; it never assigns
+    # risk, changes severity, accepts risk, closes findings, certifies controls, approves exceptions,
+    # acknowledges incidents, assigns remediation, certifies compliance, invents evidence, or infers
+    # regulatory approval. An absent signal is NOT a certification of compliance.
+    rc = (ws.get("sections") or {}).get("risk_controls") or {}
+    rc_signals = rc.get("signals") if isinstance(rc.get("signals"), dict) else {}
+    if rc.get("enabled") and isinstance(rc_signals.get("compliance_exceptions"), int):
+        facts.append(_fact("enterprise_risk", "risk.compliance_exceptions",
+                           rc_signals["compliance_exceptions"], fact_class=DERIVED,
+                           deep_link="/enterprise-risk"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

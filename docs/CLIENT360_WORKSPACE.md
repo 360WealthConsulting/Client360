@@ -80,6 +80,14 @@
 > per-client fee / commission billing has no authoritative owner (`not_configured`) and is never fabricated;
 > never bills/invoices/posts anything; never a second accounting or billing engine. See
 > [`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and [`ADR-062`](adr/ADR-062-financial-operations.md).
+>
+> **D.58:** Client 360 also gains a **Risk & Controls** section (gated by `compliance.supervise`) —
+> client-relevant, authorized risk signals (open compliance exceptions, documentation gaps, data-quality
+> issues, integration dependencies) composed by the D.58 enterprise-risk layer over ONLY the authoritative
+> owners that support per-client record scope. Firm-wide incidents / findings are never exposed here. Counts +
+> status only — never a payload; never a second GRC/risk engine; an absent signal never certifies compliance.
+> See [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and
+> [`ADR-063`](adr/ADR-063-enterprise-risk-management.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
