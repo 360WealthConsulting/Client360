@@ -33,7 +33,7 @@ NONE = Principal(3, "n@e.com", "None", frozenset({"record.read_all"}))   # no an
 # --- registries --------------------------------------------------------------
 
 def test_dashboard_and_widget_registries_complete():
-    assert len(registry.DASHBOARD_REGISTRY) == 10  # +practice_management (D.49) +document_intelligence (D.50), both reuse existing widgets
+    assert len(registry.DASHBOARD_REGISTRY) == 11  # +practice_management (D.49) +document_intelligence (D.50) +automation (D.51), all reuse existing widgets
     assert len(registry.WIDGET_REGISTRY) == 14
     for d in registry.DASHBOARD_REGISTRY:
         assert d.owner and d.audience and d.runtime_gate and d.navigation and d.widgets

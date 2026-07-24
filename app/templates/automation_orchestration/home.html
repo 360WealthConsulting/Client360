@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Automation Orchestration | Client360{% endblock %}
+{% block crumb %}Automation Orchestration{% endblock %}
+{% block content %}
+{% call ui.page_head("Automation orchestration", eyebrow="Business process composition", desc="Firm-wide visibility into automation — inventory, workflow status, trigger activity, execution status, pending and failed automations — composed read-only from the authoritative operational services (the Workflow Engine, the Automation scheduled-job engine, the Trigger engine, the Event outbox, Scheduling, Communications). Never a second workflow engine, scheduler, rules engine, orchestration engine, event bus or automation platform; never executes an automation, launches a workflow, fires a trigger or routes an event. Counts and status only — no workflow payloads. Every panel deep-links to its authoritative surface.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Automation dashboards">
+  {% for d in dashboards %}
+    <a href="/automation-orchestration?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No automation-orchestration dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Unavailable.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

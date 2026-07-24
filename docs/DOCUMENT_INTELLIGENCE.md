@@ -66,3 +66,10 @@ mutation, no OCR, no index, no outbox publication, no audit write, no second sto
 comes from the Document Platform; every dashboard panel is explainable and deep-links to its authoritative
 surface. Enforced by `app/services/document_intelligence/governance.py` and
 `tests/test_document_intelligence.py`. See [ADR-055](adr/ADR-055-document-intelligence.md).
+
+## Related: Automation Orchestration (D.51)
+
+The D.51 Automation Orchestration layer catalogs a `document_collection` automation (owner
+`document_platform`, trigger source `document`) and composes document-driven workflow status alongside the
+other authoritative engines — read-only, never a second workflow engine. See
+[`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and ADR-056.

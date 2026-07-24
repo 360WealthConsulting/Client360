@@ -102,6 +102,15 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         document_intelligence = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Automation Status panel (D.51) — a read-only automation summary (workflow status + pending approvals +
+    # failed/escalated) composed over the authoritative Workflow / Automation / Event owners. Guarded so a
+    # gate-off never breaks home; this panel never executes/launches/fires anything. Counts + status only.
+    try:
+        from app.services.automation_orchestration import automation_summary
+        automation_status = automation_summary(principal)
+    except Exception:
+        automation_status = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -120,4 +129,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "executive_insights": executive_insights,
         "capacity_planning": capacity_planning,
         "document_intelligence": document_intelligence,
+        "automation_status": automation_status,
     }

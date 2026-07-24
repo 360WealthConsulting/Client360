@@ -1148,3 +1148,27 @@ def document_panel_failures(principal) -> int:
 def document_authorization_failures(principal) -> int:
     from app.services.document_intelligence.metrics import document_authorization_failures as _r
     return _r(principal)
+
+
+# --- Automation Orchestration (Phase D.51) — low-cardinality in-process counters ---
+
+def automation_dashboards_composed(principal) -> int:
+    from app.services.automation_orchestration.metrics import automation_dashboards_composed as _r
+    return _r(principal)
+
+
+def automation_panels_composed(principal) -> int:
+    from app.services.automation_orchestration.metrics import automation_panels_composed as _r
+    return _r(principal)
+
+
+def automation_panel_failures(principal) -> int:
+    from app.services.automation_orchestration.metrics import automation_panel_failures as _r
+    return _r(principal)
+
+
+def automation_authorization_failures(principal) -> int:
+    from app.services.automation_orchestration.metrics import (
+        automation_authorization_failures as _r,
+    )
+    return _r(principal)
