@@ -62,6 +62,13 @@ metric). The client portal is excluded (no executive dashboards, no operational 
 `/practice`. The dedicated Practice Management layer (firm-wide capacity/utilization/staffing/backlog) lives
 in `app/services/practice_management/`; see [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and ADR-054.
 
+**Document Intelligence (D.50):** the registry gains a `document_intelligence` executive dashboard composed
+from **existing** widgets (`compliance_workload`, `operational_health`, `tax_workload`) — no new widget —
+whose navigation deep-links to the full document-intelligence surface at `/document-intelligence`. The
+dedicated Document Intelligence layer (firm-wide document inventory/retention/archive/lifecycle/completeness)
+lives in `app/services/document_intelligence/`; see [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and
+ADR-055.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

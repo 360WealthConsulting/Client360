@@ -40,6 +40,7 @@ HOUSEHOLD_SECTIONS = (
     ("executive", "analytics.executive"),
     ("work", "work.read"),
     ("operational_workload", "capacity.read"),
+    ("document_intelligence", "documents.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -408,6 +409,17 @@ def _operational_workload(principal, ctx):
             "source": "practice_management.household_workload", "not_a_second_engine": True}
 
 
+def _document_intelligence(principal, ctx):
+    """Aggregated household document status (D.50) — composed read-only from the Document Platform entity
+    read across the household + members (deduped by document id), rolled up to counts + status. Never
+    re-stores or copies a document; counts + status only. Never a second DMS; deep-links to the
+    authoritative document surface."""
+    from app.services.document_intelligence import household_documents
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_documents(principal, ctx["household_id"], member_ids),
+            "source": "document_intelligence.household_documents", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -454,7 +466,7 @@ _SECTION_BUILDERS = {
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
     "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
-    "operational_workload": _operational_workload,
+    "operational_workload": _operational_workload, "document_intelligence": _document_intelligence,
     "timeline": _timeline, "relationships": _relationships,
 }
 

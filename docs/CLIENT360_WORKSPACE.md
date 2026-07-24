@@ -26,6 +26,16 @@
 > firm executive context (KPIs + firm-intelligence observations) composed by the D.48 executive-intelligence
 > layer over the single Analytics Registry (never a second analytics engine). See
 > [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and [`ADR-053`](adr/ADR-053-executive-reporting.md).
+>
+> **D.49:** Client 360 also gains an **Operational Workload** section (gated by `capacity.read`) — a compact
+> per-client work-queue rollup composed by the D.49 practice-management layer (never a second work engine).
+> See [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and [`ADR-054`](adr/ADR-054-practice-management.md).
+>
+> **D.50:** Client 360 also gains a **Document Intelligence** section (gated by `documents.view`) — a compact
+> per-client document rollup (counts + status by classification/lifecycle + open documentation gaps) composed
+> by the D.50 document-intelligence layer over the authoritative Document Platform + Compliance Intelligence.
+> Counts + status only — never document content; never a second DMS. See
+> [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and [`ADR-055`](adr/ADR-055-document-intelligence.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

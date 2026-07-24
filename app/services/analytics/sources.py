@@ -1126,3 +1126,25 @@ def practice_panel_failures(principal) -> int:
 def practice_authorization_failures(principal) -> int:
     from app.services.practice_management.metrics import practice_authorization_failures as _r
     return _r(principal)
+
+
+# --- Document Intelligence / records lifecycle (Phase D.50) — low-cardinality in-process counters ---
+
+def document_dashboards_composed(principal) -> int:
+    from app.services.document_intelligence.metrics import document_dashboards_composed as _r
+    return _r(principal)
+
+
+def document_panels_composed(principal) -> int:
+    from app.services.document_intelligence.metrics import document_panels_composed as _r
+    return _r(principal)
+
+
+def document_panel_failures(principal) -> int:
+    from app.services.document_intelligence.metrics import document_panel_failures as _r
+    return _r(principal)
+
+
+def document_authorization_failures(principal) -> int:
+    from app.services.document_intelligence.metrics import document_authorization_failures as _r
+    return _r(principal)

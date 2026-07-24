@@ -39,6 +39,7 @@ SECTIONS = (
     SectionDef("relationships", "Relationships", None, sections.relationships),
     SectionDef("work", "Work", "advisor_work.read", sections.work),
     SectionDef("operational_workload", "Operational Workload", "capacity.read", sections.operational_workload),
+    SectionDef("document_intelligence", "Document Intelligence", "documents.view", sections.document_intelligence),
 )
 
 SECTION_KEYS = tuple(s.key for s in SECTIONS)
