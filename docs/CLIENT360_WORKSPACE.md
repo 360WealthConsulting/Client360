@@ -67,6 +67,12 @@
 > authoritative Observability + Runtime owners. Counts + status only — never an infrastructure payload; never
 > backs up/restores/alters anything; never a second backup/monitoring/DR engine. See
 > [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and [`ADR-060`](adr/ADR-060-business-continuity.md).
+>
+> **D.56:** Client 360 also gains a **Technology Dependencies** section (gated by `integration.view`) — the
+> external vendors / systems the client's data depends on, composed by the D.56 vendor-management layer over
+> the authoritative Integration Hub per-entity read. Counts + vendor names only — never a payload; never
+> modifies a vendor/integration; never a second vendor platform. See
+> [`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and [`ADR-061`](adr/ADR-061-vendor-management.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

@@ -1260,3 +1260,25 @@ def continuity_panel_failures(principal) -> int:
 def continuity_authorization_failures(principal) -> int:
     from app.services.business_continuity.metrics import continuity_authorization_failures as _r
     return _r(principal)
+
+
+# --- Vendor Management / third-party risk (Phase D.56) — low-cardinality in-process counters ---
+
+def vendor_dashboards_composed(principal) -> int:
+    from app.services.vendor_management.metrics import vendor_dashboards_composed as _r
+    return _r(principal)
+
+
+def vendor_panels_composed(principal) -> int:
+    from app.services.vendor_management.metrics import vendor_panels_composed as _r
+    return _r(principal)
+
+
+def vendor_panel_failures(principal) -> int:
+    from app.services.vendor_management.metrics import vendor_panel_failures as _r
+    return _r(principal)
+
+
+def vendor_authorization_failures(principal) -> int:
+    from app.services.vendor_management.metrics import vendor_authorization_failures as _r
+    return _r(principal)

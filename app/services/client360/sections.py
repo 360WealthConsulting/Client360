@@ -328,6 +328,17 @@ def business_continuity(principal, ctx):
             "source": "business_continuity.client_continuity", "not_a_second_engine": True}
 
 
+def technology_dependencies(principal, ctx):
+    """A compact technology-dependencies summary for this client (D.56) — the external vendors / systems the
+    client's data depends on, composed read-only from the authoritative Integration Hub per-entity read
+    (source systems from person lineage). Counts + vendor names only, never a payload; deep-links to the
+    authoritative vendor surface. Never modifies a vendor/integration; never a second vendor platform."""
+    from app.services.vendor_management import client_technology
+    pid = _pid(ctx)
+    return {**(client_technology(principal, pid) if pid else {"enabled": False, "vendor_dependencies": 0}),
+            "source": "vendor_management.client_technology", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

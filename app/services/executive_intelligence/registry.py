@@ -178,6 +178,12 @@ DASHBOARD_REGISTRY = (
        ("runtime_health", "operational_health"),
        ("analytics.view",), "/business-continuity",
        ("runtime", "recommendations")),
+    # Technology Governance (D.56) — the executive view of vendor / technology health, composed from EXISTING
+    # widgets (no new widget). The full vendor surface lives at /vendor-management.
+    _d("technology_governance", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("runtime_health", "operational_health"),
+       ("analytics.view",), "/vendor-management",
+       ("runtime", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

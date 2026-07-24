@@ -413,6 +413,15 @@ _DEFS = (
            sources.continuity_panel_failures),
     Metric("continuity_authorization_failures", "Continuity Authorization Failures", "operations", "count",
            "card", False, sources.continuity_authorization_failures),
+    # Vendor Management / third-party risk (Phase D.56) — low-cardinality operational metrics.
+    Metric("vendor_dashboards_composed", "Vendor Dashboards Composed", "operations", "count", "card", False,
+           sources.vendor_dashboards_composed),
+    Metric("vendor_panels_composed", "Vendor Panels Composed", "operations", "count", "card", False,
+           sources.vendor_panels_composed),
+    Metric("vendor_panel_failures", "Vendor Panel Failures", "operations", "count", "card", False,
+           sources.vendor_panel_failures),
+    Metric("vendor_authorization_failures", "Vendor Authorization Failures", "operations", "count", "card",
+           False, sources.vendor_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

@@ -73,6 +73,14 @@
 > layer over the authoritative Observability + Runtime owners. Counts + status only — never an infrastructure
 > payload; the panel never backs up/restores/alters anything. The full continuity dashboards live at
 > `/business-continuity`. See [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and ADR-060.
+>
+> **D.56:** The advisor home also carries a **Technology & Vendor Health** panel
+> (`ws["technology_vendor_health"]`) — the firm vendor / technology-health summary (governance score +
+> expiring certificates + integration dependencies + vendor inventory) composed by the D.56 vendor-management
+> layer over the authoritative Integration + Security + Observability owners. Counts + status only — never a
+> contract/credential/key/secret/payload; the panel never modifies/renews/terminates anything. The full
+> vendor dashboards live at `/vendor-management`. See [`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and
+> ADR-061.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

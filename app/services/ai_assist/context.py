@@ -44,6 +44,7 @@ _LINKS = {
     "integration_hub": lambda **k: "/integration",
     "security_operations": lambda **k: "/security-operations",
     "business_continuity": lambda **k: "/business-continuity",
+    "vendor_management": lambda **k: "/vendor-management",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -52,7 +53,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
           "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
           "data_governance": "Data Governance", "integration_hub": "Integration Hub",
-          "security_operations": "Security Operations", "business_continuity": "Business Continuity"}
+          "security_operations": "Security Operations", "business_continuity": "Business Continuity",
+          "vendor_management": "Vendor Management"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -250,6 +252,13 @@ def _client(principal, person_id):
     if bc.get("enabled") and isinstance(rs, dict) and isinstance(rs.get("readiness_percent"), (int, float)):
         facts.append(_fact("business_continuity", "continuity.readiness_percent", rs["readiness_percent"],
                            fact_class=DERIVED, deep_link="/business-continuity"))
+    # Vendor Management — SUMMARIZED technology-dependency COUNT for this client (how many external vendors /
+    # systems the client's data depends on), composed read-only. AI summarizes the count; it never approves
+    # purchases, renews contracts, terminates vendors, alters licensing, or modifies subscriptions.
+    vm = (ws.get("sections") or {}).get("technology_dependencies") or {}
+    if vm.get("enabled") and isinstance(vm.get("vendor_dependencies"), int):
+        facts.append(_fact("vendor_management", "vendor.dependencies", vm["vendor_dependencies"],
+                           fact_class=DERIVED, deep_link="/vendor-management"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},
