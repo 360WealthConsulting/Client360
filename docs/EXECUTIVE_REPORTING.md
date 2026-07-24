@@ -56,6 +56,12 @@ Advisor Workspace gains an **Executive Insights** panel; Client 360 + Household 
 metric). The client portal is excluded (no executive dashboards, no operational metrics). See
 [`EXECUTIVE_DASHBOARDS.md`](EXECUTIVE_DASHBOARDS.md), [`DASHBOARD_REGISTRY.md`](DASHBOARD_REGISTRY.md).
 
+**Practice Management (D.49):** the registry gains a `practice_management` executive dashboard composed from
+**existing** widgets (`advisor_workload`, `workflow_status`, `workflow_aging`, `operational_health`,
+`tax_workload`) — no new widget — whose navigation deep-links to the full practice-management surface at
+`/practice`. The dedicated Practice Management layer (firm-wide capacity/utilization/staffing/backlog) lives
+in `app/services/practice_management/`; see [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and ADR-054.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

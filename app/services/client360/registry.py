@@ -38,6 +38,7 @@ SECTIONS = (
     SectionDef("timeline", "Activity", "timeline.read", sections.timeline),
     SectionDef("relationships", "Relationships", None, sections.relationships),
     SectionDef("work", "Work", "advisor_work.read", sections.work),
+    SectionDef("operational_workload", "Operational Workload", "capacity.read", sections.operational_workload),
 )
 
 SECTION_KEYS = tuple(s.key for s in SECTIONS)

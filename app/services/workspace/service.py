@@ -82,6 +82,16 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         executive_insights = {"enabled": False, "authorized": False, "widgets": [], "kpis": {}}
 
+    # Capacity Planning panel (D.49) — a read-only practice-management summary (firm utilization + workload +
+    # staffing signals), composed over the authoritative capacity/work-queue owners. A principal lacking
+    # capacity.read still gets their book-scoped workload, never firm capacity. Guarded so a gate-off never
+    # breaks home; this panel never assigns work or modifies staffing.
+    try:
+        from app.services.practice_management import practice_summary
+        capacity_planning = practice_summary(principal)
+    except Exception:
+        capacity_planning = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -98,4 +108,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "operational_intelligence": operational_intelligence,
         "compliance_tasks": compliance_tasks,
         "executive_insights": executive_insights,
+        "capacity_planning": capacity_planning,
     }

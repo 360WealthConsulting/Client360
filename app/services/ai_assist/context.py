@@ -31,12 +31,15 @@ _LINKS = {
     "compliance_intelligence": lambda person_id=None, household_id=None, **k: (
         f"/supervision?person_id={person_id}" if person_id else "/supervision"),
     "executive_intelligence": lambda **k: "/executive",
+    "practice_management": lambda person_id=None, household_id=None, **k: (
+        f"/work?person_id={person_id}" if person_id
+        else (f"/work?household_id={household_id}" if household_id else "/practice")),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
           "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
           "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
-          "executive_intelligence": "Executive Reporting"}
+          "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -173,6 +176,16 @@ def _client(principal, person_id):
                 facts.append(_fact("executive_intelligence", f"executive.{kpi_key}",
                                    val if isinstance(val, (int, float)) else str(val),
                                    fact_class=DERIVED, deep_link="/executive"))
+    # Practice Management — SUMMARIZED operational-workload COUNTS for this client (open / overdue work),
+    # composed read-only over the Unified Work Queue. AI summarizes the counts; it never assigns work,
+    # rebalances staff, changes schedules, or invents a workload figure.
+    owl = (ws.get("sections") or {}).get("operational_workload") or {}
+    if owl.get("enabled"):
+        wlink = f"/work?person_id={person_id}"
+        for wk in ("open", "overdue"):
+            if isinstance(owl.get(wk), int):
+                facts.append(_fact("practice_management", f"workload.{wk}", owl[wk],
+                                   fact_class=DERIVED, deep_link=wlink))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

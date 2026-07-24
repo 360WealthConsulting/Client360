@@ -25,6 +25,13 @@
 > firm executive summary composed by the D.48 executive-intelligence layer over the single Analytics
 > Registry; a non-executive gets a non-leaking restricted envelope. The full executive dashboards live at
 > `/executive`. See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
+>
+> **D.49:** The advisor home also carries a **Capacity Planning** panel (`ws["capacity_planning"]`) — the
+> firm practice-management summary (firm utilization + workload + advisory staffing signals) composed by the
+> D.49 practice-management layer over the authoritative capacity/work-queue owners; a principal lacking
+> `capacity.read` still gets their book-scoped workload, never firm capacity. The panel never assigns work or
+> modifies staffing. The full practice dashboards live at `/practice`. See
+> [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and ADR-054.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

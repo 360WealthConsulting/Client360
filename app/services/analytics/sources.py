@@ -1104,3 +1104,25 @@ def executive_widget_failures(principal) -> int:
 def executive_authorization_failures(principal) -> int:
     from app.services.executive_intelligence.metrics import executive_authorization_failures as _r
     return _r(principal)
+
+
+# --- Practice Management / capacity planning (Phase D.49) — low-cardinality in-process counters ---
+
+def practice_dashboards_composed(principal) -> int:
+    from app.services.practice_management.metrics import practice_dashboards_composed as _r
+    return _r(principal)
+
+
+def practice_panels_composed(principal) -> int:
+    from app.services.practice_management.metrics import practice_panels_composed as _r
+    return _r(principal)
+
+
+def practice_panel_failures(principal) -> int:
+    from app.services.practice_management.metrics import practice_panel_failures as _r
+    return _r(principal)
+
+
+def practice_authorization_failures(principal) -> int:
+    from app.services.practice_management.metrics import practice_authorization_failures as _r
+    return _r(principal)

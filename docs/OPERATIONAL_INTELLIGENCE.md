@@ -73,6 +73,12 @@ The D.48 Executive Reporting layer composes this layer's `workspace_recommendati
 dashboards — read-only, never a second analytics engine. See
 [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and ADR-053.
 
+## Relationship to practice management (D.49)
+The D.49 Practice Management layer composes this layer's `workspace_recommendations` output as its
+`operational_health` panel signal (alongside Operations Capacity, the Unified Work Queue, and Workflow
+Automation) to build firm-wide capacity/utilization/staffing/backlog dashboards — read-only, never a second
+workflow/staffing/planning engine. See [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and ADR-054.
+
 ## References
 `app/services/recommendations/*`, `app/routes/recommendations.py`, `docs/platform_architecture_manifest.yaml`,
 `tests/test_operational_intelligence.py`, ADR-051.
