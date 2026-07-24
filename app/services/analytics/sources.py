@@ -1036,3 +1036,25 @@ def knowledge_searches(principal) -> int:
 def knowledge_adapter_failures(principal) -> int:
     from app.services.knowledge.metrics import knowledge_adapter_failure_count
     return knowledge_adapter_failure_count(principal)
+
+
+# --- Operational Intelligence recommendations (Phase D.46) — low-cardinality in-process counters ---
+
+def recommendations_generated(principal) -> int:
+    from app.services.recommendations.metrics import recommendations_generated as _r
+    return _r(principal)
+
+
+def recommendations_suppressed(principal) -> int:
+    from app.services.recommendations.metrics import recommendations_suppressed as _r
+    return _r(principal)
+
+
+def recommendation_compositions(principal) -> int:
+    from app.services.recommendations.metrics import recommendation_compositions as _r
+    return _r(principal)
+
+
+def recommendation_adapter_failures(principal) -> int:
+    from app.services.recommendations.metrics import recommendation_adapter_failures as _r
+    return _r(principal)

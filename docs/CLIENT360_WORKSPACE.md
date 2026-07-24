@@ -9,6 +9,12 @@
 > trusts, professionals, advisors, connected records) with an explanation of each relationship, composed by
 > the D.45 knowledge layer over the authoritative relationship engine (never a graph database, never a second
 > store). See [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and [`ADR-050`](adr/ADR-050-enterprise-knowledge-graph.md).
+>
+> **D.46:** Client 360 also gains a **Recommendations** section — client-specific explainable recommendations
+> (missing reviews, outstanding requests, planning opportunities, communication follow-up, compliance tasks),
+> composed by the D.46 operational-intelligence layer over the authoritative recommendation sources (never a
+> second recommendation engine, no ML). See [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and
+> [`ADR-051`](adr/ADR-051-operational-intelligence.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

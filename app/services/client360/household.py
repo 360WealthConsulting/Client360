@@ -35,6 +35,7 @@ HOUSEHOLD_SECTIONS = (
     ("compliance", "compliance.review.read"),
     ("communications", "communications.view"),
     ("knowledge", None),
+    ("recommendations", None),
     ("work", "work.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
@@ -355,6 +356,19 @@ def _knowledge(principal, ctx):
             "source": "knowledge.graph", "not_a_graph_db": True}
 
 
+def _recommendations(principal, ctx):
+    """Household-aggregated explainable recommendations (deduplicated across members, household-prioritized),
+    composed by the D.46 operational-intelligence layer over the authoritative recommendation sources
+    (never a second recommendation engine)."""
+    from app.services.recommendations import household_recommendations, recommendation_summary
+    hid = ctx["household_id"]
+    summary = recommendation_summary(principal, household_id=hid)
+    result = household_recommendations(principal, hid)
+    rows = result.get("recommendations", []) if result else []
+    return {"summary": summary, "recommendations": rows, "source": "recommendations.engine",
+            "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -399,8 +413,8 @@ _SECTION_BUILDERS = {
     "summary": _summary, "members": _members, "financial": _financial, "tax": _tax,
     "insurance": _insurance, "benefits": _benefits, "opportunities": _opportunities,
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
-    "communications": _communications, "knowledge": _knowledge, "work": _work, "timeline": _timeline,
-    "relationships": _relationships,
+    "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
+    "work": _work, "timeline": _timeline, "relationships": _relationships,
 }
 
 

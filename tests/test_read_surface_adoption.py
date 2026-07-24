@@ -231,7 +231,7 @@ def test_adoption_route_registered():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 884
+    assert len(app.routes) == 891
 
 
 def test_adoption_route_returns_report():

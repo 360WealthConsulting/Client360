@@ -62,8 +62,8 @@ def _req(path="/client/1", qs=b""):
 
 # --- composition + contract --------------------------------------------------
 
-def test_registry_has_fourteen_sections_with_builders():
-    assert len(SECTIONS) == 14  # +1 Communications (D.44) +1 Knowledge (D.45 knowledge graph)
+def test_registry_has_fifteen_sections_with_builders():
+    assert len(SECTIONS) == 15  # +Communications (D.44) +Knowledge (D.45) +Recommendations (D.46)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 
@@ -220,7 +220,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 884
+    assert len(app.routes) == 891
 
 
 def test_page_renders_and_404_out_of_scope():

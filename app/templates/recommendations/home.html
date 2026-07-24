@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Recommendations | Client360{% endblock %}
+{% block crumb %}Operational Intelligence{% endblock %}
+{% block content %}
+{% call ui.page_head("Operational intelligence", eyebrow="Recommendations", desc="Explainable advisor recommendations composed from the authoritative platform data — deterministic and rule-based, never ML. Every recommendation deep-links to its authoritative workflow.") %}{% endcall %}
+
+{% if not result.enabled %}
+<div class="empty">Recommendations are not currently available.</div>
+{% else %}
+{% if result.workload is defined %}
+<p class="subtle">Workload: {{ result.workload.my_overdue }} overdue · {{ result.workload.sla_breaches }} SLA breaches · {{ result.workload.due_today }} due today</p>
+{% endif %}
+<p class="subtle">{{ result.total }} recommendation(s)</p>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Priority</th><th>Type</th><th>Recommendation</th><th>Why</th><th>Source</th><th>Next action</th><th></th></tr></thead>
+    <tbody>
+    {% for r in result.recommendations %}
+      <tr>
+        <td>{{ ui.badge(r.priority, 'warn' if r.priority in ('critical','high') else '') }}</td>
+        <td>{{ r.type.replace('_',' ') }}</td>
+        <td>{{ r.title }}</td>
+        <td class="subtle">{{ r.explanation }}</td>
+        <td class="subtle">{{ r.authoritative_source }}</td>
+        <td>{{ r.recommended_next_action }}</td>
+        <td>{% if r.deep_link %}<a class="btn secondary" href="{{ r.deep_link }}">Open</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="subtle">No recommendations.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -193,6 +193,19 @@ def knowledge(principal, ctx):
             "source": "knowledge.graph", "not_a_graph_db": True}
 
 
+def recommendations(principal, ctx):
+    """Client-specific explainable recommendations (missing reviews, outstanding requests, planning
+    opportunities, communication follow-up, compliance tasks), composed by the D.46 operational-intelligence
+    layer over the authoritative recommendation sources (never a second recommendation engine)."""
+    from app.services.recommendations import client_recommendations, recommendation_summary
+    pid, hid = _pid(ctx), _hid(ctx)
+    summary = recommendation_summary(principal, person_id=pid, household_id=hid)
+    result = client_recommendations(principal, pid) if pid else None
+    rows = result.get("recommendations", []) if result else []
+    return {"summary": summary, "recommendations": rows, "source": "recommendations.engine",
+            "not_a_second_engine": True}
+
+
 def relationships(principal, ctx):
     """Household members + the read-only relationship graph (beneficiaries/trustees/businesses/
     employers/dependents/advisors) + assigned advisors."""

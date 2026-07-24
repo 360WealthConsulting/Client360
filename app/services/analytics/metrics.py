@@ -323,6 +323,15 @@ _DEFS = (
            sources.knowledge_searches),
     Metric("knowledge_adapter_failures", "Knowledge Adapter Failures", "operations", "count", "card",
            False, sources.knowledge_adapter_failures),
+    # Operational Intelligence recommendations (Phase D.46) — low-cardinality operational metrics.
+    Metric("recommendations_generated", "Recommendations Generated", "operations", "count", "card", False,
+           sources.recommendations_generated),
+    Metric("recommendations_suppressed", "Recommendations Suppressed", "operations", "count", "card", False,
+           sources.recommendations_suppressed),
+    Metric("recommendation_compositions", "Recommendation Compositions", "operations", "count", "card",
+           False, sources.recommendation_compositions),
+    Metric("recommendation_adapter_failures", "Recommendation Adapter Failures", "operations", "count",
+           "card", False, sources.recommendation_adapter_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

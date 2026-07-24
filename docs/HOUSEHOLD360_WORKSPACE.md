@@ -10,6 +10,11 @@
 > businesses, trusts, shared advisors, professionals) with relationship explanations, composed by the D.45
 > knowledge layer over each member's authoritative relationship graph (never a graph database). See
 > [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and [`ADR-050`](adr/ADR-050-enterprise-knowledge-graph.md).
+>
+> **D.46:** Household 360 also gains a **Recommendations** section — household-aggregated (deduplicated across
+> members, household-prioritized) explainable recommendations, composed by the D.46 operational-intelligence
+> layer over the authoritative recommendation sources (never a second recommendation engine). See
+> [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and [`ADR-051`](adr/ADR-051-operational-intelligence.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
