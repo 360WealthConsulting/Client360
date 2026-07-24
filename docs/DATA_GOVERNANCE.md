@@ -79,3 +79,9 @@ Platform — a read-only composition, never a second integration platform. Its p
 External Integrations sections compose the same authoritative person lineage
 (`source_contacts.source_system`) that Data Governance uses for provenance, framed as external-integration
 connectivity. See [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and ADR-058.
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) references this layer's
+`governance_summary` as the authoritative owner of the `data_quality_validation` evidence class — read-only,
+`governance.view`. It never validates or mutates data; Data Governance remains the authoritative owner. See
+[REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

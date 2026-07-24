@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Regulatory Readiness | Client360{% endblock %}
+{% block crumb %}Regulatory Readiness{% endblock %}
+{% block content %}
+{% call ui.page_head("Regulatory examination readiness", eyebrow="Evidence governance & supervisory certification", desc="A unified, governed view of the firm's operational readiness to respond to regulatory examinations, audits, supervisory reviews and evidence requests — obligation coverage, evidence availability/completeness/freshness, supervisory reviews, certification & sign-off status, filing readiness and remediation evidence — composed read-only from the authoritative owners (Compliance Intelligence and compliance reviews and the rule catalog and reviewer-authority owner, the Exception Engine, Document Intelligence, Data Governance, Security Operations, Business Continuity, Vendor Management, Financial Operations, Insurance licensing, audit logging and the CI pipeline). Never a second compliance platform, examination-management system, audit platform, document repository, records-management system, regulatory filing system, certification engine, evidence vault, supervisory approval engine or policy-management system; never creates an examination, uploads or modifies evidence, approves a rule set, certifies compliance, signs an attestation, files a form, closes a finding, resolves an exception or changes retention. Regulatory filing, examination-case ownership, certification reviewers and evidence export have no authoritative owner and are reported not_configured — never fabricated. Every certification is blocked / reviewer_not_confirmed because reviewer authority is a recorded fact (seeded empty) that is never inferred, and business approval is never regulatory certification. Counts, status, coverage, freshness and age bands only — no document contents, regulator correspondence, tax data, credentials or PII. OPERATIONAL READINESS DOES NOT CONSTITUTE REGULATORY CERTIFICATION, and an absent finding is never compliance. Every panel deep-links to its authoritative owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Readiness dashboards">
+  {% for d in dashboards %}
+    <a href="/regulatory-readiness?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No regulatory-readiness dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}
+ {% if board.blocked_domains %}· blocked: {{ board.blocked_domains | join(', ') }}{% endif %}
+ {% if board.not_configured_domains %}· not_configured obligations: {{ board.not_configured_domains | length }}{% endif %}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}{% if p.derived %} <span class="subtle">(derived)</span>{% endif %}{% if p.blocked %} <span class="subtle">(blocked)</span>{% endif %}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Not configured — no authoritative owner in the platform.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.blocked and p.blocked_reason %}<p class="subtle"><em>Blocked: {{ p.blocked_reason }}</em></p>{% endif %}
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<p class="subtle">Operational readiness reflects only what the authorized composed owners currently report; it does not constitute regulatory certification, and an absent finding is not compliance.</p>
+{% endif %}
+{% endblock %}

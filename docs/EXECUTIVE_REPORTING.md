@@ -137,6 +137,21 @@ privacy / financial-authorization / change-management are reported `not_configur
 assigns risk / certifies controls / approves exceptions / acknowledges incidents / certifies compliance. See
 [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and ADR-063.
 
+**Regulatory Readiness & Evidence (D.59):** the registry gains a `regulatory_readiness_evidence` executive
+dashboard composed from **existing** widgets (`compliance_workload`, `operational_health`, `runtime_health`) —
+no new widget — whose navigation deep-links to the full readiness surface at `/regulatory-readiness`. The
+dedicated Regulatory Readiness layer (a unified read-only view of the firm's operational readiness to respond to
+regulatory examinations — obligation coverage / evidence availability / completeness / freshness / supervisory
+reviews / certification status / filing readiness / remediation evidence, composed over Compliance Intelligence
++ compliance reviews + the rule catalog + the reviewer-authority owner, the Exception Engine, Document
+Intelligence, Insurance licensing, and the D.52–D.58 layers) lives in `app/services/regulatory_readiness/`;
+counts / status / coverage / freshness only, never sensitive evidence; every certification is blocked /
+reviewer_not_confirmed (reviewer authority never inferred; business approval is not certification); filing /
+examination / evidence-export are reported not_configured; **operational readiness is not regulatory
+certification** and an absent finding is never compliance; AI summarizes but never certifies compliance /
+approves a rule set / signs an attestation / files a form. See
+[`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and ADR-064.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

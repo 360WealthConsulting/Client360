@@ -88,6 +88,16 @@
 > status only — never a payload; never a second GRC/risk engine; an absent signal never certifies compliance.
 > See [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and
 > [`ADR-063`](adr/ADR-063-enterprise-risk-management.md).
+>
+> **D.59:** Client 360 also gains an **Evidence & Supervisory Readiness** section (gated by
+> `compliance.supervise`) — client-relevant, authorized evidence signals (documentation completeness, open
+> client-specific compliance exceptions, suitability / replacement / workflow-approval evidence via open
+> reviews) composed by the D.59 regulatory-readiness layer over ONLY the authoritative owners that support
+> per-client record scope. Firm-wide examination posture, firm-wide incidents, unrelated supervisory findings,
+> other clients' evidence, and confidential regulator information are never exposed. Counts + status only —
+> never a payload; never a second compliance/evidence engine; operational readiness is not regulatory
+> certification. See [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and
+> [`ADR-064`](adr/ADR-064-regulatory-examination-readiness.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

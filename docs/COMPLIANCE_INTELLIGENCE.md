@@ -67,3 +67,11 @@ remain the authoritative owners. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_
 ## References
 `app/services/compliance_intelligence/*`, `app/routes/compliance_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_compliance_intelligence.py`, ADR-052.
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) composes this layer's
+`supervisory_dashboard` + `compliance_summary` (over the authoritative `compliance/reviews`, the rule catalog,
+and the reviewer-authority owner) for its supervisory-review / findings / suitability / certification panels —
+read-only, `compliance.supervise`. It never records a review decision or approves a rule set; every
+certification stays blocked / reviewer_not_confirmed (reviewer authority never inferred). See
+[REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

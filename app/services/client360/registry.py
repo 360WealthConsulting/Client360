@@ -48,6 +48,7 @@ SECTIONS = (
     SectionDef("technology_dependencies", "Technology Dependencies", "integration.view", sections.technology_dependencies),
     SectionDef("financial_relationship", "Financial Relationship", "analytics.executive", sections.financial_relationship),
     SectionDef("risk_controls", "Risk & Controls", "compliance.supervise", sections.risk_controls),
+    SectionDef("evidence_readiness", "Evidence & Supervisory Readiness", "compliance.supervise", sections.evidence_readiness),
 )
 
 SECTION_KEYS = tuple(s.key for s in SECTIONS)

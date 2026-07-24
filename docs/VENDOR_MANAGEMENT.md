@@ -86,3 +86,9 @@ KPIs) — two read-only composition views, neither a second store. See
 dependencies, expiring certificates) — read-only, `integration.view`. It never modifies a vendor; Vendor
 Management remains the authoritative owner. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md)
 and [ADR-063](adr/ADR-063-enterprise-risk-management.md).
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) composes this layer's
+`vendor_summary` for its vendor-review evidence class — read-only, `integration.view`. It never modifies a
+vendor; Vendor Management remains the authoritative owner. See
+[REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

@@ -47,6 +47,7 @@ _LINKS = {
     "vendor_management": lambda **k: "/vendor-management",
     "financial_operations": lambda **k: "/financial-operations",
     "enterprise_risk": lambda **k: "/enterprise-risk",
+    "regulatory_readiness": lambda **k: "/regulatory-readiness",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -57,7 +58,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "data_governance": "Data Governance", "integration_hub": "Integration Hub",
           "security_operations": "Security Operations", "business_continuity": "Business Continuity",
           "vendor_management": "Vendor Management", "financial_operations": "Financial Operations",
-          "enterprise_risk": "Enterprise Risk & Controls"}
+          "enterprise_risk": "Enterprise Risk & Controls",
+          "regulatory_readiness": "Regulatory Readiness"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -282,6 +284,18 @@ def _client(principal, person_id):
         facts.append(_fact("enterprise_risk", "risk.compliance_exceptions",
                            rc_signals["compliance_exceptions"], fact_class=DERIVED,
                            deep_link="/enterprise-risk"))
+    # Regulatory Readiness — SUMMARIZED client-relevant evidence-gap COUNT (documentation gaps), composed
+    # read-only from the authoritative per-client owners. AI summarizes the count; it never certifies
+    # compliance, claims regulator acceptance, approves a rule set, signs an attestation, infers reviewer
+    # authority, invents evidence, fabricates a filing acknowledgement, files a form, closes a finding, or
+    # treats business approval as regulatory certification. Operational readiness is NOT certification, and an
+    # absent finding is never compliance.
+    er = (ws.get("sections") or {}).get("evidence_readiness") or {}
+    er_signals = er.get("signals") if isinstance(er.get("signals"), dict) else {}
+    if er.get("enabled") and isinstance(er_signals.get("documentation_gaps"), int):
+        facts.append(_fact("regulatory_readiness", "readiness.documentation_gaps",
+                           er_signals["documentation_gaps"], fact_class=DERIVED,
+                           deep_link="/regulatory-readiness"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

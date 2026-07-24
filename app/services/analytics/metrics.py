@@ -440,6 +440,15 @@ _DEFS = (
            sources.risk_panel_failures),
     Metric("risk_authorization_failures", "Risk Authorization Failures", "operations", "count", "card", False,
            sources.risk_authorization_failures),
+    # Regulatory Examination Readiness (Phase D.59) — low-cardinality operational metrics.
+    Metric("readiness_dashboards_composed", "Readiness Dashboards Composed", "operations", "count", "card",
+           False, sources.readiness_dashboards_composed),
+    Metric("readiness_panels_composed", "Readiness Panels Composed", "operations", "count", "card", False,
+           sources.readiness_panels_composed),
+    Metric("readiness_panel_failures", "Readiness Panel Failures", "operations", "count", "card", False,
+           sources.readiness_panel_failures),
+    Metric("readiness_authorization_failures", "Readiness Authorization Failures", "operations", "count",
+           "card", False, sources.readiness_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),
