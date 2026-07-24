@@ -316,6 +316,18 @@ def security_access(principal, ctx):
             "source": "security_operations.client_security", "not_a_second_engine": True}
 
 
+def business_continuity(principal, ctx):
+    """A compact business-continuity summary in the context of this client (D.55) — the firm-level operational
+    resilience posture (resilience score + infrastructure availability + backup coverage) protecting the
+    client's data, composed read-only from the authoritative Observability + Runtime owners. Counts + status
+    only, never a payload; deep-links to the authoritative continuity surface. Never backs up/restores/alters
+    anything; never a second backup/monitoring/DR engine."""
+    from app.services.business_continuity import client_continuity
+    pid = _pid(ctx)
+    return {**client_continuity(principal, pid),
+            "source": "business_continuity.client_continuity", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

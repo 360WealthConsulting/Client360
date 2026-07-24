@@ -1238,3 +1238,25 @@ def security_panel_failures(principal) -> int:
 def security_ops_authorization_failures(principal) -> int:
     from app.services.security_operations.metrics import security_ops_authorization_failures as _r
     return _r(principal)
+
+
+# --- Business Continuity / operational resilience (Phase D.55) — low-cardinality in-process counters ---
+
+def continuity_dashboards_composed(principal) -> int:
+    from app.services.business_continuity.metrics import continuity_dashboards_composed as _r
+    return _r(principal)
+
+
+def continuity_panels_composed(principal) -> int:
+    from app.services.business_continuity.metrics import continuity_panels_composed as _r
+    return _r(principal)
+
+
+def continuity_panel_failures(principal) -> int:
+    from app.services.business_continuity.metrics import continuity_panel_failures as _r
+    return _r(principal)
+
+
+def continuity_authorization_failures(principal) -> int:
+    from app.services.business_continuity.metrics import continuity_authorization_failures as _r
+    return _r(principal)

@@ -66,6 +66,13 @@
 > log. Counts + status only — never a password/secret/token/session-ID/payload; the panel never
 > authenticates/authorizes/alters anything. The full security dashboards live at `/security-operations`. See
 > [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and ADR-059.
+>
+> **D.55:** The advisor home also carries an **Operational Resilience** panel
+> (`ws["operational_resilience"]`) — the firm operational-resilience summary (resilience score +
+> infrastructure availability + service incidents + backup coverage) composed by the D.55 business-continuity
+> layer over the authoritative Observability + Runtime owners. Counts + status only — never an infrastructure
+> payload; the panel never backs up/restores/alters anything. The full continuity dashboards live at
+> `/business-continuity`. See [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and ADR-060.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

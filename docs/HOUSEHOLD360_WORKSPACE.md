@@ -58,6 +58,13 @@
 > security-operations layer over the authoritative authorization owner. Counts only — never a payload; never
 > authenticates/authorizes/alters anything; never a second IAM/RBAC engine. See
 > [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and [`ADR-059`](adr/ADR-059-security-operations.md).
+>
+> **D.55:** Household 360 also gains a **Business Continuity** section (gated by `observability.view`) — the
+> firm-level operational resilience posture protecting the household's data, composed by the D.55
+> business-continuity layer over the authoritative Observability + Runtime owners. Counts + status only —
+> never an infrastructure payload; never backs up/restores/alters anything; never a second
+> backup/monitoring/DR engine. See [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and
+> [`ADR-060`](adr/ADR-060-business-continuity.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
