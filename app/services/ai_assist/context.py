@@ -37,13 +37,16 @@ _LINKS = {
     "document_intelligence": lambda person_id=None, household_id=None, **k: (
         f"/document-library?person_id={person_id}" if person_id
         else (f"/document-library?household_id={household_id}" if household_id else "/document-intelligence")),
+    "automation_orchestration": lambda person_id=None, household_id=None, **k: (
+        f"/workflows?person_id={person_id}" if person_id
+        else (f"/workflows?household_id={household_id}" if household_id else "/automation-orchestration")),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
           "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
           "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
           "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
-          "document_intelligence": "Document Intelligence"}
+          "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -202,6 +205,13 @@ def _client(principal, person_id):
         if isinstance(doci.get("open_documentation_gaps"), int) and doci["open_documentation_gaps"]:
             facts.append(_fact("document_intelligence", "documents.open_gaps",
                                doci["open_documentation_gaps"], fact_class=DERIVED, deep_link=dlink))
+    # Automation Orchestration — SUMMARIZED workflow/automation COUNTS for this client (workflow count),
+    # composed read-only over the Workflow Orchestration facade. AI summarizes the counts; it never executes
+    # automations, approves workflows, triggers events, bypasses policies, or alters workflow state.
+    auto = (ws.get("sections") or {}).get("automation_history") or {}
+    if auto.get("enabled") and isinstance(auto.get("workflow_count"), int):
+        facts.append(_fact("automation_orchestration", "automation.workflow_count", auto["workflow_count"],
+                           fact_class=DERIVED, deep_link=f"/workflows?person_id={person_id}"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

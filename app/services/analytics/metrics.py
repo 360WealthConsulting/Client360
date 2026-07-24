@@ -368,6 +368,15 @@ _DEFS = (
            sources.document_panel_failures),
     Metric("document_authorization_failures", "Document Authorization Failures", "operations", "count",
            "card", False, sources.document_authorization_failures),
+    # Automation Orchestration (Phase D.51) — low-cardinality operational metrics.
+    Metric("automation_dashboards_composed", "Automation Dashboards Composed", "operations", "count", "card",
+           False, sources.automation_dashboards_composed),
+    Metric("automation_panels_composed", "Automation Panels Composed", "operations", "count", "card", False,
+           sources.automation_panels_composed),
+    Metric("automation_panel_failures", "Automation Panel Failures", "operations", "count", "card", False,
+           sources.automation_panel_failures),
+    Metric("automation_authorization_failures", "Automation Authorization Failures", "operations", "count",
+           "card", False, sources.automation_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

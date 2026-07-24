@@ -39,6 +39,13 @@
 > retention + Compliance Intelligence. Counts + status only — never document content; the panel never alters
 > metadata, archives, or deletes documents. The full document dashboards live at `/document-intelligence`.
 > See [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and ADR-055.
+>
+> **D.51:** The advisor home also carries an **Automation Status** panel (`ws["automation_status"]`) — the
+> firm automation-orchestration summary (workflow status + pending approvals + failed/escalated) composed by
+> the D.51 automation-orchestration layer over the authoritative Workflow / Automation / Event owners. Counts
+> + status only — never a workflow payload; the panel never executes/launches/fires anything. The full
+> automation dashboards live at `/automation-orchestration`. See
+> [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and ADR-056.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

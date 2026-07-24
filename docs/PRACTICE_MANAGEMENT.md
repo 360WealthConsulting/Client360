@@ -69,3 +69,11 @@ mutation, no outbox publication, no audit write, no second engine. Every utiliza
 `operations.capacity`; every dashboard panel is explainable and deep-links to its authoritative surface.
 Enforced by `app/services/practice_management/governance.py` and `tests/test_practice_management.py`. See
 [ADR-054](adr/ADR-054-practice-management.md).
+
+## Related: Automation Orchestration (D.51)
+
+Practice Management composes `workflow_automation.workflow_metrics()` for its workflow-aging panels. The D.51
+Automation Orchestration layer (`app/services/automation_orchestration/`) is the dedicated read-only surface
+for firm-wide automation visibility (workflow status, trigger activity, execution status, pending/failed
+automations) over the Workflow Engine + Automation engine + Event outbox — never a second workflow engine.
+See [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and ADR-056.

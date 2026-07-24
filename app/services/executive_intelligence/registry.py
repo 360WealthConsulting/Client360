@@ -148,6 +148,12 @@ DASHBOARD_REGISTRY = (
        ("compliance_workload", "operational_health", "tax_workload"),
        ("analytics.view",), "/document-intelligence",
        ("compliance", "recommendations", "tax_domain")),
+    # Automation Orchestration (D.51) — the executive view of automation health, composed from EXISTING
+    # widgets (no new widget). The full automation surface lives at /automation-orchestration.
+    _d("automation", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("workflow_status", "workflow_aging", "operational_health"),
+       ("analytics.view",), "/automation-orchestration",
+       ("workflow_automation", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

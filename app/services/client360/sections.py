@@ -273,6 +273,16 @@ def document_intelligence(principal, ctx):
             "source": "document_intelligence.client_documents", "not_a_second_engine": True}
 
 
+def automation_history(principal, ctx):
+    """A compact automation-history summary for this client (D.51) — composed read-only from the Workflow
+    Orchestration facade (record-scoped workflow instances rolled up to counts + status). Never executes or
+    launches anything; deep-links to the authoritative workflow surface. Never a second workflow engine."""
+    from app.services.automation_orchestration import client_automation
+    pid = _pid(ctx)
+    return {**(client_automation(principal, pid) if pid else {"enabled": False, "workflow_count": 0}),
+            "source": "automation_orchestration.client_automation", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

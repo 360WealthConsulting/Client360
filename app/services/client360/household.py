@@ -41,6 +41,7 @@ HOUSEHOLD_SECTIONS = (
     ("work", "work.read"),
     ("operational_workload", "capacity.read"),
     ("document_intelligence", "documents.view"),
+    ("automation_history", "automation.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -420,6 +421,17 @@ def _document_intelligence(principal, ctx):
             "source": "document_intelligence.household_documents", "not_a_second_engine": True}
 
 
+def _automation_history(principal, ctx):
+    """Aggregated household automation activity (D.51) — composed read-only from the Workflow Orchestration
+    facade across the household + members, rolled up to counts + status. Never re-executes or duplicates a
+    workflow; a count rollup only. Never a second workflow engine; deep-links to the authoritative workflow
+    surface."""
+    from app.services.automation_orchestration import household_automation
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_automation(principal, ctx["household_id"], member_ids),
+            "source": "automation_orchestration.household_automation", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -467,6 +479,7 @@ _SECTION_BUILDERS = {
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
     "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
     "operational_workload": _operational_workload, "document_intelligence": _document_intelligence,
+    "automation_history": _automation_history,
     "timeline": _timeline, "relationships": _relationships,
 }
 

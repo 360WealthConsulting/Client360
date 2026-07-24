@@ -69,6 +69,13 @@ dedicated Document Intelligence layer (firm-wide document inventory/retention/ar
 lives in `app/services/document_intelligence/`; see [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and
 ADR-055.
 
+**Automation Orchestration (D.51):** the registry gains an `automation` executive dashboard composed from
+**existing** widgets (`workflow_status`, `workflow_aging`, `operational_health`) — no new widget — whose
+navigation deep-links to the full automation surface at `/automation-orchestration`. The dedicated Automation
+Orchestration layer (firm-wide automation inventory/workflow/trigger/execution/pending/failed) lives in
+`app/services/automation_orchestration/`; see [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and
+ADR-056.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.
