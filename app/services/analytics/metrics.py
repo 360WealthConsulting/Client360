@@ -350,6 +350,15 @@ _DEFS = (
            sources.executive_widget_failures),
     Metric("executive_authorization_failures", "Executive Authorization Failures", "operations", "count",
            "card", False, sources.executive_authorization_failures),
+    # Practice Management / capacity planning (Phase D.49) — low-cardinality operational metrics.
+    Metric("practice_dashboards_composed", "Practice Dashboards Composed", "operations", "count", "card",
+           False, sources.practice_dashboards_composed),
+    Metric("practice_panels_composed", "Practice Panels Composed", "operations", "count", "card", False,
+           sources.practice_panels_composed),
+    Metric("practice_panel_failures", "Practice Panel Failures", "operations", "count", "card", False,
+           sources.practice_panel_failures),
+    Metric("practice_authorization_failures", "Practice Authorization Failures", "operations", "count",
+           "card", False, sources.practice_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

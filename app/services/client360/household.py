@@ -39,6 +39,7 @@ HOUSEHOLD_SECTIONS = (
     ("compliance_summary", "compliance.supervise"),
     ("executive", "analytics.executive"),
     ("work", "work.read"),
+    ("operational_workload", "capacity.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -397,6 +398,16 @@ def _executive(principal, ctx):
             "source": "executive_intelligence", "not_a_second_analytics_engine": True}
 
 
+def _operational_workload(principal, ctx):
+    """Aggregated household operational workload (D.49) — composed read-only from the Practice Management
+    layer over the Unified Work Queue (household-scoped counts + aging). Never re-sums incompatible member
+    units; a count rollup only. Never a second work engine; deep-links to the authoritative work surface."""
+    from app.services.practice_management import household_workload
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_workload(principal, ctx["household_id"], member_ids),
+            "source": "practice_management.household_workload", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -443,6 +454,7 @@ _SECTION_BUILDERS = {
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
     "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
+    "operational_workload": _operational_workload,
     "timeline": _timeline, "relationships": _relationships,
 }
 

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Practice Management | Client360{% endblock %}
+{% block crumb %}Practice Management{% endblock %}
+{% block content %}
+{% call ui.page_head("Practice management", eyebrow="Capacity & resource operations", desc="Firm-wide capacity, utilization, staffing, workload, backlog and service-level visibility — composed read-only from the authoritative operational owners (Operations Capacity, the Unified Work Queue, Workflow Automation, the tax domain). Never a second workflow, scheduler, staffing or planning engine; never assigns or reschedules. Every panel deep-links to its authoritative surface.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Practice dashboards">
+  {% for d in dashboards %}
+    <a href="/practice?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No practice-management dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Unavailable.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

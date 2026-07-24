@@ -252,6 +252,16 @@ def work(principal, ctx):
     return {"work_items": person_work(principal, pid, open_only=True) if pid else []}
 
 
+def operational_workload(principal, ctx):
+    """A compact operational-workload summary for this client (D.49) — composed read-only from the Practice
+    Management layer over the Unified Work Queue (book-scoped counts + aging). Never a second work engine;
+    deep-links to the authoritative work surface."""
+    from app.services.practice_management import client_workload
+    pid = _pid(ctx)
+    return {**(client_workload(principal, pid) if pid else {"enabled": False, "open": 0}),
+            "source": "practice_management.client_workload", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

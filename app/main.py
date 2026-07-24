@@ -60,6 +60,7 @@ from app.routes.knowledge import router as knowledge_router
 from app.routes.recommendations import router as recommendations_router
 from app.routes.compliance_intelligence import router as compliance_intelligence_router
 from app.routes.executive_intelligence import router as executive_intelligence_router
+from app.routes.practice_management import router as practice_management_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -231,6 +232,7 @@ app.include_router(knowledge_router)
 app.include_router(recommendations_router)
 app.include_router(compliance_intelligence_router)
 app.include_router(executive_intelligence_router)
+app.include_router(practice_management_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

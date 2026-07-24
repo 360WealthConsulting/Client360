@@ -136,6 +136,12 @@ DASHBOARD_REGISTRY = (
     _d("workflow", "executive_intelligence", "operations", "executive_dashboard.enabled",
        ("workflow_status", "workflow_aging"),
        ("analytics.view",), "/executive?dashboard=workflow", ("workflow_automation",)),
+    # Practice Management (D.49) — the executive view of firm capacity/workload, composed from EXISTING
+    # widgets (no new widget). The full practice-management surface lives at /practice.
+    _d("practice_management", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("advisor_workload", "workflow_status", "workflow_aging", "operational_health", "tax_workload"),
+       ("analytics.view",), "/practice",
+       ("work_queue", "workflow_automation", "recommendations", "tax_domain")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}
