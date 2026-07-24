@@ -70,3 +70,10 @@ mutation, no auth action, no outbox publication, no audit write, no second store
 from an authoritative security owner; every dashboard panel is explainable and deep-links to its
 authoritative surface. Enforced by `app/services/security_operations/governance.py` and
 `tests/test_security_operations.py`. See [ADR-059](adr/ADR-059-security-operations.md).
+
+**Related (D.58):** the **Enterprise Risk Management** layer (`/enterprise-risk`) composes this layer's
+`security_summary` + `security.incidents.metrics` for its cybersecurity / identity-access / security-risk
+panels (open incidents, findings, access warnings) — read-only, `security.view`. It never creates,
+acknowledges, or resolves an incident; Security Operations + `security/incidents.py` remain the authoritative
+owners. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
+[ADR-063](adr/ADR-063-enterprise-risk-management.md).

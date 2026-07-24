@@ -168,6 +168,17 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         financial_performance = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Enterprise Risk & Controls panel (D.58) — a read-only enterprise-risk summary (posture + open findings +
+    # security incidents + workflow escalations + vendor risk + continuity gaps + financial-control status +
+    # control coverage) composed over the authoritative Compliance / Exception / Security / Vendor / Continuity
+    # / Financial owners. Guarded so a gate-off never breaks home; this panel never mutates anything and an
+    # absent finding never certifies compliance. Counts + status only.
+    try:
+        from app.services.enterprise_risk import risk_summary
+        enterprise_risk = risk_summary(principal)
+    except Exception:
+        enterprise_risk = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -193,4 +204,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "operational_resilience": operational_resilience,
         "technology_vendor_health": technology_vendor_health,
         "financial_performance": financial_performance,
+        "enterprise_risk": enterprise_risk,
     }

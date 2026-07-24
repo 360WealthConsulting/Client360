@@ -83,3 +83,10 @@ provider registry, Security certificate & secret store, and Insurance licensing.
 whether it is current / licensed / renewed* — two read-only composition views over overlapping authoritative
 owners, neither a second store. See [VENDOR_MANAGEMENT.md](VENDOR_MANAGEMENT.md) and
 [ADR-061](adr/ADR-061-vendor-management.md).
+
+**Related (D.58):** the **Enterprise Risk Management** layer (`/enterprise-risk`) composes this layer's
+`continuity_summary` for its resilience-risk panels (continuity gaps + backup/recovery configuration) —
+read-only, `observability.view`. It never backs up, restores, or alters infrastructure; Business Continuity
+remains the authoritative owner (backup / restore / DR themselves stay `not_configured`). See
+[ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
+[ADR-063](adr/ADR-063-enterprise-risk-management.md).

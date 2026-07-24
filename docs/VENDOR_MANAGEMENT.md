@@ -80,3 +80,9 @@ fabricated. Vendor Management governs *who supplies the technology and whether i
 renewed*; Financial Operations governs *firm financial performance* (revenue / profitability / commissions /
 KPIs) — two read-only composition views, neither a second store. See
 [FINANCIAL_OPERATIONS.md](FINANCIAL_OPERATIONS.md) and [ADR-062](adr/ADR-062-financial-operations.md).
+
+**Related (D.58):** the **Enterprise Risk Management** layer (`/enterprise-risk`) composes this layer's
+`vendor_summary` for its vendor / third-party / technology-lifecycle risk panels (governance score,
+dependencies, expiring certificates) — read-only, `integration.view`. It never modifies a vendor; Vendor
+Management remains the authoritative owner. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md)
+and [ADR-063](adr/ADR-063-enterprise-risk-management.md).

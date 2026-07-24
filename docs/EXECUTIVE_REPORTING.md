@@ -123,6 +123,20 @@ have no authoritative owner and are reported `not_configured`; AI summarizes fir
 invoices / processes payroll / modifies accounting records / changes commissions / alters billing. See
 [`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and ADR-062.
 
+**Enterprise Risk & Assurance (D.58):** the registry gains an `enterprise_risk_assurance` executive dashboard
+composed from **existing** widgets (`compliance_workload`, `operational_health`, `runtime_health`) — no new
+widget — whose navigation deep-links to the full risk surface at `/enterprise-risk`. The dedicated Enterprise
+Risk layer (a unified read-only view of enterprise risk posture — risk domains / control coverage / findings /
+exceptions / incidents / remediation / assurance, composed over Compliance Intelligence + the Exception Engine,
+Security, Data Governance, the Integration Platform, Business Continuity, Vendor Management, Financial
+Operations, Document Intelligence, Automation Orchestration, Insurance licensing, and the Runtime + Policy
+engines + audit logging) lives in `app/services/enterprise_risk/`; counts / status / severity distributions /
+coverage only, never sensitive evidence; every severity comes from an authoritative source and the posture
+panel is a DERIVED coverage summary, never a fabricated composite risk score; control testing / model-AI /
+privacy / financial-authorization / change-management are reported `not_configured`; AI summarizes but never
+assigns risk / certifies controls / approves exceptions / acknowledges incidents / certifies compliance. See
+[`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and ADR-063.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

@@ -431,6 +431,15 @@ _DEFS = (
            sources.financial_panel_failures),
     Metric("financial_authorization_failures", "Financial Authorization Failures", "operations", "count",
            "card", False, sources.financial_authorization_failures),
+    # Enterprise Risk Management (Phase D.58) — low-cardinality operational metrics.
+    Metric("risk_dashboards_composed", "Risk Dashboards Composed", "operations", "count", "card", False,
+           sources.risk_dashboards_composed),
+    Metric("risk_panels_composed", "Risk Panels Composed", "operations", "count", "card", False,
+           sources.risk_panels_composed),
+    Metric("risk_panel_failures", "Risk Panel Failures", "operations", "count", "card", False,
+           sources.risk_panel_failures),
+    Metric("risk_authorization_failures", "Risk Authorization Failures", "operations", "count", "card", False,
+           sources.risk_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

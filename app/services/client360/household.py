@@ -48,6 +48,7 @@ HOUSEHOLD_SECTIONS = (
     ("business_continuity", "observability.view"),
     ("technology_dependencies", "integration.view"),
     ("financial_relationship", "analytics.executive"),
+    ("risk_controls", "compliance.supervise"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -505,6 +506,18 @@ def _financial_relationship(principal, ctx):
             "source": "financial_operations.household_financial", "not_a_second_engine": True}
 
 
+def _risk_controls(principal, ctx):
+    """Household risk-&-controls summary (D.58) — authorized member- and household-level signals (compliance /
+    documentation / data-quality / integration dependencies), aggregated read-only across members from ONLY
+    the authoritative owners that support record scope. Deduplication of shared household findings is handled
+    by composing the household-scoped owner reads. Counts + status only; never a payload; never a second
+    GRC/risk engine; an absent signal never certifies compliance."""
+    from app.services.enterprise_risk import household_risk_controls
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_risk_controls(principal, ctx["household_id"], member_ids),
+            "source": "enterprise_risk.household_risk_controls", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -555,7 +568,7 @@ _SECTION_BUILDERS = {
     "automation_history": _automation_history, "data_governance": _data_governance,
     "external_integrations": _external_integrations, "security_access": _security_access,
     "business_continuity": _business_continuity, "technology_dependencies": _technology_dependencies,
-    "financial_relationship": _financial_relationship,
+    "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
     "timeline": _timeline, "relationships": _relationships,
 }
 

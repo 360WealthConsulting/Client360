@@ -78,6 +78,14 @@
 > per-household fee / commission billing has no authoritative owner (`not_configured`); never bills/invoices/
 > posts anything; never a second accounting or billing engine. See
 > [`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and [`ADR-062`](adr/ADR-062-financial-operations.md).
+>
+> **D.58:** Household 360 also gains a **Risk & Controls** section (gated by `compliance.supervise`) —
+> authorized member- and household-level risk signals (compliance / documentation / data-quality / integration
+> dependencies) aggregated by the D.58 enterprise-risk layer over ONLY the authoritative owners that support
+> record scope; shared household findings are deduplicated by composing the household-scoped owner reads.
+> Counts + status only — never a payload; never a second GRC/risk engine; an absent signal never certifies
+> compliance. See [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and
+> [`ADR-063`](adr/ADR-063-enterprise-risk-management.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

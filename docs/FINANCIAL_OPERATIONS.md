@@ -78,3 +78,10 @@ registry, panel/{key}, metrics}` + `/financial-operations/diagnostics`.
 
 See [FINANCIAL_REGISTRY.md](FINANCIAL_REGISTRY.md), [REVENUE_REGISTRY.md](REVENUE_REGISTRY.md),
 [FINANCIAL_GOVERNANCE.md](FINANCIAL_GOVERNANCE.md), and [ADR-062](adr/ADR-062-financial-operations.md).
+
+**Related (D.58):** the **Enterprise Risk Management** layer (`/enterprise-risk`) composes this layer's
+`firm_financial_summary` + the commission ledger for its financial-control risk panels (reconciliation status,
+commission exceptions) — read-only, `analytics.executive`. It never bills, reconciles, or pays anything;
+Financial Operations + the commission ledger remain the authoritative owners (financial authorization itself
+stays `not_configured`). See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
+[ADR-063](adr/ADR-063-enterprise-risk-management.md).
