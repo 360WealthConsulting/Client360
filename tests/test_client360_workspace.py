@@ -23,7 +23,7 @@ FIRM_CAPS = frozenset({
     "compliance.review.read", "timeline.read", "advisor_work.read", "work.read", "scheduling.view",
     "communications.read", "communications.view", "compliance.supervise", "analytics.executive",
     "capacity.read", "automation.view", "governance.view", "integration.view", "security.view",
-    "record.read_all", "observability.audit",
+    "observability.view", "record.read_all", "observability.audit",
 })
 FIRM = Principal(1, "m@e.com", "M", FIRM_CAPS)          # record.read_all → in scope for any client
 SCOPED = Principal(2, "s@e.com", "S", frozenset({"client.read"}))   # no read_all, no assignments
@@ -64,8 +64,8 @@ def _req(path="/client/1", qs=b""):
 
 # --- composition + contract --------------------------------------------------
 
-def test_registry_has_twentythree_sections_with_builders():
-    assert len(SECTIONS) == 23  # …+Automation History(D.51) +Data Governance(D.52) +External Integrations(D.53) +Security & Access(D.54)
+def test_registry_has_twentyfour_sections_with_builders():
+    assert len(SECTIONS) == 24  # …+Data Governance(D.52) +External Integrations(D.53) +Security & Access(D.54) +Business Continuity(D.55)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 
@@ -222,7 +222,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 954
+    assert len(app.routes) == 962
 
 
 def test_page_renders_and_404_out_of_scope():

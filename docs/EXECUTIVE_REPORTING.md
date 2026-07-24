@@ -95,6 +95,13 @@ Operations layer (firm-wide authentication / authorization / identity governance
 security posture) lives in `app/services/security_operations/`; see
 [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and ADR-059.
 
+**Operational Resilience (D.55):** the registry gains an `operational_resilience` executive dashboard composed
+from **existing** widgets (`runtime_health`, `operational_health`) — no new widget — whose navigation
+deep-links to the full continuity surface at `/business-continuity`. The dedicated Business Continuity layer
+(firm-wide backup status / recovery readiness / restore validation / infrastructure health / runtime
+resilience / maintenance / notifications / operational readiness) lives in
+`app/services/business_continuity/`; see [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and ADR-060.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

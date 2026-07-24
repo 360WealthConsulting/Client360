@@ -45,6 +45,7 @@ HOUSEHOLD_SECTIONS = (
     ("data_governance", "governance.view"),
     ("external_integrations", "integration.view"),
     ("security_access", "security.view"),
+    ("business_continuity", "observability.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -468,6 +469,17 @@ def _security_access(principal, ctx):
             "source": "security_operations.household_security", "not_a_second_engine": True}
 
 
+def _business_continuity(principal, ctx):
+    """Household business-continuity summary (D.55) — the firm-level operational resilience posture protecting
+    the household's data, composed read-only from the authoritative Observability + Runtime owners. Counts +
+    status only; never a payload. (Business continuity is firm-level; the same posture protects every
+    household.) Never backs up/restores/alters anything; never a second backup/monitoring/DR engine."""
+    from app.services.business_continuity import household_continuity
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_continuity(principal, ctx["household_id"], member_ids),
+            "source": "business_continuity.household_continuity", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -517,6 +529,7 @@ _SECTION_BUILDERS = {
     "operational_workload": _operational_workload, "document_intelligence": _document_intelligence,
     "automation_history": _automation_history, "data_governance": _data_governance,
     "external_integrations": _external_integrations, "security_access": _security_access,
+    "business_continuity": _business_continuity,
     "timeline": _timeline, "relationships": _relationships,
 }
 

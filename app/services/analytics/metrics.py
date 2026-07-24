@@ -404,6 +404,15 @@ _DEFS = (
            sources.security_panel_failures),
     Metric("security_ops_authorization_failures", "Security Ops Authorization Failures", "operations",
            "count", "card", False, sources.security_ops_authorization_failures),
+    # Business Continuity / operational resilience (Phase D.55) — low-cardinality operational metrics.
+    Metric("continuity_dashboards_composed", "Continuity Dashboards Composed", "operations", "count", "card",
+           False, sources.continuity_dashboards_composed),
+    Metric("continuity_panels_composed", "Continuity Panels Composed", "operations", "count", "card", False,
+           sources.continuity_panels_composed),
+    Metric("continuity_panel_failures", "Continuity Panel Failures", "operations", "count", "card", False,
+           sources.continuity_panel_failures),
+    Metric("continuity_authorization_failures", "Continuity Authorization Failures", "operations", "count",
+           "card", False, sources.continuity_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

@@ -43,6 +43,7 @@ _LINKS = {
     "data_governance": lambda **k: "/governance",
     "integration_hub": lambda **k: "/integration",
     "security_operations": lambda **k: "/security-operations",
+    "business_continuity": lambda **k: "/business-continuity",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -51,7 +52,7 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
           "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
           "data_governance": "Data Governance", "integration_hub": "Integration Hub",
-          "security_operations": "Security Operations"}
+          "security_operations": "Security Operations", "business_continuity": "Business Continuity"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -240,6 +241,15 @@ def _client(principal, person_id):
     if sec.get("enabled") and isinstance(sec.get("assigned_users"), int):
         facts.append(_fact("security_operations", "security.assigned_users", sec["assigned_users"],
                            fact_class=DERIVED, deep_link="/admin"))
+    # Business Continuity — SUMMARIZED firm operational-resilience readiness protecting this client's data,
+    # composed read-only over the Observability + Runtime owners. AI summarizes the readiness score; it never
+    # starts backups, restores data, acknowledges incidents, changes monitoring, alters runtime, or modifies
+    # infrastructure.
+    bc = (ws.get("sections") or {}).get("business_continuity") or {}
+    rs = bc.get("resilience_score")
+    if bc.get("enabled") and isinstance(rs, dict) and isinstance(rs.get("readiness_percent"), (int, float)):
+        facts.append(_fact("business_continuity", "continuity.readiness_percent", rs["readiness_percent"],
+                           fact_class=DERIVED, deep_link="/business-continuity"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

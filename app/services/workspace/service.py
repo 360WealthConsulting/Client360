@@ -138,6 +138,16 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         security_operations = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Operational Resilience panel (D.55) — a read-only continuity summary (resilience score + infrastructure
+    # availability + service incidents + backup coverage) composed over the authoritative Observability +
+    # Runtime owners. Guarded so a gate-off never breaks home; this panel never backs up/restores/alters
+    # anything. Counts + status only.
+    try:
+        from app.services.business_continuity import continuity_summary
+        operational_resilience = continuity_summary(principal)
+    except Exception:
+        operational_resilience = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -160,4 +170,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "data_governance": data_governance,
         "integration_health": integration_health,
         "security_operations": security_operations,
+        "operational_resilience": operational_resilience,
     }

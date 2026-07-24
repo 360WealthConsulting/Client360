@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Business Continuity | Client360{% endblock %}
+{% block crumb %}Business Continuity{% endblock %}
+{% block content %}
+{% call ui.page_head("Business continuity", eyebrow="Disaster recovery & operational resilience", desc="A unified operational view of platform resilience — backup status, recovery readiness, restore validation, infrastructure health, runtime resilience, maintenance, notifications and operational readiness — composed read-only from the authoritative operational-resilience owners (the Observability domain, the Runtime engine, the Automation scheduler, Communications). Never a second backup platform, monitoring system, disaster-recovery engine, scheduler, notification system or incident manager; never starts a backup, restores data, acknowledges an incident, changes monitoring, alters runtime or modifies infrastructure. Backup / restore / DR have no authoritative owner today — reported as not-configured, never fabricated. Counts and status only. Every panel deep-links to its authoritative resilience owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Continuity dashboards">
+  {% for d in dashboards %}
+    <a href="/business-continuity?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No business-continuity dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Unavailable.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

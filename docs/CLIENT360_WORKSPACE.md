@@ -60,6 +60,13 @@
 > the authoritative authorization owner. Counts only — never a payload; never authenticates/authorizes/alters
 > anything; never a second IAM/RBAC engine. See [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and
 > [`ADR-059`](adr/ADR-059-security-operations.md).
+>
+> **D.55:** Client 360 also gains a **Business Continuity** section (gated by `observability.view`) — the
+> firm-level operational resilience posture (resilience score + infrastructure availability + backup
+> coverage) protecting the client's data, composed by the D.55 business-continuity layer over the
+> authoritative Observability + Runtime owners. Counts + status only — never an infrastructure payload; never
+> backs up/restores/alters anything; never a second backup/monitoring/DR engine. See
+> [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and [`ADR-060`](adr/ADR-060-business-continuity.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
