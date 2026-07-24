@@ -332,6 +332,15 @@ _DEFS = (
            False, sources.recommendation_compositions),
     Metric("recommendation_adapter_failures", "Recommendation Adapter Failures", "operations", "count",
            "card", False, sources.recommendation_adapter_failures),
+    # Compliance Intelligence / supervisory operations (Phase D.47) — low-cardinality operational metrics.
+    Metric("supervisory_reviews_composed", "Supervisory Reviews Composed", "compliance", "count", "card",
+           False, sources.supervisory_reviews_composed),
+    Metric("supervisory_exceptions_composed", "Supervisory Exceptions Composed", "compliance", "count",
+           "card", False, sources.supervisory_exceptions_composed),
+    Metric("supervisory_dashboards", "Supervisory Dashboards", "compliance", "count", "card", False,
+           sources.supervisory_dashboards),
+    Metric("supervisory_authorization_failures", "Supervisory Authorization Failures", "compliance", "count",
+           "card", False, sources.supervisory_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

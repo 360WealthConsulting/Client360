@@ -15,6 +15,11 @@
 > authoritative recommendation sources (the deterministic `advisor_intelligence` Signal engine + domain
 > observations + work queue), deterministic and rule-based (no ML). See
 > [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and ADR-051.
+>
+> **D.47:** The advisor home also carries an advisor-visible **compliance tasks** panel
+> (`ws["compliance_tasks"]`) — ONLY the governed advisor compliance recommendations, never supervisory
+> findings, reviewer identities, or approval state. Supervisory operations live behind `compliance.supervise`
+> at `/supervision`. See [`SUPERVISORY_WORKSPACE.md`](SUPERVISORY_WORKSPACE.md) and ADR-052.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

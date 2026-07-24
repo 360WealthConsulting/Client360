@@ -206,6 +206,21 @@ def recommendations(principal, ctx):
             "not_a_second_engine": True}
 
 
+def compliance_summary(principal, ctx):
+    """Supervisory compliance oversight for the client (open reviews + supervisory status + outstanding
+    exceptions), composed by the D.47 compliance-intelligence layer. Supervisor-only (the section is gated
+    by compliance.supervise); never a second compliance engine, never mutates."""
+    from app.services.compliance_intelligence import client_compliance
+    from app.services.compliance_intelligence import compliance_summary as _summary
+    pid, hid = _pid(ctx), _hid(ctx)
+    summary = _summary(principal, person_id=pid, household_id=hid)
+    result = client_compliance(principal, pid) if pid else None
+    return {"summary": summary,
+            "reviews": result.get("reviews", []) if result else [],
+            "exceptions": result.get("exceptions", []) if result else [],
+            "source": "compliance_intelligence", "not_a_second_engine": True}
+
+
 def relationships(principal, ctx):
     """Household members + the read-only relationship graph (beneficiaries/trustees/businesses/
     employers/dependents/advisors) + assigned advisors."""

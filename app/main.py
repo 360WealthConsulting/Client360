@@ -58,6 +58,7 @@ from app.routes.portal_admin import router as portal_admin_router
 from app.routes.engagement import router as engagement_router
 from app.routes.knowledge import router as knowledge_router
 from app.routes.recommendations import router as recommendations_router
+from app.routes.compliance_intelligence import router as compliance_intelligence_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -227,6 +228,7 @@ app.include_router(portal_admin_router)
 app.include_router(engagement_router)
 app.include_router(knowledge_router)
 app.include_router(recommendations_router)
+app.include_router(compliance_intelligence_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---
