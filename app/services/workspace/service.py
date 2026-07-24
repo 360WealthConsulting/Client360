@@ -158,6 +158,16 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         technology_vendor_health = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Financial Performance panel (D.57) — a read-only firm financial summary (performance score + recurring
+    # revenue + commission revenue + collections + vendor dependencies) composed over the authoritative
+    # insurance commission ledger + portfolio AUM owner + the single Analytics Registry. Guarded so a gate-off
+    # never breaks home; this panel never bills/invoices/pays/posts anything. Aggregate totals + status only.
+    try:
+        from app.services.financial_operations import firm_financial_summary
+        financial_performance = firm_financial_summary(principal)
+    except Exception:
+        financial_performance = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -182,4 +192,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "security_operations": security_operations,
         "operational_resilience": operational_resilience,
         "technology_vendor_health": technology_vendor_health,
+        "financial_performance": financial_performance,
     }

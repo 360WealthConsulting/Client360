@@ -45,6 +45,7 @@ _LINKS = {
     "security_operations": lambda **k: "/security-operations",
     "business_continuity": lambda **k: "/business-continuity",
     "vendor_management": lambda **k: "/vendor-management",
+    "financial_operations": lambda **k: "/financial-operations",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -54,7 +55,7 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
           "data_governance": "Data Governance", "integration_hub": "Integration Hub",
           "security_operations": "Security Operations", "business_continuity": "Business Continuity",
-          "vendor_management": "Vendor Management"}
+          "vendor_management": "Vendor Management", "financial_operations": "Financial Operations"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -259,6 +260,15 @@ def _client(principal, person_id):
     if vm.get("enabled") and isinstance(vm.get("vendor_dependencies"), int):
         facts.append(_fact("vendor_management", "vendor.dependencies", vm["vendor_dependencies"],
                            fact_class=DERIVED, deep_link="/vendor-management"))
+    # Financial Operations — SUMMARIZED advisory revenue basis (the client's AUM) the firm relationship rests
+    # on, composed read-only over the authoritative portfolio owner. AI summarizes the aggregate; it never
+    # issues invoices, processes payroll, modifies accounting records, changes commissions, alters billing, or
+    # executes payments.
+    fin = (ws.get("sections") or {}).get("financial_relationship") or {}
+    if fin.get("enabled") and isinstance(fin.get("advisory_revenue_basis"), (int, float)):
+        facts.append(_fact("financial_operations", "financial.advisory_revenue_basis",
+                           fin["advisory_revenue_basis"], fact_class=DERIVED,
+                           deep_link="/financial-operations"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

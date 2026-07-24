@@ -72,3 +72,11 @@ mutation, no vendor/licensing change, no outbox publication, no audit write, no 
 count comes from an authoritative owner; every dashboard panel is explainable and deep-links to its
 authoritative surface. Enforced by `app/services/vendor_management/governance.py` and
 `tests/test_vendor_management.py`. See [ADR-061](adr/ADR-061-vendor-management.md).
+
+**Related (D.57):** the **Financial Operations** layer (`/financial-operations`) references this layer's vendor
+/ technology dependency **counts** for its `vendor_dependencies` panel — but vendor *spend* / technology
+*costs* have no authoritative cost owner in the platform and are reported `not_configured` there, never
+fabricated. Vendor Management governs *who supplies the technology and whether it is current / licensed /
+renewed*; Financial Operations governs *firm financial performance* (revenue / profitability / commissions /
+KPIs) — two read-only composition views, neither a second store. See
+[FINANCIAL_OPERATIONS.md](FINANCIAL_OPERATIONS.md) and [ADR-062](adr/ADR-062-financial-operations.md).
