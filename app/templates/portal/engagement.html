@@ -1,0 +1,18 @@
+{% extends "portal/base.html" %}{% block title %}Recent Activity{% endblock %}{% block content %}
+<h1>Recent Activity</h1>
+{% if not engagement.enabled %}
+<div class="empty">Your activity feed is not currently available.</div>
+{% else %}
+<p>{% if engagement.unread %}{{ engagement.unread }} unread · {% endif %}
+   {% if engagement.action_required %}{{ engagement.action_required }} need your attention{% endif %}</p>
+{% for i in engagement.rows %}
+<article class="work-card">
+  <h3>{{ i.subject }}{% if i.unread %} · <strong>Unread</strong>{% endif %}{% if i.action_required %} · <strong>Action needed</strong>{% endif %}</h3>
+  <p>{{ i.interaction_type.replace('_', ' ') | title }}{% if i.timestamp %} · {{ i.timestamp }}{% endif %}
+    {% if i.deep_link %} · <a href="{{ i.deep_link }}">Open</a>{% endif %}</p>
+</article>
+{% else %}
+<div class="empty">No recent activity.</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

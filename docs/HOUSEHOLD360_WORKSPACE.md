@@ -1,5 +1,11 @@
 # Household 360 Workspace (Phase D.41)
 
+> **D.44:** Household 360 gains a **Communications** section — the household's unified engagement summary +
+> recent interactions, composed by the D.44 engagement layer over the household's authoritative activity
+> timeline (member-merged, deduped; never a second store). See
+> [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md) and
+> [`ENGAGEMENT_TIMELINE.md`](ENGAGEMENT_TIMELINE.md).
+
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
 member-specific information, shared relationships, current work and deadlines, and where to act. It is a
