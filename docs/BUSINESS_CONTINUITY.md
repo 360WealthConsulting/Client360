@@ -75,3 +75,11 @@ audit write, no second store. Every resilience count comes from an authoritative
 is explainable and deep-links to its authoritative surface. Enforced by
 `app/services/business_continuity/governance.py` and `tests/test_business_continuity.py`. See
 [ADR-060](adr/ADR-060-business-continuity.md).
+
+**Related (D.56):** the **Vendor Management** layer (`/vendor-management`) composes the technology-lifecycle /
+vendor / third-party-risk view over the same Observability + Runtime owners plus the Integration Platform
+provider registry, Security certificate & secret store, and Insurance licensing. Continuity governs
+*infrastructure availability + recovery readiness*; Vendor Management governs *who supplies the technology and
+whether it is current / licensed / renewed* — two read-only composition views over overlapping authoritative
+owners, neither a second store. See [VENDOR_MANAGEMENT.md](VENDOR_MANAGEMENT.md) and
+[ADR-061](adr/ADR-061-vendor-management.md).

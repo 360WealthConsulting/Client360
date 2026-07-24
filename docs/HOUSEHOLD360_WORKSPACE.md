@@ -65,6 +65,12 @@
 > never an infrastructure payload; never backs up/restores/alters anything; never a second
 > backup/monitoring/DR engine. See [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and
 > [`ADR-060`](adr/ADR-060-business-continuity.md).
+>
+> **D.56:** Household 360 also gains a **Technology Dependencies** section (gated by `integration.view`) — the
+> external vendors / systems the household's data depends on, composed by the D.56 vendor-management layer over
+> the authoritative Integration Hub per-entity read. Counts + vendor names only — never a payload; never
+> modifies a vendor/integration; never a second vendor platform. See
+> [`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and [`ADR-061`](adr/ADR-061-vendor-management.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

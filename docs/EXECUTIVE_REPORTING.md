@@ -102,6 +102,15 @@ deep-links to the full continuity surface at `/business-continuity`. The dedicat
 resilience / maintenance / notifications / operational readiness) lives in
 `app/services/business_continuity/`; see [`BUSINESS_CONTINUITY.md`](BUSINESS_CONTINUITY.md) and ADR-060.
 
+**Technology Governance (D.56):** the registry gains a `technology_governance` executive dashboard composed
+from **existing** widgets (`runtime_health`, `operational_health`) — no new widget — whose navigation
+deep-links to the full vendor surface at `/vendor-management`. The dedicated Vendor Management layer (a single
+governed read-only view of vendors / software / platforms / licensing / lifecycle / third-party risk, composed
+over the authoritative Integration + Security + Observability + Insurance-licensing + Compliance owners) lives
+in `app/services/vendor_management/`; counts + status only, never a contract/credential/key/secret/payload;
+AI summarizes but never approves purchases / renews contracts / terminates vendors / alters licensing. See
+[`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and ADR-061.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

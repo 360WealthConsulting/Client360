@@ -148,6 +148,16 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         operational_resilience = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Technology & Vendor Health panel (D.56) — a read-only vendor summary (governance score + expiring
+    # certificates + integration dependencies + vendor inventory) composed over the authoritative Integration
+    # + Security + Observability owners. Guarded so a gate-off never breaks home; this panel never
+    # modifies/renews/terminates anything. Counts + status only.
+    try:
+        from app.services.vendor_management import vendor_summary
+        technology_vendor_health = vendor_summary(principal)
+    except Exception:
+        technology_vendor_health = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -171,4 +181,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "integration_health": integration_health,
         "security_operations": security_operations,
         "operational_resilience": operational_resilience,
+        "technology_vendor_health": technology_vendor_health,
     }
