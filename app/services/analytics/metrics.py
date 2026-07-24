@@ -359,6 +359,15 @@ _DEFS = (
            sources.practice_panel_failures),
     Metric("practice_authorization_failures", "Practice Authorization Failures", "operations", "count",
            "card", False, sources.practice_authorization_failures),
+    # Document Intelligence / records lifecycle (Phase D.50) — low-cardinality operational metrics.
+    Metric("document_dashboards_composed", "Document Dashboards Composed", "operations", "count", "card",
+           False, sources.document_dashboards_composed),
+    Metric("document_panels_composed", "Document Panels Composed", "operations", "count", "card", False,
+           sources.document_panels_composed),
+    Metric("document_panel_failures", "Document Panel Failures", "operations", "count", "card", False,
+           sources.document_panel_failures),
+    Metric("document_authorization_failures", "Document Authorization Failures", "operations", "count",
+           "card", False, sources.document_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

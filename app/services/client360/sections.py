@@ -262,6 +262,17 @@ def operational_workload(principal, ctx):
             "source": "practice_management.client_workload", "not_a_second_engine": True}
 
 
+def document_intelligence(principal, ctx):
+    """A compact document-intelligence summary for this client (D.50) — composed read-only from the Document
+    Platform entity read (documents_for_entity) + Compliance Intelligence documentation gaps. Counts +
+    status only, never document content; deep-links to the authoritative document surface. Never a second
+    DMS/OCR/index/archive."""
+    from app.services.document_intelligence import client_documents
+    pid = _pid(ctx)
+    return {**(client_documents(principal, pid) if pid else {"enabled": False, "document_count": 0}),
+            "source": "document_intelligence.client_documents", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

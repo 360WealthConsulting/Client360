@@ -24,6 +24,17 @@
 > **D.48:** Household 360 also gains an executive-only **Executive** section (gated by `analytics.executive`)
 > — firm executive context composed by the D.48 executive-intelligence layer over the single Analytics
 > Registry. See [`EXECUTIVE_REPORTING.md`](EXECUTIVE_REPORTING.md) and [`ADR-053`](adr/ADR-053-executive-reporting.md).
+>
+> **D.49:** Household 360 also gains an **Operational Workload** section (gated by `capacity.read`) — a
+> household-scoped work-queue count rollup composed by the D.49 practice-management layer (never re-summed
+> across incompatible units). See [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and
+> [`ADR-054`](adr/ADR-054-practice-management.md).
+>
+> **D.50:** Household 360 also gains a **Document Intelligence** section (gated by `documents.view`) —
+> aggregated household document status (counts + status by classification/lifecycle, deduped by document id)
+> composed by the D.50 document-intelligence layer over the authoritative Document Platform entity read.
+> Counts + status only — never document content; never a second DMS. See
+> [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and [`ADR-055`](adr/ADR-055-document-intelligence.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

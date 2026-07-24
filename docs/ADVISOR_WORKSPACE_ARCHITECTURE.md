@@ -32,6 +32,13 @@
 > `capacity.read` still gets their book-scoped workload, never firm capacity. The panel never assigns work or
 > modifies staffing. The full practice dashboards live at `/practice`. See
 > [`PRACTICE_MANAGEMENT.md`](PRACTICE_MANAGEMENT.md) and ADR-054.
+>
+> **D.50:** The advisor home also carries a **Document Intelligence** panel (`ws["document_intelligence"]`) —
+> the firm document-intelligence summary (inventory by lifecycle + missing documents + expiring / completeness)
+> composed by the D.50 document-intelligence layer over the authoritative Document Platform + Governance
+> retention + Compliance Intelligence. Counts + status only — never document content; the panel never alters
+> metadata, archives, or deletes documents. The full document dashboards live at `/document-intelligence`.
+> See [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and ADR-055.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

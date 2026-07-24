@@ -92,6 +92,16 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         capacity_planning = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Document Intelligence panel (D.50) — a read-only records summary (inventory + missing documents +
+    # expiring/completeness) composed over the authoritative Document Platform + Governance retention +
+    # Compliance Intelligence. Guarded so a gate-off never breaks home; this panel never alters metadata,
+    # archives, or deletes documents. Counts + status only — never document content.
+    try:
+        from app.services.document_intelligence import document_summary
+        document_intelligence = document_summary(principal)
+    except Exception:
+        document_intelligence = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -109,4 +119,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "compliance_tasks": compliance_tasks,
         "executive_insights": executive_insights,
         "capacity_planning": capacity_planning,
+        "document_intelligence": document_intelligence,
     }

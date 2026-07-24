@@ -34,12 +34,16 @@ _LINKS = {
     "practice_management": lambda person_id=None, household_id=None, **k: (
         f"/work?person_id={person_id}" if person_id
         else (f"/work?household_id={household_id}" if household_id else "/practice")),
+    "document_intelligence": lambda person_id=None, household_id=None, **k: (
+        f"/document-library?person_id={person_id}" if person_id
+        else (f"/document-library?household_id={household_id}" if household_id else "/document-intelligence")),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
           "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
           "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
-          "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management"}
+          "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
+          "document_intelligence": "Document Intelligence"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -186,6 +190,18 @@ def _client(principal, person_id):
             if isinstance(owl.get(wk), int):
                 facts.append(_fact("practice_management", f"workload.{wk}", owl[wk],
                                    fact_class=DERIVED, deep_link=wlink))
+    # Document Intelligence — SUMMARIZED document COUNTS for this client (document count / open gaps),
+    # composed read-only over the Document Platform + Compliance Intelligence. AI summarizes the counts; it
+    # never alters metadata, archives/deletes documents, modifies retention, or changes document ownership.
+    doci = (ws.get("sections") or {}).get("document_intelligence") or {}
+    if doci.get("enabled"):
+        dlink = f"/document-library?person_id={person_id}"
+        if isinstance(doci.get("document_count"), int):
+            facts.append(_fact("document_intelligence", "documents.count", doci["document_count"],
+                               fact_class=DERIVED, deep_link=dlink))
+        if isinstance(doci.get("open_documentation_gaps"), int) and doci["open_documentation_gaps"]:
+            facts.append(_fact("document_intelligence", "documents.open_gaps",
+                               doci["open_documentation_gaps"], fact_class=DERIVED, deep_link=dlink))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

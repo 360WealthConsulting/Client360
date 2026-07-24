@@ -142,6 +142,12 @@ DASHBOARD_REGISTRY = (
        ("advisor_workload", "workflow_status", "workflow_aging", "operational_health", "tax_workload"),
        ("analytics.view",), "/practice",
        ("work_queue", "workflow_automation", "recommendations", "tax_domain")),
+    # Document Intelligence (D.50) — the executive view of document/records health, composed from EXISTING
+    # widgets (no new widget). The full document-intelligence surface lives at /document-intelligence.
+    _d("document_intelligence", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("compliance_workload", "operational_health", "tax_workload"),
+       ("analytics.view",), "/document-intelligence",
+       ("compliance", "recommendations", "tax_domain")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}
