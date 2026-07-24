@@ -82,6 +82,12 @@ navigation deep-links to the full data-governance surface at `/data-governance`.
 layer (firm-wide master data / stewardship / lineage / ownership / duplicate / validation / data quality)
 lives in `app/services/data_governance/`; see [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and ADR-057.
 
+**Integration Health (D.53):** the registry gains an `integration_health` executive dashboard composed from
+**existing** widgets (`runtime_health`, `operational_health`) — no new widget — whose navigation deep-links to
+the full integration surface at `/integration-hub`. The dedicated Integration Hub layer (firm-wide
+integrations / synchronization / authentication / webhooks / connectors / API health / event routing) lives in
+`app/services/integration_hub/`; see [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and ADR-058.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

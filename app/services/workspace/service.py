@@ -120,6 +120,15 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         data_governance = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Integration Health panel (D.53) — a read-only integration summary (overview + sync + connector +
+    # webhook health) composed over the authoritative Integration Platform. Guarded so a gate-off never
+    # breaks home; this panel never connects/syncs/invokes/refreshes anything. Counts + status only.
+    try:
+        from app.services.integration_hub import integration_summary
+        integration_health = integration_summary(principal)
+    except Exception:
+        integration_health = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -140,4 +149,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "document_intelligence": document_intelligence,
         "automation_status": automation_status,
         "data_governance": data_governance,
+        "integration_health": integration_health,
     }

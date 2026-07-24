@@ -386,6 +386,15 @@ _DEFS = (
            sources.governance_panel_failures),
     Metric("governance_authorization_failures", "Governance Authorization Failures", "operations", "count",
            "card", False, sources.governance_authorization_failures),
+    # Integration Hub / connected platform governance (Phase D.53) — low-cardinality operational metrics.
+    Metric("integration_dashboards_composed", "Integration Dashboards Composed", "operations", "count",
+           "card", False, sources.integration_dashboards_composed),
+    Metric("integration_panels_composed", "Integration Panels Composed", "operations", "count", "card",
+           False, sources.integration_panels_composed),
+    Metric("integration_panel_failures", "Integration Panel Failures", "operations", "count", "card", False,
+           sources.integration_panel_failures),
+    Metric("integration_authorization_failures", "Integration Authorization Failures", "operations", "count",
+           "card", False, sources.integration_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

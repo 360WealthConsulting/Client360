@@ -43,6 +43,7 @@ HOUSEHOLD_SECTIONS = (
     ("document_intelligence", "documents.view"),
     ("automation_history", "automation.view"),
     ("data_governance", "governance.view"),
+    ("external_integrations", "integration.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -444,6 +445,17 @@ def _data_governance(principal, ctx):
             "source": "data_governance.household_governance", "not_a_second_engine": True}
 
 
+def _external_integrations(principal, ctx):
+    """Aggregated household external-integrations summary (D.53) — the external systems the household's
+    members connected from, composed read-only from the authoritative person lineage across members. Counts
+    + source-system names only; a rollup, never an external-system call. Never a second integration platform;
+    deep-links to the authoritative integration surface."""
+    from app.services.integration_hub import household_integrations
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_integrations(principal, ctx["household_id"], member_ids),
+            "source": "integration_hub.household_integrations", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -492,6 +504,7 @@ _SECTION_BUILDERS = {
     "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
     "operational_workload": _operational_workload, "document_intelligence": _document_intelligence,
     "automation_history": _automation_history, "data_governance": _data_governance,
+    "external_integrations": _external_integrations,
     "timeline": _timeline, "relationships": _relationships,
 }
 

@@ -64,6 +64,7 @@ from app.routes.practice_management import router as practice_management_router
 from app.routes.document_intelligence import router as document_intelligence_router
 from app.routes.automation_orchestration import router as automation_orchestration_router
 from app.routes.data_governance import router as data_governance_router
+from app.routes.integration_hub import router as integration_hub_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -239,6 +240,7 @@ app.include_router(practice_management_router)
 app.include_router(document_intelligence_router)
 app.include_router(automation_orchestration_router)
 app.include_router(data_governance_router)
+app.include_router(integration_hub_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

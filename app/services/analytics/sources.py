@@ -1194,3 +1194,25 @@ def governance_panel_failures(principal) -> int:
 def governance_authorization_failures(principal) -> int:
     from app.services.data_governance.metrics import governance_authorization_failures as _r
     return _r(principal)
+
+
+# --- Integration Hub / connected platform governance (Phase D.53) — low-cardinality in-process counters ---
+
+def integration_dashboards_composed(principal) -> int:
+    from app.services.integration_hub.metrics import integration_dashboards_composed as _r
+    return _r(principal)
+
+
+def integration_panels_composed(principal) -> int:
+    from app.services.integration_hub.metrics import integration_panels_composed as _r
+    return _r(principal)
+
+
+def integration_panel_failures(principal) -> int:
+    from app.services.integration_hub.metrics import integration_panel_failures as _r
+    return _r(principal)
+
+
+def integration_authorization_failures(principal) -> int:
+    from app.services.integration_hub.metrics import integration_authorization_failures as _r
+    return _r(principal)

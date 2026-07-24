@@ -48,6 +48,12 @@
 > reading `person_source_links`). Counts + source systems only — never a payload; never merges/alters an
 > identity; never a second master-data store. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and
 > [`ADR-057`](adr/ADR-057-data-governance.md).
+>
+> **D.53:** Client 360 also gains an **External Integrations** section (gated by `integration.view`) — the
+> external systems the client's data connected from (source-system provenance), composed by the D.53
+> integration-hub layer over the authoritative person lineage. Counts + source-system names only — never a
+> payload; never connects/syncs anything; never a second integration platform. See
+> [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and [`ADR-058`](adr/ADR-058-integration-hub.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
