@@ -22,10 +22,13 @@ _LINKS = {
     "communications": lambda person_id=None, household_id=None, **k: (
         f"/engagement?person_id={person_id}" if person_id
         else (f"/engagement?household_id={household_id}" if household_id else "/engagement")),
+    "knowledge": lambda person_id=None, household_id=None, **k: (
+        f"/knowledge?person_id={person_id}" if person_id
+        else (f"/knowledge?household_id={household_id}" if household_id else "/knowledge")),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
-          "communications": "Unified Engagement"}
+          "communications": "Unified Engagement", "knowledge": "Knowledge Graph"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -120,9 +123,18 @@ def _client(principal, person_id):
         facts.append(_fact("communications", "communications.unread", csum.get("unread", 0), deep_link=clink))
         facts.append(_fact("communications", "communications.action_required",
                            csum.get("action_required", 0), deep_link=clink))
+    # Knowledge graph — connected-entity counts from the composed Client 360 section (no raw graph query);
+    # every explanation cites its authoritative service, so AI never explores the graph unrestricted.
+    know = (ws.get("sections") or {}).get("knowledge") or {}
+    ksum = know.get("summary") or {}
+    if ksum.get("enabled"):
+        klink = f"/knowledge?person_id={person_id}"
+        facts.append(_fact("knowledge", "knowledge.connected_entities", ksum.get("connected", 0),
+                           fact_class=DERIVED, deep_link=klink))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
-                               {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"}])
+                               {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},
+                               {"label": "Open Knowledge", "href": f"/knowledge?person_id={person_id}"}])
 
 
 def _household(principal, household_id):
@@ -152,6 +164,11 @@ def _household(principal, household_id):
         facts.append(_fact("communications", "communications.recent_interactions", csum.get("total", 0),
                            deep_link=clink))
         facts.append(_fact("communications", "communications.unread", csum.get("unread", 0), deep_link=clink))
+    know = (ws.get("sections") or {}).get("knowledge") or {}
+    ksum = know.get("summary") or {}
+    if ksum.get("enabled"):
+        facts.append(_fact("knowledge", "knowledge.connected_entities", ksum.get("connected", 0),
+                           fact_class=DERIVED, deep_link=f"/knowledge?household_id={household_id}"))
     return _bundle("household_brief", facts, ["Household 360"],
                    navigation=[{"label": "Open Household 360", "href": link}])
 

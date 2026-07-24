@@ -178,6 +178,21 @@ def communications(principal, ctx):
             "not_a_second_store": True}
 
 
+def knowledge(principal, ctx):
+    """Connected entities + relationship explanations, composed by the D.45 knowledge layer over the
+    authoritative relationship engine + scoped reads (never a graph database, never a second store)."""
+    from app.services.knowledge import knowledge_graph, knowledge_summary
+    pid, hid = _pid(ctx), _hid(ctx)
+    summary = knowledge_summary(principal, person_id=pid, household_id=hid)
+    graph = knowledge_graph(principal, person_id=pid, household_id=hid)
+    if graph is None or not graph.get("enabled"):
+        return {"summary": summary, "nodes": [], "edges": [], "explanations": [],
+                "source": "knowledge.graph", "not_a_graph_db": True}
+    return {"summary": summary, "nodes": graph["nodes"], "edges": graph["edges"],
+            "explanations": graph.get("explanations", []), "suppressed_nodes": graph["suppressed_nodes"],
+            "source": "knowledge.graph", "not_a_graph_db": True}
+
+
 def relationships(principal, ctx):
     """Household members + the read-only relationship graph (beneficiaries/trustees/businesses/
     employers/dependents/advisors) + assigned advisors."""
