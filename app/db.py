@@ -468,3 +468,7 @@ workspace_presets = metadata.tables["workspace_presets"]
 # Presentation state; never alters a source work record.
 work_queue_saved_views = metadata.tables["work_queue_saved_views"]
 work_queue_preferences = metadata.tables["work_queue_preferences"]
+
+# Client Portal consent ledger (Phase D.43). Governed, versioned portal consent records (terms / privacy
+# / electronic delivery / secure messaging / document delivery) — consent-management metadata + refs only.
+portal_consents = metadata.tables["portal_consents"]

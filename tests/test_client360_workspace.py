@@ -220,7 +220,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 853
+    assert len(app.routes) == 869
 
 
 def test_page_renders_and_404_out_of_scope():
@@ -241,10 +241,8 @@ def test_snapshot_route_json():
 
 
 def test_migration_head_unchanged_no_new_table():
-    # D.40 is composition-only — no migration, no new table.
-    with engine.connect() as c:
-        head = c.scalar(text("SELECT version_num FROM alembic_version"))
-    assert head == "l3q4v5w6x7y8"
+    # D.40 is composition-only — it introduced no schema. The durable invariant is that no client360
+    # table exists (the global migration head legitimately advances in later phases, so it is not pinned).
     from app.db import metadata
     assert "client360" not in metadata.tables and "rm_client360" not in metadata.tables
 

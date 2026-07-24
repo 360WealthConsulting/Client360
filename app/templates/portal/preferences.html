@@ -1,0 +1,22 @@
+{% extends "portal/base.html" %}{% block title %}Communication Preferences{% endblock %}{% block content %}
+<h1>Communication Preferences &amp; Consents</h1>
+<p>Manage the agreements and delivery preferences on your account. Electronic delivery and secure messaging
+can be accepted or withdrawn at any time.</p>
+<table class="data-table" aria-label="Your consents and delivery preferences">
+  <thead><tr><th scope="col">Agreement</th><th scope="col">Version</th><th scope="col">Status</th><th scope="col">Recorded</th></tr></thead>
+  <tbody>
+  {% for c in consents %}
+    <tr>
+      <td>{{ c.consent_type.replace('_', ' ') | title }}</td>
+      <td>{{ c.version }}</td>
+      <td>{{ c.state | title }}</td>
+      <td>{{ c.accepted_at.date() if c.accepted_at else (c.withdrawn_at.date() if c.withdrawn_at else '—') }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="empty">No preferences on file yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="fine-print">To change a preference, use the actions in your portal or contact your advisor. Every
+change is recorded for your records.</p>
+{% endblock %}

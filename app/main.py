@@ -54,6 +54,7 @@ from app.routes.ops import router as ops_router
 from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
 from app.routes.portal import router as portal_router
+from app.routes.portal_admin import router as portal_admin_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -111,6 +112,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         logging.getLogger("client360.runtime.coordination").exception(
             "runtime cluster join failed at startup; continuing standalone")
+
+    # (D.43) Register the deterministic local portal identity provider for local/test activation ONLY —
+    # a no-op once the portal is production-signed-off. GUARDED so it can never block startup.
+    try:
+        from app.portal.identity_local import register_local_provider_if_permitted
+        register_local_provider_if_permitted()
+    except Exception:
+        logging.getLogger("client360.portal").exception(
+            "portal local identity provider registration skipped")
 
     try:
         yield
@@ -210,6 +220,7 @@ app.include_router(tax_intake_router)
 app.include_router(tax_returns_router)
 app.include_router(tax_documents_router)
 app.include_router(portal_router)
+app.include_router(portal_admin_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

@@ -23,6 +23,7 @@ from sqlalchemy import (
 from app.database.advisor_work_tables import define_advisor_work_tables
 from app.database.workspace_tables import define_workspace_tables
 from app.database.work_queue_tables import define_work_queue_tables
+from app.database.portal_consent_tables import define_portal_consent_tables
 from app.database.analytics_tables import define_analytics_tables
 from app.database.annual_review_tables import define_annual_review_tables
 from app.database.automation_tables import define_automation_tables
@@ -735,6 +736,7 @@ event_tables = define_event_tables(metadata)
 projection_tables = define_projection_tables(metadata)
 workspace_tables = define_workspace_tables(metadata)
 work_queue_tables = define_work_queue_tables(metadata)
+portal_consent_tables = define_portal_consent_tables(metadata)
 if __name__ == "__main__":
     metadata.create_all(engine)
     print("Client360 Version 1 schema initialized successfully.")

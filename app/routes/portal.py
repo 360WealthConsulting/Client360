@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.db import engine, portal_document_requests, portal_notifications
+from app.db import documents, engine, portal_document_requests, portal_notifications, portal_sessions
 from app.portal.service import (PortalPrincipal, accept_invitation, client_action_detail,
     client_action_needed, client_document_requests,
     client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
@@ -13,6 +13,9 @@ from app.portal.service import (PortalPrincipal, accept_invitation, client_actio
     employer_action_detail, employer_action_needed, employer_census_upload, employer_organization_ids,
     list_messages, mark_read, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
+from app.portal import appointments as portal_appointments
+from app.portal import consent as portal_consent
+from app.portal.financial import financial_summary
 from app.services.documents import save_person_document
 from app.services.exception_engine import ExceptionNotFoundError
 from app.services import insurance_portal
@@ -33,6 +36,9 @@ class PasswordResetConsume(BaseModel): token: str
 class ThreadCreate(BaseModel): household_id: int; person_id: int; subject: str; body: str
 class MessageCreate(BaseModel): body: str; attachment_document_ids: list[int] = Field(default_factory=list)
 class NotificationCreate(BaseModel): notification_type: str; title: str; body: Optional[str] = None; idempotency_key: str
+class ConsentAction(BaseModel): consent_type: str; version: str = "v1"; accepted: bool = True
+class ConsentWithdraw(BaseModel): consent_type: str
+class AppointmentRequest(BaseModel): person_id: int; household_id: int; preferred_window: str | None = None; reason: str | None = None
 
 @router.get("/portal/login", response_class=HTMLResponse)
 def portal_login(request: Request): return templates.TemplateResponse(request=request, name="portal/login.html", context={})
@@ -138,6 +144,95 @@ def api_portal_insurance_policy(policy_id: int, principal: PortalPrincipal = Dep
     if detail is None:
         raise HTTPException(404, "Policy not found")  # out-of-scope never discloses existence
     return detail
+
+
+# --- D.43 external surfaces (declared before the /portal/{page} catch-all). All minimized, reusing the
+# authoritative services; every mutation delegates. ---
+
+@router.get("/portal/financial", response_class=HTMLResponse)
+def portal_financial(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    return templates.TemplateResponse(request=request, name="portal/financial.html",
+                                      context={"summary": financial_summary(principal), "principal": principal})
+
+@router.get("/api/v1/portal/financial")
+def api_portal_financial(principal: PortalPrincipal = Depends(current_portal)):
+    return financial_summary(principal)
+
+@router.get("/portal/preferences", response_class=HTMLResponse)
+def portal_preferences(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    return templates.TemplateResponse(request=request, name="portal/preferences.html",
+        context={"consents": portal_consent.list_consents(principal.account_id), "principal": principal})
+
+@router.get("/api/v1/portal/consents")
+def api_portal_consents(principal: PortalPrincipal = Depends(current_portal)):
+    return {"consents": portal_consent.list_consents(principal.account_id)}
+
+@router.post("/api/v1/portal/consents", status_code=201)
+def api_portal_consent_record(payload: ConsentAction, request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    try:
+        cid = portal_consent.record_consent(principal.account_id, payload.consent_type, payload.version,
+                                            request_id=request.state.request_id, accepted=payload.accepted)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": cid, "consent_type": payload.consent_type, "version": payload.version, "accepted": payload.accepted}
+
+@router.post("/api/v1/portal/consents/withdraw", status_code=200)
+def api_portal_consent_withdraw(payload: ConsentWithdraw, request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    wid = portal_consent.withdraw_consent(principal.account_id, payload.consent_type, request_id=request.state.request_id)
+    if wid is None:
+        raise HTTPException(404, "No active consent to withdraw")
+    return {"id": wid, "consent_type": payload.consent_type, "state": "withdrawn"}
+
+@router.get("/portal/security", response_class=HTMLResponse)
+def portal_security(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    with engine.connect() as connection:
+        sessions = connection.execute(select(
+            portal_sessions.c.created_at, portal_sessions.c.last_seen_at, portal_sessions.c.expires_at,
+            portal_sessions.c.ip_address).where(
+            portal_sessions.c.portal_account_id == principal.account_id,
+            portal_sessions.c.revoked_at.is_(None)).order_by(portal_sessions.c.last_seen_at.desc()).limit(20)).mappings().all()
+    return templates.TemplateResponse(request=request, name="portal/security.html", context={
+        "sessions": [dict(s) for s in sessions],
+        "consents": portal_consent.list_consents(principal.account_id), "principal": principal})
+
+@router.get("/api/v1/portal/appointments")
+def api_portal_appointments(principal: PortalPrincipal = Depends(current_portal)):
+    # Upcoming appointments are the scheduling-owned calendar_event timeline already assembled by dashboard.
+    return {"meetings": [dict(m) for m in dashboard(principal)["meetings"]]}
+
+@router.post("/api/v1/portal/appointments/request", status_code=201)
+def api_portal_appointment_request(payload: AppointmentRequest, principal: PortalPrincipal = Depends(current_portal)):
+    try:
+        thread_id = portal_appointments.request_appointment(principal, person_id=payload.person_id,
+            household_id=payload.household_id, preferred_window=payload.preferred_window, reason=payload.reason)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"thread_id": thread_id, "status": "requested"}
+
+@router.get("/api/v1/portal/documents/{document_id}/download")
+def api_portal_document_download(document_id: int, principal: PortalPrincipal = Depends(current_portal)):
+    # File-security: resolve the document, enforce person scope under the documents grant, and stream from
+    # the authoritative document store only after the scope check. Out-of-scope never discloses existence.
+    with engine.connect() as connection:
+        row = connection.execute(select(documents.c.person_id, documents.c.storage_path,
+            documents.c.original_name, documents.c.content_type, documents.c.archived).where(
+            documents.c.id == document_id)).mappings().one_or_none()
+    if not row or row["archived"]:
+        raise HTTPException(404, "Document not found")
+    try:
+        require_scope(principal, person_id=row["person_id"], permission="documents")
+    except PermissionError as exc:
+        raise HTTPException(404, "Document not found") from exc  # scope denial does not reveal existence
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+    path = Path(row["storage_path"])
+    if not path.is_file():
+        raise HTTPException(404, "Document not found")
+    from app.portal import stats as _stats
+    _stats.note("downloads")
+    return FileResponse(str(path), media_type=row["content_type"] or "application/octet-stream",
+                        filename=row["original_name"])
 
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}

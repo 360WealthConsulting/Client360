@@ -56,6 +56,14 @@ consumer) so the model is complete and governable without changing behavior. See
 `docs/EVENT_REGISTRY.md` for the registry mechanics and `docs/DOMAIN_EVENT_PAYLOAD_SAFETY.md` for the
 references-only rules.
 
+## Client Portal (D.43)
+
+The Client Portal adds **no** domain-event contracts. It is an external composition + delegated-action
+surface: reads are not events, and every mutation delegates to the authoritative owning service, which is
+the producer of any lifecycle event. Portal activity is recorded on the append-only audit ledger
+(references only), not the transactional outbox — the portal never introduces a second event bus. See
+`docs/CLIENT_PORTAL_GOVERNANCE.md` and ADR-048.
+
 ## Adding a contract
 
 Append to `D35_CONTRACTS_SEED` (or the D.34 seed), add a seeding migration (single Alembic head), add a

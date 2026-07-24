@@ -1,0 +1,23 @@
+{% extends "portal/base.html" %}{% block title %}Financial Summary{% endblock %}{% block content %}
+<h1>Financial Summary</h1>
+{% if not summary.enabled %}
+<div class="empty">The financial summary is not currently available in your portal.</div>
+{% else %}
+{% if summary.total_value is not none %}
+<p class="summary-total">Total value across accounts: {{ '%.2f' | format(summary.total_value) }}</p>
+{% endif %}
+{% for a in summary.accounts %}
+<article class="work-card">
+  <h3>{{ a.account_name }}</h3>
+  <p>{{ a.custodian }} · Account {{ a.account_number_masked }}
+    {% if a.registration_type %} · {{ a.registration_type }}{% endif %}</p>
+  <p>{% if a.current_value is not none %}Value: {{ '%.2f' | format(a.current_value) }}{% else %}Value unavailable{% endif %}
+    {% if a.as_of %} · as of {{ a.as_of }}{% endif %}</p>
+</article>
+{% else %}
+<div class="empty">No accounts are available in your portal.</div>
+{% endfor %}
+<p class="fine-print">Values are as of the date shown and may not reflect the most recent activity. Contact
+your advisor with questions about your accounts.</p>
+{% endif %}
+{% endblock %}
