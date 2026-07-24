@@ -10,7 +10,7 @@
 
 meta:
   migration_head: m4p5o6r7t8c9      # `alembic heads` / `alembic current`
-  route_count: 884                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  route_count: 891                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"

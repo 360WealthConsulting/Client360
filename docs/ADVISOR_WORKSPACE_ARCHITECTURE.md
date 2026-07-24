@@ -9,6 +9,12 @@
 > 360 Knowledge sections and the dedicated `/knowledge` surface — connected entities + relationship
 > explanations composed over the authoritative relationship engine (not a graph database). See
 > [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and ADR-050.
+>
+> **D.46:** The advisor home gains an **Operational Intelligence panel** (`ws["operational_intelligence"]`)
+> and a dedicated `/recommendations` surface — explainable advisor recommendations composed over the
+> authoritative recommendation sources (the deterministic `advisor_intelligence` Signal engine + domain
+> observations + work queue), deterministic and rule-based (no ML). See
+> [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and ADR-051.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

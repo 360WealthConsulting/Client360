@@ -25,10 +25,14 @@ _LINKS = {
     "knowledge": lambda person_id=None, household_id=None, **k: (
         f"/knowledge?person_id={person_id}" if person_id
         else (f"/knowledge?household_id={household_id}" if household_id else "/knowledge")),
+    "recommendations": lambda person_id=None, household_id=None, **k: (
+        f"/recommendations?person_id={person_id}" if person_id
+        else (f"/recommendations?household_id={household_id}" if household_id else "/recommendations")),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
-          "communications": "Unified Engagement", "knowledge": "Knowledge Graph"}
+          "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
+          "recommendations": "Operational Intelligence"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -131,10 +135,22 @@ def _client(principal, person_id):
         klink = f"/knowledge?person_id={person_id}"
         facts.append(_fact("knowledge", "knowledge.connected_entities", ksum.get("connected", 0),
                            fact_class=DERIVED, deep_link=klink))
+    # Operational Intelligence — recommendation counts from the composed Client 360 section (AI SUMMARIZES
+    # existing recommendation contracts; it never invents recommendations).
+    reco = (ws.get("sections") or {}).get("recommendations") or {}
+    rsum = reco.get("summary") or {}
+    if rsum.get("enabled"):
+        rlink = f"/recommendations?person_id={person_id}"
+        facts.append(_fact("recommendations", "recommendations.count", rsum.get("total", 0),
+                           fact_class=DERIVED, deep_link=rlink))
+        if rsum.get("top"):
+            facts.append(_fact("recommendations", "recommendations.top",
+                               _safe_title(rsum["top"].get("title")), deep_link=rlink))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},
-                               {"label": "Open Knowledge", "href": f"/knowledge?person_id={person_id}"}])
+                               {"label": "Open Knowledge", "href": f"/knowledge?person_id={person_id}"},
+                               {"label": "Open Recommendations", "href": f"/recommendations?person_id={person_id}"}])
 
 
 def _household(principal, household_id):
@@ -169,6 +185,11 @@ def _household(principal, household_id):
     if ksum.get("enabled"):
         facts.append(_fact("knowledge", "knowledge.connected_entities", ksum.get("connected", 0),
                            fact_class=DERIVED, deep_link=f"/knowledge?household_id={household_id}"))
+    reco = (ws.get("sections") or {}).get("recommendations") or {}
+    rsum = reco.get("summary") or {}
+    if rsum.get("enabled"):
+        facts.append(_fact("recommendations", "recommendations.count", rsum.get("total", 0),
+                           fact_class=DERIVED, deep_link=f"/recommendations?household_id={household_id}"))
     return _bundle("household_brief", facts, ["Household 360"],
                    navigation=[{"label": "Open Household 360", "href": link}])
 

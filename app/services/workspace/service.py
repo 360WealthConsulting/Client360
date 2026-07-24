@@ -58,6 +58,14 @@ def get_workspace(principal, *, now=None) -> dict:
 
     dashboard = get_daily_dashboard(principal)
 
+    # Operational Intelligence panel (D.46) — a read-only composition over the authoritative recommendation
+    # sources. Guarded so a failure/gate-off never breaks the advisor home.
+    try:
+        from app.services.recommendations import workspace_recommendations
+        operational_intelligence = workspace_recommendations(principal)
+    except Exception:
+        operational_intelligence = {"enabled": False, "recommendations": [], "workload": {}}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -71,4 +79,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "active_preset_id": prefs.get("active_preset_id"),
         "can_personalize": principal.can("workspace.personalize"),
         "daily": dashboard,
+        "operational_intelligence": operational_intelligence,
     }

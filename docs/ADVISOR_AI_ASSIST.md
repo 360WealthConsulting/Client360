@@ -8,6 +8,11 @@
 > **D.45:** AI Assist also grounds on the knowledge graph — the **connected-entity count only**, sourced from
 > the composed Client 360 / Household 360 Knowledge section (never an unrestricted graph query; every
 > explanation cites its authoritative service). See [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and ADR-050.
+>
+> **D.46:** AI Assist also **summarizes** the operational-intelligence recommendations — the recommendation
+> **count** + top title, sourced from the composed Client 360 / Household 360 Recommendations section. It
+> only ever summarizes the recommendation contracts this layer emits; it never invents a recommendation. See
+> [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and ADR-051.
 
 Advisor AI Assist is a governed, **read-only** briefing surface that consumes the deterministic,
 scope-guarded summaries and snapshots already produced by D.38–D.41 (Advisor Workspace, Unified Work
