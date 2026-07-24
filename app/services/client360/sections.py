@@ -166,6 +166,18 @@ def timeline(principal, ctx):
     return {**result, "rows": [r.to_dict() if hasattr(r, "to_dict") else r for r in result["rows"]]}
 
 
+def communications(principal, ctx):
+    """Unified engagement summary for the client — recent interactions across every channel, composed by
+    the D.44 engagement layer over the authoritative subsystems (never a second store)."""
+    from app.services.communications.engagement import engagement_summary, engagement_timeline
+    pid, hid = _pid(ctx), _hid(ctx)
+    summary = engagement_summary(principal, person_id=pid, household_id=hid)
+    recent = engagement_timeline(principal, person_id=pid, household_id=hid, page=1, page_size=8)
+    rows = recent.get("rows", []) if recent else []
+    return {"summary": summary, "recent": rows, "source": "communications.engagement",
+            "not_a_second_store": True}
+
+
 def relationships(principal, ctx):
     """Household members + the read-only relationship graph (beneficiaries/trustees/businesses/
     employers/dependents/advisors) + assigned advisors."""

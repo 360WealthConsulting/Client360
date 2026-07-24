@@ -21,7 +21,7 @@ from app.services.client360.registry import SECTIONS, visible_quick_actions
 FIRM_CAPS = frozenset({
     "client.read", "tax.read", "insurance.read", "benefits.read", "opportunity.view", "documents.view",
     "compliance.review.read", "timeline.read", "advisor_work.read", "work.read", "scheduling.view",
-    "communications.read", "record.read_all", "observability.audit",
+    "communications.read", "communications.view", "record.read_all", "observability.audit",
 })
 FIRM = Principal(1, "m@e.com", "M", FIRM_CAPS)          # record.read_all → in scope for any client
 SCOPED = Principal(2, "s@e.com", "S", frozenset({"client.read"}))   # no read_all, no assignments
@@ -62,8 +62,8 @@ def _req(path="/client/1", qs=b""):
 
 # --- composition + contract --------------------------------------------------
 
-def test_registry_has_twelve_sections_with_builders():
-    assert len(SECTIONS) == 12
+def test_registry_has_thirteen_sections_with_builders():
+    assert len(SECTIONS) == 13  # +1 Communications (D.44 unified engagement)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 
@@ -220,7 +220,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 869
+    assert len(app.routes) == 877
 
 
 def test_page_renders_and_404_out_of_scope():

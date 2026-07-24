@@ -307,6 +307,13 @@ _DEFS = (
            False, sources.ai_assist_provider_failures),
     Metric("open_operational_tasks", "Open Operational Tasks", "operations", "count", "card", False,
            sources.open_operational_task_count),
+    # Unified Communications & Engagement (Phase D.44) — low-cardinality operational metrics.
+    Metric("engagement_interactions_composed", "Engagement Interactions Composed", "operations", "count",
+           "card", False, sources.engagement_interactions_composed),
+    Metric("engagement_searches", "Engagement Searches", "operations", "count", "card", False,
+           sources.engagement_searches),
+    Metric("engagement_adapter_failures", "Engagement Adapter Failures", "operations", "count", "card",
+           False, sources.engagement_adapter_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

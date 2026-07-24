@@ -997,3 +997,20 @@ def ai_assist_citation_coverage(principal):
 def ai_assist_provider_failures(principal) -> int:
     from app.services.ai_assist.common import assist_stats
     return int(assist_stats().get("provider_failures") or 0)
+
+
+# --- Unified Communications & Engagement (Phase D.44) — low-cardinality in-process counters ---
+
+def engagement_interactions_composed(principal) -> int:
+    from app.services.communications.engagement.metrics import interactions_composed_count
+    return interactions_composed_count(principal)
+
+
+def engagement_searches(principal) -> int:
+    from app.services.communications.engagement.metrics import engagement_search_count
+    return engagement_search_count(principal)
+
+
+def engagement_adapter_failures(principal) -> int:
+    from app.services.communications.engagement.metrics import engagement_adapter_failure_count
+    return engagement_adapter_failure_count(principal)

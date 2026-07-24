@@ -1,5 +1,10 @@
 # Client360 — Advisor Workspace Architecture (Phase D)
 
+> **D.44:** The advisor surfaces expose a unified engagement view via the Client 360 / Household 360
+> **Communications** sections and the dedicated `/engagement` surface, composed by the D.44 engagement layer
+> over the authoritative activity timeline (no second store). See
+> [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md) and ADR-049.
+
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
 > redaction models, and extension points), see **`docs/PLATFORM_ARCHITECTURE.md`** (Phase D.12A).

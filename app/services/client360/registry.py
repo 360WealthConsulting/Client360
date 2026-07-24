@@ -30,6 +30,7 @@ SECTIONS = (
     SectionDef("documents", "Documents", "documents.view", sections.documents),
     SectionDef("meetings", "Meetings", None, sections.meetings),
     SectionDef("compliance", "Compliance", "compliance.review.read", sections.compliance),
+    SectionDef("communications", "Communications", "communications.view", sections.communications),
     SectionDef("timeline", "Activity", "timeline.read", sections.timeline),
     SectionDef("relationships", "Relationships", None, sections.relationships),
     SectionDef("work", "Work", "advisor_work.read", sections.work),

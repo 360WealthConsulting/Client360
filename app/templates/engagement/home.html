@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Engagement | Client360{% endblock %}
+{% block crumb %}Engagement{% endblock %}
+{% block content %}
+{% call ui.page_head("Unified engagement", eyebrow="Communications", desc="One interaction history across every channel — composed from the authoritative subsystems, never a second store.") %}{% endcall %}
+
+{% if result is none %}
+<p class="subtle">Open a client or household to see their unified engagement timeline. Every interaction —
+secure messages, emails, appointments, documents, requests, signatures, notifications — is shown here from
+its authoritative source, with a deep link back to act on it.</p>
+{% else %}
+<form method="get" class="filters" aria-label="Filter interactions">
+  <input type="hidden" name="{{ 'person_id' if anchor.startswith('person') else 'household_id' }}" value="{{ anchor.split(':')[1] }}">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Search interactions" aria-label="Search">
+  <input type="text" name="interaction_type" value="{{ filters.interaction_type }}" placeholder="Type (e.g. email)" aria-label="Interaction type">
+  <button type="submit">Filter</button>
+</form>
+<p class="subtle">{{ result.total }} interaction(s){% if result.suppressed %} · {{ result.suppressed }} filtered{% endif %} · page {{ result.page }} of {{ result.pages or 1 }}</p>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>When</th><th>Type</th><th>Subject</th><th>Direction</th><th></th></tr></thead>
+    <tbody>
+    {% for i in result.rows %}
+      <tr>
+        <td class="subtle">{{ i.timestamp or "—" }}</td>
+        <td>{{ ui.badge(i.interaction_type.replace('_',' '), 'good' if i.action_required else '') }}{% if i.unread %} {{ ui.badge('unread','warn') }}{% endif %}</td>
+        <td>{{ i.subject }}{% if i.attachments_available %} 📎{% endif %}</td>
+        <td class="subtle">{{ i.direction.replace('_',' ') }}</td>
+        <td>{% if i.deep_link %}<a class="btn secondary" href="{{ i.deep_link }}">Open</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="subtle">No interactions found.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

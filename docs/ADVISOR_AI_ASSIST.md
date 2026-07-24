@@ -1,5 +1,10 @@
 # Advisor AI Assist (Phase D.42)
 
+> **D.44:** AI Assist now grounds on the unified engagement summary (recent-interaction / unread /
+> action-required **counts only**, never message bodies), sourced from the composed Client 360 / Household
+> 360 Communications sections — preserving the "reuse summaries, no raw domain fan-out" invariant. See
+> [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md) and ADR-049.
+
 Advisor AI Assist is a governed, **read-only** briefing surface that consumes the deterministic,
 scope-guarded summaries and snapshots already produced by D.38–D.41 (Advisor Workspace, Unified Work
 Queue, Client 360, Household 360, meeting brief). It helps an advisor understand the day, prepare for a

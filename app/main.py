@@ -55,6 +55,7 @@ from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
 from app.routes.portal import router as portal_router
 from app.routes.portal_admin import router as portal_admin_router
+from app.routes.engagement import router as engagement_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -221,6 +222,7 @@ app.include_router(tax_returns_router)
 app.include_router(tax_documents_router)
 app.include_router(portal_router)
 app.include_router(portal_admin_router)
+app.include_router(engagement_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

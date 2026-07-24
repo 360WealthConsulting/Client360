@@ -19,9 +19,13 @@ _LINKS = {
     "client360": lambda person_id=None, **k: f"/client/{person_id}" if person_id else "/client",
     "household360": lambda household_id=None, **k: f"/client/household/{household_id}" if household_id else "/client",
     "meeting_brief": lambda person_id=None, **k: f"/workspace/meetings/{person_id}" if person_id else "/workspace",
+    "communications": lambda person_id=None, household_id=None, **k: (
+        f"/engagement?person_id={person_id}" if person_id
+        else (f"/engagement?household_id={household_id}" if household_id else "/engagement")),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
-          "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief"}
+          "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
+          "communications": "Unified Engagement"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -105,8 +109,20 @@ def _client(principal, person_id):
     facts.append(_fact("client360", "meetings.next_activity",
                        (s.get("next_activity") or {}).get("title") if s.get("next_activity") else "None",
                        deep_link=link))
+    # Unified engagement summary — sourced from the composed Client 360 section (no raw domain fan-out);
+    # counts only, never message bodies/subjects.
+    comms = (ws.get("sections") or {}).get("communications") or {}
+    csum = comms.get("summary") or {}
+    if csum.get("enabled"):
+        clink = f"/engagement?person_id={person_id}"
+        facts.append(_fact("communications", "communications.recent_interactions", csum.get("total", 0),
+                           deep_link=clink))
+        facts.append(_fact("communications", "communications.unread", csum.get("unread", 0), deep_link=clink))
+        facts.append(_fact("communications", "communications.action_required",
+                           csum.get("action_required", 0), deep_link=clink))
     return _bundle("client_brief", facts, ["Client 360"],
-                   navigation=[{"label": "Open Client 360", "href": link}])
+                   navigation=[{"label": "Open Client 360", "href": link},
+                               {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"}])
 
 
 def _household(principal, household_id):
@@ -129,6 +145,13 @@ def _household(principal, household_id):
         _fact("household360", "compliance.items", s.get("compliance_items"), deep_link=link),
         _fact("household360", "relationships.businesses", s.get("connected_businesses"), deep_link=link),
     ]
+    comms = (ws.get("sections") or {}).get("communications") or {}
+    csum = comms.get("summary") or {}
+    if csum.get("enabled"):
+        clink = f"/engagement?household_id={household_id}"
+        facts.append(_fact("communications", "communications.recent_interactions", csum.get("total", 0),
+                           deep_link=clink))
+        facts.append(_fact("communications", "communications.unread", csum.get("unread", 0), deep_link=clink))
     return _bundle("household_brief", facts, ["Household 360"],
                    navigation=[{"label": "Open Household 360", "href": link}])
 

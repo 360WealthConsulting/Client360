@@ -200,6 +200,19 @@ def api_portal_appointments(principal: PortalPrincipal = Depends(current_portal)
     # Upcoming appointments are the scheduling-owned calendar_event timeline already assembled by dashboard.
     return {"meetings": [dict(m) for m in dashboard(principal)["meetings"]]}
 
+@router.get("/portal/engagement", response_class=HTMLResponse)
+def portal_engagement_page(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    # Unified recent-interactions surface for the client — composed from the D.43 portal scoped reads by
+    # the D.44 engagement layer (no new portal subsystem). Gated by portal.timeline.enabled (opt-in).
+    from app.services.communications.engagement import portal_engagement
+    return templates.TemplateResponse(request=request, name="portal/engagement.html",
+                                      context={"engagement": portal_engagement(principal), "principal": principal})
+
+@router.get("/api/v1/portal/engagement")
+def api_portal_engagement(principal: PortalPrincipal = Depends(current_portal)):
+    from app.services.communications.engagement import portal_engagement
+    return portal_engagement(principal)
+
 @router.post("/api/v1/portal/appointments/request", status_code=201)
 def api_portal_appointment_request(payload: AppointmentRequest, principal: PortalPrincipal = Depends(current_portal)):
     try:

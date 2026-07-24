@@ -33,6 +33,7 @@ HOUSEHOLD_SECTIONS = (
     ("documents", "documents.view"),
     ("meetings", None),
     ("compliance", "compliance.review.read"),
+    ("communications", "communications.view"),
     ("work", "work.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
@@ -326,6 +327,17 @@ def _timeline(principal, ctx):
     return {**result, "rows": deduped, "dedup_count": len(rows) - len(deduped)}
 
 
+def _communications(principal, ctx):
+    """Household unified engagement summary — composed by the D.44 engagement layer over the household's
+    authoritative activity timeline (member-merged, deduped). Never a second store."""
+    from app.services.communications.engagement import engagement_summary, engagement_timeline
+    hid = ctx["household_id"]
+    summary = engagement_summary(principal, household_id=hid)
+    recent = engagement_timeline(principal, household_id=hid, page=1, page_size=8)
+    return {"summary": summary, "recent": recent.get("rows", []) if recent else [],
+            "source": "communications.engagement", "not_a_second_store": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -370,7 +382,8 @@ _SECTION_BUILDERS = {
     "summary": _summary, "members": _members, "financial": _financial, "tax": _tax,
     "insurance": _insurance, "benefits": _benefits, "opportunities": _opportunities,
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
-    "work": _work, "timeline": _timeline, "relationships": _relationships,
+    "communications": _communications, "work": _work, "timeline": _timeline,
+    "relationships": _relationships,
 }
 
 

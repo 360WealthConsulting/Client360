@@ -12,6 +12,11 @@
 > [`CLIENT_PORTAL_GOVERNANCE.md`](CLIENT_PORTAL_GOVERNANCE.md),
 > [`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md), and
 > [`ADR-048`](adr/ADR-048-secure-client-portal.md).
+>
+> **Phase D.44** added a client **recent activity** surface (`/portal/engagement`) — a unified
+> recent-interactions view composed from these existing portal reads by the D.44 engagement layer (no new
+> portal subsystem; OFF by default behind `portal.timeline.enabled`). See
+> [`ENGAGEMENT_TIMELINE.md`](ENGAGEMENT_TIMELINE.md) and [`ADR-049`](adr/ADR-049-unified-communications.md).
 
 ## Architecture
 

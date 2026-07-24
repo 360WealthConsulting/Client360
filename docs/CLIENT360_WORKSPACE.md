@@ -1,5 +1,10 @@
 # Client 360 Workspace (Phase D.40)
 
+> **D.44:** Client 360 gains a **Communications** section — a unified engagement summary + recent
+> interactions across every channel, composed by the D.44 engagement layer over the authoritative
+> subsystems (never a second store). See [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md)
+> and [`ENGAGEMENT_TIMELINE.md`](ENGAGEMENT_TIMELINE.md).
+
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
 surface** over the authoritative domain services; it is **not** a second client database and never the
