@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Supervisory Operations | Client360{% endblock %}
+{% block crumb %}Supervisory Operations{% endblock %}
+{% block content %}
+{% call ui.page_head("Supervisory operations", eyebrow="Compliance", desc="A read-only supervisory view composed from the authoritative compliance, review, exception, and licensing services. Every item deep-links to its authoritative workflow — this is not a second compliance engine.") %}{% endcall %}
+
+{% if not result.enabled %}
+<div class="empty">Supervisory operations are not currently available.</div>
+{% else %}
+<p class="subtle">{{ result.counts.open_reviews }} open review(s) · {{ result.counts.pending_approvals }} pending approval(s) · {{ result.counts.blocked }} blocked · {{ result.counts.open_exceptions }} exception(s)
+{% if result.workload %} · workload: {{ result.workload.my_overdue }} overdue, {{ result.workload.sla_breaches }} SLA breaches{% endif %}</p>
+
+<h2 class="section-title">Open reviews</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Priority</th><th>Type</th><th>Review</th><th>Status</th><th>Reviewer</th><th>Action</th><th></th></tr></thead>
+    <tbody>
+    {% for r in result.reviews %}
+      <tr>
+        <td>{{ ui.badge(r.priority, 'warn' if r.priority in ('critical','high') else '') }}</td>
+        <td>{{ r.review_type.replace('_',' ') }}</td>
+        <td>{{ r.title }}</td>
+        <td class="subtle">{{ r.status.replace('_',' ') }}</td>
+        <td class="subtle">{{ r.required_reviewer }}</td>
+        <td>{{ r.recommended_action }}</td>
+        <td>{% if r.deep_link %}<a class="btn secondary" href="{{ r.deep_link }}">Open</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="subtle">No open reviews.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">Compliance exceptions</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Severity</th><th>Type</th><th>Exception</th><th>Owner</th><th>Escalation</th><th></th></tr></thead>
+    <tbody>
+    {% for e in result.exceptions %}
+      <tr>
+        <td>{{ ui.badge(e.severity, 'warn' if e.severity in ('critical','blocker','high') else '') }}</td>
+        <td>{{ e.exception_type.replace('_',' ') }}</td>
+        <td>{{ e.title }}</td>
+        <td class="subtle">{{ e.owner }}</td>
+        <td class="subtle">{{ e.escalation }}</td>
+        <td>{% if e.deep_link %}<a class="btn secondary" href="{{ e.deep_link }}">Open</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="subtle">No compliance exceptions.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

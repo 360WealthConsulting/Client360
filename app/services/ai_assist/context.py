@@ -28,11 +28,13 @@ _LINKS = {
     "recommendations": lambda person_id=None, household_id=None, **k: (
         f"/recommendations?person_id={person_id}" if person_id
         else (f"/recommendations?household_id={household_id}" if household_id else "/recommendations")),
+    "compliance_intelligence": lambda person_id=None, household_id=None, **k: (
+        f"/supervision?person_id={person_id}" if person_id else "/supervision"),
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
           "communications": "Unified Engagement", "knowledge": "Knowledge Graph",
-          "recommendations": "Operational Intelligence"}
+          "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -146,6 +148,17 @@ def _client(principal, person_id):
         if rsum.get("top"):
             facts.append(_fact("recommendations", "recommendations.top",
                                _safe_title(rsum["top"].get("title")), deep_link=rlink))
+    # Supervisory compliance oversight — SUMMARIZED counts only, and only when the composed section is
+    # present (it builds only for a compliance.supervise holder), so supervisory facts never reach an
+    # advisor. AI never approves/waives/suppresses/invents — it only summarizes the counts this layer emits.
+    comp = (ws.get("sections") or {}).get("compliance_summary") or {}
+    csup = comp.get("summary") or {}
+    if csup.get("enabled") and csup.get("supervisor"):
+        slink = f"/supervision?person_id={person_id}"
+        facts.append(_fact("compliance_intelligence", "compliance.open_reviews_supervisory",
+                           csup.get("open_reviews", 0), deep_link=slink))
+        facts.append(_fact("compliance_intelligence", "compliance.open_exceptions",
+                           csup.get("open_exceptions", 0), deep_link=slink))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

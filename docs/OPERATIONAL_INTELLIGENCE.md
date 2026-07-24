@@ -60,6 +60,13 @@ Advisor Workspace gains an **Operational Intelligence panel**; Client 360 + Hous
 recommendations). The client portal is unchanged (D.43 reuse only — no recommendation generation). See
 [`RECOMMENDATION_GOVERNANCE.md`](RECOMMENDATION_GOVERNANCE.md).
 
+## Relationship to supervisory compliance (D.47)
+The D.47 Compliance Intelligence layer composes over the `governed_recommendation` category this layer emits
+(among the authoritative compliance engines) to build the supervisor-only view. The advisor-visible
+compliance TASKS surfaced in the Advisor Workspace are exactly this layer's governed recommendations —
+supervisory findings are never exposed to advisors. See
+[`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md) and ADR-052.
+
 ## References
 `app/services/recommendations/*`, `app/routes/recommendations.py`, `docs/platform_architecture_manifest.yaml`,
 `tests/test_operational_intelligence.py`, ADR-051.

@@ -66,6 +66,14 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         operational_intelligence = {"enabled": False, "recommendations": [], "workload": {}}
 
+    # Advisor-visible compliance tasks (D.47) — the NON-supervisory projection: only the governed advisor
+    # compliance recommendations, never supervisory-only findings/reviewer identities/approval state.
+    try:
+        from app.services.compliance_intelligence import advisor_compliance_tasks
+        compliance_tasks = advisor_compliance_tasks(principal)
+    except Exception:
+        compliance_tasks = {"enabled": False, "tasks": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -80,4 +88,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "can_personalize": principal.can("workspace.personalize"),
         "daily": dashboard,
         "operational_intelligence": operational_intelligence,
+        "compliance_tasks": compliance_tasks,
     }

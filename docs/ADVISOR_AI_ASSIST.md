@@ -13,6 +13,11 @@
 > **count** + top title, sourced from the composed Client 360 / Household 360 Recommendations section. It
 > only ever summarizes the recommendation contracts this layer emits; it never invents a recommendation. See
 > [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and ADR-051.
+>
+> **D.47:** For a compliance **supervisor** (a `compliance.supervise` holder), AI Assist also summarizes
+> supervisory counts (open reviews / open exceptions) sourced from the composed Compliance Oversight section
+> — counts only. It never approves, waives, suppresses, or invents a compliance finding, and it emits no
+> supervisory facts for a non-supervisor. See [`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md) and ADR-052.
 
 Advisor AI Assist is a governed, **read-only** briefing surface that consumes the deterministic,
 scope-guarded summaries and snapshots already produced by D.38–D.41 (Advisor Workspace, Unified Work

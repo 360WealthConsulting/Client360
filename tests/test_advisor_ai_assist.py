@@ -265,7 +265,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 891
+    assert len(app.routes) == 898
 
 
 def test_brief_route_404_out_of_scope():

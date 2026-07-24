@@ -36,6 +36,7 @@ HOUSEHOLD_SECTIONS = (
     ("communications", "communications.view"),
     ("knowledge", None),
     ("recommendations", None),
+    ("compliance_summary", "compliance.supervise"),
     ("work", "work.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
@@ -369,6 +370,21 @@ def _recommendations(principal, ctx):
             "not_a_second_engine": True}
 
 
+def _compliance_summary(principal, ctx):
+    """Household supervisory compliance oversight — aggregated across members (deduplicated), composed by the
+    D.47 compliance-intelligence layer. Supervisor-only (gated by compliance.supervise); never a second
+    compliance engine, never mutates."""
+    from app.services.compliance_intelligence import compliance_summary as _summary
+    from app.services.compliance_intelligence import household_compliance
+    hid = ctx["household_id"]
+    summary = _summary(principal, household_id=hid)
+    result = household_compliance(principal, hid)
+    return {"summary": summary,
+            "reviews": result.get("reviews", []) if result else [],
+            "exceptions": result.get("exceptions", []) if result else [],
+            "source": "compliance_intelligence", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -414,7 +430,8 @@ _SECTION_BUILDERS = {
     "insurance": _insurance, "benefits": _benefits, "opportunities": _opportunities,
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
-    "work": _work, "timeline": _timeline, "relationships": _relationships,
+    "compliance_summary": _compliance_summary, "work": _work, "timeline": _timeline,
+    "relationships": _relationships,
 }
 
 

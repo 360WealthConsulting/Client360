@@ -15,6 +15,12 @@
 > composed by the D.46 operational-intelligence layer over the authoritative recommendation sources (never a
 > second recommendation engine, no ML). See [`OPERATIONAL_INTELLIGENCE.md`](OPERATIONAL_INTELLIGENCE.md) and
 > [`ADR-051`](adr/ADR-051-operational-intelligence.md).
+>
+> **D.47:** Client 360 also gains a supervisor-only **Compliance Oversight** section (gated by
+> `compliance.supervise`) — the client's open reviews, supervisory status, and outstanding exceptions,
+> composed by the D.47 compliance-intelligence layer (never a second compliance engine). Advisors without the
+> capability never see it. See [`COMPLIANCE_INTELLIGENCE.md`](COMPLIANCE_INTELLIGENCE.md) and
+> [`ADR-052`](adr/ADR-052-compliance-intelligence.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

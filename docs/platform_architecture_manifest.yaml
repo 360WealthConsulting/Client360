@@ -9,9 +9,9 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: m4p5o6r7t8c9      # `alembic heads` / `alembic current`
-  route_count: 891                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
-  production_capability_count: 157    # seeded capabilities excluding e2_2.cap.* test fixtures
+  migration_head: n5s6u7p8v9w0      # `alembic heads` / `alembic current`
+  route_count: 898                  # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
     migration_head: "alembic heads"
@@ -191,7 +191,8 @@ capabilities:
   exceptions: [exception.read, exception.write, exception.resolve, exception.compliance]
   advisor_work: [advisor_work.read, advisor_work.create, advisor_work.assign, advisor_work.update]
   compliance: [compliance.review.read, compliance.review.submit, compliance.review.assign,
-               compliance.review.decide, compliance.authority.read, compliance.authority.manage]
+               compliance.review.decide, compliance.authority.read, compliance.authority.manage,
+               compliance.supervise]
   timeline: [timeline.read]
   annual_review: [annual_review.read, annual_review.create, annual_review.update]
   business_owner: [business_owner.read, business_owner.update, business_owner.planning_update]

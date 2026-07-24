@@ -1058,3 +1058,27 @@ def recommendation_compositions(principal) -> int:
 def recommendation_adapter_failures(principal) -> int:
     from app.services.recommendations.metrics import recommendation_adapter_failures as _r
     return _r(principal)
+
+
+# --- Compliance Intelligence / supervisory operations (Phase D.47) — low-cardinality in-process counters ---
+
+def supervisory_reviews_composed(principal) -> int:
+    from app.services.compliance_intelligence.metrics import supervisory_reviews_composed as _r
+    return _r(principal)
+
+
+def supervisory_exceptions_composed(principal) -> int:
+    from app.services.compliance_intelligence.metrics import supervisory_exceptions_composed as _r
+    return _r(principal)
+
+
+def supervisory_dashboards(principal) -> int:
+    from app.services.compliance_intelligence.metrics import supervisory_dashboards as _r
+    return _r(principal)
+
+
+def supervisory_authorization_failures(principal) -> int:
+    from app.services.compliance_intelligence.metrics import (
+        supervisory_authorization_failures as _r,
+    )
+    return _r(principal)
