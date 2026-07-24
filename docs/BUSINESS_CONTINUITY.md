@@ -90,3 +90,10 @@ read-only, `observability.view`. It never backs up, restores, or alters infrastr
 remains the authoritative owner (backup / restore / DR themselves stay `not_configured`). See
 [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
 [ADR-063](adr/ADR-063-enterprise-risk-management.md).
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) composes this layer's
+`continuity_summary` for its business-continuity evidence class — read-only, `observability.view`. Backup /
+restore evidence stays `not_configured` (no authoritative owner). It never alters infrastructure; Business
+Continuity remains the authoritative owner. See
+[REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

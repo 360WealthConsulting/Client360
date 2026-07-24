@@ -77,3 +77,9 @@ panels (open incidents, findings, access warnings) — read-only, `security.view
 acknowledges, or resolves an incident; Security Operations + `security/incidents.py` remain the authoritative
 owners. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
 [ADR-063](adr/ADR-063-enterprise-risk-management.md).
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) composes this layer's
+`security_summary` for its cybersecurity- and access-review evidence classes — read-only, `security.view`. It
+never authenticates or alters anything; Security Operations remains the authoritative owner. See
+[REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

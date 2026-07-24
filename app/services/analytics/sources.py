@@ -1326,3 +1326,25 @@ def risk_panel_failures(principal) -> int:
 def risk_authorization_failures(principal) -> int:
     from app.services.enterprise_risk.metrics import risk_authorization_failures as _r
     return _r(principal)
+
+
+# --- Regulatory Examination Readiness (Phase D.59) — low-cardinality in-process counters ---
+
+def readiness_dashboards_composed(principal) -> int:
+    from app.services.regulatory_readiness.metrics import readiness_dashboards_composed as _r
+    return _r(principal)
+
+
+def readiness_panels_composed(principal) -> int:
+    from app.services.regulatory_readiness.metrics import readiness_panels_composed as _r
+    return _r(principal)
+
+
+def readiness_panel_failures(principal) -> int:
+    from app.services.regulatory_readiness.metrics import readiness_panel_failures as _r
+    return _r(principal)
+
+
+def readiness_authorization_failures(principal) -> int:
+    from app.services.regulatory_readiness.metrics import readiness_authorization_failures as _r
+    return _r(principal)

@@ -109,3 +109,11 @@ panel/{key}, metrics}` + `/enterprise-risk/diagnostics`.
 See [ENTERPRISE_RISK_REGISTRY.md](ENTERPRISE_RISK_REGISTRY.md), [CONTROL_REGISTRY.md](CONTROL_REGISTRY.md),
 [ASSURANCE_REGISTRY.md](ASSURANCE_REGISTRY.md), [RISK_GOVERNANCE.md](RISK_GOVERNANCE.md), and
 [ADR-063](adr/ADR-063-enterprise-risk-management.md).
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) is the examination-readiness /
+evidence-governance sibling of this layer — it composes the same authoritative owners (Compliance, Exception
+Engine, Document Intelligence, Security, Vendor, Continuity, Financial) but frames them as *evidence for
+regulatory obligations + certification sign-off*, and adds honest `not_configured` filing / examination areas
+and blocked certifications. Two read-only composition views, neither a second store; operational readiness is
+not regulatory certification. See [REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

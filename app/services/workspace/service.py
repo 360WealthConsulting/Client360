@@ -179,6 +179,17 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         enterprise_risk = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Regulatory Readiness panel (D.59) — a read-only operational-readiness summary (derived readiness coverage
+    # + evidence availability + documentation gaps + unresolved findings + blocked certifications + licensing +
+    # stale evidence) composed over the authoritative Compliance / Document / Exception / Licensing owners.
+    # Guarded so a gate-off never breaks home; this panel never mutates anything. Operational readiness does
+    # NOT constitute regulatory certification, and an absent finding is never compliance.
+    try:
+        from app.services.regulatory_readiness import readiness_summary
+        regulatory_readiness = readiness_summary(principal)
+    except Exception:
+        regulatory_readiness = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -205,4 +216,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "technology_vendor_health": technology_vendor_health,
         "financial_performance": financial_performance,
         "enterprise_risk": enterprise_risk,
+        "regulatory_readiness": regulatory_readiness,
     }

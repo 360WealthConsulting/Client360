@@ -73,3 +73,10 @@ The D.51 Automation Orchestration layer catalogs a `document_collection` automat
 `document_platform`, trigger source `document`) and composes document-driven workflow status alongside the
 other authoritative engines — read-only, never a second workflow engine. See
 [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and ADR-056.
+
+**Related (D.59):** the **Regulatory Readiness** layer (`/regulatory-readiness`) composes this layer's
+`document_summary` + `client_documents` / `household_documents` for its evidence-completeness / retention /
+documentation-gap panels and its record-scoped client/household evidence sections — read-only, `documents.view`.
+It never modifies a document or changes retention; Document Intelligence remains the authoritative owner. See
+[REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
+[ADR-064](adr/ADR-064-regulatory-examination-readiness.md).

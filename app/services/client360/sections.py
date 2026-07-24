@@ -363,6 +363,20 @@ def risk_controls(principal, ctx):
             "source": "enterprise_risk.client_risk_controls", "not_a_second_engine": True}
 
 
+def evidence_readiness(principal, ctx):
+    """A compact evidence-&-supervisory-readiness summary for this client (D.59) — client-relevant, authorized
+    evidence signals (documentation completeness, open client-specific compliance exceptions, suitability /
+    replacement / workflow-approval evidence via open reviews) composed read-only from ONLY the authoritative
+    owners that support per-client record scope. Firm-wide examination posture, firm-wide incidents, unrelated
+    supervisory findings, other clients' evidence, and confidential regulator information are never exposed.
+    Counts + status only, never a payload; deep-links to the authoritative surface. Never a second compliance/
+    evidence engine; operational readiness is not regulatory certification."""
+    from app.services.regulatory_readiness import client_evidence_readiness
+    pid = _pid(ctx)
+    return {**(client_evidence_readiness(principal, pid) if pid else {"enabled": False, "signals": {}}),
+            "source": "regulatory_readiness.client_evidence_readiness", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

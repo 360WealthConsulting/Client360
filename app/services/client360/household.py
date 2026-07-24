@@ -49,6 +49,7 @@ HOUSEHOLD_SECTIONS = (
     ("technology_dependencies", "integration.view"),
     ("financial_relationship", "analytics.executive"),
     ("risk_controls", "compliance.supervise"),
+    ("evidence_readiness", "compliance.supervise"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -518,6 +519,19 @@ def _risk_controls(principal, ctx):
             "source": "enterprise_risk.household_risk_controls", "not_a_second_engine": True}
 
 
+def _evidence_readiness(principal, ctx):
+    """Household evidence-&-supervisory-readiness summary (D.59) — authorized member- and household-level
+    evidence signals (documentation completeness) aggregated read-only across members from ONLY the
+    authoritative owners that support record scope; shared household documents are deduplicated by composing
+    the household-scoped owner reads. Counts + status only; never a payload; never exposes firm-wide
+    examination information; never a second compliance/evidence engine; operational readiness is not regulatory
+    certification."""
+    from app.services.regulatory_readiness import household_evidence_readiness
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_evidence_readiness(principal, ctx["household_id"], member_ids),
+            "source": "regulatory_readiness.household_evidence_readiness", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -569,6 +583,7 @@ _SECTION_BUILDERS = {
     "external_integrations": _external_integrations, "security_access": _security_access,
     "business_continuity": _business_continuity, "technology_dependencies": _technology_dependencies,
     "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
+    "evidence_readiness": _evidence_readiness,
     "timeline": _timeline, "relationships": _relationships,
 }
 

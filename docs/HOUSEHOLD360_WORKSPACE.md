@@ -86,6 +86,15 @@
 > Counts + status only — never a payload; never a second GRC/risk engine; an absent signal never certifies
 > compliance. See [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and
 > [`ADR-063`](adr/ADR-063-enterprise-risk-management.md).
+>
+> **D.59:** Household 360 also gains an **Evidence & Supervisory Readiness** section (gated by
+> `compliance.supervise`) — authorized member- and household-level evidence signals (documentation completeness)
+> aggregated by the D.59 regulatory-readiness layer over ONLY the authoritative owners that support record
+> scope; shared household documents are deduplicated by composing the household-scoped owner reads. Counts +
+> status only — never a payload; never exposes firm-wide examination information; never a second
+> compliance/evidence engine; operational readiness is not regulatory certification. See
+> [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and
+> [`ADR-064`](adr/ADR-064-regulatory-examination-readiness.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

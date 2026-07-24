@@ -197,6 +197,13 @@ DASHBOARD_REGISTRY = (
        ("compliance_workload", "operational_health", "runtime_health"),
        ("analytics.view",), "/enterprise-risk",
        ("compliance", "runtime", "recommendations")),
+    # Regulatory Readiness & Evidence (D.59) — the executive view of examination readiness, composed from
+    # EXISTING widgets (compliance workload + documentation gaps + operational health, no new widget). The
+    # full readiness surface lives at /regulatory-readiness.
+    _d("regulatory_readiness_evidence", "executive_intelligence", "executive", "executive_dashboard.enabled",
+       ("compliance_workload", "operational_health", "runtime_health"),
+       ("analytics.view",), "/regulatory-readiness",
+       ("compliance", "recommendations", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

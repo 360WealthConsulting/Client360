@@ -97,6 +97,15 @@
 > Financial owners. Counts + status + severity distributions + coverage only — never sensitive evidence; the
 > panel never mutates anything and an absent finding never certifies compliance. The full risk dashboards live
 > at `/enterprise-risk`. See [`ENTERPRISE_RISK_MANAGEMENT.md`](ENTERPRISE_RISK_MANAGEMENT.md) and ADR-063.
+>
+> **D.59:** The advisor home also carries a **Regulatory Readiness** panel (`ws["regulatory_readiness"]`) —
+> the firm operational-readiness summary (derived readiness coverage + evidence availability + documentation
+> gaps + unresolved findings + blocked certifications + licensing + stale evidence) composed by the D.59
+> regulatory-readiness layer over the authoritative Compliance / Document / Exception / Licensing owners. Counts
+> + status + coverage + freshness only — never sensitive evidence; the panel never mutates anything. **Operational
+> readiness does NOT constitute regulatory certification**, and an absent finding is never compliance. The full
+> readiness dashboards live at `/regulatory-readiness`. See
+> [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and ADR-064.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
