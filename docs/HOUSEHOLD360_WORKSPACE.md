@@ -35,6 +35,17 @@
 > composed by the D.50 document-intelligence layer over the authoritative Document Platform entity read.
 > Counts + status only — never document content; never a second DMS. See
 > [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and [`ADR-055`](adr/ADR-055-document-intelligence.md).
+>
+> **D.51:** Household 360 also gains an **Automation History** section (gated by `automation.view`) — a
+> household-scoped workflow count rollup composed by the D.51 automation-orchestration layer (never a second
+> workflow engine). See [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and
+> [`ADR-056`](adr/ADR-056-automation-orchestration.md).
+>
+> **D.52:** Household 360 also gains a **Data Governance** section (gated by `governance.view`) — aggregated
+> household provenance (source-lineage record counts across members) composed by the D.52 data-governance
+> layer over the authoritative person lineage. Counts + source systems only — never a payload; never
+> merges/duplicates an identity; never a second master-data store. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md)
+> and [`ADR-057`](adr/ADR-057-data-governance.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

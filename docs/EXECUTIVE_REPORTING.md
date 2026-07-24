@@ -76,6 +76,12 @@ Orchestration layer (firm-wide automation inventory/workflow/trigger/execution/p
 `app/services/automation_orchestration/`; see [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and
 ADR-056.
 
+**Data Governance (D.52):** the registry gains a `data_governance` executive dashboard composed from
+**existing** widgets (`compliance_workload`, `operational_health`, `runtime_health`) — no new widget — whose
+navigation deep-links to the full data-governance surface at `/data-governance`. The dedicated Data Governance
+layer (firm-wide master data / stewardship / lineage / ownership / duplicate / validation / data quality)
+lives in `app/services/data_governance/`; see [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and ADR-057.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

@@ -283,6 +283,17 @@ def automation_history(principal, ctx):
             "source": "automation_orchestration.client_automation", "not_a_second_engine": True}
 
 
+def data_governance(principal, ctx):
+    """A compact data-governance summary for this client (D.52) — composed read-only from the authoritative
+    person lineage (governance.mdm.person_lineage, which reads person_source_links — never duplicated).
+    Counts + source systems only, never a payload; deep-links to the authoritative governance surface. Never
+    merges/alters an identity; never a second master-data/identity store."""
+    from app.services.data_governance import client_governance
+    pid = _pid(ctx)
+    return {**(client_governance(principal, pid) if pid else {"enabled": False, "lineage_records": 0}),
+            "source": "data_governance.client_governance", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

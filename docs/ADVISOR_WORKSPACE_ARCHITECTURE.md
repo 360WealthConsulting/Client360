@@ -46,6 +46,12 @@
 > + status only — never a workflow payload; the panel never executes/launches/fires anything. The full
 > automation dashboards live at `/automation-orchestration`. See
 > [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and ADR-056.
+>
+> **D.52:** The advisor home also carries a **Data Governance** panel (`ws["data_governance"]`) — the firm
+> data-governance summary (validation issues + duplicate alerts + governance overview + data-quality score)
+> composed by the D.52 data-governance layer over the authoritative Governance package. Counts + status only
+> — never a client-sensitive payload; the panel never merges/alters/approves anything. The full governance
+> dashboards live at `/data-governance`. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and ADR-057.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

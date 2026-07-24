@@ -36,6 +36,18 @@
 > by the D.50 document-intelligence layer over the authoritative Document Platform + Compliance Intelligence.
 > Counts + status only — never document content; never a second DMS. See
 > [`DOCUMENT_INTELLIGENCE.md`](DOCUMENT_INTELLIGENCE.md) and [`ADR-055`](adr/ADR-055-document-intelligence.md).
+>
+> **D.51:** Client 360 also gains an **Automation History** section (gated by `automation.view`) — a compact
+> per-client workflow rollup (counts + status) composed by the D.51 automation-orchestration layer over the
+> Workflow Orchestration facade (never a second workflow engine). See
+> [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and [`ADR-056`](adr/ADR-056-automation-orchestration.md).
+>
+> **D.52:** Client 360 also gains a **Data Governance** section (gated by `governance.view`) — a compact
+> per-client provenance rollup (source-lineage record count + confirmed links + source systems) composed by
+> the D.52 data-governance layer over the authoritative person lineage (`governance.mdm.person_lineage`,
+> reading `person_source_links`). Counts + source systems only — never a payload; never merges/alters an
+> identity; never a second master-data store. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and
+> [`ADR-057`](adr/ADR-057-data-governance.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

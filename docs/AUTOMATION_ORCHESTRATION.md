@@ -72,3 +72,11 @@ mutation, no execution, no outbox publication, no audit write, no second engine.
 from an authoritative engine; every dashboard panel is explainable and deep-links to its authoritative
 surface. Enforced by `app/services/automation_orchestration/governance.py` and
 `tests/test_automation_orchestration.py`. See [ADR-056](adr/ADR-056-automation-orchestration.md).
+
+## Related: Data Governance (D.52)
+
+The D.52 Data Governance layer (`app/services/data_governance/`) provides the enterprise view of data
+quality, lineage, stewardship, and ownership over the authoritative Governance package — a read-only
+composition, never a second master-data platform or merge engine. Automation triggers/events surface there
+via the Event registry's dependency-graph lineage panel. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and
+ADR-057.

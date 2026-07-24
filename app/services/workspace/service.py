@@ -111,6 +111,15 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         automation_status = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Data Governance panel (D.52) — a read-only governance summary (validation issues + duplicate alerts +
+    # governance overview + data-quality score) composed over the authoritative Governance package. Guarded
+    # so a gate-off never breaks home; this panel never merges/alters/approves anything. Counts + status only.
+    try:
+        from app.services.data_governance import governance_summary
+        data_governance = governance_summary(principal)
+    except Exception:
+        data_governance = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -130,4 +139,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "capacity_planning": capacity_planning,
         "document_intelligence": document_intelligence,
         "automation_status": automation_status,
+        "data_governance": data_governance,
     }

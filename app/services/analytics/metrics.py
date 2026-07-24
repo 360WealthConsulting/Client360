@@ -377,6 +377,15 @@ _DEFS = (
            sources.automation_panel_failures),
     Metric("automation_authorization_failures", "Automation Authorization Failures", "operations", "count",
            "card", False, sources.automation_authorization_failures),
+    # Data Governance / master data stewardship (Phase D.52) — low-cardinality operational metrics.
+    Metric("governance_dashboards_composed", "Governance Dashboards Composed", "operations", "count", "card",
+           False, sources.governance_dashboards_composed),
+    Metric("governance_panels_composed", "Governance Panels Composed", "operations", "count", "card", False,
+           sources.governance_panels_composed),
+    Metric("governance_panel_failures", "Governance Panel Failures", "operations", "count", "card", False,
+           sources.governance_panel_failures),
+    Metric("governance_authorization_failures", "Governance Authorization Failures", "operations", "count",
+           "card", False, sources.governance_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

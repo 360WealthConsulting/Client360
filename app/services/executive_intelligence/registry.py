@@ -154,6 +154,12 @@ DASHBOARD_REGISTRY = (
        ("workflow_status", "workflow_aging", "operational_health"),
        ("analytics.view",), "/automation-orchestration",
        ("workflow_automation", "recommendations")),
+    # Data Governance (D.52) — the executive view of data-quality/governance health, composed from EXISTING
+    # widgets (no new widget). The full data-governance surface lives at /data-governance.
+    _d("data_governance", "executive_intelligence", "operations", "executive_dashboard.enabled",
+       ("compliance_workload", "operational_health", "runtime_health"),
+       ("analytics.view",), "/data-governance",
+       ("compliance", "recommendations", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

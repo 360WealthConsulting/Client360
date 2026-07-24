@@ -42,6 +42,7 @@ HOUSEHOLD_SECTIONS = (
     ("operational_workload", "capacity.read"),
     ("document_intelligence", "documents.view"),
     ("automation_history", "automation.view"),
+    ("data_governance", "governance.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -432,6 +433,17 @@ def _automation_history(principal, ctx):
             "source": "automation_orchestration.household_automation", "not_a_second_engine": True}
 
 
+def _data_governance(principal, ctx):
+    """Aggregated household data-governance summary (D.52) — composed read-only from the authoritative person
+    lineage (governance.mdm.person_lineage) across members, rolled up to counts. Never merges/duplicates an
+    identity; a count rollup only. Never a second master-data store; deep-links to the authoritative
+    governance surface."""
+    from app.services.data_governance import household_governance
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_governance(principal, ctx["household_id"], member_ids),
+            "source": "data_governance.household_governance", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -479,7 +491,7 @@ _SECTION_BUILDERS = {
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,
     "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
     "operational_workload": _operational_workload, "document_intelligence": _document_intelligence,
-    "automation_history": _automation_history,
+    "automation_history": _automation_history, "data_governance": _data_governance,
     "timeline": _timeline, "relationships": _relationships,
 }
 

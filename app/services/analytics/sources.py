@@ -1172,3 +1172,25 @@ def automation_authorization_failures(principal) -> int:
         automation_authorization_failures as _r,
     )
     return _r(principal)
+
+
+# --- Data Governance / master data stewardship (Phase D.52) — low-cardinality in-process counters ---
+
+def governance_dashboards_composed(principal) -> int:
+    from app.services.data_governance.metrics import governance_dashboards_composed as _r
+    return _r(principal)
+
+
+def governance_panels_composed(principal) -> int:
+    from app.services.data_governance.metrics import governance_panels_composed as _r
+    return _r(principal)
+
+
+def governance_panel_failures(principal) -> int:
+    from app.services.data_governance.metrics import governance_panel_failures as _r
+    return _r(principal)
+
+
+def governance_authorization_failures(principal) -> int:
+    from app.services.data_governance.metrics import governance_authorization_failures as _r
+    return _r(principal)
