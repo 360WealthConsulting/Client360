@@ -81,6 +81,14 @@
 > contract/credential/key/secret/payload; the panel never modifies/renews/terminates anything. The full
 > vendor dashboards live at `/vendor-management`. See [`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and
 > ADR-061.
+>
+> **D.57:** The advisor home also carries a **Financial Performance** panel (`ws["financial_performance"]`) —
+> the firm financial summary (performance score + recurring revenue + commission revenue + collections +
+> vendor dependencies) composed by the D.57 financial-operations layer over the authoritative insurance
+> commission ledger + portfolio AUM owner + the single Analytics Registry. Firm-level aggregate totals + status
+> only — never a payroll detail / tax return / bank account number / payment credential / accounting payload;
+> the panel never bills/invoices/pays/posts anything. The full financial dashboards live at
+> `/financial-operations`. See [`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and ADR-062.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

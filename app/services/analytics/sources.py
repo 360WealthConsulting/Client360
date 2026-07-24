@@ -1282,3 +1282,25 @@ def vendor_panel_failures(principal) -> int:
 def vendor_authorization_failures(principal) -> int:
     from app.services.vendor_management.metrics import vendor_authorization_failures as _r
     return _r(principal)
+
+
+# --- Financial Operations / revenue intelligence (Phase D.57) — low-cardinality in-process counters ---
+
+def financial_dashboards_composed(principal) -> int:
+    from app.services.financial_operations.metrics import financial_dashboards_composed as _r
+    return _r(principal)
+
+
+def financial_panels_composed(principal) -> int:
+    from app.services.financial_operations.metrics import financial_panels_composed as _r
+    return _r(principal)
+
+
+def financial_panel_failures(principal) -> int:
+    from app.services.financial_operations.metrics import financial_panel_failures as _r
+    return _r(principal)
+
+
+def financial_authorization_failures(principal) -> int:
+    from app.services.financial_operations.metrics import financial_authorization_failures as _r
+    return _r(principal)

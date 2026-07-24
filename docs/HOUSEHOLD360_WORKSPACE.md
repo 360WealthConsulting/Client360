@@ -71,6 +71,13 @@
 > the authoritative Integration Hub per-entity read. Counts + vendor names only — never a payload; never
 > modifies a vendor/integration; never a second vendor platform. See
 > [`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and [`ADR-061`](adr/ADR-061-vendor-management.md).
+>
+> **D.57:** Household 360 also gains a **Financial Relationship** section (gated by `analytics.executive`) —
+> the advisory revenue basis (the household members' AUM) the firm relationship rests on, composed by the D.57
+> financial-operations layer over the authoritative portfolio owner. Aggregate total only — never a payload;
+> per-household fee / commission billing has no authoritative owner (`not_configured`); never bills/invoices/
+> posts anything; never a second accounting or billing engine. See
+> [`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and [`ADR-062`](adr/ADR-062-financial-operations.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

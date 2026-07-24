@@ -184,6 +184,12 @@ DASHBOARD_REGISTRY = (
        ("runtime_health", "operational_health"),
        ("analytics.view",), "/vendor-management",
        ("runtime", "recommendations")),
+    # Financial Operations (D.57) — the executive view of firm financial performance, composed from EXISTING
+    # widgets (revenue + AUM, no new widget). The full financial surface lives at /financial-operations.
+    _d("financial_operations", "executive_intelligence", "executive", "executive_dashboard.enabled",
+       ("revenue_kpi", "firm_aum", "operational_health"),
+       ("analytics.view",), "/financial-operations",
+       ("analytics", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

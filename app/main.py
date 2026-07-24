@@ -68,6 +68,7 @@ from app.routes.integration_hub import router as integration_hub_router
 from app.routes.security_operations import router as security_operations_router
 from app.routes.business_continuity import router as business_continuity_router
 from app.routes.vendor_management import router as vendor_management_router
+from app.routes.financial_operations import router as financial_operations_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -247,6 +248,7 @@ app.include_router(integration_hub_router)
 app.include_router(security_operations_router)
 app.include_router(business_continuity_router)
 app.include_router(vendor_management_router)
+app.include_router(financial_operations_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

@@ -339,6 +339,18 @@ def technology_dependencies(principal, ctx):
             "source": "vendor_management.client_technology", "not_a_second_engine": True}
 
 
+def financial_relationship(principal, ctx):
+    """A compact financial-relationship summary for this client (D.57) — the advisory revenue basis (the
+    client's AUM) the firm's relationship rests on, composed read-only from the authoritative portfolio owner.
+    Aggregate total only, never a payload; per-client fee / commission billing has no authoritative owner
+    (`not_configured`) and is never fabricated. Never bills/invoices/posts anything; never a second accounting
+    or billing engine; deep-links to the authoritative financial surface."""
+    from app.services.financial_operations import client_financial
+    pid = _pid(ctx)
+    return {**(client_financial(principal, pid) if pid else {"enabled": False, "advisory_revenue_basis": None}),
+            "source": "financial_operations.client_financial", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

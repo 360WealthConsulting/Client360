@@ -422,6 +422,15 @@ _DEFS = (
            sources.vendor_panel_failures),
     Metric("vendor_authorization_failures", "Vendor Authorization Failures", "operations", "count", "card",
            False, sources.vendor_authorization_failures),
+    # Financial Operations / revenue intelligence (Phase D.57) — low-cardinality operational metrics.
+    Metric("financial_dashboards_composed", "Financial Dashboards Composed", "operations", "count", "card",
+           False, sources.financial_dashboards_composed),
+    Metric("financial_panels_composed", "Financial Panels Composed", "operations", "count", "card", False,
+           sources.financial_panels_composed),
+    Metric("financial_panel_failures", "Financial Panel Failures", "operations", "count", "card", False,
+           sources.financial_panel_failures),
+    Metric("financial_authorization_failures", "Financial Authorization Failures", "operations", "count",
+           "card", False, sources.financial_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

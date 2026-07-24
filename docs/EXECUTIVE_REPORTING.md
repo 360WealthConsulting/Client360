@@ -111,6 +111,18 @@ in `app/services/vendor_management/`; counts + status only, never a contract/cre
 AI summarizes but never approves purchases / renews contracts / terminates vendors / alters licensing. See
 [`VENDOR_MANAGEMENT.md`](VENDOR_MANAGEMENT.md) and ADR-061.
 
+**Financial Operations (D.57):** the registry gains a `financial_operations` executive dashboard composed from
+**existing** widgets (`revenue_kpi`, `firm_aum`, `operational_health`) — no new widget — whose navigation
+deep-links to the full financial surface at `/financial-operations`. The dedicated Financial Operations layer
+(a single read-only view of firm financial performance — revenue / profitability / expenses / payroll /
+commissions / firm KPIs, composed over the authoritative insurance commission ledger + portfolio AUM owner +
+the single Analytics Registry + Executive Reporting + Practice Management) lives in
+`app/services/financial_operations/`; firm-level aggregate totals + status only, never a payroll detail / tax
+return / bank account number / payment credential / accounting payload; billing / payroll / GL / profitability
+have no authoritative owner and are reported `not_configured`; AI summarizes firm KPIs but never issues
+invoices / processes payroll / modifies accounting records / changes commissions / alters billing. See
+[`FINANCIAL_OPERATIONS.md`](FINANCIAL_OPERATIONS.md) and ADR-062.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

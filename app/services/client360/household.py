@@ -47,6 +47,7 @@ HOUSEHOLD_SECTIONS = (
     ("security_access", "security.view"),
     ("business_continuity", "observability.view"),
     ("technology_dependencies", "integration.view"),
+    ("financial_relationship", "analytics.executive"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -492,6 +493,18 @@ def _technology_dependencies(principal, ctx):
             "source": "vendor_management.household_technology", "not_a_second_engine": True}
 
 
+def _financial_relationship(principal, ctx):
+    """Household financial-relationship summary (D.57) — the advisory revenue basis (the household members'
+    AUM) the firm's relationship rests on, composed read-only from the authoritative portfolio owner.
+    Aggregate total only; a rollup, never a payload. Per-household fee / commission billing has no
+    authoritative owner (`not_configured`). Never bills/invoices/posts anything; never a second accounting or
+    billing engine; deep-links to the authoritative financial surface."""
+    from app.services.financial_operations import household_financial
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_financial(principal, ctx["household_id"], member_ids),
+            "source": "financial_operations.household_financial", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -542,6 +555,7 @@ _SECTION_BUILDERS = {
     "automation_history": _automation_history, "data_governance": _data_governance,
     "external_integrations": _external_integrations, "security_access": _security_access,
     "business_continuity": _business_continuity, "technology_dependencies": _technology_dependencies,
+    "financial_relationship": _financial_relationship,
     "timeline": _timeline, "relationships": _relationships,
 }
 
