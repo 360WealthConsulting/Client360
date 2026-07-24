@@ -1014,3 +1014,25 @@ def engagement_searches(principal) -> int:
 def engagement_adapter_failures(principal) -> int:
     from app.services.communications.engagement.metrics import engagement_adapter_failure_count
     return engagement_adapter_failure_count(principal)
+
+
+# --- Enterprise Knowledge Graph (Phase D.45) — low-cardinality in-process counters ---
+
+def knowledge_traversals(principal) -> int:
+    from app.services.knowledge.metrics import knowledge_traversal_count
+    return knowledge_traversal_count(principal)
+
+
+def knowledge_explanations(principal) -> int:
+    from app.services.knowledge.metrics import knowledge_explanation_count
+    return knowledge_explanation_count(principal)
+
+
+def knowledge_searches(principal) -> int:
+    from app.services.knowledge.metrics import knowledge_search_count
+    return knowledge_search_count(principal)
+
+
+def knowledge_adapter_failures(principal) -> int:
+    from app.services.knowledge.metrics import knowledge_adapter_failure_count
+    return knowledge_adapter_failure_count(principal)

@@ -4,6 +4,10 @@
 > action-required **counts only**, never message bodies), sourced from the composed Client 360 / Household
 > 360 Communications sections — preserving the "reuse summaries, no raw domain fan-out" invariant. See
 > [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md) and ADR-049.
+>
+> **D.45:** AI Assist also grounds on the knowledge graph — the **connected-entity count only**, sourced from
+> the composed Client 360 / Household 360 Knowledge section (never an unrestricted graph query; every
+> explanation cites its authoritative service). See [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and ADR-050.
 
 Advisor AI Assist is a governed, **read-only** briefing surface that consumes the deterministic,
 scope-guarded summaries and snapshots already produced by D.38–D.41 (Advisor Workspace, Unified Work

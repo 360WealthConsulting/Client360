@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Knowledge | Client360{% endblock %}
+{% block crumb %}Knowledge{% endblock %}
+{% block content %}
+{% call ui.page_head("Enterprise knowledge graph", eyebrow="Knowledge", desc="Connected entities across the platform — composed from the authoritative models, every relationship explainable. Not a graph database.") %}{% endcall %}
+
+{% if graph is none %}
+<p class="subtle">Open a client or household to see their connected entities — households, businesses,
+trusts, professionals, advisors, and connected records — each with an explanation of why the relationship
+exists and a deep link into the authoritative surface.</p>
+{% else %}
+<p class="subtle">{{ graph.node_count }} connected node(s) · {{ graph.edge_count }} relationship(s)
+{% if graph.suppressed_nodes %} · {{ graph.suppressed_nodes }} out-of-scope suppressed{% endif %}
+ · depth limit {{ graph.depth_limit }}</p>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Relationship</th><th>Connected entity</th><th>Type</th><th>Owner</th><th>Provenance</th><th></th></tr></thead>
+    <tbody>
+    {% for e in graph.edges %}
+      {% set target = (graph.nodes | selectattr('node_id', 'equalto', e.target_id) | list | first) %}
+      <tr>
+        <td>{{ e.label }}</td>
+        <td>{{ target.label if target else e.target_id }}</td>
+        <td>{{ target.entity_type if target else '—' }}</td>
+        <td class="subtle">{{ e.owner }}</td>
+        <td>{% if e.provenance == 'authoritative' %}{{ ui.badge('Authoritative','good') }}{% else %}{{ ui.badge('Inferred','warn') }}{% endif %}</td>
+        <td>{% if e.deep_link %}<a class="btn secondary" href="{{ e.deep_link }}">Open</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="subtle">No connected entities.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if graph.explanations %}
+<h2 class="section-title">Why these relationships exist</h2>
+<ul>
+  {% for x in graph.explanations %}
+  <li><strong>{{ x.relationship.replace('_',' ') }}</strong>: {{ x.why }}
+      <span class="subtle">({{ x.evidence }})</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+{% endblock %}

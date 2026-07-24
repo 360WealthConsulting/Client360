@@ -314,6 +314,15 @@ _DEFS = (
            sources.engagement_searches),
     Metric("engagement_adapter_failures", "Engagement Adapter Failures", "operations", "count", "card",
            False, sources.engagement_adapter_failures),
+    # Enterprise Knowledge Graph (Phase D.45) — low-cardinality operational metrics.
+    Metric("knowledge_traversals", "Knowledge Traversals", "operations", "count", "card", False,
+           sources.knowledge_traversals),
+    Metric("knowledge_explanations", "Knowledge Explanations", "operations", "count", "card", False,
+           sources.knowledge_explanations),
+    Metric("knowledge_searches", "Knowledge Searches", "operations", "count", "card", False,
+           sources.knowledge_searches),
+    Metric("knowledge_adapter_failures", "Knowledge Adapter Failures", "operations", "count", "card",
+           False, sources.knowledge_adapter_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

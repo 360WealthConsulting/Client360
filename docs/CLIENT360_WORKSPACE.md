@@ -4,6 +4,11 @@
 > interactions across every channel, composed by the D.44 engagement layer over the authoritative
 > subsystems (never a second store). See [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md)
 > and [`ENGAGEMENT_TIMELINE.md`](ENGAGEMENT_TIMELINE.md).
+>
+> **D.45:** Client 360 also gains a **Knowledge** section — connected entities (households, businesses,
+> trusts, professionals, advisors, connected records) with an explanation of each relationship, composed by
+> the D.45 knowledge layer over the authoritative relationship engine (never a graph database, never a second
+> store). See [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and [`ADR-050`](adr/ADR-050-enterprise-knowledge-graph.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

@@ -34,6 +34,7 @@ HOUSEHOLD_SECTIONS = (
     ("meetings", None),
     ("compliance", "compliance.review.read"),
     ("communications", "communications.view"),
+    ("knowledge", None),
     ("work", "work.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
@@ -338,6 +339,22 @@ def _communications(principal, ctx):
             "source": "communications.engagement", "not_a_second_store": True}
 
 
+def _knowledge(principal, ctx):
+    """Household knowledge graph — connected entities (businesses, trusts, shared advisors, professionals)
+    + relationship explanations, composed by the D.45 knowledge layer over the household's members'
+    authoritative relationship graphs. Never a graph database, never a second store."""
+    from app.services.knowledge import knowledge_graph, knowledge_summary
+    hid = ctx["household_id"]
+    summary = knowledge_summary(principal, household_id=hid)
+    graph = knowledge_graph(principal, household_id=hid)
+    if graph is None or not graph.get("enabled"):
+        return {"summary": summary, "nodes": [], "edges": [], "explanations": [],
+                "source": "knowledge.graph", "not_a_graph_db": True}
+    return {"summary": summary, "nodes": graph["nodes"], "edges": graph["edges"],
+            "explanations": graph.get("explanations", []), "suppressed_nodes": graph["suppressed_nodes"],
+            "source": "knowledge.graph", "not_a_graph_db": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -382,7 +399,7 @@ _SECTION_BUILDERS = {
     "summary": _summary, "members": _members, "financial": _financial, "tax": _tax,
     "insurance": _insurance, "benefits": _benefits, "opportunities": _opportunities,
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
-    "communications": _communications, "work": _work, "timeline": _timeline,
+    "communications": _communications, "knowledge": _knowledge, "work": _work, "timeline": _timeline,
     "relationships": _relationships,
 }
 

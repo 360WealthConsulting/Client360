@@ -56,7 +56,7 @@ def _instance(actor, pid, hid):
 def test_new_routes_registered_and_inventory():
     routes = {(getattr(r, "path", None), m) for r in app.routes for m in (getattr(r, "methods", None) or set())}
     assert NEW_ROUTES <= routes
-    assert len(app.routes) == 877  # ... +16 secure client portal (D.43) +8 unified communications engagement (D.44: 6 staff + 2 portal)
+    assert len(app.routes) == 884  # ... +8 unified communications engagement (D.44) +7 enterprise knowledge graph (D.45)
 
 
 def test_openapi_exposes_new_routes():

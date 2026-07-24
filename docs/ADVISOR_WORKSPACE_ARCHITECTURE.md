@@ -4,6 +4,11 @@
 > **Communications** sections and the dedicated `/engagement` surface, composed by the D.44 engagement layer
 > over the authoritative activity timeline (no second store). See
 > [`COMMUNICATION_ARCHITECTURE.md`](COMMUNICATION_ARCHITECTURE.md) and ADR-049.
+>
+> **D.45:** The advisor surfaces also expose an explainable **Knowledge** view via the Client 360 / Household
+> 360 Knowledge sections and the dedicated `/knowledge` surface — connected entities + relationship
+> explanations composed over the authoritative relationship engine (not a graph database). See
+> [`KNOWLEDGE_GRAPH.md`](KNOWLEDGE_GRAPH.md) and ADR-050.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
