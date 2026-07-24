@@ -54,6 +54,12 @@
 > integration-hub layer over the authoritative person lineage. Counts + source-system names only — never a
 > payload; never connects/syncs anything; never a second integration platform. See
 > [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and [`ADR-058`](adr/ADR-058-integration-hub.md).
+>
+> **D.54:** Client 360 also gains a **Security & Access** section (gated by `security.view`) — who can access
+> this client's record (record-assignment access grants), composed by the D.54 security-operations layer over
+> the authoritative authorization owner. Counts only — never a payload; never authenticates/authorizes/alters
+> anything; never a second IAM/RBAC engine. See [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) and
+> [`ADR-059`](adr/ADR-059-security-operations.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

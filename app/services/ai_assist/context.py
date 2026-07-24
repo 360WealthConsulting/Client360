@@ -42,6 +42,7 @@ _LINKS = {
         else (f"/workflows?household_id={household_id}" if household_id else "/automation-orchestration")),
     "data_governance": lambda **k: "/governance",
     "integration_hub": lambda **k: "/integration",
+    "security_operations": lambda **k: "/security-operations",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -49,7 +50,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "recommendations": "Operational Intelligence", "compliance_intelligence": "Compliance Oversight",
           "executive_intelligence": "Executive Reporting", "practice_management": "Practice Management",
           "document_intelligence": "Document Intelligence", "automation_orchestration": "Automation Orchestration",
-          "data_governance": "Data Governance", "integration_hub": "Integration Hub"}
+          "data_governance": "Data Governance", "integration_hub": "Integration Hub",
+          "security_operations": "Security Operations"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -230,6 +232,14 @@ def _client(principal, person_id):
     if ih.get("enabled") and isinstance(ih.get("connected_system_count"), int):
         facts.append(_fact("integration_hub", "integration.connected_systems",
                            ih["connected_system_count"], fact_class=DERIVED, deep_link="/integration"))
+    # Security Operations — SUMMARIZED access COUNT for this client (how many users can access the record),
+    # composed read-only over the authoritative authorization owner. AI summarizes the count; it never
+    # authenticates, authorizes, elevates permissions, issues tokens, resets passwords, disables MFA, or
+    # bypasses security.
+    sec = (ws.get("sections") or {}).get("security_access") or {}
+    if sec.get("enabled") and isinstance(sec.get("assigned_users"), int):
+        facts.append(_fact("security_operations", "security.assigned_users", sec["assigned_users"],
+                           fact_class=DERIVED, deep_link="/admin"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

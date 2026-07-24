@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Security Operations | Client360{% endblock %}
+{% block crumb %}Security Operations{% endblock %}
+{% block content %}
+{% call ui.page_head("Security operations", eyebrow="Identity governance & platform security intelligence", desc="A single governed operational view of platform security posture — authentication, authorization, identity governance, MFA, sessions, audit and security posture — composed read-only from the authoritative security owners (the Security metadata domain, Identity, the RBAC foundation, the hash-chain audit log). Never a second IAM platform, identity provider, RBAC engine, authentication system, MFA provider, audit-logging platform or SIEM; never authenticates, creates users, revokes sessions, issues tokens, resets passwords or alters permissions. Counts and status only — no passwords, secrets, tokens, session IDs or authentication payloads. Every panel deep-links to its authoritative security owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Security dashboards">
+  {% for d in dashboards %}
+    <a href="/security-operations?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No security-operations dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Unavailable.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

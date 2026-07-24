@@ -1216,3 +1216,25 @@ def integration_panel_failures(principal) -> int:
 def integration_authorization_failures(principal) -> int:
     from app.services.integration_hub.metrics import integration_authorization_failures as _r
     return _r(principal)
+
+
+# --- Security Operations / identity governance (Phase D.54) — low-cardinality in-process counters ---
+
+def security_dashboards_composed(principal) -> int:
+    from app.services.security_operations.metrics import security_dashboards_composed as _r
+    return _r(principal)
+
+
+def security_panels_composed(principal) -> int:
+    from app.services.security_operations.metrics import security_panels_composed as _r
+    return _r(principal)
+
+
+def security_panel_failures(principal) -> int:
+    from app.services.security_operations.metrics import security_panel_failures as _r
+    return _r(principal)
+
+
+def security_ops_authorization_failures(principal) -> int:
+    from app.services.security_operations.metrics import security_ops_authorization_failures as _r
+    return _r(principal)

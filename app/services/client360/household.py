@@ -44,6 +44,7 @@ HOUSEHOLD_SECTIONS = (
     ("automation_history", "automation.view"),
     ("data_governance", "governance.view"),
     ("external_integrations", "integration.view"),
+    ("security_access", "security.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -456,6 +457,17 @@ def _external_integrations(principal, ctx):
             "source": "integration_hub.household_integrations", "not_a_second_engine": True}
 
 
+def _security_access(principal, ctx):
+    """Aggregated household security & access summary (D.54) — who can access the household + its members'
+    records, composed read-only from the authoritative authorization owner (record assignments). Counts
+    only; a rollup, never a payload. Never authenticates/authorizes/alters anything; never a second
+    IAM/RBAC engine; deep-links to the authoritative admin surface."""
+    from app.services.security_operations import household_security
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_security(principal, ctx["household_id"], member_ids),
+            "source": "security_operations.household_security", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -504,7 +516,7 @@ _SECTION_BUILDERS = {
     "compliance_summary": _compliance_summary, "executive": _executive, "work": _work,
     "operational_workload": _operational_workload, "document_intelligence": _document_intelligence,
     "automation_history": _automation_history, "data_governance": _data_governance,
-    "external_integrations": _external_integrations,
+    "external_integrations": _external_integrations, "security_access": _security_access,
     "timeline": _timeline, "relationships": _relationships,
 }
 

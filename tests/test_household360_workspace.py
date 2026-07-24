@@ -24,8 +24,8 @@ FIRM_CAPS = frozenset({
     "client.read", "tax.read", "insurance.read", "benefits.read", "opportunity.view", "documents.view",
     "compliance.review.read", "timeline.read", "advisor_work.read", "work.read", "scheduling.view",
     "communications.read", "communications.view", "compliance.supervise", "analytics.executive",
-    "capacity.read", "automation.view", "governance.view", "integration.view", "record.read_all",
-    "observability.audit",
+    "capacity.read", "automation.view", "governance.view", "integration.view", "security.view",
+    "record.read_all", "observability.audit",
 })
 FIRM = Principal(1, "m@e.com", "M", FIRM_CAPS)                          # record.read_all → sees all
 SCOPED = Principal(2, "s@e.com", "S", frozenset({"client.read"}))       # no read_all, no assignment
@@ -263,7 +263,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 946
+    assert len(app.routes) == 954
 
 
 def test_household_page_renders_and_404():

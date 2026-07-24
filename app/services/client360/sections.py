@@ -305,6 +305,17 @@ def external_integrations(principal, ctx):
             "source": "integration_hub.client_integrations", "not_a_second_engine": True}
 
 
+def security_access(principal, ctx):
+    """A compact security & access summary for this client (D.54) — who can access this client's record,
+    composed read-only from the authoritative authorization owner (record assignments). Counts only, never a
+    payload; deep-links to the authoritative admin surface. Never authenticates/authorizes/alters anything;
+    never a second IAM/RBAC engine."""
+    from app.services.security_operations import client_security
+    pid = _pid(ctx)
+    return {**(client_security(principal, pid) if pid else {"enabled": False, "assigned_users": 0}),
+            "source": "security_operations.client_security", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

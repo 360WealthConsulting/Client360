@@ -395,6 +395,15 @@ _DEFS = (
            sources.integration_panel_failures),
     Metric("integration_authorization_failures", "Integration Authorization Failures", "operations", "count",
            "card", False, sources.integration_authorization_failures),
+    # Security Operations / identity governance (Phase D.54) — low-cardinality operational metrics.
+    Metric("security_ops_dashboards_composed", "Security Ops Dashboards Composed", "operations", "count",
+           "card", False, sources.security_dashboards_composed),
+    Metric("security_ops_panels_composed", "Security Ops Panels Composed", "operations", "count", "card",
+           False, sources.security_panels_composed),
+    Metric("security_ops_panel_failures", "Security Ops Panel Failures", "operations", "count", "card", False,
+           sources.security_panel_failures),
+    Metric("security_ops_authorization_failures", "Security Ops Authorization Failures", "operations",
+           "count", "card", False, sources.security_ops_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),
