@@ -51,6 +51,7 @@ _LINKS = {
     "operational_resilience": lambda **k: "/operational-resilience",
     "capacity_planning": lambda **k: "/capacity-planning",
     "knowledge_management": lambda **k: "/knowledge-management",
+    "change_management": lambda **k: "/change-management",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -65,7 +66,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "regulatory_readiness": "Regulatory Readiness",
           "operational_resilience": "Operational Resilience",
           "capacity_planning": "Capacity Planning",
-          "knowledge_management": "Knowledge Management"}
+          "knowledge_management": "Knowledge Management",
+          "change_management": "Change Management"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -334,6 +336,17 @@ def _client(principal, person_id):
         facts.append(_fact("knowledge_management", "knowledge.document_count",
                            kd_signals["document_count"], fact_class=DERIVED,
                            deep_link="/knowledge-management"))
+    # Change Management — SUMMARIZED record-scoped affected-integration COUNT (the external systems whose
+    # configuration changes could touch THIS client's data), composed read-only from the authoritative person
+    # lineage. AI summarizes the count; it never invents a change / deployment / release, implies a deployment
+    # or approval, certifies production, or exposes firm-wide change / release / CI status at client scope.
+    # Merged is not deployed; a green build is not production.
+    ci = (ws.get("sections") or {}).get("change_impact") or {}
+    ci_signals = ci.get("signals") if isinstance(ci.get("signals"), dict) else {}
+    if ci.get("enabled") and isinstance(ci_signals.get("affected_integrations"), int):
+        facts.append(_fact("change_management", "change.affected_integrations",
+                           ci_signals["affected_integrations"], fact_class=DERIVED,
+                           deep_link="/change-management"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

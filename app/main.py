@@ -74,6 +74,7 @@ from app.routes.regulatory_readiness import router as regulatory_readiness_route
 from app.routes.operational_resilience import router as operational_resilience_router
 from app.routes.capacity_planning import router as capacity_planning_router
 from app.routes.knowledge_management import router as knowledge_management_router
+from app.routes.change_management import router as change_management_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -259,6 +260,7 @@ app.include_router(regulatory_readiness_router)
 app.include_router(operational_resilience_router)
 app.include_router(capacity_planning_router)
 app.include_router(knowledge_management_router)
+app.include_router(change_management_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

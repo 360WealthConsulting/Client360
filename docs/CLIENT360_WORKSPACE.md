@@ -126,6 +126,16 @@
 > [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
 > [`ADR-067`](adr/ADR-067-knowledge-management.md).
 
+> **D.63:** Client 360 also gains a **Change Impact** section (gated by `observability.view`) — ONLY the
+> record-scoped affected-integration surface (the external systems whose configuration changes could touch THIS
+> client's data), composed by the D.63 change-management layer over the authoritative person lineage.
+> **Firm-wide change / release / deployment / CI status is NOT record-scoped and is never exposed at client
+> scope** — there is no authoritative record-scoped change-management owner, so beyond the affected-integration
+> surface this section reports not_configured honestly. Counts + source-system names only — never a deployment
+> payload / configuration value; never a second change engine; **merged is not deployed**. See
+> [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+> [`ADR-068`](adr/ADR-068-change-management.md).
+
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
 surface** over the authoritative domain services; it is **not** a second client database and never the

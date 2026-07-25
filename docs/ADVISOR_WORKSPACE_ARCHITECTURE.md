@@ -135,6 +135,18 @@
 > `/knowledge-management`. See [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
 > ADR-067.
 
+> **D.63:** The advisor home also carries a **Change & Release Status** panel (`ws["change_release"]`) — the
+> firm change/release/configuration summary (executive change posture + derived change-readiness coverage +
+> current release line + migration-head verification + route-count verification + composed governance +
+> not_configured domains) composed by the D.63 change-management layer over the architecture manifest, the live
+> Alembic head, the live route/ADR/section/dashboard counts, the Runtime + Policy engines and CI evidence.
+> Counts + status + verification only — never a credential / token / deployment payload / sensitive
+> configuration value; the panel never creates a branch / merges / deploys / runs a migration / changes a flag
+> / approves / rolls back. An operational-readiness summary only — **a green build is not production
+> certification, a merged pull request is not deployment, an absent incident is not change success**. The full
+> change dashboards live at `/change-management`. See
+> [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and ADR-068.
+
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
 > redaction models, and extension points), see **`docs/PLATFORM_ARCHITECTURE.md`** (Phase D.12A).

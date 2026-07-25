@@ -192,6 +192,23 @@ executive posture is DERIVED and labeled — **a documentation-coverage summary,
 / institutional-knowledge figure**; AI summarizes but never invents documentation / fabricates SOPs / implies
 approvals. See [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and ADR-067.
 
+**Enterprise Change & Release Governance (D.63):** the registry gains an `enterprise_change_release_governance`
+executive dashboard composed from **existing** widgets (`compliance_workload`, `operational_health`,
+`runtime_health`) — no new widget — whose navigation deep-links to the full change surface at
+`/change-management`. The dedicated Change Management layer (a unified read-only view of the firm's change
+posture — change-domain inventory / release readiness / CI-evidence verification / configuration governance /
+migration readiness / deployment evidence / rollback readiness / executive change posture, composed over the
+architecture manifest, Observability health / catalog / alerts / incidents, the Runtime + Policy engines,
+Security incidents, Compliance Intelligence, and the CI pipeline evidence — with **live self-verification** of
+declared-vs-live route / migration / ADR / section / dashboard drift) lives in
+`app/services/change_management/`; counts / status / verification only, never a credential / token / deployment
+payload / sensitive configuration value; live git / PR / CI status, deployment execution, rollback, production
+verification, and post-change review are reported not_configured; the executive posture is DERIVED and labeled
+— **an operational-readiness summary, never approval / certification / deployment success: a green build is not
+production, a merged pull request is not deployment, an absent incident is not change success**; AI summarizes
+but never creates a branch / merges / deploys / runs a migration / changes a flag / approves / rolls back /
+certifies production. See [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and ADR-068.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

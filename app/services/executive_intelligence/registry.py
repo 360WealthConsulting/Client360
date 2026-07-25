@@ -225,6 +225,14 @@ DASHBOARD_REGISTRY = (
        "executive_dashboard.enabled", ("compliance_workload", "operational_health"),
        ("analytics.view",), "/knowledge-management",
        ("compliance", "runtime")),
+    # Enterprise Change & Release Governance (D.63) — the executive view of change / release / configuration
+    # posture, composed from EXISTING widgets (compliance workload + operational health + runtime health, no
+    # new widget). The full change surface lives at /change-management. Operational readiness only — a green
+    # build is not production certification, a merged pull request is not deployment.
+    _d("enterprise_change_release_governance", "executive_intelligence", "executive",
+       "executive_dashboard.enabled", ("compliance_workload", "operational_health", "runtime_health"),
+       ("analytics.view",), "/change-management",
+       ("compliance", "recommendations", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

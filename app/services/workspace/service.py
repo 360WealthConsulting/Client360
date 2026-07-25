@@ -224,6 +224,19 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         knowledge_sops = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Change & Release Status panel (D.63) — a read-only operational-readiness summary (executive change posture
+    # + derived change-readiness coverage + current release line + migration-head verification + route-count
+    # verification + composed governance + not_configured domains) composed over the architecture manifest, the
+    # live Alembic head, the live route/ADR/section/dashboard counts, the Runtime + Policy engines and CI
+    # evidence. Guarded so a gate-off never breaks home; this panel never creates a branch / merges / deploys /
+    # runs a migration / changes a flag / approves / rolls back. Operational readiness only — a green build is
+    # not production certification, a merged pull request is not deployment, an absent incident is not success.
+    try:
+        from app.services.change_management import change_summary
+        change_release = change_summary(principal)
+    except Exception:
+        change_release = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -254,4 +267,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "operational_status": operational_status,
         "capacity_workload": capacity_workload,
         "knowledge_sops": knowledge_sops,
+        "change_release": change_release,
     }

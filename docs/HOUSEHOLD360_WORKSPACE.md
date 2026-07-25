@@ -120,6 +120,14 @@
 > wiki/DMS. See [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
 > [`ADR-067`](adr/ADR-067-knowledge-management.md).
 
+> **D.63:** Household 360 also gains a **Change Impact** section (gated by `observability.view`) — ONLY the
+> record-scoped affected-integration surface (the external systems whose configuration changes could touch the
+> household's members' data), composed by the D.63 change-management layer over the authoritative person lineage
+> across members. Firm-wide change / release / deployment / CI status is never exposed at household scope.
+> Counts + source-system names only — never a deployment payload; a rollup, never a second change engine;
+> **merged is not deployed**. See [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+> [`ADR-068`](adr/ADR-068-change-management.md).
+
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
 member-specific information, shared relationships, current work and deadlines, and where to act. It is a

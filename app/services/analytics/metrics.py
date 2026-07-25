@@ -476,6 +476,15 @@ _DEFS = (
            sources.knowledge_panel_failures),
     Metric("knowledge_authorization_failures", "Knowledge Authorization Failures", "operations", "count",
            "card", False, sources.knowledge_authorization_failures),
+    # Change Management / Release governance (Phase D.63) — low-cardinality operational metrics.
+    Metric("change_dashboards_composed", "Change Dashboards Composed", "operations", "count", "card",
+           False, sources.change_dashboards_composed),
+    Metric("change_panels_composed", "Change Panels Composed", "operations", "count", "card", False,
+           sources.change_panels_composed),
+    Metric("change_panel_failures", "Change Panel Failures", "operations", "count", "card", False,
+           sources.change_panel_failures),
+    Metric("change_authorization_failures", "Change Authorization Failures", "operations", "count",
+           "card", False, sources.change_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

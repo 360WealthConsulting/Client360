@@ -80,3 +80,11 @@ quality, lineage, stewardship, and ownership over the authoritative Governance p
 composition, never a second master-data platform or merge engine. Automation triggers/events surface there
 via the Event registry's dependency-graph lineage panel. See [`DATA_GOVERNANCE.md`](DATA_GOVERNANCE.md) and
 ADR-057.
+
+**Related (D.63):** the **Change Management** layer (`/change-management`) treats workflow definitions and
+automation rules as change domains and references this layer's `automation_summary` as their read surface —
+read-only, `automation.view`. It never creates a template / job, runs a workflow, or changes an automation
+rule; Automation Orchestration remains the authoritative owner. Change management is an operational-readiness
+view — **not** a deployment or production certification. See
+[`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+[`ADR-068`](adr/ADR-068-change-management.md).
