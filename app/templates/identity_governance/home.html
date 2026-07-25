@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Identity Governance | Client360{% endblock %}
+{% block crumb %}Identity Governance{% endblock %}
+{% block content %}
+{% call ui.page_head("Identity & access governance", eyebrow="Authorization intelligence", desc="A unified, governed view of the firm's identity and access posture — identity inventory, role coverage, capability coverage, permission mappings, authentication coverage, authorization coverage, policy coverage, least-privilege indicators, access-governance readiness and identity gaps — composed read-only from the authoritative owners (the Identity service for the user / role / capability / team directory, Security RBAC for role & capability resolution and authorization policies, Security Authentication for providers, the Policy engine for policy coverage, and Security Authorization for record-scope decisions). Never a second identity provider, authentication service, authorization engine, RBAC system, directory, SSO platform, policy engine or user-management platform; never authenticates a user, authorizes a request, assigns a role, grants or revokes a permission, modifies a policy, creates an identity, creates a session or manages a password. SSO / external identity providers, MFA enforcement, service accounts, API-key / token identities, access reviews, PAM, segregation of duties, identity lifecycle and password management have no authoritative owner and are reported not_configured — never fabricated. Counts, coverage, status and ratios only — no passwords, secrets, tokens, session IDs, credentials, authentication payloads, raw identities, privileged-role membership or user-level permission maps. These are GOVERNANCE-READINESS SUMMARIES, never an authentication result, an authorization decision, a granted permission or a certified access review: a capability inventory is not a grant, a role definition is not an assignment, a provider registration is not an authentication, and coverage is not certification. Every panel deep-links to its authoritative owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Identity dashboards">
+  {% for d in dashboards %}
+    <a href="/identity-governance?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No identity-governance dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}
+ {% if board.not_configured_domains %}· not_configured: {{ board.not_configured_domains | length }}{% endif %}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}{% if p.derived %} <span class="subtle">(derived)</span>{% endif %}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Not configured — no authoritative owner in the platform.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<p class="subtle">These are governance-readiness summaries composed from the authorized owners; they are never an authentication result, an authorization decision, a granted permission or a certified access review. A capability inventory is not a grant, a role definition is not an assignment, and coverage is not certification.</p>
+{% endif %}
+{% endblock %}

@@ -241,6 +241,14 @@ DASHBOARD_REGISTRY = (
        "executive_dashboard.enabled", ("operational_health", "runtime_health"),
        ("analytics.view",), "/environment-management",
        ("runtime", "recommendations")),
+    # Enterprise Identity & Access Governance (D.65) — the executive view of the identity / role / capability /
+    # authentication / authorization posture, composed from EXISTING widgets (compliance + operational health,
+    # no new widget). The full identity surface lives at /identity-governance. Governance coverage only — a
+    # capability inventory is not a grant, coverage is not certification.
+    _d("enterprise_identity_access_governance", "executive_intelligence", "executive",
+       "executive_dashboard.enabled", ("compliance_workload", "operational_health"),
+       ("analytics.view",), "/identity-governance",
+       ("compliance", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

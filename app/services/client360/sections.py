@@ -444,6 +444,20 @@ def platform_dependencies(principal, ctx):
             "source": "environment_management.client_platform_dependencies", "not_a_second_engine": True}
 
 
+def authorization_context(principal, ctx):
+    """A record-scoped authorization-context summary for this client (D.65) — ONLY the current principal's OWN
+    authorization decision for this record, composed read-only from the authoritative Security Authorization
+    owner (`record_in_scope`). **No internal identities, privileged roles, permission maps, authentication
+    metadata, or security configuration are ever exposed, and authorization is never inferred** — this is the
+    platform's actual, already-made decision for THIS principal on THIS record. Never a second authorization
+    engine; never authenticates / authorizes / assigns / grants anything."""
+    from app.services.identity_governance import client_authorization_context
+    pid = _pid(ctx)
+    return {**(client_authorization_context(principal, pid) if pid else {"enabled": False, "available": False,
+               "signals": {}}),
+            "source": "identity_governance.client_authorization_context", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

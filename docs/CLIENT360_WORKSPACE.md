@@ -145,6 +145,15 @@
 > [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and
 > [`ADR-069`](adr/ADR-069-environment-management.md).
 
+> **D.65:** Client 360 also gains an **Authorization Context** section (gated by `observability.view`) — which
+> composes ONLY the current principal's OWN record-scope authorization decision (`record_in_scope`, the
+> platform's actual already-made decision) from the authoritative Security Authorization owner. **No internal
+> identities, privileged roles, permission maps, authentication metadata, or security configuration are ever
+> exposed, and authorization is never inferred.** Composed by the D.65 identity-governance layer; never a
+> second authorization engine; never authenticates / authorizes / assigns / grants anything. See
+> [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
+> [`ADR-070`](adr/ADR-070-identity-governance.md).
+
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
 surface** over the authoritative domain services; it is **not** a second client database and never the

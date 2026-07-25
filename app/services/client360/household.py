@@ -55,6 +55,7 @@ HOUSEHOLD_SECTIONS = (
     ("knowledge_documentation", "documents.view"),
     ("change_impact", "observability.view"),
     ("platform_dependencies", "observability.view"),
+    ("authorization_context", "observability.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -596,6 +597,18 @@ def _platform_dependencies(principal, ctx):
             "source": "environment_management.household_platform_dependencies", "not_a_second_engine": True}
 
 
+def _authorization_context(principal, ctx):
+    """Household record-scoped authorization-context summary (D.65) — ONLY the current principal's OWN
+    authorization decision for this household record, composed read-only from the authoritative Security
+    Authorization owner (`record_in_scope`). No internal identities, privileged roles, permission maps,
+    authentication metadata, or security configuration are ever exposed, and authorization is never inferred.
+    Never a second authorization engine; never authenticates / authorizes / assigns / grants anything."""
+    from app.services.identity_governance import household_authorization_context
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_authorization_context(principal, ctx["household_id"], member_ids),
+            "source": "identity_governance.household_authorization_context", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -650,6 +663,7 @@ _SECTION_BUILDERS = {
     "evidence_readiness": _evidence_readiness, "operational_impact": _operational_impact,
     "servicing_team": _servicing_team, "knowledge_documentation": _knowledge_documentation,
     "change_impact": _change_impact, "platform_dependencies": _platform_dependencies,
+    "authorization_context": _authorization_context,
     "timeline": _timeline, "relationships": _relationships,
 }
 

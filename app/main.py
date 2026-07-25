@@ -76,6 +76,7 @@ from app.routes.capacity_planning import router as capacity_planning_router
 from app.routes.knowledge_management import router as knowledge_management_router
 from app.routes.change_management import router as change_management_router
 from app.routes.environment_management import router as environment_management_router
+from app.routes.identity_governance import router as identity_governance_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -263,6 +264,7 @@ app.include_router(capacity_planning_router)
 app.include_router(knowledge_management_router)
 app.include_router(change_management_router)
 app.include_router(environment_management_router)
+app.include_router(identity_governance_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---
