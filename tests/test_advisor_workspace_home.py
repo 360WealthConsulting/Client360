@@ -277,7 +277,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1010
+    assert len(app.routes) == 1018
 
 
 def test_workspace_personalization_tables_exist():

@@ -212,6 +212,18 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         capacity_workload = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Knowledge & SOPs panel (D.62) — a read-only knowledge/documentation summary (executive knowledge posture
+    # + documentation completeness + documentation gaps + SOP coverage + publication readiness + knowledge
+    # gaps + knowledge health) composed over the authoritative Document Platform / Document Intelligence /
+    # retention owners. Guarded so a gate-off never breaks home; this panel never creates/edits/publishes
+    # anything. A documentation-coverage summary only — never fabricated documentation or institutional
+    # knowledge.
+    try:
+        from app.services.knowledge_management import knowledge_summary
+        knowledge_sops = knowledge_summary(principal)
+    except Exception:
+        knowledge_sops = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -241,4 +253,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "regulatory_readiness": regulatory_readiness,
         "operational_status": operational_status,
         "capacity_workload": capacity_workload,
+        "knowledge_sops": knowledge_sops,
     }

@@ -111,6 +111,14 @@
 > never an employee detail; never a second HR/scheduling engine. See
 > [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and
 > [`ADR-066`](adr/ADR-066-capacity-planning.md).
+>
+> **D.62:** Household 360 also gains a **Documentation** section (gated by `documents.view`) — ONLY the
+> record-scoped documentation relevant to servicing this household (document count + gaps across the household +
+> members, deduplicated by document id), composed by the D.62 knowledge-management layer over the authoritative
+> Document Intelligence per-entity read. Internal SOPs, unrelated documentation, and firm-wide documentation
+> metrics are never exposed at household scope. Counts + status only — never document contents; never a second
+> wiki/DMS. See [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
+> [`ADR-067`](adr/ADR-067-knowledge-management.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

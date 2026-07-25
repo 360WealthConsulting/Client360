@@ -1392,3 +1392,25 @@ def capacity_panel_failures(principal) -> int:
 def capacity_authorization_failures(principal) -> int:
     from app.services.capacity_planning.metrics import capacity_authorization_failures as _r
     return _r(principal)
+
+
+# --- Knowledge Management / SOP governance (Phase D.62) — low-cardinality in-process counters ---
+
+def knowledge_dashboards_composed(principal) -> int:
+    from app.services.knowledge_management.metrics import knowledge_dashboards_composed as _r
+    return _r(principal)
+
+
+def knowledge_panels_composed(principal) -> int:
+    from app.services.knowledge_management.metrics import knowledge_panels_composed as _r
+    return _r(principal)
+
+
+def knowledge_panel_failures(principal) -> int:
+    from app.services.knowledge_management.metrics import knowledge_panel_failures as _r
+    return _r(principal)
+
+
+def knowledge_authorization_failures(principal) -> int:
+    from app.services.knowledge_management.metrics import knowledge_authorization_failures as _r
+    return _r(principal)

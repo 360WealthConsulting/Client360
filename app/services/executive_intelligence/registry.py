@@ -218,6 +218,13 @@ DASHBOARD_REGISTRY = (
        ("advisor_workload", "operational_health"),
        ("analytics.view",), "/capacity-planning",
        ("recommendations", "runtime")),
+    # Enterprise Knowledge & Documentation (D.62) — the executive view of knowledge / SOP / documentation
+    # coverage, composed from EXISTING widgets (compliance workload + operational health, no new widget). The
+    # full knowledge surface lives at /knowledge-management.
+    _d("enterprise_knowledge_documentation", "executive_intelligence", "executive",
+       "executive_dashboard.enabled", ("compliance_workload", "operational_health"),
+       ("analytics.view",), "/knowledge-management",
+       ("compliance", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

@@ -402,6 +402,20 @@ def servicing_team(principal, ctx):
             "source": "capacity_planning.client_staffing", "not_a_second_engine": True}
 
 
+def knowledge_documentation(principal, ctx):
+    """A compact documentation summary for this client (D.62) — ONLY the record-scoped documentation relevant
+    to servicing this client (this client's document count + documentation gaps), composed read-only from the
+    authoritative Document Intelligence per-entity read over the Document Platform's scoped reads. **Internal
+    SOPs, unrelated documentation, confidential operational procedures, and firm-wide documentation metrics are
+    never exposed at client scope.** Counts + status only, never document contents; deep-links to the
+    authoritative surface. Never a second wiki/DMS; a documentation-coverage summary, never fabricated
+    knowledge."""
+    from app.services.knowledge_management import client_documentation
+    pid = _pid(ctx)
+    return {**(client_documentation(principal, pid) if pid else {"enabled": False, "signals": {}}),
+            "source": "knowledge_management.client_documentation", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

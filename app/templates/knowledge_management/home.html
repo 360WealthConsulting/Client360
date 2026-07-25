@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Knowledge Management | Client360{% endblock %}
+{% block crumb %}Knowledge Management{% endblock %}
+{% block content %}
+{% call ui.page_head("Knowledge management", eyebrow="SOP governance & institutional intelligence", desc="A unified, governed view of firm knowledge, SOPs and documentation — SOP coverage, documentation completeness, document freshness, ownership coverage, version awareness, publication readiness, documentation gaps and knowledge health — composed read-only from the authoritative owners (the Document Platform, Document Intelligence and Data Governance retention). Never a second wiki, document-management platform, Confluence replacement, SharePoint, records-management platform, search engine, AI knowledge store or document repository; never creates, edits, approves or publishes a document, changes a version or alters metadata. SOP governance, runbooks, playbooks, onboarding SOPs, a knowledge base, institutional memory, a wiki, Confluence and a dedicated search index have no authoritative owner and are reported not_configured — never fabricated. Counts, status and coverage only — no document contents, confidential procedures, credentials, tokens or client-sensitive documentation. These are DOCUMENTATION-COVERAGE SUMMARIES, never fabricated documentation, SOP approval, version history or institutional knowledge. Every panel deep-links to its authoritative owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Knowledge dashboards">
+  {% for d in dashboards %}
+    <a href="/knowledge-management?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No knowledge-management dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}
+ {% if board.not_configured_domains %}· not_configured: {{ board.not_configured_domains | length }}{% endif %}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}{% if p.derived %} <span class="subtle">(derived)</span>{% endif %}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Not configured — no authoritative owner in the platform.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<p class="subtle">These are documentation-coverage summaries composed from the authorized owners; they are never fabricated documentation, SOP approval, version history or institutional knowledge.</p>
+{% endif %}
+{% endblock %}

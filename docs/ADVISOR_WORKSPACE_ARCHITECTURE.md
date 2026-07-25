@@ -124,6 +124,16 @@
 > entry; the panel never assigns/schedules anything. An operational summary only — **never a certified staffing
 > figure and never an HR record**. The full capacity dashboards live at `/capacity-planning`. See
 > [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and ADR-066.
+>
+> **D.62:** The advisor home also carries a **Knowledge & SOPs** panel (`ws["knowledge_sops"]`) — the firm
+> knowledge/documentation summary (executive knowledge posture + documentation completeness + documentation
+> gaps + SOP coverage + publication readiness + knowledge gaps + knowledge health) composed by the D.62
+> knowledge-management layer over the authoritative Document Platform / Document Intelligence / retention
+> owners. Counts + status + coverage only — never document contents / confidential procedures / credentials /
+> tokens; the panel never creates/edits/publishes anything. A documentation-coverage summary only — **never
+> fabricated documentation or institutional knowledge**. The full knowledge dashboards live at
+> `/knowledge-management`. See [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
+> ADR-067.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
