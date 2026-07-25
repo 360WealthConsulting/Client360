@@ -431,6 +431,19 @@ def change_impact(principal, ctx):
             "source": "change_management.client_change_impact", "not_a_second_engine": True}
 
 
+def platform_dependencies(principal, ctx):
+    """A record-scoped platform-dependency summary for this client (D.64). There is NO authoritative owner that
+    maps a client RECORD to a platform / environment / infrastructure dependency, so this is reported
+    `not_configured` honestly — **internal infrastructure, deployment topology, and environment metadata
+    unrelated to the record are never exposed, and platform impact is never inferred at record scope.** Never a
+    second CMDB / infrastructure platform; never creates / deploys / provisions / modifies anything."""
+    from app.services.environment_management import client_platform_dependencies
+    pid = _pid(ctx)
+    return {**(client_platform_dependencies(principal, pid) if pid else {"enabled": False, "available": False,
+               "signals": {}}),
+            "source": "environment_management.client_platform_dependencies", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

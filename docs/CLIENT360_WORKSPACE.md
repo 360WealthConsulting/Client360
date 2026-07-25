@@ -136,6 +136,15 @@
 > [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and
 > [`ADR-068`](adr/ADR-068-change-management.md).
 
+> **D.64:** Client 360 also gains a **Platform Dependencies** section (gated by `observability.view`) — which
+> reports `not_configured` (available=False) HONESTLY. **There is no authoritative owner that maps a client
+> RECORD to a platform / environment / infrastructure dependency, so platform impact is never inferred at
+> record scope, and internal infrastructure, deployment topology, and environment metadata unrelated to the
+> record are never exposed.** Composed by the D.64 environment-management layer; never a second CMDB /
+> infrastructure platform; never creates / deploys / provisions / modifies anything. See
+> [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and
+> [`ADR-069`](adr/ADR-069-environment-management.md).
+
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
 surface** over the authoritative domain services; it is **not** a second client database and never the

@@ -128,6 +128,15 @@
 > **merged is not deployed**. See [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and
 > [`ADR-068`](adr/ADR-068-change-management.md).
 
+> **D.64:** Household 360 also gains a **Platform Dependencies** section (gated by `observability.view`) —
+> which reports `not_configured` (available=False) HONESTLY. No authoritative record-scoped platform /
+> environment / infrastructure owner exists, so platform impact is never inferred at household scope, and
+> internal infrastructure and environment metadata unrelated to the household are never exposed. Composed by
+> the D.64 environment-management layer; never a second CMDB / infrastructure platform; never creates / deploys
+> / provisions / modifies anything. See
+> [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and
+> [`ADR-069`](adr/ADR-069-environment-management.md).
+
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
 member-specific information, shared relationships, current work and deadlines, and where to act. It is a

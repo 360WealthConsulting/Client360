@@ -147,6 +147,18 @@
 > change dashboards live at `/change-management`. See
 > [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and ADR-068.
 
+> **D.64:** The advisor home also carries an **Environment & Platform Status** panel
+> (`ws["environment_platform"]`) — the firm environment/platform landscape summary (executive platform posture
+> + environment profiles + platform inventory + deployment references + lifecycle readiness + composed
+> governance + not_configured domains) composed by the D.64 environment-management layer over the Observability
+> catalog / health / service owners, the Runtime + Policy engines and the Integration platform. Counts + status
+> + coverage only — never a credential / token / deployment payload / private topology / sensitive
+> configuration value; the panel never creates an environment / deploys / provisions / modifies topology /
+> changes lifecycle / executes a cloud operation. An operational-visibility summary only — **environment
+> metadata is not live infrastructure, a deployment reference is not a deployment, an active flag is not a
+> lifecycle guarantee**. The full environment dashboards live at `/environment-management`. See
+> [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and ADR-069.
+
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
 > redaction models, and extension points), see **`docs/PLATFORM_ARCHITECTURE.md`** (Phase D.12A).

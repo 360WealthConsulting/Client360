@@ -209,6 +209,23 @@ production, a merged pull request is not deployment, an absent incident is not c
 but never creates a branch / merges / deploys / runs a migration / changes a flag / approves / rolls back /
 certifies production. See [`ENTERPRISE_CHANGE_MANAGEMENT.md`](ENTERPRISE_CHANGE_MANAGEMENT.md) and ADR-068.
 
+**Enterprise Platform & Environment Landscape (D.64):** the registry gains an
+`enterprise_platform_environment_landscape` executive dashboard composed from **existing** widgets
+(`operational_health`, `runtime_health`) — no new widget — whose navigation deep-links to the full environment
+surface at `/environment-management`. The dedicated Environment Management layer (a unified read-only view of
+the firm's environment & platform landscape — environment inventory / deployment topology / runtime topology /
+platform ownership / lifecycle state / infrastructure dependencies, composed over the Observability catalog /
+health / service owners, the Runtime + Policy engines, and the Integration platform) lives in
+`app/services/environment_management/`; counts / status / coverage only, never a credential / token / deployment
+payload / private topology / sensitive configuration value; cloud resources, servers, containers, VMs, formal
+lifecycle state, retirement records, decommission schedule, host / network topology, and live deployment
+execution are reported not_configured; the executive posture is DERIVED and labeled — **an operational-visibility
+summary, never a certified environment health, deployment status, provisioning outcome, or retirement decision:
+environment metadata is not live infrastructure, a deployment reference is not a deployment**; AI summarizes but
+never invents environments / fabricates infrastructure / infers deployments / certifies platform health /
+provisions resources. See [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and
+ADR-069.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.
