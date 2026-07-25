@@ -167,6 +167,19 @@ healthy or continuity assured**; AI summarizes but never declares production hea
 generates alerts. See [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
 ADR-065.
 
+**Enterprise Workforce & Capacity (D.61):** the registry gains an `enterprise_workforce_capacity` executive
+dashboard composed from **existing** widgets (`advisor_workload`, `operational_health`) — no new widget — whose
+navigation deep-links to the full capacity surface at `/capacity-planning`. The dedicated Capacity Planning
+layer (a unified read-only view of firm workforce operations / capacity / utilization — staffing / workload /
+queue health / utilization / capacity forecasts / assignment distribution / operational / advisor / automation
+workload, composed over the Operations capacity owner, the Work Queue, Practice Management, and Automation
+Orchestration) lives in `app/services/capacity_planning/`; counts / status / coverage only, never an employee
+detail / payroll / HR record / calendar content / time entry; HR directory / contractors / PTO / availability /
+time-tracking / payroll / meeting-onboarding-planning capacity are reported not_configured; the executive
+posture is DERIVED and labeled — **an operational summary, never a certified staffing / utilization figure and
+never an HR record**; AI summarizes but never assigns work / approves staffing / schedules employees /
+fabricates utilization. See [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and ADR-066.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

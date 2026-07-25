@@ -77,3 +77,12 @@ Automation Orchestration layer (`app/services/automation_orchestration/`) is the
 for firm-wide automation visibility (workflow status, trigger activity, execution status, pending/failed
 automations) over the Workflow Engine + Automation engine + Event outbox — never a second workflow engine.
 See [`AUTOMATION_ORCHESTRATION.md`](AUTOMATION_ORCHESTRATION.md) and ADR-056.
+
+**Related (D.61):** the **Capacity Planning** layer (`/capacity-planning`) composes this layer's
+`practice_summary` (staffing recommendations) + the same Operations capacity owner for its staffing /
+utilization / capacity panels — read-only, `capacity.read`. Practice Management is the D.49 capacity/workload
+*composition* owner; Capacity Planning is the broader D.61 workforce / resource-intelligence view (adding
+workforce + capacity + utilization registries + honest not_configured for HR directory / PTO / time-tracking /
+payroll). Two read-only composition views, neither a second store; both advisory only — never assign or
+schedule. See [ENTERPRISE_CAPACITY_PLANNING.md](ENTERPRISE_CAPACITY_PLANNING.md) and
+[ADR-066](adr/ADR-066-capacity-planning.md).

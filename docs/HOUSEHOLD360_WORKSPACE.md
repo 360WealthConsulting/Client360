@@ -103,6 +103,14 @@
 > (not_configured). Counts only — never a payload; never a second incident/monitoring engine. See
 > [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
 > [`ADR-065`](adr/ADR-065-operational-resilience.md).
+>
+> **D.61:** Household 360 also gains a **Servicing Team** section (gated by `capacity.read`) — ONLY the
+> record-scoped staffing directly related to servicing this household (who is assigned across the household +
+> members), composed by the D.61 capacity-planning layer over the authoritative authorization owner. Employee
+> workload, firm utilization, and unrelated staffing data are never exposed at household scope. Counts only —
+> never an employee detail; never a second HR/scheduling engine. See
+> [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and
+> [`ADR-066`](adr/ADR-066-capacity-planning.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

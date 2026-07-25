@@ -49,6 +49,7 @@ _LINKS = {
     "enterprise_risk": lambda **k: "/enterprise-risk",
     "regulatory_readiness": lambda **k: "/regulatory-readiness",
     "operational_resilience": lambda **k: "/operational-resilience",
+    "capacity_planning": lambda **k: "/capacity-planning",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -61,7 +62,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "vendor_management": "Vendor Management", "financial_operations": "Financial Operations",
           "enterprise_risk": "Enterprise Risk & Controls",
           "regulatory_readiness": "Regulatory Readiness",
-          "operational_resilience": "Operational Resilience"}
+          "operational_resilience": "Operational Resilience",
+          "capacity_planning": "Capacity Planning"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -309,6 +311,16 @@ def _client(principal, person_id):
         facts.append(_fact("operational_resilience", "operational.service_dependencies",
                            oi_signals["service_dependencies"], fact_class=DERIVED,
                            deep_link="/operational-resilience"))
+    # Capacity Planning — SUMMARIZED record-scoped servicing-team COUNT (how many servicers are assigned to
+    # this client), composed read-only from the authoritative authorization owner. AI summarizes the count; it
+    # never assigns work, approves staffing, schedules employees, modifies assignments, infers availability, or
+    # fabricates utilization. Employee workload and firm utilization are never surfaced at client scope.
+    st = (ws.get("sections") or {}).get("servicing_team") or {}
+    st_signals = st.get("signals") if isinstance(st.get("signals"), dict) else {}
+    if st.get("enabled") and isinstance(st_signals.get("assigned_servicers"), int):
+        facts.append(_fact("capacity_planning", "capacity.assigned_servicers",
+                           st_signals["assigned_servicers"], fact_class=DERIVED,
+                           deep_link="/capacity-planning"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

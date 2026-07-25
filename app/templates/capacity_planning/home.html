@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Capacity Planning | Client360{% endblock %}
+{% block crumb %}Capacity Planning{% endblock %}
+{% block content %}
+{% call ui.page_head("Capacity planning", eyebrow="Workforce operations & resource intelligence", desc="A unified, governed view of firm workforce operations, capacity and utilization — staffing summaries, workload, queue health, utilization, capacity forecasts, assignment distribution and operational / advisor / automation workload — composed read-only from the authoritative owners (the Operations capacity owner, the Work Queue, Practice Management and Automation Orchestration). Never a second HR platform, HCM, scheduling application, calendar system, project-management system, PSA, time-tracking platform, payroll platform or workforce-management system; never assigns work, approves PTO, creates meetings, moves calendar events, schedules resources or modifies assignments. A full HR employee directory, contractors, PTO / availability, time-tracking, payroll and meeting / onboarding / planning capacity have no authoritative owner and are reported not_configured — never fabricated. Counts, status and coverage only — no employee details, payroll, HR records, calendar contents, time entries or sensitive staffing data. These are OPERATIONAL SUMMARIES, never certified staffing / utilization figures and never HR records. Every panel deep-links to its authoritative owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Resource dashboards">
+  {% for d in dashboards %}
+    <a href="/capacity-planning?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No capacity-planning dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}
+ {% if board.not_configured_domains %}· not_configured: {{ board.not_configured_domains | length }}{% endif %}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}{% if p.derived %} <span class="subtle">(derived)</span>{% endif %}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Not configured — no authoritative owner in the platform.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<p class="subtle">These are operational summaries composed from the authorized owners; they are not certified staffing or utilization figures and never HR records.</p>
+{% endif %}
+{% endblock %}

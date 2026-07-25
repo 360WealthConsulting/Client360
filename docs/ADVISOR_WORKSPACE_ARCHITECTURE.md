@@ -115,6 +115,15 @@
 > **Operational posture is NOT a certification** that production is healthy, and an absent incident is not
 > health. The full resilience dashboards live at `/operational-resilience`. See
 > [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and ADR-065.
+>
+> **D.61:** The advisor home also carries a **Capacity & Workload** panel (`ws["capacity_workload"]`) — the
+> firm workforce/capacity summary (executive workforce posture + firm capacity utilization + queue health +
+> advisor workload + staffing readiness + staffing gaps + automation workload) composed by the D.61
+> capacity-planning layer over the authoritative Operations capacity / Work Queue / Practice Management owners.
+> Counts + status + coverage only — never an employee detail / payroll / HR record / calendar content / time
+> entry; the panel never assigns/schedules anything. An operational summary only — **never a certified staffing
+> figure and never an HR record**. The full capacity dashboards live at `/capacity-planning`. See
+> [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and ADR-066.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

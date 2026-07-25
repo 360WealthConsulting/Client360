@@ -211,6 +211,13 @@ DASHBOARD_REGISTRY = (
        "executive_dashboard.enabled", ("operational_health", "runtime_health"),
        ("analytics.view",), "/operational-resilience",
        ("runtime", "recommendations")),
+    # Enterprise Workforce & Capacity (D.61) — the executive view of workforce operations & capacity, composed
+    # from EXISTING widgets (advisor workload + operational health, no new widget). The full capacity surface
+    # lives at /capacity-planning.
+    _d("enterprise_workforce_capacity", "executive_intelligence", "executive", "executive_dashboard.enabled",
+       ("advisor_workload", "operational_health"),
+       ("analytics.view",), "/capacity-planning",
+       ("recommendations", "runtime")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}
