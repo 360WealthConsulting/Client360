@@ -159,6 +159,19 @@
 > lifecycle guarantee**. The full environment dashboards live at `/environment-management`. See
 > [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and ADR-069.
 
+> **D.65:** The advisor home also carries an **Identity & Access Status** panel (`ws["identity_access"]`) — the
+> firm identity/access-governance summary (executive identity posture + access-governance readiness + user
+> directory coverage + MFA coverage + authorization-policy coverage + composed governance + not_configured
+> domains) composed by the D.65 identity-governance layer over the Identity service, Security RBAC /
+> Authentication / Authorization owners and the Policy engine. Counts + coverage + status only — never a
+> password / token / session ID / credential / raw identity / privileged-role membership / user-level
+> permission map; the panel never authenticates / authorizes / assigns a role / grants / revokes / modifies a
+> policy / creates an identity / creates a session. Self-gates to `identity.manage` — an advisor without it
+> sees an empty envelope. A governance-readiness summary only — **a capability inventory is not a grant, a role
+> definition is not an assignment, and coverage is not certification**. The full identity dashboards live at
+> `/identity-governance`. See [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
+> ADR-070.
+
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
 > redaction models, and extension points), see **`docs/PLATFORM_ARCHITECTURE.md`** (Phase D.12A).

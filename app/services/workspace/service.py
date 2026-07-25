@@ -251,6 +251,20 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         environment_platform = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Identity & Access Status panel (D.65) — a read-only governance-readiness summary (executive identity
+    # posture + access-governance readiness + user-directory coverage + MFA coverage + authorization-policy
+    # coverage + composed governance + not_configured domains) composed over the Identity service, Security
+    # RBAC / Authentication / Authorization owners and the Policy engine. Guarded so a gate-off never breaks
+    # home; this panel never authenticates / authorizes / assigns a role / grants / revokes / modifies a policy
+    # / creates an identity / creates a session. Self-gates to identity.manage — an advisor without it sees an
+    # empty envelope. Governance coverage only — a capability inventory is not a grant, coverage is not
+    # certification.
+    try:
+        from app.services.identity_governance import identity_summary
+        identity_access = identity_summary(principal)
+    except Exception:
+        identity_access = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -283,4 +297,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "knowledge_sops": knowledge_sops,
         "change_release": change_release,
         "environment_platform": environment_platform,
+        "identity_access": identity_access,
     }

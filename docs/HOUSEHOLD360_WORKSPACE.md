@@ -137,6 +137,15 @@
 > [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and
 > [`ADR-069`](adr/ADR-069-environment-management.md).
 
+> **D.65:** Household 360 also gains an **Authorization Context** section (gated by `observability.view`) —
+> which composes ONLY the current principal's OWN record-scope authorization decision (`record_in_scope`) from
+> the authoritative Security Authorization owner. No internal identities, privileged roles, permission maps,
+> authentication metadata, or security configuration are ever exposed, and authorization is never inferred.
+> Composed by the D.65 identity-governance layer; never a second authorization engine; never authenticates /
+> authorizes / assigns / grants anything. See
+> [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
+> [`ADR-070`](adr/ADR-070-identity-governance.md).
+
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
 member-specific information, shared relationships, current work and deadlines, and where to act. It is a

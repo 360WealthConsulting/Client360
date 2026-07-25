@@ -494,6 +494,15 @@ _DEFS = (
            sources.environment_panel_failures),
     Metric("environment_authorization_failures", "Environment Authorization Failures", "operations", "count",
            "card", False, sources.environment_authorization_failures),
+    # Identity Governance / Access governance (Phase D.65) — low-cardinality operational metrics.
+    Metric("identity_dashboards_composed", "Identity Dashboards Composed", "operations", "count", "card",
+           False, sources.identity_dashboards_composed),
+    Metric("identity_panels_composed", "Identity Panels Composed", "operations", "count", "card", False,
+           sources.identity_panels_composed),
+    Metric("identity_panel_failures", "Identity Panel Failures", "operations", "count", "card", False,
+           sources.identity_panel_failures),
+    Metric("identity_authorization_failures", "Identity Authorization Failures", "operations", "count",
+           "card", False, sources.identity_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

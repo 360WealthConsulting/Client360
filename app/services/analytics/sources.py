@@ -1458,3 +1458,25 @@ def environment_panel_failures(principal) -> int:
 def environment_authorization_failures(principal) -> int:
     from app.services.environment_management.metrics import environment_authorization_failures as _r
     return _r(principal)
+
+
+# --- Identity Governance / Access governance (Phase D.65) — low-cardinality in-process counters ---
+
+def identity_dashboards_composed(principal) -> int:
+    from app.services.identity_governance.metrics import identity_dashboards_composed as _r
+    return _r(principal)
+
+
+def identity_panels_composed(principal) -> int:
+    from app.services.identity_governance.metrics import identity_panels_composed as _r
+    return _r(principal)
+
+
+def identity_panel_failures(principal) -> int:
+    from app.services.identity_governance.metrics import identity_panel_failures as _r
+    return _r(principal)
+
+
+def identity_authorization_failures(principal) -> int:
+    from app.services.identity_governance.metrics import identity_authorization_failures as _r
+    return _r(principal)

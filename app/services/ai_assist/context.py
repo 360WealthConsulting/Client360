@@ -53,6 +53,7 @@ _LINKS = {
     "knowledge_management": lambda **k: "/knowledge-management",
     "change_management": lambda **k: "/change-management",
     "environment_management": lambda **k: "/environment-management",
+    "identity_governance": lambda **k: "/identity-governance",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -69,7 +70,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "capacity_planning": "Capacity Planning",
           "knowledge_management": "Knowledge Management",
           "change_management": "Change Management",
-          "environment_management": "Environment Management"}
+          "environment_management": "Environment Management",
+          "identity_governance": "Identity Governance"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -358,6 +360,17 @@ def _client(principal, person_id):
     if pd.get("available") is False:
         facts.append(_fact("environment_management", "platform.record_scoped_dependencies", None,
                            fact_class=DERIVED, deep_link="/environment-management", available=False))
+    # Identity Governance — the current principal's OWN record-scope authorization decision for this record
+    # (the platform's actual, already-made decision), composed read-only from the authoritative Security
+    # Authorization owner. AI may state whether THIS principal is in authorized scope; it must NEVER
+    # authenticate, authorize, assign a role, recommend privilege escalation, fabricate a permission, invent an
+    # identity, expose another user's identity / privileged role / permission map, or infer authorization.
+    ac = (ws.get("sections") or {}).get("authorization_context") or {}
+    ac_signals = ac.get("signals") if isinstance(ac.get("signals"), dict) else {}
+    if ac.get("available") and isinstance(ac_signals.get("principal_in_scope"), bool):
+        facts.append(_fact("identity_governance", "authorization.principal_in_scope",
+                           ac_signals["principal_in_scope"], fact_class=DERIVED,
+                           deep_link="/identity-governance"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

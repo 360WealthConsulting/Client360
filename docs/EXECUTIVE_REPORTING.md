@@ -226,6 +226,23 @@ never invents environments / fabricates infrastructure / infers deployments / ce
 provisions resources. See [`ENTERPRISE_ENVIRONMENT_MANAGEMENT.md`](ENTERPRISE_ENVIRONMENT_MANAGEMENT.md) and
 ADR-069.
 
+**Enterprise Identity & Access Governance (D.65):** the registry gains an `enterprise_identity_access_governance`
+executive dashboard composed from **existing** widgets (`compliance_workload`, `operational_health`) — no new
+widget — whose navigation deep-links to the full identity surface at `/identity-governance`. The dedicated
+Identity Governance layer (a unified read-only view of the firm's identity & access posture — identity inventory
+/ role coverage / capability coverage / authentication coverage / authorization coverage / policy coverage /
+least-privilege indicators, composed over the Identity service, Security RBAC / Authentication / Authorization
+owners and the Policy engine) lives in `app/services/identity_governance/`; counts / coverage / status / ratios
+only, never a password / token / session ID / credential / raw identity / privileged-role membership /
+user-level permission map; SSO, MFA enforcement, service accounts, API-key auth, access reviews, PAM,
+segregation of duties, identity lifecycle, and password management are reported not_configured; the executive
+posture is DERIVED and labeled — **a governance-readiness summary, never an authentication result, an
+authorization decision, a granted permission, or a certified access review: a capability inventory is not a
+grant, a role definition is not an assignment, and coverage is not certification**; AI summarizes but never
+authenticates / authorizes / assigns roles / recommends privilege escalation / fabricates permissions / invents
+identities / bypasses policy. See [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
+ADR-070.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.
