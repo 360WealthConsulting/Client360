@@ -80,3 +80,12 @@ documentation-gap panels and its record-scoped client/household evidence section
 It never modifies a document or changes retention; Document Intelligence remains the authoritative owner. See
 [REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
 [ADR-064](adr/ADR-064-regulatory-examination-readiness.md).
+
+**Related (D.62):** the **Knowledge Management** layer (`/knowledge-management`) composes this layer's
+`document_summary` + `client_documents` / `household_documents`, plus the Document Platform's `list_documents`
+(lifecycle / classification / ownership / versions), for its SOP-governance / documentation-health / ownership /
+publication / knowledge dashboards — read-only, `documents.view`. It never creates / edits / approves /
+publishes a document or changes a version; Document Intelligence + the Document Platform remain the
+authoritative owners. SOP governance / runbooks / wiki / Confluence / search are reported `not_configured`. See
+[ENTERPRISE_KNOWLEDGE_MANAGEMENT.md](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
+[ADR-067](adr/ADR-067-knowledge-management.md).

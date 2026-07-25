@@ -50,6 +50,7 @@ _LINKS = {
     "regulatory_readiness": lambda **k: "/regulatory-readiness",
     "operational_resilience": lambda **k: "/operational-resilience",
     "capacity_planning": lambda **k: "/capacity-planning",
+    "knowledge_management": lambda **k: "/knowledge-management",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -63,7 +64,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "enterprise_risk": "Enterprise Risk & Controls",
           "regulatory_readiness": "Regulatory Readiness",
           "operational_resilience": "Operational Resilience",
-          "capacity_planning": "Capacity Planning"}
+          "capacity_planning": "Capacity Planning",
+          "knowledge_management": "Knowledge Management"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -321,6 +323,17 @@ def _client(principal, person_id):
         facts.append(_fact("capacity_planning", "capacity.assigned_servicers",
                            st_signals["assigned_servicers"], fact_class=DERIVED,
                            deep_link="/capacity-planning"))
+    # Knowledge Management — SUMMARIZED record-scoped documentation COUNT (this client's document count),
+    # composed read-only from the authoritative Document Intelligence per-entity read. AI summarizes the count;
+    # it never invents documentation, fabricates SOPs, creates procedures, implies approvals, infers unpublished
+    # knowledge, or modifies documentation. Internal SOPs and firm-wide documentation metrics are never
+    # surfaced at client scope.
+    kd = (ws.get("sections") or {}).get("knowledge_documentation") or {}
+    kd_signals = kd.get("signals") if isinstance(kd.get("signals"), dict) else {}
+    if kd.get("enabled") and isinstance(kd_signals.get("document_count"), int):
+        facts.append(_fact("knowledge_management", "knowledge.document_count",
+                           kd_signals["document_count"], fact_class=DERIVED,
+                           deep_link="/knowledge-management"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

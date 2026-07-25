@@ -116,6 +116,15 @@
 > engine; an operational summary, never an HR record. See
 > [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and
 > [`ADR-066`](adr/ADR-066-capacity-planning.md).
+>
+> **D.62:** Client 360 also gains a **Documentation** section (gated by `documents.view`) — ONLY the
+> record-scoped documentation relevant to servicing this client (this client's document count + documentation
+> gaps), composed by the D.62 knowledge-management layer over the authoritative Document Intelligence per-entity
+> read. **Internal SOPs, unrelated documentation, confidential operational procedures, and firm-wide
+> documentation metrics are never exposed at client scope.** Counts + status only — never document contents;
+> never a second wiki/DMS; a documentation-coverage summary, never fabricated knowledge. See
+> [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and
+> [`ADR-067`](adr/ADR-067-knowledge-management.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

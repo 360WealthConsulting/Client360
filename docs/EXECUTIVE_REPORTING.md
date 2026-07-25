@@ -180,6 +180,18 @@ posture is DERIVED and labeled — **an operational summary, never a certified s
 never an HR record**; AI summarizes but never assigns work / approves staffing / schedules employees /
 fabricates utilization. See [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and ADR-066.
 
+**Enterprise Knowledge & Documentation (D.62):** the registry gains an `enterprise_knowledge_documentation`
+executive dashboard composed from **existing** widgets (`compliance_workload`, `operational_health`) — no new
+widget — whose navigation deep-links to the full knowledge surface at `/knowledge-management`. The dedicated
+Knowledge Management layer (a unified read-only view of firm knowledge / SOPs / documentation — SOP coverage /
+documentation completeness / freshness / ownership / version awareness / publication readiness / knowledge
+health, composed over the Document Platform, Document Intelligence, and Data Governance retention) lives in
+`app/services/knowledge_management/`; counts / status / coverage only, never document contents / confidential
+procedures; SOP governance / runbooks / wiki / Confluence / search index are reported not_configured; the
+executive posture is DERIVED and labeled — **a documentation-coverage summary, never a certified SOP / approval
+/ institutional-knowledge figure**; AI summarizes but never invents documentation / fabricates SOPs / implies
+approvals. See [`ENTERPRISE_KNOWLEDGE_MANAGEMENT.md`](ENTERPRISE_KNOWLEDGE_MANAGEMENT.md) and ADR-067.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

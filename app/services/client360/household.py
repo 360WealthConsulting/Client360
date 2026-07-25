@@ -52,6 +52,7 @@ HOUSEHOLD_SECTIONS = (
     ("evidence_readiness", "compliance.supervise"),
     ("operational_impact", "observability.view"),
     ("servicing_team", "capacity.read"),
+    ("knowledge_documentation", "documents.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -557,6 +558,18 @@ def _servicing_team(principal, ctx):
             "source": "capacity_planning.household_staffing", "not_a_second_engine": True}
 
 
+def _knowledge_documentation(principal, ctx):
+    """Household documentation summary (D.62) — ONLY the record-scoped documentation relevant to servicing this
+    household (document count + gaps across the household + members), composed read-only from the authoritative
+    Document Intelligence per-entity read (deduplicated by document id). Internal SOPs, unrelated
+    documentation, and firm-wide documentation metrics are never exposed at household scope. Counts + status
+    only; never document contents; never a second wiki/DMS."""
+    from app.services.knowledge_management import household_documentation
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_documentation(principal, ctx["household_id"], member_ids),
+            "source": "knowledge_management.household_documentation", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -609,7 +622,7 @@ _SECTION_BUILDERS = {
     "business_continuity": _business_continuity, "technology_dependencies": _technology_dependencies,
     "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
     "evidence_readiness": _evidence_readiness, "operational_impact": _operational_impact,
-    "servicing_team": _servicing_team,
+    "servicing_team": _servicing_team, "knowledge_documentation": _knowledge_documentation,
     "timeline": _timeline, "relationships": _relationships,
 }
 

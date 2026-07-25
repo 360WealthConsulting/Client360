@@ -467,6 +467,15 @@ _DEFS = (
            sources.capacity_panel_failures),
     Metric("capacity_authorization_failures", "Capacity Authorization Failures", "operations", "count",
            "card", False, sources.capacity_authorization_failures),
+    # Knowledge Management / SOP governance (Phase D.62) — low-cardinality operational metrics.
+    Metric("knowledge_dashboards_composed", "Knowledge Dashboards Composed", "operations", "count", "card",
+           False, sources.knowledge_dashboards_composed),
+    Metric("knowledge_panels_composed", "Knowledge Panels Composed", "operations", "count", "card", False,
+           sources.knowledge_panels_composed),
+    Metric("knowledge_panel_failures", "Knowledge Panel Failures", "operations", "count", "card", False,
+           sources.knowledge_panel_failures),
+    Metric("knowledge_authorization_failures", "Knowledge Authorization Failures", "operations", "count",
+           "card", False, sources.knowledge_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),
