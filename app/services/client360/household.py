@@ -50,6 +50,7 @@ HOUSEHOLD_SECTIONS = (
     ("financial_relationship", "analytics.executive"),
     ("risk_controls", "compliance.supervise"),
     ("evidence_readiness", "compliance.supervise"),
+    ("operational_impact", "observability.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -532,6 +533,18 @@ def _evidence_readiness(principal, ctx):
             "source": "regulatory_readiness.household_evidence_readiness", "not_a_second_engine": True}
 
 
+def _operational_impact(principal, ctx):
+    """Household operational-impact summary (D.60) — the external services / vendors the household's members
+    depend on, aggregated read-only across members from ONLY the genuinely record-scoped owner (the Integration
+    Hub per-entity read). Firm-wide operational information is never exposed at household scope; per-household
+    incident impact has no authoritative owner (not_configured). Counts only; never a payload; never a second
+    incident/monitoring engine."""
+    from app.services.operational_resilience import household_operational_impact
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_operational_impact(principal, ctx["household_id"], member_ids),
+            "source": "operational_resilience.household_operational_impact", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -583,7 +596,7 @@ _SECTION_BUILDERS = {
     "external_integrations": _external_integrations, "security_access": _security_access,
     "business_continuity": _business_continuity, "technology_dependencies": _technology_dependencies,
     "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
-    "evidence_readiness": _evidence_readiness,
+    "evidence_readiness": _evidence_readiness, "operational_impact": _operational_impact,
     "timeline": _timeline, "relationships": _relationships,
 }
 

@@ -71,6 +71,7 @@ from app.routes.vendor_management import router as vendor_management_router
 from app.routes.financial_operations import router as financial_operations_router
 from app.routes.enterprise_risk import router as enterprise_risk_router
 from app.routes.regulatory_readiness import router as regulatory_readiness_router
+from app.routes.operational_resilience import router as operational_resilience_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.referral import router as referral_router
 from app.routes.relationships import router as relationships_router
@@ -253,6 +254,7 @@ app.include_router(vendor_management_router)
 app.include_router(financial_operations_router)
 app.include_router(enterprise_risk_router)
 app.include_router(regulatory_readiness_router)
+app.include_router(operational_resilience_router)
 
 
 # --- Styled error pages for browser navigations (JSON preserved for API/tests) ---

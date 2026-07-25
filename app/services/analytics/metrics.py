@@ -449,6 +449,15 @@ _DEFS = (
            sources.readiness_panel_failures),
     Metric("readiness_authorization_failures", "Readiness Authorization Failures", "operations", "count",
            "card", False, sources.readiness_authorization_failures),
+    # Operational Resilience (Phase D.60) — low-cardinality operational metrics.
+    Metric("resilience_dashboards_composed", "Resilience Dashboards Composed", "operations", "count", "card",
+           False, sources.resilience_dashboards_composed),
+    Metric("resilience_panels_composed", "Resilience Panels Composed", "operations", "count", "card", False,
+           sources.resilience_panels_composed),
+    Metric("resilience_panel_failures", "Resilience Panel Failures", "operations", "count", "card", False,
+           sources.resilience_panel_failures),
+    Metric("resilience_authorization_failures", "Resilience Authorization Failures", "operations", "count",
+           "card", False, sources.resilience_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

@@ -152,6 +152,21 @@ certification** and an absent finding is never compliance; AI summarizes but nev
 approves a rule set / signs an attestation / files a form. See
 [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and ADR-064.
 
+**Enterprise Operational Resilience (D.60):** the registry gains an `enterprise_operational_resilience`
+executive dashboard composed from **existing** widgets (`operational_health`, `runtime_health`) — no new
+widget — whose navigation deep-links to the full resilience surface at `/operational-resilience`. The dedicated
+Operational Resilience layer (a unified read-only view of firm operational resilience — service health /
+incident inventory / alerts / maintenance windows / continuity coverage / recovery readiness / dependency
+health / vendor operational status, composed over the Observability service catalog / health / incidents /
+alerts owners, Security incidents, the Integration Platform, Vendor Management, Automation Orchestration, and
+Business Continuity) lives in `app/services/operational_resilience/`; counts / status / coverage only, never a
+sensitive operational payload; backup / restore / DR / recovery-testing / failover / outage-history / vendor
+incidents are reported not_configured (maintenance windows + alerting ARE owned by Observability); the
+executive posture is DERIVED and labeled — **operational posture, never a certification that production is
+healthy or continuity assured**; AI summarizes but never declares production healthy / certifies continuity /
+generates alerts. See [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
+ADR-065.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

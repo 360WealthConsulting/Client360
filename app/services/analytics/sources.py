@@ -1348,3 +1348,25 @@ def readiness_panel_failures(principal) -> int:
 def readiness_authorization_failures(principal) -> int:
     from app.services.regulatory_readiness.metrics import readiness_authorization_failures as _r
     return _r(principal)
+
+
+# --- Operational Resilience (Phase D.60) — low-cardinality in-process counters ---
+
+def resilience_dashboards_composed(principal) -> int:
+    from app.services.operational_resilience.metrics import resilience_dashboards_composed as _r
+    return _r(principal)
+
+
+def resilience_panels_composed(principal) -> int:
+    from app.services.operational_resilience.metrics import resilience_panels_composed as _r
+    return _r(principal)
+
+
+def resilience_panel_failures(principal) -> int:
+    from app.services.operational_resilience.metrics import resilience_panel_failures as _r
+    return _r(principal)
+
+
+def resilience_authorization_failures(principal) -> int:
+    from app.services.operational_resilience.metrics import resilience_authorization_failures as _r
+    return _r(principal)

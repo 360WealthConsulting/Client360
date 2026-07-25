@@ -190,6 +190,17 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         regulatory_readiness = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Operational Status panel (D.60) — a read-only operational-resilience summary (executive operational
+    # posture + service health + degraded services + reliability incidents + open alerts + active maintenance
+    # windows + resilience gaps) composed over the authoritative Observability / Security / Business Continuity
+    # owners. Guarded so a gate-off never breaks home; this panel never mutates anything. Operational posture
+    # is NOT a certification that production is healthy, and an absent incident is not health.
+    try:
+        from app.services.operational_resilience import resilience_summary
+        operational_status = resilience_summary(principal)
+    except Exception:
+        operational_status = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -217,4 +228,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "financial_performance": financial_performance,
         "enterprise_risk": enterprise_risk,
         "regulatory_readiness": regulatory_readiness,
+        "operational_status": operational_status,
     }

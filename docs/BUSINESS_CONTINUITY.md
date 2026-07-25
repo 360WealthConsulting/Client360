@@ -97,3 +97,11 @@ restore evidence stays `not_configured` (no authoritative owner). It never alter
 Continuity remains the authoritative owner. See
 [REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
 [ADR-064](adr/ADR-064-regulatory-examination-readiness.md).
+
+**Related (D.60):** the **Operational Resilience** layer (`/operational-resilience`) composes this layer's
+`continuity_summary` for its continuity-coverage / resilience-posture / infrastructure-availability panels —
+read-only, `observability.view`. It frames continuity as *operational resilience + incident intelligence*
+(service health, incidents, alerts, maintenance windows, dependency health) alongside the D.55 backup /
+recovery view; backup / restore / DR stay `not_configured` in both. Two read-only composition views, neither a
+second store. See [ENTERPRISE_OPERATIONAL_RESILIENCE.md](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
+[ADR-065](adr/ADR-065-operational-resilience.md).

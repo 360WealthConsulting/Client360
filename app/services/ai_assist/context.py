@@ -48,6 +48,7 @@ _LINKS = {
     "financial_operations": lambda **k: "/financial-operations",
     "enterprise_risk": lambda **k: "/enterprise-risk",
     "regulatory_readiness": lambda **k: "/regulatory-readiness",
+    "operational_resilience": lambda **k: "/operational-resilience",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -59,7 +60,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "security_operations": "Security Operations", "business_continuity": "Business Continuity",
           "vendor_management": "Vendor Management", "financial_operations": "Financial Operations",
           "enterprise_risk": "Enterprise Risk & Controls",
-          "regulatory_readiness": "Regulatory Readiness"}
+          "regulatory_readiness": "Regulatory Readiness",
+          "operational_resilience": "Operational Resilience"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -296,6 +298,17 @@ def _client(principal, person_id):
         facts.append(_fact("regulatory_readiness", "readiness.documentation_gaps",
                            er_signals["documentation_gaps"], fact_class=DERIVED,
                            deep_link="/regulatory-readiness"))
+    # Operational Resilience — SUMMARIZED client-relevant service-dependency COUNT (the external services the
+    # client's data depends on), composed read-only from the record-scoped Integration Hub read. AI summarizes
+    # the count; it never declares production healthy, certifies continuity, infers recovery success,
+    # fabricates incidents, or generates alerts. Firm-wide operational status is never surfaced at client
+    # scope, and an absent incident is not health.
+    oi = (ws.get("sections") or {}).get("operational_impact") or {}
+    oi_signals = oi.get("signals") if isinstance(oi.get("signals"), dict) else {}
+    if oi.get("enabled") and isinstance(oi_signals.get("service_dependencies"), int):
+        facts.append(_fact("operational_resilience", "operational.service_dependencies",
+                           oi_signals["service_dependencies"], fact_class=DERIVED,
+                           deep_link="/operational-resilience"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},
