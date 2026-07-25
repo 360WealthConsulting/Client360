@@ -8,6 +8,7 @@ makes reseeding idempotent.
 """
 import hashlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import insert, select
 
@@ -171,7 +172,7 @@ def _seed_portfolio(connection, hh):
     return n
 
 
-# --- documents (direct insert; no file IO) ----------------------------------
+# --- documents (metadata + a demo blob so seeded docs are downloadable) ------
 
 def _seed_documents(connection, hh):
     count = 0
@@ -182,9 +183,15 @@ def _seed_documents(connection, hh):
     for hname, original, category, review in plan:
         pid = hh[hname]["people"][0][0]
         blob = f"DEMO DOCUMENT {original}".encode()
+        storage_path = f"demo/{pid}/{original}"
+        # Write the demo blob to disk so the seeded document is viewable/downloadable
+        # (the download route serves the file at storage_path). Demo-only, fictional content.
+        _blob_path = Path(storage_path)
+        _blob_path.parent.mkdir(parents=True, exist_ok=True)
+        _blob_path.write_bytes(blob)
         connection.execute(documents.insert().values(
             person_id=pid, original_name=original, stored_name=f"demo-{count}-{original}",
-            storage_path=f"demo/{pid}/{original}", size_bytes=len(blob),
+            storage_path=storage_path, size_bytes=len(blob),
             sha256=hashlib.sha256(blob).hexdigest(), category=category, review_status=review,
             review_due_at=NOW + timedelta(days=3) if review != "not_required" else None))
         count += 1

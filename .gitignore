@@ -28,3 +28,4 @@ documents/
 # Developer Demo Mode runtime artifacts
 .demo-server.pid
 .demo-server.log
+/demo/
