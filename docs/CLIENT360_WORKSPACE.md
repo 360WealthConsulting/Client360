@@ -107,6 +107,15 @@
 > engine; operational posture is not a certification that production is healthy. See
 > [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
 > [`ADR-065`](adr/ADR-065-operational-resilience.md).
+>
+> **D.61:** Client 360 also gains a **Servicing Team** section (gated by `capacity.read`) — ONLY the
+> record-scoped staffing directly related to servicing this client (who is assigned to the record), composed by
+> the D.61 capacity-planning layer over the authoritative authorization owner
+> (`object_security.resolve_assignments`). **Employee workload, firm utilization, and unrelated staffing data
+> are never exposed at client scope.** Counts only — never an employee detail; never a second HR/scheduling
+> engine; an operational summary, never an HR record. See
+> [`ENTERPRISE_CAPACITY_PLANNING.md`](ENTERPRISE_CAPACITY_PLANNING.md) and
+> [`ADR-066`](adr/ADR-066-capacity-planning.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION

@@ -51,6 +51,7 @@ HOUSEHOLD_SECTIONS = (
     ("risk_controls", "compliance.supervise"),
     ("evidence_readiness", "compliance.supervise"),
     ("operational_impact", "observability.view"),
+    ("servicing_team", "capacity.read"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -545,6 +546,17 @@ def _operational_impact(principal, ctx):
             "source": "operational_resilience.household_operational_impact", "not_a_second_engine": True}
 
 
+def _servicing_team(principal, ctx):
+    """Household servicing-team summary (D.61) — ONLY the record-scoped staffing directly related to servicing
+    this household (who is assigned across the household + members), composed read-only from the authoritative
+    authorization owner. Employee workload, firm utilization, and unrelated staffing data are never exposed at
+    household scope. Counts only; never an employee detail; never a second HR/scheduling engine."""
+    from app.services.capacity_planning import household_staffing
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_staffing(principal, ctx["household_id"], member_ids),
+            "source": "capacity_planning.household_staffing", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -597,6 +609,7 @@ _SECTION_BUILDERS = {
     "business_continuity": _business_continuity, "technology_dependencies": _technology_dependencies,
     "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
     "evidence_readiness": _evidence_readiness, "operational_impact": _operational_impact,
+    "servicing_team": _servicing_team,
     "timeline": _timeline, "relationships": _relationships,
 }
 

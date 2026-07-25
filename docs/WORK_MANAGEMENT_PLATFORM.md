@@ -105,3 +105,12 @@ Dedicated tax returns, investment account operations, and revenue pipeline
 records are not fabricated in Sprint 4.2. Their entity types and dashboard
 hooks are reserved, and later migrations can add domain-specific tables without
 changing assignment, queue, audit, or API semantics.
+
+## Related (D.61)
+
+The **Capacity Planning** layer (`/capacity-planning`) composes this platform's `work_queue.summary`
+(`unassigned_team` / `sla_breaches` / `my_overdue` / `by_domain`) for its workload / queue-health / assignment
+panels — read-only, `work.read`. It never assigns, claims, or completes work; the Work Management platform
+remains the authoritative owner of assignments and the queue. See
+[ENTERPRISE_CAPACITY_PLANNING.md](ENTERPRISE_CAPACITY_PLANNING.md) and
+[ADR-066](adr/ADR-066-capacity-planning.md).

@@ -1370,3 +1370,25 @@ def resilience_panel_failures(principal) -> int:
 def resilience_authorization_failures(principal) -> int:
     from app.services.operational_resilience.metrics import resilience_authorization_failures as _r
     return _r(principal)
+
+
+# --- Capacity Planning / workforce (Phase D.61) — low-cardinality in-process counters ---
+
+def capacity_dashboards_composed(principal) -> int:
+    from app.services.capacity_planning.metrics import capacity_dashboards_composed as _r
+    return _r(principal)
+
+
+def capacity_panels_composed(principal) -> int:
+    from app.services.capacity_planning.metrics import capacity_panels_composed as _r
+    return _r(principal)
+
+
+def capacity_panel_failures(principal) -> int:
+    from app.services.capacity_planning.metrics import capacity_panel_failures as _r
+    return _r(principal)
+
+
+def capacity_authorization_failures(principal) -> int:
+    from app.services.capacity_planning.metrics import capacity_authorization_failures as _r
+    return _r(principal)

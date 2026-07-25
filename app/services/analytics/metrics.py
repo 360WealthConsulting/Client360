@@ -458,6 +458,15 @@ _DEFS = (
            sources.resilience_panel_failures),
     Metric("resilience_authorization_failures", "Resilience Authorization Failures", "operations", "count",
            "card", False, sources.resilience_authorization_failures),
+    # Capacity Planning / workforce (Phase D.61) — low-cardinality operational metrics.
+    Metric("capacity_dashboards_composed", "Capacity Dashboards Composed", "operations", "count", "card",
+           False, sources.capacity_dashboards_composed),
+    Metric("capacity_panels_composed", "Capacity Panels Composed", "operations", "count", "card", False,
+           sources.capacity_panels_composed),
+    Metric("capacity_panel_failures", "Capacity Panel Failures", "operations", "count", "card", False,
+           sources.capacity_panel_failures),
+    Metric("capacity_authorization_failures", "Capacity Authorization Failures", "operations", "count",
+           "card", False, sources.capacity_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

@@ -201,6 +201,17 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         operational_status = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Capacity & Workload panel (D.61) — a read-only workforce/capacity summary (executive workforce posture +
+    # firm capacity utilization + queue health + advisor workload + staffing readiness + staffing gaps +
+    # automation workload) composed over the authoritative Operations capacity / Work Queue / Practice
+    # Management owners. Guarded so a gate-off never breaks home; this panel never assigns/schedules anything.
+    # An operational summary only — never a certified staffing figure and never an HR record.
+    try:
+        from app.services.capacity_planning import capacity_summary
+        capacity_workload = capacity_summary(principal)
+    except Exception:
+        capacity_workload = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -229,4 +240,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "enterprise_risk": enterprise_risk,
         "regulatory_readiness": regulatory_readiness,
         "operational_status": operational_status,
+        "capacity_workload": capacity_workload,
     }

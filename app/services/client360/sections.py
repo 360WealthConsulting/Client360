@@ -390,6 +390,18 @@ def operational_impact(principal, ctx):
             "source": "operational_resilience.client_operational_impact", "not_a_second_engine": True}
 
 
+def servicing_team(principal, ctx):
+    """A compact servicing-team summary for this client (D.61) — ONLY the record-scoped staffing directly
+    related to servicing this client (who is assigned to the record), composed read-only from the authoritative
+    authorization owner. **Employee workload, firm utilization, and unrelated staffing data are never exposed
+    at client scope.** Counts only, never an employee detail; deep-links to the authoritative surface. Never a
+    second HR/scheduling engine; an operational summary, never an HR record."""
+    from app.services.capacity_planning import client_staffing
+    pid = _pid(ctx)
+    return {**(client_staffing(principal, pid) if pid else {"enabled": False, "signals": {}}),
+            "source": "capacity_planning.client_staffing", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:
