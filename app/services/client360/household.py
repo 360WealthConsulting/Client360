@@ -54,6 +54,7 @@ HOUSEHOLD_SECTIONS = (
     ("servicing_team", "capacity.read"),
     ("knowledge_documentation", "documents.view"),
     ("change_impact", "observability.view"),
+    ("platform_dependencies", "observability.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -584,6 +585,17 @@ def _change_impact(principal, ctx):
             "source": "change_management.household_change_impact", "not_a_second_engine": True}
 
 
+def _platform_dependencies(principal, ctx):
+    """Household platform-dependency summary (D.64). No authoritative record-scoped platform / environment /
+    infrastructure owner exists, so this is reported `not_configured` honestly — internal infrastructure and
+    environment metadata unrelated to the household are never exposed, and platform impact is never inferred.
+    Never a second CMDB / infrastructure platform; never creates / deploys / provisions / modifies anything."""
+    from app.services.environment_management import household_platform_dependencies
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_platform_dependencies(principal, ctx["household_id"], member_ids),
+            "source": "environment_management.household_platform_dependencies", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -637,7 +649,7 @@ _SECTION_BUILDERS = {
     "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
     "evidence_readiness": _evidence_readiness, "operational_impact": _operational_impact,
     "servicing_team": _servicing_team, "knowledge_documentation": _knowledge_documentation,
-    "change_impact": _change_impact,
+    "change_impact": _change_impact, "platform_dependencies": _platform_dependencies,
     "timeline": _timeline, "relationships": _relationships,
 }
 

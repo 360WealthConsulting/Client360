@@ -52,6 +52,7 @@ _LINKS = {
     "capacity_planning": lambda **k: "/capacity-planning",
     "knowledge_management": lambda **k: "/knowledge-management",
     "change_management": lambda **k: "/change-management",
+    "environment_management": lambda **k: "/environment-management",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -67,7 +68,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "operational_resilience": "Operational Resilience",
           "capacity_planning": "Capacity Planning",
           "knowledge_management": "Knowledge Management",
-          "change_management": "Change Management"}
+          "change_management": "Change Management",
+          "environment_management": "Environment Management"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -347,6 +349,15 @@ def _client(principal, person_id):
         facts.append(_fact("change_management", "change.affected_integrations",
                            ci_signals["affected_integrations"], fact_class=DERIVED,
                            deep_link="/change-management"))
+    # Environment Management — record-scoped platform dependencies have NO authoritative owner, so this is
+    # surfaced as an explicit not_configured (available=False) fact. AI may summarize firm-level environment
+    # coverage / lifecycle readiness at /environment-management, but it must NEVER infer platform impact at
+    # record scope, invent environments, fabricate infrastructure, infer deployments, or certify platform
+    # health. Internal infrastructure and environment metadata unrelated to the record are never exposed.
+    pd = (ws.get("sections") or {}).get("platform_dependencies") or {}
+    if pd.get("available") is False:
+        facts.append(_fact("environment_management", "platform.record_scoped_dependencies", None,
+                           fact_class=DERIVED, deep_link="/environment-management", available=False))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},

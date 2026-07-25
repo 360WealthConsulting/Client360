@@ -485,6 +485,15 @@ _DEFS = (
            sources.change_panel_failures),
     Metric("change_authorization_failures", "Change Authorization Failures", "operations", "count",
            "card", False, sources.change_authorization_failures),
+    # Environment Management / Platform lifecycle (Phase D.64) — low-cardinality operational metrics.
+    Metric("environment_dashboards_composed", "Environment Dashboards Composed", "operations", "count",
+           "card", False, sources.environment_dashboards_composed),
+    Metric("environment_panels_composed", "Environment Panels Composed", "operations", "count", "card",
+           False, sources.environment_panels_composed),
+    Metric("environment_panel_failures", "Environment Panel Failures", "operations", "count", "card", False,
+           sources.environment_panel_failures),
+    Metric("environment_authorization_failures", "Environment Authorization Failures", "operations", "count",
+           "card", False, sources.environment_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

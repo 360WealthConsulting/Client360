@@ -1436,3 +1436,25 @@ def change_panel_failures(principal) -> int:
 def change_authorization_failures(principal) -> int:
     from app.services.change_management.metrics import change_authorization_failures as _r
     return _r(principal)
+
+
+# --- Environment Management / Platform lifecycle (Phase D.64) — low-cardinality in-process counters ---
+
+def environment_dashboards_composed(principal) -> int:
+    from app.services.environment_management.metrics import environment_dashboards_composed as _r
+    return _r(principal)
+
+
+def environment_panels_composed(principal) -> int:
+    from app.services.environment_management.metrics import environment_panels_composed as _r
+    return _r(principal)
+
+
+def environment_panel_failures(principal) -> int:
+    from app.services.environment_management.metrics import environment_panel_failures as _r
+    return _r(principal)
+
+
+def environment_authorization_failures(principal) -> int:
+    from app.services.environment_management.metrics import environment_authorization_failures as _r
+    return _r(principal)

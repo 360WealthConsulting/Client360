@@ -233,6 +233,14 @@ DASHBOARD_REGISTRY = (
        "executive_dashboard.enabled", ("compliance_workload", "operational_health", "runtime_health"),
        ("analytics.view",), "/change-management",
        ("compliance", "recommendations", "runtime")),
+    # Enterprise Platform & Environment Landscape (D.64) — the executive view of the environment / platform /
+    # deployment-topology / lifecycle landscape, composed from EXISTING widgets (operational + runtime health,
+    # no new widget). The full environment surface lives at /environment-management. Operational visibility
+    # only — environment metadata is not live infrastructure, a deployment reference is not a deployment.
+    _d("enterprise_platform_environment_landscape", "executive_intelligence", "executive",
+       "executive_dashboard.enabled", ("operational_health", "runtime_health"),
+       ("analytics.view",), "/environment-management",
+       ("runtime", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

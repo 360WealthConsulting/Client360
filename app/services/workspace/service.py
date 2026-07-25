@@ -237,6 +237,20 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         change_release = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Environment & Platform Status panel (D.64) — a read-only operational-visibility summary (executive
+    # platform posture + environment profiles + platform inventory + deployment references + lifecycle
+    # readiness + composed governance + not_configured domains) composed over the Observability catalog /
+    # health / service owners, the Runtime + Policy engines and the Integration platform. Guarded so a gate-off
+    # never breaks home; this panel never creates an environment / deploys / provisions / modifies topology /
+    # changes lifecycle / executes a cloud operation. Operational visibility only — environment metadata is not
+    # live infrastructure, a deployment reference is not a deployment, an active flag is not a lifecycle
+    # guarantee.
+    try:
+        from app.services.environment_management import environment_summary
+        environment_platform = environment_summary(principal)
+    except Exception:
+        environment_platform = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -268,4 +282,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "capacity_workload": capacity_workload,
         "knowledge_sops": knowledge_sops,
         "change_release": change_release,
+        "environment_platform": environment_platform,
     }
