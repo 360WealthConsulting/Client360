@@ -249,6 +249,14 @@ DASHBOARD_REGISTRY = (
        "executive_dashboard.enabled", ("compliance_workload", "operational_health"),
        ("analytics.view",), "/identity-governance",
        ("compliance", "runtime")),
+    # Enterprise Data Governance (D.66) — the executive view of the data-domain / lineage / stewardship /
+    # quality / retention posture, composed from EXISTING widgets (compliance + operational health, no new
+    # widget). The full data-governance surface lives at /data-governance-intelligence. Governance coverage
+    # only — a registered rule is not an executed check, coverage is not certification.
+    _d("enterprise_data_governance", "executive_intelligence", "executive", "executive_dashboard.enabled",
+       ("compliance_workload", "operational_health"),
+       ("analytics.view",), "/data-governance-intelligence",
+       ("compliance", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

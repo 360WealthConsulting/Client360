@@ -146,6 +146,15 @@
 > [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
 > [`ADR-070`](adr/ADR-070-identity-governance.md).
 
+> **D.66:** Household 360 also gains a **Data Lineage & Provenance** section (gated by `governance.view`) —
+> which composes ONLY the record-scoped source-system lineage / provenance across the household's members from
+> the authoritative Governance MDM owner (`person_lineage`). No internal governance notes, confidential
+> metadata, quality-rule internals, system architecture, or platform configuration are ever exposed, and
+> governance state is never inferred. Composed by the D.66 data-governance-intelligence layer; never a second
+> catalog / lineage engine; never mutates metadata / creates lineage / assigns a steward / repairs data. See
+> [`ENTERPRISE_DATA_GOVERNANCE.md`](ENTERPRISE_DATA_GOVERNANCE.md) and
+> [`ADR-071`](adr/ADR-071-data-governance-intelligence.md).
+
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,
 member-specific information, shared relationships, current work and deadlines, and where to act. It is a

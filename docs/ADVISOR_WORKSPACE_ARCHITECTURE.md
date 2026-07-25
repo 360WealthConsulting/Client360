@@ -172,6 +172,17 @@
 > `/identity-governance`. See [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
 > ADR-070.
 
+> **D.66:** The advisor home also carries a **Data Governance Status** panel (`ws["data_governance"]`) — the
+> firm data-governance summary (executive data-governance posture + governance readiness + data-domain coverage
+> + lineage coverage + quality findings + composed governance + not_configured domains) composed by the D.66
+> data-governance-intelligence layer over the Governance catalog / MDM / quality / retention owners. Counts +
+> coverage + status only — never a sensitive data value / client PII / confidential metadata / quality-rule
+> internal; the panel never transforms data / mutates metadata / creates lineage / assigns a steward / executes
+> a quality rule / enforces retention. Self-gates to `governance.view`. A governance-readiness summary only —
+> **a registered rule is not an executed check, and coverage is not certification**. The full data-governance
+> dashboards live at `/data-governance-intelligence` (distinct from the D.52 layer at `/data-governance`). See
+> [`ENTERPRISE_DATA_GOVERNANCE.md`](ENTERPRISE_DATA_GOVERNANCE.md) and ADR-071.
+
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and
 > redaction models, and extension points), see **`docs/PLATFORM_ARCHITECTURE.md`** (Phase D.12A).

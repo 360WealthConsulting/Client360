@@ -243,6 +243,23 @@ authenticates / authorizes / assigns roles / recommends privilege escalation / f
 identities / bypasses policy. See [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
 ADR-070.
 
+**Enterprise Data Governance (D.66):** the registry gains an `enterprise_data_governance` executive dashboard
+composed from **existing** widgets (`compliance_workload`, `operational_health`) — no new widget — whose
+navigation deep-links to the full data-governance surface at `/data-governance-intelligence`. The dedicated
+Data Governance Intelligence layer (a unified read-only view of the firm's data-governance posture — enterprise
+data inventory / source-of-truth coverage / lineage coverage / stewardship coverage / quality-rule coverage /
+retention coverage / governance readiness / data-risk indicators, composed over the Governance catalog / MDM /
+quality / retention owners) lives in `app/services/data_governance_intelligence/`; counts / coverage / status /
+ratios only, never a sensitive data value / client PII / confidential metadata / quality-rule internal; external
+catalog, business glossary, classification, automated column lineage, contracts, DQ scorecards, retention-policy
+catalog, and DPIA are reported not_configured; the executive posture is DERIVED and labeled — **a
+governance-readiness summary, never a repaired dataset, a created lineage edge, an assigned steward, an executed
+quality rule, or an enforced retention decision: a registered rule is not an executed check, and coverage is not
+certification**; AI summarizes but never invents lineage / fabricates metadata / assigns stewardship / modifies
+governance / repairs data / infers missing ownership. Distinct from (not a duplicate of) the D.52 Data
+Governance executive dashboard; both are read-only views over the single authoritative Governance package. See
+[`ENTERPRISE_DATA_GOVERNANCE.md`](ENTERPRISE_DATA_GOVERNANCE.md) and ADR-071.
+
 ## References
 `app/services/executive_intelligence/*`, `app/routes/executive_intelligence.py`,
 `docs/platform_architecture_manifest.yaml`, `tests/test_executive_reporting.py`, ADR-053.

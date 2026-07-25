@@ -85,3 +85,41 @@ connectivity. See [`INTEGRATION_HUB.md`](INTEGRATION_HUB.md) and ADR-058.
 `governance.view`. It never validates or mutates data; Data Governance remains the authoritative owner. See
 [REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
 [ADR-064](adr/ADR-064-regulatory-examination-readiness.md).
+
+---
+
+## D.66 Data Governance Intelligence — the governance checker (a distinct, deeper layer)
+
+Phase D.66 adds a **dedicated, deeper** Data Governance, Lineage & Information Stewardship **Intelligence**
+layer (`app/services/data_governance_intelligence/`, `/data-governance-intelligence`) — distinct from this D.52
+layer. Both are read-only views over the SINGLE authoritative D.23 Governance package
+(`app/services/governance/`); **neither owns, persists, or duplicates governance data.** The D.66 master
+runtime gate is `data_governance_intelligence.enabled` (NOT this layer's `data_governance.enabled`), and its
+lineage gate is `lineage_landscape.enabled` (NOT this layer's `lineage.enabled`).
+
+`app/services/data_governance_intelligence/governance.py`'s `validate_data_governance_intelligence()` returns
+`{ok, issue_count, findings}` and **never raises**. Invariants enforced:
+
+1. **No persistence / no writes.** No table, no DB write, no outbox publication, no audit write — only reads.
+2. **No mutation / no duplicate engine.** `_FORBIDDEN_CALLS` scans for `create_domain(`, `create_element(`,
+   `create_rule(`, `record_lineage(`, `record_merge_decision(`, `create_finding(`, `run_check(`,
+   `create_retention_assignment(`, `place_legal_hold(`, `execute_deletion(`, `create_case(`, `write_audit(`, …
+   — the layer never transforms data, mutates metadata, creates lineage, assigns a steward, executes a quality
+   rule, or enforces retention.
+3. **No raw environment gating; no second metrics registry.**
+4. **Reuses authoritative reads** (`governance.catalog` / `governance.mdm` / `governance.quality` /
+   `governance.retention`, incl. `list_domains` + `person_lineage`); explainability enforced.
+5. **Registry integrity** — five registries (Data Domain 8 + Lineage 5 + Stewardship 5 + Quality 5 + Retention
+   6 = 29 domain entries), unique keys across all registries, configured entries name an authoritative owner,
+   derived values labeled, honest `not_configured`.
+6. **Gate-collision guard** — a finding is raised if the D.52 gate `data_governance.enabled` ever appears in
+   the D.66 `GATES`.
+
+The honesty stance: no fabricated lineage, source systems, stewardship assignments, quality scores, retention
+policies, metadata, catalog entries, or data owners; no exposure of sensitive data values / client PII /
+confidential metadata / quality-rule internals; **a registered rule is not an executed check, a steward
+assignment is not a governance guarantee, a lineage record is not a complete lineage, and coverage is not
+certification.** See [`ENTERPRISE_DATA_GOVERNANCE.md`](ENTERPRISE_DATA_GOVERNANCE.md),
+[`DATA_DOMAIN_REGISTRY.md`](DATA_DOMAIN_REGISTRY.md), [`DATA_LINEAGE_REGISTRY.md`](DATA_LINEAGE_REGISTRY.md),
+[`DATA_STEWARDSHIP_REGISTRY.md`](DATA_STEWARDSHIP_REGISTRY.md), and
+[`ADR-071`](adr/ADR-071-data-governance-intelligence.md).

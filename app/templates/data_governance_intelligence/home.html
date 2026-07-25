@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Data Governance Intelligence | Client360{% endblock %}
+{% block crumb %}Data Governance Intelligence{% endblock %}
+{% block content %}
+{% call ui.page_head("Data governance intelligence", eyebrow="Lineage & information stewardship", desc="A unified, governed view of the firm's data-governance posture — enterprise data inventory, source-of-truth coverage, lineage coverage, stewardship coverage, quality-rule coverage, retention coverage, governance readiness, data-risk indicators and governance gaps — composed read-only from the authoritative owners (the Governance catalog for data domains / elements / quality rules / survivorship rules / stewardship, Governance MDM for lineage & provenance and merge candidates, Governance Quality for findings, and Governance Retention for assignments / legal holds / deletion requests / cases). Never a second data catalog, metadata repository, ETL platform, MDM platform, warehouse, governance platform, lineage engine or quality engine; never transforms data, synchronizes systems, mutates metadata, repairs data, creates lineage, assigns a steward, executes a quality rule or enforces retention. External data catalog, business glossary, data classification, automated column-level lineage, data-sharing contracts, data-quality scorecards / SLAs, a retention-policy catalog and DPIA have no authoritative owner and are reported not_configured — never fabricated. Counts, coverage, status and ratios only — no sensitive data values, client PII, credentials, secrets, tokens, confidential metadata, internal governance notes or quality-rule internals. These are GOVERNANCE-READINESS SUMMARIES, never a repaired dataset, a created lineage edge, an assigned steward, an executed quality rule or an enforced retention decision: a registered rule is not an executed check, a steward assignment is not a governance guarantee, a lineage record is not a complete lineage, and coverage is not certification. Distinct from the D.52 Data Governance layer at /data-governance; both are read-only views over the single authoritative Governance package. Every panel deep-links to its authoritative owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Data governance dashboards">
+  {% for d in dashboards %}
+    <a href="/data-governance-intelligence?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No data-governance dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}
+ {% if board.not_configured_domains %}· not_configured: {{ board.not_configured_domains | length }}{% endif %}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}{% if p.derived %} <span class="subtle">(derived)</span>{% endif %}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Not configured — no authoritative owner in the platform.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<p class="subtle">These are governance-readiness summaries composed from the authorized owners; they are never a repaired dataset, a created lineage edge, an assigned steward, an executed quality rule or an enforced retention decision. A registered rule is not an executed check, a steward assignment is not a governance guarantee, a lineage record is not a complete lineage, and coverage is not certification.</p>
+{% endif %}
+{% endblock %}

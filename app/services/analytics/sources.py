@@ -1480,3 +1480,33 @@ def identity_panel_failures(principal) -> int:
 def identity_authorization_failures(principal) -> int:
     from app.services.identity_governance.metrics import identity_authorization_failures as _r
     return _r(principal)
+
+
+# --- Data Governance Intelligence (Phase D.66) — low-cardinality in-process counters ---
+
+def data_governance_dashboards_composed(principal) -> int:
+    from app.services.data_governance_intelligence.metrics import (
+        data_governance_dashboards_composed as _r,
+    )
+    return _r(principal)
+
+
+def data_governance_panels_composed(principal) -> int:
+    from app.services.data_governance_intelligence.metrics import (
+        data_governance_panels_composed as _r,
+    )
+    return _r(principal)
+
+
+def data_governance_panel_failures(principal) -> int:
+    from app.services.data_governance_intelligence.metrics import (
+        data_governance_panel_failures as _r,
+    )
+    return _r(principal)
+
+
+def data_governance_authorization_failures(principal) -> int:
+    from app.services.data_governance_intelligence.metrics import (
+        data_governance_authorization_failures as _r,
+    )
+    return _r(principal)
