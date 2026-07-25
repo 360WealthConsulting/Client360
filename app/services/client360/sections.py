@@ -377,6 +377,19 @@ def evidence_readiness(principal, ctx):
             "source": "regulatory_readiness.client_evidence_readiness", "not_a_second_engine": True}
 
 
+def operational_impact(principal, ctx):
+    """A compact operational-impact summary for this client (D.60) — the external services / vendors the
+    client's data depends on, composed read-only from ONLY the genuinely record-scoped owner (the Integration
+    Hub per-entity read). Firm-wide operational information (incidents, alerts, service health) is never
+    exposed at client scope; per-client incident impact has no authoritative owner (not_configured). Counts
+    only, never a payload; deep-links to the authoritative surface. Never a second incident/monitoring engine;
+    operational posture is not a certification that production is healthy."""
+    from app.services.operational_resilience import client_operational_impact
+    pid = _pid(ctx)
+    return {**(client_operational_impact(principal, pid) if pid else {"enabled": False, "signals": {}}),
+            "source": "operational_resilience.client_operational_impact", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

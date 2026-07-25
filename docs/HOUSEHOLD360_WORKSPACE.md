@@ -95,6 +95,14 @@
 > compliance/evidence engine; operational readiness is not regulatory certification. See
 > [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and
 > [`ADR-064`](adr/ADR-064-regulatory-examination-readiness.md).
+>
+> **D.60:** Household 360 also gains an **Operational Impact** section (gated by `observability.view`) — the
+> external services / vendors the household's members depend on, aggregated by the D.60 operational-resilience
+> layer over ONLY the genuinely record-scoped Integration Hub per-entity read. Firm-wide operational
+> information is never exposed at household scope; per-household incident impact has no authoritative owner
+> (not_configured). Counts only — never a payload; never a second incident/monitoring engine. See
+> [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
+> [`ADR-065`](adr/ADR-065-operational-resilience.md).
 
 `GET /client/household/{household_id}` is the **Household 360 Workspace** — open one household and
 understand who belongs to it, each member's role and status, the combined operational picture,

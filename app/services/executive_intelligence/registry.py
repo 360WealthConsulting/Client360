@@ -204,6 +204,13 @@ DASHBOARD_REGISTRY = (
        ("compliance_workload", "operational_health", "runtime_health"),
        ("analytics.view",), "/regulatory-readiness",
        ("compliance", "recommendations", "runtime")),
+    # Enterprise Operational Resilience (D.60) — the executive view of operational resilience, composed from
+    # EXISTING widgets (operational + runtime health, no new widget). The full resilience surface lives at
+    # /operational-resilience.
+    _d("enterprise_operational_resilience", "executive_intelligence", "executive",
+       "executive_dashboard.enabled", ("operational_health", "runtime_health"),
+       ("analytics.view",), "/operational-resilience",
+       ("runtime", "recommendations")),
 )
 
 _DASH_BY_KEY = {d.key: d for d in DASHBOARD_REGISTRY}

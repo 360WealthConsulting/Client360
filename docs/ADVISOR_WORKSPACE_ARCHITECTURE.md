@@ -106,6 +106,15 @@
 > readiness does NOT constitute regulatory certification**, and an absent finding is never compliance. The full
 > readiness dashboards live at `/regulatory-readiness`. See
 > [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and ADR-064.
+>
+> **D.60:** The advisor home also carries an **Operational Status** panel (`ws["operational_status"]`) — the
+> firm operational-resilience summary (executive operational posture + service health + degraded services +
+> reliability incidents + open alerts + active maintenance windows + resilience gaps) composed by the D.60
+> operational-resilience layer over the authoritative Observability / Security / Business Continuity owners.
+> Counts + status + coverage only — never a sensitive operational payload; the panel never mutates anything.
+> **Operational posture is NOT a certification** that production is healthy, and an absent incident is not
+> health. The full resilience dashboards live at `/operational-resilience`. See
+> [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and ADR-065.
 
 > **Authoritative platform reference:** For the current, code-verified top-level architecture
 > (domain map, source-of-truth matrix, dependency directions, capability inventory, scope and

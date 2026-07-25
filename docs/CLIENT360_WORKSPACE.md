@@ -98,6 +98,15 @@
 > never a payload; never a second compliance/evidence engine; operational readiness is not regulatory
 > certification. See [`REGULATORY_EXAMINATION_READINESS.md`](REGULATORY_EXAMINATION_READINESS.md) and
 > [`ADR-064`](adr/ADR-064-regulatory-examination-readiness.md).
+>
+> **D.60:** Client 360 also gains an **Operational Impact** section (gated by `observability.view`) — the
+> external services / vendors the client's data depends on, composed by the D.60 operational-resilience layer
+> over ONLY the genuinely record-scoped Integration Hub per-entity read. **Firm-wide operational information
+> (incidents, alerts, service health) is never exposed at client scope**; per-client incident impact has no
+> authoritative owner (not_configured). Counts only — never a payload; never a second incident/monitoring
+> engine; operational posture is not a certification that production is healthy. See
+> [`ENTERPRISE_OPERATIONAL_RESILIENCE.md`](ENTERPRISE_OPERATIONAL_RESILIENCE.md) and
+> [`ADR-065`](adr/ADR-065-operational-resilience.md).
 
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
