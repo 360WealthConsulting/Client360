@@ -83,3 +83,10 @@ owners. See [ENTERPRISE_RISK_MANAGEMENT.md](ENTERPRISE_RISK_MANAGEMENT.md) and
 never authenticates or alters anything; Security Operations remains the authoritative owner. See
 [REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
 [ADR-064](adr/ADR-064-regulatory-examination-readiness.md).
+
+**Related (D.63):** the **Change Management** layer (`/change-management`) composes this domain's
+`security.incidents.metrics` for its `related_security_findings` panel (open incidents / findings correlated to
+change) and treats security configuration as a change domain — read-only, `security.view`. It never
+acknowledges an incident, alters a policy, or changes security configuration; Security Operations remains the
+authoritative owner. See [ENTERPRISE_CHANGE_MANAGEMENT.md](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+[ADR-068](adr/ADR-068-change-management.md).

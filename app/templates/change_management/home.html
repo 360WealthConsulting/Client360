@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Change Management | Client360{% endblock %}
+{% block crumb %}Change Management{% endblock %}
+{% block content %}
+{% call ui.page_head("Change management", eyebrow="Release governance & configuration intelligence", desc="A unified, governed view of the firm's change posture — change-domain inventory, release readiness, CI-evidence verification, configuration governance, migration readiness, deployment evidence, rollback readiness and executive change posture — composed read-only from the authoritative owners (the architecture manifest, the live Alembic script head, the live route / ADR / section / dashboard counts, the Runtime and Policy engines, the Observability catalog / alerts / incidents / health owners, Security incidents, Compliance Intelligence and the CI pipeline evidence the manifest records). Never a second ITSM, change-management, deployment, CI/CD, Git, CMDB, feature-flag, release-approval, incident or maintenance-scheduling platform; never creates a branch, merges a pull request, pushes a commit, tags a release, deploys code, runs a migration, changes a flag, approves a change, schedules maintenance, acknowledges an incident or executes rollback. Live git / PR / CI status, deployment execution / status, rollback readiness, production verification, change calendar and post-change review have no authoritative owner and are reported not_configured — never fabricated. Counts, status, identifiers, hashes, timestamps, coverage and verification only — no credentials, tokens, environment variables, connection strings, private keys, deployment payloads or sensitive configuration values. These are OPERATIONAL-READINESS SUMMARIES, never approval, certification, deployment success or production safety: a green build is not production certification, a merged pull request is not deployment, and an absent incident is not change success. Every panel deep-links to its authoritative owner.") %}{% endcall %}
+
+{% if dashboards %}
+<nav class="filters" aria-label="Change dashboards">
+  {% for d in dashboards %}
+    <a href="/change-management?dashboard={{ d.key }}"{% if d.key == chosen %} class="active"{% endif %}>{{ d.key.replace('_',' ') | title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if result is none or not result.enabled or not result.dashboard %}
+<div class="empty">No change-management dashboard is available for your access level.</div>
+{% else %}
+{% set board = result.dashboard %}
+<p class="subtle">{{ board.name }} · {{ board.panel_count }} panel(s) · generated {{ board.generated_at }}
+ · governing: {{ board.governing_services | join(', ') }}
+ {% if board.not_configured_domains %}· not_configured: {{ board.not_configured_domains | length }}{% endif %}</p>
+<div class="grid">
+  {% for p in board.panels %}
+  <article class="work-card">
+    <h3>{{ p.title }}{% if p.derived %} <span class="subtle">(derived)</span>{% endif %}</h3>
+    {% if p.restricted %}
+      <p class="subtle">Restricted — {{ p.owner }} access required.</p>
+    {% elif not p.available %}
+      <p class="subtle">Not configured — no authoritative owner in the platform.</p>
+    {% else %}
+      <p><strong>{{ p.value }}</strong> <span class="subtle">({{ p.unit }})</span></p>
+    {% endif %}
+    <p class="subtle">{{ p.explanation }}</p>
+    {% if p.deep_link %}<a class="btn secondary" href="{{ p.deep_link }}">Open {{ p.owner }}</a>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<p class="subtle">These are operational-readiness summaries composed from the authorized owners; they are never approval, certification, deployment success or production safety. A green build is not production certification, a merged pull request is not deployment, and an absent incident is not change success.</p>
+{% endif %}
+{% endblock %}

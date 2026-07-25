@@ -117,3 +117,11 @@ regulatory obligations + certification sign-off*, and adds honest `not_configure
 and blocked certifications. Two read-only composition views, neither a second store; operational readiness is
 not regulatory certification. See [REGULATORY_EXAMINATION_READINESS.md](REGULATORY_EXAMINATION_READINESS.md) and
 [ADR-064](adr/ADR-064-regulatory-examination-readiness.md).
+
+**Composed by D.63:** the **Change Management** layer (`/change-management`) composes the enterprise-risk
+governance checker into its derived `governance_status` panel — read-only, `observability.view`. Note that
+Enterprise Risk declares *change management* as a `not_configured` control (there is no live change-management
+owner in the risk taxonomy); D.63 is that operational-readiness view, and it is **not** a gate, an approval, or
+a production certification — a green build is not production, merged is not deployed. See
+[ENTERPRISE_CHANGE_MANAGEMENT.md](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+[ADR-068](adr/ADR-068-change-management.md).

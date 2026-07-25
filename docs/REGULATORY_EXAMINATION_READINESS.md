@@ -124,3 +124,11 @@ See [REGULATORY_OBLIGATION_REGISTRY.md](REGULATORY_OBLIGATION_REGISTRY.md), [EVI
 [CERTIFICATION_SIGNOFF_REGISTRY.md](CERTIFICATION_SIGNOFF_REGISTRY.md),
 [REGULATORY_READINESS_GOVERNANCE.md](REGULATORY_READINESS_GOVERNANCE.md), and
 [ADR-064](adr/ADR-064-regulatory-examination-readiness.md).
+
+**Composed by D.63:** the **Change Management** layer (`/change-management`) composes the regulatory-readiness
+governance checker into its derived `governance_status` panel — read-only, `observability.view`. It never files,
+signs off, or certifies anything; Regulatory Readiness remains the authoritative evidence-governance owner. Just
+as operational readiness is not regulatory certification, change readiness is not production certification — a
+green build is not production, merged is not deployed. See
+[ENTERPRISE_CHANGE_MANAGEMENT.md](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+[ADR-068](adr/ADR-068-change-management.md).

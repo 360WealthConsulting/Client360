@@ -74,3 +74,11 @@ See [ENTERPRISE_OPERATIONAL_RESILIENCE.md](ENTERPRISE_OPERATIONAL_RESILIENCE.md)
 [INCIDENT_REGISTRY.md](INCIDENT_REGISTRY.md), [SERVICE_DEPENDENCY_REGISTRY.md](SERVICE_DEPENDENCY_REGISTRY.md),
 [BUSINESS_CONTINUITY_REGISTRY.md](BUSINESS_CONTINUITY_REGISTRY.md), and
 [ADR-065](adr/ADR-065-operational-resilience.md).
+
+**Composed by D.63:** the **Change Management** layer (`/change-management`) composes this layer's governance
+checker into its derived `governance_status` panel (a count of clean vs failing governance checkers across the
+read-only layers) — read-only, `observability.view`. It never acknowledges an incident, schedules maintenance,
+or alters resilience state; Operational Resilience remains the authoritative owner. Change management is an
+operational-readiness view, **not** production certification. See
+[ENTERPRISE_CHANGE_MANAGEMENT.md](ENTERPRISE_CHANGE_MANAGEMENT.md) and
+[ADR-068](adr/ADR-068-change-management.md).

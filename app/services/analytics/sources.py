@@ -1414,3 +1414,25 @@ def knowledge_panel_failures(principal) -> int:
 def knowledge_authorization_failures(principal) -> int:
     from app.services.knowledge_management.metrics import knowledge_authorization_failures as _r
     return _r(principal)
+
+
+# --- Change Management / Release governance (Phase D.63) — low-cardinality in-process counters ---
+
+def change_dashboards_composed(principal) -> int:
+    from app.services.change_management.metrics import change_dashboards_composed as _r
+    return _r(principal)
+
+
+def change_panels_composed(principal) -> int:
+    from app.services.change_management.metrics import change_panels_composed as _r
+    return _r(principal)
+
+
+def change_panel_failures(principal) -> int:
+    from app.services.change_management.metrics import change_panel_failures as _r
+    return _r(principal)
+
+
+def change_authorization_failures(principal) -> int:
+    from app.services.change_management.metrics import change_authorization_failures as _r
+    return _r(principal)

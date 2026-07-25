@@ -52,6 +52,7 @@ SECTIONS = (
     SectionDef("operational_impact", "Operational Impact", "observability.view", sections.operational_impact),
     SectionDef("servicing_team", "Servicing Team", "capacity.read", sections.servicing_team),
     SectionDef("knowledge_documentation", "Documentation", "documents.view", sections.knowledge_documentation),
+    SectionDef("change_impact", "Change Impact", "observability.view", sections.change_impact),
 )
 
 SECTION_KEYS = tuple(s.key for s in SECTIONS)

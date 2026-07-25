@@ -416,6 +416,21 @@ def knowledge_documentation(principal, ctx):
             "source": "knowledge_management.client_documentation", "not_a_second_engine": True}
 
 
+def change_impact(principal, ctx):
+    """A record-scoped change-impact summary for this client (D.63) — ONLY the external systems / integrations
+    whose configuration changes could touch THIS client's data, composed read-only from the authoritative
+    person lineage (via the change layer's `client_change_impact`, over Integration Hub / MDM lineage).
+    **Firm-wide change / release / deployment / CI status is NOT record-scoped and is never exposed here** —
+    there is no authoritative record-scoped change-management owner, so beyond the affected-integration surface
+    this section reports not_configured honestly. Counts + source-system names only, never a deployment
+    payload / configuration value; deep-links to the authoritative surface. Never a second change engine; never
+    creates / merges / deploys / changes / approves anything. Merged is not deployed."""
+    from app.services.change_management import client_change_impact
+    pid = _pid(ctx)
+    return {**(client_change_impact(principal, pid) if pid else {"enabled": False, "signals": {}}),
+            "source": "change_management.client_change_impact", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

@@ -53,6 +53,7 @@ HOUSEHOLD_SECTIONS = (
     ("operational_impact", "observability.view"),
     ("servicing_team", "capacity.read"),
     ("knowledge_documentation", "documents.view"),
+    ("change_impact", "observability.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -570,6 +571,19 @@ def _knowledge_documentation(principal, ctx):
             "source": "knowledge_management.household_documentation", "not_a_second_engine": True}
 
 
+def _change_impact(principal, ctx):
+    """Household change-impact summary (D.63) — ONLY the external systems / integrations whose configuration
+    changes could touch the household's members' data, composed read-only from the authoritative person
+    lineage across members (via the change layer's `household_change_impact`). Firm-wide change / release /
+    deployment / CI status is never exposed at household scope. Counts + source-system names only; a rollup,
+    never a deployment payload; never a second change engine; never creates / merges / deploys / approves.
+    Merged is not deployed."""
+    from app.services.change_management import household_change_impact
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_change_impact(principal, ctx["household_id"], member_ids),
+            "source": "change_management.household_change_impact", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -623,6 +637,7 @@ _SECTION_BUILDERS = {
     "financial_relationship": _financial_relationship, "risk_controls": _risk_controls,
     "evidence_readiness": _evidence_readiness, "operational_impact": _operational_impact,
     "servicing_team": _servicing_team, "knowledge_documentation": _knowledge_documentation,
+    "change_impact": _change_impact,
     "timeline": _timeline, "relationships": _relationships,
 }
 
