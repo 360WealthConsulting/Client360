@@ -154,6 +154,16 @@
 > [`ENTERPRISE_IDENTITY_GOVERNANCE.md`](ENTERPRISE_IDENTITY_GOVERNANCE.md) and
 > [`ADR-070`](adr/ADR-070-identity-governance.md).
 
+> **D.66:** Client 360 also gains a **Data Lineage & Provenance** section (gated by `governance.view`) — which
+> composes ONLY the record-scoped source-system lineage / provenance for this client's record from the
+> authoritative Governance MDM owner (`person_lineage`), exposing the provenance record count + distinct
+> source-system names. **No internal governance notes, confidential metadata, quality-rule internals, system
+> architecture, or platform configuration are ever exposed, and governance state is never inferred.** Composed
+> by the D.66 data-governance-intelligence layer (distinct from the D.52 Data Governance section); never a
+> second catalog / lineage engine; never mutates metadata / creates lineage / assigns a steward / repairs
+> data. See [`ENTERPRISE_DATA_GOVERNANCE.md`](ENTERPRISE_DATA_GOVERNANCE.md) and
+> [`ADR-071`](adr/ADR-071-data-governance-intelligence.md).
+
 `GET /client/{id}` is the **master client record** — the primary operational screen. Open a person (or
 household) and see, and act on, the whole client picture from one place. It is a **read-only COMPOSITION
 surface** over the authoritative domain services; it is **not** a second client database and never the

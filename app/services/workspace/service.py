@@ -265,6 +265,19 @@ def get_workspace(principal, *, now=None) -> dict:
     except Exception:
         identity_access = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
 
+    # Data Governance Status panel (D.66) — a read-only governance-readiness summary (executive data-governance
+    # posture + governance readiness + data-domain coverage + lineage coverage + quality findings + composed
+    # governance + not_configured domains) composed over the Governance catalog / MDM / quality / retention
+    # owners. Guarded so a gate-off never breaks home; this panel never transforms data / mutates metadata /
+    # creates lineage / assigns a steward / executes a quality rule / enforces retention. Self-gates to
+    # governance.view. A governance-readiness summary only — a registered rule is not an executed check,
+    # coverage is not certification.
+    try:
+        from app.services.data_governance_intelligence import data_governance_summary
+        data_governance_intel = data_governance_summary(principal)
+    except Exception:
+        data_governance_intel = {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
+
     return {
         "greeting": _greeting(now),
         "display_name": getattr(principal, "display_name", None) or "there",
@@ -298,4 +311,5 @@ def get_workspace(principal, *, now=None) -> dict:
         "change_release": change_release,
         "environment_platform": environment_platform,
         "identity_access": identity_access,
+        "data_governance_intelligence": data_governance_intel,
     }

@@ -458,6 +458,20 @@ def authorization_context(principal, ctx):
             "source": "identity_governance.client_authorization_context", "not_a_second_engine": True}
 
 
+def data_governance_metadata(principal, ctx):
+    """A record-scoped data-governance-metadata summary for this client (D.66) — ONLY the source-system lineage
+    / provenance for this client's record, composed read-only from the authoritative Governance MDM owner
+    (`person_lineage`). **No internal governance notes, confidential metadata, quality-rule internals, system
+    architecture, or platform configuration are ever exposed, and governance state is never inferred.** Never a
+    second catalog / lineage engine; never mutates metadata / creates lineage / assigns a steward / repairs
+    data."""
+    from app.services.data_governance_intelligence import client_data_governance
+    pid = _pid(ctx)
+    return {**(client_data_governance(principal, pid) if pid else {"enabled": False, "available": False,
+               "signals": {}}),
+            "source": "data_governance_intelligence.client_data_governance", "not_a_second_engine": True}
+
+
 def _matches(event, ctx):
     pid, hid = _pid(ctx), _hid(ctx)
     if pid and event.get("person_id") == pid:

@@ -503,6 +503,15 @@ _DEFS = (
            sources.identity_panel_failures),
     Metric("identity_authorization_failures", "Identity Authorization Failures", "operations", "count",
            "card", False, sources.identity_authorization_failures),
+    # Data Governance Intelligence (Phase D.66) — low-cardinality operational metrics.
+    Metric("data_governance_dashboards_composed", "Data Governance Dashboards Composed", "operations",
+           "count", "card", False, sources.data_governance_dashboards_composed),
+    Metric("data_governance_panels_composed", "Data Governance Panels Composed", "operations", "count",
+           "card", False, sources.data_governance_panels_composed),
+    Metric("data_governance_panel_failures", "Data Governance Panel Failures", "operations", "count", "card",
+           False, sources.data_governance_panel_failures),
+    Metric("data_governance_authorization_failures", "Data Governance Authorization Failures", "operations",
+           "count", "card", False, sources.data_governance_authorization_failures),
     # Tax / insurance (guarded — scoped; return None if unavailable to the principal).
     Metric("tax_engagements", "Tax Engagements", "operations", "count", "card", False,
            _safe(lambda p: sources.tax_dashboard(p)["metrics"]["engagements"])),

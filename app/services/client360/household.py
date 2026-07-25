@@ -56,6 +56,7 @@ HOUSEHOLD_SECTIONS = (
     ("change_impact", "observability.view"),
     ("platform_dependencies", "observability.view"),
     ("authorization_context", "observability.view"),
+    ("data_governance_metadata", "governance.view"),
     ("timeline", "timeline.read"),
     ("relationships", None),
 )
@@ -609,6 +610,19 @@ def _authorization_context(principal, ctx):
             "source": "identity_governance.household_authorization_context", "not_a_second_engine": True}
 
 
+def _data_governance_metadata(principal, ctx):
+    """Household record-scoped data-governance-metadata summary (D.66) — ONLY the source-system lineage /
+    provenance across the household's members, composed read-only from the authoritative Governance MDM owner
+    (`person_lineage`). No internal governance notes, confidential metadata, quality-rule internals, system
+    architecture, or platform configuration are ever exposed, and governance state is never inferred. Never a
+    second catalog / lineage engine; never mutates metadata / creates lineage / assigns a steward / repairs
+    data."""
+    from app.services.data_governance_intelligence import household_data_governance
+    member_ids = [m["id"] for m in ctx.get("members", [])]
+    return {**household_data_governance(principal, ctx["household_id"], member_ids),
+            "source": "data_governance_intelligence.household_data_governance", "not_a_second_engine": True}
+
+
 def _relationships(principal, ctx):
     """Household relationship graph — composed from each member's one-hop graph + household memberships,
     with node/edge dedup, a depth cap, and cycle protection. Read-only; never creates/mutates a
@@ -664,6 +678,7 @@ _SECTION_BUILDERS = {
     "servicing_team": _servicing_team, "knowledge_documentation": _knowledge_documentation,
     "change_impact": _change_impact, "platform_dependencies": _platform_dependencies,
     "authorization_context": _authorization_context,
+    "data_governance_metadata": _data_governance_metadata,
     "timeline": _timeline, "relationships": _relationships,
 }
 

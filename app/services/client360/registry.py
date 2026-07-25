@@ -55,6 +55,7 @@ SECTIONS = (
     SectionDef("change_impact", "Change Impact", "observability.view", sections.change_impact),
     SectionDef("platform_dependencies", "Platform Dependencies", "observability.view", sections.platform_dependencies),
     SectionDef("authorization_context", "Authorization Context", "observability.view", sections.authorization_context),
+    SectionDef("data_governance_metadata", "Data Lineage & Provenance", "governance.view", sections.data_governance_metadata),
 )
 
 SECTION_KEYS = tuple(s.key for s in SECTIONS)

@@ -54,6 +54,7 @@ _LINKS = {
     "change_management": lambda **k: "/change-management",
     "environment_management": lambda **k: "/environment-management",
     "identity_governance": lambda **k: "/identity-governance",
+    "data_governance_intelligence": lambda **k: "/data-governance-intelligence",
 }
 _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue",
           "client360": "Client 360", "household360": "Household 360", "meeting_brief": "Meeting Brief",
@@ -71,7 +72,8 @@ _LABEL = {"daily_brief": "Advisor Workspace", "work_queue": "Unified Work Queue"
           "knowledge_management": "Knowledge Management",
           "change_management": "Change Management",
           "environment_management": "Environment Management",
-          "identity_governance": "Identity Governance"}
+          "identity_governance": "Identity Governance",
+          "data_governance_intelligence": "Data Governance Intelligence"}
 
 
 def _fact(source, key, value, *, fact_class=CONFIRMED, deep_link=None, available=True):
@@ -371,6 +373,17 @@ def _client(principal, person_id):
         facts.append(_fact("identity_governance", "authorization.principal_in_scope",
                            ac_signals["principal_in_scope"], fact_class=DERIVED,
                            deep_link="/identity-governance"))
+    # Data Governance — SUMMARIZED record-scoped source-system provenance COUNT (how many source systems this
+    # client's record data came from), composed read-only from the authoritative Governance MDM owner
+    # (`person_lineage`). AI summarizes the count; it never invents lineage, fabricates metadata, assigns
+    # stewardship, modifies governance, repairs data, infers missing ownership, or exposes confidential
+    # metadata / quality-rule internals.
+    dg = (ws.get("sections") or {}).get("data_governance_metadata") or {}
+    dg_signals = dg.get("signals") if isinstance(dg.get("signals"), dict) else {}
+    if dg.get("available") and isinstance(dg_signals.get("source_systems"), int):
+        facts.append(_fact("data_governance_intelligence", "governance.source_systems",
+                           dg_signals["source_systems"], fact_class=DERIVED,
+                           deep_link="/data-governance-intelligence"))
     return _bundle("client_brief", facts, ["Client 360"],
                    navigation=[{"label": "Open Client 360", "href": link},
                                {"label": "Open Engagement", "href": f"/engagement?person_id={person_id}"},
