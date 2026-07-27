@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Identity Review | Client360{% endblock %}
+{% block crumb %}Identity Review{% endblock %}
+{% block content %}
+{% call ui.page_head("Identity Review", eyebrow="Identity matching & data quality", desc="Live view of canonical people vs. imported source contacts across Wealthbox, Dave Ramsey, AssetMark and Schwab. Run the existing identity-matching intelligence, resolve unresolved contacts, and open duplicate candidates — no hand-searching thousands of records.") %}
+  <form method="post" action="/demo/identity/run-matching{% if active_source %}?source={{ active_source }}{% endif %}" style="display:inline">
+    <button class="btn" type="submit">Run Identity Matching{% if active_source %} ({{ active_source }}){% endif %}</button>
+  </form>
+{% endcall %}
+
+{% if last_run %}
+<div class="alert good" style="margin-bottom:14px">
+  <span class="ico">✓</span>
+  <div><strong>Identity matching complete</strong> ({{ last_run.source }}) —
+    inspected {{ last_run.inspected }}, created {{ last_run.created }},
+    linked_existing {{ last_run.linked_existing }}, ambiguous {{ last_run.ambiguous }}.</div>
+</div>
+{% endif %}
+{% if saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Contact resolved.</div></div>{% endif %}
+
+<div class="grid" style="margin-bottom:18px">
+  <article class="work-card"><div class="subtle">Canonical people</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.canonical_people) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Total source contacts</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.total_source_contacts) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Linked source contacts</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.linked_source_contacts) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Unlinked source contacts</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.unlinked_source_contacts) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Ambiguous unresolved</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.ambiguous_unresolved) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">People in 2+ source systems</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.multi_source_people) }}</strong></p></article>
+</div>
+
+<div class="row" style="gap:18px; flex-wrap:wrap; margin-bottom:18px">
+  <article class="card" style="padding:14px 16px; min-width:280px">
+    <div class="subtle" style="margin-bottom:8px">Source contacts by system</div>
+    <table style="width:100%">
+      <tbody>
+      {% for name in sources %}
+        <tr><td>{{ name }}</td><td style="text-align:right"><strong>{{ '{:,}'.format(counts.by_system.get(name, 0)) }}</strong></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="card" style="padding:14px 16px; min-width:280px">
+    <div class="subtle" style="margin-bottom:8px">Cross-source link counts (people in both)</div>
+    <table style="width:100%">
+      <tbody>
+      {% for label, value in counts.cross_source.items() %}
+        <tr><td>{{ label }}</td><td style="text-align:right"><strong>{{ '{:,}'.format(value) }}</strong></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="card" style="padding:14px 16px; min-width:280px">
+    <div class="subtle" style="margin-bottom:8px">Duplicate candidates</div>
+    <p><strong style="font-size:22px">{{ '{:,}'.format(counts.duplicate_candidate_groups) }}</strong> group(s) awaiting a merge decision.</p>
+    <a class="btn secondary sm" href="/matches">Open duplicate-candidate review</a>
+  </article>
+</div>
+
+<h2 style="margin:6px 0 10px">Unresolved contacts</h2>
+<nav class="filters" aria-label="Source filter" style="margin-bottom:12px">
+  <a href="/demo/identity"{% if not active_source %} class="active"{% endif %}>All sources</a>
+  {% for name in sources %}
+    <a href="/demo/identity?source={{ name }}"{% if active_source == name %} class="active"{% endif %}>{{ name }}</a>
+  {% endfor %}
+</nav>
+
+{% if not unresolved %}
+<div class="empty">No unresolved contacts{% if active_source %} for {{ active_source }}{% endif %}. Run Identity Matching after an import to surface any that need a human decision.</div>
+{% else %}
+<div class="stack">
+  {% for contact in unresolved %}
+  <article class="card" style="padding:14px 16px">
+    <div class="row" style="gap:10px; align-items:center; margin-bottom:4px">
+      <strong>{{ contact.full_name or "(no name)" }}</strong>
+      <span class="pill">{{ contact.source_system }}</span>
+      <span class="subtle">{{ contact.reason.replace('_', ' ') }}</span>
+    </div>
+    <div class="subtle" style="margin-bottom:10px">
+      {{ contact.email or "no email" }} · {{ contact.phone or "no phone" }}
+      {% if contact.candidates %}· {{ contact.candidates | length }} possible match(es){% endif %}
+    </div>
+    <form method="post" action="/matches/unresolved/{{ contact.id }}/resolve" class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end">
+      {% if contact.candidates %}
+      <div class="field"><label>Link to existing client (possible matches)</label>
+        <select class="input" name="person_id">
+          {% for c in contact.candidates %}
+          <option value="{{ c.id }}">{{ c.full_name }}{% if c.primary_email %} — {{ c.primary_email }}{% endif %}{% if c.primary_phone %} — {{ c.primary_phone }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn" type="submit" name="action" value="link">Accept &amp; Link</button>
+      {% endif %}
+      <button class="btn secondary" type="submit" name="action" value="create">Create new client</button>
+    </form>
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

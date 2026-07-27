@@ -20,5 +20,15 @@ _middleware.PUBLIC_EXACT = _middleware.PUBLIC_EXACT | frozenset({"/demo", "/demo
 
 from app.main import app  # noqa: E402  (import after the guard + allowlist patch)
 from app.demo.demo_auth import router as demo_router  # noqa: E402
+from app.demo.identity_review import router as demo_identity_router  # noqa: E402
 
 app.include_router(demo_router)
+app.include_router(demo_identity_router)
+
+
+# Process-local flag so base.html renders the demo-only "Identity Review" nav item.
+# Production never runs this module, so its navigation is untouched.
+@app.middleware("http")
+async def _mark_demo_mode(request, call_next):
+    request.state.demo_mode = True
+    return await call_next(request)
