@@ -28,6 +28,8 @@
 {# Advisor Workspace is book-scoped (client.read), not firm-wide (record.read_all),
    so advisors without record.read_all still get their daily workspace. #}
 {% set can_workspace = 'client.read' in caps %}
+{# Demo-only: app.demo.demo_app sets request.state.demo_mode; undefined (falsy) in production. #}
+{% set demo_mode = request.state.demo_mode if request else false %}
 {% set groups = [
   {"label": "Workspace", "items": [
     {"href": "/workspace", "label": "Today", "match": "/workspace", "ico": "◭", "show": can_workspace}]},
@@ -38,6 +40,8 @@
     {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": firm_client},
     {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": firm_client},
     {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": firm_client}]},
+  {"label": "Identity", "items": [
+    {"href": "/demo/identity", "label": "Identity Review", "match": "/demo/identity", "ico": "◑", "show": demo_mode}]},
   {"label": "Wealth", "items": [
     {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": firm_client},
     {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": firm_client}]},
