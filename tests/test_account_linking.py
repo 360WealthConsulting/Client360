@@ -168,6 +168,31 @@ def test_repair_source_links_creates_missing_link_without_duplicates():
         _teardown(ids)
 
 
+# --- dry-run preview (no writes) ---------------------------------------------
+
+def test_preview_reports_planned_changes_without_writing():
+    # Profile with NO person_source_link (a consistency gap) + the canonical person.
+    ids = _scenario(accounts_spec=[{"total": Decimal("441857.25"), "cash": Decimal("210641.74")}], link=False)
+    try:
+        with engine.connect() as c:
+            number = c.scalar(select(accounts.c.account_number).where(accounts.c.id == ids["account_ids"][0]))
+        plan = al.preview(((number, ids["person_id"]),))
+        # It reports the source link to be created and the account that would receive a person_id.
+        assert any(sl["source_contact_id"] == ids["source_contact_ids"][0]
+                   and sl["person_id"] == ids["person_id"] for sl in plan["source_links_to_create"])
+        change = next(ch for ch in plan["account_changes"] if ch["account_id"] == ids["account_ids"][0])
+        assert change["current_person_id"] is None and change["new_person_id"] == ids["person_id"]
+        assert change["account_number"] == number and change["client_name"]
+        # ...but NOTHING was written.
+        assert _person_id(ids["account_ids"][0]) is None
+        with engine.connect() as c:
+            n = c.scalar(select(func.count()).select_from(person_source_links)
+                         .where(person_source_links.c.source_contact_id.in_(ids["source_contact_ids"])))
+        assert n == 0
+    finally:
+        _teardown(ids)
+
+
 # --- client aggregation ------------------------------------------------------
 
 def test_client_account_aggregation_matches_account_totals():
