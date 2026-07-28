@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}TaxDome Drive | Client360{% endblock %}
+{% block crumb %}TaxDome Drive{% endblock %}
+{% block content %}
+{% call ui.page_head("TaxDome Drive", eyebrow="Document index (metadata only)", desc="Indexes the mounted TaxDome Drive (Z:\\) into Client360's existing document model — metadata only, no file contents copied and nothing on the drive moved or renamed. Each top-level folder is a TaxDome account/client; folders are linked to a canonical person only on a unique exact-name match, and everything else waits for review.") %}
+  <form method="post" action="/demo/taxdome-drive/scan" style="display:inline">
+    <button class="btn" type="submit">Scan TaxDome Drive</button>
+  </form>
+{% endcall %}
+
+{% if scanned is not none %}
+{% set parts = scanned.split('-') %}
+<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span>
+  <div><strong>Scan complete</strong> — {{ parts[0] }} new, {{ parts[1] }} changed, {{ parts[2] }} missing.</div></div>
+{% endif %}
+{% if saved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Folder mapping saved.</div></div>{% endif %}
+{% if counts.scan_errors %}
+<div class="alert bad" style="margin-bottom:14px"><span class="ico">⚑</span>
+  <div><strong>{{ counts.scan_errors | length }} scan error(s)</strong> — most recent: {{ counts.scan_errors[0] }}</div></div>
+{% endif %}
+
+<div class="grid" style="margin-bottom:18px">
+  <article class="work-card"><div class="subtle">Total TaxDome folders</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.total_folders) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Folders linked to a person</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.folders_linked) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Unresolved folder mappings</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.folders_unresolved) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Total indexed files</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.total_files) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">New (last scan)</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.new_last_scan) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Changed (last scan)</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.changed_last_scan) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Missing (last scan)</div><p><strong style="font-size:26px">{{ '{:,}'.format(counts.missing_last_scan) }}</strong></p></article>
+  <article class="work-card"><div class="subtle">Last scan</div><p><strong>{{ counts.last_scan_time | humandt if counts.last_scan_time else "never" }}</strong><br><span class="subtle">{{ counts.scan_status }}</span></p></article>
+</div>
+
+<h2 style="margin:6px 0 10px">Search indexed TaxDome documents</h2>
+<form method="get" action="/demo/taxdome-drive" class="row" style="gap:8px; margin-bottom:10px">
+  <input class="input" type="text" name="q" value="{{ q }}" placeholder="Filename or folder..." style="max-width:360px">
+  <button class="btn secondary" type="submit">Search</button>
+</form>
+{% if q %}
+  {% if results %}
+  <table style="width:100%; margin-bottom:18px">
+    <thead><tr><th style="text-align:left">Document</th><th style="text-align:left">Folder</th><th style="text-align:left">Category</th><th style="text-align:right">Size</th><th style="text-align:left">Status</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+      <tr>
+        <td>{% if r.person_id %}<a href="/client/{{ r.person_id }}">{{ r.original_name }}</a>{% else %}{{ r.original_name }}{% endif %}</td>
+        <td>{{ r.folder }}</td><td>{{ r.category or "—" }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(r.size_bytes or 0) }} B</td><td>{{ r.status }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty" style="margin-bottom:18px">No indexed TaxDome documents match "{{ q }}".</div>{% endif %}
+{% endif %}
+
+<h2 style="margin:6px 0 10px">Unresolved folder mappings</h2>
+{% if not unresolved %}
+<div class="empty">No unresolved folders. Run a scan, then link any folders that need a human decision.</div>
+{% else %}
+<div class="stack">
+  {% for f in unresolved %}
+  <article class="card" style="padding:14px 16px">
+    <div class="row" style="gap:10px; align-items:center; margin-bottom:4px">
+      <strong>{{ f.folder }}</strong>
+      <span class="pill">{{ f.files }} file(s)</span>
+    </div>
+    <form method="post" action="/demo/taxdome-drive/folders/resolve" class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end">
+      <input type="hidden" name="folder" value="{{ f.folder }}">
+      {% if f.suggestions %}
+      <div class="field"><label>Suggested canonical people ({{ f.suggestions[0].reason }})</label>
+        <select class="input" name="person_id">
+          {% for s in f.suggestions %}
+          <option value="{{ s.id }}">{{ s.full_name }}{% if s.primary_email %} — {{ s.primary_email }}{% endif %} · {{ s.confidence }} confidence</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn" type="submit" name="action" value="link">Link</button>
+      {% else %}
+      <span class="subtle">No suggested match.</span>
+      {% endif %}
+      <button class="btn secondary" type="submit" name="action" value="keep_separate">Keep Separate</button>
+      <button class="btn secondary" type="submit" name="action" value="defer">Defer</button>
+    </form>
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -16,14 +16,17 @@ assert_demo_database()
 # Process-local: make the demo login reachable without an existing session.
 # Production never runs this module, so its allowlist is untouched.
 from app.security import middleware as _middleware
+
 _middleware.PUBLIC_EXACT = _middleware.PUBLIC_EXACT | frozenset({"/demo", "/demo/login"})
 
-from app.main import app  # noqa: E402  (import after the guard + allowlist patch)
 from app.demo.demo_auth import router as demo_router  # noqa: E402
 from app.demo.identity_review import router as demo_identity_router  # noqa: E402
+from app.demo.taxdome_drive import router as demo_taxdome_router  # noqa: E402
+from app.main import app  # noqa: E402  (import after the guard + allowlist patch)
 
 app.include_router(demo_router)
 app.include_router(demo_identity_router)
+app.include_router(demo_taxdome_router)
 
 
 # Process-local flag so base.html renders the demo-only "Identity Review" nav item.
