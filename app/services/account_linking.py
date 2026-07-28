@@ -182,6 +182,79 @@ def unlinked_profile_count(*, conn=None) -> int:
     return _count(conn) or 0
 
 
+def _plan(conn, pairs) -> dict:
+    """Compute the exact set of writes an ``--apply`` run would perform, WITHOUT writing."""
+    contacts_by_number: dict[str, dict] = {}
+    for r in conn.execute(
+        select(source_contacts.c.id, source_contacts.c.source_record_id, source_contacts.c.full_name)
+        .where(source_contacts.c.source_system == PROFILE_SOURCE_SYSTEM)
+    ).mappings():
+        num = _norm(r["source_record_id"])
+        if num:
+            contacts_by_number.setdefault(num, dict(r))
+
+    existing = {(r["person_id"], r["source_contact_id"]) for r in conn.execute(
+        select(person_source_links.c.person_id, person_source_links.c.source_contact_id)).mappings()}
+
+    # 1) The source links the repair step would create — and the number→person they unlock.
+    source_links_to_create: list[dict] = []
+    pending: dict[str, int] = {}
+    for number, person_id in pairs:
+        num = _norm(number)
+        contact = contacts_by_number.get(num)
+        if contact is None:                                              # no matching Schwab profile
+            continue
+        if not conn.scalar(select(people.c.id).where(people.c.id == person_id)):   # canonical person missing
+            continue
+        if (person_id, contact["id"]) in existing:                      # link already present
+            continue
+        source_links_to_create.append({
+            "source_contact_id": contact["id"], "person_id": person_id,
+            "account_number": number, "contact_name": contact["full_name"]})
+        pending[num] = person_id
+
+    # 2) Resolvable number→person from existing unique links, overlaid with the pending repairs.
+    resolved = _profile_person_by_number(conn)
+    for num, person_id in pending.items():
+        resolved.setdefault(num, person_id)
+
+    # 3) The accounts that would receive a person_id.
+    account_changes: list[dict] = []
+    needed: set[int] = set()
+    for a in conn.execute(
+        select(accounts.c.id, accounts.c.account_number, accounts.c.account_name, accounts.c.person_id)
+        .where(accounts.c.custodian == ACCOUNT_CUSTODIAN, accounts.c.account_number.is_not(None))
+        .order_by(accounts.c.account_number)
+    ).mappings():
+        person_id = resolved.get(_norm(a["account_number"]))
+        if person_id is None or a["person_id"] == person_id:
+            continue
+        needed.add(person_id)
+        account_changes.append({
+            "account_id": a["id"], "account_number": a["account_number"],
+            "account_name": a["account_name"], "current_person_id": a["person_id"],
+            "new_person_id": person_id, "client_name": None})
+
+    names = {}
+    if needed:
+        names = {r["id"]: r["full_name"] for r in conn.execute(
+            select(people.c.id, people.c.full_name).where(people.c.id.in_(needed))).mappings()}
+    for change in account_changes:
+        change["client_name"] = names.get(change["new_person_id"])
+
+    return {"source_links_to_create": source_links_to_create, "account_changes": account_changes}
+
+
+def preview(pairs=KNOWN_SOURCE_LINK_REPAIRS, *, conn=None) -> dict:
+    """Compute — WITHOUT writing anything — exactly what an ``--apply`` run would change: the
+    Schwab-Profile source links that would be created, and the accounts that would receive a
+    ``person_id`` (with current + new person and the canonical client name). Read-only."""
+    if conn is None:
+        with engine.connect() as c:
+            return _plan(c, pairs)
+    return _plan(conn, pairs)
+
+
 def run() -> dict:
     """Repair the known missing source links, then link accounts — atomically."""
     with engine.begin() as conn:
@@ -190,23 +263,58 @@ def run() -> dict:
     return {"source_link_repair": repair, "account_link": link}
 
 
-def main() -> None:
-    result = run()
+def _print_preview(plan) -> None:
+    links, changes = plan["source_links_to_create"], plan["account_changes"]
+    print("DRY RUN — no changes were written.\n")
+    print(f"Schwab Profile source links to be created: {len(links)}")
+    if links:
+        print(f"  {'source_contact_id':>17}  {'person_id':>9}  {'account_number':<16}  contact_name")
+        for row in links:
+            print(f"  {row['source_contact_id']:>17}  {row['person_id']:>9}  "
+                  f"{row['account_number']:<16}  {row['contact_name'] or ''}")
+    print()
+    print(f"Accounts that will receive a person_id: {len(changes)}")
+    if changes:
+        print(f"  {'account_id':>10}  {'account_number':<16}  {'current':>7}  {'new':>7}  client_name")
+        for row in changes:
+            current = "NULL" if row["current_person_id"] is None else row["current_person_id"]
+            print(f"  {row['account_id']:>10}  {row['account_number']:<16}  {str(current):>7}  "
+                  f"{row['new_person_id']:>7}  {row['client_name'] or row['account_name'] or ''}")
+
+
+def _print_apply(result) -> None:
     repair, link = result["source_link_repair"], result["account_link"]
     print("Schwab source-link repair:")
-    print(f"  created:            {repair['created']}")
-    print(f"  already present:    {repair['already_present']}")
+    print(f"  created:              {repair['created']}")
+    print(f"  already present:      {repair['already_present']}")
     print(f"  skipped (no profile): {repair['skipped_no_contact']}")
     print(f"  skipped (no person):  {repair['skipped_no_person']}")
     print()
     print("Account → person linking:")
-    print(f"  accounts seen:      {link['accounts_seen']}")
-    print(f"  newly linked:       {link['linked']}")
-    print(f"  already linked:     {link['already_linked']}")
-    print(f"  unresolved:         {link['unresolved']}")
+    print(f"  accounts seen:        {link['accounts_seen']}")
+    print(f"  newly linked:         {link['linked']}")
+    print(f"  already linked:       {link['already_linked']}")
+    print(f"  unresolved:           {link['unresolved']}")
     print()
     print(f"Schwab profiles still unlinked: {unlinked_profile_count()}")
 
 
+def main(argv=None) -> int:
+    """CLI. Requires an explicit mode so a bare invocation never writes to a live database:
+    ``--dry-run`` previews (read-only); ``--apply`` performs the repair + linking."""
+    import sys
+    args = sys.argv[1:] if argv is None else argv
+    if "--dry-run" in args:
+        _print_preview(preview())
+        return 0
+    if "--apply" in args:
+        _print_apply(run())
+        return 0
+    print("Usage: python -m app.services.account_linking [--dry-run | --apply]")
+    print("  --dry-run   show exactly what would change (no writes)")
+    print("  --apply     perform the source-link repair and account linking")
+    return 2
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
