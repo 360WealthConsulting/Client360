@@ -78,6 +78,26 @@
     <div class="detail-row"><span class="subtle">Not tracked</span><span class="subtle">{{ sec.not_tracked|join(", ")|replace("_"," ") }}</span></div>
   </article>
 
+  {# Linked investment accounts (same portfolio read as the AUM/Cash tiles above — totals cannot disagree). #}
+  <h2 class="section-title">Accounts</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Custodian</th><th>Account #</th><th>Name</th><th>Type</th><th class="num">Total value</th><th class="num">Cash value</th><th>As of</th></tr></thead>
+    <tbody>
+    {% for a in sec.accounts %}
+      <tr>
+        <td>{{ a.custodian or "—" }}</td>
+        <td>{{ a.account_number or "—" }}</td>
+        <td>{{ a.account_name or "—" }}</td>
+        <td>{{ a.registration_type or "—" }}</td>
+        <td class="num">{{ "${:,.2f}".format(a.total_value|float) }}</td>
+        <td class="num">{{ "${:,.2f}".format(a.cash_value|float) if a.cash_value is not none else "—" }}</td>
+        <td>{{ a.last_imported_at.strftime("%Y-%m-%d") if a.last_imported_at else "—" }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">{% call ui.empty("No linked accounts", "No investment accounts are linked to this client.") %}{% endcall %}</td></tr>
+    {% endfor %}
+    </tbody></table></div></article>
+
 {% elif active_tab == "relationships" %}
   <h2 class="section-title">Relationship graph (read-only)</h2>
   {% for cat, items in (sec.graph.categories or {}).items() %}
