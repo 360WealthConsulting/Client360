@@ -2,7 +2,7 @@ from datetime import date
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -24,9 +24,11 @@ from app.services.work_management import (
 )
 from app.services.work_queue import dispatch as qdispatch
 from app.services.work_queue import views as qv
+from app.services.work_queue.detail import work_item_detail
 from app.services.work_queue.diagnostics import work_queue_diagnostics
 from app.services.work_queue.governance import validate_work_queue
 from app.services.work_queue.summary import work_queue_summary
+from app.templating import render_error
 
 router = APIRouter(tags=["work-management"])
 templates = Jinja2Templates(directory="app/templates")
@@ -213,6 +215,75 @@ async def ui_assign(entity_type: str, entity_id: int, request: Request,
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
     return RedirectResponse(url=f"/work?assigned={assignment_id}", status_code=303)
+
+
+@router.post("/work/approvals/{approval_id}/decision")
+async def work_approval_decision(approval_id: int, request: Request,
+                                 principal: Principal = Depends(require_capability("work.approve"))):
+    """Decide a work approval (approve/reject) from the detail screen — delegates to the authoritative
+    workflow-orchestration approval service (segregation-of-duties enforced there)."""
+    from app.services.workflow_orchestration.service import decide_approval
+    form = await request.form()
+    back = form.get("return_to") or "/work"
+    try:
+        decide_approval(principal, approval_id, decision=str(form.get("decision") or "approved"),
+                        approver_user_id=principal.user_id, note=str(form.get("note") or "") or None)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    sep = "&" if "?" in back else "?"
+    return RedirectResponse(f"{back}{sep}result=ok&msg={quote('approval decision recorded')}",
+                            status_code=303)
+
+
+@router.get("/work/{source_domain}/{source_id}", response_class=HTMLResponse)
+def work_item_detail_page(source_domain: str, source_id: int, request: Request,
+                          principal: Principal = Depends(require_capability("work.read"))):
+    """The unified work-item DETAIL screen — one place to see an item's status, client, assignments,
+    approvals, linked Vault documents, and history, and to act (assign / claim / complete / waiting /
+    approve). Read-only composition; every action delegates to the owning service. 404 if out of scope."""
+    detail = work_item_detail(principal, source_domain, source_id)
+    if detail is None:
+        return render_error(request, 404, detail="Work item not found.")
+    return templates.TemplateResponse(request=request, name="work/detail.html", context={
+        "principal": principal, "d": detail, "can_act": principal.can("work.write"),
+        "can_approve": principal.can("work.approve"),
+        "result": request.query_params.get("result"), "message": request.query_params.get("msg")})
+
+
+@router.post("/work/{source_domain}/{source_id}/link-document")
+async def work_link_document(source_domain: str, source_id: int, request: Request,
+                             principal: Principal = Depends(require_capability("work.write"))):
+    """Link an existing Vault document to this work item (reuses vault_document_links.work_item_id —
+    no new schema). The document must exist; the association is audited."""
+    from sqlalchemy import select as _select
+
+    from app.db import engine as _engine
+    from app.db import vault_document_links, vault_documents
+    from app.security.audit import write_audit_event
+    form = await request.form()
+    back = f"/work/{source_domain}/{source_id}"
+    try:
+        document_id = int(form["document_id"])
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(400, "A numeric document_id is required.") from None
+    with _engine.begin() as conn:
+        exists = conn.scalar(_select(vault_documents.c.id).where(vault_documents.c.id == document_id))
+        if not exists:
+            raise HTTPException(404, "Vault document not found.")
+        already = conn.scalar(_select(vault_document_links.c.id).where(
+            vault_document_links.c.document_id == document_id,
+            vault_document_links.c.work_item_id == source_id))
+        if not already:
+            conn.execute(vault_document_links.insert().values(
+                document_id=document_id, work_item_id=source_id))
+    write_audit_event(action="work.document.linked", entity_type="work_item",
+                      entity_id=source_id, actor_user_id=principal.user_id,
+                      request_id=request.state.request_id,
+                      ip_address=request.client.host if request.client else None,
+                      metadata={"document_id": document_id, "domain": source_domain})
+    return RedirectResponse(f"{back}?result=ok&msg={quote('document linked')}", status_code=303)
 
 
 @router.get("/api/v1/work/my-work")

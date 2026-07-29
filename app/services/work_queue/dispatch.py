@@ -35,8 +35,8 @@ def _record(outcome):
 
 # Actions each source domain supports (mirrors the adapters' allowed_actions; "open" is a plain link).
 ALLOWED_ACTIONS = {
-    "tasks": {"claim", "assign"},
-    "workflow": {"claim", "assign", "complete"},
+    "tasks": {"claim", "assign", "complete", "waiting"},
+    "workflow": {"claim", "assign", "complete", "waiting"},
     "exceptions": {"claim", "assign", "acknowledge", "resolve"},
     "advisor_work": set(),
     "compliance": set(),
@@ -51,6 +51,7 @@ ASSIGN_ENTITY = {"tasks": "task", "workflow": "workflow_step", "exceptions": "ex
                  "documents": "document", "tax": "tax_return"}
 # Route-level capability floor per action (the owning service re-checks the real capability + scope).
 ACTION_CAPABILITY = {"claim": "work.write", "assign": "work.write", "complete": "work.write",
+                     "waiting": "work.write",
                      "acknowledge": "exception.write", "resolve": "exception.write",
                      "approve": "documents.write"}
 
@@ -112,6 +113,29 @@ def _delegate(principal, domain, sid, action, params, request_id):
         from app.services.workflow_orchestration.service import complete_step
         complete_step(principal, sid, actor_user_id=principal.user_id)
         return _ok("workflow step completed")
+    if action == "complete" and domain == "tasks":
+        from sqlalchemy import select as _select
+
+        from app.db import engine as _engine
+        from app.db import tasks as _tasks
+        from app.services.tasks import complete_task
+        with _engine.connect() as _c:
+            person_id = _c.scalar(_select(_tasks.c.person_id).where(_tasks.c.id == sid))
+        if person_id is None:
+            return _fail("task not found")
+        complete_task(person_id, sid, actor_user_id=principal.user_id)
+        return _ok("task completed")
+    if action == "waiting" and domain in ("tasks", "workflow"):
+        # Mark the item as waiting-on a party (client/staff/third_party). Reuses the existing
+        # waiting_on column — no new schema. Blank clears the waiting state.
+        from app.db import engine as _engine
+        from app.db import tasks as _tasks
+        from app.db import workflow_steps as _steps
+        table = _tasks if domain == "tasks" else _steps
+        waiting_on = (params.get("waiting_on") or "").strip() or None
+        with _engine.begin() as _c:
+            _c.execute(table.update().where(table.c.id == sid).values(waiting_on=waiting_on))
+        return _ok(f"marked waiting on {waiting_on}" if waiting_on else "cleared waiting state")
     if action in ("acknowledge", "resolve") and domain == "exceptions":
         from app.services import exception_engine
         if action == "acknowledge":
