@@ -69,8 +69,14 @@ def household_diagnostics_route(
 
 @router.get("/{person_id}", response_class=HTMLResponse)
 def client_workspace(request: Request, person_id: int, tab: str = "summary",
+                     q: str | None = None, category: str | None = None,
+                     document_type: str | None = None, status: str | None = None,
+                     year: int | None = None, doc: int | None = None,
                      principal: Principal = Depends(require_capability("client.read"))):
-    ws = get_workspace(principal, person_id=person_id)
+    # Vault-tab UI state (filters + selected document) threaded into the composition context.
+    vault_view = {"q": q, "category": category, "document_type": document_type,
+                  "status": status, "year": year, "doc": doc}
+    ws = get_workspace(principal, person_id=person_id, vault_view=vault_view)
     if ws is None:
         return render_error(request, 404, detail="Client not found.")
     return _render(request, ws, principal, tab)

@@ -23,7 +23,7 @@ FIRM_CAPS = frozenset({
     "compliance.review.read", "timeline.read", "advisor_work.read", "work.read", "scheduling.view",
     "communications.read", "communications.view", "compliance.supervise", "analytics.executive",
     "capacity.read", "automation.view", "governance.view", "integration.view", "security.view",
-    "observability.view", "record.read_all", "observability.audit",
+    "observability.view", "record.read_all", "observability.audit", "vault.view",
 })
 FIRM = Principal(1, "m@e.com", "M", FIRM_CAPS)          # record.read_all → in scope for any client
 SCOPED = Principal(2, "s@e.com", "S", frozenset({"client.read"}))   # no read_all, no assignments
@@ -65,7 +65,7 @@ def _req(path="/client/1", qs=b""):
 # --- composition + contract --------------------------------------------------
 
 def test_registry_has_thirtyone_sections_with_builders():
-    assert len(SECTIONS) == 35  # …+Change Impact(D.63) +Platform Dependencies(D.64) +Authorization Context(D.65) +Data Lineage & Provenance(D.66)
+    assert len(SECTIONS) == 36  # …+Data Lineage & Provenance(D.66) +Vault (client-vault-mvp)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 
@@ -222,7 +222,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1050
+    assert len(app.routes) == 1058  # +8 /api/vault endpoints (client-vault-mvp)
 
 
 def test_page_renders_and_404_out_of_scope():

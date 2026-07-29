@@ -119,6 +119,40 @@ def documents(principal, ctx):
     return {"documents": documents_for_entity(principal, et, eid, limit=25)}
 
 
+def vault(principal, ctx):
+    """Client Vault tab — the client's linked, authorized vault documents (list + filters), plus the
+    selected document's detail panel (versions / links / audit) when one is requested. Reuses the
+    vault service for authorization + audit; upload/download/version/archive act via /api/vault."""
+    from app.services.vault import service as vault_service
+    pid, hid = _pid(ctx), _hid(ctx)
+    view = ctx.get("vault_view") or {}
+    documents_list = vault_service.list_documents(
+        principal, person_id=pid, household_id=hid,
+        category=view.get("category") or None, document_type=view.get("document_type") or None,
+        status=view.get("status") or None, year=view.get("year") or None, query=view.get("q") or None)
+    detail = None
+    selected = view.get("doc")
+    if selected:
+        try:
+            # Detail render is a 'view' of the document → audits the access.
+            detail = vault_service.get_document(
+                principal, int(selected), actor_user_id=principal.user_id, audit_action="view")
+        except (vault_service.VaultNotFound, vault_service.VaultPermissionError, ValueError):
+            detail = None
+    return {
+        "documents": documents_list,
+        "detail": detail,
+        "filters": {"q": view.get("q") or "", "category": view.get("category") or "",
+                    "document_type": view.get("document_type") or "", "status": view.get("status") or "",
+                    "year": view.get("year") or ""},
+        "categories": list(vault_service.CATEGORIES),
+        "statuses": list(vault_service.STATUSES),
+        "person_id": pid, "household_id": hid,
+        "can_upload": principal.can("vault.upload"),
+        "can_manage": principal.can("vault.manage"),
+    }
+
+
 def meetings(principal, ctx):
     """Upcoming + previous meetings from the client's calendar-event timeline (authoritative)."""
     from datetime import datetime

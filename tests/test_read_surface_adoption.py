@@ -231,7 +231,7 @@ def test_adoption_route_registered():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1050
+    assert len(app.routes) == 1058  # +8 client vault (client-vault-mvp)
 
 
 def test_adoption_route_returns_report():
