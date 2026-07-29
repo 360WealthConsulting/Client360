@@ -4,6 +4,7 @@ All reuse the existing engine (config, Alembic, /readiness, identity/roles, uvic
 Config/service tests are pure (env monkeypatch / command construction); DB-touching tests use the
 disposable test DB. Secrets are asserted never to be printed.
 """
+import os
 import uuid
 
 import pytest
@@ -11,6 +12,18 @@ from sqlalchemy import delete, insert, select
 
 from app.db import engine, roles, user_roles, users
 from app.deploy import admin, checks, config_check, migrate, service, smoke
+
+
+@pytest.fixture(autouse=True)
+def _restore_environ():
+    """Snapshot/restore os.environ around every test. The deploy CLI calls load_dotenv(app/.env),
+    which writes directly to os.environ (bypassing monkeypatch's undo) — without this, config vars
+    set by one test would leak into later tests (and into other test files)."""
+    saved = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(saved)
+
 
 # --- configuration -----------------------------------------------------------
 
