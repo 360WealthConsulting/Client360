@@ -22,11 +22,13 @@ param(
   [string]$Python      = 'C:\Client360\.venv\Scripts\python.exe',
   [string]$BindHost    = '127.0.0.1',
   [int]   $Port        = 8360,
-  [string]$LogDir      = 'C:\Client360\logs'
+  [string]$LogDir      = 'C:\Client360\logs',
+  [string]$EnvFile     = 'app\.env'
 )
 
 $ErrorActionPreference = 'Stop'
-$uvicornArgs = @('-m','uvicorn','app.main:app','--host',$BindHost,'--port',"$Port")
+# --env-file is REQUIRED so the service loads the production config (SESSION_SECRET/DATABASE_URL/OIDC).
+$uvicornArgs = @('-m','uvicorn','app.main:app','--host',$BindHost,'--port',"$Port",'--env-file',$EnvFile)
 $nssm = (Get-Command nssm -ErrorAction SilentlyContinue)
 
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }

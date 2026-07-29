@@ -40,6 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    # Load the production env file so every subcommand validates/acts on the SAME config the app boots
+    # with (uvicorn loads it via --env-file). override=False → real process env always wins.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv("app/.env", override=False)
+    except Exception:  # noqa: BLE001
+        pass
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "check-config":

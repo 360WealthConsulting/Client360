@@ -72,7 +72,19 @@ def _print(result: dict) -> None:
     print("RESULT:", "OK" if result["ok"] else "FAILED")
 
 
+def _load_env_file() -> None:
+    """Load app/.env so the CLI validates the SAME production config the app boots with (uvicorn loads
+    it via --env-file; app.config reads SESSION_SECRET at import before app.db loads the dotenv).
+    override=False so real process/system env always wins and no value is clobbered."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv("app/.env", override=False)
+    except Exception:  # noqa: BLE001 — best-effort; missing file just means rely on process env
+        pass
+
+
 def main(argv=None) -> int:
+    _load_env_file()
     result = validate_config()
     _print(result)
     return 0 if result["ok"] else 1
