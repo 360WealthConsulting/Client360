@@ -66,7 +66,8 @@ def _event_matches(e, ctx):
     return (pid and e.get("person_id") == pid) or (hid and e.get("household_id") == hid)
 
 
-def get_workspace(principal, *, person_id=None, household_id=None, page=1, section_timings=True):
+def get_workspace(principal, *, person_id=None, household_id=None, page=1, section_timings=True,
+                  vault_view=None):
     """Compose the Client 360 workspace. Returns None if the client is out of record scope.
 
     The household path (Phase D.41) delegates to the full Household 360 workspace builder — one entry
@@ -101,7 +102,7 @@ def get_workspace(principal, *, person_id=None, household_id=None, page=1, secti
     ctx = {"entity_type": entity_type, "entity_id": entity_id, "person_id": person_id and entity_id,
            "household_id": household_id, "subject": subject, "portfolio": portfolio,
            "members": members, "scope_ids": scope_ids, "page": page,
-           "household_name": None}
+           "household_name": None, "vault_view": vault_view}
     if household_id and entity_type == "person":
         hh = _subject("household", household_id)
         ctx["household_name"] = hh.get("name") if hh else None

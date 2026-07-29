@@ -13,28 +13,48 @@ from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.activity_timeline import router as activity_timeline_router
 from app.routes.admin import router as admin_router
 from app.routes.advisor_work import router as advisor_work_router
+from app.routes.ai_assist import router as ai_assist_router
 from app.routes.analytics import router as analytics_router
 from app.routes.annual_review import router as annual_review_router
 from app.routes.auth import router as auth_router
 from app.routes.automation import router as automation_router
+from app.routes.automation_orchestration import router as automation_orchestration_router
 from app.routes.benefits import router as benefits_router
+from app.routes.business_continuity import router as business_continuity_router
 from app.routes.business_development import router as business_development_router
 from app.routes.business_owner import router as business_owner_router
 from app.routes.campaign import router as campaign_router
+from app.routes.capacity_planning import router as capacity_planning_router
+from app.routes.change_management import router as change_management_router
+from app.routes.client360 import router as client360_router
 from app.routes.communications import router as communications_router
 from app.routes.compliance import router as compliance_router
+from app.routes.compliance_intelligence import router as compliance_intelligence_router
 from app.routes.configuration import router as configuration_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.data_governance import router as data_governance_router
+from app.routes.data_governance_intelligence import router as data_governance_intelligence_router
 from app.routes.dev_auth import dev_auth_enabled
 from app.routes.dev_auth import router as dev_auth_router
+from app.routes.document_intelligence import router as document_intelligence_router
 from app.routes.document_library import router as document_library_router
 from app.routes.documents import router as documents_router
+from app.routes.engagement import router as engagement_router
+from app.routes.enterprise_risk import router as enterprise_risk_router
+from app.routes.environment_management import router as environment_management_router
+from app.routes.events import router as events_router
 from app.routes.exceptions import router as exceptions_router
+from app.routes.executive_intelligence import router as executive_intelligence_router
+from app.routes.financial_operations import router as financial_operations_router
 from app.routes.governance import router as governance_router
 from app.routes.households import router as households_router
+from app.routes.identity_governance import router as identity_governance_router
 from app.routes.identity_review import router as identity_review_router
 from app.routes.insurance import router as insurance_router
 from app.routes.integration import router as integration_router
+from app.routes.integration_hub import router as integration_hub_router
+from app.routes.knowledge import router as knowledge_router
+from app.routes.knowledge_management import router as knowledge_management_router
 from app.routes.matches import router as matches_router
 from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
@@ -48,50 +68,31 @@ from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.notes import router as notes_router
 from app.routes.observability import router as observability_router
+from app.routes.operational_resilience import router as operational_resilience_router
 from app.routes.operations import router as operations_router
 from app.routes.opportunity import router as opportunity_router
 from app.routes.ops import router as ops_router
+from app.routes.orchestration import router as orchestration_router
 from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
+from app.routes.policy import router as policy_router
 from app.routes.portal import router as portal_router
 from app.routes.portal_admin import router as portal_admin_router
-from app.routes.engagement import router as engagement_router
-from app.routes.knowledge import router as knowledge_router
-from app.routes.recommendations import router as recommendations_router
-from app.routes.compliance_intelligence import router as compliance_intelligence_router
-from app.routes.executive_intelligence import router as executive_intelligence_router
-from app.routes.practice_management import router as practice_management_router
-from app.routes.document_intelligence import router as document_intelligence_router
-from app.routes.automation_orchestration import router as automation_orchestration_router
-from app.routes.data_governance import router as data_governance_router
-from app.routes.integration_hub import router as integration_hub_router
-from app.routes.security_operations import router as security_operations_router
-from app.routes.business_continuity import router as business_continuity_router
-from app.routes.vendor_management import router as vendor_management_router
-from app.routes.financial_operations import router as financial_operations_router
-from app.routes.enterprise_risk import router as enterprise_risk_router
-from app.routes.regulatory_readiness import router as regulatory_readiness_router
-from app.routes.operational_resilience import router as operational_resilience_router
-from app.routes.capacity_planning import router as capacity_planning_router
-from app.routes.knowledge_management import router as knowledge_management_router
-from app.routes.change_management import router as change_management_router
-from app.routes.environment_management import router as environment_management_router
-from app.routes.identity_governance import router as identity_governance_router
-from app.routes.data_governance_intelligence import router as data_governance_intelligence_router
 from app.routes.portfolio import router as portfolio_router
+from app.routes.practice_management import router as practice_management_router
+from app.routes.projections import router as projections_router
+from app.routes.recommendations import router as recommendations_router
 from app.routes.referral import router as referral_router
+from app.routes.regulatory_readiness import router as regulatory_readiness_router
 from app.routes.relationships import router as relationships_router
 from app.routes.reporting import router as reporting_router
 from app.routes.runtime import router as runtime_router
-from app.routes.runtime_cluster import router as runtime_cluster_router
 from app.routes.runtime_behavior import router as runtime_behavior_router
-from app.routes.policy import router as policy_router
-from app.routes.orchestration import router as orchestration_router
-from app.routes.events import router as events_router
-from app.routes.projections import router as projections_router
+from app.routes.runtime_cluster import router as runtime_cluster_router
 from app.routes.scheduling import router as scheduling_router
 from app.routes.search import router as search_router
 from app.routes.security import router as security_router
+from app.routes.security_operations import router as security_operations_router
 from app.routes.session import router as session_router
 from app.routes.source import router as source_router
 from app.routes.task_dashboard import router as task_dashboard_router
@@ -101,13 +102,13 @@ from app.routes.tax_documents import router as tax_documents_router
 from app.routes.tax_intake import router as tax_intake_router
 from app.routes.tax_returns import router as tax_returns_router
 from app.routes.timeline import router as timeline_router
+from app.routes.vault import router as vault_router
+from app.routes.vendor_management import router as vendor_management_router
 from app.routes.wealth import router as wealth_router
 from app.routes.work import router as work_router
 from app.routes.workflow_automation import router as workflow_automation_router
 from app.routes.workflows import router as workflows_router
 from app.routes.workspace import router as workspace_router
-from app.routes.client360 import router as client360_router
-from app.routes.ai_assist import router as ai_assist_router
 from app.security.middleware import AuthenticationMiddleware
 from app.services.runtime.middleware import RuntimeContextMiddleware
 
@@ -229,6 +230,7 @@ app.include_router(wealth_router)
 app.include_router(workspace_router)
 app.include_router(client360_router)
 app.include_router(ai_assist_router)
+app.include_router(vault_router)
 app.include_router(auth_router)
 # Development-only sign-in provider. dev_auth_enabled() is False in production (and
 # whenever CLIENT360_DEV_AUTH is unset), so this router is simply never mounted there.

@@ -28,6 +28,7 @@ SECTIONS = (
     SectionDef("benefits", "Benefits", "benefits.read", sections.benefits),
     SectionDef("opportunities", "Opportunities", "opportunity.view", sections.opportunities),
     SectionDef("documents", "Documents", "documents.view", sections.documents),
+    SectionDef("vault", "Vault", "vault.view", sections.vault),
     SectionDef("meetings", "Meetings", None, sections.meetings),
     SectionDef("compliance", "Compliance", "compliance.review.read", sections.compliance),
     SectionDef("communications", "Communications", "communications.view", sections.communications),

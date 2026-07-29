@@ -127,6 +127,95 @@
     {% else %}<tr><td colspan="3">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>
 
+{% elif active_tab == "vault" %}
+  <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">
+    <h2 class="section-title" style="margin:0">Vault</h2>
+    {% if sec.can_upload %}<button class="btn sm" type="button" onclick="document.getElementById('vault-upload').hidden=!document.getElementById('vault-upload').hidden">Upload document</button>{% endif %}
+  </div>
+
+  {% if sec.can_upload %}
+  <form id="vault-upload" hidden class="card" style="padding:14px 16px; margin-bottom:12px"
+        onsubmit="return vaultUpload(event)">
+    <input type="hidden" name="person_id" value="{{ sec.person_id or '' }}">
+    <input type="hidden" name="household_id" value="{{ sec.household_id or '' }}">
+    <div class="row" style="gap:10px; flex-wrap:wrap">
+      <label>File<br><input type="file" name="file" required></label>
+      <label>Display name<br><input class="input" type="text" name="display_name" required></label>
+      <label>Category<br><select class="input" name="category">{% for c in sec.categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></label>
+      <label>Document type<br><input class="input" type="text" name="document_type" placeholder="e.g. W-2, 1040"></label>
+      <label>Classification<br><input class="input" type="text" name="security_classification" value="internal"></label>
+      <label>Status<br><select class="input" name="status">{% for s in sec.statuses %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select></label>
+      <label>Engagement (optional)<br><input class="input" type="number" name="engagement_id" placeholder="id"></label>
+    </div>
+    <div style="margin-top:10px"><button class="btn" type="submit">Upload</button></div>
+  </form>
+  {% endif %}
+
+  <form method="get" action="{{ base }}" class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:10px">
+    <input type="hidden" name="tab" value="vault">
+    <input class="input" type="text" name="q" value="{{ sec.filters.q }}" placeholder="Search name…" style="max-width:200px">
+    <select class="input" name="category"><option value="">All categories</option>{% for c in sec.categories %}<option value="{{ c }}" {{ 'selected' if sec.filters.category == c }}>{{ c }}</option>{% endfor %}</select>
+    <input class="input" type="text" name="document_type" value="{{ sec.filters.document_type }}" placeholder="Type" style="max-width:130px">
+    <select class="input" name="status"><option value="">All statuses</option>{% for s in sec.statuses %}<option value="{{ s }}" {{ 'selected' if sec.filters.status == s }}>{{ s }}</option>{% endfor %}</select>
+    <input class="input" type="number" name="year" value="{{ sec.filters.year }}" placeholder="Year" style="max-width:100px">
+    <button class="btn secondary" type="submit">Filter</button>
+  </form>
+
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Document</th><th>Category</th><th>Type</th><th>Status</th><th>Ver</th><th>Uploaded by</th><th>Uploaded</th><th>Size</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for d in sec.documents %}
+      <tr>
+        <td><a href="{{ base }}?tab=vault&doc={{ d.id }}">{{ d.display_name }}</a></td>
+        <td>{{ d.category }}</td><td>{{ d.document_type or "—" }}</td><td>{{ d.status }}</td>
+        <td>{{ d.current_version }}</td><td>{{ d.uploaded_by_user_id or "—" }}</td>
+        <td>{{ d.created_at.strftime("%Y-%m-%d") if d.created_at else "—" }}</td>
+        <td>{{ "{:,.0f} KB".format((d.file_size or 0)/1024) }}</td>
+        <td>
+          <a href="/api/vault/documents/{{ d.id }}/download">Download</a>
+          · <a href="{{ base }}?tab=vault&doc={{ d.id }}">Details</a>
+          {% if sec.can_manage and d.status != "archived" %} · <a href="#" onclick="return vaultArchive(event, {{ d.id }})">Archive</a>{% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="9">{% call ui.empty("No documents", "No vault documents are linked to this client yet.") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+
+  {% if sec.detail %}
+  {% set dt = sec.detail.document %}
+  <article class="card" style="margin-top:14px; padding:14px 16px">
+    <h2 class="section-title">Details — {{ dt.display_name }}</h2>
+    <div class="detail-row"><span>Original filename</span><strong>{{ dt.original_filename }}</strong></div>
+    <div class="detail-row"><span>Category / Type</span><strong>{{ dt.category }} / {{ dt.document_type or "—" }}</strong></div>
+    <div class="detail-row"><span>Classification / Status</span><strong>{{ dt.security_classification }} / {{ dt.status }}</strong></div>
+    <div class="detail-row"><span>Current version</span><strong>v{{ dt.current_version }}</strong></div>
+    <div class="detail-row"><span>Checksum (SHA-256)</span><strong style="font-family:monospace; font-size:11px">{{ dt.checksum_sha256 }}</strong></div>
+    <div class="row" style="gap:10px; margin-top:8px">
+      <a class="btn sm" href="/api/vault/documents/{{ dt.id }}/download">Download current</a>
+      {% if sec.can_upload %}
+      <form style="display:inline" onsubmit="return vaultNewVersion(event, {{ dt.id }})">
+        <input type="file" name="file" required> <button class="btn sm secondary" type="submit">Upload new version</button>
+      </form>
+      {% endif %}
+    </div>
+    <h3 style="margin:12px 0 6px">Version history</h3>
+    <div class="table-wrap"><table class="data"><thead><tr><th>Ver</th><th>Size</th><th>Uploaded</th><th>By</th></tr></thead><tbody>
+      {% for v in sec.detail.versions %}<tr><td>{{ v.version_number }}</td><td>{{ "{:,.0f} KB".format((v.file_size or 0)/1024) }}</td><td>{{ v.created_at.strftime("%Y-%m-%d %H:%M") if v.created_at else "—" }}</td><td>{{ v.uploaded_by_user_id or "—" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <h3 style="margin:12px 0 6px">Linked records</h3>
+    <article class="card">{% for l in sec.detail.links %}<div class="detail-row"><span>Links</span><strong>person={{ l.person_id or "—" }} · household={{ l.household_id or "—" }} · engagement={{ l.engagement_id or "—" }} · work_item={{ l.work_item_id or "—" }}</strong></div>{% else %}<div class="subtle">No linked records.</div>{% endfor %}</article>
+    <h3 style="margin:12px 0 6px">Audit history</h3>
+    <div class="table-wrap"><table class="data"><thead><tr><th>Action</th><th>User</th><th>When</th><th>IP</th></tr></thead><tbody>
+      {% for a in sec.detail.audit %}<tr><td>{{ a.action }}</td><td>{{ a.user_id or "—" }}</td><td>{{ a.occurred_at.strftime("%Y-%m-%d %H:%M:%S") if a.occurred_at else "—" }}</td><td>{{ a.ip_address or "—" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </article>
+  {% endif %}
+
+  <script>
+    async function vaultUpload(e){e.preventDefault();const f=e.target;const r=await fetch('/api/vault/documents',{method:'POST',body:new FormData(f)});if(r.ok){location.href='{{ base }}?tab=vault';}else{alert('Upload failed: '+r.status+' '+await r.text());}return false;}
+    async function vaultNewVersion(e,id){e.preventDefault();const r=await fetch('/api/vault/documents/'+id+'/versions',{method:'POST',body:new FormData(e.target)});if(r.ok){location.href='{{ base }}?tab=vault&doc='+id;}else{alert('Version upload failed: '+r.status);}return false;}
+    async function vaultArchive(e,id){e.preventDefault();if(!confirm('Archive this document?'))return false;const r=await fetch('/api/vault/documents/'+id+'/archive',{method:'POST'});if(r.ok){location.href='{{ base }}?tab=vault';}else{alert('Archive failed: '+r.status);}return false;}
+  </script>
+
 {% elif active_tab == "opportunities" %}
   <h2 class="section-title">Pipeline</h2>
   <article class="card">{% for o in sec.pipeline %}<div class="detail-row"><span><a href="/opportunities/{{ o.id }}">{{ o.title or ("Opportunity " ~ o.id) }}</a></span><strong class="subtle">{{ o.status }}</strong></div>{% else %}{% call ui.empty("No opportunities") %}{% endcall %}{% endfor %}</article>

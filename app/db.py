@@ -27,6 +27,13 @@ household_relationships = metadata.tables["household_relationships"]
 microsoft_accounts = metadata.tables["microsoft_accounts"]
 
 documents = metadata.tables["documents"]
+
+# Client Vault (feature/client-vault-mvp) — employee-facing client document store.
+vault_documents = metadata.tables["vault_documents"]
+vault_document_versions = metadata.tables["vault_document_versions"]
+vault_document_links = metadata.tables["vault_document_links"]
+vault_document_audit_events = metadata.tables["vault_document_audit_events"]
+
 microsoft_drives = metadata.tables["microsoft_drives"]
 microsoft_documents = metadata.tables["microsoft_documents"]
 microsoft_document_matching_rules = metadata.tables[
