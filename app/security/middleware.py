@@ -31,7 +31,7 @@ def _is_cross_site(origin, referer, base_url):
 
 PUBLIC_EXACT = frozenset({"/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
-    "/api/v1/portal/auth/password-reset/consume"})
+    "/api/v1/portal/auth/password-reset/consume", "/api/portal/login"})
 RULES = (
     # Approval / review decisions use dedicated segregation-of-duty capabilities
     # (work.approve, tax.review). These carve-outs must precede the generic
@@ -163,7 +163,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                     },
                     status_code=403,
                 )
-        if request.url.path.startswith("/portal") or request.url.path.startswith("/api/v1/portal"):
+        if (request.url.path.startswith("/portal") or request.url.path.startswith("/api/v1/portal")
+                or request.url.path.startswith("/api/portal")):
             from app.portal.service import resolve_portal_session
             portal_principal = resolve_portal_session(request.session.get("portal_session_token"))
             request.state.portal_principal = portal_principal

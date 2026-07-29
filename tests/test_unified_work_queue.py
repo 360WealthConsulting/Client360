@@ -354,7 +354,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1058  # +8 client vault (client-vault-mvp)  # +16 secure client portal (D.43)
+    assert len(app.routes) == 1071  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)  # +16 secure client portal (D.43)
 
 
 def test_migration_head():

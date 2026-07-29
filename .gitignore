@@ -29,3 +29,6 @@ documents/
 .demo-server.pid
 .demo-server.log
 /demo/
+
+# Vault local storage (VAULT_STORAGE_ROOT default)
+/data/

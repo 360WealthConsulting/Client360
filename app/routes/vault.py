@@ -39,6 +39,7 @@ class VaultPatch(BaseModel):
     document_type: str | None = None
     security_classification: str | None = None
     status: str | None = None
+    client_visible: bool | None = None
 
 
 @router.post("/documents")
@@ -175,6 +176,8 @@ def _json_doc(d):
         "security_classification": d["security_classification"], "status": d["status"],
         "mime_type": d["mime_type"], "file_size": d["file_size"], "version": d["current_version"],
         "checksum_sha256": d["checksum_sha256"], "uploaded_by_user_id": d["uploaded_by_user_id"],
+        "client_visible": d.get("client_visible", False),
+        "uploaded_by_client": d.get("uploaded_by_portal_account_id") is not None,
         "created_at": _iso(d["created_at"]), "updated_at": _iso(d["updated_at"]),
         "archived_at": _iso(d["archived_at"]),
     }
