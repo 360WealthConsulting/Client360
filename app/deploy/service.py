@@ -15,17 +15,26 @@ APP_TARGET = "app.main:app"          # the production ASGI app — asserted by t
 ACTIONS = ("install", "start", "stop", "restart", "status", "uninstall")
 
 
-def uvicorn_args(host: str, port: int) -> list[str]:
-    return ["-m", "uvicorn", APP_TARGET, "--host", str(host), "--port", str(port)]
+DEFAULT_ENV_FILE = "app\\.env"           # production config the app relies on (loaded by uvicorn)
+
+
+def uvicorn_args(host: str, port: int, env_file: str = DEFAULT_ENV_FILE) -> list[str]:
+    # --env-file is REQUIRED: app.config reads SESSION_SECRET at import, before app.db loads the
+    # dotenv, so uvicorn must load the production environment file itself or the app cannot boot.
+    args = ["-m", "uvicorn", APP_TARGET, "--host", str(host), "--port", str(port)]
+    if env_file:
+        args += ["--env-file", env_file]
+    return args
 
 
 def nssm_commands(action: str, *, service_name="Client360", nssm="nssm",
                   python="python", host="127.0.0.1", port=8360,
-                  workdir="C:\\Client360", log_dir="C:\\Client360\\logs") -> list[list[str]]:
+                  workdir="C:\\Client360", log_dir="C:\\Client360\\logs",
+                  env_file=DEFAULT_ENV_FILE) -> list[list[str]]:
     """Return the NSSM command(s) (each an argv list) for the action."""
     if action == "install":
         return [
-            [nssm, "install", service_name, python, *uvicorn_args(host, port)],
+            [nssm, "install", service_name, python, *uvicorn_args(host, port, env_file)],
             [nssm, "set", service_name, "AppDirectory", workdir],
             [nssm, "set", service_name, "AppStdout", f"{log_dir}\\service-stdout.log"],
             [nssm, "set", service_name, "AppStderr", f"{log_dir}\\service-stderr.log"],
@@ -41,10 +50,11 @@ def nssm_commands(action: str, *, service_name="Client360", nssm="nssm",
 
 
 def sc_commands(action: str, *, service_name="Client360", python="python",
-                host="127.0.0.1", port=8360, workdir="C:\\Client360") -> list[list[str]]:
+                host="127.0.0.1", port=8360, workdir="C:\\Client360",
+                env_file=DEFAULT_ENV_FILE) -> list[list[str]]:
     """Fallback using the built-in sc.exe (no auto-restart configuration beyond the OS default)."""
     if action == "install":
-        bin_path = f'"{python}" ' + " ".join(uvicorn_args(host, port))
+        bin_path = f'"{python}" ' + " ".join(uvicorn_args(host, port, env_file))
         return [["sc.exe", "create", service_name, "binPath=", bin_path, "start=", "auto"]]
     if action == "uninstall":
         return [["sc.exe", "stop", service_name], ["sc.exe", "delete", service_name]]
@@ -74,13 +84,15 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=8360)
     parser.add_argument("--workdir", default="C:\\Client360")
     parser.add_argument("--log-dir", default="C:\\Client360\\logs")
+    parser.add_argument("--env-file", default=DEFAULT_ENV_FILE)
     args = parser.parse_args(argv)
     if args.manager == "nssm":
         cmds = nssm_commands(args.action, service_name=args.service_name, python=args.python,
-                             host=args.host, port=args.port, workdir=args.workdir, log_dir=args.log_dir)
+                             host=args.host, port=args.port, workdir=args.workdir,
+                             log_dir=args.log_dir, env_file=args.env_file)
     else:
         cmds = sc_commands(args.action, service_name=args.service_name, python=args.python,
-                           host=args.host, port=args.port, workdir=args.workdir)
+                           host=args.host, port=args.port, workdir=args.workdir, env_file=args.env_file)
     print(render(cmds))
     return 0
 

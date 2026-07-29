@@ -123,6 +123,33 @@ def test_service_uses_app_main_not_demo():
     assert "app.main:app" in flat and "demo_app" not in flat and "app.demo" not in flat
 
 
+def test_service_loads_env_file_so_production_config_is_available():
+    # Without --env-file the service starts uvicorn with no production config and app.config raises
+    # (SESSION_SECRET required in production) → the service would crash-loop.
+    for builder in (service.nssm_commands, service.sc_commands):
+        flat = " ".join(" ".join(c) for c in builder("install"))
+        assert "--env-file" in flat and "app\\.env" in flat
+
+
+def test_config_check_cli_loads_env_file(tmp_path, monkeypatch):
+    # check-config must reflect the SAME config the app boots with (loaded from app/.env), not just
+    # the ambient process env. Simulate a production app/.env and confirm the CLI reads it.
+    import os
+
+    from app.deploy import config_check
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / ".env").write_text(
+        "CLIENT360_ENVIRONMENT=production\nDATABASE_URL=postgresql://h/db\n"
+        "SESSION_SECRET=a-strong-secret\nOIDC_ISSUER=https://i\nOIDC_CLIENT_ID=c\n"
+        f"OIDC_CLIENT_SECRET=s\nVAULT_STORAGE_ROOT={tmp_path / 'vault'}\n")
+    for var in ("CLIENT360_ENVIRONMENT", "DATABASE_URL", "SESSION_SECRET", "OIDC_ISSUER",
+                "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "VAULT_STORAGE_ROOT"):
+        monkeypatch.delenv(var, raising=False)
+    assert config_check.main([]) == 0            # loads app/.env → valid production config → exit 0
+    assert os.getenv("SESSION_SECRET") == "a-strong-secret"
+
+
 def test_service_actions_construct_for_nssm_and_sc():
     for action in service.ACTIONS:
         assert service.nssm_commands(action)          # each action yields at least one command
