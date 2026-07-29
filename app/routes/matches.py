@@ -67,7 +67,7 @@ def _review_groups():
         return [row for row in csv.DictReader(file_handle) if row.get("decision") == "REVIEW"]
 
 
-@router.get("/matches/{group_number}")
+@router.get("/matches/{group_number:int}")
 def match_group_page(request: Request, group_number: int):
     if not MERGE_PLAN_PATH.exists():
         return render_error(request, 404, detail="Match report not found.")
