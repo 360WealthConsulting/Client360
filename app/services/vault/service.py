@@ -238,7 +238,8 @@ def add_version(principal, document_id, *, source, original_filename, actor_user
     return next_version
 
 
-_EDITABLE = {"display_name", "category", "document_type", "security_classification", "status"}
+_EDITABLE = {"display_name", "category", "document_type", "security_classification", "status",
+             "client_visible"}
 
 
 def update_metadata(principal, document_id, *, changes, actor_user_id=None, ip_address=None):

@@ -174,7 +174,13 @@
         <td>
           <a href="/api/vault/documents/{{ d.id }}/download">Download</a>
           · <a href="{{ base }}?tab=vault&doc={{ d.id }}">Details</a>
-          {% if sec.can_manage and d.status != "archived" %} · <a href="#" onclick="return vaultArchive(event, {{ d.id }})">Archive</a>{% endif %}
+          {% if d.client_visible %}<span class="pill" title="Visible in the client portal">◑ client-visible</span>{% endif %}
+          {% if d.uploaded_by_portal_account_id and d.status in ["uploaded","under_review"] %}<span class="pill" style="background:#fde">client upload — pending</span>{% endif %}
+          {% if sec.can_manage %}
+            {% if d.uploaded_by_portal_account_id and d.status in ["uploaded","under_review"] %} · <a href="#" onclick="return vaultApprove(event, {{ d.id }}, true)">Approve</a> · <a href="#" onclick="return vaultApprove(event, {{ d.id }}, false)">Reject</a>{% endif %}
+            · <a href="#" onclick="return vaultVisible(event, {{ d.id }}, {{ 'false' if d.client_visible else 'true' }})">{{ 'Hide from client' if d.client_visible else 'Show to client' }}</a>
+            {% if d.status != "archived" %} · <a href="#" onclick="return vaultArchive(event, {{ d.id }})">Archive</a>{% endif %}
+          {% endif %}
         </td>
       </tr>
     {% else %}<tr><td colspan="9">{% call ui.empty("No documents", "No vault documents are linked to this client yet.") %}{% endcall %}</td></tr>{% endfor %}
@@ -214,6 +220,8 @@
     async function vaultUpload(e){e.preventDefault();const f=e.target;const r=await fetch('/api/vault/documents',{method:'POST',body:new FormData(f)});if(r.ok){location.href='{{ base }}?tab=vault';}else{alert('Upload failed: '+r.status+' '+await r.text());}return false;}
     async function vaultNewVersion(e,id){e.preventDefault();const r=await fetch('/api/vault/documents/'+id+'/versions',{method:'POST',body:new FormData(e.target)});if(r.ok){location.href='{{ base }}?tab=vault&doc='+id;}else{alert('Version upload failed: '+r.status);}return false;}
     async function vaultArchive(e,id){e.preventDefault();if(!confirm('Archive this document?'))return false;const r=await fetch('/api/vault/documents/'+id+'/archive',{method:'POST'});if(r.ok){location.href='{{ base }}?tab=vault';}else{alert('Archive failed: '+r.status);}return false;}
+    async function vaultVisible(e,id,val){e.preventDefault();const r=await fetch('/api/vault/documents/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_visible:val})});if(r.ok){location.href='{{ base }}?tab=vault';}else{alert('Update failed: '+r.status);}return false;}
+    async function vaultApprove(e,id,ok){e.preventDefault();if(!confirm((ok?'Approve':'Reject')+' this client upload?'))return false;const r=await fetch('/api/vault/documents/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:ok?'approved':'rejected'})});if(r.ok){location.href='{{ base }}?tab=vault';}else{alert('Action failed: '+r.status);}return false;}
   </script>
 
 {% elif active_tab == "opportunities" %}

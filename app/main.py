@@ -77,6 +77,7 @@ from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
 from app.routes.policy import router as policy_router
 from app.routes.portal import router as portal_router
+from app.routes.portal_api import router as portal_api_router
 from app.routes.portal_admin import router as portal_admin_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.practice_management import router as practice_management_router
@@ -245,6 +246,7 @@ app.include_router(tax_intake_router)
 app.include_router(tax_returns_router)
 app.include_router(tax_documents_router)
 app.include_router(portal_router)
+app.include_router(portal_api_router)
 app.include_router(portal_admin_router)
 app.include_router(engagement_router)
 app.include_router(knowledge_router)
