@@ -215,6 +215,17 @@ def test_carl_has_no_routine_client_document_access(client_ids):
     assert vault.list_documents(CARL, person_id=pid) == []      # list hides everything
 
 
+def test_vault_tab_lists_person_documents(client_ids):
+    # Regression: the Client 360 Vault tab (person view) must list a person-linked doc. Passing both
+    # person_id AND household_id would AND them and drop person-linked docs (NULL household on the link).
+    from app.services.client360 import sections
+    pid, hid = client_ids["person_id"], client_ids["household_id"]
+    doc_id = _upload(FULL, pid, category="tax")
+    sec = sections.vault(FULL, {"entity_type": "person", "entity_id": pid, "person_id": pid,
+                                "household_id": hid, "vault_view": None})
+    assert doc_id in {d["id"] for d in sec["documents"]}
+
+
 def test_client_list_only_returns_linked_documents(client_ids):
     pid = client_ids["person_id"]
     mine = _upload(FULL, pid, category="tax")
