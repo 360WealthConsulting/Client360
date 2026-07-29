@@ -31,6 +31,8 @@
 {# Demo-only: app.demo.demo_app sets request.state.demo_mode; undefined (falsy) in production. #}
 {% set demo_mode = request.state.demo_mode if request else false %}
 {% set groups = [
+  {"label": "Home", "items": [
+    {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p}]},
   {"label": "Workspace", "items": [
     {"href": "/workspace", "label": "Today", "match": "/workspace", "ico": "◭", "show": can_workspace}]},
   {"label": "Overview", "items": [

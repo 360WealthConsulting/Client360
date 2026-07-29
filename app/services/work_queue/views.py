@@ -40,6 +40,11 @@ BUILTIN_VIEWS = {
                        "capability": "opportunity.read"},
     "meetings":       {"label": "Meetings", "filters": {"domain": "meetings"}, "tab": True,
                        "capability": "scheduling.view"},
+    # Deep-link views for the Staff Home dashboard cards (not tabs — items are capability-suppressed
+    # per row, so no per-view capability gate is needed).
+    "waiting":        {"label": "Waiting", "filters": {"status": "waiting"}, "tab": False},
+    "reviews":        {"label": "Reviews", "filters": {"domain": ["compliance", "documents"]},
+                       "tab": False},
 }
 
 DEFAULT_VIEW = "my_work"

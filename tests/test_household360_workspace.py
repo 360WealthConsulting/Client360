@@ -263,7 +263,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1074  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
+    assert len(app.routes) == 1076  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
 
 
 def test_household_page_renders_and_404():

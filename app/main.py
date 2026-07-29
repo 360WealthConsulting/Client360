@@ -32,6 +32,7 @@ from app.routes.compliance import router as compliance_router
 from app.routes.compliance_intelligence import router as compliance_intelligence_router
 from app.routes.configuration import router as configuration_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.home import router as home_router
 from app.routes.data_governance import router as data_governance_router
 from app.routes.data_governance_intelligence import router as data_governance_intelligence_router
 from app.routes.dev_auth import dev_auth_enabled
@@ -171,6 +172,7 @@ app.add_middleware(
 )
 
 app.include_router(dashboard_router)
+app.include_router(home_router)
 app.include_router(compliance_router)
 app.include_router(advisor_work_router)
 app.include_router(annual_review_router)
