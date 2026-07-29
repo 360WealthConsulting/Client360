@@ -126,8 +126,11 @@ def vault(principal, ctx):
     from app.services.vault import service as vault_service
     pid, hid = _pid(ctx), _hid(ctx)
     view = ctx.get("vault_view") or {}
+    # Scope to the entity being viewed: a person view filters by person only (person-linked docs have
+    # a NULL household on the link, so passing household too would AND them away); a household view
+    # filters by household.
     documents_list = vault_service.list_documents(
-        principal, person_id=pid, household_id=hid,
+        principal, person_id=pid, household_id=(None if pid else hid),
         category=view.get("category") or None, document_type=view.get("document_type") or None,
         status=view.get("status") or None, year=view.get("year") or None, query=view.get("q") or None)
     detail = None
