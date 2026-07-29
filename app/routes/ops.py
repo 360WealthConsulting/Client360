@@ -73,7 +73,9 @@ def readiness():
         logger.warning("readiness database check failed: %s", exc)
 
     expected_head = _expected_head()
-    migrations_in_sync = bool(current_head) and (expected_head is None or current_head == expected_head)
+    # Migrations are in sync only when the current head is known AND matches the expected head. An
+    # unknown expected head (could not resolve the code's migration graph) is treated as NOT ready.
+    migrations_in_sync = bool(current_head) and bool(expected_head) and current_head == expected_head
 
     try:
         from app.jobs.scheduler import scheduler_status
@@ -82,7 +84,16 @@ def readiness():
         logger.warning("scheduler status unavailable: %s", exc)
         scheduler = {"running": False, "job_count": 0, "jobs": []}
 
-    ready = db_ok and migrations_in_sync
+    # Deployment additions (presence/booleans only — the public probe never leaks config values).
+    try:
+        from app.deploy.checks import config_ready, vault_storage_writable
+        config_ok = config_ready()
+        vault_ok, _ = vault_storage_writable()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("readiness config/vault check failed: %s", exc)
+        config_ok, vault_ok = False, False
+
+    ready = db_ok and migrations_in_sync and config_ok and vault_ok
     body = {
         "status": "ready" if ready else "not_ready",
         "application": "Client360",
@@ -93,6 +104,8 @@ def readiness():
                 "expected_head": expected_head,
                 "in_sync": migrations_in_sync,
             },
+            "configuration": "ok" if config_ok else "incomplete",
+            "vault_storage": "ok" if vault_ok else "error",
             "scheduler": scheduler,
             "microsoft_sync": sync,
         },

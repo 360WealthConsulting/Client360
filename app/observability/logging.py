@@ -77,12 +77,27 @@ def configure_logging(
         return logger
 
     chosen_format = resolve_format(fmt)
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        JsonFormatter() if chosen_format == "json" else logging.Formatter(_PLAIN_FORMAT)
-    )
+    formatter = JsonFormatter() if chosen_format == "json" else logging.Formatter(_PLAIN_FORMAT)
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
 
-    logger.handlers[:] = [handler]  # replace (idempotent — never accumulates)
+    # Persistent rotating file logs for a server install (LOG_DIR). stderr always stays on so a
+    # console/service capture still works; the file survives outside temporary directories.
+    log_dir = (os.getenv("LOG_DIR") or "").strip()
+    if log_dir:
+        try:
+            from logging.handlers import RotatingFileHandler
+            from pathlib import Path
+            path = Path(log_dir)
+            path.mkdir(parents=True, exist_ok=True)
+            handlers.append(RotatingFileHandler(
+                str(path / "client360.log"), maxBytes=10 * 1024 * 1024, backupCount=10,
+                encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 — never let logging config break startup
+            logger.warning("could not configure LOG_DIR file logging: %s", exc)
+
+    for h in handlers:
+        h.setFormatter(formatter)
+    logger.handlers[:] = handlers  # replace (idempotent — never accumulates)
     logger.setLevel(resolve_level(level))
     logger.propagate = False  # do not double-emit through the root logger
 
