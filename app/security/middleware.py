@@ -1,6 +1,6 @@
 import re
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
@@ -137,6 +137,30 @@ def _denied(request, principal, action, entity_type, entity_id, detail):
     )
 
 
+def _is_api_request(request) -> bool:
+    """Whether an unauthenticated request should get a JSON 401 rather than a browser login redirect.
+
+    True for anything that is not a plain browser page navigation: any ``/api/`` path, any non-GET/HEAD
+    method (a redirect on a POST/PUT is useless), or a client that explicitly wants JSON and not HTML.
+    A GET/HEAD to a non-API path is treated as a browser page (redirect to the staff login), regardless
+    of whether the Accept header happens to include ``text/html`` — so ``Accept: */*`` navigations and
+    proxied requests still get the login flow instead of a JSON body."""
+    if request.url.path.startswith("/api/"):
+        return True
+    if request.method not in {"GET", "HEAD"}:
+        return True
+    accept = request.headers.get("accept", "")
+    return "application/json" in accept and "text/html" not in accept
+
+
+def _login_redirect(request):
+    """303 to the staff OIDC entry route, preserving the requested page as a safe local ``next``."""
+    target = request.url.path
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(f"/auth/login?next={quote(target, safe='')}", 303)
+
+
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request.state.request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
@@ -185,15 +209,18 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         principal = resolve_principal(token)
         request.state.principal = principal
         if principal is None:
-            if "text/html" in request.headers.get("accept", ""):
-                return RedirectResponse("/auth/login", 303)
-            return JSONResponse(
-                {
-                    "detail": "Authentication required",
-                    "request_id": request.state.request_id,
-                },
-                status_code=401,
-            )
+            # Browser page navigations get the staff login flow (redirect + return URL); API/JSON
+            # clients and mutations get a JSON 401. Decided by route/method, not the Accept header
+            # alone, so an ``Accept: */*`` navigation to a page still reaches the login.
+            if _is_api_request(request):
+                return JSONResponse(
+                    {
+                        "detail": "Authentication required",
+                        "request_id": request.state.request_id,
+                    },
+                    status_code=401,
+                )
+            return _login_redirect(request)
         capability = next((code for pattern, code in RULES if pattern.search(request.url.path)), None)
         if request.method not in {"GET", "HEAD", "OPTIONS"} and capability:
             capability = capability.replace(".read", ".write")
