@@ -91,6 +91,22 @@ def _stored_name(source_relative_path: str) -> str:
     return "taxdome:" + hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
+def _legacy_stored_name(absolute_source_path: str) -> str:
+    """The stored_name the PREVIOUS (metadata-only) importer used: a hash of the ABSOLUTE source path.
+
+    Kept so this sync recognizes and upgrades rows created before the switch to relative-path keys,
+    instead of treating them as missing and inserting duplicates. Must reproduce the old scheme exactly:
+    ``"taxdome:" + sha256(os.path.join(dirpath, filename))`` over the same walk/root."""
+    return "taxdome:" + hashlib.sha256(absolute_source_path.encode("utf-8")).hexdigest()
+
+
+# Office/OS temporary and system files: skipped (counted as ignored, never errors).
+def _is_ignored_file(filename: str) -> bool:
+    low = filename.lower()
+    return (filename.startswith("~$") or low.endswith(".tmp")
+            or low in ("thumbs.db", "desktop.ini"))
+
+
 def _content_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -125,7 +141,10 @@ def sanitize_relative_path(relative_path: str) -> PurePosixPath:
         segment = segment.strip()
         if segment in ("", "."):
             continue
-        if segment == ".." or ":" in segment or segment.startswith(("/", "~")):
+        # Reject traversal / absolute / drive-qualified segments. A leading "~" is a LEGITIMATE
+        # filename character (e.g. "~budget.xlsx") and is allowed — Office lock files ("~$…") are
+        # handled separately as ignored temp files, not here.
+        if segment == ".." or ":" in segment or segment.startswith("/"):
             raise ValueError(f"unsafe path segment {segment!r} in {relative_path!r}")
         parts.append(_UNSAFE_COMPONENT.sub("_", segment).rstrip(". "))
     parts = [p for p in parts if p]
@@ -237,7 +256,8 @@ def _new_summary(source_root, destination_root, scan_id, started):
         "source_root": str(source_root), "destination_root": str(destination_root),
         "scan_id": scan_id, "started_at": started.isoformat(), "completed_at": None,
         "folders_examined": 0, "files_examined": 0, "copied": 0, "updated": 0, "skipped": 0,
-        "bytes_copied": 0, "missing": 0, "purged": 0, "errors": [],
+        "bytes_copied": 0, "missing": 0, "purged": 0, "ignored": 0, "errors": [],
+        "legacy_rows_to_upgrade": 0, "legacy_rows_upgraded": 0, "reconciled": 0,
         "folders_linked": 0, "folders_unresolved": 0, "status": "started", "dry_run": False,
     }
 
@@ -245,7 +265,8 @@ def _new_summary(source_root, destination_root, scan_id, started):
 def _print_progress(summary: dict) -> None:
     print(f"  … folders={summary['folders_examined']} files={summary['files_examined']} "
           f"copied={summary['copied']} updated={summary['updated']} skipped={summary['skipped']} "
-          f"bytes={summary['bytes_copied']:,} errors={len(summary['errors'])}", flush=True)
+          f"ignored={summary['ignored']} bytes={summary['bytes_copied']:,} "
+          f"errors={len(summary['errors'])}", flush=True)
 
 
 def sync(source_root: str | os.PathLike | None = None,
@@ -284,6 +305,9 @@ def sync(source_root: str | os.PathLike | None = None,
                 summary["folders_examined"] += 1
                 for dirpath, _dirs, filenames in os.walk(entry):
                     for filename in sorted(filenames):
+                        if _is_ignored_file(filename):
+                            summary["ignored"] += 1        # temp/system file, not an error
+                            continue
                         abs_path = os.path.join(dirpath, filename)
                         summary["files_examined"] += 1
                         try:
@@ -326,9 +350,41 @@ def sync(source_root: str | os.PathLike | None = None,
     return summary
 
 
+def _resolve_identity(rows, key, legacy_key):
+    """Resolve the candidate rows for one source file into (canonical, duplicates, had_legacy).
+
+    ``rows`` are the documents whose stored_name is the new relative-path key or the legacy
+    absolute-path key. When both a new-style and a legacy row exist for the same file, the
+    person-associated row is preserved as canonical and the other becomes a duplicate to merge away."""
+    new_row = next((r for r in rows if r["stored_name"] == key), None)
+    legacy_row = next((r for r in rows if r["stored_name"] == legacy_key and r["stored_name"] != key), None)
+    if new_row and legacy_row:
+        if legacy_row["person_id"] and not new_row["person_id"]:
+            return legacy_row, [new_row], True          # preserve the linked legacy row
+        return new_row, [legacy_row], True
+    if legacy_row:
+        return legacy_row, [], True
+    if new_row:
+        return new_row, [], False
+    return None, [], False
+
+
+def _merge_field(canonical, duplicates, field):
+    """Keep the canonical value; fall back to a duplicate's value only where canonical is empty."""
+    if canonical[field] is not None:
+        return canonical[field]
+    for dup in duplicates:
+        if dup[field] is not None:
+            return dup[field]
+    return None
+
+
 def _sync_one_file(db, source, destination, folder_name, abs_path, filename, scan_id, dry_run,
                    seen_keys, summary) -> None:
-    """Sync a single source file. Raises on failure so the caller records it and continues."""
+    """Sync a single source file. Raises on failure so the caller records it and continues.
+
+    Identity resolution happens FIRST (new relative-path key OR legacy absolute-path key), so legacy
+    metadata-only rows are upgraded in place rather than duplicated or reported missing."""
     source_path = Path(abs_path)
     stat = os.stat(source_path)
     source_size = int(stat.st_size)
@@ -338,79 +394,94 @@ def _sync_one_file(db, source, destination, folder_name, abs_path, filename, sca
     dest_abs = _destination_path(destination, safe_rel)    # raises if it escapes the root
     local_rel = str(safe_rel)
     key = _stored_name(rel_str)
+    legacy_key = _legacy_stored_name(abs_path)
+    # Track BOTH keys as seen so missing-reconciliation (which runs later) never flags a legacy row
+    # whose source still exists.
     seen_keys.add(key)
+    seen_keys.add(legacy_key)
 
     with db.engine.connect() as conn:
-        existing = conn.execute(
-            select(db.documents.c.id, db.documents.c.sha256, db.documents.c.tags,
-                   db.documents.c.person_id)
-            .where(db.documents.c.stored_name == key)).mappings().first()
+        rows = conn.execute(
+            select(db.documents.c.id, db.documents.c.stored_name, db.documents.c.sha256,
+                   db.documents.c.tags, db.documents.c.person_id, db.documents.c.household_id,
+                   db.documents.c.category, db.documents.c.classification, db.documents.c.size_bytes)
+            .where(db.documents.c.stored_name.in_([key, legacy_key]))).mappings().all()
+    canonical, duplicates, had_legacy = _resolve_identity(rows, key, legacy_key)
 
-    # Decide the action using the size+mtime fast path; hash only when needed.
+    # Decide the copy action using the size+mtime fast path; hash only when needed.
     action = "new"
-    if existing is not None:
-        tags = existing["tags"] or {}
+    if canonical is not None:
+        tags = canonical["tags"] or {}
         local_ok = dest_abs.exists()
         if local_ok and tags.get("source_size") == source_size \
                 and tags.get("source_modified") == source_modified:
             action = "skip"
         else:
             source_hash = _content_sha256(source_path)
-            action = "skip" if (local_ok and source_hash == existing["sha256"]) else "changed"
-
-    if action == "skip":
-        summary["skipped"] += 1
-        if not dry_run:
-            _refresh_tags(db, existing["id"], scan_id, source, abs_path, folder_name, local_rel,
-                          stat, source_size, source_modified)
-        return
+            action = "skip" if (local_ok and source_hash == canonical["sha256"]) else "changed"
 
     if dry_run:
-        summary["copied" if action == "new" else "updated"] += 1
-        summary["bytes_copied"] += source_size
+        if canonical is None:
+            summary["copied"] += 1
+            summary["bytes_copied"] += source_size
+        elif action == "skip":
+            summary["skipped"] += 1
+        else:
+            summary["updated"] += 1
+            summary["bytes_copied"] += source_size
+        if had_legacy:
+            summary["legacy_rows_to_upgrade"] += 1
+        summary["reconciled"] += len(duplicates)
         return
 
-    sha, size = _copy_verified(source_path, dest_abs)      # temp + verify + atomic replace
-    tags = {
+    # Copy the bytes when needed; on a genuine skip, reuse the verified local copy's hash/size.
+    if action in ("new", "changed"):
+        sha, size = _copy_verified(source_path, dest_abs)   # temp + verify + atomic replace
+    else:
+        sha, size = canonical["sha256"], canonical["size_bytes"]
+
+    base_tags = dict((canonical["tags"] if canonical else None) or {})
+    base_tags.update({
         "source_system": SOURCE_SYSTEM, "source_root": str(source), "source_path": abs_path,
         "source_relative_path": rel_str, "taxdome_folder": folder_name,
         "local_relative_path": local_rel, "source_created": _iso(_created_ts(stat)),
         "source_modified": source_modified, "source_size": source_size,
         "available_from_source": True, "retained_locally": True, "last_scan_id": scan_id,
         "last_synced_at": datetime.now(UTC).isoformat(), "sync_version": SYNC_VERSION,
-    }
+    })
+    if duplicates:
+        base_tags["reconciled_from"] = sorted(d["stored_name"] for d in duplicates)
     values = {
         "storage_provider": STORAGE_PROVIDER, "storage_uri": str(dest_abs), "storage_path": local_rel,
         "original_name": filename, "content_type": mimetypes.guess_type(filename)[0],
-        "size_bytes": size, "sha256": sha, "category": infer_category(filename, rel_str),
-        "tags": tags, "status": "active", "archived": False, "archived_at": None, "deleted_at": None,
+        "size_bytes": size, "sha256": sha, "tags": base_tags,
+        "status": "active", "archived": False, "archived_at": None, "deleted_at": None,
         "uploaded_by": "TaxDome Drive Sync", "updated_at": datetime.now(UTC),
     }
     with db.engine.begin() as conn:
-        if existing is None:
-            conn.execute(db.documents.insert().values(stored_name=key, **values))
+        # Remove duplicate rows first so converting the canonical row to the new key cannot collide on
+        # the unique stored_name. Only DB rows are removed here — never the retained local file.
+        for dup in duplicates:
+            conn.execute(db.documents.delete().where(db.documents.c.id == dup["id"]))
+        if canonical is None:
+            conn.execute(db.documents.insert().values(
+                stored_name=key, category=infer_category(filename, rel_str), **values))
             summary["copied"] += 1
         else:
-            conn.execute(db.documents.update().where(db.documents.c.id == existing["id"]).values(**values))
-            summary["updated"] += 1
-    summary["bytes_copied"] += size
-
-
-def _refresh_tags(db, doc_id, scan_id, source, abs_path, folder_name, local_rel, stat, source_size,
-                  source_modified) -> None:
-    """For a skipped (unchanged) file, refresh the source bookkeeping tags without touching the file."""
-    with db.engine.begin() as conn:
-        row = conn.execute(select(db.documents.c.tags).where(db.documents.c.id == doc_id)).mappings().first()
-        tags = dict(row["tags"] or {})
-        tags.update({
-            "source_system": SOURCE_SYSTEM, "source_root": str(source), "source_path": abs_path,
-            "taxdome_folder": folder_name, "local_relative_path": local_rel,
-            "source_created": _iso(_created_ts(stat)), "source_modified": source_modified,
-            "source_size": source_size, "available_from_source": True, "retained_locally": True,
-            "last_scan_id": scan_id, "last_synced_at": datetime.now(UTC).isoformat(),
-        })
-        conn.execute(db.documents.update().where(db.documents.c.id == doc_id).values(
-            tags=tags, status="active"))
+            # Upgrade/reconcile in place: convert to the new stable key and preserve useful metadata.
+            conn.execute(db.documents.update().where(db.documents.c.id == canonical["id"]).values(
+                stored_name=key,
+                person_id=_merge_field(canonical, duplicates, "person_id"),
+                household_id=_merge_field(canonical, duplicates, "household_id"),
+                category=_merge_field(canonical, duplicates, "category") or infer_category(filename, rel_str),
+                classification=_merge_field(canonical, duplicates, "classification"),
+                **values))
+            summary["updated" if action != "skip" else "skipped"] += 1
+        if had_legacy:
+            summary["legacy_rows_upgraded"] += 1
+        summary["reconciled"] += len(duplicates)
+    if action in ("new", "changed"):
+        summary["bytes_copied"] += size
 
 
 def _link_folders(db, folders_seen) -> None:
@@ -551,8 +622,10 @@ def main(argv=None):
         return 130
     label = "DRY RUN — no changes made" if args.dry_run else "sync complete"
     print(f"TaxDome Drive {label}.")
-    for key in ("folders_examined", "files_examined", "copied", "updated", "skipped", "bytes_copied",
-                "missing", "purged", "folders_linked", "folders_unresolved", "status"):
+    legacy_key = "legacy_rows_to_upgrade" if args.dry_run else "legacy_rows_upgraded"
+    for key in ("folders_examined", "files_examined", "ignored", "copied", "updated", "skipped",
+                "bytes_copied", "missing", "purged", "reconciled", legacy_key,
+                "folders_linked", "folders_unresolved", "status"):
         print(f"  {key}: {summary[key]}")
     if summary["errors"]:
         print(f"  errors ({len(summary['errors'])}):")

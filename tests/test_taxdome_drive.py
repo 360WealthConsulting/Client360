@@ -7,6 +7,7 @@ copy, handles duplicate filenames across folders, blocks path traversal, links f
 conservatively, makes dry-run a no-op, and surfaces local copies through the existing person-document
 query + download route. All tests use temporary directories — no production data is touched.
 """
+import hashlib
 import os
 from pathlib import Path, PurePosixPath
 
@@ -236,7 +237,7 @@ def test_duplicate_filenames_in_different_folders(tmp_path):
 # --- path traversal protection ----------------------------------------------
 
 @pytest.mark.parametrize("evil", ["../etc/passwd", "a/../../secret", r"C:\Windows\system32",
-                                  "/abs/path", "~/secret", "..\\..\\x"])
+                                  "/abs/path", "..\\..\\x"])
 def test_sanitize_relative_path_blocks_traversal(evil):
     with pytest.raises(ValueError):
         td.sanitize_relative_path(evil)
@@ -244,6 +245,11 @@ def test_sanitize_relative_path_blocks_traversal(evil):
 
 def test_sanitize_relative_path_allows_normal_nested_path():
     assert td.sanitize_relative_path("Okoro Family/2025/W-2.pdf") == PurePosixPath("Okoro Family/2025/W-2.pdf")
+
+
+def test_sanitize_relative_path_allows_legitimate_tilde_filename():
+    # A leading "~" is a valid filename character (only "~$…" Office lock files are ignored elsewhere).
+    assert td.sanitize_relative_path("Okoro Family/~budget.xlsx") == PurePosixPath("Okoro Family/~budget.xlsx")
 
 
 def test_destination_path_rejects_escape(tmp_path):
@@ -334,6 +340,128 @@ def test_retained_but_unavailable_document_still_downloads(tmp_path):
     doc = next(d for d in get_person_documents(pid) if d["original_name"] == "2025 W-2.pdf")
     resp = download_document(doc["id"])                      # retained copy still serves
     assert Path(resp.path).read_text() == "w2 content"
+
+
+# --- legacy metadata-only row migration --------------------------------------
+
+def _legacy_row(src, abs_path, folder, *, person_id=None):
+    """Insert a row exactly as the OLD metadata-only importer did: stored_name keyed off the ABSOLUTE
+    source path, storage_provider "TaxDome Drive", storage_uri = the Z:\\ path, no local copy."""
+    rel = os.path.relpath(abs_path, src)
+    content = Path(abs_path).read_bytes()
+    with engine.begin() as conn:
+        return conn.execute(documents.insert().values(
+            stored_name=td._legacy_stored_name(abs_path),
+            original_name=Path(abs_path).name, storage_path=rel, storage_provider="TaxDome Drive",
+            storage_uri=abs_path, size_bytes=len(content), sha256=hashlib.sha256(content).hexdigest(),
+            category="tax_document", person_id=person_id, status="active", archived=False,
+            tags={"source_system": "TaxDome Drive", "taxdome_folder": folder, "relative_path": rel,
+                  "available": True}).returning(documents.c.id)).scalar_one()
+
+
+def test_legacy_absolute_path_row_upgraded_in_place(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    abs_path = str(src / "Okoro Family" / "Engagement Agreement.pdf")
+    legacy_id = _legacy_row(src, abs_path, "Okoro Family")
+    summary = _sync(src, dst)
+    assert summary["legacy_rows_upgraded"] >= 1
+    # SAME row id, now converted to the new relative-path key + local provider + verified local copy
+    row = next(r for r in _taxdome_rows() if r["id"] == legacy_id)
+    assert row["stored_name"] == td._stored_name(os.path.relpath(abs_path, src))
+    assert row["storage_provider"] == "Client360 Local"
+    assert row["storage_uri"] == str((dst / "Okoro Family" / "Engagement Agreement.pdf").resolve())
+    assert (dst / "Okoro Family" / "Engagement Agreement.pdf").exists()
+
+
+def test_legacy_upgrade_preserves_person_id(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    pid = _person("Delgado, Alex")
+    abs_path = str(src / "Okoro Family" / "Engagement Agreement.pdf")
+    legacy_id = _legacy_row(src, abs_path, "Okoro Family", person_id=pid)
+    _sync(src, dst)
+    row = next(r for r in _taxdome_rows() if r["id"] == legacy_id)
+    assert row["person_id"] == pid                           # linkage preserved through the upgrade
+
+
+def test_legacy_upgrade_creates_no_duplicate(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)                                               # 3 files
+    for folder, name in (("Hawthorne, Taylor", "2025 W-2.pdf"),
+                         ("Hawthorne, Taylor", "sub/1099-DIV.pdf"),
+                         ("Okoro Family", "Engagement Agreement.pdf")):
+        _legacy_row(src, str(src / folder / name), folder.split("/")[0] if "/" not in folder else folder)
+    _sync(src, dst)
+    assert len(_taxdome_rows()) == 3                         # upgraded in place; no duplicate rows
+
+
+def test_mixed_legacy_and_new_rows_reconciled(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    pid = _person("Delgado, Alex")
+    abs_path = str(src / "Okoro Family" / "Engagement Agreement.pdf")
+    _sync(src, dst)                                          # creates a new-style row (no person)
+    _legacy_row(src, abs_path, "Okoro Family", person_id=pid)   # legacy row for the SAME file, linked
+    summary = _sync(src, dst)
+    assert summary["reconciled"] >= 1
+    matches = [r for r in _taxdome_rows() if r["original_name"] == "Engagement Agreement.pdf"]
+    assert len(matches) == 1                                 # reconciled to one canonical row
+    assert matches[0]["person_id"] == pid                    # the linked row was preserved
+    assert matches[0]["stored_name"] == td._stored_name(os.path.relpath(abs_path, src))
+
+
+def test_missing_count_correct_after_legacy_matching(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    for folder, name in (("Hawthorne, Taylor", "2025 W-2.pdf"), ("Okoro Family", "Engagement Agreement.pdf")):
+        _legacy_row(src, str(src / folder / name), folder)
+    summary = _sync(src, dst)
+    assert summary["missing"] == 0                           # legacy rows matched, NOT reported missing
+
+
+def test_dry_run_reports_legacy_rows_to_upgrade(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    _legacy_row(src, str(src / "Okoro Family" / "Engagement Agreement.pdf"), "Okoro Family")
+    summary = _sync(src, dst, dry_run=True)
+    assert summary["legacy_rows_to_upgrade"] == 1 and summary["missing"] == 0
+    assert _taxdome_rows()[0]["storage_provider"] == "TaxDome Drive"   # unchanged by dry-run
+
+
+def test_legacy_migration_is_idempotent(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    _legacy_row(src, str(src / "Okoro Family" / "Engagement Agreement.pdf"), "Okoro Family")
+    _sync(src, dst)
+    summary = _sync(src, dst)
+    assert summary["legacy_rows_upgraded"] == 0 and summary["copied"] == 0 and summary["updated"] == 0
+    assert summary["skipped"] == 3 and len(_taxdome_rows()) == 3
+
+
+# --- temp / system files ignored ---------------------------------------------
+
+def test_office_lock_and_system_files_are_ignored(tmp_path):
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir(parents=True)
+    (src / "Okoro Family" / "Engagement Agreement.pdf").write_text("agreement")
+    (src / "Okoro Family" / "~$gagement Agreement.pdf").write_text("office lock")
+    (src / "Okoro Family" / "draft.tmp").write_text("tmp")
+    (src / "Okoro Family" / "Thumbs.db").write_text("thumbs")
+    (src / "Okoro Family" / "desktop.ini").write_text("ini")
+    summary = _sync(src, dst)
+    assert summary["ignored"] == 4 and summary["errors"] == []
+    assert summary["copied"] == 1                            # only the real document
+    assert not (dst / "Okoro Family" / "~$gagement Agreement.pdf").exists()
+
+
+def test_legitimate_tilde_file_is_synced(tmp_path):
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir(parents=True)
+    (src / "Okoro Family" / "~budget.xlsx").write_text("budget")   # legit name, not a lock file
+    summary = _sync(src, dst)
+    assert summary["copied"] == 1 and summary["ignored"] == 0
+    assert (dst / "Okoro Family" / "~budget.xlsx").read_text() == "budget"
 
 
 # --- demo dashboard (existing surface still works) ---------------------------
