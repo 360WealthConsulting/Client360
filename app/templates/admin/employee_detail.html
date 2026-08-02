@@ -40,24 +40,30 @@
   </form>
 </article>
 
-{# --- Roles --- #}
+{# --- Access profiles (multi-select) --- #}
 <article class="card" style="flex:1; min-width:300px">
-  <h2 class="section-title">Assigned roles</h2>
-  <div class="table-wrap"><table class="data"><thead><tr><th>Role</th><th>Since</th><th></th></tr></thead><tbody>
-    {% for r in d.active_roles %}
-      <tr><td>{{ r.name }} <span class="subtle">({{ r.code }})</span></td><td class="subtle">{{ r.effective_date }}</td>
-        <td><form method="post" action="/admin/employees/{{ u.id }}/roles/remove" class="inline"><input type="hidden" name="role_id" value="{{ r.role_id }}"><button class="btn-link" type="submit">Remove</button></form></td></tr>
-    {% else %}<tr><td colspan="3">{% call ui.empty("No roles assigned") %}{% endcall %}</td></tr>{% endfor %}
-  </tbody></table></div>
-
-  <h3 style="margin:12px 0 6px">Assign a role profile</h3>
-  <form method="post" action="/admin/employees/{{ u.id }}/roles" class="row" style="gap:8px; flex-wrap:wrap">
-    <select class="input" name="role_id" style="min-width:200px">
-      {% for r in d.assignable_roles %}<option value="{{ r.id }}">{{ r.name }} ({{ r.code }})</option>{% endfor %}
-    </select>
-    <button class="btn" type="submit">Assign</button>
+  <h2 class="section-title">Access profiles</h2>
+  <p class="subtle">An employee can hold several profiles at once — effective permissions are the
+    <strong>union</strong> of every checked profile (shown below). Check or uncheck, then save.</p>
+  <form method="post" action="/admin/employees/{{ u.id }}/roles/set" class="stack" style="gap:2px">
+    {% for r in d.assignable_roles %}
+      {% set checked = r.id in d.active_role_ids %}
+      {% set lock_admin = is_last_admin and r.code == 'administrator' and checked %}
+      <label class="field-check" style="display:flex; gap:10px; align-items:flex-start; padding:8px 4px; border-bottom:1px solid var(--hairline, #e5e7eb)">
+        <input type="checkbox" name="role_ids" value="{{ r.id }}" {{ 'checked' if checked }} {{ 'disabled' if lock_admin }} style="margin-top:3px">
+        {% if lock_admin %}<input type="hidden" name="role_ids" value="{{ r.id }}">{% endif %}
+        <span>
+          <strong>{{ r.name }}</strong> <span class="subtle">({{ r.code }})</span>
+          {% if lock_admin %}<span class="subtle"> — locked: final administrator</span>{% endif %}
+          <br><span class="subtle">{{ r.capability_count }} capabilities{% if r.areas %} · {{ r.areas|join(", ") }}{% endif %}</span>
+          {% if r.description %}<br><span class="subtle">{{ r.description }}</span>{% endif %}
+        </span>
+      </label>
+    {% else %}{% call ui.empty("No assignable profiles") %}{% endcall %}{% endfor %}
+    <button class="btn" type="submit" style="margin-top:10px">Save access profiles</button>
   </form>
-  <p class="subtle">You can only assign a profile whose capabilities you already hold.</p>
+  <p class="subtle">You can only grant a profile whose capabilities you already hold. Changes are
+    audited per profile; the final active administrator cannot lose the administrator profile.</p>
 </article>
 </div>
 

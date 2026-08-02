@@ -11,7 +11,15 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, insert, select
 from starlette.requests import Request
 
-from app.db import audit_events, engine, roles, user_roles, users
+from app.db import (
+    audit_events,
+    capabilities,
+    engine,
+    role_capabilities,
+    roles,
+    user_roles,
+    users,
+)
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.security.rbac import resolve_capabilities
@@ -245,3 +253,93 @@ def test_existing_403_remains_fail_closed():
     import pathlib
     src = pathlib.Path("app/routes/auth.py").read_text()
     assert "Account is inactive, uninvited, or missing required MFA" in src
+
+
+# --- multi-select access-profile editor (multiple profiles, union) -----------
+
+def _role_caps(role_id):
+    with engine.connect() as c:
+        return set(c.scalars(
+            select(capabilities.c.code).select_from(
+                role_capabilities.join(capabilities, capabilities.c.id == role_capabilities.c.capability_id))
+            .where(role_capabilities.c.role_id == role_id)))
+
+
+def _two_non_admin_roles():
+    """Two distinct active non-administrator roles with capabilities, for union tests."""
+    with engine.connect() as c:
+        rows = c.execute(
+            select(roles.c.id).where(roles.c.active.is_(True), roles.c.code != "administrator")
+            .order_by(roles.c.id)).scalars().all()
+    picked = [rid for rid in rows if _role_caps(rid)][:2]
+    return picked[0], picked[1]
+
+
+def _actor_over(env, role_ids):
+    """An actor Principal that holds every capability the given roles grant (satisfies the ceiling)."""
+    caps = {"role.manage"}
+    for rid in role_ids:
+        caps |= _role_caps(rid)
+    return Principal(env["admin_uid"], "actor@e.test", "Actor", frozenset(caps))
+
+
+def test_editor_assigns_multiple_profiles_with_union_of_capabilities(env):
+    from app.routes.admin import employee_set_roles
+    uid, _ = _invite(env, "Multi")
+    r1, r2 = _two_non_admin_roles()
+    actor = _actor_over(env, [r1, r2])
+    employee_set_roles(uid, _req(env), role_ids=[r1, r2], principal=actor)
+    with engine.connect() as c:
+        active = set(c.scalars(select(user_roles.c.role_id).where(
+            user_roles.c.user_id == uid, user_roles.c.inactive_date.is_(None))))
+    assert {r1, r2} <= active
+    # Effective permissions are the union of both profiles — the RBAC engine is unchanged.
+    assert resolve_capabilities(uid) >= (_role_caps(r1) | _role_caps(r2))
+
+
+def test_editor_reconciles_by_removing_unchecked_profiles(env):
+    from app.routes.admin import employee_set_roles
+    uid, _ = _invite(env, "Reconcile")
+    r1, r2 = _two_non_admin_roles()
+    employee_set_roles(uid, _req(env), role_ids=[r1, r2], principal=_actor_over(env, [r1, r2]))
+    # Re-submit with only r1 checked → r2 is ended, r1 remains.
+    employee_set_roles(uid, _req(env), role_ids=[r1], principal=_actor_over(env, [r1, r2]))
+    assert ea.active_role_ids(uid) == {r1}
+
+
+def test_editor_still_enforces_capability_ceiling(env):
+    from app.routes.admin import employee_set_roles
+    uid, _ = _invite(env, "Ceiling")
+    r1, _r2 = _two_non_admin_roles()
+    limited = Principal(env["admin_uid"], "lim@e.test", "Lim", frozenset({"role.manage"}))
+    resp = employee_set_roles(uid, _req(env), role_ids=[r1], principal=limited)
+    assert resp.status_code == 303 and "err=" in resp.headers["location"]
+    assert r1 not in ea.active_role_ids(uid)   # broadening beyond the actor's caps is refused
+
+
+def test_editor_honours_final_administrator_guard(env, monkeypatch):
+    from app.routes.admin import employee_set_roles
+    monkeypatch.setattr(ea, "is_last_active_administrator", lambda uid: True)
+    # Try to drop every profile from the sole administrator → administrator role is retained.
+    resp = employee_set_roles(env["admin_uid"], _req(env), role_ids=[], principal=env["admin"])
+    assert resp.status_code == 303 and "err=" in resp.headers["location"]
+    assert env["admin_role_id"] in ea.active_role_ids(env["admin_uid"])
+
+
+def test_single_role_via_editor_is_backward_compatible(env):
+    from app.routes.admin import employee_set_roles
+    uid, _ = _invite(env, "Solo")
+    employee_set_roles(uid, _req(env), role_ids=[env["benefits_role_id"]], principal=env["admin"])
+    assert ea.active_role_ids(uid) == {env["benefits_role_id"]}
+
+
+def test_invite_can_assign_multiple_profiles(env):
+    from app.routes.admin import employee_invite
+    email = f"multi-{env['tag']}@firm.test"
+    r1, r2 = _two_non_admin_roles()
+    employee_invite(_req(env), email=email, display_name="Multi Invite", role_ids=[r1, r2],
+                    principal=_actor_over(env, [r1, r2]))
+    with engine.connect() as c:
+        uid = c.scalar(select(users.c.id).where(users.c.email == email))
+    env["users"].append(uid)
+    assert {r1, r2} <= ea.active_role_ids(uid)

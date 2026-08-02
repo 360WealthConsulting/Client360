@@ -141,6 +141,18 @@ def employee_detail(user_id) -> dict | None:
         all_roles = conn.execute(
             select(roles.c.id, roles.c.code, roles.c.name, roles.c.description)
             .where(roles.c.active.is_(True)).order_by(roles.c.name)).mappings().all()
+        # Capabilities per assignable role, so the multi-select editor can preview each profile.
+        role_caps: dict[int, list[str]] = {}
+        for rid, code in conn.execute(
+            select(role_capabilities.c.role_id, capabilities.c.code).select_from(
+                role_capabilities.join(capabilities,
+                                       capabilities.c.id == role_capabilities.c.capability_id))):
+            role_caps.setdefault(rid, []).append(code)
+        # Editor checkbox state = currently-granted (open) assignments, so unchecking + saving
+        # reflects immediately (see active_role_ids). Distinct from the effective-dated caps below.
+        granted_role_ids = set(conn.scalars(
+            select(user_roles.c.role_id).where(
+                user_roles.c.user_id == user_id, user_roles.c.inactive_date.is_(None))))
         recent_audit = conn.execute(
             select(audit_events.c.action, audit_events.c.actor_user_id, audit_events.c.occurred_at,
                    audit_events.c.outcome, audit_events.c.metadata)
@@ -151,7 +163,11 @@ def employee_detail(user_id) -> dict | None:
     return {
         "user": dict(u), "entra_linked": bool(u["auth_subject"]),
         "active_roles": [dict(r) for r in active_roles],
-        "assignable_roles": [dict(r) for r in all_roles],
+        "active_role_ids": granted_role_ids,
+        "assignable_roles": [
+            {**dict(r), "capability_count": len(role_caps.get(r["id"], [])),
+             "areas": sorted(group_capabilities(role_caps.get(r["id"], [])).keys())}
+            for r in all_roles],
         "effective_capabilities": group_capabilities(caps),
         "capability_count": len(caps),
         "record_scope": scope,
@@ -211,6 +227,19 @@ def active_administrator_ids() -> set[int]:
 def is_last_active_administrator(user_id) -> bool:
     admins = active_administrator_ids()
     return admins == {user_id}
+
+
+def active_role_ids(user_id) -> set[int]:
+    """Role ids the employee is currently *granted* — open assignments that have not been ended.
+    This is the baseline the multi-select editor diffs against: unchecking a profile ends it
+    (``end_role`` sets ``inactive_date``), so it drops out here immediately and the checkbox
+    reflects the admin's action. The effective-dated RBAC engine is untouched — it independently
+    keeps a just-ended role's capabilities live through the end of the current day."""
+    with engine.connect() as conn:
+        return set(conn.scalars(
+            select(user_roles.c.role_id).where(
+                user_roles.c.user_id == user_id,
+                user_roles.c.inactive_date.is_(None))))
 
 
 # --- thin setters (existing tables + audited at the route) -------------------
