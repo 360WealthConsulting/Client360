@@ -231,7 +231,9 @@
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
         <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}</td>
         <td>{{ d.owner_label }}</td>
-        <td>{% if d.source_systems %}{{ d.source_systems|join(", ") }}{% else %}{{ d.source }}{% endif %}</td>
+        {# Source references (ADR-072): every source shown; an external (http) source_uri links out to
+           the originating system. Generic across TaxDome/Drake/SharePoint/… — no per-source UI. #}
+        <td>{% if d.sources %}{% for s in d.sources %}{% if s.source_uri and s.source_uri.startswith("http") %}<a href="{{ s.source_uri }}" target="_blank" rel="noopener" title="View source in {{ s.source_system }}">{{ s.source_system }}</a>{% else %}<span title="{{ s.source_path or s.source_uri or s.source_system }}">{{ s.source_system }}</span>{% endif %}{% if not s.available %} <span class="subtle">(unavailable)</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% elif d.source_systems %}{{ d.source_systems|join(", ") }}{% else %}{{ d.source }}{% endif %}</td>
         <td><span class="subtle">{{ d.review_status or "—" }}</span></td>
         <td><span class="subtle">{{ (d.ocr_status or "pending") }} / pending</span></td>
         <td>{{ d.version_count }}</td>
