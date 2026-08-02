@@ -1,4 +1,4 @@
-"""Explicit household assignment (app.services.household_admin) — coverage.
+"""Explicit household assignment (app.services.households) — coverage.
 
 Verifies the supported, migration-safe way to group people into one household: it reuses an existing
 household or creates one, sets people.household_id AND records a household_relationships member row,
@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import delete, func, select
 
 from app.db import engine, household_relationships, households, people
-from app.services.household_admin import assign_people_to_household
+from app.services.households import assign_people_to_household
 
 _TAG = "HHADMIN"
 

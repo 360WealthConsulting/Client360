@@ -1,22 +1,29 @@
-"""Assign an explicit, human-verified set of people to a common household.
+"""Household service — the supported API for grouping people into a household.
 
-This is the supported, migration-safe way to group people who belong together (e.g. spouses) when the
-automatic :mod:`app.services.household_derivation` engine cannot — its policies are "group nothing"
-(default) or "group by address" (a candidate that needs firm approval), and grouping by shared surname
-alone is a weak signal. Assigning specific people is a **human decision**, so it takes explicit person
-ids rather than inferring a match.
+``assign_people_to_household`` is the single supported entry point for assigning an explicit,
+human-verified set of people (e.g. spouses) to one household. It is **UI-first**: the future Household
+Management UI calls it directly (passing the acting principal's ``actor_user_id``/``request_id`` for an
+audited change and rendering the returned summary / typed errors), and the thin ``main`` CLI at the
+bottom is just one caller, kept for deployment and automation. Staff are **not** expected to assign
+households from PowerShell — the CLI exists for operators, the service is the API for the product.
+
+This is needed where the automatic :mod:`app.services.household_derivation` engine cannot help — its
+policies are "group nothing" (default) or "group by address" (a candidate awaiting firm approval), and
+shared surname alone is too weak a signal to auto-merge. Assigning specific people is a human decision,
+so the service takes explicit person ids rather than inferring a match.
 
 It uses the same tables and conventions as ``household_derivation``: reuse/create a row in
 ``households``, set ``people.household_id``, and record a ``household_relationships`` ``member`` row.
-No schema change. It preserves every existing person record and every document/source link (only the
-household relationship is touched), never creates a duplicate household, and refuses to silently merge
-people who already belong to *different* households. Idempotent.
+No schema change. Safety guarantees (identical whether called from the UI or the CLI): it preserves
+every existing person record and every document/source link (only the household relationship is
+touched), never creates a duplicate household, is idempotent, and refuses to silently merge people who
+already belong to *different* households.
 
-CLI::
+CLI (one caller of the service; for deployment/automation)::
 
-    python -m app.services.household_admin 3824 2008                       # assign both to one household
-    python -m app.services.household_admin 3824 2008 --name "White Household"
-    python -m app.services.household_admin 3824 2008 --dry-run             # report only, no changes
+    python -m app.services.households 3824 2008                       # assign both to one household
+    python -m app.services.households 3824 2008 --name "White Household"
+    python -m app.services.households 3824 2008 --dry-run             # report only, no changes
 """
 from __future__ import annotations
 
@@ -99,7 +106,7 @@ def assign_people_to_household(person_ids, *, name: str | None = None, actor_use
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        prog="python -m app.services.household_admin",
+        prog="python -m app.services.households",
         description="Assign explicit people to one common household (create if needed).")
     parser.add_argument("person_ids", nargs="+", type=int, help="Canonical people.id values to group.")
     parser.add_argument("--name", default=None, help="Household name (default '<Surname> Household').")
