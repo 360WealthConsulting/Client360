@@ -23,7 +23,7 @@ FIRM_CAPS = frozenset({
     "compliance.review.read", "timeline.read", "advisor_work.read", "work.read", "scheduling.view",
     "communications.read", "communications.view", "compliance.supervise", "analytics.executive",
     "capacity.read", "automation.view", "governance.view", "integration.view", "security.view",
-    "observability.view", "record.read_all", "observability.audit", "vault.view",
+    "observability.view", "record.read_all", "observability.audit", "vault.view", "audit.read",
 })
 FIRM = Principal(1, "m@e.com", "M", FIRM_CAPS)          # record.read_all → in scope for any client
 SCOPED = Principal(2, "s@e.com", "S", frozenset({"client.read"}))   # no read_all, no assignments
@@ -65,7 +65,7 @@ def _req(path="/client/1", qs=b""):
 # --- composition + contract --------------------------------------------------
 
 def test_registry_has_thirtyone_sections_with_builders():
-    assert len(SECTIONS) == 37  # …+Vault (client-vault-mvp) +Dashboard (Client Workspace landing tab)
+    assert len(SECTIONS) == 40  # +Dashboard +Tasks +Notes +Audit (Client Workspace beta tabs)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 
@@ -222,7 +222,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1087  # +1 client workspace document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 /api/vault endpoints (client-vault-mvp)
+    assert len(app.routes) == 1090  # +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 /api/vault endpoints (client-vault-mvp)
 
 
 def test_page_renders_and_404_out_of_scope():

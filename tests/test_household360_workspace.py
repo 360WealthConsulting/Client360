@@ -25,7 +25,7 @@ FIRM_CAPS = frozenset({
     "compliance.review.read", "timeline.read", "advisor_work.read", "work.read", "scheduling.view",
     "communications.read", "communications.view", "compliance.supervise", "analytics.executive",
     "capacity.read", "automation.view", "governance.view", "integration.view", "security.view",
-    "observability.view", "record.read_all", "observability.audit",
+    "observability.view", "record.read_all", "observability.audit", "audit.read",
 })
 FIRM = Principal(1, "m@e.com", "M", FIRM_CAPS)                          # record.read_all → sees all
 SCOPED = Principal(2, "s@e.com", "S", frozenset({"client.read"}))       # no read_all, no assignment
@@ -263,7 +263,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1087  # +1 client workspace document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
+    assert len(app.routes) == 1090  # +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
 
 
 def test_household_page_renders_and_404():

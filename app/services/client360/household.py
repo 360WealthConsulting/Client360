@@ -58,6 +58,9 @@ HOUSEHOLD_SECTIONS = (
     ("authorization_context", "observability.view"),
     ("data_governance_metadata", "governance.view"),
     ("timeline", "timeline.read"),
+    ("tasks", None),
+    ("notes", None),
+    ("audit", "audit.read"),
     ("relationships", None),
 )
 GRAPH_DEPTH = 1   # each member's relationship graph is one-hop; the household adds a membership hop.
@@ -665,8 +668,31 @@ def _relationships(principal, ctx):
                       "depth_limit": GRAPH_DEPTH, "cycle_protection": True}}
 
 
+def _hh_scope_ctx(ctx):
+    return {"scope_ids": ctx.get("member_ids") or [], "person_id": None,
+            "household_id": ctx["household_id"]}
+
+
+def _tasks(principal, ctx):
+    """Household tasks — the same authoritative client-scoped read as the person workspace, aggregated
+    across members. Create happens on a member's workspace; complete works here (member-keyed)."""
+    from app.services.client360.sections import tasks as _person_tasks
+    return _person_tasks(principal, _hh_scope_ctx(ctx))
+
+
+def _notes(principal, ctx):
+    from app.services.client360.sections import notes as _person_notes
+    return _person_notes(principal, _hh_scope_ctx(ctx))
+
+
+def _audit(principal, ctx):
+    from app.services.client360.sections import audit as _person_audit
+    return _person_audit(principal, _hh_scope_ctx(ctx))
+
+
 _SECTION_BUILDERS = {
     "summary": _summary, "members": _members, "financial": _financial, "tax": _tax,
+    "tasks": _tasks, "notes": _notes, "audit": _audit,
     "insurance": _insurance, "benefits": _benefits, "opportunities": _opportunities,
     "documents": _documents, "meetings": _meetings, "compliance": _compliance,
     "communications": _communications, "knowledge": _knowledge, "recommendations": _recommendations,

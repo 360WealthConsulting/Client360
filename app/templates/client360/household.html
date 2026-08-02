@@ -104,6 +104,32 @@
     {% else %}{% call ui.empty("No activity") %}{% endcall %}{% endfor %}
   </article>
 
+{% elif active_tab == "tasks" %}
+  <h2 class="section-title">Tasks</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th>Assignee</th><th></th></tr></thead><tbody>
+    {% for t in sec.tasks %}
+      <tr><td>{{ t.title }}</td><td>{{ t.status }}</td><td>{{ t.priority or "—" }}</td>
+        <td class="subtle">{{ t.due_date or "—" }}</td><td class="subtle">{{ t.assignee_name or t.assigned_to or "Unassigned" }}</td>
+        <td>{% if sec.can_write and t.status not in ["complete","completed","closed","cancelled","resolved"] %}<form method="post" action="/client/{{ t.person_id }}/tasks/{{ t.id }}/complete" class="inline"><button class="btn-link" type="submit">Complete</button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="6">{% call ui.empty("No tasks") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+  <p class="subtle">Create a task on a member's workspace.</p>
+
+{% elif active_tab == "notes" %}
+  <h2 class="section-title">Notes <span class="subtle">· internal</span></h2>
+  <article class="card">
+    {% for n in sec.notes %}<div class="detail-row"><span>{{ n.body }} <span class="subtle">({{ n.note_type }})</span></span><strong class="subtle">{{ n.author_name or "—" }} · {{ n.created_at.strftime("%Y-%m-%d") if n.created_at else "" }}</strong></div>{% else %}{% call ui.empty("No notes") %}{% endcall %}{% endfor %}
+  </article>
+
+{% elif active_tab == "audit" %}
+  <h2 class="section-title">Audit history</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Action</th><th>Entity</th><th>Actor</th><th>When</th><th>Outcome</th></tr></thead><tbody>
+    {% for a in sec.events %}<tr><td>{{ a.action }}</td><td>{{ a.entity_type }} #{{ a.entity_id }}</td><td>{{ "#" ~ a.actor_user_id if a.actor_user_id else "—" }}</td><td class="subtle">{{ a.occurred_at.strftime("%Y-%m-%d %H:%M") if a.occurred_at else "" }}</td><td>{{ a.outcome or "" }}</td></tr>
+    {% else %}<tr><td colspan="5">{% call ui.empty("No audit events") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+
 {% elif active_tab == "meetings" %}
   <h2 class="section-title">Upcoming</h2>
   <article class="card">{% for m in sec.upcoming %}<div class="detail-row"><span>{{ m.title }}</span><strong class="subtle">{{ m.event_time[:16] if m.event_time else "" }}</strong></div>{% else %}{% call ui.empty("No upcoming meetings") %}{% endcall %}{% endfor %}</article>
