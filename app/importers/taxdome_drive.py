@@ -30,7 +30,7 @@ CLI::
     python -m app.importers.taxdome_drive --destination-root C:\\Client360\\Data\\Documents\\TaxDome
     python -m app.importers.taxdome_drive --purge-missing        # explicit; never automatic
 
-Forward compatibility (see docs/adr/ADR-011-canonical-document-model.md): the ``documents`` row IS the
+Forward compatibility (see docs/adr/ADR-072-canonical-document-model.md): the ``documents`` row IS the
 canonical document (``documents.id`` is its stable id). ``storage_provider="Client360 Local"`` +
 ``storage_uri`` are the canonical local copy; the TaxDome **origin** is a *source reference* held in
 ``tags`` (``source_system``/``source_root``/``source_path``/…) alongside the content ``sha256``. That is
