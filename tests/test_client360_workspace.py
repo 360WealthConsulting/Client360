@@ -65,7 +65,7 @@ def _req(path="/client/1", qs=b""):
 # --- composition + contract --------------------------------------------------
 
 def test_registry_has_thirtyone_sections_with_builders():
-    assert len(SECTIONS) == 36  # …+Data Lineage & Provenance(D.66) +Vault (client-vault-mvp)
+    assert len(SECTIONS) == 37  # …+Vault (client-vault-mvp) +Dashboard (Client Workspace landing tab)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 

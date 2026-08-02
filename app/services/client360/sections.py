@@ -24,6 +24,76 @@ def _hid(ctx):
     return ctx.get("household_id")
 
 
+def _dash_tasks(ctx, *, limit=8):
+    from sqlalchemy import select
+
+    from app.db import engine, tasks
+    ids = [i for i in (ctx.get("scope_ids") or ([_pid(ctx)] if _pid(ctx) else [])) if i]
+    if not ids:
+        return []
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(tasks.c.id, tasks.c.title, tasks.c.status, tasks.c.due_date, tasks.c.priority)
+            .where(tasks.c.person_id.in_(ids), tasks.c.status != "complete")
+            .order_by(tasks.c.due_date.asc()).limit(limit)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def dashboard(principal, ctx):
+    """The Client Workspace landing tab (the "Dashboard"). A compact cross-domain snapshot composed from
+    the SAME authoritative section builders — never a second data source, never new ownership/domain
+    logic. Each card is gated by its capability so a user sees only what they may open, and any single
+    card failing degrades to empty rather than breaking the landing tab."""
+    def _safe(fn, default):
+        try:
+            return fn()
+        except Exception:      # noqa: BLE001 — one card must never break the whole Dashboard
+            return default
+
+    card = {
+        "open_tasks": _safe(lambda: _dash_tasks(ctx), []),
+        "recent_activity": [], "recent_documents": [], "documents_needing_review": [],
+        "missing_tax_items": [], "tax_engagements": None, "upcoming_meetings": [],
+        "planning_opportunities": [], "alerts": [],
+    }
+    if principal.can("timeline.read"):
+        card["recent_activity"] = _safe(lambda: timeline(principal, ctx).get("rows", [])[:8], [])
+    if principal.can("documents.view"):
+        docs = _safe(lambda: documents(principal, ctx).get("documents", []), [])
+        card["recent_documents"] = docs[:8]
+        card["documents_needing_review"] = [
+            d for d in docs if str(d.get("review_status") or "").lower()
+            in ("pending", "in_review", "needs_review", "review")][:8]
+    if principal.can("tax.read"):
+        t = _safe(lambda: tax(principal, ctx), {})
+        exc = t.get("open_exceptions", []) or []
+        missing = [e for e in exc if "missing" in str(e.get("category", "")).lower()
+                   or "document" in str(e.get("category", "")).lower()]
+        card["missing_tax_items"] = (missing or exc)[:8]
+        card["tax_engagements"] = t.get("engagements")
+    card["upcoming_meetings"] = _safe(lambda: meetings(principal, ctx).get("upcoming", [])[:5], [])
+    card["planning_opportunities"] = _safe(
+        lambda: recommendations(principal, ctx).get("recommendations", [])[:8], [])
+
+    pid, hid = _pid(ctx), _hid(ctx)
+    if pid:
+        allow = {"insurance": "insurance.read", "benefits": "benefits.read",
+                 "compliance": "compliance.review.read"}
+
+        def _alerts():
+            from app.services.exception_engine import open_exceptions_for_client
+            out = []
+            for e in open_exceptions_for_client(pid, hid):
+                dom = e.get("domain")
+                cap = allow.get(dom)
+                if dom in allow and principal.can(cap):
+                    out.append({"domain": dom, "title": e.get("title") or e.get("message"),
+                                "severity": e.get("severity")})
+            return out[:12]
+        card["alerts"] = _safe(_alerts, [])
+    return card
+
+
 def summary(principal, ctx):
     """Household overview + client health + assigned advisor/team + last contact / next activity.
     Wealth/insurance/tax figures are presented side-by-side (never summed — units differ)."""
