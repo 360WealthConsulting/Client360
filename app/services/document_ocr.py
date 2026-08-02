@@ -89,9 +89,10 @@ def _candidates(conn, *, mode, document_ids, max_attempts, batch_size):
         stmt = stmt.where(or_(document_ocr.c.document_id.is_(None),
                               document_ocr.c.source_hash != documents.c.sha256,
                               document_ocr.c.status != _TERMINAL_OK))
-    else:  # initial / incremental — anything not yet completed
+    else:  # initial / incremental — not-yet-attempted (failed rows are the retry mode's job, so a
+        # resumable batch sweep terminates instead of re-selecting a poison document every batch)
         stmt = stmt.where(or_(document_ocr.c.document_id.is_(None),
-                              document_ocr.c.status.in_(("pending", "processing", "failed"))))
+                              document_ocr.c.status.in_(("pending", "processing"))))
     return conn.execute(stmt.order_by(documents.c.id).limit(batch_size)).mappings().all()
 
 

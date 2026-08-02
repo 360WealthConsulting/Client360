@@ -157,7 +157,7 @@
         <td><span class="subtle">{{ d.review_status or "—" }}</span></td>
         {# OCR enriches the canonical document (ADR-072): real status + completed date + searchable
            text. AI extraction is a later phase (shown honestly as pending). #}
-        <td><span class="subtle">{{ (d.ocr_status or "pending")|replace("_"," ") }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%Y-%m-%d") }}{% endif %} / pending</span>{% if d.searchable_text %}<br><span class="subtle" title="Extracted text is indexed for Universal Search">🔍 searchable</span>{% endif %}</td>
+        <td><span class="subtle"{% if d.ocr_engine %} title="OCR engine: {{ d.ocr_engine }}"{% endif %}>{{ (d.ocr_status or "pending")|replace("_"," ") }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%Y-%m-%d") }}{% endif %} / pending</span>{% if d.searchable_text %}<br><span class="subtle" title="Extracted text is indexed for Universal Search">🔍 searchable</span>{% endif %}</td>
         <td>{{ d.version_count }}</td>
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
         <td><a href="/documents/{{ d.id }}/download">Open</a>{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
