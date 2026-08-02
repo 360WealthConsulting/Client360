@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Invitations | Administration | Client360{% endblock %}
+{% block crumb %}Invitations{% endblock %}
+{% block content %}
+{% call ui.page_head("Invitations & activation", eyebrow="Administration", desc="Invite an employee by their exact Microsoft work email, assign an approved role, then activate. First Entra sign-in binds their identity automatically.") %}
+  <a class="btn sm secondary" href="/admin/employees">← Employees</a>
+{% endcall %}
+
+{% if ok %}<div class="banner banner-ok" role="status">{{ ok }}</div>{% endif %}
+{% if err %}<div class="banner banner-warn" role="status">{{ err }}</div>{% endif %}
+
+<article class="card">
+  <h2 class="section-title">Invite / add an employee</h2>
+  <form method="post" action="/admin/employees/invite" class="stack" style="gap:8px; max-width:520px">
+    <label class="field"><span>Exact Microsoft work email</span><input class="input" type="email" name="email" required placeholder="name@firm.example"></label>
+    <label class="field"><span>Display name</span><input class="input" type="text" name="display_name" required></label>
+    <label class="field"><span>Role profile (assigned before access is granted)</span>
+      <select class="input" name="role_id"><option value="">— none yet —</option>
+        {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} ({{ p.code }})</option>{% endfor %}
+      </select></label>
+    <button class="btn" type="submit">Invite employee</button>
+  </form>
+  <p class="subtle">Re-inviting an existing email updates that same account (no duplicate is created). After inviting + assigning a role, open the employee and set the account to <strong>active</strong>.</p>
+</article>
+
+<article class="card">
+  <h2 class="section-title">Awaiting access</h2>
+  <p class="subtle">Employees who cannot yet sign in — with the exact reason (admin-only; not shown to them).</p>
+  <div class="table-wrap"><table class="data"><thead><tr><th>Name</th><th>Email</th><th>Reason</th><th></th></tr></thead><tbody>
+    {% for e in pending %}
+      <tr><td>{{ e.display_name }}</td><td class="subtle">{{ e.email }}</td>
+        <td>{{ ui.badge(e.access_status|replace("_"," "), "warn") }}</td>
+        <td><a href="/admin/employees/{{ e.id }}">Manage</a></td></tr>
+    {% else %}<tr><td colspan="4">{% call ui.empty("Everyone is active") %}{% endcall %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</article>
+{% endblock %}

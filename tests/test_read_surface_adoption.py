@@ -231,7 +231,7 @@ def test_adoption_route_registered():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1076  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
+    assert len(app.routes) == 1085  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
 
 
 def test_adoption_route_returns_report():
