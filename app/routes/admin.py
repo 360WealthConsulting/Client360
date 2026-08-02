@@ -113,16 +113,28 @@ def employee_detail(user_id: int, request: Request,
 
 @router.post("/employees/invite")
 def employee_invite(request: Request, email: str = Form(...), display_name: str = Form(...),
-                    role_id: int | None = Form(None),
+                    role_id: int | None = Form(None), role_ids: list[int] = Form(default=[]),
                     principal: Principal = Depends(require_capability("identity.manage"))):
+    # Accepts one or many access profiles. `role_id` is kept for backward compatibility with the
+    # legacy single-select form; `role_ids` carries the new multi-select. Effective access is the
+    # union of every profile that assigns cleanly (each still ceiling-checked + audited).
     user_id = invite_user(email, display_name)
     audit(request, principal, "identity.user_invited", "user", user_id, {"email": email})
-    if role_id:
+    # Tolerate either field being omitted (legacy single-select sends role_id; new multi-select
+    # sends role_ids) so both forms — and direct callers — behave identically.
+    wanted = set(role_ids if isinstance(role_ids, list) else [])
+    if isinstance(role_id, int):
+        wanted.add(role_id)
+    failed = []
+    for rid in sorted(wanted):
         try:
-            assign_role(user_id, role_id, actor_capabilities=principal.capabilities)
-            audit(request, principal, "authorization.role_assigned", "user", user_id, {"role_id": role_id})
+            assign_role(user_id, rid, actor_capabilities=principal.capabilities)
+            audit(request, principal, "authorization.role_assigned", "user", user_id, {"role_id": rid})
         except (PermissionError, ValueError) as exc:
-            return _back(f"/admin/employees/{user_id}", err=f"Invited, but role not assigned: {exc}")
+            failed.append(f"{ea.role_code(rid) or rid}: {exc}")
+    if failed:
+        return _back(f"/admin/employees/{user_id}",
+                     err="Invited, but some profiles were not assigned — " + "; ".join(failed))
     return _back(f"/admin/employees/{user_id}", ok="Employee invited.")
 
 
@@ -186,6 +198,45 @@ def employee_remove_role(user_id: int, request: Request, role_id: int = Form(...
     if changed:
         audit(request, principal, "authorization.role_removed", "user", user_id, {"role_id": role_id})
     return _back(f"/admin/employees/{user_id}", ok="Role removed." if changed else "No active role to remove.")
+
+
+@router.post("/employees/{user_id}/roles/set")
+def employee_set_roles(user_id: int, request: Request, role_ids: list[int] = Form(default=[]),
+                       principal: Principal = Depends(require_capability("role.manage"))):
+    """Multi-select access-profile editor: reconcile the employee's active roles to exactly the
+    submitted set. Additions go through the same capability-ceiling check as single assignment;
+    removals honour the final-administrator guard. Each change is audited individually, so history
+    is identical to doing the assigns/removes one at a time. Effective permissions are the union of
+    the resulting profiles (unchanged RBAC engine). Backward compatible: submitting one id behaves
+    exactly like the legacy single-role assignment."""
+    current = ea.active_role_ids(user_id)
+    desired = set(role_ids)
+    to_remove = current - desired
+    to_add = desired - current
+    errors = []
+    for rid in sorted(to_remove):
+        if ea.role_code(rid) == ea.ADMIN_ROLE_CODE and ea.is_last_active_administrator(user_id):
+            errors.append("administrator cannot be removed from the final active administrator")
+            continue
+        if ea.end_role(user_id, rid):
+            audit(request, principal, "authorization.role_removed", "user", user_id, {"role_id": rid})
+    for rid in sorted(to_add):
+        try:
+            assign_role(user_id, rid, actor_capabilities=principal.capabilities)
+            audit(request, principal, "authorization.role_assigned", "user", user_id, {"role_id": rid})
+        except PermissionError as exc:
+            write_audit_event(action="authorization.role_assign_denied", entity_type="user",
+                              entity_id=user_id, actor_user_id=principal.user_id, outcome="denied",
+                              request_id=request.state.request_id,
+                              metadata={"role_id": rid, "detail": str(exc)})
+            errors.append(f"{ea.role_code(rid) or rid}: {exc}")
+        except ValueError as exc:
+            errors.append(f"{ea.role_code(rid) or rid}: {exc}")
+    if errors:
+        return _back(f"/admin/employees/{user_id}", err="; ".join(errors))
+    if to_add or to_remove:
+        return _back(f"/admin/employees/{user_id}", ok="Access profiles updated.")
+    return _back(f"/admin/employees/{user_id}", ok="No changes to access profiles.")
 
 
 @router.get("/access-profiles")

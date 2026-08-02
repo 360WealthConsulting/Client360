@@ -15,10 +15,15 @@
   <form method="post" action="/admin/employees/invite" class="stack" style="gap:8px; max-width:520px">
     <label class="field"><span>Exact Microsoft work email</span><input class="input" type="email" name="email" required placeholder="name@firm.example"></label>
     <label class="field"><span>Display name</span><input class="input" type="text" name="display_name" required></label>
-    <label class="field"><span>Role profile (assigned before access is granted)</span>
-      <select class="input" name="role_id"><option value="">— none yet —</option>
-        {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} ({{ p.code }})</option>{% endfor %}
-      </select></label>
+    <fieldset class="field" style="border:1px solid var(--hairline, #e5e7eb); border-radius:8px; padding:10px">
+      <legend class="subtle">Access profiles (select one or more — effective access is their union)</legend>
+      {% for p in profiles %}
+        <label style="display:flex; gap:8px; align-items:baseline; padding:4px 0">
+          <input type="checkbox" name="role_ids" value="{{ p.id }}">
+          <span><strong>{{ p.name }}</strong> <span class="subtle">({{ p.code }}) · {{ p.capability_count }} capabilities</span></span>
+        </label>
+      {% endfor %}
+    </fieldset>
     <button class="btn" type="submit">Invite employee</button>
   </form>
   <p class="subtle">Re-inviting an existing email updates that same account (no duplicate is created). After inviting + assigning a role, open the employee and set the account to <strong>active</strong>.</p>
