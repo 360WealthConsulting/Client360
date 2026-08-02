@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Roles & Access | Administration | Client360{% endblock %}
+{% block crumb %}Roles &amp; Access{% endblock %}
+{% block content %}
+{% call ui.page_head("Roles & Access", eyebrow="Administration", desc="The existing role profiles and the capabilities each grants, grouped by business area. Assignment happens on an employee's page and is capability-ceiling governed.") %}
+  <a class="btn sm secondary" href="/admin/employees">← Employees</a>
+{% endcall %}
+
+<div class="stack">
+{% for p in profiles %}
+<article class="card">
+  <div class="row" style="justify-content:space-between; align-items:baseline; flex-wrap:wrap">
+    <h2 class="section-title" style="margin:0">{{ p.name }} <span class="subtle">({{ p.code }})</span></h2>
+    <span class="subtle">{{ p.assigned_employees }} employee(s) · {{ p.capability_count }} capabilities{{ " · system role" if p.system_role else "" }}</span>
+  </div>
+  {% if p.description %}<p class="subtle">{{ p.description }}</p>{% endif %}
+  <div class="row" style="gap:14px; flex-wrap:wrap; margin-top:6px">
+    {% for area, caps in p.capabilities.items() %}
+    <div style="flex:1; min-width:200px">
+      <h3 style="margin:4px 0; font-size:13px">{{ area }}</h3>
+      <div class="stack">{% for c in caps %}<span class="pill">{{ c }}</span>{% endfor %}</div>
+    </div>
+    {% else %}<span class="subtle">No capabilities.</span>{% endfor %}
+  </div>
+</article>
+{% endfor %}
+</div>
+{% endblock %}

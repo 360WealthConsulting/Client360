@@ -30,6 +30,9 @@
 {% set can_workspace = 'client.read' in caps %}
 {# Demo-only: app.demo.demo_app sets request.state.demo_mode; undefined (falsy) in production. #}
 {% set demo_mode = request.state.demo_mode if request else false %}
+{# Administrator-only: employee & access management. Derived from the SAME capability the routes
+   enforce (identity.manage) — visibility never grants access. #}
+{% set can_admin = 'identity.manage' in caps %}
 {% set groups = [
   {"label": "Home", "items": [
     {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p}]},
@@ -68,6 +71,11 @@
     {"href": "/insurance/reviews", "label": "Reviews", "match": "/insurance/reviews", "ico": "◷", "show": can_ins},
     {"href": "/insurance/licensing", "label": "Licensing", "match": "/insurance/licensing", "ico": "✦", "show": can_ins_lic},
     {"href": "/insurance/reporting", "label": "Pipeline", "match": "/insurance/reporting", "ico": "▥", "show": can_ins}]},
+  {"label": "Administration", "items": [
+    {"href": "/admin/employees", "label": "Employees", "match": "/admin/employees", "ico": "◐", "show": can_admin},
+    {"href": "/admin/access-profiles", "label": "Roles & Access", "match": "/admin/access-profiles", "ico": "◆", "show": can_admin},
+    {"href": "/admin/invitations", "label": "Invitations", "match": "/admin/invitations", "ico": "✉", "show": can_admin},
+    {"href": "/admin/audit", "label": "Access Audit", "match": "/admin/audit", "ico": "▦", "show": can_admin}]},
   {"label": "Oversight", "items": [
     {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
     {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Employees | Administration | Client360{% endblock %}
+{% block crumb %}Employees{% endblock %}
+{% block content %}
+{% call ui.page_head("Employees", eyebrow="Administration", desc="Every employee account, their Microsoft identity + access status, and role profile. Tap a name to manage access.") %}
+  <a class="btn sm" href="/admin/invitations">Invite / activate</a>
+  <a class="btn sm secondary" href="/admin/access-profiles">Roles &amp; Access</a>
+{% endcall %}
+
+{% if ok %}<div class="banner banner-ok" role="status">{{ ok }}</div>{% endif %}
+{% if err %}<div class="banner banner-warn" role="status">{{ err }}</div>{% endif %}
+
+<article class="card"><div class="table-wrap"><table class="data">
+  <thead><tr>
+    <th>Name</th><th>Work email</th><th>Entra</th><th>Account</th><th>MFA</th>
+    <th>Roles</th><th>Access status</th><th>Last login</th>
+  </tr></thead>
+  <tbody>
+  {% for e in employees %}
+    <tr>
+      <td><a class="rowlink" href="/admin/employees/{{ e.id }}">{{ e.display_name }}</a></td>
+      <td class="subtle">{{ e.email }}</td>
+      <td>{{ ui.badge("linked" if e.entra_linked else "unmapped", "" if e.entra_linked else "warn") }}</td>
+      <td>{{ ui.badge(e.status, {"active":"", "invited":"warn", "disabled":"warn"}.get(e.status,"")) }}</td>
+      <td>{{ "on" if e.mfa_enabled else "—" }}</td>
+      <td>{% for r in e.roles %}<span class="pill">{{ r }}</span> {% else %}<span class="subtle">none</span>{% endfor %}</td>
+      <td><span class="sla sla-{{ 'on_track' if e.access_status == 'active' else 'due_soon' }}">{{ e.access_status|replace("_"," ") }}</span></td>
+      <td class="subtle">{{ e.last_login_at.strftime("%Y-%m-%d") if e.last_login_at else "never" }}</td>
+    </tr>
+  {% else %}<tr><td colspan="8">{% call ui.empty("No employees") %}{% endcall %}</td></tr>{% endfor %}
+  </tbody>
+</table></div></article>
+<p class="subtle" style="margin-top:8px">Activation, role assignment, and identity mapping are on each employee's detail page (mobile-friendly).</p>
+{% endblock %}
