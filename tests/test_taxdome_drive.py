@@ -14,26 +14,38 @@ from pathlib import Path, PurePosixPath
 import pytest
 from starlette.requests import Request
 
-from app.db import documents, engine, people
+from app.db import documents, engine, households, people
 from app.demo import taxdome_drive as page
 from app.importers import taxdome_drive as td
 from app.security.models import Principal
 from app.services.documents import get_person_documents
 
-_TEST_NAMES = ("Taylor Hawthorne", "Okoro Family", "Delgado, Alex")
+_TEST_NAMES = ("Taylor Hawthorne", "Okoro Family", "Delgado, Alex", "Michael White", "Debra White")
 
 
 @pytest.fixture(autouse=True)
 def _clean_taxdome():
-    """Isolate the shared test DB: remove TaxDome docs + test people before and after each test."""
+    """Isolate the shared test DB: remove TaxDome docs + test people/households before and after."""
     def _wipe():
         with engine.begin() as conn:
             conn.execute(documents.delete().where(td.taxdome_filter(documents)))
             conn.execute(people.delete().where(people.c.full_name.in_(_TEST_NAMES)))
+            conn.execute(households.delete().where(households.c.name.like("TESTHH%")))
     _wipe()
     td._database.cache_clear()
     yield
     _wipe()
+
+
+def _household(name="TESTHH White"):
+    with engine.begin() as conn:
+        return conn.execute(households.insert().values(name=name).returning(households.c.id)).scalar_one()
+
+
+def _person_in(full_name, household_id=None):
+    with engine.begin() as conn:
+        return conn.execute(people.insert().values(
+            full_name=full_name, household_id=household_id).returning(people.c.id)).scalar_one()
 
 
 def _tree(root: Path) -> Path:
@@ -462,6 +474,136 @@ def test_legitimate_tilde_file_is_synced(tmp_path):
     summary = _sync(src, dst)
     assert summary["copied"] == 1 and summary["ignored"] == 0
     assert (dst / "Okoro Family" / "~budget.xlsx").read_text() == "budget"
+
+
+# --- household / joint folder resolution -------------------------------------
+
+def _white_tree(src):
+    (src / "Michael and Debra White").mkdir(parents=True)
+    (src / "Michael and Debra White" / "2025 Joint 1040.pdf").write_text("joint return")
+    (src / "Michael and Debra White" / "Estate Plan.pdf").write_text("estate")
+    return src
+
+
+def test_resolve_folder_joint_maps_to_shared_household():
+    hh = _household()
+    _person_in("Michael White", hh)
+    _person_in("Debra White", hh)
+    with engine.connect() as conn:
+        household_id, person_id = td.resolve_folder(conn, "Michael and Debra White")
+    assert household_id == hh and person_id is None       # joint -> household, not a single person
+
+
+def test_resolve_folder_single_person_maps_to_person():
+    pid = _person_in("Taylor Hawthorne")
+    with engine.connect() as conn:
+        household_id, person_id = td.resolve_folder(conn, "Hawthorne, Taylor")
+    assert person_id == pid and household_id is None
+
+
+def test_joint_folder_import_sets_household_and_is_visible_to_both_spouses(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _white_tree(src)
+    hh = _household()
+    michael = _person_in("Michael White", hh)
+    debra = _person_in("Debra White", hh)
+    _sync(src, dst)
+    rows = _taxdome_rows()
+    assert rows and all(r["household_id"] == hh and r["person_id"] is None for r in rows)
+    # Both spouses see the joint household documents via the existing person-document query.
+    for pid in (michael, debra):
+        names = {d["original_name"] for d in get_person_documents(pid)}
+        assert {"2025 Joint 1040.pdf", "Estate Plan.pdf"} <= names
+
+
+def test_household_document_visible_to_both_members_via_household_id(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _white_tree(src)
+    hh = _household()
+    a = _person_in("Michael White", hh)
+    b = _person_in("Debra White", hh)
+    _sync(src, dst)
+    # A person NOT in the household sees nothing; both members do.
+    outsider = _person_in("Taylor Hawthorne")
+    assert get_person_documents(outsider) == []
+    assert get_person_documents(a) and get_person_documents(b)
+
+
+# --- repair command (relink existing rows without re-copying) -----------------
+
+def test_repair_relinks_existing_joint_rows(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _white_tree(src)
+    _sync(src, dst)                                       # imported while NO people existed -> unlinked
+    assert all(r["household_id"] is None and r["person_id"] is None for r in _taxdome_rows())
+    before = {(r["id"], r["storage_path"], r["sha256"], r["current_version"]) for r in _taxdome_rows()}
+    # Now the canonical household/people exist; repair relinks by folder metadata.
+    hh = _household()
+    _person_in("Michael White", hh)
+    _person_in("Debra White", hh)
+    summary = td.repair_person_links()
+    assert summary["linked_household"] == 1 and summary["documents_updated"] == 2
+    rows = _taxdome_rows()
+    assert all(r["household_id"] == hh for r in rows)
+    # No duplicates, and storage_path / hashes / version history preserved.
+    assert len(rows) == 2
+    after = {(r["id"], r["storage_path"], r["sha256"], r["current_version"]) for r in rows}
+    assert after == before
+
+
+def test_repair_relinks_single_person_row(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    _sync(src, dst)
+    pid = _person_in("Taylor Hawthorne")
+    summary = td.repair_person_links()
+    assert summary["linked_person"] >= 1
+    linked = [r for r in _taxdome_rows() if r["person_id"] == pid]
+    assert len(linked) == 2                               # both Hawthorne files linked
+
+
+def test_repair_is_idempotent_and_creates_no_duplicates(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _white_tree(src)
+    _sync(src, dst)
+    hh = _household()
+    _person_in("Michael White", hh)
+    _person_in("Debra White", hh)
+    td.repair_person_links()
+    count_after_first = len(_taxdome_rows())
+    summary = td.repair_person_links()                    # second run
+    assert summary["documents_updated"] == 0             # nothing left to fill
+    assert len(_taxdome_rows()) == count_after_first     # no duplicate rows
+
+
+def test_repair_dry_run_makes_no_changes(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _white_tree(src)
+    _sync(src, dst)
+    hh = _household()
+    _person_in("Michael White", hh)
+    _person_in("Debra White", hh)
+    summary = td.repair_person_links(dry_run=True)
+    assert summary["documents_updated"] == 2 and summary["dry_run"] is True
+    assert all(r["household_id"] is None for r in _taxdome_rows())   # unchanged
+
+
+def test_repair_preserves_manual_person_link(tmp_path):
+    src, dst = _dirs(tmp_path)
+    _white_tree(src)
+    _sync(src, dst)
+    # A human already linked one document to a specific person; repair must not overwrite it.
+    manual_person = _person_in("Delgado, Alex")
+    rows = _taxdome_rows()
+    with engine.begin() as conn:
+        conn.execute(documents.update().where(documents.c.id == rows[0]["id"]).values(person_id=manual_person))
+    hh = _household()
+    _person_in("Michael White", hh)
+    _person_in("Debra White", hh)
+    td.repair_person_links()
+    kept = next(r for r in _taxdome_rows() if r["id"] == rows[0]["id"])
+    assert kept["person_id"] == manual_person            # manual link preserved
+    assert kept["household_id"] == hh                    # household still filled in (was NULL)
 
 
 # --- demo dashboard (existing surface still works) ---------------------------

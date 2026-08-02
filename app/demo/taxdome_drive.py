@@ -37,7 +37,7 @@ def _folder_states(conn):
     deferred = d.c.tags["review_deferred"].astext
     rows = conn.execute(
         select(folder.label("folder"),
-               func.bool_or(d.c.person_id.isnot(None)).label("linked"),
+               func.bool_or(d.c.person_id.isnot(None) | d.c.household_id.isnot(None)).label("linked"),
                func.bool_or(deferred == "true").label("deferred"),
                func.count().label("files"))
         .where(td.taxdome_filter(d))

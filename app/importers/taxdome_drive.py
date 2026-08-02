@@ -207,6 +207,9 @@ def infer_category(filename: str, relative_path: str) -> str | None:
 
 
 _NAME_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_NAME_DROP = {"family", "trust", "llc", "inc", "the", "and", "household", "jr", "sr", "ii", "iii"}
+# Separators that join two people in a TaxDome folder name, e.g. "Michael and Debra White".
+_JOINT_SPLIT_RE = re.compile(r"\s+and\s+|\s*&\s*|\s*\+\s*", re.IGNORECASE)
 
 
 def _name_key(name: str | None) -> str:
@@ -215,20 +218,69 @@ def _name_key(name: str | None) -> str:
     if not name:
         return ""
     tokens = _NAME_TOKEN_RE.findall(name.lower())
-    drop = {"family", "trust", "llc", "inc", "the", "and", "household", "jr", "sr", "ii", "iii"}
-    return " ".join(sorted(t for t in tokens if t not in drop))
+    return " ".join(sorted(t for t in tokens if t not in _NAME_DROP))
+
+
+def _folder_person_keys(folder_name: str) -> list[str]:
+    """Normalized name key(s) a folder refers to. A joint folder is split on 'and'/'&'/'+', and a bare
+    first name inherits the shared surname from the final fragment, so 'Michael and Debra White' yields
+    the keys for 'Michael White' and 'Debra White'. A single-name folder yields one key."""
+    parts = [p.strip() for p in _JOINT_SPLIT_RE.split(folder_name or "") if p.strip()]
+    if len(parts) <= 1:
+        key = _name_key(folder_name)
+        return [key] if key else []
+    last_tokens = [t for t in _NAME_TOKEN_RE.findall(parts[-1].lower()) if t not in _NAME_DROP]
+    surname = last_tokens[-1] if len(last_tokens) >= 2 else None
+    keys = []
+    for part in parts:
+        tokens = [t for t in _NAME_TOKEN_RE.findall(part.lower()) if t not in _NAME_DROP]
+        if not tokens:
+            continue
+        if len(tokens) == 1 and surname and tokens[0] != surname:
+            tokens = [*tokens, surname]                 # bare first name -> add the shared surname
+        keys.append(" ".join(sorted(tokens)))
+    return keys
+
+
+def resolve_folder(conn, folder_name: str) -> tuple[int | None, int | None]:
+    """Resolve a TaxDome folder to (household_id, person_id) against the canonical people.
+
+    - Single-person folder with one unique name match -> (None, person_id).
+    - Joint folder whose matched people share exactly one household -> (household_id, None), so both
+      spouses see the household's documents.
+    - Anything ambiguous (no match, several matches for a name, or matched people without one common
+      household) -> (None, None), left for human review. Never a weak/partial match."""
+    keys = _folder_person_keys(folder_name)
+    if not keys:
+        return (None, None)
+    people = _database().people
+    rows = conn.execute(select(people.c.id, people.c.full_name,
+                               people.c.household_id)).mappings().all()
+    matched_person_ids: list[int] = []
+    households: set[int] = set()
+    for key in keys:
+        matches = [(r["id"], r["household_id"]) for r in rows if _name_key(r["full_name"]) == key]
+        if len(matches) == 1:                          # unique match for this name only
+            pid, hh = matches[0]
+            matched_person_ids.append(pid)
+            if hh is not None:
+                households.add(hh)
+    unique_people = set(matched_person_ids)
+    if not unique_people:
+        return (None, None)
+    if len(keys) == 1 and len(unique_people) == 1:
+        return (None, matched_person_ids[0])           # single-person folder -> person link
+    if len(households) == 1:
+        return (households.pop(), None)                # joint folder -> shared household
+    if len(unique_people) == 1:
+        return (None, matched_person_ids[0])           # only one distinct person actually matched
+    return (None, None)                                # ambiguous -> review
 
 
 def _autolink_person_id(conn, folder_name: str) -> int | None:
-    """Canonical person_id ONLY when exactly one person has the exact normalized-name match; zero or
-    several matches -> None (unresolved, for review). Never a weak name match."""
-    db = _database()
-    key = _name_key(folder_name)
-    if not key:
-        return None
-    rows = conn.execute(select(db.people.c.id, db.people.c.full_name)).mappings().all()
-    matches = [r["id"] for r in rows if _name_key(r["full_name"]) == key]
-    return matches[0] if len(matches) == 1 else None
+    """Backward-compatible single-person resolver (unique exact name match only)."""
+    _hh, pid = resolve_folder(conn, folder_name)
+    return pid
 
 
 def suggest_people(conn, folder_name: str, *, limit: int = 5) -> list[dict]:
@@ -484,22 +536,27 @@ def _sync_one_file(db, source, destination, folder_name, abs_path, filename, sca
         summary["bytes_copied"] += size
 
 
+def _apply_folder_link(conn, d, folder_name, household_id, person_id) -> int:
+    """Fill household_id / person_id on a folder's documents where they are currently NULL (never
+    overwriting an existing manual/auto link). Returns the number of rows updated."""
+    base = and_(taxdome_filter(d), d.c.tags["taxdome_folder"].astext == folder_name)
+    updated = 0
+    if person_id is not None:
+        updated += conn.execute(d.update().where(and_(base, d.c.person_id.is_(None)))
+                                .values(person_id=person_id)).rowcount
+    if household_id is not None:
+        updated += conn.execute(d.update().where(and_(base, d.c.household_id.is_(None)))
+                                .values(household_id=household_id)).rowcount
+    return updated
+
+
 def _link_folders(db, folders_seen) -> None:
+    """Resolve each folder to a household and/or person and fill in the links (NULLs only)."""
     with db.engine.begin() as conn:
         for folder_name in folders_seen:
-            already = conn.execute(
-                select(func.count()).select_from(db.documents).where(and_(
-                    taxdome_filter(db.documents),
-                    db.documents.c.tags["taxdome_folder"].astext == folder_name,
-                    db.documents.c.person_id.isnot(None)))).scalar() or 0
-            if already:
-                continue
-            pid = _autolink_person_id(conn, folder_name)
-            if pid is not None:
-                conn.execute(db.documents.update().where(and_(
-                    taxdome_filter(db.documents),
-                    db.documents.c.tags["taxdome_folder"].astext == folder_name)
-                ).values(person_id=pid))
+            hh, pid = resolve_folder(conn, folder_name)
+            if hh is not None or pid is not None:
+                _apply_folder_link(conn, db.documents, folder_name, hh, pid)
 
 
 def _handle_missing(db, seen_keys, scan_id, dry_run, purge_missing, summary) -> None:
@@ -545,15 +602,56 @@ def _handle_missing(db, seen_keys, scan_id, dry_run, purge_missing, summary) -> 
 
 
 def _folder_counts(db, summary) -> None:
+    linked_expr = db.documents.c.person_id.isnot(None) | db.documents.c.household_id.isnot(None)
     with db.engine.connect() as conn:
         linked = conn.execute(
             select(func.count(func.distinct(db.documents.c.tags["taxdome_folder"].astext)))
-            .where(and_(taxdome_filter(db.documents), db.documents.c.person_id.isnot(None)))).scalar() or 0
+            .where(and_(taxdome_filter(db.documents), linked_expr))).scalar() or 0
         total = conn.execute(
             select(func.count(func.distinct(db.documents.c.tags["taxdome_folder"].astext)))
             .where(taxdome_filter(db.documents))).scalar() or 0
     summary["folders_linked"] = linked
     summary["folders_unresolved"] = max(total - linked, 0)
+
+
+def repair_person_links(*, dry_run: bool = False, progress=None) -> dict:
+    """Relink ALREADY-IMPORTED TaxDome documents to the canonical household/person using the stored
+    ``tags->>'taxdome_folder'`` metadata — without re-copying files, inserting rows, or touching
+    storage_path/hashes/OCR metadata/version history. Fills household_id/person_id where NULL only, so
+    it is idempotent and preserves any manual links. Returns a summary."""
+    db = _database()
+    d = db.documents
+    summary = {"folders": 0, "linked_household": 0, "linked_person": 0, "unresolved": 0,
+               "documents_updated": 0, "dry_run": dry_run}
+    with db.engine.connect() as conn:
+        folders = [r[0] for r in conn.execute(
+            select(d.c.tags["taxdome_folder"].astext).where(taxdome_filter(d)).distinct()).all() if r[0]]
+    for folder_name in sorted(folders):
+        summary["folders"] += 1
+        with db.engine.begin() as conn:
+            hh, pid = resolve_folder(conn, folder_name)
+            if hh is None and pid is None:
+                summary["unresolved"] += 1
+                continue
+            if pid is not None:
+                summary["linked_person"] += 1
+            if hh is not None:
+                summary["linked_household"] += 1
+            if dry_run:
+                base = and_(taxdome_filter(d), d.c.tags["taxdome_folder"].astext == folder_name)
+                if pid is not None:
+                    summary["documents_updated"] += conn.execute(
+                        select(func.count()).select_from(d)
+                        .where(and_(base, d.c.person_id.is_(None)))).scalar() or 0
+                if hh is not None:
+                    summary["documents_updated"] += conn.execute(
+                        select(func.count()).select_from(d)
+                        .where(and_(base, d.c.household_id.is_(None)))).scalar() or 0
+            else:
+                summary["documents_updated"] += _apply_folder_link(conn, d, folder_name, hh, pid)
+        if progress:
+            progress(summary)
+    return summary
 
 
 # Backward-compatible alias: the previous entry point was ``scan``; keep it working.
@@ -607,6 +705,9 @@ def _parse_args(argv=None):
                         help="Report what would change; make no file or database changes.")
     parser.add_argument("--purge-missing", action="store_true",
                         help="DELETE local copies whose source file has disappeared (off by default).")
+    parser.add_argument("--repair-links", action="store_true",
+                        help="Relink already-imported documents to household/person by folder "
+                             "metadata (no file copying). Honors --dry-run.")
     parser.add_argument("--progress-interval", type=int, default=DEFAULT_PROGRESS_INTERVAL,
                         help="Print progress every N files examined.")
     return parser.parse_args(argv)
@@ -614,6 +715,13 @@ def _parse_args(argv=None):
 
 def main(argv=None):
     args = _parse_args(argv)
+    if args.repair_links:
+        summary = repair_person_links(dry_run=args.dry_run)
+        label = "DRY RUN — no changes made" if args.dry_run else "link repair complete"
+        print(f"TaxDome Drive {label}.")
+        for key in ("folders", "linked_household", "linked_person", "unresolved", "documents_updated"):
+            print(f"  {key}: {summary[key]}")
+        return 0
     try:
         summary = sync(args.source_root, args.destination_root, dry_run=args.dry_run,
                        purge_missing=args.purge_missing, progress_interval=args.progress_interval)

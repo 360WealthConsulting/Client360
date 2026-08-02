@@ -1,12 +1,11 @@
 import hashlib
 import uuid
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import and_, insert, or_, select, update
 
-from app.db import documents, engine
-
+from app.db import documents, engine, people
 
 DOCUMENT_ROOT = Path("documents")
 
@@ -30,10 +29,10 @@ def save_person_document(
     person_id: int,
     original_name: str,
     source: BinaryIO,
-    content_type: Optional[str] = None,
-    category: Optional[str] = None,
-    description: Optional[str] = None,
-    uploaded_by: Optional[str] = None,
+    content_type: str | None = None,
+    category: str | None = None,
+    description: str | None = None,
+    uploaded_by: str | None = None,
 ) -> int:
     stored_name = f"{uuid.uuid4().hex}{_safe_suffix(original_name)}"
     destination = _person_directory(person_id) / stored_name
@@ -75,11 +74,18 @@ def save_person_document(
 
 def get_person_documents(person_id: int):
     with engine.connect() as connection:
+        # Include the person's own documents AND documents linked to their household, so household
+        # documents (e.g. joint tax returns, estate documents) are visible to every household member.
+        household_id = connection.execute(
+            select(people.c.household_id).where(people.c.id == person_id)
+        ).scalar_one_or_none()
+        scope = documents.c.person_id == person_id
+        if household_id is not None:
+            scope = or_(scope, documents.c.household_id == household_id)
         rows = connection.execute(
             select(documents)
             .where(
-                documents.c.person_id == person_id,
-                documents.c.archived.is_(False),
+                and_(scope, documents.c.archived.is_(False)),
             )
             .order_by(
                 documents.c.created_at.desc(),
