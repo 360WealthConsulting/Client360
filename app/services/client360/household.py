@@ -224,17 +224,16 @@ def _financial(principal, ctx):
 
 
 def _tax(principal, ctx):
-    """Per-member tax engagement counts + open tax exceptions. Filing/dependency/joint relationships
-    are NOT inferred from household membership."""
-    from app.services.exception_engine import open_exceptions_for_people
-    from app.services.tax_domain import client_engagement_summary
-    members = [{"person_id": pid, "name": _name(ctx, pid),
-                "engagements": _safe(lambda p=pid: client_engagement_summary(p).get("active", 0), 0)}
-               for pid in ctx["member_ids"]]
-    exc = [e for e in _safe(lambda: open_exceptions_for_people(set(ctx["member_ids"])), [])
-           if e.get("domain") == "tax"]
-    return {"members": members, "open_exceptions": exc, "inferred_relationships": False,
-            "note": "Filing status / joint returns / dependency are not inferred from membership."}
+    """The household Tax tab — the same tax operating center as the person workspace, scoped to the
+    household (ADR-073). Composed from the authoritative tax domain; no inferred filing relationships."""
+    from app.services.client360.tax_workspace import build_tax_workspace
+    hid = ctx["household_id"]
+    members = ctx.get("member_ids") or []
+    tws = build_tax_workspace(principal, person_id=(members[0] if members else None),
+                              household_id=hid, scope_ids=members)
+    tws["open_exceptions"] = tws.get("missing_and_exceptions", {}).get("exceptions", [])
+    tws["inferred_relationships"] = False
+    return tws
 
 
 def _insurance(principal, ctx):
