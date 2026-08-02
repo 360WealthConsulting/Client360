@@ -1,44 +1,61 @@
-"""TaxDome Drive document indexer for Client360.
+"""TaxDome Drive one-way document synchronization for Client360.
 
-Indexes the mounted TaxDome Drive (Z:\\ by default) into Client360's EXISTING document
-model — it does NOT introduce a parallel document platform, and it NEVER copies, moves,
-or renames anything on the drive (Z:\\ is treated as read-only, the authoritative live
-repository). For each file it records METADATA ONLY (no contents, no OCR):
+TaxDome Drive (``Z:\\`` by default) is treated as a **read-only external source**: nothing on it is
+ever renamed, moved, modified, or deleted. Client360 maintains its own **durable local copies** under
+``CLIENT360_TAXDOME_DOCUMENT_ROOT`` (default ``C:\\Client360\\Data\\Documents\\TaxDome``), preserving the
+complete source-relative directory structure, and records each copy in the EXISTING ``documents`` table
+(no parallel document platform). Every run is journalled in ``import_jobs``.
 
-  * documents.storage_provider = "TaxDome Drive"  (the external-source discriminator)
-  * documents.storage_uri      = the absolute path on Z:\\  (an external reference; not copied)
-  * documents.storage_path     = the path relative to the drive root
-  * documents.original_name    = the filename
-  * documents.size_bytes / sha256 = size + content hash (hash only — contents are never stored)
-  * documents.category / classification = a lightweight path/name-only inference
-  * documents.tags (JSONB)     = {source_system, taxdome_folder, relative_path, extension,
-                                  file_created, file_modified, available, last_scan_id}
-  * documents.status / archived = availability (a missing file is marked per existing rules)
+Sync contract (see the project docs for the operational runbook):
+  * New source files are copied into the local store.
+  * A changed source file is copied to a temp file in the destination directory, verified by size and
+    SHA-256, then **atomically** swapped into place (``os.replace``) — a partial copy is never exposed.
+  * Unchanged files are skipped using the stored source size + modified-time fast path; a hash is only
+    computed when those disagree, to confirm whether the content really changed.
+  * Individual file failures are recorded and the run continues; rescans are idempotent.
+  * When a source file disappears the local copy is RETAINED: the document is flagged
+    ``available_from_source=false`` (status stays ``active``, ``archived`` stays false). A local file is
+    only removed with the explicit, off-by-default ``--purge-missing`` flag.
 
-Each top-level folder under the root is treated as one TaxDome account/client. A folder is
-linked to a canonical person ONLY on a unique exact normalized-name match (never a weak name
-match); everything else is left unresolved (person_id NULL) for the TaxDome Drive review queue.
+Synchronized documents carry ``storage_provider = "Client360 Local"`` and ``tags.source_system =
+"TaxDome Drive"`` (the discriminator). Each top-level folder under the source root is one TaxDome
+account; a folder is auto-linked to a canonical person ONLY on a unique exact normalized-name match —
+never a weak match — and everything else is left unresolved for human review.
 
-Rescans are idempotent: unchanged files are skipped, changed files (new hash) are updated, new
-files are inserted, and files that vanished from the drive are marked unavailable. Every scan is
-recorded in import_jobs (source_system="TaxDome Drive"). Run:  python -m app.importers.taxdome_drive
+CLI::
+
+    python -m app.importers.taxdome_drive
+    python -m app.importers.taxdome_drive --dry-run
+    python -m app.importers.taxdome_drive --source-root Z:\\
+    python -m app.importers.taxdome_drive --destination-root C:\\Client360\\Data\\Documents\\TaxDome
+    python -m app.importers.taxdome_drive --purge-missing        # explicit; never automatic
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import mimetypes
 import os
 import re
+import tempfile
 from collections import namedtuple
 from datetime import UTC, datetime
 from functools import cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, and_, create_engine, func, or_, select
 
-SOURCE_SYSTEM = "TaxDome Drive"
-DEFAULT_ROOT = os.getenv("TAXDOME_DRIVE_ROOT", "Z:\\")
+SOURCE_SYSTEM = "TaxDome Drive"          # tags.source_system discriminator (stable across the change)
+STORAGE_PROVIDER = "Client360 Local"     # documents.storage_provider for a retained local copy
+SYNC_VERSION = 2                          # bump when the sync semantics change
+
+DEFAULT_SOURCE_ROOT = os.getenv("TAXDOME_DRIVE_ROOT", "Z:\\")
+DEFAULT_DESTINATION_ROOT = os.getenv(
+    "CLIENT360_TAXDOME_DOCUMENT_ROOT", r"C:\Client360\Data\Documents\TaxDome")
+DEFAULT_PROGRESS_INTERVAL = int(os.getenv("TAXDOME_SYNC_PROGRESS_INTERVAL", "100") or "100")
+_CHUNK = 1024 * 1024
 
 _Database = namedtuple("_Database", "engine documents people households import_jobs")
 
@@ -57,21 +74,27 @@ def _database():
                      metadata.tables["households"], metadata.tables["import_jobs"])
 
 
+def taxdome_filter(documents_table):
+    """SQL predicate selecting TaxDome-sourced documents regardless of storage_provider.
+
+    Uses ``tags.source_system`` so it matches both the retained local copies written by this sync and
+    any legacy metadata-only rows from the previous indexer."""
+    return documents_table.c.tags["source_system"].astext == SOURCE_SYSTEM
+
+
 # --- helpers -----------------------------------------------------------------
 
-def _stored_name(abs_path: str) -> str:
-    """A stable, unique key for a drive file location (documents.stored_name is UNIQUE).
-
-    Derived from the absolute path so a rescan matches the SAME row (content changes update
-    it); a moved/renamed file becomes a new row and the old path is marked missing."""
-    return "taxdome:" + hashlib.sha256(abs_path.encode("utf-8")).hexdigest()
+def _stored_name(source_relative_path: str) -> str:
+    """Stable, unique key for ``documents.stored_name`` derived from the source-relative path, so a
+    rescan matches the SAME row (content changes update it) and is independent of the drive letter."""
+    norm = str(PurePosixPath(source_relative_path.replace("\\", "/"))).lower()
+    return "taxdome:" + hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
 def _content_sha256(path: Path) -> str:
-    """SHA-256 of the file contents. Only the hash is kept — contents are never stored."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        for chunk in iter(lambda: handle.read(_CHUNK), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -84,6 +107,68 @@ def _iso(timestamp: float | None) -> str | None:
 
 def _created_ts(stat) -> float | None:
     return getattr(stat, "st_birthtime", None) or stat.st_ctime
+
+
+_UNSAFE_COMPONENT = re.compile(r'[<>:"|?*\x00-\x1f]')
+
+
+def sanitize_relative_path(relative_path: str) -> PurePosixPath:
+    """Return a safe, destination-relative path, or raise ValueError on any traversal attempt.
+
+    Rejects absolute paths, drive letters, and ``..`` segments; strips characters illegal on Windows
+    filesystems. The result is always strictly beneath the destination root when joined."""
+    raw = (relative_path or "").replace("\\", "/")
+    if raw.startswith("/"):
+        raise ValueError(f"absolute path is not a safe relative path: {relative_path!r}")
+    parts: list[str] = []
+    for segment in raw.split("/"):
+        segment = segment.strip()
+        if segment in ("", "."):
+            continue
+        if segment == ".." or ":" in segment or segment.startswith(("/", "~")):
+            raise ValueError(f"unsafe path segment {segment!r} in {relative_path!r}")
+        parts.append(_UNSAFE_COMPONENT.sub("_", segment).rstrip(". "))
+    parts = [p for p in parts if p]
+    if not parts:
+        raise ValueError(f"empty path after sanitization: {relative_path!r}")
+    return PurePosixPath(*parts)
+
+
+def _destination_path(destination_root: Path, safe_relative: PurePosixPath) -> Path:
+    """Resolve the absolute destination path and guarantee it stays within the destination root."""
+    dest = (destination_root / Path(*safe_relative.parts)).resolve()
+    root = destination_root.resolve()
+    if root != dest and root not in dest.parents:
+        raise ValueError(f"path escapes destination root: {safe_relative}")
+    return dest
+
+
+def _copy_verified(source_path: Path, destination_abs: Path) -> tuple[str, int]:
+    """Copy source -> destination safely: stream into a temp file in the destination directory, verify
+    its size and SHA-256, then atomically replace the prior file. Never exposes a partial file; on any
+    failure the temp file is removed and the exception propagates."""
+    destination_abs.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(destination_abs.parent), prefix=".sync-", suffix=".part")
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with os.fdopen(fd, "wb") as out, source_path.open("rb") as src:
+            for chunk in iter(lambda: src.read(_CHUNK), b""):
+                out.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+            out.flush()
+            os.fsync(out.fileno())
+        if _content_sha256(Path(tmp)) != digest.hexdigest() or os.path.getsize(tmp) != size:
+            raise OSError(f"verification failed writing {destination_abs}")
+        os.replace(tmp, str(destination_abs))       # atomic within the same filesystem
+        return digest.hexdigest(), size
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def infer_category(filename: str, relative_path: str) -> str | None:
@@ -106,25 +191,18 @@ _NAME_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
 def _name_key(name: str | None) -> str:
-    """Order-insensitive normalized name key so 'Smith, John' matches 'John Smith'.
-
-    Drops common suffixes (family/trust/llc/…) so a folder named 'Hawthorne Family' can match a
-    person 'Taylor Hawthorne' is NOT attempted here (that is a weak match) — only exact token
-    sets match, which keeps auto-linking conservative."""
+    """Order-insensitive normalized name key so 'Smith, John' matches 'John Smith'. Only exact token
+    sets match, which keeps auto-linking conservative (never a weak/partial match)."""
     if not name:
         return ""
     tokens = _NAME_TOKEN_RE.findall(name.lower())
     drop = {"family", "trust", "llc", "inc", "the", "and", "household", "jr", "sr", "ii", "iii"}
-    tokens = [t for t in tokens if t not in drop]
-    return " ".join(sorted(tokens))
+    return " ".join(sorted(t for t in tokens if t not in drop))
 
-
-# --- scan --------------------------------------------------------------------
 
 def _autolink_person_id(conn, folder_name: str) -> int | None:
-    """Return a canonical person_id ONLY when exactly one person has the exact normalized-name
-    match for this folder — a strong, unique match. Zero or several matches → None (unresolved,
-    for the review queue). Never a weak name match."""
+    """Canonical person_id ONLY when exactly one person has the exact normalized-name match; zero or
+    several matches -> None (unresolved, for review). Never a weak name match."""
     db = _database()
     key = _name_key(folder_name)
     if not key:
@@ -135,15 +213,13 @@ def _autolink_person_id(conn, folder_name: str) -> int | None:
 
 
 def suggest_people(conn, folder_name: str, *, limit: int = 5) -> list[dict]:
-    """Candidate canonical people for an unresolved folder — exact normalized-name matches first,
-    then a loose ILIKE on any token (a SUGGESTION for a human; never auto-applied)."""
+    """Candidate canonical people for an unresolved folder (SUGGESTION only, never auto-applied)."""
     db = _database()
     key = _name_key(folder_name)
     tokens = _NAME_TOKEN_RE.findall((folder_name or "").lower())
     rows = conn.execute(
         select(db.people.c.id, db.people.c.full_name, db.people.c.primary_email,
-               db.people.c.household_id)
-    ).mappings().all()
+               db.people.c.household_id)).mappings().all()
     exact, loose = [], []
     for r in rows:
         pk = _name_key(r["full_name"])
@@ -154,143 +230,273 @@ def suggest_people(conn, folder_name: str, *, limit: int = 5) -> list[dict]:
     return (exact + loose)[:limit]
 
 
-def scan(root: str | os.PathLike | None = None, *, actor_user_id: int | None = None):
-    """Recursively index the TaxDome Drive. Read-only w.r.t. the drive; idempotent w.r.t. the DB.
+# --- sync --------------------------------------------------------------------
 
-    Returns a summary dict: folders, files_scanned, new, changed, unchanged, missing,
-    folders_linked, folders_unresolved, errors, scan_id, started_at, completed_at, status.
-    """
+def _new_summary(source_root, destination_root, scan_id, started):
+    return {
+        "source_root": str(source_root), "destination_root": str(destination_root),
+        "scan_id": scan_id, "started_at": started.isoformat(), "completed_at": None,
+        "folders_examined": 0, "files_examined": 0, "copied": 0, "updated": 0, "skipped": 0,
+        "bytes_copied": 0, "missing": 0, "purged": 0, "errors": [],
+        "folders_linked": 0, "folders_unresolved": 0, "status": "started", "dry_run": False,
+    }
+
+
+def _print_progress(summary: dict) -> None:
+    print(f"  … folders={summary['folders_examined']} files={summary['files_examined']} "
+          f"copied={summary['copied']} updated={summary['updated']} skipped={summary['skipped']} "
+          f"bytes={summary['bytes_copied']:,} errors={len(summary['errors'])}", flush=True)
+
+
+def sync(source_root: str | os.PathLike | None = None,
+         destination_root: str | os.PathLike | None = None, *,
+         dry_run: bool = False, purge_missing: bool = False, actor_user_id: int | None = None,
+         progress_interval: int = DEFAULT_PROGRESS_INTERVAL, progress=_print_progress) -> dict:
+    """Run a one-way TaxDome Drive -> Client360 local sync. Returns a summary dict (see module docs)."""
     db = _database()
-    root_path = Path(root or DEFAULT_ROOT)
+    source = Path(source_root or DEFAULT_SOURCE_ROOT)
+    destination = Path(destination_root or DEFAULT_DESTINATION_ROOT)
     started = datetime.now(UTC)
-    errors: list[str] = []
-    new = changed = unchanged = 0
+
+    # A dry run makes NO database changes at all — not even a job-ledger row.
+    scan_id = None
+    if not dry_run:
+        with db.engine.begin() as conn:
+            scan_id = conn.execute(db.import_jobs.insert().values(
+                source_system=SOURCE_SYSTEM, source_file=str(source),
+                status="started").returning(db.import_jobs.c.id)).scalar_one()
+
+    summary = _new_summary(source, destination, scan_id, started)
+    summary["dry_run"] = dry_run
     seen_keys: set[str] = set()
     folders_seen: set[str] = set()
+    interrupted = False
 
-    with db.engine.begin() as conn:
-        scan_id = conn.execute(
-            db.import_jobs.insert().values(
-                source_system=SOURCE_SYSTEM, source_file=str(root_path),
-                status="started").returning(db.import_jobs.c.id)
-        ).scalar_one()
-
-        if not root_path.exists():
-            errors.append(f"drive root not found: {root_path}")
+    try:
+        if not source.exists():
+            summary["errors"].append(f"source root not found: {source}")
         else:
-            for entry in sorted(p for p in root_path.iterdir() if p.is_dir()):
+            if not dry_run:
+                destination.mkdir(parents=True, exist_ok=True)
+            for entry in sorted(p for p in source.iterdir() if p.is_dir()):
                 folder_name = entry.name
                 folders_seen.add(folder_name)
+                summary["folders_examined"] += 1
                 for dirpath, _dirs, filenames in os.walk(entry):
                     for filename in sorted(filenames):
                         abs_path = os.path.join(dirpath, filename)
+                        summary["files_examined"] += 1
                         try:
-                            stat = os.stat(abs_path)
-                            content_sha = _content_sha256(Path(abs_path))
-                        except OSError as exc:
-                            errors.append(f"{abs_path}: {exc}")
-                            continue
-                        rel_path = os.path.relpath(abs_path, root_path)
-                        key = _stored_name(abs_path)
-                        seen_keys.add(key)
-                        ext = Path(filename).suffix.lower()
-                        tags = {
-                            "source_system": SOURCE_SYSTEM, "taxdome_folder": folder_name,
-                            "relative_path": rel_path, "extension": ext,
-                            "file_created": _iso(_created_ts(stat)),
-                            "file_modified": _iso(stat.st_mtime), "available": True,
-                            "last_scan_id": scan_id,
-                        }
-                        existing = conn.execute(
-                            select(db.documents.c.id, db.documents.c.sha256, db.documents.c.status)
-                            .where(db.documents.c.stored_name == key)
-                        ).mappings().first()
-                        base_values = {
-                            "storage_provider": SOURCE_SYSTEM, "storage_uri": abs_path,
-                            "storage_path": rel_path, "original_name": filename,
-                            "size_bytes": int(stat.st_size), "sha256": content_sha,
-                            "category": infer_category(filename, rel_path),
-                            "tags": tags, "status": "active", "archived": False,
-                            "archived_at": None, "updated_at": datetime.now(UTC),
-                        }
-                        if existing is None:
-                            conn.execute(db.documents.insert().values(
-                                stored_name=key, **base_values))
-                            new += 1
-                        elif existing["sha256"] != content_sha or existing["status"] != "active":
-                            conn.execute(db.documents.update()
-                                         .where(db.documents.c.id == existing["id"])
-                                         .values(**base_values))
-                            changed += 1
-                        else:
-                            unchanged += 1
+                            _sync_one_file(db, source, destination, folder_name, abs_path, filename,
+                                           scan_id, dry_run, seen_keys, summary)
+                        except Exception as exc:          # noqa: BLE001 — record & continue per spec
+                            summary["errors"].append(f"{abs_path}: {exc}")
+                        if progress and summary["files_examined"] % max(progress_interval, 1) == 0:
+                            progress(summary)
 
-            # Conservative folder -> canonical person auto-link (unique exact-name only).
-            for folder_name in folders_seen:
-                already = conn.execute(
-                    select(func.count()).select_from(db.documents).where(and_(
-                        db.documents.c.storage_provider == SOURCE_SYSTEM,
-                        db.documents.c.tags["taxdome_folder"].astext == folder_name,
-                        db.documents.c.person_id.isnot(None)))
-                ).scalar() or 0
-                if already:
-                    continue
-                pid = _autolink_person_id(conn, folder_name)
-                if pid is not None:
-                    conn.execute(db.documents.update().where(and_(
-                        db.documents.c.storage_provider == SOURCE_SYSTEM,
-                        db.documents.c.tags["taxdome_folder"].astext == folder_name)
-                    ).values(person_id=pid))
+        # Auto-link folders (skip in dry-run — it is a DB write).
+        if not dry_run:
+            _link_folders(db, folders_seen)
 
-        # Mark files that vanished from the drive as unavailable (existing retention rule).
-        missing_rows = conn.execute(
-            select(db.documents.c.id, db.documents.c.stored_name)
-            .where(and_(db.documents.c.storage_provider == SOURCE_SYSTEM,
-                        db.documents.c.status == "active"))
-        ).mappings().all()
-        gone = [r["id"] for r in missing_rows if r["stored_name"] not in seen_keys]
-        if gone:
-            # Mark vanished files unavailable per the existing document retention rule: 'archived'
-            # (an allowed documents.status), which also hides them from the person document list.
-            conn.execute(db.documents.update().where(db.documents.c.id.in_(gone)).values(
-                status="archived", archived=True, archived_at=datetime.now(UTC)))
-        missing = len(gone)
+        _handle_missing(db, seen_keys, scan_id, dry_run, purge_missing, summary)
+    except KeyboardInterrupt:
+        interrupted = True
+        summary["errors"].append("interrupted by user (Ctrl+C)")
 
-        folders_linked = conn.execute(
-            select(func.count(func.distinct(db.documents.c.tags["taxdome_folder"].astext)))
-            .where(and_(db.documents.c.storage_provider == SOURCE_SYSTEM,
-                        db.documents.c.person_id.isnot(None)))
-        ).scalar() or 0
-        folders_total = conn.execute(
-            select(func.count(func.distinct(db.documents.c.tags["taxdome_folder"].astext)))
-            .where(db.documents.c.storage_provider == SOURCE_SYSTEM)
-        ).scalar() or 0
+    if not dry_run:
+        _folder_counts(db, summary)
+    completed = datetime.now(UTC)
+    summary["completed_at"] = completed.isoformat()
+    summary["status"] = (
+        "interrupted" if interrupted else
+        "dry_run" if dry_run else
+        "completed_with_errors" if summary["errors"] else "completed")
 
-        completed = datetime.now(UTC)
-        summary = {
-            "folders": len(folders_seen) or folders_total,
-            "files_scanned": new + changed + unchanged, "new": new, "changed": changed,
-            "unchanged": unchanged, "missing": missing, "folders_linked": folders_linked,
-            "folders_unresolved": max(folders_total - folders_linked, 0),
-            "errors": errors, "scan_id": scan_id,
-            "started_at": started.isoformat(), "completed_at": completed.isoformat(),
-            "status": "completed" if not errors else "completed_with_errors",
-        }
-        conn.execute(db.import_jobs.update().where(db.import_jobs.c.id == scan_id).values(
-            status=summary["status"], completed_at=completed,
-            rows_read=summary["files_scanned"], rows_inserted=new, rows_updated=changed,
-            rows_skipped=unchanged, error_message=json.dumps(summary)))
+    if not dry_run:
+        with db.engine.begin() as conn:
+            conn.execute(db.import_jobs.update().where(db.import_jobs.c.id == scan_id).values(
+                status=summary["status"], completed_at=completed,
+                rows_read=summary["files_examined"], rows_inserted=summary["copied"],
+                rows_updated=summary["updated"], rows_skipped=summary["skipped"],
+                error_message=json.dumps(summary)))
+    if progress:
+        progress(summary)
+    if interrupted:
+        raise KeyboardInterrupt
     return summary
 
 
+def _sync_one_file(db, source, destination, folder_name, abs_path, filename, scan_id, dry_run,
+                   seen_keys, summary) -> None:
+    """Sync a single source file. Raises on failure so the caller records it and continues."""
+    source_path = Path(abs_path)
+    stat = os.stat(source_path)
+    source_size = int(stat.st_size)
+    source_modified = _iso(stat.st_mtime)
+    rel_str = os.path.relpath(abs_path, source)
+    safe_rel = sanitize_relative_path(rel_str)             # raises on traversal
+    dest_abs = _destination_path(destination, safe_rel)    # raises if it escapes the root
+    local_rel = str(safe_rel)
+    key = _stored_name(rel_str)
+    seen_keys.add(key)
+
+    with db.engine.connect() as conn:
+        existing = conn.execute(
+            select(db.documents.c.id, db.documents.c.sha256, db.documents.c.tags,
+                   db.documents.c.person_id)
+            .where(db.documents.c.stored_name == key)).mappings().first()
+
+    # Decide the action using the size+mtime fast path; hash only when needed.
+    action = "new"
+    if existing is not None:
+        tags = existing["tags"] or {}
+        local_ok = dest_abs.exists()
+        if local_ok and tags.get("source_size") == source_size \
+                and tags.get("source_modified") == source_modified:
+            action = "skip"
+        else:
+            source_hash = _content_sha256(source_path)
+            action = "skip" if (local_ok and source_hash == existing["sha256"]) else "changed"
+
+    if action == "skip":
+        summary["skipped"] += 1
+        if not dry_run:
+            _refresh_tags(db, existing["id"], scan_id, source, abs_path, folder_name, local_rel,
+                          stat, source_size, source_modified)
+        return
+
+    if dry_run:
+        summary["copied" if action == "new" else "updated"] += 1
+        summary["bytes_copied"] += source_size
+        return
+
+    sha, size = _copy_verified(source_path, dest_abs)      # temp + verify + atomic replace
+    tags = {
+        "source_system": SOURCE_SYSTEM, "source_root": str(source), "source_path": abs_path,
+        "source_relative_path": rel_str, "taxdome_folder": folder_name,
+        "local_relative_path": local_rel, "source_created": _iso(_created_ts(stat)),
+        "source_modified": source_modified, "source_size": source_size,
+        "available_from_source": True, "retained_locally": True, "last_scan_id": scan_id,
+        "last_synced_at": datetime.now(UTC).isoformat(), "sync_version": SYNC_VERSION,
+    }
+    values = {
+        "storage_provider": STORAGE_PROVIDER, "storage_uri": str(dest_abs), "storage_path": local_rel,
+        "original_name": filename, "content_type": mimetypes.guess_type(filename)[0],
+        "size_bytes": size, "sha256": sha, "category": infer_category(filename, rel_str),
+        "tags": tags, "status": "active", "archived": False, "archived_at": None, "deleted_at": None,
+        "uploaded_by": "TaxDome Drive Sync", "updated_at": datetime.now(UTC),
+    }
+    with db.engine.begin() as conn:
+        if existing is None:
+            conn.execute(db.documents.insert().values(stored_name=key, **values))
+            summary["copied"] += 1
+        else:
+            conn.execute(db.documents.update().where(db.documents.c.id == existing["id"]).values(**values))
+            summary["updated"] += 1
+    summary["bytes_copied"] += size
+
+
+def _refresh_tags(db, doc_id, scan_id, source, abs_path, folder_name, local_rel, stat, source_size,
+                  source_modified) -> None:
+    """For a skipped (unchanged) file, refresh the source bookkeeping tags without touching the file."""
+    with db.engine.begin() as conn:
+        row = conn.execute(select(db.documents.c.tags).where(db.documents.c.id == doc_id)).mappings().first()
+        tags = dict(row["tags"] or {})
+        tags.update({
+            "source_system": SOURCE_SYSTEM, "source_root": str(source), "source_path": abs_path,
+            "taxdome_folder": folder_name, "local_relative_path": local_rel,
+            "source_created": _iso(_created_ts(stat)), "source_modified": source_modified,
+            "source_size": source_size, "available_from_source": True, "retained_locally": True,
+            "last_scan_id": scan_id, "last_synced_at": datetime.now(UTC).isoformat(),
+        })
+        conn.execute(db.documents.update().where(db.documents.c.id == doc_id).values(
+            tags=tags, status="active"))
+
+
+def _link_folders(db, folders_seen) -> None:
+    with db.engine.begin() as conn:
+        for folder_name in folders_seen:
+            already = conn.execute(
+                select(func.count()).select_from(db.documents).where(and_(
+                    taxdome_filter(db.documents),
+                    db.documents.c.tags["taxdome_folder"].astext == folder_name,
+                    db.documents.c.person_id.isnot(None)))).scalar() or 0
+            if already:
+                continue
+            pid = _autolink_person_id(conn, folder_name)
+            if pid is not None:
+                conn.execute(db.documents.update().where(and_(
+                    taxdome_filter(db.documents),
+                    db.documents.c.tags["taxdome_folder"].astext == folder_name)
+                ).values(person_id=pid))
+
+
+def _handle_missing(db, seen_keys, scan_id, dry_run, purge_missing, summary) -> None:
+    """Reconcile documents whose source file was not seen this run. Default: retain the local copy and
+    flag it unavailable. With purge_missing: delete the local copy and archive the row."""
+    with db.engine.connect() as conn:
+        rows = conn.execute(
+            select(db.documents.c.id, db.documents.c.stored_name, db.documents.c.tags,
+                   db.documents.c.storage_uri)
+            .where(taxdome_filter(db.documents))).mappings().all()
+    for r in rows:
+        if r["stored_name"] in seen_keys:
+            continue
+        tags = r["tags"] or {}
+        if not purge_missing and tags.get("available_from_source") is False:
+            continue                                       # already flagged missing on a prior run
+        summary["missing"] += 1
+        if dry_run:
+            if purge_missing:
+                summary["purged"] += 1
+            continue
+        if purge_missing:
+            uri = r["storage_uri"]
+            if uri:
+                try:
+                    os.unlink(uri)
+                except OSError:
+                    pass
+            new_tags = {**tags, "available_from_source": False, "retained_locally": False,
+                        "source_status": "purged", "last_scan_id": scan_id}
+            with db.engine.begin() as conn:
+                conn.execute(db.documents.update().where(db.documents.c.id == r["id"]).values(
+                    tags=new_tags, status="archived", archived=True,
+                    archived_at=datetime.now(UTC), deleted_at=datetime.now(UTC)))
+            summary["purged"] += 1
+        else:
+            new_tags = {**tags, "available_from_source": False, "retained_locally": True,
+                        "source_status": "missing", "last_scan_id": scan_id}
+            with db.engine.begin() as conn:
+                # Retain the local copy: status stays active, archived stays false.
+                conn.execute(db.documents.update().where(db.documents.c.id == r["id"]).values(
+                    tags=new_tags, status="active", archived=False))
+
+
+def _folder_counts(db, summary) -> None:
+    with db.engine.connect() as conn:
+        linked = conn.execute(
+            select(func.count(func.distinct(db.documents.c.tags["taxdome_folder"].astext)))
+            .where(and_(taxdome_filter(db.documents), db.documents.c.person_id.isnot(None)))).scalar() or 0
+        total = conn.execute(
+            select(func.count(func.distinct(db.documents.c.tags["taxdome_folder"].astext)))
+            .where(taxdome_filter(db.documents))).scalar() or 0
+    summary["folders_linked"] = linked
+    summary["folders_unresolved"] = max(total - linked, 0)
+
+
+# Backward-compatible alias: the previous entry point was ``scan``; keep it working.
+def scan(root=None, *, actor_user_id=None):
+    return sync(root, actor_user_id=actor_user_id)
+
+
 def latest_scan():
-    """The most recent TaxDome Drive scan summary (from import_jobs), or None."""
+    """The most recent TaxDome sync summary (from import_jobs), or None."""
     db = _database()
     with db.engine.connect() as conn:
         row = conn.execute(
             select(db.import_jobs).where(db.import_jobs.c.source_system == SOURCE_SYSTEM)
-            .order_by(db.import_jobs.c.id.desc()).limit(1)
-        ).mappings().first()
+            .order_by(db.import_jobs.c.id.desc()).limit(1)).mappings().first()
     if not row:
         return None
     try:
@@ -303,33 +509,57 @@ def latest_scan():
 
 
 def _search_documents(conn, term: str, *, limit: int = 50):
-    """Search indexed TaxDome document METADATA (filename + folder) — reused by the demo UI so
-    indexed TaxDome documents are searchable in Client360."""
+    """Search synchronized TaxDome documents (filename + folder) — reused by the demo UI."""
     db = _database()
     like = f"%{term.strip()}%"
     return conn.execute(
         select(db.documents.c.id, db.documents.c.original_name, db.documents.c.person_id,
                db.documents.c.tags["taxdome_folder"].astext.label("folder"),
                db.documents.c.category, db.documents.c.size_bytes, db.documents.c.status)
-        .where(and_(db.documents.c.storage_provider == SOURCE_SYSTEM,
+        .where(and_(taxdome_filter(db.documents),
                     or_(db.documents.c.original_name.ilike(like),
                         db.documents.c.tags["taxdome_folder"].astext.ilike(like))))
-        .order_by(db.documents.c.original_name).limit(limit)
-    ).mappings().all()
+        .order_by(db.documents.c.original_name).limit(limit)).mappings().all()
 
 
-def main():
-    summary = scan()
-    print("TaxDome Drive scan complete.")
-    for key in ("folders", "files_scanned", "new", "changed", "unchanged", "missing",
-                "folders_linked", "folders_unresolved", "status"):
+# --- CLI ---------------------------------------------------------------------
+
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="python -m app.importers.taxdome_drive",
+        description="One-way TaxDome Drive -> Client360 local document synchronization.")
+    parser.add_argument("--source-root", default=None,
+                        help=f"TaxDome Drive root (default {DEFAULT_SOURCE_ROOT} / $TAXDOME_DRIVE_ROOT)")
+    parser.add_argument("--destination-root", default=None,
+                        help="Local document root (default $CLIENT360_TAXDOME_DOCUMENT_ROOT)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Report what would change; make no file or database changes.")
+    parser.add_argument("--purge-missing", action="store_true",
+                        help="DELETE local copies whose source file has disappeared (off by default).")
+    parser.add_argument("--progress-interval", type=int, default=DEFAULT_PROGRESS_INTERVAL,
+                        help="Print progress every N files examined.")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = _parse_args(argv)
+    try:
+        summary = sync(args.source_root, args.destination_root, dry_run=args.dry_run,
+                       purge_missing=args.purge_missing, progress_interval=args.progress_interval)
+    except KeyboardInterrupt:
+        print("\nTaxDome sync interrupted — recorded as interrupted.", flush=True)
+        return 130
+    label = "DRY RUN — no changes made" if args.dry_run else "sync complete"
+    print(f"TaxDome Drive {label}.")
+    for key in ("folders_examined", "files_examined", "copied", "updated", "skipped", "bytes_copied",
+                "missing", "purged", "folders_linked", "folders_unresolved", "status"):
         print(f"  {key}: {summary[key]}")
     if summary["errors"]:
         print(f"  errors ({len(summary['errors'])}):")
         for e in summary["errors"][:20]:
             print(f"    - {e}")
-    return summary
+    return 1 if summary["status"] == "completed_with_errors" and not args.dry_run else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

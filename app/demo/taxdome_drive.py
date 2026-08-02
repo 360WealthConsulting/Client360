@@ -40,7 +40,7 @@ def _folder_states(conn):
                func.bool_or(d.c.person_id.isnot(None)).label("linked"),
                func.bool_or(deferred == "true").label("deferred"),
                func.count().label("files"))
-        .where(d.c.storage_provider == PROVIDER)
+        .where(td.taxdome_filter(d))
         .group_by(folder)
         .order_by(folder)
     ).mappings().all()
@@ -55,10 +55,13 @@ def _counts(conn):
     total_folders = len(states)
     total_files = conn.scalar(
         select(func.count()).select_from(d)
-        .where(and_(d.c.storage_provider == PROVIDER, d.c.status == "active"))) or 0
+        .where(and_(td.taxdome_filter(d), d.c.status == "active"))) or 0
+    # A "missing" document is one whose source file has disappeared; the local copy is retained
+    # (status stays active), so this is tracked via the availability tag, not the status.
     missing_total = conn.scalar(
         select(func.count()).select_from(d)
-        .where(and_(d.c.storage_provider == PROVIDER, d.c.status == "archived"))) or 0
+        .where(and_(td.taxdome_filter(d),
+                    d.c.tags["available_from_source"].astext == "false"))) or 0
     last = td.latest_scan() or {}
     return {
         "total_folders": total_folders,
@@ -67,8 +70,8 @@ def _counts(conn):
         "folders_deferred": deferred,
         "total_files": total_files,
         "missing_total": missing_total,
-        "new_last_scan": last.get("new", 0),
-        "changed_last_scan": last.get("changed", 0),
+        "new_last_scan": last.get("copied", last.get("new", 0)),
+        "changed_last_scan": last.get("updated", last.get("changed", 0)),
         "missing_last_scan": last.get("missing", 0),
         "last_scan_time": last.get("completed_at"),
         "scan_status": last.get("status", "never run"),
@@ -116,10 +119,11 @@ def taxdome_scan(request: Request, principal: Principal = Depends(current_princi
         action="taxdome.drive_scanned", entity_type="import_job", entity_id=summary.get("scan_id"),
         actor_user_id=principal.user_id,
         request_id=getattr(request.state, "request_id", None) or f"taxdome-{uuid.uuid4()}",
-        metadata={k: summary[k] for k in ("folders", "new", "changed", "unchanged", "missing")},
+        metadata={k: summary.get(k) for k in
+                  ("folders_examined", "copied", "updated", "skipped", "missing")},
     )
     return RedirectResponse(
-        f"/demo/taxdome-drive?scanned={summary['new']}-{summary['changed']}-{summary['missing']}",
+        f"/demo/taxdome-drive?scanned={summary['copied']}-{summary['updated']}-{summary['missing']}",
         status_code=303)
 
 
@@ -131,7 +135,7 @@ def taxdome_resolve(request: Request, folder: str = Form(...), action: str = For
     or Defer (leave for later). Never an automatic weak-name merge — this is a human decision."""
     db = td._database()
     d = db.documents
-    folder_docs = and_(d.c.storage_provider == PROVIDER, _folder_col() == folder)
+    folder_docs = and_(td.taxdome_filter(d), _folder_col() == folder)
     if action not in {"link", "keep_separate", "defer"}:
         return RedirectResponse("/demo/taxdome-drive", status_code=303)
     if action == "link" and not person_id.strip():
