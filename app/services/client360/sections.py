@@ -276,6 +276,64 @@ def _safe_unassigned():
         return []
 
 
+def _scope(ctx):
+    return [i for i in (ctx.get("scope_ids") or ([_pid(ctx)] if _pid(ctx) else [])) if i]
+
+
+def tasks(principal, ctx):
+    """Client-scoped tasks (the authoritative ``tasks`` service — never a second task store). Create /
+    complete happen in-workspace via /client/{id}/tasks*; detailed edits deep-link to the task surface."""
+    from app.services.tasks import tasks_with_assignee
+    rows = []
+    for p in _scope(ctx):
+        rows.extend(dict(r) for r in tasks_with_assignee(p))
+    closed = {"complete", "completed", "closed", "cancelled", "resolved"}
+    rows.sort(key=lambda t: (t.get("status") in closed,
+                             t.get("due_date") is None, str(t.get("due_date") or "")))
+    return {"tasks": rows, "can_write": principal.can("client.write"),
+            "primary_person_id": _pid(ctx)}
+
+
+def notes(principal, ctx):
+    """Client notes (the authoritative append-only ``person_notes`` service). Internal-only — these are
+    staff notes and are never exposed to the client portal here."""
+    from app.services.notes import ACTIVITY_NOTE_TYPES, list_person_notes
+    rows = []
+    for p in _scope(ctx):
+        rows.extend(list_person_notes(p))
+    rows.sort(key=lambda n: (n.get("created_at") is not None, n.get("created_at")), reverse=True)
+    return {"notes": rows, "note_types": sorted(ACTIVITY_NOTE_TYPES),
+            "can_write": principal.can("client.write"), "primary_person_id": _pid(ctx),
+            "internal_only": True}
+
+
+def audit(principal, ctx):
+    """Read-only audit history scoped to this client's ownership (person(s) + household + their tasks).
+    Reads the authoritative append-only ``audit_events`` — never a second audit store. Registry-gated by
+    ``audit.read``; scope already verified at the workspace boundary. Never surfaces secrets."""
+    from sqlalchemy import and_, or_, select
+
+    from app.db import audit_events, engine
+    scope = [str(i) for i in _scope(ctx)]
+    hid = _hid(ctx)
+    conds = []
+    if scope:
+        conds.append(and_(audit_events.c.entity_type == "person", audit_events.c.entity_id.in_(scope)))
+        conds.append(and_(audit_events.c.entity_type == "task",
+                          audit_events.c.metadata["person_id"].astext.in_(scope)))
+    if hid:
+        conds.append(and_(audit_events.c.entity_type == "household",
+                          audit_events.c.entity_id == str(hid)))
+    if not conds:
+        return {"events": []}
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(audit_events.c.action, audit_events.c.entity_type, audit_events.c.entity_id,
+                   audit_events.c.actor_user_id, audit_events.c.occurred_at, audit_events.c.outcome)
+            .where(or_(*conds)).order_by(audit_events.c.occurred_at.desc()).limit(100)).mappings().all()
+    return {"events": [dict(r) for r in rows]}
+
+
 def vault(principal, ctx):
     """Client Vault tab — the client's linked, authorized vault documents (list + filters), plus the
     selected document's detail panel (versions / links / audit) when one is requested. Reuses the

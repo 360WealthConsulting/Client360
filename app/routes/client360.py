@@ -90,6 +90,70 @@ def resolve_document_ownership(
     return RedirectResponse(return_to or "/", status_code=303)
 
 
+def _rid(request):
+    return getattr(request.state, "request_id", None)
+
+
+@router.post("/{person_id}/tasks")
+def create_client_task(request: Request, person_id: int, title: str = Form(...),
+                       priority: str = Form("normal"), due_date: str = Form(""),
+                       principal: Principal = Depends(require_capability("client.write"))):
+    """Create a client task in-workspace (reuses app.services.tasks.create_task — audited)."""
+    from datetime import date as _date
+
+    from app.security.authorization import record_in_scope
+    from app.services.tasks import create_task
+    if not record_in_scope(principal, "person", person_id):
+        return render_error(request, 404, detail="Client not found.")
+    due = None
+    if due_date.strip():
+        try:
+            due = _date.fromisoformat(due_date.strip())
+        except ValueError:
+            return render_error(request, 400, detail="Due date must be YYYY-MM-DD.")
+    try:
+        create_task(person_id, title=title, priority=priority, due_date=due,
+                    actor_user_id=principal.user_id, request_id=_rid(request), source="client360")
+    except ValueError as exc:
+        return render_error(request, 400, detail=str(exc))
+    return RedirectResponse(f"/client/{person_id}?tab=tasks", status_code=303)
+
+
+@router.post("/{person_id}/tasks/{task_id}/complete")
+def complete_client_task(request: Request, person_id: int, task_id: int,
+                         principal: Principal = Depends(require_capability("client.write"))):
+    """Mark a client task complete in-workspace (reuses app.services.tasks.complete_task — audited)."""
+    from app.security.authorization import record_in_scope
+    from app.services.tasks import complete_task
+    if not record_in_scope(principal, "person", person_id):
+        return render_error(request, 404, detail="Client not found.")
+    complete_task(person_id, task_id, actor_user_id=principal.user_id, request_id=_rid(request))
+    return RedirectResponse(f"/client/{person_id}?tab=tasks", status_code=303)
+
+
+@router.post("/{person_id}/notes")
+def add_client_note(request: Request, person_id: int, body: str = Form(...),
+                    note_type: str = Form("note"),
+                    principal: Principal = Depends(require_capability("client.write"))):
+    """Add an internal client note in-workspace (reuses app.services.notes.add_person_note; audited
+    here). Internal-only — person notes are never exposed to the client portal by this action."""
+    from app.security.audit import write_audit_event
+    from app.security.authorization import record_in_scope
+    from app.services.notes import ACTIVITY_NOTE_TYPES, add_person_note
+    if not record_in_scope(principal, "person", person_id):
+        return render_error(request, 404, detail="Client not found.")
+    if note_type not in ACTIVITY_NOTE_TYPES:
+        note_type = "note"
+    try:
+        note_id = add_person_note(person_id, body, author_user_id=principal.user_id, note_type=note_type)
+    except ValueError as exc:
+        return render_error(request, 400, detail=str(exc))
+    write_audit_event(action="note.created", entity_type="person", entity_id=person_id,
+                      actor_user_id=principal.user_id, request_id=_rid(request),
+                      metadata={"note_id": note_id, "note_type": note_type})
+    return RedirectResponse(f"/client/{person_id}?tab=notes", status_code=303)
+
+
 @router.get("/{person_id}", response_class=HTMLResponse)
 def client_workspace(request: Request, person_id: int, tab: str = "summary",
                      q: str | None = None, category: str | None = None,
