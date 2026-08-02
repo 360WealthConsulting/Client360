@@ -273,9 +273,11 @@ def _attach_ocr(docs):
             d["ocr_status"] = rec["status"]
             d["ocr_completed_at"] = rec.get("ocr_completed_at")
             d["ocr_page_count"] = rec.get("page_count")
+            d["ocr_engine"] = rec.get("engine")
             d["searchable_text"] = rec["status"] == "completed" and (rec.get("char_count") or 0) > 0
         else:
             d.setdefault("ocr_completed_at", None)
+            d["ocr_engine"] = None
             d["searchable_text"] = False
     return docs
 

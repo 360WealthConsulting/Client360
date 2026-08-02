@@ -36,6 +36,32 @@ def run_microsoft_document_sync() -> None:
     except Exception:
         logger.exception("Microsoft document sync failed.")
 
+def run_ocr_incremental_sweep() -> None:
+    """Incremental OCR over newly ingested canonical documents (PR 5B). Idempotent + resumable;
+    concurrency-safe via an advisory lock. No-op / backend_unavailable when no engine is installed.
+    Overlap is prevented by APScheduler (max_instances=1, coalesce) and the runner's advisory lock."""
+    try:
+        from app.jobs.ocr_runner import run_incremental
+        result = run_incremental()
+        if result.get("status") != "backend_unavailable" and (
+                result.get("completed") or result.get("failed")):
+            logger.info("OCR incremental sweep result: %s", result)
+    except Exception:
+        logger.exception("OCR incremental sweep failed.")
+
+
+def run_ocr_retry_sweep() -> None:
+    """Retry previously failed OCR documents (one batch per run, PR 5B). Failure-isolated."""
+    try:
+        from app.jobs.ocr_runner import run_retry
+        result = run_retry()
+        if result.get("status") != "backend_unavailable" and (
+                result.get("completed") or result.get("failed")):
+            logger.info("OCR retry sweep result: %s", result)
+    except Exception:
+        logger.exception("OCR retry sweep failed.")
+
+
 def run_workflow_sla_automation() -> None:
     try:
         logger.info("Workflow SLA escalation result: %s", evaluate_sla())
@@ -199,6 +225,14 @@ def start_scheduler() -> None:
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+    )
+    _scheduler.add_job(
+        run_ocr_incremental_sweep, trigger="interval", minutes=30,
+        id="ocr-incremental-sweep", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    _scheduler.add_job(
+        run_ocr_retry_sweep, trigger="interval", minutes=60,
+        id="ocr-retry-sweep", replace_existing=True, max_instances=1, coalesce=True,
     )
     _scheduler.add_job(
         run_workflow_sla_automation, trigger="interval", minutes=5,
