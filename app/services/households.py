@@ -29,9 +29,16 @@ from __future__ import annotations
 
 import argparse
 
-from sqlalchemy import insert, select
+from sqlalchemy import and_, func, insert, or_, select
 
-from app.db import engine, household_relationships, households, people
+from app.db import (
+    audit_events,
+    documents,
+    engine,
+    household_relationships,
+    households,
+    people,
+)
 from app.services.household_derivation import _household_name
 
 
@@ -102,6 +109,106 @@ def assign_people_to_household(person_ids, *, name: str | None = None, actor_use
                                   entity_id=target, actor_user_id=actor_user_id, request_id=request_id,
                                   metadata={"person_ids": ids, "created": report["household_created"]})
         return report
+
+
+# --- read API (consumed by the Household Management UI; no new ownership logic) ----------------
+
+def _member_ids(conn, household_id) -> list[int]:
+    return list(conn.scalars(select(household_relationships.c.person_id)
+                             .where(household_relationships.c.household_id == household_id)))
+
+
+def search_households(query: str | None = None, *, limit: int = 50) -> list[dict]:
+    """Households matching a query by household name/city or a member's name. Blank query -> all
+    (name-ordered). Includes a member count for the list view."""
+    q = (query or "").strip()
+    member_count = func.count(household_relationships.c.person_id).label("member_count")
+    stmt = (select(households.c.id, households.c.name, households.c.city, households.c.state,
+                   member_count)
+            .select_from(households.outerjoin(
+                household_relationships, household_relationships.c.household_id == households.c.id))
+            .group_by(households.c.id, households.c.name, households.c.city, households.c.state)
+            .order_by(households.c.name).limit(limit))
+    if q:
+        like = f"%{q}%"
+        by_member = (select(household_relationships.c.household_id)
+                     .select_from(household_relationships.join(
+                         people, people.c.id == household_relationships.c.person_id))
+                     .where(people.c.full_name.ilike(like)))
+        stmt = stmt.where(or_(households.c.name.ilike(like), households.c.city.ilike(like),
+                              households.c.id.in_(by_member)))
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(stmt).mappings().all()]
+
+
+def household_members(household_id) -> list[dict]:
+    """Members with their household relationship role (spouse/dependent/member), primary flags."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(people.c.id, people.c.full_name, people.c.primary_email, people.c.primary_phone,
+                   household_relationships.c.relationship_type, household_relationships.c.is_primary)
+            .select_from(household_relationships.join(
+                people, people.c.id == household_relationships.c.person_id))
+            .where(household_relationships.c.household_id == household_id)
+            .order_by(household_relationships.c.is_primary.desc(),
+                      people.c.last_name, people.c.first_name)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def household_documents(household_id, *, limit: int = 500) -> list[dict]:
+    """Documents owned by the household OR by any current member — the household view of ownership
+    (ADR-072 canonical document, ADR-073 ownership). No new ownership logic: same person-or-household
+    resolution the person Documents tab uses, scoped to the whole household."""
+    with engine.connect() as conn:
+        member_ids = _member_ids(conn, household_id)
+        scope = documents.c.household_id == household_id
+        if member_ids:
+            scope = or_(scope, documents.c.person_id.in_(member_ids))
+        rows = conn.execute(
+            select(documents.c.id, documents.c.original_name, documents.c.category,
+                   documents.c.size_bytes, documents.c.person_id, documents.c.household_id,
+                   documents.c.storage_provider, documents.c.created_at,
+                   documents.c.tags["taxdome_folder"].astext.label("taxdome_folder"))
+            .where(and_(scope, documents.c.archived.is_(False)))
+            .order_by(documents.c.created_at.desc(), documents.c.id.desc()).limit(limit)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def household_audit(household_id, *, limit: int = 50) -> list[dict]:
+    """Recent audit events recorded against this household (ownership changes, member assignment)."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(audit_events.c.action, audit_events.c.actor_user_id, audit_events.c.occurred_at,
+                   audit_events.c.outcome, audit_events.c.metadata)
+            .where(audit_events.c.entity_type == "household",
+                   audit_events.c.entity_id == str(household_id))
+            .order_by(audit_events.c.occurred_at.desc()).limit(limit)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def unresolved_taxdome_folders(*, limit: int = 200) -> list[dict]:
+    """TaxDome folders whose documents are still unlinked (no person and no household), with the
+    candidate people for each — the worklist for the in-product resolve tool. Re-evaluates
+    resolution live, so a folder becomes resolvable as soon as its household/people exist."""
+    from app.importers import taxdome_drive as td
+    folder_col = documents.c.tags["taxdome_folder"].astext
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(folder_col.label("folder"), func.count().label("files"))
+            .where(and_(td.taxdome_filter(documents),
+                        documents.c.person_id.is_(None), documents.c.household_id.is_(None)))
+            .group_by(folder_col).order_by(folder_col).limit(limit)).mappings().all()
+        out = []
+        for r in rows:
+            if not r["folder"]:
+                continue
+            household_id, person_id = td.resolve_folder(conn, r["folder"])
+            out.append({
+                "folder": r["folder"], "files": r["files"],
+                "resolves_to": {"household_id": household_id, "person_id": person_id},
+                "suggestions": td.suggest_people(conn, r["folder"]),
+            })
+    return out
 
 
 def main(argv=None):
