@@ -11,3 +11,7 @@
 .c360-tab.active { background: var(--accent, #2563eb); color: #fff; }
 .c360-panel { margin-top: 8px; }
 .c360-panel .card { margin-bottom: 10px; }
+
+/* Client Workspace — Dashboard landing tab: responsive card grid. */
+.c360-dash{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;align-items:start}
+.c360-dash .card{margin:0}

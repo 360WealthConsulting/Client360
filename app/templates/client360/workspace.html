@@ -50,6 +50,61 @@
 {% elif sec.error %}
   {% call ui.empty("Temporarily unavailable", sec.error) %}{% endcall %}
 
+{% elif active_tab == "dashboard" %}
+  {# The Client Workspace landing tab — cross-domain snapshot, each card one click into its tab. #}
+  <div class="c360-dash">
+    <article class="card">
+      <h2 class="section-title">Open tasks</h2>
+      {% for t in sec.open_tasks %}
+        <div class="detail-row"><span>{{ t.title }}</span><span class="subtle">{{ t.due_date or t.status }}</span></div>
+      {% else %}{% call ui.empty("No open tasks") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Documents needing review</h2>
+      {% for d in sec.documents_needing_review %}
+        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.storage_provider }}</span></div>
+      {% else %}{% call ui.empty("Nothing awaiting review") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Missing tax items</h2>
+      {% for e in sec.missing_tax_items %}
+        <div class="detail-row"><span>{{ e.title or e.message or e.category }}</span><span class="subtle">{{ e.severity or "" }}</span></div>
+      {% else %}{% call ui.empty("No missing tax items") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Recent documents</h2>
+      {% for d in sec.recent_documents %}
+        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.storage_provider }}</span></div>
+      {% else %}{% call ui.empty("No documents yet") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Upcoming meetings</h2>
+      {% for m in sec.upcoming_meetings %}
+        <div class="detail-row"><span>{{ m.title }}</span><span class="subtle">{{ m.event_time }}</span></div>
+      {% else %}{% call ui.empty("No upcoming meetings") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Planning opportunities</h2>
+      {% for r in sec.planning_opportunities %}
+        <div class="detail-row"><span>{{ r.title or r.summary or r.message }}</span></div>
+      {% else %}{% call ui.empty("No planning opportunities") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Recent activity</h2>
+      {% for a in sec.recent_activity %}
+        <div class="detail-row"><span>{{ a.title or a.event_type }}</span><span class="subtle">{{ a.occurred_at or a.event_time or "" }}</span></div>
+      {% else %}{% call ui.empty("No recent activity") %}{% endcall %}{% endfor %}
+    </article>
+    {% if sec.alerts %}
+    <article class="card">
+      <h2 class="section-title">Alerts</h2>
+      {% for al in sec.alerts %}
+        <div class="detail-row"><span>{{ al.title }}</span><span class="subtle">{{ al.domain }}{% if al.severity %} · {{ al.severity }}{% endif %}</span></div>
+      {% endfor %}
+    </article>
+    {% endif %}
+  </div>
+
 {% elif active_tab == "summary" %}
   <h2 class="section-title">Household &amp; assignment</h2>
   <article class="card">

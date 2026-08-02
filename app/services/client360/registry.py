@@ -21,6 +21,7 @@ class SectionDef:
 
 
 SECTIONS = (
+    SectionDef("dashboard", "Dashboard", None, sections.dashboard),
     SectionDef("summary", "Summary", None, sections.summary),
     SectionDef("financial", "Financial", None, sections.financial),
     SectionDef("tax", "Tax", "tax.read", sections.tax),
