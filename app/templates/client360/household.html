@@ -155,7 +155,9 @@
            Generic across TaxDome/Drake/SharePoint/… — no per-source UI. #}
         <td>{% if d.sources %}{% for s in d.sources %}{% if s.source_uri and s.source_uri.startswith("http") %}<a href="{{ s.source_uri }}" target="_blank" rel="noopener" title="View source in {{ s.source_system }}">{{ s.source_system }}</a>{% else %}<span title="{{ s.source_path or s.source_uri or s.source_system }}">{{ s.source_system }}</span>{% endif %}{% if not s.available %} <span class="subtle">(unavailable)</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% elif d.source_systems %}{{ d.source_systems|join(", ") }}{% else %}{{ d.source }}{% endif %}</td>
         <td><span class="subtle">{{ d.review_status or "—" }}</span></td>
-        <td><span class="subtle">{{ (d.ocr_status or "pending") }} / pending</span></td>
+        {# OCR enriches the canonical document (ADR-072): real status + completed date + searchable
+           text. AI extraction is a later phase (shown honestly as pending). #}
+        <td><span class="subtle">{{ (d.ocr_status or "pending")|replace("_"," ") }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%Y-%m-%d") }}{% endif %} / pending</span>{% if d.searchable_text %}<br><span class="subtle" title="Extracted text is indexed for Universal Search">🔍 searchable</span>{% endif %}</td>
         <td>{{ d.version_count }}</td>
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
         <td><a href="/documents/{{ d.id }}/download">Open</a>{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>

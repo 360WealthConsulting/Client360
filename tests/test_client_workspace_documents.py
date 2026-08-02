@@ -99,7 +99,7 @@ def test_documents_view_model_flags_are_honest():
     pid = _person("Flag", "Client")
     _doc("x.pdf", person_id=pid)
     sec = get_workspace(_principal(), person_id=pid)["sections"]["documents"]
-    assert sec["ocr_enabled"] is False and sec["ai_extraction_enabled"] is False
+    assert sec["ocr_enabled"] is True and sec["ai_extraction_enabled"] is False
     assert sec["multi_source_enabled"] is False
     assert set(sec["supported_sources"]) >= {"TaxDome", "Drake", "SharePoint", "Schwab",
                                              "AssetMark", "Upload", "Scanner", "Email"}
