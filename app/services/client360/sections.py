@@ -259,13 +259,30 @@ def documents_view_model(docs):
     }
 
 
+def _attach_source_refs(docs):
+    """Attach each canonical document's source references (ADR-072 multi-source) for the Documents tab."""
+    try:
+        from app.services.document_sources import sources_for_documents
+        refs = sources_for_documents([d["id"] for d in docs])
+    except Exception:      # noqa: BLE001 — source refs must never break the Documents tab
+        refs = {}
+    for d in docs:
+        d["sources"] = refs.get(d["id"], [])
+        if d["sources"]:
+            d["source_systems"] = sorted({s["source_system"] for s in d["sources"]})
+        else:
+            d["source_systems"] = [d["source"]] if d.get("source") else []
+    return docs
+
+
 def documents(principal, ctx):
     """The client's unified canonical document list — the Documents tab's operating center. One row per
-    canonical document (ADR-072), scoped to this client's ownership (ADR-073)."""
+    canonical document (ADR-072), scoped to this client's ownership (ADR-073). Each row carries its
+    source references (TaxDome / Drake / …) — one canonical document, many sources."""
     from app.services.document_platform.relationships import documents_for_entity
     et, eid = ctx["entity_type"], ctx["entity_id"]
     rows = documents_for_entity(principal, et, eid, limit=200)
-    return documents_view_model(enrich_documents(rows))
+    return documents_view_model(_attach_source_refs(enrich_documents(rows)))
 
 
 def _safe_unassigned():
