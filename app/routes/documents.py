@@ -12,9 +12,8 @@ from app.services.documents import (
     get_person_documents,
     save_person_document,
 )
-from app.services.timeline import add_timeline_event
 from app.services.microsoft_documents import get_person_microsoft_documents
-
+from app.services.timeline import add_timeline_event
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -118,7 +117,13 @@ def download_document(document_id: int):
             status_code=404,
         )
 
-    path = Path(document["storage_path"])
+    # TaxDome-synced documents keep a durable Client360-local copy addressed by an absolute
+    # storage_uri; serve THAT copy (never the read-only Z:\ source). Directly-uploaded documents
+    # continue to resolve via their repo-relative storage_path.
+    if document["storage_provider"] == "Client360 Local" and document["storage_uri"]:
+        path = Path(document["storage_uri"])
+    else:
+        path = Path(document["storage_path"])
 
     if not path.exists():
         return HTMLResponse(
@@ -128,7 +133,7 @@ def download_document(document_id: int):
 
     return FileResponse(
         path=path,
-        media_type=document["content_type"],
+        media_type=document["content_type"] or "application/octet-stream",
         filename=document["original_name"],
     )
 
