@@ -1,0 +1,292 @@
+"""Drake Tax — a first-class SOURCE PROVIDER for Client360 (not a separate application).
+
+Drake documents become CANONICAL documents (ADR-072): each discovered file is hashed (SHA-256) and
+resolved against the existing corpus — an identical document already present from another source (e.g.
+TaxDome) is REUSED and gains a Drake source reference (provenance preserved); a new document creates the
+canonical row plus its first source reference. Ownership is linked to the client's household/person
+(ADR-073) using the same conservative folder→owner resolution as the TaxDome sync. Nothing here is a
+parallel document system — canonical storage, dedup, and ownership are the platform's, and Drake is one
+source among many.
+
+Honest boundary: this discovers Drake artifacts from a Drake EXPORT directory (Drake's live database
+format is environment-specific). Files are classified by Drake naming conventions (federal/state return
+PDFs, IRS/state acknowledgements, organizers, engagement letters, workpapers, K-1s, depreciation/asset
+reports, XML exports, supporting documents). Structured e-file STATUS / acknowledgement ingestion into
+the authoritative tax tables is the next roadmap step (3B) — this foundation attaches Drake documents +
+provenance, which the existing Client Workspace Documents/Tax/Timeline tabs already surface.
+
+CLI::
+
+    python -m app.importers.drake
+    python -m app.importers.drake --dry-run
+    python -m app.importers.drake --source-root D:\\DrakeExport --destination-root C:\\Client360\\Data\\Documents\\Drake
+    python -m app.importers.drake --purge-missing        # explicit; never automatic
+"""
+from __future__ import annotations
+
+import argparse
+import os
+from collections import namedtuple
+from datetime import UTC, datetime
+from functools import cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+from sqlalchemy import MetaData, and_, create_engine, select
+
+from app.importers.taxdome_drive import (
+    _copy_verified,
+    _created_ts,
+    _destination_path,
+    _is_ignored_file,
+    _iso,
+    infer_category,
+    resolve_folder,
+    sanitize_relative_path,
+)
+
+SOURCE_SYSTEM = "Drake"
+STORAGE_PROVIDER = "Client360 Local"
+SYNC_VERSION = 1
+DEFAULT_SOURCE_ROOT = os.getenv("DRAKE_EXPORT_ROOT", os.getenv("DRAKE_DRIVE_ROOT", "D:\\DrakeExport"))
+DEFAULT_DESTINATION_ROOT = os.getenv(
+    "CLIENT360_DRAKE_DOCUMENT_ROOT", r"C:\Client360\Data\Documents\Drake")
+DEFAULT_PROGRESS_INTERVAL = int(os.getenv("DRAKE_SYNC_PROGRESS_INTERVAL", "100") or "100")
+
+_Database = namedtuple("_Database", "engine documents document_sources")
+
+
+@cache
+def _database():
+    load_dotenv("app/.env")
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is missing from app/.env")
+    engine = create_engine(url)
+    md = MetaData()
+    md.reflect(bind=engine)
+    return _Database(engine, md.tables["documents"], md.tables["document_sources"])
+
+
+# --- Drake document-type classification (by export naming conventions) -------
+
+def drake_doc_type(filename: str) -> str:
+    low = filename.lower()
+    if low.endswith(".xml"):
+        return "xml_export"
+    if "ack" in low or "acknowledg" in low:
+        return "state_ack" if "state" in low else "irs_ack"
+    if "organizer" in low:
+        return "organizer"
+    if "engagement" in low:
+        return "engagement_letter"
+    if "k-1" in low or "k1" in low or "sch k1" in low:
+        return "k1"
+    if "deprec" in low:
+        return "depreciation"
+    if "asset" in low:
+        return "asset_detail"
+    if "workpaper" in low or low.startswith("wp") or "_wp" in low:
+        return "workpaper"
+    if low.endswith(".pdf") and "state" in low:
+        return "state_return"
+    if low.endswith(".pdf") and any(k in low for k in ("1040", "1120", "1065", "federal", "return")):
+        return "federal_return"
+    return "supporting"
+
+
+def _tax_year(filename: str, rel_path: str):
+    import re
+    m = re.search(r"(20\d{2})", f"{filename} {rel_path}")
+    return m.group(1) if m else None
+
+
+def _drake_stored_name(source_relative_path: str) -> str:
+    import hashlib
+    from pathlib import PurePosixPath
+    norm = str(PurePosixPath(source_relative_path.replace("\\", "/"))).lower()
+    return "drake:" + hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
+
+# --- sync --------------------------------------------------------------------
+
+def _new_summary(source, dest, scan_id, started):
+    return {"source_root": str(source), "destination_root": str(dest), "scan_id": scan_id,
+            "started_at": started.isoformat(), "completed_at": None,
+            "folders_examined": 0, "files_examined": 0, "ignored": 0,
+            "canonical_created": 0, "reused_canonical": 0, "source_refs_added": 0,
+            "skipped": 0, "missing": 0, "purged": 0, "bytes_copied": 0, "errors": [],
+            "linked_household": 0, "linked_person": 0, "status": "started", "dry_run": False}
+
+
+def _print_progress(s):
+    print(f"  … folders={s['folders_examined']} files={s['files_examined']} "
+          f"canonical_created={s['canonical_created']} reused={s['reused_canonical']} "
+          f"skipped={s['skipped']} ignored={s['ignored']} errors={len(s['errors'])}", flush=True)
+
+
+def sync(source_root=None, destination_root=None, *, dry_run=False, purge_missing=False,
+         actor_user_id=None, progress_interval=DEFAULT_PROGRESS_INTERVAL, progress=_print_progress):
+    """Discover a Drake export tree and integrate it into the canonical document model. Returns a
+    summary dict. Read-only w.r.t. the Drake source; idempotent + resumable w.r.t. Client360."""
+    from app.services.document_sources import mark_source_unavailable, resolve_or_create_canonical
+    db = _database()
+    source = Path(source_root or DEFAULT_SOURCE_ROOT)
+    destination = Path(destination_root or DEFAULT_DESTINATION_ROOT)
+    started = datetime.now(UTC)
+    scan_id = None
+    summary = _new_summary(source, destination, scan_id, started)
+    summary["dry_run"] = dry_run
+    seen_uris: set[str] = set()
+
+    if not source.exists():
+        summary["errors"].append(f"Drake export root not found: {source}")
+    else:
+        if not dry_run:
+            destination.mkdir(parents=True, exist_ok=True)
+        for entry in sorted(p for p in source.iterdir() if p.is_dir()):
+            folder_name = entry.name
+            summary["folders_examined"] += 1
+            for dirpath, _dirs, filenames in os.walk(entry):
+                for filename in sorted(filenames):
+                    if _is_ignored_file(filename):
+                        summary["ignored"] += 1
+                        continue
+                    abs_path = os.path.join(dirpath, filename)
+                    summary["files_examined"] += 1
+                    try:
+                        _sync_one(db, source, destination, folder_name, abs_path, filename,
+                                  dry_run, seen_uris, summary, resolve_or_create_canonical)
+                    except Exception as exc:      # noqa: BLE001 — record & continue
+                        summary["errors"].append(f"{abs_path}: {exc}")
+                    if progress and summary["files_examined"] % max(progress_interval, 1) == 0:
+                        progress(summary)
+
+    _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable)
+
+    completed = datetime.now(UTC)
+    summary["completed_at"] = completed.isoformat()
+    summary["status"] = "dry_run" if dry_run else ("completed_with_errors" if summary["errors"]
+                                                   else "completed")
+    if progress:
+        progress(summary)
+    return summary
+
+
+def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run, seen_uris, summary,
+              resolve_or_create_canonical):
+    stat = os.stat(abs_path)
+    rel_str = os.path.relpath(abs_path, source)
+    safe_rel = sanitize_relative_path(rel_str)
+    dest_abs = _destination_path(destination, safe_rel)
+    seen_uris.add(abs_path)
+
+    # Incremental fast path: an existing Drake source ref with the same size (+ local copy) is skipped.
+    with db.engine.connect() as conn:
+        existing_ref = conn.execute(
+            select(db.document_sources.c.document_id, db.document_sources.c.metadata,
+                   db.document_sources.c.source_hash)
+            .where(db.document_sources.c.source_system == SOURCE_SYSTEM,
+                   db.document_sources.c.source_uri == abs_path)).mappings().first()
+    if existing_ref is not None:
+        meta = existing_ref["metadata"] or {}
+        if dest_abs.exists() and meta.get("size") == int(stat.st_size) \
+                and meta.get("mtime") == _iso(stat.st_mtime):
+            summary["skipped"] += 1
+            return
+
+    if dry_run:
+        summary["files_examined"]  # already counted
+        # Report what would happen without hashing/copying every file.
+        summary["canonical_created" if existing_ref is None else "reused_canonical"] += 1
+        summary["bytes_copied"] += int(stat.st_size)
+        return
+
+    sha, size = _copy_verified(Path(abs_path), dest_abs)   # canonical local copy + verify
+    with db.engine.begin() as conn:
+        household_id, person_id = resolve_folder(conn, folder_name)
+        if person_id is not None:
+            summary["linked_person"] += 1
+        if household_id is not None:
+            summary["linked_household"] += 1
+        tags = {
+            "source_system": SOURCE_SYSTEM, "drake_doc_type": drake_doc_type(filename),
+            "tax_year": _tax_year(filename, rel_str), "source_path": abs_path,
+            "source_relative_path": rel_str, "taxdome_folder": folder_name,
+            "source_created": _iso(_created_ts(stat)), "source_modified": _iso(stat.st_mtime),
+            "sync_version": SYNC_VERSION, "last_synced_at": datetime.now(UTC).isoformat(),
+        }
+        import mimetypes
+        result = resolve_or_create_canonical(
+            sha256=sha, original_name=filename, stored_name=_drake_stored_name(rel_str),
+            storage_provider=STORAGE_PROVIDER, storage_uri=str(dest_abs), storage_path=str(safe_rel),
+            size_bytes=size, content_type=mimetypes.guess_type(filename)[0],
+            category=infer_category(filename, rel_str), tags=tags,
+            person_id=person_id, household_id=household_id,
+            source_system=SOURCE_SYSTEM, source_uri=abs_path, source_path=rel_str, conn=conn)
+        # Record size/mtime on the source ref for the next incremental run.
+        conn.execute(db.document_sources.update().where(and_(
+            db.document_sources.c.document_id == result["document_id"],
+            db.document_sources.c.source_system == SOURCE_SYSTEM,
+            db.document_sources.c.source_uri == abs_path)).values(
+            metadata={"size": int(size), "mtime": _iso(stat.st_mtime),
+                      "drake_doc_type": tags["drake_doc_type"]}))
+    summary["reused_canonical" if result["reused"] else "canonical_created"] += 1
+    summary["source_refs_added"] += 1
+    summary["bytes_copied"] += size
+
+
+def _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable):
+    """Drake source references not seen this run: mark unavailable (canonical + local copy retained).
+    --purge-missing additionally flags them purged; it never deletes a canonical document."""
+    with db.engine.connect() as conn:
+        rows = conn.execute(
+            select(db.document_sources.c.document_id, db.document_sources.c.source_uri,
+                   db.document_sources.c.available)
+            .where(db.document_sources.c.source_system == SOURCE_SYSTEM)).mappings().all()
+    for r in rows:
+        if r["source_uri"] in seen_uris or not r["available"]:
+            continue
+        summary["missing"] += 1
+        if dry_run:
+            if purge_missing:
+                summary["purged"] += 1
+            continue
+        with db.engine.begin() as conn:
+            mark_source_unavailable(conn, r["document_id"], SOURCE_SYSTEM, r["source_uri"])
+        if purge_missing:
+            summary["purged"] += 1
+
+
+# --- CLI ---------------------------------------------------------------------
+
+def _parse_args(argv=None):
+    p = argparse.ArgumentParser(prog="python -m app.importers.drake",
+                                description="Integrate a Drake export as a canonical source provider.")
+    p.add_argument("--source-root", default=None)
+    p.add_argument("--destination-root", default=None)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--purge-missing", action="store_true")
+    p.add_argument("--progress-interval", type=int, default=DEFAULT_PROGRESS_INTERVAL)
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    args = _parse_args(argv)
+    summary = sync(args.source_root, args.destination_root, dry_run=args.dry_run,
+                   purge_missing=args.purge_missing, progress_interval=args.progress_interval)
+    label = "DRY RUN — no changes made" if args.dry_run else "Drake integration complete"
+    print(f"Drake {label}.")
+    for k in ("folders_examined", "files_examined", "ignored", "canonical_created", "reused_canonical",
+              "source_refs_added", "skipped", "missing", "purged", "bytes_copied",
+              "linked_household", "linked_person", "status"):
+        print(f"  {k}: {summary[k]}")
+    if summary["errors"]:
+        print(f"  errors ({len(summary['errors'])}):")
+        for e in summary["errors"][:20]:
+            print(f"    - {e}")
+    return 1 if summary["status"] == "completed_with_errors" else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

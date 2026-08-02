@@ -231,7 +231,7 @@
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
         <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}</td>
         <td>{{ d.owner_label }}</td>
-        <td>{{ d.source }}</td>
+        <td>{% if d.source_systems %}{{ d.source_systems|join(", ") }}{% else %}{{ d.source }}{% endif %}</td>
         <td><span class="subtle">{{ d.review_status or "—" }}</span></td>
         <td><span class="subtle">{{ (d.ocr_status or "pending") }} / pending</span></td>
         <td>{{ d.version_count }}</td>
