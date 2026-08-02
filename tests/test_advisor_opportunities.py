@@ -40,7 +40,12 @@ from app.services.advisor_workspace import FIRM_TZ
 
 CAPS = frozenset({"client.read", "work.read", "task.read", "exception.read", "insurance.read"})
 READ_ALL = CAPS | {"record.read_all"}
-NOW = datetime(2026, 7, 16, 9, 0, tzinfo=FIRM_TZ)
+# Anchor to the real clock. Signal tests inject now=NOW, but the render-path routes
+# (dashboard/meeting brief/client workspace) evaluate review cadence against the live
+# datetime.now(); a pinned date drifts out of the "due soon" window as time passes and
+# the opportunities stop rendering. Seeds are all relative to TODAY, so anchoring here
+# keeps both the injected-now and real-clock paths consistent on any day.
+NOW = datetime.now(FIRM_TZ).replace(hour=9, minute=0, second=0, microsecond=0)
 TODAY = NOW.date()
 
 
