@@ -182,11 +182,95 @@ def opportunities(principal, ctx):
     return {"pipeline": pipeline, "recommendations": recs}
 
 
+_SUPPORTED_SOURCES = ("TaxDome", "Drake", "SharePoint", "Schwab", "AssetMark", "Upload",
+                      "Scanner", "Email")
+
+
+def _source_badge(row):
+    """One canonical document, many sources (ADR-072). Today a row carries a single source in tags;
+    derive the badge honestly (multi-source references arrive with the document_sources table)."""
+    tags = row.get("tags") or {}
+    ss = str(tags.get("source_system") or "").lower()
+    prov = str(row.get("storage_provider") or "").lower()
+    for key, badge in (("taxdome", "TaxDome"), ("drake", "Drake"), ("sharepoint", "SharePoint"),
+                       ("microsoft", "SharePoint"), ("schwab", "Schwab"), ("assetmark", "AssetMark"),
+                       ("scan", "Scanner"), ("email", "Email")):
+        if key in ss:
+            return badge
+    if prov in ("client360 local", "local", ""):
+        return "Upload"
+    return row.get("storage_provider") or "Upload"
+
+
+def _owner_label(row):
+    if row.get("household_id"):
+        return "Household"
+    if row.get("organization_id"):
+        return "Business/Trust/Estate"
+    if row.get("person_id"):
+        return "Client"
+    return "Unassigned"
+
+
+def enrich_documents(rows):
+    """Map canonical document rows into the Documents-tab view model (shared by the person and
+    household compositions). Duplicate detection is by SHA-256 over the given set. OCR/AI and true
+    multi-source references are surfaced honestly as pending — never fabricated."""
+    from collections import Counter
+    sha_counts = Counter(r.get("sha256") for r in rows if r.get("sha256"))
+    docs = []
+    for r in rows:
+        tags = r.get("tags") or {}
+        sha = r.get("sha256")
+        docs.append({
+            "id": r["id"], "name": r.get("original_name") or f"Document {r['id']}",
+            "document_type": tags.get("document_type") or r.get("subcategory"),
+            "category": r.get("category") or tags.get("category"),
+            "tax_year": tags.get("tax_year") or tags.get("year"),
+            "owner_label": _owner_label(r), "provenance": r.get("provenance"),
+            "person_id": r.get("person_id"), "household_id": r.get("household_id"),
+            "organization_id": r.get("organization_id"),
+            "source": _source_badge(r),
+            "review_status": r.get("review_status"),
+            "ocr_status": r.get("ocr_status"),          # real column; pending until the OCR phase
+            "ai_status": None,                          # not implemented — shown as pending, never faked
+            "is_duplicate": bool(sha and sha_counts.get(sha, 0) > 1),
+            "duplicate_count": sha_counts.get(sha, 0) if sha else 0,
+            "version_count": r.get("current_version") or 1,
+            "created_at": r.get("created_at"), "updated_at": r.get("updated_at"),
+            "taxdome_folder": tags.get("taxdome_folder"),
+            "source_path": tags.get("source_path"),
+            "sha256": sha,
+        })
+    return docs
+
+
+def documents_view_model(docs):
+    """The full Documents-tab section payload (list + supported sources + unassigned worklist + honest
+    capability flags), shared by both compositions."""
+    return {
+        "documents": docs,
+        "supported_sources": list(_SUPPORTED_SOURCES),
+        "unassigned": _safe_unassigned(),
+        "ocr_enabled": False, "ai_extraction_enabled": False, "multi_source_enabled": False,
+    }
+
+
 def documents(principal, ctx):
-    """Client documents (uploads / classification / review status) via the document platform."""
+    """The client's unified canonical document list — the Documents tab's operating center. One row per
+    canonical document (ADR-072), scoped to this client's ownership (ADR-073)."""
     from app.services.document_platform.relationships import documents_for_entity
     et, eid = ctx["entity_type"], ctx["entity_id"]
-    return {"documents": documents_for_entity(principal, et, eid, limit=25)}
+    rows = documents_for_entity(principal, et, eid, limit=200)
+    return documents_view_model(enrich_documents(rows))
+
+
+def _safe_unassigned():
+    try:
+        from app.services.households import unresolved_taxdome_folders
+        return unresolved_taxdome_folders(limit=25)
+    except Exception:      # noqa: BLE001 — the worklist must never break the Documents tab
+        return []
 
 
 def vault(principal, ctx):

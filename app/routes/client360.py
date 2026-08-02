@@ -7,8 +7,8 @@ the page is gated by `client.read`. `/client/.../diagnostics` reuses `observabil
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
@@ -65,6 +65,29 @@ def household_diagnostics_route(
     from app.services.client360.governance import validate_household360
     return JSONResponse(as_json({"diagnostics": household_diagnostics(principal, household_id=household_id),
                                  "governance": validate_household360(principal)}))
+
+
+@router.post("/documents/resolve")
+def resolve_document_ownership(
+        request: Request, folder: str = Form(...), household_id: int | None = Form(None),
+        person_id: int | None = Form(None), return_to: str = Form("/"),
+        principal: Principal = Depends(require_capability("client.write"))):
+    """In-product Resolve Ownership: link an unassigned TaxDome folder's documents to an existing
+    household or person. Reuses the household ownership service (audited, fills NULLs only — no new
+    ownership logic, no duplicate rows). This replaces the PowerShell repair for staff."""
+    from app.security.authorization import record_in_scope
+    from app.services.households import resolve_folder_ownership
+    if household_id is not None and not record_in_scope(principal, "household", household_id):
+        return render_error(request, 404, detail="Household not found.")
+    if person_id is not None and not record_in_scope(principal, "person", person_id):
+        return render_error(request, 404, detail="Client not found.")
+    try:
+        resolve_folder_ownership(folder, household_id=household_id, person_id=person_id,
+                                 actor_user_id=principal.user_id,
+                                 request_id=getattr(request.state, "request_id", None))
+    except ValueError as exc:
+        return render_error(request, 400, detail=str(exc))
+    return RedirectResponse(return_to or "/", status_code=303)
 
 
 @router.get("/{person_id}", response_class=HTMLResponse)

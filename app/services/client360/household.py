@@ -263,17 +263,20 @@ def _opportunities(principal, ctx):
 
 
 def _documents(principal, ctx):
-    """Household-anchored documents UNION per-member documents, deduped by document id."""
+    """Household-anchored documents UNION per-member documents, deduped by document id — rendered as the
+    same canonical Documents operating center as the person workspace (shared enrichment)."""
+    from app.services.client360.sections import documents_view_model, enrich_documents
     from app.services.document_platform.relationships import documents_for_entity
-    seen, docs = set(), []
+    seen, rows = set(), []
     for et, eid in [("household", ctx["household_id"])] + [("person", p) for p in ctx["member_ids"]]:
         for d in _safe(lambda e=et, i=eid: documents_for_entity(principal, e, i, limit=50), []):
             if d["id"] in seen:
                 continue
             seen.add(d["id"])
             d["provenance"] = et
-            docs.append(d)
-    return {"documents": docs, "deduped_by": "document_id", "count": len(docs)}
+            rows.append(d)
+    return {**documents_view_model(enrich_documents(rows)), "deduped_by": "document_id",
+            "count": len(rows)}
 
 
 def _meetings(principal, ctx):

@@ -211,6 +211,53 @@ def unresolved_taxdome_folders(*, limit: int = 200) -> list[dict]:
     return out
 
 
+def duplicate_candidates(sha256_hex, *, limit: int = 20) -> list[dict]:
+    """Documents sharing a content hash — the compare-duplicates candidate set (canonical de-dup by
+    SHA-256, ADR-072). Read-only; never merges."""
+    if not sha256_hex:
+        return []
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(documents.c.id, documents.c.original_name, documents.c.person_id,
+                   documents.c.household_id, documents.c.organization_id,
+                   documents.c.storage_provider, documents.c.created_at)
+            .where(documents.c.sha256 == sha256_hex, documents.c.archived.is_(False))
+            .order_by(documents.c.id).limit(limit)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None,
+                             actor_user_id=None, request_id=None, dry_run: bool = False) -> dict:
+    """Link a TaxDome folder's currently-unlinked documents to an existing household and/or person —
+    the in-product, audited replacement for the ``--repair-links`` CLI for a single folder. Fills NULL
+    ownership only (never overwrites a manual link, never creates a duplicate row). No new ownership
+    logic: reuses the same folder-link the sync uses."""
+    if household_id is None and person_id is None:
+        raise ValueError("a household_id or person_id is required")
+    from app.importers import taxdome_drive as td
+    if dry_run:
+        base = and_(td.taxdome_filter(documents),
+                    documents.c.tags["taxdome_folder"].astext == folder_name)
+        with engine.connect() as conn:
+            n = 0
+            if person_id is not None:
+                n += conn.execute(select(func.count()).select_from(documents)
+                                  .where(and_(base, documents.c.person_id.is_(None)))).scalar() or 0
+            if household_id is not None:
+                n += conn.execute(select(func.count()).select_from(documents)
+                                  .where(and_(base, documents.c.household_id.is_(None)))).scalar() or 0
+        return {"folder": folder_name, "documents_updated": n, "dry_run": True}
+    with engine.begin() as conn:
+        updated = td._apply_folder_link(conn, documents, folder_name, household_id, person_id)
+        if actor_user_id is not None and updated:
+            from app.security.audit import write_audit_event
+            write_audit_event(action="document.ownership_resolved", entity_type="taxdome_folder",
+                              entity_id=folder_name, actor_user_id=actor_user_id, request_id=request_id,
+                              metadata={"folder": folder_name, "household_id": household_id,
+                                        "person_id": person_id, "documents_updated": updated})
+    return {"folder": folder_name, "documents_updated": updated, "dry_run": False}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="python -m app.services.households",

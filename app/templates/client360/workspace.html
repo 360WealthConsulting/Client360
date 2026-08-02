@@ -175,12 +175,60 @@
   <article class="card">{% for m in sec.previous %}<div class="detail-row"><span>{{ m.title }}</span><strong class="subtle">{{ m.event_time[:16] if m.event_time else "" }}</strong></div>{% else %}{% call ui.empty("No previous meetings") %}{% endcall %}{% endfor %}</article>
 
 {% elif active_tab == "documents" %}
+  {# The firm's document operating center for this client: ONE canonical document list (ADR-072),
+     scoped by ownership (ADR-073). OCR/AI and true multi-source references are shown honestly as
+     pending until those systems land — never fabricated. #}
   <h2 class="section-title">Documents</h2>
+  <p class="subtle">One canonical document per file; sources attach as references — never duplicate rows.
+    OCR &amp; AI extraction: <strong>pending</strong> (enabled in a later phase).</p>
   <article class="card"><div class="table-wrap"><table class="data">
-    <thead><tr><th>Document</th><th>Classification</th><th>Status</th></tr></thead><tbody>
-    {% for d in sec.documents %}<tr><td><a href="/document-library/{{ d.id }}">{{ d.original_name or d.name or ("Document " ~ d.id) }}</a></td><td>{{ d.classification or "—" }}</td><td><span class="subtle">{{ d.status or d.review_status or "—" }}</span></td></tr>
-    {% else %}<tr><td colspan="3">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
+    <thead><tr><th>Document</th><th>Type · Year</th><th>Owner</th><th>Source</th><th>Review</th>
+      <th>OCR / AI</th><th>Ver</th><th>Modified</th><th>Actions</th></tr></thead><tbody>
+    {% for d in sec.documents %}
+      <tr>
+        <td><a href="/documents/{{ d.id }}/download">{{ d.name }}</a>
+          {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
+        <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}</td>
+        <td>{{ d.owner_label }}</td>
+        <td>{{ d.source }}</td>
+        <td><span class="subtle">{{ d.review_status or "—" }}</span></td>
+        <td><span class="subtle">{{ (d.ocr_status or "pending") }} / pending</span></td>
+        <td>{{ d.version_count }}</td>
+        <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
+        <td>
+          <a href="/documents/{{ d.id }}/download">Open</a>
+          {% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}
+          {% if d.source_path %} · <span class="subtle" title="{{ d.source_path }}">Source</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="9">{% call ui.empty("No documents", "No documents are linked to this client yet.") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>
+
+  {% if sec.unassigned %}
+  <h2 class="section-title">Unassigned documents — resolve ownership</h2>
+  <p class="subtle">TaxDome folders not yet attached to a client. Resolve them here — no PowerShell required.</p>
+  {% for u in sec.unassigned %}
+  <article class="card">
+    <div class="detail-row"><strong>{{ u.folder }}</strong><span class="subtle">{{ u.files }} document(s)</span></div>
+    <form method="post" action="/client/documents/resolve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:8px">
+      <input type="hidden" name="folder" value="{{ u.folder }}">
+      <input type="hidden" name="return_to" value="{{ base }}?tab=documents">
+      {% if u.resolves_to.household_id %}
+        <input type="hidden" name="household_id" value="{{ u.resolves_to.household_id }}">
+        <button class="btn sm" type="submit">Link to matched household</button>
+      {% elif u.resolves_to.person_id %}
+        <input type="hidden" name="person_id" value="{{ u.resolves_to.person_id }}">
+        <button class="btn sm" type="submit">Link to matched client</button>
+      {% else %}
+        <label class="subtle">Link to person id <input class="input" type="number" name="person_id" style="max-width:110px"></label>
+        <label class="subtle">or household id <input class="input" type="number" name="household_id" style="max-width:110px"></label>
+        <button class="btn sm secondary" type="submit">Resolve</button>
+      {% endif %}
+    </form>
+    {% if u.suggestions %}<p class="subtle" style="margin-top:6px">Candidates: {% for s in u.suggestions %}{{ s.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  </article>
+  {% endfor %}
+  {% endif %}
 
 {% elif active_tab == "vault" %}
   <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">
