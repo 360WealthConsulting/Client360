@@ -29,6 +29,14 @@ CLI::
     python -m app.importers.taxdome_drive --source-root Z:\\
     python -m app.importers.taxdome_drive --destination-root C:\\Client360\\Data\\Documents\\TaxDome
     python -m app.importers.taxdome_drive --purge-missing        # explicit; never automatic
+
+Forward compatibility (see docs/adr/ADR-011-canonical-document-model.md): the ``documents`` row IS the
+canonical document (``documents.id`` is its stable id). ``storage_provider="Client360 Local"`` +
+``storage_uri`` are the canonical local copy; the TaxDome **origin** is a *source reference* held in
+``tags`` (``source_system``/``source_root``/``source_path``/…) alongside the content ``sha256``. That is
+exactly the data a future ``document_sources`` table backfills, so adopting the canonical multi-source
+model is an additive migration — no identity rework and no duplicate cleanup. Ownership
+(``person_id``/``household_id``) is a relationship only and never participates in document identity.
 """
 from __future__ import annotations
 
