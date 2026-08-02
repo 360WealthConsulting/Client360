@@ -75,10 +75,15 @@ def search_contacts(
 
 
 @router.get("/search")
-def search_page(request: Request, q: str = ""):
-    rows = _search(q) if len(q.strip()) >= 2 else []
+def search_page(request: Request, q: str = "", kind: str = "", active: bool = False,
+                archived: bool = False):
+    """Universal Search — the single entry point. Resolves people, households, businesses, trusts,
+    estates, documents, and tax returns (record-scoped) and opens the correct Client Workspace."""
+    from app.services.universal_search import universal_search
+    principal = getattr(request.state, "principal", None)
+    data = (universal_search(principal, q, types=[kind] if kind else None,
+                             active_only=active, include_archived=archived)
+            if principal and len(q.strip()) >= 2 else {"query": q, "results": [], "count": 0, "notes": []})
     return templates.TemplateResponse(
-        request=request,
-        name="search/results.html",
-        context={"q": q, "rows": [dict(r) for r in rows], "count": len(rows)},
-    )
+        request=request, name="search/universal.html",
+        context={"q": q, "data": data, "kind": kind, "active": active, "archived": archived})
