@@ -255,8 +255,29 @@ def documents_view_model(docs):
         "documents": docs,
         "supported_sources": list(_SUPPORTED_SOURCES),
         "unassigned": _safe_unassigned(),
-        "ocr_enabled": False, "ai_extraction_enabled": False, "multi_source_enabled": False,
+        "ocr_enabled": True, "ai_extraction_enabled": False, "multi_source_enabled": False,
     }
+
+
+def _attach_ocr(docs):
+    """Attach each canonical document's OCR record (status, completed date, searchable-text flag) for
+    the Documents tab. OCR enriches the canonical document (ADR-072) — read-only here."""
+    try:
+        from app.services.document_ocr import ocr_for_documents
+        recs = ocr_for_documents([d["id"] for d in docs])
+    except Exception:      # noqa: BLE001 — OCR state must never break the Documents tab
+        recs = {}
+    for d in docs:
+        rec = recs.get(d["id"])
+        if rec:
+            d["ocr_status"] = rec["status"]
+            d["ocr_completed_at"] = rec.get("ocr_completed_at")
+            d["ocr_page_count"] = rec.get("page_count")
+            d["searchable_text"] = rec["status"] == "completed" and (rec.get("char_count") or 0) > 0
+        else:
+            d.setdefault("ocr_completed_at", None)
+            d["searchable_text"] = False
+    return docs
 
 
 def _attach_source_refs(docs):
@@ -282,7 +303,7 @@ def documents(principal, ctx):
     from app.services.document_platform.relationships import documents_for_entity
     et, eid = ctx["entity_type"], ctx["entity_id"]
     rows = documents_for_entity(principal, et, eid, limit=200)
-    return documents_view_model(_attach_source_refs(enrich_documents(rows)))
+    return documents_view_model(_attach_ocr(_attach_source_refs(enrich_documents(rows))))
 
 
 def _safe_unassigned():

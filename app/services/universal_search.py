@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import or_, select
+from sqlalchemy import Text, cast, or_, select
 
 from app.db import (
     accounts,
+    document_ocr,
     documents,
     engine,
     households,
@@ -138,7 +139,12 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
         # --- Documents (name / tax year) ---
         if _wanted("document"):
             year = q if re.fullmatch(r"\d{4}", q) else None
-            conds = [documents.c.original_name.ilike(like)]
+            # Match filename, OCR text (extracted document contents), and metadata (tags).
+            ocr_hits = select(document_ocr.c.document_id).where(
+                document_ocr.c.status == "completed", document_ocr.c.text.ilike(like))
+            conds = [documents.c.original_name.ilike(like),
+                     documents.c.id.in_(ocr_hits),
+                     cast(documents.c.tags, Text).ilike(like)]
             if year:
                 conds.append(documents.c.tags["tax_year"].astext == year)
             stmt = select(documents.c.id, documents.c.original_name, documents.c.person_id,
