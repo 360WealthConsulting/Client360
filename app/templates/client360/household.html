@@ -175,9 +175,55 @@
   <p class="subtle"><a href="/work?household_id={{ ws.entity_id }}">Open in Work Queue →</a></p>
 
 {% elif active_tab == "tax" %}
-  <h2 class="section-title">Tax by member</h2>
-  <article class="card">{% for m in sec.members %}<div class="detail-row"><span><a href="/client/{{ m.person_id }}?tab=tax">{{ m.name }}</a></span><strong class="subtle">{{ m.engagements }} engagement(s)</strong></div>{% else %}{% call ui.empty("No tax records") %}{% endcall %}{% endfor %}</article>
-  <p class="subtle">{{ sec.note }}</p>
+  {% set ss = sec.status_summary %}
+  <h2 class="section-title">Tax status</h2>
+  {% if not ss or ss.status == "no_data" %}
+    {% call ui.empty("No tax engagements", "No tax returns are recorded for this household yet.") %}{% endcall %}
+  {% else %}
+  <section class="stat-grid">
+    <article class="card"><span class="detail-label">Current return</span><h2>{{ ss.current.year }} · {{ ss.current.return_type }}</h2></article>
+    <article class="card"><span class="detail-label">Status</span><h2>{{ (ss.current.status or "—")|replace("_"," ") }}</h2></article>
+    <article class="card"><span class="detail-label">Filed / Accepted</span><h2>{{ "Yes" if ss.filed else "No" }} / {{ "Yes" if ss.accepted else "—" }}</h2></article>
+    <article class="card"><span class="detail-label">Next deadline</span><h2>{{ ss.next_deadline or "—" }}</h2></article>
+    <article class="card"><span class="detail-label">Missing / Exceptions / Tasks</span><h2>{{ ss.open_missing }} / {{ ss.open_exceptions }} / {{ ss.open_tasks }}</h2></article>
+  </section>
+  {% endif %}
+
+  <h2 class="section-title">Return history</h2>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Year</th><th>Type</th><th>Jurisdiction</th><th>Status</th><th>Filed</th><th>Return document</th></tr></thead><tbody>
+    {% for r in sec.return_history.returns %}
+      <tr><td>{{ r.year }}</td><td>{{ r.return_type }}</td><td>{{ r.jurisdiction or "—" }}</td>
+        <td>{{ (r.status or "—")|replace("_"," ") }}</td>
+        <td class="subtle">{{ r.filed_at.strftime("%Y-%m-%d") if r.filed_at else "—" }}</td>
+        <td>{% for d in r.documents %}<a href="/documents/{{ d.id }}/download">{{ d.name }}</a>{% if not loop.last %}, {% endif %}{% else %}<span class="subtle">—</span>{% endfor %}</td></tr>
+    {% else %}<tr><td colspan="6">{% call ui.empty("No returns") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+
+  <h2 class="section-title">Missing documents &amp; exceptions</h2>
+  <article class="card">
+    {% for m in sec.missing_and_exceptions.missing_items %}<div class="detail-row"><span>{{ m.title }} <span class="subtle">({{ m.item_type }})</span></span><strong class="subtle">{{ m.due_date or m.status }}</strong></div>{% endfor %}
+    {% for e in sec.missing_and_exceptions.exceptions %}<div class="detail-row"><span><a href="/exceptions/{{ e.id }}">{{ e.title or "Tax exception" }}</a></span><strong class="subtle">{{ e.severity }}</strong></div>{% endfor %}
+    {% if not sec.missing_and_exceptions.missing_items and not sec.missing_and_exceptions.exceptions %}{% call ui.empty("Nothing outstanding") %}{% endcall %}{% endif %}
+  </article>
+
+  <h2 class="section-title">Acknowledgements &amp; filing evidence</h2>
+  <article class="card">
+    {% if sec.acknowledgements.status == "available" %}
+      {% for e in sec.acknowledgements.events %}<div class="detail-row"><span>{{ e.filing_status }}{% if e.provider_key %} · {{ e.provider_key }}{% endif %}{% if e.submission_id %} · {{ e.submission_id }}{% endif %}</span><strong class="subtle">{{ e.created_at.strftime("%Y-%m-%d") if e.created_at else "" }}</strong></div>{% endfor %}
+    {% else %}{% call ui.empty("No filing evidence", sec.acknowledgements.note or "No acknowledgements recorded yet.") %}{% endcall %}{% endif %}
+  </article>
+
+  <h2 class="section-title">Estimated payments</h2>
+  <article class="card">{% call ui.empty("Not connected", sec.estimated_payments.note) %}{% endcall %}</article>
+  <h2 class="section-title">Carryforwards &amp; planning</h2>
+  <article class="card">{% call ui.empty("Requires review", sec.carryforwards_planning.note) %}{% endcall %}</article>
+
+  <h2 class="section-title">K-1 tracking</h2>
+  <article class="card">{% for k in sec.k1_tracking.k1_items %}<div class="detail-row"><span>{{ k.title }}</span><strong class="subtle">{{ k.status }}</strong></div>{% else %}{% call ui.empty("No K-1 items", sec.k1_tracking.note) %}{% endcall %}{% endfor %}</article>
+
+  <h2 class="section-title">Filing timeline</h2>
+  <article class="card">{% for ev in sec.filing_timeline.events %}<div class="detail-row"><span>{{ ev.label }}{% if ev.detail %} — {{ ev.detail }}{% endif %}</span><strong class="subtle">{{ ev.at.strftime("%Y-%m-%d") if ev.at else "" }}</strong></div>{% else %}{% call ui.empty("No tax timeline events") %}{% endcall %}{% endfor %}</article>
 
 {% elif active_tab == "insurance" %}
   <h2 class="section-title">Insurance by member</h2>

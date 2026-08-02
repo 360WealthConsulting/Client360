@@ -141,15 +141,18 @@ def financial(principal, ctx):
 
 
 def tax(principal, ctx):
-    """Tax engagement summary + open tax exceptions (returns/filing/extensions/missing-docs/estimated
-    payments are engagement-keyed, not person-keyed — surfaced via exceptions + the deep link)."""
-    from app.services.exception_engine import open_exceptions_for_client
-    from app.services.tax_domain import client_engagement_summary
+    """The Tax tab — the client's tax operating center, composed from the authoritative tax domain
+    (engagements/returns/missing items/filing events/lifecycle/deadlines) plus exceptions/tasks/timeline.
+    See app.services.client360.tax_workspace. Keeps ``open_exceptions``/``engagements`` keys so the
+    Dashboard's missing-tax-items card keeps working."""
+    from app.services.client360.tax_workspace import build_tax_workspace
     pid, hid = _pid(ctx), _hid(ctx)
-    engagements = client_engagement_summary(pid, hid) if pid else {"active": 0}
-    tax_exc = [e for e in open_exceptions_for_client(pid, hid) if e.get("domain") == "tax"] if pid else []
-    return {"engagements": engagements, "open_exceptions": tax_exc,
-            "note": "Return/filing detail opens on the Tax surface."}
+    scope = list(ctx.get("scope_ids") or ([pid] if pid else []))
+    tws = build_tax_workspace(principal, person_id=pid, household_id=hid, scope_ids=scope) if pid else {}
+    if tws:
+        tws["open_exceptions"] = tws.get("missing_and_exceptions", {}).get("exceptions", [])
+        tws["engagements"] = {"active": tws.get("status_summary", {}).get("return_count", 0)}
+    return tws or {"open_exceptions": [], "engagements": {"active": 0}}
 
 
 def insurance(principal, ctx):
