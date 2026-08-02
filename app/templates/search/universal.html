@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Search | Client360{% endblock %}
+{% block crumb %}Search{% endblock %}
+{% block content %}
+{% call ui.page_head("Universal search", eyebrow="Client360", desc="Search once — open the client. People, households, businesses, trusts, estates, documents, and tax returns.") %}{% endcall %}
+
+<form method="get" action="/search" class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone, EIN, account #, policy #, document, tax year…" style="flex:1; min-width:280px" autofocus>
+  <select class="input" name="kind">
+    <option value="">All types</option>
+    {% for k,label in [("person","People"),("household","Households"),("business","Businesses"),("trust","Trusts"),("estate","Estates"),("document","Documents"),("tax_return","Tax returns")] %}
+      <option value="{{ k }}" {{ 'selected' if kind == k }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <label class="subtle" style="display:flex;align-items:center;gap:5px"><input type="checkbox" name="active" value="true" {{ 'checked' if active }}> Active only</label>
+  <label class="subtle" style="display:flex;align-items:center;gap:5px"><input type="checkbox" name="archived" value="true" {{ 'checked' if archived }}> Include archived</label>
+  <button class="btn" type="submit">Search</button>
+</form>
+
+{% for note in data.notes %}<div class="banner banner-warn" role="status">{{ note }}</div>{% endfor %}
+
+{% if q|length >= 2 %}
+  <p class="subtle">{{ data.count }} result{{ "" if data.count == 1 else "s" }} for “{{ q }}”</p>
+  <article class="card"><div class="table-wrap"><table class="data">
+    <thead><tr><th>Name</th><th>Type</th><th>Household / details</th><th>Source</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for r in data.results %}
+      <tr>
+        <td><strong>{% if r.workspace_url %}<a href="{{ r.workspace_url }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</strong>{% if r.tax_year %} <span class="subtle">· {{ r.tax_year }}</span>{% endif %}</td>
+        <td>{{ r.entity_type|replace("_"," ")|capitalize }}</td>
+        <td class="subtle">{{ r.subtitle }}</td>
+        <td>{{ r.source or "—" }}</td>
+        <td><span class="subtle">{{ r.quick_status or "—" }}</span></td>
+        <td>
+          {% if r.workspace_url %}<a href="{{ r.workspace_url }}">Open workspace</a>{% endif %}
+          {% if r.open_url %}{% if r.workspace_url %} · {% endif %}<a href="{{ r.open_url }}">Open document</a>{% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="6">{% call ui.empty("No matches", "No records match your search in your scope.") %}{% endcall %}</td></tr>{% endfor %}
+    </tbody></table></div></article>
+{% else %}
+  {% call ui.empty("Start typing", "Enter at least two characters to search across every client record.") %}{% endcall %}
+{% endif %}
+{% endblock %}
