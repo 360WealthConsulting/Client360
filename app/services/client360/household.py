@@ -268,6 +268,7 @@ def _documents(principal, ctx):
     """Household-anchored documents UNION per-member documents, deduped by document id — rendered as the
     same canonical Documents operating center as the person workspace (shared enrichment)."""
     from app.services.client360.sections import (
+        _attach_classification,
         _attach_ocr,
         _attach_source_refs,
         documents_view_model,
@@ -282,7 +283,8 @@ def _documents(principal, ctx):
             seen.add(d["id"])
             d["provenance"] = et
             rows.append(d)
-    return {**documents_view_model(_attach_ocr(_attach_source_refs(enrich_documents(rows)))),
+    return {**documents_view_model(
+                _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows))))),
             "deduped_by": "document_id", "count": len(rows)}
 
 

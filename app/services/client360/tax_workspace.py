@@ -205,6 +205,8 @@ def build_tax_workspace(principal, *, person_id=None, household_id=None, scope_i
         timeline = _safe(lambda: _timeline(conn, return_ids), [])
         tax_tasks = _safe(lambda: _tax_tasks(conn, scope_ids), [])
 
+    from app.services.knowledge_pipeline import tax_facts_for_scope
+    extracted = _safe(lambda: tax_facts_for_scope(scope_ids, household_id), [])
     tax_exceptions = _safe(
         lambda: [e for e in _open_exceptions(person_id, household_id, scope_ids)
                  if e.get("domain") == "tax"], [])
@@ -254,6 +256,12 @@ def build_tax_workspace(principal, *, person_id=None, household_id=None, scope_i
                           for r in returns if r.get("due_date")]},
         "tax_tasks": {"status": AVAILABLE if tax_tasks else NO_DATA, "tasks": tax_tasks},
         "filing_timeline": {"status": AVAILABLE if timeline else NO_DATA, "events": timeline},
+        # Knowledge layer (Phase 6A): unverified facts extracted from the client's documents. Clearly
+        # labeled — never treated as authoritative tax data, never fabricated.
+        "extracted_facts": {
+            "status": AVAILABLE if extracted else NO_DATA, "facts": extracted,
+            "note": "Unverified facts extracted from documents by the Knowledge layer — confirm before "
+                    "relying on them."},
     }
 
 

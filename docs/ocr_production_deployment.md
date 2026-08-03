@@ -3,7 +3,7 @@
 The OCR **service** (schema, status, retry/reprocess, search, audit, workspace display) shipped in PR 5A.
 PR 5B adds the concrete **extraction backend** (`app/services/ocr_backend.py`) and the **operational
 runner** (`app/jobs/ocr_runner.py`). OCR enriches the canonical document (ADR-072) — no second document
-system, no OCR pages, no schema change (Alembic head remains `dococr01`).
+system, no OCR pages, no schema change (Alembic head is `docknow01`).
 
 The backend imports its heavy dependencies lazily, so the app and CI run without them; a Windows Server
 becomes OCR-capable only after the steps below.
@@ -82,14 +82,14 @@ Confirms every library imports and the Tesseract binary is reachable **before** 
 Expect `OCR backend preflight: OK` and a printed `engine: tesseract 5.3.x`. A non-zero exit means a
 library or the binary is missing (the output lists exactly which).
 
-## 6. Apply database migrations (head `dococr01`)
+## 6. Apply database migrations (head `docknow01`)
 
 ```
 .venv\Scripts\python -m app.deploy.migrate
 .venv\Scripts\alembic current
 ```
 
-`alembic current` must report `dococr01` (the `document_ocr` table from PR 5A). PR 5B adds **no** new
+`alembic current` must report the current head `docknow01` (the `document_ocr` table from PR 5A is included). PR 5B adds **no** new
 migration.
 
 ## 7. One-document OCR validation
@@ -204,7 +204,7 @@ WHERE action = 'document.ocr_run' ORDER BY occurred_at DESC LIMIT 20;
 | Action | Command |
 |--------|---------|
 | Preflight | `python -m app.services.ocr_backend --preflight` |
-| Migrate | `python -m app.deploy.migrate` (head `dococr01`) |
+| Migrate | `python -m app.deploy.migrate` (head `docknow01`) |
 | One document | `python -m app.jobs.ocr_runner --mode reprocess --document-id <id>` |
 | Initial batch | `python -m app.jobs.ocr_runner --mode initial --batch-size 50` |
 | Incremental | `python -m app.jobs.ocr_runner --mode incremental --batch-size 50` |

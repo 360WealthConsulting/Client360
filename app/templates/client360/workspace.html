@@ -89,6 +89,25 @@
         <div class="detail-row"><span>{{ r.title or r.summary or r.message }}</span></div>
       {% else %}{% call ui.empty("No planning opportunities") %}{% endcall %}{% endfor %}
     </article>
+    {# Knowledge layer (Phase 6A): document intelligence surfaced on the existing Dashboard. #}
+    <article class="card">
+      <h2 class="section-title">Newly classified documents</h2>
+      {% for d in sec.newly_classified %}
+        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.doc_type|replace("_"," ") }} · {{ (d.confidence * 100)|round|int }}%</span></div>
+      {% else %}{% call ui.empty("No newly classified documents") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Possible compliance issues</h2>
+      {% for d in sec.compliance_issues %}
+        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.doc_type|replace("_"," ") }}</span></div>
+      {% else %}{% call ui.empty("No compliance notices identified") %}{% endcall %}{% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="section-title">Missing / unidentified documents</h2>
+      {% for d in sec.missing_document_alerts %}
+        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">needs identification</span></div>
+      {% else %}{% call ui.empty("No unidentified documents") %}{% endcall %}{% endfor %}
+    </article>
     <article class="card">
       <h2 class="section-title">Recent activity</h2>
       {% for a in sec.recent_activity %}
@@ -229,7 +248,11 @@
       <tr>
         <td><a href="/documents/{{ d.id }}/download">{{ d.name }}</a>
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
-        <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}</td>
+        {# Type + Knowledge layer (Phase 6A): classified document type, classifier confidence, and
+           structured-extraction status — surfaced inline, no Intelligence-specific screen. #}
+        <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}
+          {% if d.classification_confidence is not none %}<br><span class="subtle" title="Classifier {{ d.classified_type }} ({{ d.classification_confidence }})">🏷 {{ (d.classification_confidence * 100)|round|int }}% conf</span>{% endif %}
+          {% if d.extraction_status and d.extraction_status != "pending" %}<br><span class="subtle" title="Structured facts extracted">🧠 {{ d.extraction_status }}{% if d.fact_count %} · {{ d.fact_count }} facts{% endif %}</span>{% endif %}</td>
         <td>{{ d.owner_label }}</td>
         {# Source references (ADR-072): every source shown; an external (http) source_uri links out to
            the originating system. Generic across TaxDome/Drake/SharePoint/… — no per-source UI. #}
@@ -455,6 +478,15 @@
   <h2 class="section-title">Filing timeline</h2>
   <article class="card">
     {% for ev in sec.filing_timeline.events %}<div class="detail-row"><span>{{ ev.label }}{% if ev.detail %} — {{ ev.detail }}{% endif %}</span><strong class="subtle">{{ ev.at.strftime("%Y-%m-%d") if ev.at else "" }}</strong></div>{% else %}{% call ui.empty("No tax timeline events") %}{% endcall %}{% endfor %}
+  </article>
+
+  {# Knowledge layer (Phase 6A): facts extracted from documents — unverified, clearly labeled. #}
+  <h2 class="section-title">From documents <span class="subtle">· extracted, unverified</span></h2>
+  <article class="card">
+    {% if sec.extracted_facts and sec.extracted_facts.status == "available" %}
+      {% for f in sec.extracted_facts.facts %}<div class="detail-row"><span>{{ f.fact_type|replace("_"," ") }}: <strong>{{ f.fact_value }}</strong></span><span class="subtle">{{ f.original_name }} · {{ (f.confidence * 100)|round|int }}%</span></div>{% endfor %}
+      <p class="subtle">{{ sec.extracted_facts.note }}</p>
+    {% else %}{% call ui.empty("No extracted facts", "The Knowledge layer has not extracted tax facts from this client's documents yet.") %}{% endcall %}{% endif %}
   </article>
 
 {% elif active_tab == "insurance" %}
