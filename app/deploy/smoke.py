@@ -38,13 +38,24 @@ def auth_gating() -> dict:
             "public_missing": public_ok, "gated_leaking": gated_leaks}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Do NOT follow redirects — a gated staff route answers 302/303 (redirect to login), and the smoke
+    check must observe that status, not the 200 of the login page it would redirect to."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None      # returning None makes urllib raise HTTPError with the real 3xx code
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _http_status(url, timeout=10):
     req = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — operator-supplied URL
+        with _NO_REDIRECT_OPENER.open(req, timeout=timeout) as resp:  # noqa: S310 — operator-supplied URL
             return resp.status
     except urllib.error.HTTPError as exc:
-        return exc.code
+        return exc.code      # includes 302/303 for gated routes (redirects are no longer followed)
     except Exception:  # noqa: BLE001
         return None
 
