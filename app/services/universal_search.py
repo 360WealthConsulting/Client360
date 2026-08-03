@@ -19,6 +19,7 @@ from sqlalchemy import Text, cast, or_, select
 
 from app.db import (
     accounts,
+    document_classifications,
     document_ocr,
     documents,
     engine,
@@ -139,19 +140,26 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
         # --- Documents (name / tax year) ---
         if _wanted("document"):
             year = q if re.fullmatch(r"\d{4}", q) else None
-            # Match filename, OCR text (extracted document contents), and metadata (tags).
+            # Match filename, OCR text (extracted document contents), classified doc type, and
+            # metadata (tags).
             ocr_hits = select(document_ocr.c.document_id).where(
                 document_ocr.c.status == "completed", document_ocr.c.text.ilike(like))
+            class_hits = select(document_classifications.c.document_id).where(
+                document_classifications.c.doc_type.ilike(like))
             conds = [documents.c.original_name.ilike(like),
                      documents.c.id.in_(ocr_hits),
+                     documents.c.id.in_(class_hits),
                      cast(documents.c.tags, Text).ilike(like)]
             if year:
                 conds.append(documents.c.tags["tax_year"].astext == year)
-            stmt = select(documents.c.id, documents.c.original_name, documents.c.person_id,
-                          documents.c.household_id, documents.c.storage_provider,
-                          documents.c.tags["tax_year"].astext.label("tax_year"),
-                          documents.c.tags["source_system"].astext.label("source_system"),
-                          documents.c.archived).where(or_(*conds))
+            cls = document_classifications
+            stmt = (select(documents.c.id, documents.c.original_name, documents.c.person_id,
+                           documents.c.household_id, documents.c.storage_provider,
+                           documents.c.tags["tax_year"].astext.label("tax_year"),
+                           documents.c.tags["source_system"].astext.label("source_system"),
+                           documents.c.archived, cls.c.doc_type.label("doc_type"))
+                    .select_from(documents.outerjoin(cls, cls.c.document_id == documents.c.id))
+                    .where(or_(*conds)))
             if not include_archived:
                 stmt = stmt.where(documents.c.archived.is_(False))
             for r in conn.execute(stmt.limit(limit)).mappings():
@@ -160,12 +168,14 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
                     continue
                 owner_url = (f"/client/household/{r['household_id']}" if r["household_id"]
                              else (f"/client/{r['person_id']}" if r["person_id"] else None))
+                dt = (r["doc_type"] or "").replace("_", " ") if r["doc_type"] else ""
+                subtitle = " · ".join(x for x in (dt, r["tax_year"] or "") if x)
                 rows.append({"kind": "document", "id": r["id"], "name": r["original_name"],
                              "entity_type": "document", "household_id": r["household_id"],
-                             "subtitle": (r["tax_year"] or ""),
+                             "subtitle": subtitle,
                              "source": _doc_source(r), "quick_status": "archived" if r["archived"] else "",
                              "open_url": f"/documents/{r['id']}/download", "workspace_url": owner_url,
-                             "tax_year": r["tax_year"]})
+                             "tax_year": r["tax_year"], "doc_type": r["doc_type"]})
 
         # --- Tax returns (by year, return type, or client name) ---
         if _wanted("tax_return"):

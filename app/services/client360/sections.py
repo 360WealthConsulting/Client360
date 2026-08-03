@@ -50,11 +50,14 @@ def dashboard(principal, ctx):
         except Exception:      # noqa: BLE001 — one card must never break the whole Dashboard
             return default
 
+    pid0, hid0 = _pid(ctx), _hid(ctx)
     card = {
         "open_tasks": _safe(lambda: _dash_tasks(ctx), []),
         "recent_activity": [], "recent_documents": [], "documents_needing_review": [],
         "missing_tax_items": [], "tax_engagements": None, "upcoming_meetings": [],
         "planning_opportunities": [], "alerts": [],
+        # Knowledge layer (Phase 6A) — surfaced through the existing Dashboard, no new screen.
+        "newly_classified": [], "missing_document_alerts": [], "compliance_issues": [],
     }
     if principal.can("timeline.read"):
         card["recent_activity"] = _safe(lambda: timeline(principal, ctx).get("rows", [])[:8], [])
@@ -64,6 +67,15 @@ def dashboard(principal, ctx):
         card["documents_needing_review"] = [
             d for d in docs if str(d.get("review_status") or "").lower()
             in ("pending", "in_review", "needs_review", "review")][:8]
+        from app.services import knowledge_pipeline as _kp
+        _scope = [pid0] if pid0 else []
+        _hids = [hid0] if hid0 else []
+        card["newly_classified"] = _safe(
+            lambda: _kp.recently_classified(_scope, household_ids=_hids), [])
+        card["compliance_issues"] = _safe(
+            lambda: _kp.compliance_documents(_scope, household_ids=_hids), [])
+        card["missing_document_alerts"] = _safe(
+            lambda: _kp.unidentified_documents(_scope, household_ids=_hids), [])
     if principal.can("tax.read"):
         t = _safe(lambda: tax(principal, ctx), {})
         exc = t.get("open_exceptions", []) or []
@@ -282,6 +294,36 @@ def _attach_ocr(docs):
     return docs
 
 
+def _attach_classification(docs):
+    """Attach each canonical document's Knowledge-layer classification + extraction status (Phase 6A):
+    classified doc type, confidence, and how many structured facts were extracted. Read-only."""
+    try:
+        from app.services.knowledge_pipeline import (
+            classification_for_documents,
+            facts_for_documents,
+        )
+        ids = [d["id"] for d in docs]
+        cls = classification_for_documents(ids)
+        facts = facts_for_documents(ids)
+    except Exception:      # noqa: BLE001 — the Knowledge layer must never break the Documents tab
+        cls, facts = {}, {}
+    for d in docs:
+        c = cls.get(d["id"])
+        n_facts = len(facts.get(d["id"], []))
+        if c:
+            d["classified_type"] = c["doc_type"]
+            d["classification_confidence"] = float(c["confidence"]) if c["confidence"] is not None else None
+            # A classified type is the authoritative label to show; fall back to the tag-derived type.
+            d["document_type"] = d.get("document_type") or (
+                c["doc_type"] if c["doc_type"] != "unknown" else None)
+        else:
+            d["classified_type"] = None
+            d["classification_confidence"] = None
+        d["fact_count"] = n_facts
+        d["extraction_status"] = ("extracted" if n_facts else ("classified" if c else "pending"))
+    return docs
+
+
 def _attach_source_refs(docs):
     """Attach each canonical document's source references (ADR-072 multi-source) for the Documents tab."""
     try:
@@ -305,7 +347,8 @@ def documents(principal, ctx):
     from app.services.document_platform.relationships import documents_for_entity
     et, eid = ctx["entity_type"], ctx["entity_id"]
     rows = documents_for_entity(principal, et, eid, limit=200)
-    return documents_view_model(_attach_ocr(_attach_source_refs(enrich_documents(rows))))
+    return documents_view_model(
+        _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows)))))
 
 
 def _safe_unassigned():

@@ -149,7 +149,10 @@
       <tr>
         <td><a href="/documents/{{ d.id }}/download">{{ d.name }}</a>
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
-        <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}</td>
+        {# Type + Knowledge layer (Phase 6A): classified type, confidence, extraction status. #}
+        <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}
+          {% if d.classification_confidence is not none %}<br><span class="subtle" title="Classifier {{ d.classified_type }} ({{ d.classification_confidence }})">🏷 {{ (d.classification_confidence * 100)|round|int }}% conf</span>{% endif %}
+          {% if d.extraction_status and d.extraction_status != "pending" %}<br><span class="subtle" title="Structured facts extracted">🧠 {{ d.extraction_status }}{% if d.fact_count %} · {{ d.fact_count }} facts{% endif %}</span>{% endif %}</td>
         <td>{{ d.owner_label }}</td>
         {# Source references (ADR-072): every source shown; an external (http) source_uri links out.
            Generic across TaxDome/Drake/SharePoint/… — no per-source UI. #}
