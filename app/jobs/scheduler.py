@@ -12,8 +12,38 @@ logger = logging.getLogger(__name__)
 
 _scheduler = BackgroundScheduler(timezone="America/New_York")
 
+# Jobs already told (once) that Microsoft 365 is not connected — avoids a log line every interval.
+_ms365_skip_logged: set[str] = set()
+
+
+def _microsoft365_connected() -> bool:
+    """True if a Microsoft 365 account is connected. When none is, the mail/calendar/document sync
+    jobs have nothing to talk to and would fail deep inside on token/account lookup — so we skip them
+    cleanly rather than emitting a RuntimeError stack trace every interval."""
+    from sqlalchemy import select
+
+    from app.db import engine, microsoft_accounts
+    try:
+        with engine.connect() as conn:
+            return conn.execute(select(microsoft_accounts.c.id).limit(1)).first() is not None
+    except Exception:      # noqa: BLE001 — a check failure must not crash the job; treat as not-connected
+        return False
+
+
+def _skip_ms365(job: str) -> bool:
+    """Skip a Microsoft sync job when no M365 account is connected, logging the reason once at INFO."""
+    if _microsoft365_connected():
+        _ms365_skip_logged.discard(job)      # reset so a later disconnect logs again
+        return False
+    if job not in _ms365_skip_logged:
+        logger.info("%s skipped: no Microsoft 365 account is connected.", job)
+        _ms365_skip_logged.add(job)
+    return True
+
 
 def run_microsoft_mail_sync() -> None:
+    if _skip_ms365("Microsoft mail sync"):
+        return
     try:
         result = sync_recent_mail(top=50)
         logger.info("Microsoft mail sync result: %s", result)
@@ -22,6 +52,8 @@ def run_microsoft_mail_sync() -> None:
 
 
 def run_microsoft_calendar_sync() -> None:
+    if _skip_ms365("Microsoft calendar sync"):
+        return
     try:
         result = sync_calendar_events()
         logger.info("Microsoft calendar sync result: %s", result)
@@ -30,6 +62,8 @@ def run_microsoft_calendar_sync() -> None:
 
 
 def run_microsoft_document_sync() -> None:
+    if _skip_ms365("Microsoft document sync"):
+        return
     try:
         result = sync_microsoft_documents()
         logger.info("Microsoft document sync result: %s", result)
