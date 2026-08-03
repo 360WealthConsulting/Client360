@@ -336,7 +336,7 @@ def test_local_document_appears_in_person_documents_and_downloads_local_copy(tmp
     doc = next(d for d in docs if d["original_name"] == "2025 W-2.pdf")
     assert doc["storage_provider"] == "Client360 Local"
     # download serves the Client360 local copy, not the source drive
-    resp = download_document(doc["id"])
+    resp = download_document(doc["id"], Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"", "state": {}}))
     assert Path(resp.path) == (dst / "Hawthorne, Taylor" / "2025 W-2.pdf").resolve()
     assert str(src) not in str(resp.path)
 
@@ -350,7 +350,7 @@ def test_retained_but_unavailable_document_still_downloads(tmp_path):
     (src / "Hawthorne, Taylor" / "2025 W-2.pdf").unlink()
     _sync(src, dst)                                          # source gone; local retained
     doc = next(d for d in get_person_documents(pid) if d["original_name"] == "2025 W-2.pdf")
-    resp = download_document(doc["id"])                      # retained copy still serves
+    resp = download_document(doc["id"], Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"", "state": {}}))                      # retained copy still serves
     assert Path(resp.path).read_text() == "w2 content"
 
 

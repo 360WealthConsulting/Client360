@@ -15,3 +15,11 @@
 /* Client Workspace — Dashboard landing tab: responsive card grid. */
 .c360-dash{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;align-items:start}
 .c360-dash .card{margin:0}
+
+/* Back-to-search + client identity breadcrumb (UI stabilization) */
+.c360-backnav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  font-size: 13px; margin: 0 0 12px; color: var(--muted, #667085); }
+.c360-backnav a { color: var(--accent, #0b7285); text-decoration: none; font-weight: 600; }
+.c360-backnav a:hover { text-decoration: underline; }
+.c360-backnav .sep { color: var(--border, #cbd5e1); }
+.c360-backnav .current { color: var(--text, #1f2937); font-weight: 600; }

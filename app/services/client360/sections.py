@@ -271,9 +271,19 @@ def documents_view_model(docs):
     }
 
 
+# Plain-language OCR states for staff (no technical jargon) — see _attach_ocr.
+_OCR_LABELS = {
+    "completed": "Text captured",
+    "failed": "Text not captured",
+    "unsupported": "No text layer",
+    "processing": "Working…",
+    "pending": "Not processed",
+}
+
+
 def _attach_ocr(docs):
     """Attach each canonical document's OCR record (status, completed date, searchable-text flag) for
-    the Documents tab. OCR enriches the canonical document (ADR-072) — read-only here."""
+    the Documents tab, plus a plain-language ``ocr_label`` for staff. Read-only (ADR-072)."""
     try:
         from app.services.document_ocr import ocr_for_documents
         recs = ocr_for_documents([d["id"] for d in docs])
@@ -291,6 +301,7 @@ def _attach_ocr(docs):
             d.setdefault("ocr_completed_at", None)
             d["ocr_engine"] = None
             d["searchable_text"] = False
+        d["ocr_label"] = _OCR_LABELS.get(d.get("ocr_status"), "Not processed")
     return docs
 
 
@@ -321,6 +332,9 @@ def _attach_classification(docs):
             d["classification_confidence"] = None
         d["fact_count"] = n_facts
         d["extraction_status"] = ("extracted" if n_facts else ("classified" if c else "pending"))
+        # Plain-language extraction summary for staff.
+        d["extraction_label"] = (f"{n_facts} detail{'s' if n_facts != 1 else ''} found" if n_facts
+                                 else ("Classified" if c else None))
     return docs
 
 
