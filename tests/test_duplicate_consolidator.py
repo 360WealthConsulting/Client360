@@ -69,9 +69,20 @@ def _history_count(dup):
                          {"d": dup}).scalar_one()
 
 
-def _run(ids, *, apply=False, actor=None, report=None):
-    return consolidator.consolidate(apply=apply, actor_user_id=actor, restrict_ids=ids,
-                                    report_path=report)
+def _document(pid):
+    from app.db import documents
+    with engine.begin() as c:
+        c.execute(documents.insert().values(
+            original_name="d.pdf", stored_name=f"d-{uuid.uuid4().hex[:8]}", storage_path="/x",
+            storage_provider="Client360 Local", size_bytes=1, sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+            person_id=pid, status="active", archived=False))
+
+
+def _run(ids, *, apply=False, clear_only=False, actor=None, report=None, group=None, person_id=None,
+         group_summary=None):
+    return consolidator.consolidate(
+        apply=apply, apply_clear_only=clear_only, actor_user_id=actor, restrict_ids=ids,
+        group_name=group, person_id=person_id, report_path=report, group_summary_path=group_summary)
 
 
 # --- preview only ------------------------------------------------------------
@@ -270,3 +281,128 @@ def test_same_source_email_across_shells_deterministic_survivor(group, actor):
     r = _run(people_ids, apply=True, actor=actor)
     assert r["merged"] == 2 and r["ambiguous"] == 0           # one deterministic survivor, two merged
     assert sum(1 for pid in people_ids if _exists(pid)) == 1
+
+
+# --- MDM-2 hardening: categories, group summary, scoping, clear-only --------------------------
+
+def _cat(summary):
+    return summary["group_rows"][0]["ambiguity_category"]
+
+
+def test_ambiguity_categories(group, actor):
+    # conflicting_identity
+    a, b = _person(group), _person(group)
+    _link(a, _sc(email="a@x.com")); _link(b, _sc(email="b@y.com"))
+    assert _cat(_run([a, b])) == "conflicting_identity"
+
+
+def test_category_all_empty_shells(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc()); _link(b, _sc())
+    assert _cat(_run([a, b])) == "all_empty_shells"
+
+
+def test_category_tied_consistent_evidence(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc(email="same@x.com")); _link(b, _sc(email="same@x.com"))
+    assert _cat(_run([a, b])) == "tied_consistent_evidence"
+
+
+def test_category_clear_survivor(group, actor):
+    survivor = _person(group)
+    _link(survivor, _sc(email="rich@x.com", phone="5551234567"))
+    dup = _person(group)
+    _link(dup, _sc())
+    r = _run([survivor, dup])
+    assert _cat(r) == "clear_survivor"
+
+
+def test_category_engine_blocked(group, actor):
+    survivor = _person(group, primary_email="same@e.test")
+    dup = _person(group, primary_email="same@e.test")
+    _relationship_entity(survivor); _relationship_entity(dup)     # engine blocks the pair
+    r = _run([survivor, dup])
+    assert _cat(r) == "engine_blocked"
+
+
+def test_group_summary_csv(group, actor, tmp_path):
+    survivor = _person(group); _link(survivor, _sc(email="rich@x.com", phone="5551234567"))
+    dup = _person(group); _link(dup, _sc())
+    gs = str(tmp_path / "mdm2_group_summary.csv")
+    _run([survivor, dup], group_summary=gs)
+    import csv
+    with open(gs) as fh:
+        rows = list(csv.DictReader(fh))
+    assert set(rows[0].keys()) == {"group_name", "member_count", "proposed_survivor_person_id",
+                                   "survivor_score", "survivor_evidence", "proposed_merge_count",
+                                   "ambiguity_category", "conflicting_identifiers", "selection_reason",
+                                   "group_status"}
+    assert rows[0]["proposed_survivor_person_id"] == str(survivor) and rows[0]["member_count"] == "2"
+
+
+def test_group_name_scoping(actor):
+    ga, gb = f"Alpha {uuid.uuid4().hex[:6]}", f"Beta {uuid.uuid4().hex[:6]}"
+    a1, a2 = _person(ga), _person(ga)
+    b1, b2 = _person(gb), _person(gb)
+    for pid in (a1, a2, b1, b2):
+        _link(pid, _sc(email="x@x.com"))
+    r = _run([a1, a2, b1, b2], group=ga)
+    assert r["groups"] == 1 and r["group_rows"][0]["group_name"] == ga.lower()
+
+
+def test_person_id_scoping(actor):
+    ga, gb = f"Gamma {uuid.uuid4().hex[:6]}", f"Delta {uuid.uuid4().hex[:6]}"
+    a1, a2 = _person(ga), _person(ga)
+    b1, b2 = _person(gb), _person(gb)
+    r = _run([a1, a2, b1, b2], person_id=a1)
+    assert r["groups"] == 1 and a1 in [int(x["merged_person_id"]) for x in r["rows"]] + [
+        int(r["group_rows"][0]["proposed_survivor_person_id"] or -1)]
+
+
+def test_clear_only_qualifies_austin_style(group, actor):
+    survivor = _person(group)
+    _link(survivor, _sc(raw_data={"home_email": "austinweaver4743@gmail.com",
+                                  "home_phone": "4345928548"}))
+    shells = [_person(group) for _ in range(3)]
+    for s in shells:
+        _link(s, _sc())
+    r = _run([survivor, *shells], clear_only=True, actor=actor)
+    assert r["clear_only_qualified"] == 1 and r["merged"] == 3
+    assert _exists(survivor) and all(not _exists(s) for s in shells)
+
+
+def test_clear_only_refuses_duplicate_with_business_evidence(group, actor):
+    survivor = _person(group)
+    _link(survivor, _sc(email="s@x.com", phone="5559998888"))
+    dup = _person(group)
+    _link(dup, _sc(email="s@x.com"))          # same email (no conflict)
+    _document(dup)                             # but the duplicate owns a document → not an empty shell
+    r = _run([survivor, dup], clear_only=True, actor=actor)
+    assert r["clear_only_qualified"] == 0 and r["merged"] == 0
+    assert _exists(survivor) and _exists(dup)   # clear-only refused
+    assert r["group_rows"][0]["group_status"] == "skipped_not_clear"
+
+
+def test_clear_only_all_empty_does_not_qualify(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc()); _link(b, _sc())
+    r = _run([a, b], clear_only=True, actor=actor)
+    assert r["clear_only_qualified"] == 0 and r["merged"] == 0 and r["ambiguous"] == 1
+
+
+def test_clear_only_conflicting_does_not_qualify(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc(email="a@x.com")); _link(b, _sc(email="b@x.com"))
+    r = _run([a, b], clear_only=True, actor=actor)
+    assert r["clear_only_qualified"] == 0 and r["merged"] == 0 and r["ambiguous"] == 1
+
+
+def test_clear_only_rerun_idempotent(group, actor):
+    survivor = _person(group); _link(survivor, _sc(email="rich@x.com", phone="5551112222"))
+    shells = [_person(group) for _ in range(2)]
+    for s in shells:
+        _link(s, _sc())
+    first = _run([survivor, *shells], clear_only=True, actor=actor)
+    assert first["merged"] == 2
+    second = _run([survivor, *shells], clear_only=True, actor=actor)
+    assert second["merged"] == 0

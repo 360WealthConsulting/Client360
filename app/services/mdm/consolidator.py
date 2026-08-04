@@ -222,16 +222,18 @@ def select_survivor(conn, person_ids) -> dict:
     scores = {pid: _score(evs[pid]) for pid in person_ids}
     result = {"survivor_id": None, "ambiguous": True, "reason": "", "scores": scores,
               "evidence": {pid: _evidence_summary(evs[pid]) for pid in person_ids},
-              "conflicts": []}
+              "conflicts": [], "category": "other", "clear_only_eligible": False,
+              "materially_stronger": False}
 
     conflicts = _conflicts(evs)
     if conflicts:
-        result["conflicts"] = conflicts
-        result["reason"] = "conflicting identifiers: " + "; ".join(conflicts)
+        result.update(conflicts=conflicts, category="conflicting_identity",
+                      reason="conflicting identifiers: " + "; ".join(conflicts))
         return result
 
     if not any(_has_evidence(evs[pid]) for pid in person_ids):
-        result["reason"] = "no usable identity evidence (all empty shells)"
+        result.update(category="all_empty_shells",
+                      reason="no usable identity evidence (all empty shells)")
         return result
 
     # Consistent evidence + at least one signal → safe. Deterministic survivor: highest score, then most
@@ -240,10 +242,22 @@ def select_survivor(conn, person_ids) -> dict:
                     key=lambda p: (scores[p], evs[p]["counts"].get("source_links", 0), -p), reverse=True)
     survivor = ranked[0]
     top, second = scores[ranked[0]], (scores[ranked[1]] if len(ranked) > 1 else -1)
-    reason = (f"clear survivor: materially stronger evidence (score {top} vs {second}); no conflicts"
-              if top > second else
-              f"consistent shared evidence (score {top}); deterministic survivor by links then id")
-    result.update(survivor_id=survivor, ambiguous=False, reason=reason)
+    sev = evs[survivor]
+    # "materially stronger" = a clear score lead AND the survivor holds strong identity (email/phone/DOB).
+    materially_stronger = top > second and bool(sev["emails"] or sev["phones"] or sev["dob"])
+    dups_all_empty = all(not _has_evidence(evs[d]) for d in person_ids if d != survivor)
+    if materially_stronger:
+        category = "clear_survivor"
+        reason = f"clear survivor: materially stronger evidence (score {top} vs {second}); no conflicts"
+    elif top == second:
+        category = "tied_consistent_evidence"
+        reason = f"consistent shared evidence (score {top}); deterministic survivor by links then id"
+    else:
+        category = "other"
+        reason = f"survivor by non-identity evidence (score {top} vs {second})"
+    result.update(survivor_id=survivor, ambiguous=False, reason=reason, category=category,
+                  materially_stronger=materially_stronger,
+                  clear_only_eligible=materially_stronger and dups_all_empty)
     return result
 
 
@@ -277,15 +291,42 @@ def _already_merged(conn, duplicate_id) -> bool:
                         {"d": duplicate_id}).first() is not None
 
 
-def consolidate(*, apply: bool = False, actor_user_id: int | None = None, restrict_ids=None,
-                report_path: str | None = None, progress=None) -> dict:
-    """Consolidate duplicate people. ``apply=False`` (default) previews only — NO database changes.
-    ``apply=True`` merges each safe, unambiguous group via ``merge_people()`` (resumable: already-merged
-    or vanished duplicates are skipped). Returns a summary and, if ``report_path`` given, writes a CSV."""
-    summary = {"apply": apply, "groups": 0, "merged": 0, "skipped": 0, "ambiguous": 0,
-               "blocked": 0, "failed": 0, "rows": []}
-    # Apply requires the merge-history ledger; refuse clearly BEFORE any work if pmh01 is not applied.
-    # (Preview never needs it — see _already_merged.)
+def _norm_group_name(s: str) -> str:
+    return " ".join(str(s or "").strip().lower().split())
+
+
+def _scope_groups(groups, *, group_name=None, person_id=None):
+    """Restrict discovered groups to an exact normalized group name and/or the group containing a person
+    (production-safe allowlist for a first pass)."""
+    if group_name is not None:
+        target = _norm_group_name(group_name)
+        groups = [g for g in groups if _norm_group_name(g["group_key"]) == target]
+    if person_id is not None:
+        groups = [g for g in groups if int(person_id) in g["person_ids"]]
+    return groups
+
+
+_GROUP_COLUMNS = ("group_name", "member_count", "proposed_survivor_person_id", "survivor_score",
+                  "survivor_evidence", "proposed_merge_count", "ambiguity_category",
+                  "conflicting_identifiers", "selection_reason", "group_status")
+
+
+def consolidate(*, apply: bool = False, apply_clear_only: bool = False, actor_user_id: int | None = None,
+                restrict_ids=None, group_name: str | None = None, person_id: int | None = None,
+                report_path: str | None = None, group_summary_path: str | None = None,
+                progress=None) -> dict:
+    """Consolidate duplicate people via the MDM-1 engine.
+
+    Modes: ``apply=False`` (default) previews only — NO changes. ``apply=True`` merges every safe,
+    unambiguous pair. ``apply_clear_only=True`` (implies apply) merges ONLY groups that qualify as a
+    clear first-production pass: a materially-stronger unique survivor, every duplicate an empty shell
+    (no email/phone/DOB/household/accounts/engagements/documents/opportunities/address), every pair
+    ``safe_to_merge`` with no warnings/blockers. Scope with ``group_name`` (exact) and/or ``person_id``.
+    Resumable. Writes a pair-level CSV (``report_path``) and a group-level CSV (``group_summary_path``)."""
+    apply = apply or apply_clear_only
+    summary = {"apply": apply, "apply_clear_only": apply_clear_only, "groups": 0, "merged": 0,
+               "skipped": 0, "ambiguous": 0, "blocked": 0, "failed": 0,
+               "clear_only_qualified": 0, "rows": [], "group_rows": []}
     if apply:
         with engine.connect() as conn:
             if not _history_table_exists(conn):
@@ -293,45 +334,82 @@ def consolidate(*, apply: bool = False, actor_user_id: int | None = None, restri
                     "person_merge_history is missing — apply migration pmh01 before running --apply. "
                     "(preview mode works without it.)")
     with engine.connect() as conn:
-        groups = find_duplicate_groups(conn, restrict_ids=restrict_ids)
+        groups = _scope_groups(find_duplicate_groups(conn, restrict_ids=restrict_ids),
+                               group_name=group_name, person_id=person_id)
     summary["groups"] = len(groups)
 
     for group in groups:
         gkey, ids = group["group_key"], group["person_ids"]
         with engine.connect() as conn:
             sel = select_survivor(conn, ids)
+        grow = {"group_name": gkey, "member_count": len(ids), "proposed_survivor_person_id": "",
+                "survivor_score": "", "survivor_evidence": "", "proposed_merge_count": 0,
+                "ambiguity_category": sel["category"],
+                "conflicting_identifiers": "; ".join(sel.get("conflicts", []) or []),
+                "selection_reason": sel["reason"], "group_status": ""}
+
         if sel["ambiguous"]:
             summary["ambiguous"] += 1
+            grow["group_status"] = "ambiguous"
             for dup in ids:
                 summary["rows"].append({
                     "survivor_person_id": "", "merged_person_id": dup, "group_name": gkey,
                     "reason": sel["reason"], "safe_to_merge": "", "status": "ambiguous",
-                    "blocker": "", "warning": "",
-                    "survivor_score": "", "survivor_evidence": "",
+                    "blocker": "", "warning": "", "survivor_score": "", "survivor_evidence": "",
                     "duplicate_evidence": sel["evidence"].get(dup, ""),
-                    "conflicting_identifiers": "; ".join(sel.get("conflicts", []) or []),
+                    "conflicting_identifiers": grow["conflicting_identifiers"],
                     "selection_reason": sel["reason"]})
+            summary["group_rows"].append(grow)
             if progress:
-                progress(f"AMBIGUOUS {gkey}: {sel['reason']}")
+                progress(f"AMBIGUOUS [{sel['category']}] {gkey}")
             continue
 
         survivor = sel["survivor_id"]
-        for dup in [i for i in ids if i != survivor]:
+        grow.update(proposed_survivor_person_id=survivor,
+                    survivor_score=sel["scores"].get(survivor, ""),
+                    survivor_evidence=sel["evidence"].get(survivor, ""))
+        dups = [i for i in ids if i != survivor]
+
+        # Preview every remaining pair up front (resume: skip already-merged / vanished duplicates).
+        previews, pending = {}, []
+        for dup in dups:
             with engine.connect() as conn:
-                if _already_merged(conn, dup):          # resume: never repeat a completed merge
+                if _already_merged(conn, dup):
                     summary["skipped"] += 1
                     continue
-            report = preview_person_merge(survivor, dup)
+            previews[dup] = preview_person_merge(survivor, dup)
+            pending.append(dup)
+
+        any_unsafe = any(not p["safe_to_merge"] for p in previews.values())
+        any_warn = any(p.get("warnings") for p in previews.values())
+        if any_unsafe:
+            grow["ambiguity_category"] = "engine_blocked"
+        clear_ok = sel["clear_only_eligible"] and not any_unsafe and not any_warn
+        if clear_ok:
+            summary["clear_only_qualified"] += 1
+
+        # Decide whether this group merges in the current mode.
+        if apply_clear_only:
+            do_merge = clear_ok
+        elif apply:
+            do_merge = True
+        else:
+            do_merge = False
+
+        safe_count = sum(1 for p in previews.values() if p["safe_to_merge"])
+        grow["proposed_merge_count"] = safe_count
+        merged_here = blocked_here = 0
+        for dup in pending:
+            report = previews[dup]
             row = _pair_rows(gkey, survivor, dup, report, sel)
             if not report["safe_to_merge"]:
                 row["status"] = "blocked"
                 summary["blocked"] += 1
+                blocked_here += 1
                 summary["rows"].append(row)
-                if progress:
-                    progress(f"BLOCKED {survivor}<-{dup}: {row['blocker']}")
                 continue
-            if not apply:
-                row["status"] = "would_merge"
+            if not do_merge:
+                row["status"] = "would_merge" if (not apply_clear_only or clear_ok) else "skipped_not_clear"
                 summary["skipped"] += 1
                 summary["rows"].append(row)
                 continue
@@ -340,27 +418,40 @@ def consolidate(*, apply: bool = False, actor_user_id: int | None = None, restri
                              actor_user_id=actor_user_id)
                 row["status"] = "merged"
                 summary["merged"] += 1
+                merged_here += 1
             except MergeBlocked as exc:
                 row["status"], row["blocker"] = "blocked", str(exc)
                 summary["blocked"] += 1
+                blocked_here += 1
             except Exception as exc:      # noqa: BLE001 — record & continue; the engine rolled back
                 row["status"], row["blocker"] = "failed", str(exc)
                 summary["failed"] += 1
             summary["rows"].append(row)
-            if progress:
-                progress(f"{row['status'].upper()} {survivor}<-{dup}")
+
+        grow["group_status"] = (
+            "merged" if merged_here else
+            "blocked" if blocked_here and not safe_count else
+            "skipped_not_clear" if (apply_clear_only and not clear_ok) else
+            "would_merge" if safe_count else "no_action")
+        summary["group_rows"].append(grow)
+        if progress:
+            progress(f"{grow['group_status'].upper()} [{grow['ambiguity_category']}] {gkey} "
+                     f"survivor={survivor} merges={safe_count}")
 
     if report_path:
-        _write_report(report_path, summary["rows"])
+        _write_csv(report_path, _REPORT_COLUMNS, summary["rows"])
         summary["report_path"] = report_path
+    if group_summary_path:
+        _write_csv(group_summary_path, _GROUP_COLUMNS, summary["group_rows"])
+        summary["group_summary_path"] = group_summary_path
     return summary
 
 
-def _write_report(path: str, rows: list[dict]) -> None:
+def _write_csv(path: str, columns, rows: list[dict]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=_REPORT_COLUMNS)
+        w = csv.DictWriter(fh, fieldnames=columns)
         w.writeheader()
         for r in rows:
-            w.writerow({k: r.get(k, "") for k in _REPORT_COLUMNS})
+            w.writerow({k: r.get(k, "") for k in columns})
