@@ -14,6 +14,7 @@ from app.services.documents import (
 )
 from app.services.microsoft_documents import get_person_microsoft_documents
 from app.services.timeline import add_timeline_event
+from app.templating import render_error
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -108,14 +109,12 @@ async def upload_person_document(
 
 
 @router.get("/documents/{document_id}/download")
-def download_document(document_id: int):
+def download_document(document_id: int, request: Request):
     document = get_document(document_id)
 
     if document is None or document["archived"]:
-        return HTMLResponse(
-            "<h1>Document not found</h1>",
-            status_code=404,
-        )
+        return render_error(request, 404,
+                            detail="This document is no longer available. It may have been archived.")
 
     # TaxDome-synced documents keep a durable Client360-local copy addressed by an absolute
     # storage_uri; serve THAT copy (never the read-only Z:\ source). Directly-uploaded documents
@@ -126,10 +125,8 @@ def download_document(document_id: int):
         path = Path(document["storage_path"])
 
     if not path.exists():
-        return HTMLResponse(
-            "<h1>Stored file is missing</h1>",
-            status_code=404,
-        )
+        return render_error(request, 404,
+                            detail="The stored copy of this document could not be found on the server.")
 
     return FileResponse(
         path=path,

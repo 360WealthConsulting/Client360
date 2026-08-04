@@ -1,11 +1,18 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% block title %}{{ ws.display_name }} · Household 360 | Client360{% endblock %}
-{% block crumb %}Household 360{% endblock %}
+{% block crumb %}{{ ws.display_name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">{% endblock %}
 {% block content %}
 {% set s = ws.snapshot %}
 {% set base = "/client/household/" ~ ws.entity_id %}
+
+{# Back-to-search + household identity breadcrumb — a clear return path that never loses context. #}
+<nav class="c360-backnav" aria-label="Breadcrumb">
+  <a href="/search">← Search</a>
+  <span class="sep">·</span>
+  <span class="current">{{ ws.display_name }}</span>
+</nav>
 
 {# Household 360 (D.41): read-only COMPOSITION over the authoritative services. Rollup + navigation; the
    person workspace (/client/{id}) remains the member-detail surface. Every edit deep-links out. #}
@@ -140,19 +147,19 @@
   {# Canonical document operating center for the household (ADR-072/073): household + member docs,
      deduped by canonical document id. OCR/AI + multi-source references: pending (later phases). #}
   <h2 class="section-title">Documents ({{ sec.count }})</h2>
-  <p class="subtle">One canonical document per file; sources attach as references — never duplicate rows.
-    OCR &amp; AI extraction: <strong>pending</strong> (enabled in a later phase).</p>
+  <p class="subtle">One record per document; provider copies attach as sources — never duplicated. Text
+    capture and document details run automatically after a document arrives.</p>
   <article class="card"><div class="table-wrap"><table class="data">
     <thead><tr><th>Document</th><th>Type · Year</th><th>Owner</th><th>Source</th><th>Review</th>
-      <th>OCR / AI</th><th>Ver</th><th>Modified</th><th>Actions</th></tr></thead><tbody>
+      <th>Text</th><th>Ver</th><th>Modified</th><th>Actions</th></tr></thead><tbody>
     {% for d in sec.documents %}
       <tr>
         <td><a href="/documents/{{ d.id }}/download">{{ d.name }}</a>
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
         {# Type + Knowledge layer (Phase 6A): classified type, confidence, extraction status. #}
         <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}
-          {% if d.classification_confidence is not none %}<br><span class="subtle" title="Classifier {{ d.classified_type }} ({{ d.classification_confidence }})">🏷 {{ (d.classification_confidence * 100)|round|int }}% conf</span>{% endif %}
-          {% if d.extraction_status and d.extraction_status != "pending" %}<br><span class="subtle" title="Structured facts extracted">🧠 {{ d.extraction_status }}{% if d.fact_count %} · {{ d.fact_count }} facts{% endif %}</span>{% endif %}</td>
+          {% if d.classification_confidence is not none %}<br><span class="subtle" title="How confident we are in the document type">🏷 {{ (d.classification_confidence * 100)|round|int }}% match</span>{% endif %}
+          {% if d.extraction_label %}<br><span class="subtle" title="Details read from the document">🧠 {{ d.extraction_label }}</span>{% endif %}</td>
         <td>{{ d.owner_label }}</td>
         {# Source references (ADR-072): every source shown; an external (http) source_uri links out.
            Generic across TaxDome/Drake/SharePoint/… — no per-source UI. #}
@@ -160,7 +167,7 @@
         <td><span class="subtle">{{ d.review_status or "—" }}</span></td>
         {# OCR enriches the canonical document (ADR-072): real status + completed date + searchable
            text. AI extraction is a later phase (shown honestly as pending). #}
-        <td><span class="subtle"{% if d.ocr_engine %} title="OCR engine: {{ d.ocr_engine }}"{% endif %}>{{ (d.ocr_status or "pending")|replace("_"," ") }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%Y-%m-%d") }}{% endif %} / pending</span>{% if d.searchable_text %}<br><span class="subtle" title="Extracted text is indexed for Universal Search">🔍 searchable</span>{% endif %}</td>
+        <td><span class="subtle"{% if d.ocr_engine %} title="Captured by {{ d.ocr_engine }}"{% endif %}>{{ d.ocr_label }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%b %d, %Y") }}{% endif %}</span>{% if d.searchable_text %}<br><span class="subtle" title="This document's text can be found in search">🔍 Searchable</span>{% endif %}</td>
         <td>{{ d.version_count }}</td>
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
         <td><a href="/documents/{{ d.id }}/download">Open</a>{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
