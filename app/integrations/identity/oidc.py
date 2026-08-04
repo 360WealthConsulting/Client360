@@ -1,4 +1,4 @@
-import os
+﻿import os
 from urllib.parse import urlencode
 import jwt
 import requests
@@ -30,4 +30,12 @@ class OidcIdentityProvider:
         key = jwt.PyJWKClient(discovery["jwks_uri"]).get_signing_key_from_jwt(token).key
         claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], audience=self.client_id, issuer=self.issuer)
         methods = claims.get("amr", [])
-        return IdentityClaims(str(claims["sub"]), claims.get("email", ""), claims.get("name") or claims.get("email", ""), bool({"mfa", "otp", "hwk"}.intersection(methods)))
+        email = claims.get("email") or claims.get("preferred_username") or claims.get("upn") or ""
+        display_name = claims.get("name") or email
+        return IdentityClaims(
+            str(claims["sub"]),
+            email,
+            display_name,
+            bool({"mfa", "otp", "hwk"}.intersection(methods)),
+        )
+

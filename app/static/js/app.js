@@ -94,3 +94,58 @@
     init();
   }
 })();
+
+/* Client360 Vault external handlers */
+document.addEventListener("DOMContentLoaded", () => {
+  const toggle = document.getElementById("vault-upload-toggle");
+  const form = document.getElementById("vault-upload");
+
+  if (toggle && form) {
+    toggle.addEventListener("click", () => {
+      form.hidden = !form.hidden;
+
+      if (!form.hidden) {
+        const fileInput = form.querySelector('input[type="file"]');
+        if (fileInput) {
+          fileInput.focus();
+        }
+      }
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const submitButton = form.querySelector('button[type="submit"]');
+      const originalText = submitButton ? submitButton.textContent : "";
+
+      try {
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.textContent = "Uploading...";
+        }
+
+        const response = await fetch("/api/vault/documents", {
+          method: "POST",
+          body: new FormData(form),
+        });
+
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(`${response.status} ${message}`);
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", "vault");
+        url.searchParams.delete("doc");
+        window.location.href = url.toString();
+      } catch (error) {
+        window.alert(`Upload failed: ${error.message}`);
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = originalText;
+        }
+      }
+    });
+  }
+});

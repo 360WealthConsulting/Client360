@@ -1,4 +1,4 @@
-import re
+﻿import re
 import uuid
 from urllib.parse import quote, urlsplit
 
@@ -29,7 +29,7 @@ def _is_cross_site(origin, referer, base_url):
     return False
 
 
-PUBLIC_EXACT = frozenset({"/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
+PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume", "/api/portal/login"})
 RULES = (
@@ -46,18 +46,18 @@ RULES = (
     (re.compile(r"^/tax/returns|^/api/v1/tax/returns"), "tax.read"),
     (re.compile(r"^/tax/intake|^/api/v1/tax/intake"), "tax.intake.read"),
     (re.compile(r"^/tax|^/api/v1/tax"), "tax.read"),
-    # Exception Engine console + API (Sprint 5.5 Phase 6). GET → exception.read;
-    # the .read→.write inference gates mutations as exception.write. The engine
+    # Exception Engine console + API (Sprint 5.5 Phase 6). GET â†’ exception.read;
+    # the .readâ†’.write inference gates mutations as exception.write. The engine
     # service enforces the finer exception.resolve / exception.compliance on top.
     (re.compile(r"^/exceptions|^/api/v1/exceptions"), "exception.read"),
-    # Organization & Employee Benefits staff console + API (Release 0.9.11 Phase 6). GET →
-    # .read; the .read→.write inference gates mutations; the canonical services enforce the
+    # Organization & Employee Benefits staff console + API (Release 0.9.11 Phase 6). GET â†’
+    # .read; the .readâ†’.write inference gates mutations; the canonical services enforce the
     # finer benefits.enroll / benefits.compliance / benefits.sensitive.read and record scope.
     (re.compile(r"^/organizations|^/api/v1/organizations"), "organization.read"),
     (re.compile(r"^/benefits|^/api/v1/benefits"), "benefits.read"),
     # Insurance: coarse read; services enforce insurance.suitability / .sensitive.read
     # / .licensing and record scope (Release 0.10.0). No SoD carve-out precedes it
-    # because suitability review is not a URL prefix — it is gated inside the service.
+    # because suitability review is not a URL prefix â€” it is gated inside the service.
     (re.compile(r"^/insurance|^/api/v1/insurance"), "insurance.read"),
     # Advisor Workspace: book-scoped (NOT a firm-wide collection). Requires
     # client.read; the orchestration service scopes to accessible clients, so it
@@ -108,7 +108,7 @@ def _secure_headers(response, request):
     an inert JSON body; since Release 0.9.12 renders a styled HTML 403 it matters,
     because an HTML document without `x-frame-options`/`frame-ancestors` is
     framable. The styled 404 already carries these (it is raised inside the route
-    and passes through call_next) — this keeps the 403 consistent with it.
+    and passes through call_next) â€” this keeps the 403 consistent with it.
     """
     response.headers["x-request-id"] = request.state.request_id
     response.headers["x-content-type-options"] = "nosniff"
@@ -143,7 +143,7 @@ def _is_api_request(request) -> bool:
     True for anything that is not a plain browser page navigation: any ``/api/`` path, any non-GET/HEAD
     method (a redirect on a POST/PUT is useless), or a client that explicitly wants JSON and not HTML.
     A GET/HEAD to a non-API path is treated as a browser page (redirect to the staff login), regardless
-    of whether the Accept header happens to include ``text/html`` — so ``Accept: */*`` navigations and
+    of whether the Accept header happens to include ``text/html`` â€” so ``Accept: */*`` navigations and
     proxied requests still get the login flow instead of a JSON body."""
     if request.url.path.startswith("/api/"):
         return True
@@ -346,3 +346,4 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         response.headers["x-frame-options"] = "DENY"
         response.headers["content-security-policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
         return response
+

@@ -29,6 +29,69 @@
   {% if s.compliance %}<article class="card"><span class="detail-label">Open reviews</span><h2>{{ s.compliance.open_reviews }}</h2></article>{% endif %}
 </section>
 
+{% if ws.drake_returns %}
+<section class="card" style="margin-top:12px">
+  <h2 class="section-title">Drake Tax</h2>
+
+  {% for d in ws.drake_returns %}
+    <div class="detail-row">
+      <span>
+        <strong>{{ d.tax_year }} {{ d.return_type or "Return" }}</strong>
+        <span class="subtle">
+          ? {{ d.taxpayer_first_name }} {{ d.taxpayer_last_name }}
+          {% if d.spouse_first_name %}
+            &amp; {{ d.spouse_first_name }}
+            {{ d.spouse_last_name or d.taxpayer_last_name }}
+          {% endif %}
+        </span>
+      </span>
+
+      <strong>
+        {% if d.federal_ack_code == "A" %}
+          Federal accepted
+        {% elif d.federal_ack_code %}
+          Federal status: {{ d.federal_ack_code }}
+        {% else %}
+          No federal acknowledgement
+        {% endif %}
+      </strong>
+    </div>
+
+    <div class="detail-row">
+      <span>AGI</span>
+      <strong>
+        {{ "${:,.0f}".format(d.agi|float) if d.agi is not none else "?" }}
+      </strong>
+    </div>
+
+    <div class="detail-row">
+      <span>Preparer</span>
+      <strong>{{ d.preparer_code or "?" }}</strong>
+    </div>
+
+    {% if d.federal_product %}
+    <div class="detail-row">
+      <span>Federal return</span>
+      <strong>
+        {{ d.federal_product }}
+        {% if d.federal_ack_date %} ? {{ d.federal_ack_date }}{% endif %}
+      </strong>
+    </div>
+    {% endif %}
+
+    {% if d.state_product %}
+    <div class="detail-row">
+      <span>State return</span>
+      <strong>
+        {{ d.state_product }}
+        {% if d.state_ack_date %} ? {{ d.state_ack_date }}{% endif %}
+      </strong>
+    </div>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endif %}
+
 {# Quick actions — deep links into the authoritative create workflow. #}
 {% if ws.quick_actions %}
 <nav class="c360-actions" aria-label="Quick actions">
@@ -301,7 +364,7 @@
 {% elif active_tab == "vault" %}
   <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">
     <h2 class="section-title" style="margin:0">Vault</h2>
-    {% if sec.can_upload %}<button class="btn sm" type="button" onclick="document.getElementById('vault-upload').hidden=!document.getElementById('vault-upload').hidden">Upload document</button>{% endif %}
+    {% if sec.can_upload %}<button id="vault-upload-toggle" class="btn sm" type="button">Upload document</button>{% endif %}
   </div>
 
   {% if sec.can_upload %}

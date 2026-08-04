@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 
 from app.db import (
     documents,
@@ -86,6 +86,182 @@ def _returns(conn, person_ids, household_id):
          .where(or_(*conds))
          .order_by(tax_years.c.year.desc(), tax_engagement_returns.c.id.desc()))
     return [dict(r) for r in conn.execute(q).mappings()]
+
+
+
+def _drake_returns(conn, person_ids):
+    """Read-only Drake returns matched to Client360 people by exact canonical name."""
+    ids = [int(person_id) for person_id in person_ids if person_id]
+    if not ids:
+        return []
+
+    rows = conn.execute(
+        text("""
+            SELECT DISTINCT
+                d.id,
+                d.tax_year,
+                d.return_type,
+                d.agi,
+                d.preparer_code,
+                d.filing_status,
+                d.prepare_date,
+                d.review_date,
+                d.approved_date,
+                d.complete_date,
+                d.federal_product,
+                d.federal_ack_date,
+                d.federal_ack_code,
+                d.state_product,
+                d.state_ack_date,
+                d.state_ack_code,
+                d.taxpayer_first_name,
+                d.taxpayer_last_name,
+                d.spouse_first_name,
+                d.spouse_last_name
+            FROM people p
+            JOIN drake_client_returns d
+              ON (
+                   lower(trim(d.taxpayer_first_name)) = lower(trim(p.first_name))
+                   AND lower(trim(d.taxpayer_last_name)) = lower(trim(p.last_name))
+                 )
+              OR (
+                   lower(trim(d.spouse_first_name)) = lower(trim(p.first_name))
+                   AND lower(trim(d.taxpayer_last_name)) = lower(trim(p.last_name))
+                 )
+            WHERE p.id = ANY(:person_ids)
+            ORDER BY d.tax_year DESC, d.id DESC
+        """),
+        {"person_ids": ids},
+    ).mappings().all()
+
+    results = []
+
+    for row in rows:
+        accepted = row["federal_ack_code"] == "A"
+
+        if accepted:
+            status = "accepted"
+        elif row["federal_ack_date"] or row["federal_product"]:
+            status = "filed"
+        elif row["complete_date"]:
+            status = "completed"
+        else:
+            status = "imported"
+
+        results.append({
+            "return_id": -int(row["id"]),
+            "engagement_id": None,
+            "engagement_type": "drake",
+            "engagement_status": status,
+            "year": row["tax_year"],
+            "return_type": row["return_type"] or "Return",
+            "return_type_name": row["return_type"] or "Return",
+            "entity_type": "individual" if row["return_type"] == "1040" else None,
+            "jurisdiction": "FED",
+            "status": status,
+            "filing_status": status,
+            "preparation_started_at": row["prepare_date"],
+            "preparation_completed_at": row["complete_date"],
+            "filed_at": row["federal_ack_date"] if row["federal_ack_date"] else None,
+            "accepted_at": row["federal_ack_date"] if accepted else None,
+            "delivered_at": None,
+            "filing_external_id": None,
+            "due_date": None,
+            "documents": [],
+            "assignments": [],
+            "agi": row["agi"],
+            "preparer_code": row["preparer_code"],
+            "federal_product": row["federal_product"],
+            "federal_ack_date": row["federal_ack_date"],
+            "federal_ack_code": row["federal_ack_code"],
+            "state_product": row["state_product"],
+            "state_ack_date": row["state_ack_date"],
+            "state_ack_code": row["state_ack_code"],
+            "source": "drake",
+        })
+
+    return results
+
+
+def _drake_filing_events(returns):
+    events = []
+
+    for item in returns:
+        if item.get("source") != "drake":
+            continue
+
+        if item.get("federal_ack_code"):
+            events.append({
+                "filing_status": (
+                    "accepted"
+                    if item["federal_ack_code"] == "A"
+                    else item["federal_ack_code"]
+                ),
+                "provider_key": "drake",
+                "external_id": None,
+                "submission_id": None,
+                "reason_code": item["federal_ack_code"],
+                "message": item.get("federal_product"),
+                "created_at": item.get("federal_ack_date"),
+                "tax_engagement_return_id": item["return_id"],
+            })
+
+        if item.get("state_ack_code"):
+            events.append({
+                "filing_status": (
+                    "accepted"
+                    if item["state_ack_code"] == "A"
+                    else item["state_ack_code"]
+                ),
+                "provider_key": "drake-state",
+                "external_id": None,
+                "submission_id": None,
+                "reason_code": item["state_ack_code"],
+                "message": item.get("state_product"),
+                "created_at": item.get("state_ack_date"),
+                "tax_engagement_return_id": item["return_id"],
+            })
+
+    return events
+
+
+def _drake_timeline(returns):
+    events = []
+
+    for item in returns:
+        if item.get("source") != "drake":
+            continue
+
+        if item.get("preparation_completed_at"):
+            events.append({
+                "kind": "lifecycle",
+                "label": "Drake return completed",
+                "detail": f"{item['year']} {item['return_type']}",
+                "at": item["preparation_completed_at"],
+            })
+
+        if item.get("filed_at"):
+            events.append({
+                "kind": "filing",
+                "label": "Federal return acknowledged",
+                "detail": item.get("federal_product"),
+                "at": item["filed_at"],
+            })
+
+        if item.get("state_ack_date"):
+            events.append({
+                "kind": "filing",
+                "label": "State return acknowledged",
+                "detail": item.get("state_product"),
+                "at": item["state_ack_date"],
+            })
+
+    return sorted(
+        events,
+        key=lambda event: event["at"] or _MIN,
+        reverse=True,
+    )
+
 
 
 def _linked_documents(conn, return_ids):
@@ -193,16 +369,35 @@ def build_tax_workspace(principal, *, person_id=None, household_id=None, scope_i
     tax engagements keyed to any of them — or to the household — are included."""
     scope_ids = scope_ids or ([person_id] if person_id else [])
     with engine.connect() as conn:
-        returns = _safe(lambda: _returns(conn, scope_ids, household_id), [])
-        return_ids = [r["return_id"] for r in returns]
+        native_returns = _safe(
+            lambda: _returns(conn, scope_ids, household_id),
+            [],
+        )
+        drake_returns = _safe(
+            lambda: _drake_returns(conn, scope_ids),
+            [],
+        )
+
+        returns = native_returns if native_returns else drake_returns
+        return_ids = [r["return_id"] for r in native_returns]
+
         linked = _safe(lambda: _linked_documents(conn, return_ids), {})
         assigns = _safe(lambda: _assignments(conn, return_ids), {})
+
         for r in returns:
-            r["documents"] = linked.get(r["return_id"], [])
-            r["assignments"] = assigns.get(r["return_id"], [])
+            r["documents"] = linked.get(r["return_id"], r.get("documents", []))
+            r["assignments"] = assigns.get(r["return_id"], r.get("assignments", []))
+
         missing = _safe(lambda: _missing_items(conn, return_ids), [])
+
         filing = _safe(lambda: _filing_events(conn, return_ids), [])
+        if not filing and drake_returns:
+            filing = _drake_filing_events(drake_returns)
+
         timeline = _safe(lambda: _timeline(conn, return_ids), [])
+        if not timeline and drake_returns:
+            timeline = _drake_timeline(drake_returns)
+
         tax_tasks = _safe(lambda: _tax_tasks(conn, scope_ids), [])
 
     from app.services.knowledge_pipeline import tax_facts_for_scope

@@ -10,7 +10,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
 
+from app.db import engine
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.client360 import get_workspace
@@ -20,6 +22,50 @@ from app.templating import render_error
 
 router = APIRouter(prefix="/client", tags=["client360"])
 templates = Jinja2Templates(directory="app/templates")
+
+
+
+def _drake_returns_for_person(person_id: int) -> list[dict]:
+    """Read-only Drake lookup using the Client360 person's canonical name."""
+    query = text("""
+        SELECT
+            d.id,
+            d.tax_year,
+            d.return_type,
+            d.agi,
+            d.preparer_code,
+            d.filing_status,
+            d.federal_product,
+            d.federal_ack_date,
+            d.federal_ack_code,
+            d.state_product,
+            d.state_ack_date,
+            d.state_ack_code,
+            d.taxpayer_first_name,
+            d.taxpayer_last_name,
+            d.spouse_first_name,
+            d.spouse_last_name
+        FROM people p
+        JOIN drake_client_returns d
+          ON (
+               lower(trim(d.taxpayer_first_name)) = lower(trim(p.first_name))
+               AND lower(trim(d.taxpayer_last_name)) = lower(trim(p.last_name))
+             )
+          OR (
+               lower(trim(d.spouse_first_name)) = lower(trim(p.first_name))
+               AND lower(trim(d.taxpayer_last_name)) = lower(trim(p.last_name))
+             )
+        WHERE p.id = :person_id
+        ORDER BY d.tax_year DESC, d.id DESC
+    """)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            query,
+            {"person_id": person_id},
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
 
 
 def _render(request, ws, principal, tab):
@@ -166,6 +212,7 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
     ws = get_workspace(principal, person_id=person_id, vault_view=vault_view)
     if ws is None:
         return render_error(request, 404, detail="Client not found.")
+    ws["drake_returns"] = _drake_returns_for_person(person_id)
     return _render(request, ws, principal, tab)
 
 
