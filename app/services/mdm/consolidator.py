@@ -107,7 +107,16 @@ def _pair_rows(group_key, survivor_id, duplicate_id, report):
     }
 
 
+def _history_table_exists(conn) -> bool:
+    """Whether pmh01's person_merge_history exists. Preview must stay usable before the migration."""
+    return conn.execute(text("SELECT to_regclass('person_merge_history')")).scalar() is not None
+
+
 def _already_merged(conn, duplicate_id) -> bool:
+    # Before pmh01 the history table does not exist → nothing has been merged yet, so preview's resume
+    # check treats it as "not previously merged" instead of raising UndefinedTable.
+    if not _history_table_exists(conn):
+        return False
     return conn.execute(text("SELECT 1 FROM person_merge_history WHERE merged_person_id = :d"),
                         {"d": duplicate_id}).first() is not None
 
@@ -119,6 +128,14 @@ def consolidate(*, apply: bool = False, actor_user_id: int | None = None, restri
     or vanished duplicates are skipped). Returns a summary and, if ``report_path`` given, writes a CSV."""
     summary = {"apply": apply, "groups": 0, "merged": 0, "skipped": 0, "ambiguous": 0,
                "blocked": 0, "failed": 0, "rows": []}
+    # Apply requires the merge-history ledger; refuse clearly BEFORE any work if pmh01 is not applied.
+    # (Preview never needs it — see _already_merged.)
+    if apply:
+        with engine.connect() as conn:
+            if not _history_table_exists(conn):
+                raise MergeBlocked(
+                    "person_merge_history is missing — apply migration pmh01 before running --apply. "
+                    "(preview mode works without it.)")
     with engine.connect() as conn:
         groups = find_duplicate_groups(conn, restrict_ids=restrict_ids)
     summary["groups"] = len(groups)

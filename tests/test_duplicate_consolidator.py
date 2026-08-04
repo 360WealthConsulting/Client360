@@ -154,3 +154,35 @@ def test_consolidator_uses_merge_engine():
     src = inspect.getsource(consolidator)
     assert "merge_people(" in src and "preview_person_merge(" in src   # orchestrates, not reimplements
     assert consolidator.AUTOMATIC_SURVIVOR_RULE_COUNT == 10
+
+
+# --- deployment-order safety: preview works before pmh01; apply refuses -----------------------
+
+def test_preview_and_apply_without_pmh01(group, actor, tmp_path):
+    """Regression (PR #186): preview must run against a pre-pmh01 schema and still generate a report
+    with no mutations; apply must refuse clearly before any mutation. Rename person_merge_history away
+    so a fresh connection genuinely sees the pre-pmh01 schema, then restore it."""
+    from app.services.person_merge import MergeBlocked
+    survivor = _person(group, primary_email="rich@e.test", primary_phone="555-1")
+    dup = _person(group)
+    report = str(tmp_path / "pre_pmh01.csv")
+    with engine.begin() as c:
+        c.execute(text("ALTER TABLE person_merge_history RENAME TO person_merge_history_bak"))
+    try:
+        # Preview works without the history table and writes a report; nothing is mutated.
+        s = _run([survivor, dup], apply=False, actor=actor, report=report)
+        assert s["groups"] == 1
+        row = next(r for r in s["rows"] if r["merged_person_id"] == dup)
+        assert row["status"] == "would_merge" and row["safe_to_merge"] is True
+        import csv
+        with open(report) as fh:
+            assert any(r["merged_person_id"] == str(dup) for r in csv.DictReader(fh))
+        assert _exists(survivor) and _exists(dup)              # no records mutated
+
+        # Apply refuses clearly, before any mutation.
+        with pytest.raises(MergeBlocked, match="pmh01"):
+            _run([survivor, dup], apply=True, actor=actor)
+        assert _exists(survivor) and _exists(dup)              # still nothing merged
+    finally:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE person_merge_history_bak RENAME TO person_merge_history"))
