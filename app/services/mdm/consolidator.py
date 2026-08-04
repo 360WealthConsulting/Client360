@@ -455,3 +455,131 @@ def _write_csv(path: str, columns, rows: list[dict]) -> None:
         w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k, "") for k in columns})
+
+
+def approved_merge(*, group_name: str | None, survivor_person_id: int | None, apply: bool = False,
+                   actor_user_id: int | None = None, restrict_ids=None, report_path: str | None = None,
+                   group_summary_path: str | None = None, progress=None) -> dict:
+    """HUMAN-APPROVED merge of a manually-reviewed duplicate group (e.g. an ``all_empty_shells`` group a
+    business owner has confirmed is one person). This does NOT use or weaken automatic survivor selection:
+    it requires an EXACT group name and an EXPLICIT survivor id, verifies the survivor belongs to that
+    group, then runs the UNCHANGED MDM-1 engine (preview_person_merge + merge_people) for every duplicate.
+
+    Refuses the whole group (no changes) if ANY pair has a blocker, a warning, a conflicting identifier,
+    or a duplicate with unexpected business evidence. ``apply=False`` previews the plan without changes;
+    ``apply=True`` merges only when nothing is refused. Idempotent + resumable."""
+    if not group_name or survivor_person_id is None:
+        raise ValueError("approved mode requires BOTH an exact --group and an explicit --survivor-person-id")
+    survivor = int(survivor_person_id)
+    summary = {"apply": apply, "approved": True, "group": None, "survivor_person_id": survivor,
+               "members": [], "groups": 0, "merged": 0, "skipped": 0, "ambiguous": 0, "blocked": 0,
+               "failed": 0, "refused": False, "refusal_reasons": [], "rows": [], "group_rows": []}
+    if apply:
+        with engine.connect() as conn:
+            if not _history_table_exists(conn):
+                raise MergeBlocked("person_merge_history is missing — apply migration pmh01 before --apply.")
+
+    with engine.connect() as conn:
+        groups = _scope_groups(find_duplicate_groups(conn, restrict_ids=restrict_ids),
+                               group_name=group_name)
+    if not groups:
+        # Resume/idempotency: if the survivor still exists under this exact name, the group has already
+        # been consolidated to it (duplicates deleted) — a no-op, not an error.
+        with engine.connect() as conn:
+            srow = conn.execute(text(
+                "SELECT lower(btrim(coalesce(nullif(full_name,''), "
+                "concat_ws(' ', first_name, last_name)))) FROM people WHERE id = :p"),
+                {"p": survivor}).scalar()
+        if srow is not None and _norm_group_name(srow) == _norm_group_name(group_name):
+            summary["group"] = _norm_group_name(group_name)
+            if progress:
+                progress("group already consolidated to the survivor — nothing to merge")
+            return summary
+        raise ValueError(f"no duplicate group matches --group '{group_name}'")
+    if len(groups) > 1:
+        raise ValueError(f"--group '{group_name}' matched {len(groups)} groups; must be unique")
+    group = groups[0]
+    summary["groups"] = 1
+    gkey, ids = group["group_key"], group["person_ids"]
+    summary["group"], summary["members"] = gkey, ids
+    if survivor not in ids:
+        raise ValueError(f"survivor {survivor} does not belong to group '{gkey}' (members={ids})")
+    if progress:
+        progress(f"group '{gkey}' members: {ids} | approved survivor: {survivor}")
+
+    dups = [i for i in ids if i != survivor]
+    with engine.connect() as conn:
+        evs = {pid: gather_identity(conn, pid) for pid in ids}
+    reasons = []
+    conflicts = _conflicts(evs)
+    if conflicts:
+        reasons.append("conflicting identifiers: " + "; ".join(conflicts))
+    for d in dups:
+        c = evs[d]["counts"]
+        if evs[d]["household"] or any(c.get(k, 0) for k in
+                                      ("accounts", "engagements", "documents", "opportunities")):
+            reasons.append(f"duplicate {d} has unexpected business evidence — re-review required")
+
+    previews, pending = {}, []
+    for d in dups:
+        with engine.connect() as conn:
+            if _already_merged(conn, d):                       # resume: never repeat a completed merge
+                summary["skipped"] += 1
+                continue
+        p = preview_person_merge(survivor, d)
+        previews[d] = p
+        pending.append(d)
+        if not p["safe_to_merge"]:
+            reasons.append(f"pair {survivor}<-{d} blocked: {'; '.join(p.get('blockers', []) or [])}")
+        if p.get("warnings"):
+            reasons.append(f"pair {survivor}<-{d} has warnings: {'; '.join(p.get('warnings', []) or [])}")
+
+    refused = bool(reasons)
+    summary["refused"], summary["refusal_reasons"] = refused, reasons
+    sel_like = {"scores": {survivor: ""},
+                "evidence": {pid: _evidence_summary(evs[pid]) for pid in ids},
+                "conflicts": conflicts, "reason": f"approved survivor {survivor}"}
+
+    for d in pending:
+        row = _pair_rows(gkey, survivor, d, previews[d], sel_like)
+        if refused:
+            row["status"] = "refused"
+        elif apply:
+            try:
+                merge_people(survivor, d, reason=f"MDM-2 approved consolidation ({gkey})",
+                             actor_user_id=actor_user_id)
+                row["status"] = "merged"
+                summary["merged"] += 1
+                if progress:
+                    progress(f"MERGED {survivor}<-{d}")
+            except MergeBlocked as exc:
+                row["status"], row["blocker"] = "blocked", str(exc)
+                summary["blocked"] += 1
+                summary["refused"], refused = True, True
+                summary["refusal_reasons"].append(str(exc))
+            except Exception as exc:      # noqa: BLE001 — engine rolled back this pair
+                row["status"], row["blocker"] = "failed", str(exc)
+                summary["failed"] += 1
+        else:
+            row["status"] = "would_merge"
+            summary["skipped"] += 1
+        summary["rows"].append(row)
+
+    grow = {"group_name": gkey, "member_count": len(ids), "proposed_survivor_person_id": survivor,
+            "survivor_score": "", "survivor_evidence": _evidence_summary(evs[survivor]),
+            "proposed_merge_count": len(pending), "ambiguity_category": "approved_manual",
+            "conflicting_identifiers": "; ".join(conflicts),
+            "selection_reason": f"human-approved survivor {survivor}",
+            "group_status": ("refused" if refused else
+                             "merged" if summary["merged"] else "would_merge")}
+    summary["group_rows"].append(grow)
+    if report_path:
+        _write_csv(report_path, _REPORT_COLUMNS, summary["rows"])
+        summary["report_path"] = report_path
+    if group_summary_path:
+        _write_csv(group_summary_path, _GROUP_COLUMNS, summary["group_rows"])
+        summary["group_summary_path"] = group_summary_path
+
+    if apply and refused:
+        raise MergeBlocked("approved merge refused (no changes made): " + " | ".join(reasons))
+    return summary

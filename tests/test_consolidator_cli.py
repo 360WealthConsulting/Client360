@@ -56,3 +56,22 @@ def test_default_is_preview_footer(capsys, _stub):
     cli.main([])
     out = capsys.readouterr().out
     assert "(PREVIEW — no database changes were made)" in out
+
+
+def test_apply_zero_merges_reports_no_changes(capsys, monkeypatch):
+    # An --apply run that merged nothing (e.g. an ambiguous group) must NOT claim changes were made.
+    monkeypatch.setattr(cli.consolidator, "consolidate",
+                        lambda **kw: {**_SUMMARY, "merged": 0})
+    cli.main(["--apply"])
+    out = capsys.readouterr().out
+    assert "(APPLY COMPLETE — no database changes were made)" in out
+    assert "database changes were made)" in out  # sanity: footer printed
+    assert "APPLY COMPLETE — database changes were made" not in out
+
+
+def test_apply_with_merges_reports_changes(capsys, monkeypatch):
+    monkeypatch.setattr(cli.consolidator, "consolidate",
+                        lambda **kw: {**_SUMMARY, "merged": 5})
+    cli.main(["--apply"])
+    out = capsys.readouterr().out
+    assert "(APPLY COMPLETE — database changes were made)" in out
