@@ -50,7 +50,10 @@ def main(argv=None) -> int:
     print(f"  pair report:  {summary.get('report_path')}")
     print(f"  group report: {summary.get('group_summary_path')}")
     print(f"  automatic-survivor rules: {consolidator.AUTOMATIC_SURVIVOR_RULE_COUNT}")
-    if not apply:
+    # Footer must reflect the ACTUAL mode: --apply and --apply-clear-only both write; only preview does not.
+    if apply or clear_only:
+        print("  (APPLY COMPLETE — database changes were made)")
+    else:
         print("  (PREVIEW — no database changes were made)")
     return 1 if summary["failed"] else 0
 
