@@ -10,7 +10,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.db import engine, people, users
+from app.db import engine, people, person_source_links, source_contacts, users
 from app.services.mdm import consolidator
 
 
@@ -34,6 +34,22 @@ def _person(full_name, **over):
     vals.update(over)
     with engine.begin() as c:
         return c.execute(people.insert().values(**vals).returning(people.c.id)).scalar_one()
+
+
+def _sc(**over):
+    """Insert a source_contact (columns + raw_data) and return its id."""
+    vals = {"source_system": "Wealthbox", "source_file": "wb.csv", "source_hash": uuid.uuid4().hex,
+            "raw_data": {}}
+    vals.update(over)
+    with engine.begin() as c:
+        return c.execute(source_contacts.insert().values(**vals).returning(source_contacts.c.id)).scalar_one()
+
+
+def _link(pid, sc_id):
+    with engine.begin() as c:
+        c.execute(person_source_links.insert().values(
+            person_id=pid, source_contact_id=sc_id, match_method="manual_review",
+            match_score=100, confirmed=True))
 
 
 def _relationship_entity(pid):
@@ -120,8 +136,10 @@ def test_ambiguous_equal_richness_skipped(group, actor):
 # --- blocked -----------------------------------------------------------------
 
 def test_blocked_group_is_skipped(group, actor):
-    survivor = _person(group, primary_email="rich@e.test", primary_phone="555-1")
-    dup = _person(group, primary_email="d@e.test")             # dup has a little profile but survivor richer
+    # Same email on both (no identity conflict → survivor selected), but both own a relationship_entity,
+    # so the MDM-1 engine blocks the merge → status blocked (never bypassed).
+    survivor = _person(group, primary_email="same@e.test", primary_phone="555-1")
+    dup = _person(group, primary_email="same@e.test")
     _relationship_entity(survivor)
     _relationship_entity(dup)                                  # both own relationship_entities → blocker
     s = _run([survivor, dup], apply=True, actor=actor)
@@ -142,9 +160,12 @@ def test_report_generation(group, actor, tmp_path):
     with open(report) as fh:
         rows = list(csv.DictReader(fh))
     assert set(rows[0].keys()) == {"survivor_person_id", "merged_person_id", "group_name", "reason",
-                                   "safe_to_merge", "status", "blocker", "warning"}
+                                   "safe_to_merge", "status", "blocker", "warning", "survivor_score",
+                                   "survivor_evidence", "duplicate_evidence", "conflicting_identifiers",
+                                   "selection_reason"}
     merged = [r for r in rows if r["merged_person_id"] == str(dup)]
     assert merged and merged[0]["status"] == "merged" and merged[0]["survivor_person_id"] == str(survivor)
+    assert merged[0]["survivor_score"] and merged[0]["selection_reason"]
 
 
 # --- engine is used, not bypassed --------------------------------------------
@@ -186,3 +207,66 @@ def test_preview_and_apply_without_pmh01(group, actor, tmp_path):
     finally:
         with engine.begin() as c:
             c.execute(text("ALTER TABLE person_merge_history_bak RENAME TO person_merge_history"))
+
+
+# --- source-contact-derived scoring (PR #186 fix) --------------------------------------------
+
+def test_austin_style_source_email_selects_unique_survivor(group, actor):
+    """Canonical rows sparse; one linked source_contact carries email/phone in raw_data (the Austin
+    case). That person must win; the empty shells merge into it."""
+    survivor = _person(group)                                  # canonical empty
+    _link(survivor, _sc(raw_data={"home_email": "austinweaver4743@gmail.com",
+                                  "home_phone": "4345928548", "contact_type": "Prospect",
+                                  "contact_source": "Referral"}))
+    shells = [_person(group) for _ in range(5)]
+    for s in shells:
+        _link(s, _sc(raw_data={}))                            # empty source contacts
+    r = _run([survivor, *shells], apply=True, actor=actor)
+    assert r["merged"] == 5 and r["ambiguous"] == 0 and r["blocked"] == 0
+    assert _exists(survivor) and all(not _exists(s) for s in shells)
+
+
+def test_canonical_empty_but_source_populated_selects_survivor(group, actor):
+    survivor = _person(group)                                  # empty canonical row
+    _link(survivor, _sc(email="found@x.com", phone="5551234567"))
+    dup = _person(group)                                       # totally empty
+    r = _run([survivor, dup], apply=True, actor=actor)
+    assert r["merged"] == 1 and _exists(survivor) and not _exists(dup)
+
+
+def test_conflicting_source_emails_are_ambiguous(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc(email="a@x.com"))
+    _link(b, _sc(email="b@y.com"))                            # different real emails → conflict
+    r = _run([a, b], apply=True, actor=actor)
+    assert r["ambiguous"] == 1 and r["merged"] == 0
+    assert _exists(a) and _exists(b)
+    row = next(x for x in r["rows"] if x["merged_person_id"] in (a, b))
+    assert row["conflicting_identifiers"] and row["status"] == "ambiguous"
+
+
+def test_conflicting_source_phones_are_ambiguous(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc(raw_data={"home_phone": "4345928548"}))
+    _link(b, _sc(raw_data={"home_phone": "2125551212"}))      # different phones → conflict
+    r = _run([a, b], apply=True, actor=actor)
+    assert r["ambiguous"] == 1 and r["merged"] == 0
+    assert _exists(a) and _exists(b)
+
+
+def test_all_empty_source_contacts_are_ambiguous(group, actor):
+    a, b = _person(group), _person(group)
+    _link(a, _sc(raw_data={}))
+    _link(b, _sc(raw_data={}))                                # no usable identity evidence
+    r = _run([a, b], apply=True, actor=actor)
+    assert r["ambiguous"] == 1 and r["merged"] == 0
+    assert _exists(a) and _exists(b)
+
+
+def test_same_source_email_across_shells_deterministic_survivor(group, actor):
+    people_ids = [_person(group) for _ in range(3)]
+    for pid in people_ids:
+        _link(pid, _sc(email="shared@x.com"))                 # same email everywhere → consistent, safe
+    r = _run(people_ids, apply=True, actor=actor)
+    assert r["merged"] == 2 and r["ambiguous"] == 0           # one deterministic survivor, two merged
+    assert sum(1 for pid in people_ids if _exists(pid)) == 1
