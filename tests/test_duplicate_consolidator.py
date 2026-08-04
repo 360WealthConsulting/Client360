@@ -1,0 +1,156 @@
+"""MDM-2 — duplicate-person consolidation orchestration coverage.
+
+Exercises app/services/mdm/consolidator.py, which orchestrates the MDM-1 engine (never bypasses it):
+preview-only (no changes), apply, resume/idempotent rerun, ambiguous-group skip, blocked-group skip,
+CSV report generation, and no-duplicate-merge. Every merge goes through merge_people(); every group is
+scoped with restrict_ids so unrelated people are never touched.
+"""
+import uuid
+
+import pytest
+from sqlalchemy import text
+
+from app.db import engine, people, users
+from app.services.mdm import consolidator
+
+
+@pytest.fixture
+def actor():
+    with engine.begin() as c:
+        t = uuid.uuid4().hex[:8]
+        return c.execute(users.insert().values(
+            email=f"mdm2{t}@e.test", normalized_email=f"mdm2{t}@e.test", display_name="MDM2",
+            status="active").returning(users.c.id)).scalar_one()
+
+
+@pytest.fixture
+def group():
+    """A duplicate group name shared by everyone created in a test (so they group together)."""
+    return f"Consol {uuid.uuid4().hex[:8]}"
+
+
+def _person(full_name, **over):
+    vals = {"first_name": "C", "last_name": "Consol", "full_name": full_name, "active": True}
+    vals.update(over)
+    with engine.begin() as c:
+        return c.execute(people.insert().values(**vals).returning(people.c.id)).scalar_one()
+
+
+def _relationship_entity(pid):
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO relationship_entities (entity_type, name, person_id) "
+                       "VALUES ('individual', 'e', :p)"), {"p": pid})
+
+
+def _exists(pid):
+    with engine.connect() as c:
+        return c.execute(text("SELECT 1 FROM people WHERE id=:p"), {"p": pid}).first() is not None
+
+
+def _history_count(dup):
+    with engine.connect() as c:
+        return c.execute(text("SELECT count(*) FROM person_merge_history WHERE merged_person_id=:d"),
+                         {"d": dup}).scalar_one()
+
+
+def _run(ids, *, apply=False, actor=None, report=None):
+    return consolidator.consolidate(apply=apply, actor_user_id=actor, restrict_ids=ids,
+                                    report_path=report)
+
+
+# --- preview only ------------------------------------------------------------
+
+def test_preview_makes_no_changes(group, actor):
+    survivor = _person(group, primary_email="rich@e.test", primary_phone="555-1")
+    dup = _person(group)                                    # empty shell → clear survivor is the rich one
+    s = _run([survivor, dup], apply=False, actor=actor)
+    assert s["groups"] == 1 and s["merged"] == 0
+    row = next(r for r in s["rows"] if r["merged_person_id"] == dup)
+    assert row["status"] == "would_merge" and row["safe_to_merge"] is True
+    assert _exists(survivor) and _exists(dup) and _history_count(dup) == 0   # nothing mutated
+
+
+# --- apply -------------------------------------------------------------------
+
+def test_apply_merges_clear_survivor(group, actor):
+    survivor = _person(group, primary_email="rich@e.test", primary_phone="555-1")
+    dup = _person(group)
+    s = _run([survivor, dup], apply=True, actor=actor)
+    assert s["merged"] == 1 and s["ambiguous"] == 0 and s["blocked"] == 0
+    assert _exists(survivor) and not _exists(dup) and _history_count(dup) == 1
+
+
+def test_apply_merges_multiple_empty_shells_into_rich(group, actor):
+    survivor = _person(group, primary_email="rich@e.test", primary_phone="555-1")
+    d1, d2 = _person(group), _person(group)
+    s = _run([survivor, d1, d2], apply=True, actor=actor)
+    assert s["merged"] == 2
+    assert _exists(survivor) and not _exists(d1) and not _exists(d2)
+
+
+# --- resume / idempotency ----------------------------------------------------
+
+def test_resume_and_idempotent_rerun(group, actor):
+    survivor = _person(group, primary_email="rich@e.test")
+    dup = _person(group)
+    first = _run([survivor, dup], apply=True, actor=actor)
+    assert first["merged"] == 1
+    second = _run([survivor, dup], apply=True, actor=actor)      # rerun
+    assert second["merged"] == 0                                # nothing to repeat
+    assert _history_count(dup) == 1                             # no second history row
+
+
+# --- ambiguous ---------------------------------------------------------------
+
+def test_ambiguous_all_empty_group_skipped(group, actor):
+    a, b = _person(group), _person(group)                       # both empty → no clear survivor
+    s = _run([a, b], apply=True, actor=actor)
+    assert s["ambiguous"] == 1 and s["merged"] == 0
+    assert _exists(a) and _exists(b)                            # never guessed → both kept
+
+
+def test_ambiguous_equal_richness_skipped(group, actor):
+    a = _person(group, primary_email="a@e.test")
+    b = _person(group, primary_email="b@e.test")               # tie on score → ambiguous
+    s = _run([a, b], apply=True, actor=actor)
+    assert s["ambiguous"] == 1 and s["merged"] == 0
+    assert _exists(a) and _exists(b)
+
+
+# --- blocked -----------------------------------------------------------------
+
+def test_blocked_group_is_skipped(group, actor):
+    survivor = _person(group, primary_email="rich@e.test", primary_phone="555-1")
+    dup = _person(group, primary_email="d@e.test")             # dup has a little profile but survivor richer
+    _relationship_entity(survivor)
+    _relationship_entity(dup)                                  # both own relationship_entities → blocker
+    s = _run([survivor, dup], apply=True, actor=actor)
+    assert s["blocked"] == 1 and s["merged"] == 0
+    row = next(r for r in s["rows"] if r["merged_person_id"] == dup)
+    assert row["status"] == "blocked" and row["safe_to_merge"] is False and row["blocker"]
+    assert _exists(survivor) and _exists(dup)                  # blocked → nothing merged
+
+
+# --- report generation -------------------------------------------------------
+
+def test_report_generation(group, actor, tmp_path):
+    survivor = _person(group, primary_email="rich@e.test")
+    dup = _person(group)
+    report = str(tmp_path / "mdm2_merge_report.csv")
+    _run([survivor, dup], apply=True, actor=actor, report=report)
+    import csv
+    with open(report) as fh:
+        rows = list(csv.DictReader(fh))
+    assert set(rows[0].keys()) == {"survivor_person_id", "merged_person_id", "group_name", "reason",
+                                   "safe_to_merge", "status", "blocker", "warning"}
+    merged = [r for r in rows if r["merged_person_id"] == str(dup)]
+    assert merged and merged[0]["status"] == "merged" and merged[0]["survivor_person_id"] == str(survivor)
+
+
+# --- engine is used, not bypassed --------------------------------------------
+
+def test_consolidator_uses_merge_engine():
+    import inspect
+    src = inspect.getsource(consolidator)
+    assert "merge_people(" in src and "preview_person_merge(" in src   # orchestrates, not reimplements
+    assert consolidator.AUTOMATIC_SURVIVOR_RULE_COUNT == 10
