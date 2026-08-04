@@ -36,9 +36,9 @@ def _reset():
 
 def test_registry_seeded_and_coverage():
     cov = registry.coverage()
-    # 5 D.34 contracts + 31 D.35 producer-adoption contracts, each with a subscription.
-    assert cov["total"] == 36 and cov["active"] == 36
-    assert cov["subscriptions"] == 36 and cov["active_subscriptions"] == 36
+    # 5 D.34 contracts + 32 D.35 producer-adoption contracts, each with a subscription.
+    assert cov["total"] == 37 and cov["active"] == 37
+    assert cov["subscriptions"] == 37 and cov["active_subscriptions"] == 37
     assert cov["consumer_coverage_pct"] == 100.0 and cov["producer_coverage_pct"] == 100.0
     assert cov["coverage_pct"] == 100.0 and cov["domains_covered"] == cov["domains"]
 
@@ -225,7 +225,7 @@ def test_analytics_event_metrics():
         assert key in METRICS
     assert sources.domain_event_coverage_pct(None) == 100.0
     assert sources.domain_event_governance_issue_count(None) == 0
-    assert sources.domain_event_contract_count(None) == 36
+    assert sources.domain_event_contract_count(None) == 37
 
 
 def test_publisher_reuses_outbox_no_second_event_table():
