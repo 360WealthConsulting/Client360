@@ -43,7 +43,7 @@ def test_all_d35_contracts_registered():
     db = {c["event_type"] for c in registry.list_contracts()}
     for c in D35_CONTRACTS_SEED:
         assert c["event_type"] in db, c["event_type"]
-    assert len(D35_EVENT_TYPES) == 31
+    assert len(D35_EVENT_TYPES) == 32
 
 
 def test_d35_contracts_are_references_only():
@@ -174,7 +174,7 @@ def test_governance_scan_finds_all_d35_sites():
 def test_producer_adoption_full():
     pa = registry.producer_adoption()
     assert pa["adoption_pct"] == 100.0 and pa["stale_producers"] == 0
-    assert pa["adopted_sites"] == pa["target_sites"] == 31
+    assert pa["adopted_sites"] == pa["target_sites"] == 32
     assert pa["active_producers"] >= 11
 
 

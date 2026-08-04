@@ -9,7 +9,7 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: docknow01            # `alembic heads` / `alembic current`
+  migration_head: pmh01                 # `alembic heads` / `alembic current`
   route_count: 1090                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:

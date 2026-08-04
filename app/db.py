@@ -30,6 +30,10 @@ documents = metadata.tables["documents"]
 document_ocr = metadata.tables["document_ocr"]
 document_classifications = metadata.tables["document_classifications"]
 document_facts = metadata.tables["document_facts"]
+# Tolerant bind: MDM-1's migration (pmh01) may not be applied yet in every environment. The read-only
+# person-merge PREVIEW must import + run before pmh01; an eager metadata.tables[...] would KeyError at
+# import. None here until the table exists; merge_people() checks for it and refuses clearly if absent.
+person_merge_history = metadata.tables.get("person_merge_history")
 
 # Client Vault (feature/client-vault-mvp) — employee-facing client document store.
 vault_documents = metadata.tables["vault_documents"]
