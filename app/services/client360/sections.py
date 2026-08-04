@@ -410,7 +410,7 @@ def audit(principal, ctx):
     ``audit.read``; scope already verified at the workspace boundary. Never surfaces secrets."""
     from sqlalchemy import and_, or_, select
 
-    from app.db import audit_events, engine
+    from app.db import audit_events, engine, households, people, tasks, users
     scope = [str(i) for i in _scope(ctx)]
     hid = _hid(ctx)
     conds = []
@@ -428,7 +428,35 @@ def audit(principal, ctx):
             select(audit_events.c.action, audit_events.c.entity_type, audit_events.c.entity_id,
                    audit_events.c.actor_user_id, audit_events.c.occurred_at, audit_events.c.outcome)
             .where(or_(*conds)).order_by(audit_events.c.occurred_at.desc()).limit(100)).mappings().all()
-    return {"events": [dict(r) for r in rows]}
+        events = [dict(r) for r in rows]
+        # Resolve human labels so the tab never shows raw internal ids ("#1" / "person #1"). Bulk-load
+        # the actor display names and the person/household/task names referenced by these events.
+        actor_ids = {e["actor_user_id"] for e in events if e["actor_user_id"]}
+        by_type: dict[str, set] = {}
+        for e in events:
+            if str(e["entity_id"]).isdigit():
+                by_type.setdefault(e["entity_type"], set()).add(int(e["entity_id"]))
+
+        def _names(table, name_col, ids):
+            if not ids:
+                return {}
+            return {str(i): n for i, n in conn.execute(
+                select(table.c.id, name_col).where(table.c.id.in_(ids))).all()}
+
+        actor_names = ({str(i): n for i, n in conn.execute(
+            select(users.c.id, users.c.display_name).where(users.c.id.in_(actor_ids))).all()}
+            if actor_ids else {})
+        labels = {
+            "person": _names(people, people.c.full_name, by_type.get("person")),
+            "household": _names(households, households.c.name, by_type.get("household")),
+            "task": _names(tasks, tasks.c.title, by_type.get("task")),
+        }
+    for e in events:
+        actor = e["actor_user_id"]
+        e["actor_name"] = (actor_names.get(str(actor)) or "Unknown user") if actor else "System"
+        e["entity_label"] = (labels.get(e["entity_type"], {}).get(str(e["entity_id"]))
+                             or e["entity_type"].replace("_", " ").title())
+    return {"events": events}
 
 
 def vault(principal, ctx):

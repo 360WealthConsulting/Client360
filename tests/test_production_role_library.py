@@ -81,6 +81,16 @@ def test_existing_profile_still_present_with_required_capabilities(code):
     assert EXISTING_PROFILES[code] <= caps, code
 
 
+def test_advisor_has_firm_wide_read_but_not_firm_wide_write():
+    # Office decision (advfw01): every advisor SEES the whole client book (record.read_all), so the
+    # firm-wide collection screens (Search / People / Households / Home / Timeline) are reachable.
+    # Firm-wide WRITE stays administrator-only — the advisor must NOT gain record.write_all.
+    caps = _role_caps("advisor")
+    assert "record.read_all" in caps
+    assert "record.write_all" not in caps
+    assert not (caps & ADMINISTRATOR_ONLY)          # still not administrator authority
+
+
 # --- effective permissions are the union of assigned profiles -----------------
 
 def test_effective_permissions_are_union_jessica(make_user):

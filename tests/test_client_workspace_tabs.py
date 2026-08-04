@@ -142,6 +142,29 @@ def test_audit_section_scoped_to_client(person):
     assert any(e["action"] == "task.created" for e in sec["events"])
 
 
+def test_audit_events_show_human_labels_not_raw_ids(person):
+    # The Audit tab must resolve actor + entity to names, never expose raw internal ids ("#1" / "task #4").
+    from app.db import engine, users
+    from app.services.tasks import create_task
+    title = f"Labelled task {_TAG}"
+    create_task(person, title=title, actor_user_id=_ACTOR["uid"], request_id="t")
+    with engine.connect() as c:
+        actor_name = c.execute(select(users.c.display_name).where(users.c.id == _ACTOR["uid"])).scalar_one()
+        person_name = c.execute(select(people.c.full_name).where(people.c.id == person)).scalar_one()
+    events = get_workspace(_principal(), person_id=person)["sections"]["audit"]["events"]
+    task_ev = next(e for e in events if e["action"] == "task.created")
+    assert task_ev["actor_name"] == actor_name                 # not "#<id>"
+    assert task_ev["entity_label"] == title                    # task title, not "task #<id>"
+    note_ev = next((e for e in events if e["action"] == "note.created"), None)
+    for e in events:                                            # nothing raw leaks through
+        assert not str(e["entity_label"]).startswith("#")
+        assert "#" not in str(e["actor_name"])
+    # a person-entity event resolves to the person's name
+    person_ev = next((e for e in events if e["entity_type"] == "person"), note_ev)
+    if person_ev is not None:
+        assert person_ev["entity_label"] == person_name
+
+
 def test_audit_tab_hidden_without_capability(person):
     ws = get_workspace(Principal(0, "x@e.test", "X", frozenset({"client.read", "record.read_all"})),
                        person_id=person)
