@@ -270,3 +270,30 @@ def test_idempotent_refusal_when_duplicate_gone(actor):
         merge_people(survivor, 99999999, reason="gone", actor_user_id=actor)
     with pytest.raises(ValueError):                        # identical ids rejected too
         merge_people(survivor, survivor, reason="self", actor_user_id=actor)
+
+
+# --- deployment-order safety: preview works before pmh01; applied merge refuses ---------------
+
+def test_preview_works_and_merge_refuses_without_pmh01(actor):
+    """Regression (PR #185): the read-only preview must run against a schema that has NOT applied
+    pmh01, and an applied merge must refuse clearly. We rename person_merge_history away so a fresh
+    connection genuinely sees the pre-pmh01 schema, then restore it."""
+    survivor, dup = _person(), _person()
+    sc = _source_contact()
+    _link(dup, sc)
+    with engine.begin() as c:
+        c.execute(text("ALTER TABLE person_merge_history RENAME TO person_merge_history_bak"))
+    try:
+        report = preview_person_merge(survivor, dup)          # no history table present
+        assert report["safe_to_merge"] is True                # preview does not depend on pmh01
+        assert report["source_links_would_move"] == 1
+        with pytest.raises(MergeBlocked, match="pmh01"):      # applied merge refuses clearly
+            merge_people(survivor, dup, reason="no pmh01", actor_user_id=actor)
+        assert _exists(survivor) and _exists(dup)             # refused → nothing mutated
+        with engine.connect() as c:
+            owner = c.execute(text("SELECT person_id FROM person_source_links WHERE source_contact_id=:s"),
+                              {"s": sc}).scalar_one()
+        assert owner == dup                                   # duplicate's link never moved
+    finally:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE person_merge_history_bak RENAME TO person_merge_history"))

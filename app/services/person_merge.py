@@ -222,6 +222,12 @@ _REGISTRY = [
 ]
 
 
+def _history_table_available(conn) -> bool:
+    """Whether the pmh01 person_merge_history table exists. preview_person_merge never needs it; an
+    APPLIED merge_people does (it records history) and refuses clearly when the migration is absent."""
+    return conn.execute(text("SELECT to_regclass('person_merge_history')")).scalar() is not None
+
+
 def _person(conn, pid, *, lock=False):
     stmt = f"SELECT * FROM people WHERE id = :pid{' FOR UPDATE' if lock else ''}"
     return conn.execute(text(stmt), {"pid": pid}).mappings().first()
@@ -362,6 +368,11 @@ def merge_people(survivor_person_id: int, duplicate_person_id: int, *, reason: s
                "profile_filled": {}, "reason": reason}
 
     with engine.begin() as conn:
+        # An applied merge records history — refuse clearly (before any mutation) if pmh01 is not applied.
+        if not _history_table_available(conn):
+            raise MergeBlocked(
+                "person_merge_history is missing — apply migration pmh01 before merging people. "
+                "(preview_person_merge is safe to run without it.)")
         # Lock both rows in a stable order (avoid deadlocks); both must exist.
         for pid in sorted((survivor_id, duplicate_id)):
             if _person(conn, pid, lock=True) is None:
