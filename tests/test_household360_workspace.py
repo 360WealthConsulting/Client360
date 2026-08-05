@@ -263,7 +263,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1090  # +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
+    assert len(app.routes) == 1094  # +4 Drake identity-review (merge-forward: /matches/drake GET + approve/reject/defer); +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
 
 
 def test_household_page_renders_and_404():

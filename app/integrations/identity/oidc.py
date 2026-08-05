@@ -30,4 +30,13 @@ class OidcIdentityProvider:
         key = jwt.PyJWKClient(discovery["jwks_uri"]).get_signing_key_from_jwt(token).key
         claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], audience=self.client_id, issuer=self.issuer)
         methods = claims.get("amr", [])
-        return IdentityClaims(str(claims["sub"]), claims.get("email", ""), claims.get("name") or claims.get("email", ""), bool({"mfa", "otp", "hwk"}.intersection(methods)))
+        # Entra ID / Azure AD often omits the ``email`` claim and carries the address in
+        # ``preferred_username`` or ``upn`` instead — fall back so staff sign-in resolves a real address.
+        email = claims.get("email") or claims.get("preferred_username") or claims.get("upn") or ""
+        display_name = claims.get("name") or email
+        return IdentityClaims(
+            str(claims["sub"]),
+            email,
+            display_name,
+            bool({"mfa", "otp", "hwk"}.intersection(methods)),
+        )

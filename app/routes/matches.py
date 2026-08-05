@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import (
@@ -225,6 +225,258 @@ def save_match_decision(group_number: int, decision: str):
 
     return RedirectResponse(
         url=f"/matches/{next_group}",
+        status_code=303,
+    )
+
+
+
+def _next_pending_drake_identity(connection):
+    return connection.execute(text("""
+        SELECT identifier_hash
+        FROM drake_identity_match_candidates
+        WHERE status = 'pending'
+        ORDER BY score DESC, identifier_hash
+        LIMIT 1
+    """)).scalar_one_or_none()
+
+
+@router.get("/matches/drake")
+def drake_identity_review_page(
+    request: Request,
+    status: str = "pending",
+    saved: int | None = None,
+):
+    allowed = {"pending", "approved", "rejected", "deferred", "all"}
+    if status not in allowed:
+        status = "pending"
+
+    status_clause = ""
+    parameters = {}
+
+    if status != "all":
+        status_clause = "WHERE c.status = :status"
+        parameters["status"] = status
+
+    with engine.connect() as connection:
+        rows = connection.execute(text(f"""
+            SELECT
+                c.id AS candidate_id,
+                c.identifier_hash,
+                c.person_id,
+                c.score,
+                c.reasons,
+                c.rank,
+                c.status,
+                di.first_year,
+                di.last_year,
+                di.return_count,
+                di.taxpayer_name,
+                di.spouse_name,
+                di.primary_person_id,
+                p.full_name AS candidate_name,
+                p.primary_email,
+                p.primary_phone,
+                p.city,
+                p.state
+            FROM drake_identity_match_candidates c
+            JOIN drake_identity di
+              ON di.identifier_hash = c.identifier_hash
+            JOIN people p
+              ON p.id = c.person_id
+            {status_clause}
+            ORDER BY
+                CASE c.status
+                    WHEN 'pending' THEN 0
+                    WHEN 'deferred' THEN 1
+                    ELSE 2
+                END,
+                c.score DESC,
+                c.identifier_hash,
+                c.rank
+        """), parameters).mappings().all()
+
+        summary = connection.execute(text("""
+            SELECT
+                (SELECT COUNT(*) FROM drake_identity) AS total_identities,
+                (SELECT COUNT(*) FROM drake_identity
+                  WHERE primary_person_id IS NOT NULL) AS linked_identities,
+                (SELECT COUNT(*) FROM drake_identity
+                  WHERE primary_person_id IS NULL) AS unresolved_identities,
+                COUNT(DISTINCT identifier_hash)
+                  FILTER (WHERE status = 'pending') AS pending,
+                COUNT(DISTINCT identifier_hash)
+                  FILTER (WHERE status = 'approved') AS approved,
+                COUNT(DISTINCT identifier_hash)
+                  FILTER (WHERE status = 'rejected') AS rejected,
+                COUNT(DISTINCT identifier_hash)
+                  FILTER (WHERE status = 'deferred') AS deferred
+            FROM drake_identity_match_candidates
+        """)).mappings().one()
+
+    identities = []
+    by_hash = {}
+
+    for row in rows:
+        identifier_hash = row["identifier_hash"]
+
+        if identifier_hash not in by_hash:
+            identity = {
+                "identifier_hash": identifier_hash,
+                "first_year": row["first_year"],
+                "last_year": row["last_year"],
+                "return_count": row["return_count"],
+                "taxpayer_name": row["taxpayer_name"],
+                "spouse_name": row["spouse_name"],
+                "primary_person_id": row["primary_person_id"],
+                "status": row["status"],
+                "candidates": [],
+            }
+            identities.append(identity)
+            by_hash[identifier_hash] = identity
+
+        by_hash[identifier_hash]["candidates"].append(dict(row))
+
+    return templates.TemplateResponse(
+        request=request,
+        name="matches/drake_identities.html",
+        context={
+            "status": status,
+            "saved": saved,
+            "identities": identities,
+            "summary": dict(summary),
+        },
+    )
+
+
+@router.post("/matches/drake/{identifier_hash}/{person_id}/approve")
+def approve_drake_identity(identifier_hash: str, person_id: int):
+    with engine.begin() as connection:
+        candidate = connection.execute(text("""
+            SELECT id, score
+            FROM drake_identity_match_candidates
+            WHERE identifier_hash = :identifier_hash
+              AND person_id = :person_id
+        """), {
+            "identifier_hash": identifier_hash,
+            "person_id": person_id,
+        }).mappings().first()
+
+        if not candidate:
+            return HTMLResponse(
+                "<h1>Drake match candidate not found</h1>",
+                status_code=404,
+            )
+
+        identity_exists = connection.execute(text("""
+            SELECT 1
+            FROM drake_identity
+            WHERE identifier_hash = :identifier_hash
+        """), {
+            "identifier_hash": identifier_hash,
+        }).scalar_one_or_none()
+
+        if not identity_exists:
+            return HTMLResponse(
+                "<h1>Drake identity not found</h1>",
+                status_code=404,
+            )
+
+        connection.execute(text("""
+            UPDATE drake_identity
+            SET
+                primary_person_id = :person_id,
+                confidence = :score
+            WHERE identifier_hash = :identifier_hash
+        """), {
+            "identifier_hash": identifier_hash,
+            "person_id": person_id,
+            "score": candidate["score"],
+        })
+
+        connection.execute(text("""
+            INSERT INTO person_source_links (
+                person_id,
+                source_contact_id,
+                match_method,
+                match_score,
+                confirmed
+            )
+            SELECT
+                :person_id,
+                sc.id,
+                'drake_identity_review',
+                :score,
+                TRUE
+            FROM source_contacts sc
+            WHERE sc.source_system = 'Drake'
+              AND sc.raw_data->>'identifier_hash' = :identifier_hash
+            ON CONFLICT ON CONSTRAINT uq_person_source_link
+            DO NOTHING
+        """), {
+            "identifier_hash": identifier_hash,
+            "person_id": person_id,
+            "score": candidate["score"],
+        })
+
+        connection.execute(text("""
+            UPDATE drake_identity_match_candidates
+            SET
+                status = CASE
+                    WHEN person_id = :person_id THEN 'approved'
+                    ELSE 'rejected'
+                END,
+                reviewed_at = now(),
+                updated_at = now()
+            WHERE identifier_hash = :identifier_hash
+        """), {
+            "identifier_hash": identifier_hash,
+            "person_id": person_id,
+        })
+
+    return RedirectResponse(
+        "/matches/drake?status=pending&saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/matches/drake/{identifier_hash}/reject")
+def reject_drake_identity(identifier_hash: str):
+    with engine.begin() as connection:
+        connection.execute(text("""
+            UPDATE drake_identity_match_candidates
+            SET
+                status = 'rejected',
+                reviewed_at = now(),
+                updated_at = now()
+            WHERE identifier_hash = :identifier_hash
+              AND status IN ('pending', 'deferred')
+        """), {
+            "identifier_hash": identifier_hash,
+        })
+
+    return RedirectResponse(
+        "/matches/drake?status=pending&saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/matches/drake/{identifier_hash}/defer")
+def defer_drake_identity(identifier_hash: str):
+    with engine.begin() as connection:
+        connection.execute(text("""
+            UPDATE drake_identity_match_candidates
+            SET
+                status = 'deferred',
+                reviewed_at = now(),
+                updated_at = now()
+            WHERE identifier_hash = :identifier_hash
+              AND status = 'pending'
+        """), {
+            "identifier_hash": identifier_hash,
+        })
+
+    return RedirectResponse(
+        "/matches/drake?status=pending&saved=1",
         status_code=303,
     )
 

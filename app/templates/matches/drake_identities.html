@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Drake Identity Review | Client360{% endblock %}
+{% block crumb %}Match Review ? Drake{% endblock %}
+
+{% block content %}
+{% call ui.page_head(
+  "Drake identity review",
+  eyebrow="Match Review",
+  desc="Approve one identity once to attach every Drake year sharing the same protected identifier."
+) %}
+  <a class="btn secondary" href="/matches">Back to match review</a>
+{% endcall %}
+
+{% if saved %}
+<div class="alert good" style="margin-bottom:14px">
+  <span class="ico">?</span>
+  <div>Drake identity decision saved.</div>
+</div>
+{% endif %}
+
+<div class="filterbar">
+  {% set labels = {
+    'all':'All candidates',
+    'pending':'Pending',
+    'approved':'Approved',
+    'rejected':'Rejected',
+    'deferred':'Deferred'
+  } %}
+  {% for item in ['pending','deferred','approved','rejected','all'] %}
+  <a class="chip {{ 'active' if status == item else '' }}"
+     href="/matches/drake?status={{ item }}">{{ labels[item] }}</a>
+  {% endfor %}
+</div>
+
+<div class="stat-grid" style="margin-bottom:16px">
+  {{ ui.stat("Drake identities", "{:,}".format(summary.total_identities or 0)) }}
+  {{ ui.stat("Linked", "{:,}".format(summary.linked_identities or 0)) }}
+  {{ ui.stat("Unresolved", "{:,}".format(summary.unresolved_identities or 0)) }}
+  {{ ui.stat("Pending review", "{:,}".format(summary.pending or 0)) }}
+  {{ ui.stat("Deferred", "{:,}".format(summary.deferred or 0)) }}
+</div>
+
+<div class="alert info" style="margin-bottom:16px">
+  <span class="ico">?</span>
+  <div>
+    Approval creates permanent source links for every listed Drake year.
+    It does not create a new Client360 person.
+  </div>
+</div>
+
+{% if identities %}
+<div class="stack">
+{% for identity in identities %}
+<article class="card" style="padding:16px">
+  <div class="row" style="justify-content:space-between; gap:14px; align-items:flex-start">
+    <div>
+      <h2 style="margin:0 0 5px; font-size:17px">
+        {{ identity.taxpayer_name or identity.spouse_name or "Unnamed Drake identity" }}
+      </h2>
+
+      {% if identity.spouse_name and identity.spouse_name != identity.taxpayer_name %}
+      <div class="subtle">Also appears as {{ identity.spouse_name }}</div>
+      {% endif %}
+
+      <div class="subtle" style="margin-top:5px">
+        Drake years:
+        <strong>{{ identity.first_year }}?{{ identity.last_year }}</strong>
+        ? {{ identity.return_count }} source record{{ "" if identity.return_count == 1 else "s" }}
+      </div>
+    </div>
+
+    {{ ui.badge(identity.status|capitalize, 'warn' if identity.status == 'pending' else 'muted') }}
+  </div>
+
+  <div class="stack" style="margin-top:14px">
+  {% for candidate in identity.candidates %}
+    <div class="card" style="padding:12px; background:var(--surface-2, #f7f7f7)">
+      <div class="row" style="justify-content:space-between; gap:14px; align-items:center">
+        <div>
+          <strong>
+            <a href="/client/{{ candidate.person_id }}">
+              {{ candidate.candidate_name or ("Person #" ~ candidate.person_id) }}
+            </a>
+          </strong>
+
+          <div class="subtle" style="margin-top:4px">
+            {{ candidate.primary_email or "no email" }}
+            ? {{ candidate.primary_phone or "no phone" }}
+            {% if candidate.city or candidate.state %}
+              ? {{ candidate.city or "" }} {{ candidate.state or "" }}
+            {% endif %}
+          </div>
+
+          <div class="subtle" style="margin-top:4px">
+            Evidence:
+            {{ candidate.reasons|join(", ")|replace("_", " ") }}
+          </div>
+        </div>
+
+        <div style="text-align:right">
+          {{ ui.badge(candidate.score ~ "%", 'good' if candidate.score >= 95 else 'warn') }}
+
+          {% if identity.status in ['pending', 'deferred'] %}
+          <form method="post"
+                action="/matches/drake/{{ identity.identifier_hash }}/{{ candidate.person_id }}/approve"
+                style="margin-top:8px">
+            <button class="btn" type="submit">Approve this client</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+
+  {% if identity.status in ['pending', 'deferred'] %}
+  <div class="row" style="gap:10px; margin-top:14px">
+    <form method="post"
+          action="/matches/drake/{{ identity.identifier_hash }}/reject">
+      <button class="btn danger" type="submit">None of these clients</button>
+    </form>
+
+    {% if identity.status == 'pending' %}
+    <form method="post"
+          action="/matches/drake/{{ identity.identifier_hash }}/defer">
+      <button class="btn secondary" type="submit">Defer</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</article>
+{% endfor %}
+</div>
+{% else %}
+{% call ui.empty(
+  "No Drake identities",
+  "No Drake identities match the selected status."
+) %}{% endcall %}
+{% endif %}
+{% endblock %}
