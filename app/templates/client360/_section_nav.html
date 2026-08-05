@@ -1,0 +1,48 @@
+{# Shared grouped section navigation for BOTH the Client/Person and Household workspaces (D.41 nav
+   polish). Eight primary tab GROUPS over the existing ?tab= sections; the active group's sub-sections
+   show as a secondary row. Presentation-only: URLs, section keys, permissions, content and services are
+   UNCHANGED — only the tab bar is reorganized.
+
+   Expects the enclosing template's context: `ws` (with .section_keys), `active_tab`, `base`.
+
+   The group definition is the UNION of both workspaces' sections; each workspace renders only the keys
+   present in its own ws.section_keys, so the two stay consistent while remaining correctly gated
+   (a section the principal cannot open is absent — no shown-then-403). Any section not explicitly
+   grouped still appears under "More", so nothing is ever hidden. #}
+{% set groups_def = [
+    ("Overview",   ["dashboard","summary","members","relationships","timeline","notes","audit"]),
+    ("Financial",  ["financial","insurance","benefits","opportunities"]),
+    ("Tax",        ["tax","work"]),
+    ("Documents",  ["documents","vault","knowledge","communications","document_intelligence"]),
+    ("Tasks",      ["tasks","operational_workload","recommendations","automation_history"]),
+    ("Meetings",   ["meetings"]),
+    ("Compliance", ["compliance","compliance_summary","risk_controls","evidence_readiness"]),
+    ("More",       ["executive","business_continuity","technology_dependencies","operational_impact",
+                    "security_access","servicing_team","change_impact","platform_dependencies",
+                    "data_governance","data_governance_metadata","financial_relationship",
+                    "knowledge_documentation","external_integrations","authorization_context"]),
+] %}
+{% set gk = namespace(all=[]) %}
+{% for _l, keys in groups_def %}{% for k in keys %}{% set _ = gk.all.append(k) %}{% endfor %}{% endfor %}
+{% set nav = namespace(groups=[], active_group="", active_subs=[]) %}
+{% for lbl, keys in groups_def %}
+  {% set vg = namespace(items=[]) %}
+  {% for k in keys %}{% if k in ws.section_keys %}{% set _ = vg.items.append(k) %}{% endif %}{% endfor %}
+  {% if lbl == "More" %}{% for k in ws.section_keys %}{% if k not in gk.all %}{% set _ = vg.items.append(k) %}{% endif %}{% endfor %}{% endif %}
+  {% if vg.items %}{% set _ = nav.groups.append((lbl, vg.items)) %}{% endif %}
+{% endfor %}
+{% if nav.groups %}{% set nav.active_group = nav.groups[0][0] %}{% set nav.active_subs = nav.groups[0][1] %}{% endif %}
+{% for lbl, subs in nav.groups %}{% if active_tab in subs %}{% set nav.active_group = lbl %}{% set nav.active_subs = subs %}{% endif %}{% endfor %}
+
+<nav class="c360-tabs" aria-label="Sections">
+  {% for lbl, subs in nav.groups %}
+    <a class="c360-tab {% if lbl == nav.active_group %}active{% endif %}" href="{{ base }}?tab={{ subs[0] }}">{{ lbl }}</a>
+  {% endfor %}
+</nav>
+{% if nav.active_subs | length > 1 %}
+<nav class="c360-subtabs" aria-label="{{ nav.active_group }} sections">
+  {% for key in nav.active_subs %}
+    <a class="c360-tab c360-tab--sub {% if key == active_tab %}active{% endif %}" href="{{ base }}?tab={{ key }}">{{ key|replace("_"," ")|title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}

@@ -42,11 +42,7 @@
 </nav>
 {% endif %}
 
-<nav class="c360-tabs" aria-label="Sections">
-  {% for key in ws.section_keys %}
-    <a class="c360-tab {% if key == active_tab %}active{% endif %}" href="{{ base }}?tab={{ key }}">{{ key|replace("_"," ")|capitalize }}</a>
-  {% endfor %}
-</nav>
+{% include "client360/_section_nav.html" %}
 
 {% set sec = ws.sections.get(active_tab) %}
 <section class="c360-panel">
