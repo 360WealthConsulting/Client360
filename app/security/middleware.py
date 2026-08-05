@@ -29,7 +29,7 @@ def _is_cross_site(origin, referer, base_url):
     return False
 
 
-PUBLIC_EXACT = frozenset({"/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
+PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume", "/api/portal/login"})
 RULES = (

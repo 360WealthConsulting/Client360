@@ -9,8 +9,8 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: advfw01               # `alembic heads` / `alembic current`
-  route_count: 1090                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  migration_head: drake01               # `alembic heads` / `alembic current`
+  route_count: 1094                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
   production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"

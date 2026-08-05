@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 
@@ -9,6 +10,7 @@ from app.security.audit import write_audit_event
 from app.security.service import authenticate_claims, create_session, revoke_session
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+logger = logging.getLogger("client360.auth")
 
 def _safe_next(value: str | None) -> str | None:
     """Accept only a local path (``/...``) as the post-login return URL — never an absolute/off-site
@@ -34,7 +36,11 @@ def login(request: Request, next: str | None = None):
 def auth_callback(request: Request, code: str, state: str):
     if not state or not secrets.compare_digest(state, request.session.pop("oidc_state", "")): raise HTTPException(400, "Invalid authentication state")
     claims = OidcIdentityProvider().exchange_code(code=code, redirect_uri=str(request.url_for("auth_callback")))
-    user_id = authenticate_claims(claims, os.getenv("OIDC_REQUIRE_MFA", "true").lower() == "true")
+    require_mfa = os.getenv("OIDC_REQUIRE_MFA", "true").lower() == "true"
+    # MFA-troubleshooting diagnostic. DEBUG-level and PII-free (no email/subject) so it is silent in
+    # normal operation and never records personal identifiers on every login.
+    logger.debug("OIDC callback: mfa_detected=%s require_mfa=%s", claims.mfa_authenticated, require_mfa)
+    user_id = authenticate_claims(claims, require_mfa)
     if not user_id: raise HTTPException(403, "Account is inactive, uninvited, or missing required MFA")
     request.session["session_token"] = create_session(user_id)
     write_audit_event(action="auth.login", entity_type="user", entity_id=user_id, actor_user_id=user_id, request_id=request.state.request_id, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
