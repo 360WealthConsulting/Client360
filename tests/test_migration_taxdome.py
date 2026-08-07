@@ -1,16 +1,20 @@
 """TaxDome Document Migration — PREVIEW (read-only) coverage.
 
-Proves the preview matches top-level client folders to canonical people/households (matched / ambiguous
-/ unmatched), counts files/folders/bytes/duplicates/estimated document rows, writes the three named
-artifacts, and makes ZERO database writes and ZERO file changes. Also proves APPLY is refused before any
-database access. Temp source tree + temp people only; people cleaned up.
+Proves the preview: matches top-level folders to canonical people/households (matched / ambiguous /
+unmatched); builds the proposed destination path carrying the canonical id; detects placeholders,
+zero-byte, unreadable, duplicate-content candidates, and destination collisions; assigns readiness
+(ready / review-required / blocked); writes the three named artifacts; and makes ZERO database writes and
+ZERO file changes. Also proves APPLY is refused before any database access. Temp trees + temp people only.
 """
+import dataclasses
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
 
 from app.db import engine, households, metadata, people
+from app.services.migration import taxdome as td
 from app.services.migration.base import Mode, ModeNotSupported
 from app.services.migration.config import MigrationConfig
 from app.services.migration.taxdome import TaxDomeDocumentMigration
@@ -32,10 +36,11 @@ def _cleanup():
     _CREATED["people"].clear(); _CREATED["households"].clear()
 
 
-def _person(full_name, household_id=None):
+def _person(full_name, first=None, last=None, household_id=None):
     with engine.begin() as c:
         pid = c.execute(people.insert().values(
-            full_name=full_name, active=True, household_id=household_id).returning(people.c.id)).scalar_one()
+            full_name=full_name, first_name=first, last_name=last, active=True,
+            household_id=household_id).returning(people.c.id)).scalar_one()
     _CREATED["people"].append(pid)
     return pid
 
@@ -49,93 +54,119 @@ def _household(name):
 
 @pytest.fixture
 def source(tmp_path):
-    """A temp TaxDome tree with a matched, ambiguous, unmatched, and joint-household folder."""
     root = tmp_path / "TaxDome"
     def mk(folder, files):
         d = root / folder
         d.mkdir(parents=True)
-        for name, data in files:
-            (d / name).write_bytes(data)
-    # matched (unique person)
-    mk(f"Alpha {_TAG}", [("2023 return.pdf", b"a" * 100), ("desktop.ini", b"x")])   # desktop.ini ignored
-    # ambiguous (two people share the name)
-    mk(f"Bravo {_TAG}", [("doc.pdf", b"b" * 50)])
-    # unmatched (no person)
-    mk(f"Nomatch {_TAG}", [("scan.pdf", b"c" * 30)])
-    # joint -> shared household
-    mk(f"Carol {_TAG} and Dave {_TAG}", [("joint.pdf", b"d" * 40)])
+        for rel, data in files:
+            p = d / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+    mk(f"Alpha {_TAG}", [("2024/Tax Return.pdf", b"a" * 100), ("desktop.ini", b"x")])   # matched person
+    mk(f"Bravo {_TAG}", [("doc.pdf", b"b" * 50)])                                        # ambiguous
+    mk(f"Nomatch {_TAG}", [("2022/scan.pdf", b"c" * 30)])                                # unmatched
+    mk(f"Carol {_TAG} and Dave {_TAG}", [("2023/joint.pdf", b"d" * 40)])                 # matched household
     return root
 
 
 @pytest.fixture
 def cfg(tmp_path, source):
     (tmp_path / "out").mkdir()
+    (tmp_path / "dest").mkdir()
     base = MigrationConfig.from_env()
-    import dataclasses
-    return dataclasses.replace(base, migration_root=tmp_path / "out", taxdome_migration_root=source)
+    return dataclasses.replace(base, migration_root=tmp_path / "out",
+                               taxdome_migration_root=source, migration_dest_root=tmp_path / "dest")
 
 
-def _seed_people():
-    _person(f"Alpha {_TAG}")                                  # unique -> matched person
-    _person(f"Bravo {_TAG}"); _person(f"Bravo {_TAG}")        # duplicate -> ambiguous
+def _seed():
+    pid = _person(f"Alpha {_TAG}", first="Alpha", last=_TAG)
+    _person(f"Bravo {_TAG}"); _person(f"Bravo {_TAG}")                 # duplicate -> ambiguous
     hid = _household(f"Carol-Dave {_TAG}")
     _person(f"Carol {_TAG}", household_id=hid)
-    _person(f"Dave {_TAG}", household_id=hid)                 # joint -> matched household
+    _person(f"Dave {_TAG}", household_id=hid)
+    return pid, hid
 
 
-def _counts():
+def _db_counts():
     with engine.connect() as c:
         return (int(c.execute(select(func.count()).select_from(import_jobs)).scalar_one()),
                 int(c.execute(select(func.count()).select_from(documents)).scalar_one()))
 
 
-def test_preview_classifies_matched_ambiguous_unmatched(cfg):
-    _seed_people()
-    before = _counts()
+def test_preview_classification_destination_and_readiness(cfg):
+    pid, hid = _seed()
+    before = _db_counts()
     result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     c = result.counts
-    assert c["top_level_folders"] == 4
-    assert c["matched_folders"] == 2       # Alpha (person) + Carol&Dave (household)
-    assert c["ambiguous_folders"] == 1     # Bravo
-    assert c["unmatched_folders"] == 1     # Nomatch
-    # per-folder statuses
-    by = {r["top_level_folder"]: r for r in result.reconciliation}
-    assert by[f"Alpha {_TAG}"]["match_status"] == "matched" and by[f"Alpha {_TAG}"]["person_id"]
-    assert by[f"Carol {_TAG} and Dave {_TAG}"]["match_status"] == "matched"
-    assert by[f"Carol {_TAG} and Dave {_TAG}"]["household_id"]
-    assert by[f"Bravo {_TAG}"]["match_status"] == "ambiguous"
-    assert by[f"Nomatch {_TAG}"]["match_status"] == "unmatched"
-    # counts: ignored desktop.ini excluded from estimated document rows
+    assert c["matched_folders"] == 2 and c["ambiguous_folders"] == 1 and c["unmatched_folders"] == 1
+    by = {r["source_folder"]: r for r in result.reconciliation}
+    a = by[f"Alpha {_TAG}"]
+    assert a["classification"] == "matched" and a["entity_type"] == "person" and str(a["canonical_id"]) == str(pid)
+    # destination carries the canonical id + display, category Tax, detected year 2024
+    assert a["proposed_destination_root"].endswith(f"Clients/{pid} - {_TAG}, Alpha") or \
+           a["proposed_destination_root"].endswith(f"Clients\\{pid} - {_TAG}, Alpha")
+    assert a["readiness"] == "ready"
+    h = by[f"Carol {_TAG} and Dave {_TAG}"]
+    assert h["classification"] == "matched" and h["entity_type"] == "household" and str(h["canonical_id"]) == str(hid)
+    assert by[f"Bravo {_TAG}"]["classification"] == "ambiguous"
+    assert by[f"Bravo {_TAG}"]["readiness"] == "review-required"
+    assert by[f"Nomatch {_TAG}"]["classification"] == "unmatched"
+    # counts: ignored excluded from doc rows; matched vs review split
     assert c["ignored_files"] >= 1
-    assert c["estimated_document_rows_total"] == 4         # 4 real docs (desktop.ini excluded)
-    assert c["total_files"] == 5                           # 4 docs + desktop.ini
-    assert c["total_bytes"] == 100 + 50 + 30 + 40
-    # ZERO database writes
-    assert _counts() == before
+    assert c["estimated_document_rows_total"] == 4
+    assert c["estimated_document_rows_matched"] == 2          # Alpha + joint
+    # ZERO db writes
+    assert _db_counts() == before
 
 
-def test_preview_writes_the_three_named_artifacts(cfg):
-    _seed_people()
-    from pathlib import Path
+def test_preview_detects_zero_byte_and_preflight(cfg, source):
+    _seed()
+    (source / f"Alpha {_TAG}" / "2024" / "empty.pdf").write_bytes(b"")   # zero-byte
+    result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
+    assert result.counts["zero_byte_files"] >= 1
+    # destination pre-flight is reported (read-only stat), dest dir exists in the fixture
+    assert result.counts["dest_root_exists"] is True
+    assert "dest_free_gb" in result.counts and "fits_with_10pct_margin" in result.counts
+
+
+def test_preview_detects_destination_collision_same_entity(cfg, source):
+    pid, _ = _seed()
+    # a SECOND top-level folder that resolves to the SAME person (order-insensitive name key)
+    dupe = source / f"{_TAG} Alpha"
+    (dupe / "2024").mkdir(parents=True)
+    (dupe / "2024" / "Tax Return.pdf").write_bytes(b"a" * 100)           # same dest path as Alpha's file
+    result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
+    assert result.counts["destination_collisions"] >= 1
+
+
+def test_preview_placeholder_blocks_folder(cfg, monkeypatch):
+    _seed()
+    monkeypatch.setattr(td, "_is_placeholder", lambda st: True)          # simulate OneDrive cloud-only
+    result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
+    assert result.counts["cloud_only_placeholders"] >= 1
+    a = {r["source_folder"]: r for r in result.reconciliation}[f"Alpha {_TAG}"]
+    assert a["placeholder_count"] >= 1 and a["readiness"] == "blocked"   # matched but cloud-only -> blocked
+
+
+def test_preview_writes_named_artifacts(cfg):
+    _seed()
     result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     d = Path(result.run_dir)
     for name in ("migration_preview.csv", "migration_summary.txt", "migration_manifest.json"):
         assert (d / name).exists(), name
-    preview = (d / "migration_preview.csv").read_text()
-    assert "match_status" in preview and f"Alpha {_TAG}" in preview
+    assert "proposed_destination_root" in (d / "migration_preview.csv").read_text()
 
 
-def test_preview_does_not_modify_source_files(cfg, source):
-    _seed_people()
-    before = sorted(p.name for p in source.rglob("*"))
+def test_preview_does_not_modify_source(cfg, source):
+    _seed()
+    before = sorted(str(p.relative_to(source)) for p in source.rglob("*"))
     TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
-    after = sorted(p.name for p in source.rglob("*"))
-    assert before == after                                # no copy/move/delete/rename
+    assert sorted(str(p.relative_to(source)) for p in source.rglob("*")) == before
 
 
-def test_apply_is_refused_before_any_write(cfg):
-    before = _counts()
+def test_apply_refused_before_any_write(cfg):
+    before = _db_counts()
     with pytest.raises(ModeNotSupported, match="disabled"):
         TaxDomeDocumentMigration(cfg).run(Mode.APPLY)
-    assert _counts() == before
+    assert _db_counts() == before
     assert Mode.APPLY not in TaxDomeDocumentMigration.supported_modes
