@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db import engine, households, metadata, people
-from app.services.migration import engine as mig_engine
+from app.services.migration import storage as mig_storage
 from app.services.migration.base import Mode, ModeNotSupported
 from app.services.migration.config import MigrationConfig
 from app.services.migration.taxdome import TaxDomeDocumentMigration
@@ -142,7 +142,7 @@ def test_preview_detects_destination_collision_same_entity(cfg, source):
 
 def test_preview_placeholder_blocks_folder(cfg, monkeypatch):
     _seed()
-    monkeypatch.setattr(mig_engine, "_is_placeholder", lambda st: True)   # simulate OneDrive cloud-only
+    monkeypatch.setattr(mig_storage, "_is_placeholder", lambda st: True)   # simulate OneDrive cloud-only (Storage service)
     result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     assert result.counts["cloud_only_placeholders"] >= 1
     a = {r["source_group"]: r for r in result.reconciliation}[f"Alpha {_TAG}"]
@@ -222,6 +222,53 @@ def test_apply_reconcile_retire_stages_declared_but_unimplemented(cfg):
     for stage in (eng.apply, eng.reconcile, eng.retire):
         with pytest.raises(NotImplementedError):
             stage()
+
+
+def test_storage_service_is_injectable_and_replaceable(cfg):
+    """Handlers go through the Storage Service — swap the backend and the handler is unchanged."""
+    from app.services.migration.adapters.taxdome import TaxDomeAdapter
+    from app.services.migration.engine import IngestionEngine
+    from app.services.migration.storage import StatInfo, StorageService
+    _seed()
+
+    class FakeStorage(StorageService):                       # a different "backend" (NAS/object/cloud stand-in)
+        def stat(self, uri):
+            return StatInfo(exists=True, size=123, is_placeholder=True)
+        def exists(self, uri):
+            return True
+        def free_and_total(self, path):
+            return (10 ** 12, 2 * 10 ** 12)
+
+    counts, _rows, _e, _n = IngestionEngine(TaxDomeAdapter(), cfg, storage=FakeStorage()).preview()
+    assert counts["total_bytes"] == 123 * 4                  # 4 non-ignored files, each sized by the fake backend
+    assert counts["cloud_only_placeholders"] == 4           # backend reported cloud-only → matched groups blocked
+    assert counts["blocked_folders"] == 2                    # Alpha + the joint household
+
+
+def test_engine_asks_the_identity_service(cfg):
+    """The engine resolves entities via the Identity Service — swap it and the engine uses the swap."""
+    from app.services.migration.adapters.taxdome import TaxDomeAdapter
+    from app.services.migration.artifact import CanonicalEntity
+    from app.services.migration.engine import IngestionEngine
+    from app.services.migration.identity import CanonicalMatch, IdentityService
+
+    class FakeIdentity(IdentityService):
+        def load(self):
+            pass
+        def resolve(self, group_key, record):
+            return CanonicalMatch("matched", "fake", CanonicalEntity("person", 999, "Fake, Person"))
+
+    counts, rows, _e, _n = IngestionEngine(TaxDomeAdapter(), cfg, identity=FakeIdentity(cfg)).preview()
+    assert counts["matched_folders"] == counts["groups"]     # every group matched via the injected service
+    assert rows and all(r["canonical_id"] == 999 for r in rows)
+
+
+def test_versioned_artifact_supports_history_never_overwrite():
+    from app.services.migration.artifact import VersionedEnterpriseArtifact
+    a = VersionedEnterpriseArtifact(source_system="X", artifact_type="document", group_key="g")
+    for f in ("version_id", "previous_version_id", "effective_date", "imported_date", "archived_date",
+              "integrity_hash", "canonical_entity"):
+        assert hasattr(a, f) and getattr(a, f) is None       # unset until apply; new versions, never overwrite
 
 
 def test_apply_refused_before_any_write(cfg):
