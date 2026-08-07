@@ -198,6 +198,32 @@ def test_engine_is_source_and_artifact_agnostic(cfg, tmp_path):
     assert any(e.get("artifact_type") == "note" and "no handler" in e["reason"] for e in res.exceptions)
 
 
+def test_stage_events_published_and_subscribable(cfg):
+    """Each independent ingestion stage publishes a StageEvent; a downstream subscriber receives them
+    without modifying the engine — the Event Publishing seam (OCR/AI/indexing/search/… plug in here)."""
+    from app.services.migration import events as ev
+    _seed()
+    received: list[str] = []
+    ev.subscribe(lambda e: received.append(str(e.stage)))
+    try:
+        result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
+    finally:
+        ev.clear_subscribers()
+    assert result.counts["stage_events"] == [
+        "discovery", "normalization", "canonical_matching", "transformation", "validation", "preview"]
+    for stage in ("discovery", "canonical_matching", "validation", "preview"):
+        assert stage in received                            # subscriber saw every completed stage
+
+
+def test_apply_reconcile_retire_stages_declared_but_unimplemented(cfg):
+    from app.services.migration.adapters.taxdome import TaxDomeAdapter
+    from app.services.migration.engine import IngestionEngine
+    eng = IngestionEngine(TaxDomeAdapter(), cfg)
+    for stage in (eng.apply, eng.reconcile, eng.retire):
+        with pytest.raises(NotImplementedError):
+            stage()
+
+
 def test_apply_refused_before_any_write(cfg):
     before = _db_counts()
     with pytest.raises(ModeNotSupported, match="disabled"):

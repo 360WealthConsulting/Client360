@@ -34,6 +34,12 @@ from pathlib import Path
 from app.importers.taxdome_drive import _folder_person_keys, _is_ignored_file, _name_key
 from app.services.migration.base import MigrationJob, Mode, Outcome
 from app.services.migration.config import MigrationConfig
+from app.services.migration.events import (
+    CollectingEventPublisher,
+    EventPublisher,
+    Stage,
+    StageEvent,
+)
 
 _YEAR_RE = re.compile(r"^(19|20)\d{2}$")
 _FILE_ATTRIBUTE_OFFLINE = 0x1000
@@ -45,9 +51,11 @@ _PLACEHOLDER_MASK = _FILE_ATTRIBUTE_OFFLINE | _FILE_ATTRIBUTE_RECALL_ON_OPEN | _
 # --- the normalized record every adapter emits (any artifact type) -----------
 
 @dataclass
-class IngestionRecord:
-    """One normalized business object from any source. ``artifact_type`` selects the handler; ``payload``
-    carries the artifact-specific data (a document's file path, a note's body, a task's fields, …)."""
+class EnterpriseArtifact:
+    """One normalized enterprise object from any source — the engine assumes NOTHING about files. A
+    ``document``'s payload holds a file path; a ``note``'s holds body text; a ``contact``/``task``/
+    ``email``/``event``/AI-metadata artifact holds structured fields. ``artifact_type`` selects the
+    handler that maps it into Client360's canonical model."""
 
     source_system: str
     artifact_type: str                   # "document" | "note" | "task" | "email" | "contact" | "event" | …
@@ -245,27 +253,55 @@ HANDLERS: dict[str, ArtifactHandler] = {
 # --- the engine (source-agnostic AND artifact-agnostic) ----------------------
 
 class IngestionEngine:
-    """Runs the common pipeline for any adapter and any artifact type. Preview is strictly read-only."""
+    """Orchestrates the independent ingestion stages for any adapter and any artifact type. Each stage
+    runs as its own step and publishes a StageEvent on completion (Event Publishing service), so
+    downstream systems (OCR / AI / indexing / search / compliance / audit) subscribe without touching the
+    engine. Preview runs Discovery → Normalization → Canonical Matching → Transformation → Validation →
+    Preview; Apply / Reconciliation / Retirement are separate stages built after preview approval. Preview
+    is strictly read-only — its default publisher keeps events in memory (no database writes)."""
 
-    def __init__(self, adapter: SourceAdapter, config: MigrationConfig):
+    def __init__(self, adapter: SourceAdapter, config: MigrationConfig, publisher: EventPublisher | None = None):
         self.adapter = adapter
         self.config = config
+        self.publisher = publisher or CollectingEventPublisher()
+        self.stages_run: list[str] = []
+
+    def _emit(self, stage: Stage, counts: dict) -> None:
+        self.stages_run.append(str(stage))
+        self.publisher.publish(StageEvent(stage=stage, source_system=self.adapter.source_system, counts=counts))
+
+    # -- stages not yet implemented (declared so the platform shape is explicit) --
+    def apply(self, *_a, **_k):
+        raise NotImplementedError("APPLY stage is not implemented yet (preview must be approved first).")
+
+    def reconcile(self, *_a, **_k):
+        raise NotImplementedError("RECONCILIATION stage is not implemented yet.")
+
+    def retire(self, *_a, **_k):
+        raise NotImplementedError("RETIREMENT stage is not implemented yet.")
 
     def preview(self) -> tuple[dict, list[dict], list[dict], list[str]]:
         cfg = self.config
         dest_root = cfg.migration_dest_root
         src_root = self.adapter.source_root(cfg)
         if not self.adapter.available(cfg):
-            return ({"groups": 0, "source_root": str(src_root), "destination_root": str(dest_root)},
+            return ({"groups": 0, "source_root": str(src_root), "destination_root": str(dest_root),
+                     "stage_events": []},
                     [], [{"reason": f"source not found: {src_root}"}], [f"Source not found: {src_root}"])
 
-        # DISCOVER + NORMALIZE (the only source-specific step) → group by entity hint, then artifact type
-        groups: dict[str, dict[str, list[IngestionRecord]]] = {}
+        # STAGE: DISCOVERY + NORMALIZATION (the only source-specific step)
+        groups: dict[str, dict[str, list[EnterpriseArtifact]]] = {}
         artifact_types: set[str] = set()
+        total_records = 0
         for rec in self.adapter.discover(cfg):
+            total_records += 1
             artifact_types.add(rec.artifact_type)
             groups.setdefault(rec.group_key, {}).setdefault(rec.artifact_type, []).append(rec)
+        self._emit(Stage.DISCOVERY, {"groups": len(groups), "records": total_records,
+                                     "artifact_types": sorted(artifact_types)})
+        self._emit(Stage.NORMALIZATION, {"records": total_records})
 
+        # STAGE: CANONICAL MATCHING (resolve each group's entity up front)
         idx: dict[str, list[dict]] = {}
         hh: dict[int, str] = {}
         db_note = None
@@ -275,17 +311,9 @@ class IngestionEngine:
                 idx, hh = _load_directory(conn)
         except Exception as exc:  # noqa: BLE001 — preview must not fail on DB access
             db_note = f"canonical directory unavailable ({exc}); groups reported unmatched"
-
-        ctx = {"name_size_seen": {}, "dest_seen": {}, "dest_root": dest_root}
-        rows: list[dict] = []
-        exceptions: list[dict] = []
+        matches: dict[str, dict] = {}
         by_status = {"matched": 0, "ambiguous": 0, "unmatched": 0}
-        by_readiness = {"ready": 0, "review-required": 0, "blocked": 0}
-        est_rows = {"matched": 0, "ambiguous": 0, "unmatched": 0}
-        per_type_rows: dict[str, int] = {}
-        agg = {"files": 0, "bytes": 0, "zero_byte": 0, "unreadable": 0, "ignored": 0, "placeholders": 0}
-
-        for group_key, by_type in sorted(groups.items(), key=lambda kv: kv[0].lower()):
+        for group_key, by_type in groups.items():
             first = next(iter(next(iter(by_type.values()))))
             if first.entity_type and first.canonical_id:              # adapter pre-resolved the canonical entity
                 match = {"status": "matched", "reason": "adapter-resolved", "entity_type": first.entity_type,
@@ -296,8 +324,21 @@ class IngestionEngine:
             else:
                 match = {"status": "unmatched", "reason": db_note or "no canonical directory",
                          "entity_type": "", "canonical_id": None, "display_name": "", "candidates": []}
+            matches[group_key] = match
             by_status[match["status"]] += 1
+        self._emit(Stage.CANONICAL_MATCHING, dict(by_status))
 
+        # STAGE: TRANSFORMATION + VALIDATION + PREVIEW (per artifact type, via its handler)
+        ctx = {"name_size_seen": {}, "dest_seen": {}, "dest_root": dest_root}
+        rows: list[dict] = []
+        exceptions: list[dict] = []
+        by_readiness = {"ready": 0, "review-required": 0, "blocked": 0}
+        est_rows = {"matched": 0, "ambiguous": 0, "unmatched": 0}
+        per_type_rows: dict[str, int] = {}
+        agg = {"files": 0, "bytes": 0, "zero_byte": 0, "unreadable": 0, "ignored": 0, "placeholders": 0}
+
+        for group_key, by_type in sorted(groups.items(), key=lambda kv: kv[0].lower()):
+            match = matches[group_key]
             for artifact_type, records in sorted(by_type.items()):
                 per_type_rows[artifact_type] = per_type_rows.get(artifact_type, 0) + 1
                 handler = HANDLERS.get(artifact_type)
@@ -330,8 +371,14 @@ class IngestionEngine:
         dup_groups = sum(1 for n in ctx["name_size_seen"].values() if n > 1)
         dup_files = sum(n - 1 for n in ctx["name_size_seen"].values() if n > 1)
         collisions = sum(v - 1 for v in ctx["dest_seen"].values() if v > 1)
+        self._emit(Stage.TRANSFORMATION, {"destinations_planned": est_rows["matched"]})
+        self._emit(Stage.VALIDATION, {"blocked": by_readiness["blocked"],
+                                      "review_required": by_readiness["review-required"],
+                                      "issues": len(exceptions)})
+        self._emit(Stage.PREVIEW, {"rows": len(rows)})
         counts = {
             "source_system": self.adapter.source_system, "artifact_types": sorted(artifact_types),
+            "stage_events": list(self.stages_run),
             "source_root": str(src_root), "destination_root": str(dest_root),
             "groups": len(groups), "top_level_folders": len(groups),
             "matched_folders": by_status["matched"], "ambiguous_folders": by_status["ambiguous"],
@@ -432,6 +479,7 @@ class IngestionJob(MigrationJob):
         return Outcome(counts=counts, exceptions=exceptions, reconciliation=rows, notes=notes)
 
 
-# Backward-compatible aliases (documents were the first implementation).
+# Backward-compatible aliases (documents were the first implementation; records were once file-only).
 DocumentMigrationJob = IngestionJob
-SourceItem = IngestionRecord
+IngestionRecord = EnterpriseArtifact
+SourceItem = EnterpriseArtifact
