@@ -42,6 +42,11 @@ class Mode(StrEnum):
 WRITE_MODES: frozenset[Mode] = frozenset({Mode.APPLY, Mode.ROLLBACK})
 
 
+class ModeNotSupported(RuntimeError):
+    """A job was asked to run a mode it does not support / has disabled for this phase. Raised by
+    ``run()`` BEFORE any database access — no ``import_jobs`` row is opened and nothing is written."""
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -130,6 +135,9 @@ class MigrationJob:
     unimplemented hooks raise ``NotImplementedError`` so an unsupported mode fails loudly."""
 
     source_system: str = "unknown"
+    #: Modes this job supports THIS phase. Fail-closed: anything not listed is refused up front
+    #: (before any database access). Subclasses must declare what they actually implement/enable.
+    supported_modes: frozenset[Mode] = frozenset()
 
     def __init__(self, config: MigrationConfig | None = None):
         self.config = config or MigrationConfig.from_env()
@@ -164,6 +172,17 @@ class MigrationJob:
         started = _now_iso()
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         run_dir = self.run_dir(mode, stamp)
+        # Fail-closed: an unsupported / disabled mode is refused BEFORE any database access — no
+        # import_jobs row is opened and no table is touched. A refusal artifact set is still written.
+        if mode not in self.supported_modes:
+            outcome = Outcome(notes=[
+                f"{self.source_system}: mode '{mode.value}' is not enabled in this phase — refused "
+                "before any database access (no import_jobs row, no data written)."])
+            result = self._finalize(mode, "refused", started, _now_iso(), run_dir, None, outcome, opts)
+            self._write_artifacts(result, run_dir)
+            raise ModeNotSupported(
+                f"{self.source_system}: '{mode.value}' mode is disabled in this phase — "
+                "no import_jobs row was created and no database changes were made.")
         job_id: int | None = None
         status = "completed"
         try:

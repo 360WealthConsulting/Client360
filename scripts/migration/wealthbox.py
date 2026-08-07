@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from app.services.migration.base import Mode
+from app.services.migration.base import Mode, ModeNotSupported
 from app.services.migration.wealthbox import WealthboxContactsMigration
 
 
@@ -24,12 +24,19 @@ def main(argv=None) -> int:
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--inventory", action="store_true", help="Read-only source inventory.")
     mode.add_argument("--preview", action="store_true", help="Read-only preview of what apply would create.")
+    mode.add_argument("--apply", action="store_true",
+                      help="DISABLED in Phase 1 — exits without creating an import_jobs row or any change.")
     args = p.parse_args(argv)
 
     job = WealthboxContactsMigration()
-    selected = Mode.INVENTORY if args.inventory else Mode.PREVIEW
-    print(f"Wealthbox migration — mode: {selected.value}  (READ-ONLY; no writes)")
-    result = job.run(selected)
+    selected = (Mode.APPLY if args.apply else Mode.INVENTORY if args.inventory else Mode.PREVIEW)
+    print(f"Wealthbox migration — mode: {selected.value}")
+    try:
+        result = job.run(selected)
+    except ModeNotSupported as exc:
+        print(f"  DISABLED: {exc}")
+        print("  (no import_jobs row created; no database changes were made)")
+        return 2
     print("-" * 60)
     for k, v in result.counts.items():
         print(f"  {k}: {v}")

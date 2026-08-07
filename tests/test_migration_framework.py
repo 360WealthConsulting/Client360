@@ -139,8 +139,22 @@ def test_wealthbox_preview_missing_export_is_soft(cfg):
     assert result.counts["rows_read"] == 0
 
 
-# --- apply is guarded off in Phase 1 ------------------------------------------
+# --- apply is refused BEFORE any database access (Phase 1) --------------------
 
-def test_wealthbox_apply_is_disabled(cfg):
-    with pytest.raises(NotImplementedError, match="PREVIEW-ONLY"):
+def test_wealthbox_apply_refuses_before_any_write(cfg):
+    from app.services.migration.base import ModeNotSupported
+    source_contacts = metadata.tables["source_contacts"]
+
+    def snapshot() -> tuple[int, int]:
+        with engine.connect() as c:
+            return (int(c.execute(select(func.count()).select_from(import_jobs)).scalar_one()),
+                    int(c.execute(select(func.count()).select_from(source_contacts)).scalar_one()))
+
+    before = snapshot()
+    # 1. apply refuses (raises), clearly disabled — before opening any import_jobs row
+    with pytest.raises(ModeNotSupported, match="disabled"):
         WealthboxContactsMigration(cfg).run(Mode.APPLY)
+    after = snapshot()
+    # 2. import_jobs count unchanged   3. no client/migration data (source_contacts) written
+    assert after == before
+    assert Mode.APPLY not in WealthboxContactsMigration.supported_modes

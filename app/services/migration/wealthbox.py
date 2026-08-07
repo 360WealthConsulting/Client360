@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 from app.importers.wealthbox import clean, normalize_email, normalize_phone
-from app.services.migration.base import MigrationJob, Outcome
+from app.services.migration.base import MigrationJob, Mode, Outcome
 from app.services.migration.inventory import inventory_wealthbox
 
 _HOUSEHOLD_KEYS = ("household", "household_title", "household_name", "household_id")
@@ -61,6 +61,8 @@ def _household_of(row: dict) -> str | None:
 
 class WealthboxContactsMigration(MigrationJob):
     source_system = "Wealthbox"
+    # Phase 1: read-only only. apply/reconcile/rollback are refused up front (before any DB access).
+    supported_modes = frozenset({Mode.INVENTORY, Mode.PREVIEW})
 
     def _inventory(self, **_opts) -> Outcome:
         inv = inventory_wealthbox(self.config)

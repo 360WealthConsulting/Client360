@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.services.migration.base import MigrationJob, Outcome
+from app.services.migration.base import MigrationJob, Mode, Outcome
 from app.services.migration.config import MigrationConfig, is_excluded
 
 _DOC_EXTS = frozenset({".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
@@ -170,6 +170,7 @@ class InventoryJob(MigrationJob):
     standard four artifacts. Only the ``inventory`` mode is meaningful here (read-only, no writes)."""
 
     source_system = "Inventory"
+    supported_modes = frozenset({Mode.INVENTORY})
 
     def _inventory(self, sources: list[str] | None = None, **_opts) -> Outcome:
         invs = collect_inventory(self.config, sources)

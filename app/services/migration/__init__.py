@@ -9,8 +9,9 @@ from app.services.migration.base import (
     MigrationJob,
     MigrationResult,
     Mode,
+    ModeNotSupported,
     Outcome,
 )
 from app.services.migration.config import MigrationConfig
 
-__all__ = ["Mode", "MigrationJob", "MigrationResult", "Outcome", "MigrationConfig"]
+__all__ = ["Mode", "MigrationJob", "MigrationResult", "ModeNotSupported", "Outcome", "MigrationConfig"]
