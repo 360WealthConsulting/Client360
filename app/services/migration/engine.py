@@ -1,16 +1,23 @@
-"""Generic enterprise document-migration engine + the source-adapter interface.
+"""Enterprise Ingestion Engine for Client360 — permanent infrastructure, not a one-time utility.
 
-ONE engine, MANY adapters. An adapter's only responsibility is DISCOVERY — yielding :class:`SourceItem`
-records (a normalized per-file record carrying the client-match hint, category, and provenance).
-Everything after discovery is identical for every source:
+ONE engine. MANY source adapters. MANY artifact types. The authoritative model is Client360's canonical
+data model (people / households / organizations / relationships / documents / notes / tasks / …) plus the
+one on-prem repository at ``D:\\Client360Data`` for file-bearing artifacts.
 
-    discover (adapter)  →  classify  →  match canonical entity  →  build destination  →  validate
-    (placeholders / zero-byte / unreadable / duplicate candidates / collisions)  →  readiness
+    ┌ adapters (discover + normalize ONLY) ┐        ┌ engine (source-agnostic, permanent) ┐
+    │ TaxDome · SharePoint · OneDrive ·    │        │ Discover → Normalize → Classify →   │
+    │ Wealthbox · Drake · Scanner · Email  │  ───►  │ Canonical Match → Validate → Preview │
+    │ · CSV · firm acquisitions · …        │        │ → Apply → Reconcile → Archive Source │
+    └──────────────────────────────────────┘        └──────────────────────────────────────┘
 
-APPLY / reconcile / retire (added later) consume the SAME records from any adapter. The destination
-repository never encodes the source system except as provenance metadata:
+Two extension seams, both permanent:
+  * a **SourceAdapter** (one per source/firm) yields typed :class:`IngestionRecord` s — discovery only;
+  * an **ArtifactHandler** (one per artifact type) knows how to validate / preview / (later) apply that
+    artifact into the canonical model. Documents are simply the first handler.
 
-    <dest root>\\Clients\\<canonical-id> - <display>\\<category>\\<year|Undated>\\<preserved subpath>\\<file>
+Onboarding another firm ten years from now = writing ONE adapter. A brand-new business object = ONE
+handler. Everything between — matching, validation, preview, apply, reconciliation, provenance,
+rollback, archival — is written once, here, and shared by every source and every artifact type.
 """
 from __future__ import annotations
 
@@ -29,37 +36,36 @@ from app.services.migration.base import MigrationJob, Mode, Outcome
 from app.services.migration.config import MigrationConfig
 
 _YEAR_RE = re.compile(r"^(19|20)\d{2}$")
-# OneDrive / Files-On-Demand cloud-only attribute bits (Windows only).
 _FILE_ATTRIBUTE_OFFLINE = 0x1000
 _FILE_ATTRIBUTE_RECALL_ON_OPEN = 0x00040000
 _FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS = 0x00400000
 _PLACEHOLDER_MASK = _FILE_ATTRIBUTE_OFFLINE | _FILE_ATTRIBUTE_RECALL_ON_OPEN | _FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 
 
-# --- the normalized record every adapter emits -------------------------------
+# --- the normalized record every adapter emits (any artifact type) -----------
 
 @dataclass
-class SourceItem:
-    """One source file, normalized. The ONLY thing adapters produce; the engine consumes it identically."""
+class IngestionRecord:
+    """One normalized business object from any source. ``artifact_type`` selects the handler; ``payload``
+    carries the artifact-specific data (a document's file path, a note's body, a task's fields, …)."""
 
     source_system: str
-    group_key: str                       # the entity hint (e.g. client folder name) used to match canonical
-    abs_path: str
-    rel_within_group: str                # posix path (dirs + filename) relative to the group root
-    category: str = "Documents"          # destination category (provenance-driven; e.g. "Tax")
-    entity_type: str | None = None       # optional pre-resolved canonical (record-based sources like Wealthbox)
+    artifact_type: str                   # "document" | "note" | "task" | "email" | "contact" | "event" | …
+    group_key: str                       # entity hint used for canonical matching (e.g. client folder / name)
+    payload: dict = field(default_factory=dict)
+    entity_type: str | None = None       # optional pre-resolved canonical (record-based sources)
     canonical_id: int | None = None
     display_name: str | None = None
-    source_metadata: dict = field(default_factory=dict)   # provenance (source_root, source_relative_path, …)
+    source_metadata: dict = field(default_factory=dict)   # provenance (source ids, paths, timestamps, …)
 
 
 class SourceAdapter(ABC):
-    """A source adapter. Implements ONLY discovery + where its data lives — nothing downstream."""
+    """A source/firm adapter. Implements ONLY discovery + where its data lives — nothing downstream."""
 
     source_system: str = "unknown"
 
     @abstractmethod
-    def discover(self, config: MigrationConfig) -> Iterator[SourceItem]:
+    def discover(self, config: MigrationConfig) -> Iterator[IngestionRecord]:
         ...
 
     def source_root(self, config: MigrationConfig) -> Path:  # noqa: ARG002 — adapters override
@@ -69,10 +75,9 @@ class SourceAdapter(ABC):
         return self.source_root(config).exists()
 
 
-# --- generic helpers (identical for every source) ----------------------------
+# --- shared helpers (identical for every source AND artifact type) ------------
 
 def _is_placeholder(st) -> bool:
-    """True if a stat result marks a OneDrive cloud-only placeholder (Windows). Elsewhere → False."""
     return bool(getattr(st, "st_file_attributes", 0) & _PLACEHOLDER_MASK)
 
 
@@ -92,7 +97,6 @@ def _person_display(p: dict) -> str:
 
 
 def _load_directory(conn):
-    """Read-only: name_key -> [person rows]; household id -> name."""
     from sqlalchemy import select
 
     from app.db import households, people
@@ -107,7 +111,8 @@ def _load_directory(conn):
 
 
 def classify_group(group_key: str, idx: dict[str, list[dict]], hh: dict[int, str]) -> dict:
-    """matched / ambiguous / unmatched for a group, with matched entity type + canonical id + display."""
+    """matched / ambiguous / unmatched for a group, with matched entity type + canonical id + display.
+    Source-agnostic: any adapter that groups by a person/household name reuses this."""
     base = {"status": "unmatched", "reason": "no matching canonical person", "entity_type": "",
             "canonical_id": None, "display_name": "", "candidates": []}
     keys = _folder_person_keys(group_key)
@@ -153,10 +158,94 @@ def _dest_preflight(dest_root: Path, source_bytes: int) -> dict:
     return out
 
 
-# --- the generic engine ------------------------------------------------------
+# --- artifact handlers (one per artifact type; documents are the first) -------
 
-class MigrationEngine:
-    """Runs the common pipeline for any adapter. Read-only in preview: no DB writes, no file movement."""
+@dataclass
+class HandlerResult:
+    est_rows: int
+    fields: dict                          # merged into the per (group, artifact) preview row
+    exceptions: list[dict] = field(default_factory=list)
+    blocked: bool = False                 # affects readiness (e.g. cloud-only placeholders)
+    review: bool = False                  # affects readiness (e.g. unreadable / collisions)
+
+
+class ArtifactHandler(ABC):
+    """Maps ONE artifact type into the canonical model. ``preview`` is read-only; ``apply`` (added later)
+    is the only place that writes. Registering a handler is how a new business object is supported."""
+
+    artifact_type: str = "unknown"
+
+    @abstractmethod
+    def preview(self, records: list[IngestionRecord], match: dict, config: MigrationConfig, ctx: dict) -> HandlerResult:
+        ...
+
+
+class DocumentHandler(ArtifactHandler):
+    """Documents → files under ``<dest>\\Clients\\<id> - <display>\\<category>\\<year>\\<subpath>`` +
+    (on apply) canonical ``documents`` + ``document_sources`` rows. Validates placeholders / zero-byte /
+    unreadable / duplicate candidates / destination collisions."""
+
+    artifact_type = "document"
+
+    def preview(self, records, match, config, ctx) -> HandlerResult:
+        dest_root = ctx["dest_root"]
+        matched = match["status"] == "matched"
+        dest_folder = f"{match['canonical_id']} - {_sanitize(match['display_name'])}" if matched else ""
+        files = zero = unread = ignored = ph = coll = docrows = 0
+        total_bytes = 0
+        category = records[0].payload.get("category", "Documents") if records else "Documents"
+        for rec in records:
+            files += 1
+            abs_path = rec.payload["abs_path"]
+            fname = Path(rec.payload["rel_within_group"]).name
+            if _is_ignored_file(fname):
+                ignored += 1
+                continue
+            try:
+                st = os.stat(abs_path)
+            except OSError:
+                unread += 1
+                continue
+            size = st.st_size
+            total_bytes += size
+            docrows += 1
+            if size == 0:
+                zero += 1
+            if _is_placeholder(st):
+                ph += 1
+            ctx["name_size_seen"][(fname.lower(), size)] = ctx["name_size_seen"].get((fname.lower(), size), 0) + 1
+            if matched:
+                dir_parts = Path(rec.payload["rel_within_group"]).parts[:-1]
+                year, sub = _year_and_subpath(dir_parts)
+                dest = str(dest_root / "Clients" / dest_folder / category / year / Path(*sub) / fname)
+                if ctx["dest_seen"].get(dest):
+                    coll += 1
+                ctx["dest_seen"][dest] = ctx["dest_seen"].get(dest, 0) + 1
+        exceptions = []
+        if ph:
+            exceptions.append({"artifact_type": "document", "reason": f"{ph} cloud-only placeholder(s)"})
+        if coll:
+            exceptions.append({"artifact_type": "document", "reason": f"{coll} destination collision(s)"})
+        fields = {
+            "category": category,
+            "proposed_destination_root": str(dest_root / "Clients" / dest_folder) if matched else "(review queue)",
+            "files": files, "bytes": total_bytes, "placeholder_count": ph, "zero_byte_count": zero,
+            "unreadable_count": unread, "ignored_count": ignored, "collision_count": coll,
+        }
+        return HandlerResult(est_rows=docrows, fields=fields, exceptions=exceptions,
+                             blocked=bool(ph), review=bool(unread or coll))
+
+
+#: The permanent artifact-handler registry. Add a handler to support a new business object.
+HANDLERS: dict[str, ArtifactHandler] = {
+    DocumentHandler.artifact_type: DocumentHandler(),
+}
+
+
+# --- the engine (source-agnostic AND artifact-agnostic) ----------------------
+
+class IngestionEngine:
+    """Runs the common pipeline for any adapter and any artifact type. Preview is strictly read-only."""
 
     def __init__(self, adapter: SourceAdapter, config: MigrationConfig):
         self.adapter = adapter
@@ -167,13 +256,15 @@ class MigrationEngine:
         dest_root = cfg.migration_dest_root
         src_root = self.adapter.source_root(cfg)
         if not self.adapter.available(cfg):
-            return ({"top_level_folders": 0, "source_root": str(src_root), "destination_root": str(dest_root)},
+            return ({"groups": 0, "source_root": str(src_root), "destination_root": str(dest_root)},
                     [], [{"reason": f"source not found: {src_root}"}], [f"Source not found: {src_root}"])
 
-        # DISCOVER (the only source-specific step) → group by entity hint
-        groups: dict[str, list[SourceItem]] = {}
-        for item in self.adapter.discover(cfg):
-            groups.setdefault(item.group_key, []).append(item)
+        # DISCOVER + NORMALIZE (the only source-specific step) → group by entity hint, then artifact type
+        groups: dict[str, dict[str, list[IngestionRecord]]] = {}
+        artifact_types: set[str] = set()
+        for rec in self.adapter.discover(cfg):
+            artifact_types.add(rec.artifact_type)
+            groups.setdefault(rec.group_key, {}).setdefault(rec.artifact_type, []).append(rec)
 
         idx: dict[str, list[dict]] = {}
         hh: dict[int, str] = {}
@@ -185,87 +276,69 @@ class MigrationEngine:
         except Exception as exc:  # noqa: BLE001 — preview must not fail on DB access
             db_note = f"canonical directory unavailable ({exc}); groups reported unmatched"
 
+        ctx = {"name_size_seen": {}, "dest_seen": {}, "dest_root": dest_root}
         rows: list[dict] = []
-        name_size_seen: dict[tuple[str, int], int] = {}
-        dest_seen: dict[str, int] = {}
-        agg = {"files": 0, "bytes": 0, "zero_byte": 0, "unreadable": 0, "ignored": 0, "placeholders": 0}
+        exceptions: list[dict] = []
         by_status = {"matched": 0, "ambiguous": 0, "unmatched": 0}
         by_readiness = {"ready": 0, "review-required": 0, "blocked": 0}
         est_rows = {"matched": 0, "ambiguous": 0, "unmatched": 0}
+        per_type_rows: dict[str, int] = {}
+        agg = {"files": 0, "bytes": 0, "zero_byte": 0, "unreadable": 0, "ignored": 0, "placeholders": 0}
 
-        for group_key, items in sorted(groups.items(), key=lambda kv: kv[0].lower()):
-            first = items[0]
-            if first.entity_type and first.canonical_id:      # adapter pre-resolved the canonical entity
-                cls = {"status": "matched", "reason": "adapter-resolved", "entity_type": first.entity_type,
-                       "canonical_id": first.canonical_id,
-                       "display_name": first.display_name or str(first.canonical_id), "candidates": []}
+        for group_key, by_type in sorted(groups.items(), key=lambda kv: kv[0].lower()):
+            first = next(iter(next(iter(by_type.values()))))
+            if first.entity_type and first.canonical_id:              # adapter pre-resolved the canonical entity
+                match = {"status": "matched", "reason": "adapter-resolved", "entity_type": first.entity_type,
+                         "canonical_id": first.canonical_id,
+                         "display_name": first.display_name or str(first.canonical_id), "candidates": []}
             elif idx:
-                cls = classify_group(group_key, idx, hh)
+                match = classify_group(group_key, idx, hh)
             else:
-                cls = {"status": "unmatched", "reason": db_note or "no canonical directory",
-                       "entity_type": "", "canonical_id": None, "display_name": "", "candidates": []}
-            matched = cls["status"] == "matched"
-            dest_folder = f"{cls['canonical_id']} - {_sanitize(cls['display_name'])}" if matched else ""
-            proposed_root = str(dest_root / "Clients" / dest_folder) if matched else "(review queue)"
+                match = {"status": "unmatched", "reason": db_note or "no canonical directory",
+                         "entity_type": "", "canonical_id": None, "display_name": "", "candidates": []}
+            by_status[match["status"]] += 1
 
-            f_files = f_bytes = f_zero = f_unread = f_ignored = f_ph = f_coll = f_docrows = 0
-            for it in items:
-                f_files += 1
-                fname = Path(it.rel_within_group).name
-                if _is_ignored_file(fname):
-                    f_ignored += 1
+            for artifact_type, records in sorted(by_type.items()):
+                per_type_rows[artifact_type] = per_type_rows.get(artifact_type, 0) + 1
+                handler = HANDLERS.get(artifact_type)
+                if handler is None:
+                    exceptions.append({"source_group": group_key, "artifact_type": artifact_type,
+                                       "reason": "no handler registered for this artifact type"})
                     continue
-                try:
-                    st = os.stat(it.abs_path)
-                except OSError:
-                    f_unread += 1
-                    continue
-                size = st.st_size
-                f_bytes += size
-                f_docrows += 1
-                if size == 0:
-                    f_zero += 1
-                if _is_placeholder(st):
-                    f_ph += 1
-                name_size_seen[(fname.lower(), size)] = name_size_seen.get((fname.lower(), size), 0) + 1
-                if matched:
-                    dir_parts = Path(it.rel_within_group).parts[:-1]
-                    year, sub = _year_and_subpath(dir_parts)
-                    dest = str(dest_root / "Clients" / dest_folder / it.category / year / Path(*sub) / fname)
-                    if dest_seen.get(dest):
-                        f_coll += 1
-                    dest_seen[dest] = dest_seen.get(dest, 0) + 1
+                res = handler.preview(records, match, cfg, ctx)
+                est_rows[match["status"]] += res.est_rows
+                readiness = ("review-required" if match["status"] != "matched" else
+                             "blocked" if res.blocked else "review-required" if res.review else "ready")
+                by_readiness[readiness] += 1
+                agg["files"] += res.fields.get("files", 0)
+                agg["bytes"] += res.fields.get("bytes", 0)
+                agg["zero_byte"] += res.fields.get("zero_byte_count", 0)
+                agg["unreadable"] += res.fields.get("unreadable_count", 0)
+                agg["ignored"] += res.fields.get("ignored_count", 0)
+                agg["placeholders"] += res.fields.get("placeholder_count", 0)
+                for e in res.exceptions:
+                    exceptions.append({"source_group": group_key, **e})
+                rows.append({
+                    "source_group": group_key, "artifact_type": artifact_type,
+                    "classification": match["status"], "match_reason": match["reason"],
+                    "entity_type": match["entity_type"], "canonical_id": match["canonical_id"] or "",
+                    "display_name": match["display_name"], "estimated_document_rows": res.est_rows,
+                    "readiness": readiness, "candidate_names": "; ".join(match["candidates"]),
+                    **res.fields,
+                })
 
-            readiness = ("review-required" if not matched else
-                         "blocked" if f_ph else
-                         "review-required" if (f_unread or f_coll) else "ready")
-            by_status[cls["status"]] += 1
-            by_readiness[readiness] += 1
-            est_rows[cls["status"]] += f_docrows
-            for k, v in (("files", f_files), ("bytes", f_bytes), ("zero_byte", f_zero),
-                         ("unreadable", f_unread), ("ignored", f_ignored), ("placeholders", f_ph)):
-                agg[k] += v
-            rows.append({
-                "source_folder": group_key, "classification": cls["status"], "match_reason": cls["reason"],
-                "entity_type": cls["entity_type"], "canonical_id": cls["canonical_id"] or "",
-                "display_name": cls["display_name"], "category": first.category,
-                "proposed_destination_root": proposed_root, "files": f_files, "bytes": f_bytes,
-                "estimated_document_rows": f_docrows, "collision_count": f_coll, "placeholder_count": f_ph,
-                "zero_byte_count": f_zero, "unreadable_count": f_unread, "ignored_count": f_ignored,
-                "candidate_names": "; ".join(cls["candidates"]), "readiness": readiness,
-            })
-
-        dup_groups = sum(1 for n in name_size_seen.values() if n > 1)
-        dup_files = sum(n - 1 for n in name_size_seen.values() if n > 1)
-        collisions = sum(v - 1 for v in dest_seen.values() if v > 1)
+        dup_groups = sum(1 for n in ctx["name_size_seen"].values() if n > 1)
+        dup_files = sum(n - 1 for n in ctx["name_size_seen"].values() if n > 1)
+        collisions = sum(v - 1 for v in ctx["dest_seen"].values() if v > 1)
         counts = {
-            "source_system": self.adapter.source_system,
+            "source_system": self.adapter.source_system, "artifact_types": sorted(artifact_types),
             "source_root": str(src_root), "destination_root": str(dest_root),
-            "top_level_folders": len(groups),
+            "groups": len(groups), "top_level_folders": len(groups),
             "matched_folders": by_status["matched"], "ambiguous_folders": by_status["ambiguous"],
             "unmatched_folders": by_status["unmatched"],
             "ready_folders": by_readiness["ready"], "review_required_folders": by_readiness["review-required"],
             "blocked_folders": by_readiness["blocked"],
+            "rows_by_artifact_type": per_type_rows,
             "total_files": agg["files"], "total_bytes": agg["bytes"],
             "estimated_gb": round(agg["bytes"] / (1024 ** 3), 2),
             "ignored_files": agg["ignored"], "zero_byte_files": agg["zero_byte"],
@@ -278,16 +351,11 @@ class MigrationEngine:
             "estimated_document_rows_unmatched_review": est_rows["unmatched"],
             **_dest_preflight(dest_root, agg["bytes"]),
         }
-        exceptions = [{"source_folder": r["source_folder"], "classification": r["classification"],
-                       "readiness": r["readiness"], "reason": r["match_reason"],
-                       "placeholder_count": r["placeholder_count"], "collision_count": r["collision_count"],
-                       "candidate_names": r["candidate_names"]}
-                      for r in rows if r["readiness"] != "ready"]
         notes = [
             "PREVIEW ONLY — no database rows, no files copied/moved, no existing data modified.",
-            f"Generic migration engine · adapter: {self.adapter.source_system} (discovery only; "
-            "the pipeline is identical for every source).",
-            "Ambiguous/unmatched groups are review-only: no unlinked document rows proposed, nothing "
+            f"Enterprise ingestion engine · adapter: {self.adapter.source_system} (discovery only) · "
+            f"artifact types: {', '.join(sorted(artifact_types)) or 'none'}.",
+            "Ambiguous/unmatched groups are review-only: no unlinked canonical rows proposed, nothing "
             "copied — held in the human-review queue until linked (MDM; no bulk auto-merge).",
             "cloud_only_placeholders>0 marks groups BLOCKED — those files must be hydrated before apply.",
         ]
@@ -296,56 +364,60 @@ class MigrationEngine:
         return counts, rows, exceptions, notes
 
 
-# --- artifact writer (identical for every source) ----------------------------
+# --- artifact writer (identical for every source and artifact type) ----------
 
 def write_named_artifacts(run_dir, rows: list[dict], counts: dict, notes: list[str], source_system: str) -> None:
     if run_dir is None:
         return
     run_dir = Path(run_dir)
-    fields = list(rows[0].keys()) if rows else ["source_folder"]
+    fields: list[str] = []
+    for r in rows:
+        for k in r:
+            if k not in fields:
+                fields.append(k)
     with (run_dir / "migration_preview.csv").open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields or ["source_group"])
         w.writeheader()
         for r in rows:
-            w.writerow(r)
+            w.writerow({k: r.get(k, "") for k in fields})
     (run_dir / "migration_manifest.json").write_text(
         json.dumps({"source_system": source_system, "mode": "preview", "counts": counts, "notes": notes},
                    indent=2, default=str), encoding="utf-8")
     lines = [
-        f"Document Migration — PREVIEW (read-only) — {source_system}",
+        f"Enterprise Ingestion — PREVIEW (read-only) — {source_system}",
+        f"artifact types : {', '.join(counts.get('artifact_types', [])) or 'none'}",
         f"source      : {counts.get('source_root')}",
         f"destination : {counts.get('destination_root')}",
         f"  D: drive exists: {counts.get('dest_drive_exists')}   dest folder exists: {counts.get('dest_root_exists')}",
         f"  free: {counts.get('dest_free_gb')} GB   source: {counts.get('source_gb', counts.get('estimated_gb'))} GB"
         f"   fits(+10%): {counts.get('fits_with_10pct_margin')}",
         "",
-        f"top-level client folders : {counts.get('top_level_folders')}",
-        f"  matched   : {counts.get('matched_folders')}   ambiguous: {counts.get('ambiguous_folders')}"
-        f"   unmatched: {counts.get('unmatched_folders')}",
-        f"  readiness  ready: {counts.get('ready_folders')}   review-required: "
+        f"entity groups : {counts.get('groups')}   "
+        f"matched: {counts.get('matched_folders')}   ambiguous: {counts.get('ambiguous_folders')}   "
+        f"unmatched: {counts.get('unmatched_folders')}",
+        f"readiness  ready: {counts.get('ready_folders')}   review-required: "
         f"{counts.get('review_required_folders')}   blocked: {counts.get('blocked_folders')}",
+        f"rows by artifact type: {counts.get('rows_by_artifact_type')}",
         "",
-        f"files: {counts.get('total_files')}   size: {counts.get('estimated_gb')} GB",
+        f"files: {counts.get('total_files')}   size: {counts.get('estimated_gb')} GB   "
         f"ignored: {counts.get('ignored_files')}   zero-byte: {counts.get('zero_byte_files')}   "
-        f"unreadable: {counts.get('unreadable_files')}   cloud-only placeholders: {counts.get('cloud_only_placeholders')}",
+        f"unreadable: {counts.get('unreadable_files')}   placeholders: {counts.get('cloud_only_placeholders')}",
         f"duplicate candidates: {counts.get('duplicate_candidate_groups')} groups / "
         f"{counts.get('duplicate_candidate_files')} files   destination collisions: {counts.get('destination_collisions')}",
-        "",
-        f"estimated document rows — total {counts.get('estimated_document_rows_total')} | "
-        f"matched(link) {counts.get('estimated_document_rows_matched')} | "
-        f"ambiguous(review) {counts.get('estimated_document_rows_ambiguous_review')} | "
-        f"unmatched(review) {counts.get('estimated_document_rows_unmatched_review')}",
+        f"estimated canonical rows — total {counts.get('estimated_document_rows_total')} | "
+        f"matched {counts.get('estimated_document_rows_matched')} | "
+        f"review {counts.get('estimated_document_rows_ambiguous_review', 0) + counts.get('estimated_document_rows_unmatched_review', 0)}",
         "",
         *notes,
     ]
     (run_dir / "migration_summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# --- the generic job (any adapter) -------------------------------------------
+# --- the generic job (any adapter, any artifact type) ------------------------
 
-class DocumentMigrationJob(MigrationJob):
-    """A MigrationJob driven by a SourceAdapter. Same pipeline for every source; PREVIEW-only in Phase 2
-    (a generic APPLY engine will consume the same records after the preview is approved)."""
+class IngestionJob(MigrationJob):
+    """A MigrationJob driven by a SourceAdapter. Same pipeline for every source and artifact type;
+    PREVIEW-only in this phase (a generic APPLY engine consumes the same records after approval)."""
 
     supported_modes = frozenset({Mode.PREVIEW})
 
@@ -355,6 +427,11 @@ class DocumentMigrationJob(MigrationJob):
         self.source_system = adapter.source_system
 
     def _preview(self, **_opts) -> Outcome:
-        counts, rows, exceptions, notes = MigrationEngine(self.adapter, self.config).preview()
+        counts, rows, exceptions, notes = IngestionEngine(self.adapter, self.config).preview()
         write_named_artifacts(getattr(self, "_last_run_dir", None), rows, counts, notes, self.source_system)
         return Outcome(counts=counts, exceptions=exceptions, reconciliation=rows, notes=notes)
+
+
+# Backward-compatible aliases (documents were the first implementation).
+DocumentMigrationJob = IngestionJob
+SourceItem = IngestionRecord

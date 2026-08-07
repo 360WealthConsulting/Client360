@@ -12,16 +12,16 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from app.services.migration.config import MigrationConfig
-from app.services.migration.engine import SourceAdapter, SourceItem
+from app.services.migration.engine import IngestionRecord, SourceAdapter
 
 
 class TaxDomeAdapter(SourceAdapter):
-    source_system = "TaxDome Documents"
+    source_system = "TaxDome"
 
     def source_root(self, config: MigrationConfig) -> Path:
         return config.taxdome_migration_root
 
-    def discover(self, config: MigrationConfig) -> Iterator[SourceItem]:
+    def discover(self, config: MigrationConfig) -> Iterator[IngestionRecord]:
         root = self.source_root(config)
         if not root.exists():
             return
@@ -31,8 +31,8 @@ class TaxDomeAdapter(SourceAdapter):
                 for name in filenames:
                     abs_path = os.path.join(dirpath, name)
                     rel_within = os.path.relpath(abs_path, entry.path).replace(os.sep, "/")
-                    yield SourceItem(
-                        source_system=self.source_system, group_key=group, abs_path=abs_path,
-                        rel_within_group=rel_within, category="Tax",
+                    yield IngestionRecord(
+                        source_system=self.source_system, artifact_type="document", group_key=group,
+                        payload={"abs_path": abs_path, "rel_within_group": rel_within, "category": "Tax"},
                         source_metadata={"source_root": str(root),
                                          "source_relative_path": os.path.relpath(abs_path, root)})

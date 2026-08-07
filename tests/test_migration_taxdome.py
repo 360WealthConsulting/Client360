@@ -99,7 +99,8 @@ def test_preview_classification_destination_and_readiness(cfg):
     result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     c = result.counts
     assert c["matched_folders"] == 2 and c["ambiguous_folders"] == 1 and c["unmatched_folders"] == 1
-    by = {r["source_folder"]: r for r in result.reconciliation}
+    assert c["artifact_types"] == ["document"]                 # TaxDome adapter emits document records
+    by = {r["source_group"]: r for r in result.reconciliation}
     a = by[f"Alpha {_TAG}"]
     assert a["classification"] == "matched" and a["entity_type"] == "person" and str(a["canonical_id"]) == str(pid)
     # destination carries the canonical id + display, category Tax, detected year 2024
@@ -144,7 +145,7 @@ def test_preview_placeholder_blocks_folder(cfg, monkeypatch):
     monkeypatch.setattr(mig_engine, "_is_placeholder", lambda st: True)   # simulate OneDrive cloud-only
     result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     assert result.counts["cloud_only_placeholders"] >= 1
-    a = {r["source_folder"]: r for r in result.reconciliation}[f"Alpha {_TAG}"]
+    a = {r["source_group"]: r for r in result.reconciliation}[f"Alpha {_TAG}"]
     assert a["placeholder_count"] >= 1 and a["readiness"] == "blocked"   # matched but cloud-only -> blocked
 
 
@@ -164,10 +165,11 @@ def test_preview_does_not_modify_source(cfg, source):
     assert sorted(str(p.relative_to(source)) for p in source.rglob("*")) == before
 
 
-def test_generic_engine_runs_any_adapter(cfg, tmp_path):
-    """The engine is adapter-agnostic: a non-TaxDome adapter runs the identical pipeline, and the
-    destination category comes from the item (not hard-coded to Tax)."""
-    from app.services.migration.engine import DocumentMigrationJob, SourceAdapter, SourceItem
+def test_engine_is_source_and_artifact_agnostic(cfg, tmp_path):
+    """A non-TaxDome adapter runs the identical pipeline; the document handler is dispatched by
+    artifact_type; category flows from the record; and an unregistered artifact type is reported (never
+    silently dropped) — proving the engine is source- AND artifact-agnostic."""
+    from app.services.migration.engine import IngestionJob, IngestionRecord, SourceAdapter
     pid = _person(f"Zeta {_TAG}", first="Zeta", last=_TAG)
     f = tmp_path / "x.pdf"
     f.write_bytes(b"1234")
@@ -177,15 +179,23 @@ def test_generic_engine_runs_any_adapter(cfg, tmp_path):
         def source_root(self, config):
             return tmp_path
         def discover(self, config):
-            yield SourceItem(source_system="FakeSource", group_key=f"Zeta {_TAG}", abs_path=str(f),
-                             rel_within_group="2021/x.pdf", category="General")
+            yield IngestionRecord(source_system="FakeSource", artifact_type="document",
+                                  group_key=f"Zeta {_TAG}",
+                                  payload={"abs_path": str(f), "rel_within_group": "2021/x.pdf",
+                                           "category": "General"})
+            # a future business object with no handler yet -> reported, not dropped
+            yield IngestionRecord(source_system="FakeSource", artifact_type="note",
+                                  group_key=f"Zeta {_TAG}", payload={"body": "call the client"})
 
-    res = DocumentMigrationJob(FakeAdapter(), cfg).run(Mode.PREVIEW)
+    res = IngestionJob(FakeAdapter(), cfg).run(Mode.PREVIEW)
     assert res.counts["source_system"] == "FakeSource"
-    row = res.reconciliation[0]
-    assert row["classification"] == "matched" and str(row["canonical_id"]) == str(pid)
-    assert row["category"] == "General"                    # category flows from the item, not TaxDome
-    assert f"{pid} - " in row["proposed_destination_root"]
+    assert sorted(res.counts["artifact_types"]) == ["document", "note"]
+    doc_row = next(r for r in res.reconciliation if r["artifact_type"] == "document")
+    assert doc_row["classification"] == "matched" and str(doc_row["canonical_id"]) == str(pid)
+    assert doc_row["category"] == "General"                # category flows from the record, not TaxDome
+    assert f"{pid} - " in doc_row["proposed_destination_root"]
+    # the unhandled 'note' artifact is surfaced as an exception (extension point = register a handler)
+    assert any(e.get("artifact_type") == "note" and "no handler" in e["reason"] for e in res.exceptions)
 
 
 def test_apply_refused_before_any_write(cfg):

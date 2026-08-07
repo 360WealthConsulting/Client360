@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from app.services.migration.adapters.taxdome import TaxDomeAdapter
 from app.services.migration.config import MigrationConfig
-from app.services.migration.engine import DocumentMigrationJob
+from app.services.migration.engine import IngestionJob
 
 
-class TaxDomeDocumentMigration(DocumentMigrationJob):
+class TaxDomeDocumentMigration(IngestionJob):
     def __init__(self, config: MigrationConfig | None = None):
         super().__init__(TaxDomeAdapter(), config)
