@@ -172,6 +172,7 @@ class MigrationJob:
         started = _now_iso()
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         run_dir = self.run_dir(mode, stamp)
+        self._last_run_dir = run_dir   # concrete jobs may write extra named artifacts into this dir
         # Fail-closed: an unsupported / disabled mode is refused BEFORE any database access — no
         # import_jobs row is opened and no table is touched. A refusal artifact set is still written.
         if mode not in self.supported_modes:

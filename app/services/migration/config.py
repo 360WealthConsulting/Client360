@@ -57,6 +57,7 @@ class MigrationConfig:
     vault_root: Path = Path("data/vault")                     # VAULT_STORAGE_ROOT (Client360 Vault files)
     drake_roots: tuple[Path, ...] = ()                        # Drake install roots to inspect read-only
     unclassified_search_roots: tuple[Path, ...] = ()          # drives/roots to sweep for unassigned trees
+    taxdome_migration_root: Path = Path("data/Documents/TaxDome")   # one-time TaxDome document migration source
 
     @classmethod
     def from_env(cls) -> MigrationConfig:
@@ -75,4 +76,7 @@ class MigrationConfig:
                          or tuple(Path(p) for p in _DEFAULT_DRAKE_ROOTS)),
             unclassified_search_roots=(_parse_roots(g("CLIENT360_UNCLASSIFIED_SEARCH_ROOTS"))
                                        or (Path("C:\\"),)),
+            taxdome_migration_root=Path(g(
+                "CLIENT360_TAXDOME_MIGRATION_ROOT",
+                r"C:\Users\michael\OneDrive - 360 Wealth Consulting\Client360 Backup\Client360\data\Documents\TaxDome")),
         )
