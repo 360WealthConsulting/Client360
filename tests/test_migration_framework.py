@@ -27,7 +27,7 @@ import_jobs = metadata.tables["import_jobs"]
 def cfg(tmp_path):
     """A MigrationConfig pointed entirely at temp dirs (no real source/output paths touched)."""
     (tmp_path / "migration").mkdir()
-    for name in ("wealthbox", "taxdome", "sharepoint", "scanner", "docs"):
+    for name in ("wealthbox", "taxdome", "sharepoint", "scanner", "docs", "vault", "search"):
         (tmp_path / name).mkdir()
     return MigrationConfig(
         migration_root=tmp_path / "migration",
@@ -36,6 +36,9 @@ def cfg(tmp_path):
         sharepoint_root=tmp_path / "sharepoint",
         scanner_root=tmp_path / "scanner",
         document_root=tmp_path / "docs",
+        vault_root=tmp_path / "vault",
+        drake_roots=(tmp_path / "DRAKE24",),          # created per-test when needed
+        unclassified_search_roots=(tmp_path / "search",),
     )
 
 
@@ -96,6 +99,72 @@ def test_inventory_reports_unavailable_source(cfg):
     cfg2 = MigrationConfig(**{**cfg.__dict__, "taxdome_root": cfg.migration_root / "does-not-exist"})
     inv = {i.source: i for i in collect_inventory(cfg2, ["taxdome"])}["TaxDome"]
     assert inv.available is False and inv.readiness == "unavailable"
+
+
+# --- Vault provider (DB + files, read-only) -----------------------------------
+
+def test_vault_inventory_counts_files_and_orphans(cfg):
+    from app.services.migration.inventory import inventory_vault
+    # two physical files under the vault root; test DB has 0 vault_documents -> both are orphans
+    (cfg.vault_root / "ab").mkdir()
+    (cfg.vault_root / "ab" / "abcd.pdf").write_bytes(b"x" * 10)
+    (cfg.vault_root / "cd").mkdir()
+    (cfg.vault_root / "cd" / "efgh.pdf").write_bytes(b"y" * 20)
+    before = _import_job_count()
+    inv = inventory_vault(cfg)
+    assert inv.object_counts["physical_files"] == 2
+    assert inv.total_bytes == 30
+    assert inv.object_counts["vault_documents"] == 0        # empty test DB
+    assert inv.object_counts["orphan_files"] == 2 and inv.object_counts["missing_files"] == 0
+    assert _import_job_count() == before                    # read-only: no writes
+
+
+# --- Drake provider (client artifacts only; program files excluded) -----------
+
+def test_drake_inventory_classifies_and_excludes(cfg):
+    from app.services.migration.inventory import inventory_drake
+    root = cfg.drake_roots[0]                                # .../DRAKE24  -> year 2024
+    (root / "Returns").mkdir(parents=True)
+    (root / "Returns" / "Smith1040.pdf").write_bytes(b"pdf" * 100)      # candidate: return_pdf
+    (root / "EFile").mkdir()
+    (root / "EFile" / "ack.pdf").write_bytes(b"ack" * 10)              # candidate: acknowledgement
+    (root / "SERVPACK").mkdir()
+    (root / "SERVPACK" / "engine.dll").write_bytes(b"MZ" * 500)         # excluded: program dir + ext
+    (root / "setup.exe").write_bytes(b"MZ" * 500)                       # excluded: program ext
+    (root / "Clients").mkdir()
+    (root / "Clients" / "notes.dat").write_bytes(b"data")              # excluded: .dat data file
+    inv = inventory_drake(cfg)
+    assert inv.available is True
+    assert inv.object_counts["candidate_documents"] == 2               # the two PDFs only
+    assert inv.object_counts["excluded_program_files"] == 3            # dll, exe, .dat
+    types = {(r["year"], r["artifact_type"]) for r in inv.breakdown}
+    assert ("2024", "return_pdf") in types and ("2024", "acknowledgement") in types
+    assert inv.total_bytes == len(b"pdf" * 100) + len(b"ack" * 10)     # candidate bytes only
+    assert "filtering_rules" in inv.metadata and inv.metadata["sample_excluded"]
+
+
+def test_drake_inventory_unavailable_when_no_roots(cfg):
+    from app.services.migration.inventory import inventory_drake
+    inv = inventory_drake(cfg)                               # DRAKE24 dir not created -> unavailable
+    assert inv.available is False and inv.readiness == "unavailable"
+
+
+# --- Unclassified provider (needs review) -------------------------------------
+
+def test_unclassified_flags_unassigned_tree_only(cfg):
+    from app.services.migration.inventory import inventory_unclassified
+    search = cfg.unclassified_search_roots[0]
+    # an unassigned tree with >=25 docs -> flagged
+    legacy = search / "OldLegacyShare"
+    legacy.mkdir()
+    for i in range(30):
+        (legacy / f"doc{i}.pdf").write_bytes(b"z")
+    # an ASSIGNED tree (the scanner root) placed under search must NOT be flagged
+    inv = inventory_unclassified(cfg)
+    paths = {r["path"] for r in inv.breakdown}
+    assert str(legacy) in paths
+    assert inv.object_counts["needs_review_trees"] == 1
+    assert all(r["classification"] == "needs review" for r in inv.breakdown)
 
 
 # --- Wealthbox preview --------------------------------------------------------
