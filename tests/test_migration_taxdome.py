@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db import engine, households, metadata, people
-from app.services.migration import taxdome as td
+from app.services.migration import engine as mig_engine
 from app.services.migration.base import Mode, ModeNotSupported
 from app.services.migration.config import MigrationConfig
 from app.services.migration.taxdome import TaxDomeDocumentMigration
@@ -141,7 +141,7 @@ def test_preview_detects_destination_collision_same_entity(cfg, source):
 
 def test_preview_placeholder_blocks_folder(cfg, monkeypatch):
     _seed()
-    monkeypatch.setattr(td, "_is_placeholder", lambda st: True)          # simulate OneDrive cloud-only
+    monkeypatch.setattr(mig_engine, "_is_placeholder", lambda st: True)   # simulate OneDrive cloud-only
     result = TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     assert result.counts["cloud_only_placeholders"] >= 1
     a = {r["source_folder"]: r for r in result.reconciliation}[f"Alpha {_TAG}"]
@@ -162,6 +162,30 @@ def test_preview_does_not_modify_source(cfg, source):
     before = sorted(str(p.relative_to(source)) for p in source.rglob("*"))
     TaxDomeDocumentMigration(cfg).run(Mode.PREVIEW)
     assert sorted(str(p.relative_to(source)) for p in source.rglob("*")) == before
+
+
+def test_generic_engine_runs_any_adapter(cfg, tmp_path):
+    """The engine is adapter-agnostic: a non-TaxDome adapter runs the identical pipeline, and the
+    destination category comes from the item (not hard-coded to Tax)."""
+    from app.services.migration.engine import DocumentMigrationJob, SourceAdapter, SourceItem
+    pid = _person(f"Zeta {_TAG}", first="Zeta", last=_TAG)
+    f = tmp_path / "x.pdf"
+    f.write_bytes(b"1234")
+
+    class FakeAdapter(SourceAdapter):
+        source_system = "FakeSource"
+        def source_root(self, config):
+            return tmp_path
+        def discover(self, config):
+            yield SourceItem(source_system="FakeSource", group_key=f"Zeta {_TAG}", abs_path=str(f),
+                             rel_within_group="2021/x.pdf", category="General")
+
+    res = DocumentMigrationJob(FakeAdapter(), cfg).run(Mode.PREVIEW)
+    assert res.counts["source_system"] == "FakeSource"
+    row = res.reconciliation[0]
+    assert row["classification"] == "matched" and str(row["canonical_id"]) == str(pid)
+    assert row["category"] == "General"                    # category flows from the item, not TaxDome
+    assert f"{pid} - " in row["proposed_destination_root"]
 
 
 def test_apply_refused_before_any_write(cfg):
