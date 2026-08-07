@@ -12,9 +12,13 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class CanonicalEntity:
-    """The Client360 canonical entity an artifact belongs to (resolved by the Identity Service)."""
+    """The Client360 canonical entity an artifact belongs to (resolved by the Identity Service).
 
-    entity_type: str            # "person" | "household" | "organization"
+    ``entity_type`` is one of the Identity Service's supported kinds:
+    ``person`` | ``household`` | ``organization`` | ``trust`` | ``estate``.
+    """
+
+    entity_type: str
     canonical_id: int
     display_name: str = ""
 
@@ -30,7 +34,12 @@ class VersionedEnterpriseArtifact:
     payload: dict = field(default_factory=dict)          # artifact-type-specific (storage ref, body, fields…)
     provenance: dict = field(default_factory=dict)       # source ids / paths / timestamps
 
-    # --- version history (set on apply; append-only, never overwritten) ---
+    # --- source identity (set by the adapter during discovery) ---
+    source_record_id: str | None = None                  # the source system's own id for this record/file
+    source_locator: str | None = None                    # original source path / URL / object key
+
+    # --- artifact + version history (artifact_id + version fields set on apply; append-only) ---
+    artifact_id: str | None = None                       # stable canonical artifact id (constant across versions)
     version_id: str | None = None
     previous_version_id: str | None = None
     effective_date: str | None = None                    # when the artifact content is effective (source date)
@@ -39,7 +48,7 @@ class VersionedEnterpriseArtifact:
     integrity_hash: str | None = None                    # SHA-256, computed on apply
 
     # --- canonical binding + adapter pre-resolution ---
-    canonical_entity: CanonicalEntity | None = None      # set by the Identity Service
+    canonical_entity: CanonicalEntity | None = None      # set by the Identity Service (type + id + name)
     entity_type: str | None = None                       # optional: adapter already knows the entity
     canonical_id: int | None = None
     display_name: str | None = None

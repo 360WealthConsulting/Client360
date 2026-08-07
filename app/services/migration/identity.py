@@ -1,9 +1,15 @@
 """Identity (Canonical Matching) Service.
 
-Resolving which canonical Client360 entity an artifact belongs to is its OWN service. The ingestion
-engine ASKS the Identity Service — matching is never embedded in ingestion. Read-only: it reads the
-canonical people/households directory and resolves a group hint (or an adapter-pre-resolved record) to a
-matched / ambiguous / unmatched result. Exact matching only; ambiguity is never guessed.
+Resolving which canonical Client360 entity an artifact belongs to is its OWN service, reusable by any
+Client360 service (not only ingestion). The ingestion engine ASKS the Identity Service — matching is
+never embedded in ingestion. Read-only: it reads the canonical directory and resolves a group hint (or an
+adapter-pre-resolved record) to a matched / ambiguous / unmatched result. Exact matching only; ambiguity
+is never guessed.
+
+Supported canonical entity types (the contract): person, household, organization, trust, estate.
+Name-based resolution implements ``person`` and ``household`` today; ``organization`` / ``trust`` /
+``estate`` are honored when an adapter pre-resolves them, and their name-based directories plug in here
+later WITHOUT changing any caller.
 """
 from __future__ import annotations
 
@@ -12,6 +18,9 @@ from dataclasses import dataclass, field
 from app.importers.taxdome_drive import _folder_person_keys, _name_key
 from app.services.migration.artifact import CanonicalEntity, VersionedEnterpriseArtifact
 from app.services.migration.config import MigrationConfig
+
+#: Every canonical entity kind the Identity Service is contracted to resolve.
+SUPPORTED_ENTITY_TYPES = ("person", "household", "organization", "trust", "estate")
 
 
 @dataclass

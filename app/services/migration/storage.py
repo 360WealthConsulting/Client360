@@ -10,6 +10,28 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
+
+
+class RepositoryArea(StrEnum):
+    """The logical areas of the authoritative repository (``D:\\Client360Data``). It is enterprise storage,
+    NOT merely a client-document tree. These are addressable now; the physical structure is NOT created
+    until D:\\ is confirmed on production and APPLY is approved."""
+
+    OBJECTS = "Objects"          # canonical binary objects / client files (e.g. Objects/Clients/<id> - <name>)
+    STAGING = "Staging"          # in-flight imports before they become canonical versions
+    ARCHIVE = "Archive"          # superseded artifact versions + archival material
+    VAULT = "Vault"             # Client360 Vault data
+    DERIVATIVES = "Derivatives"  # OCR / AI / thumbnail / embedding outputs (Transformation service)
+    INDEX = "Index"             # search / index artifacts
+    AUDIT = "Audit"             # reconciliation evidence + audit trail
+    EXPORTS = "Exports"          # system-generated exports
+
+
+def repository_uri(root, area: RepositoryArea, *parts: str) -> str:
+    """Compose a repository URI for an area. Pure string composition — creates NOTHING on disk."""
+    return os.path.join(str(root), str(area), *parts)
+
 
 # OneDrive / Files-On-Demand cloud-only attribute bits (Windows only).
 _FILE_ATTRIBUTE_OFFLINE = 0x1000

@@ -194,6 +194,11 @@ class ApplyService:
 
 
 class ReconciliationService:
+    """Independently PROVES a source's migration completeness (never trusts APPLY's own count). It will
+    compare: source records/files vs discovered vs successfully ingested; duplicates; unresolved records;
+    failures; per-artifact integrity hashes; canonical links; and artifact versions. No source is
+    considered complete until reconciliation passes. NOT IMPLEMENTED."""
+
     stage = Stage.RECONCILIATION
 
     def run(self, *_a, **_k):
@@ -201,8 +206,16 @@ class ReconciliationService:
 
 
 class RetirementService:
-    """Retires a legacy source AFTER successful reconciliation + explicit approval. The ingestion engine
-    never disables or deletes a legacy system. NOT IMPLEMENTED."""
+    """Retires a legacy platform — a SEPARATE service, never the ingestion engine. The engine must NEVER
+    delete, disable, disconnect, or cancel a legacy platform. Retirement occurs ONLY after: successful
+    APPLY, successful reconciliation, unresolved exceptions reviewed, and explicit human approval.
+
+    Retirement targets for this program: TaxDome, SharePoint / OneDrive, Wealthbox. Drake remains an
+    operational tax-preparation system and is NOT a retirement target unless separately approved — its
+    relevant artifacts are still ingested into Client360. NOT IMPLEMENTED."""
+
+    #: platforms this program will ultimately retire (Drake deliberately excluded — operational system)
+    RETIREMENT_TARGETS = ("TaxDome", "SharePoint/OneDrive", "Wealthbox")
 
     stage = Stage.RETIREMENT
 

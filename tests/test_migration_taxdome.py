@@ -7,6 +7,8 @@ zero-byte, unreadable, duplicate-content candidates, and destination collisions;
 ZERO file changes. Also proves APPLY is refused before any database access. Temp trees + temp people only.
 """
 import dataclasses
+import os
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -266,9 +268,75 @@ def test_engine_asks_the_identity_service(cfg):
 def test_versioned_artifact_supports_history_never_overwrite():
     from app.services.migration.artifact import VersionedEnterpriseArtifact
     a = VersionedEnterpriseArtifact(source_system="X", artifact_type="document", group_key="g")
-    for f in ("version_id", "previous_version_id", "effective_date", "imported_date", "archived_date",
-              "integrity_hash", "canonical_entity"):
+    for f in ("artifact_id", "version_id", "previous_version_id", "effective_date", "imported_date",
+              "archived_date", "integrity_hash", "canonical_entity",
+              "source_record_id", "source_locator"):
         assert hasattr(a, f) and getattr(a, f) is None       # unset until apply; new versions, never overwrite
+
+
+def test_adapter_records_source_identity():
+    """Discovery stamps the source's own id + original locator on every artifact (provenance contract)."""
+    from app.services.migration.adapters.taxdome import TaxDomeAdapter
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "Smith, John").mkdir()
+        (root / "Smith, John" / "2024").mkdir()
+        (root / "Smith, John" / "2024" / "return.pdf").write_text("x")
+        cfg = MigrationConfig(migration_root=root, wealthbox_export=root, taxdome_root=root,
+                              sharepoint_root=root, scanner_root=root, document_root=root,
+                              taxdome_migration_root=root)
+        recs = list(TaxDomeAdapter().discover(cfg))
+    assert recs and all(r.source_record_id and r.source_locator for r in recs)
+    assert recs[0].source_locator.endswith("return.pdf")
+
+
+def test_identity_supports_non_person_entities():
+    """The Identity Service resolves organization/trust/estate (adapter-pre-resolved), not only people."""
+    from app.services.migration.artifact import VersionedEnterpriseArtifact
+    from app.services.migration.identity import SUPPORTED_ENTITY_TYPES, IdentityService
+    assert set(SUPPORTED_ENTITY_TYPES) == {"person", "household", "organization", "trust", "estate"}
+    svc = IdentityService(MigrationConfig(migration_root=Path("."), wealthbox_export=Path("."),
+                                          taxdome_root=Path("."), sharepoint_root=Path("."),
+                                          scanner_root=Path("."), document_root=Path(".")))
+    for etype in ("organization", "trust", "estate"):
+        rec = VersionedEnterpriseArtifact(source_system="X", artifact_type="document", group_key="g",
+                                          entity_type=etype, canonical_id=7, display_name="Acme")
+        m = svc.resolve("g", rec)
+        assert m.status == "matched" and m.entity.entity_type == etype and m.entity.canonical_id == 7
+
+
+def test_repository_areas_addressable_without_creating():
+    """Enterprise repository areas are addressable; composing a URI creates nothing on disk."""
+    from app.services.migration.storage import RepositoryArea, repository_uri
+    with tempfile.TemporaryDirectory() as td:
+        uri = repository_uri(td, RepositoryArea.DERIVATIVES, "ocr", "x.txt")
+        assert uri.endswith(os.path.join("Derivatives", "ocr", "x.txt"))
+        assert not os.path.exists(os.path.join(td, "Derivatives"))     # nothing created
+    # the full enterprise area set is declared (not just a document tree)
+    assert {a.value for a in RepositoryArea} >= {"Objects", "Staging", "Archive", "Vault",
+                                                 "Derivatives", "Index", "Audit", "Exports"}
+
+
+def test_transformation_extension_is_contract_only():
+    """The Transformer extension point exists and is empty by design (OCR/AI/etc. plug in later)."""
+    from app.services.migration.transform import TRANSFORMERS, Transformer
+    assert TRANSFORMERS == {}                                # no enrichment wired in this phase
+    with pytest.raises(TypeError):                           # abstract: cannot instantiate the contract
+        Transformer()
+
+
+def test_outbox_publisher_is_contract_only():
+    """The durable outbox bridge is declared but unimplemented until APPLY (no competing bus, no writes)."""
+    from app.services.migration.events import OutboxEventPublisher, Stage, StageEvent
+    with pytest.raises(NotImplementedError):
+        OutboxEventPublisher().publish(StageEvent(stage=Stage.DISCOVERY, source_system="X"))
+
+
+def test_retirement_targets_exclude_drake():
+    """Retirement targets TaxDome/SharePoint/Wealthbox; Drake stays operational (ingested, not retired)."""
+    from app.services.migration.stages import RetirementService
+    assert set(RetirementService.RETIREMENT_TARGETS) == {"TaxDome", "SharePoint/OneDrive", "Wealthbox"}
+    assert not any("Drake" in t for t in RetirementService.RETIREMENT_TARGETS)
 
 
 def test_apply_refused_before_any_write(cfg):

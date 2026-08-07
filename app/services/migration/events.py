@@ -78,3 +78,18 @@ class CollectingEventPublisher(EventPublisher):
                 fn(event)
             except Exception:  # noqa: BLE001 — a subscriber must never break ingestion
                 pass
+
+
+class OutboxEventPublisher(EventPublisher):
+    """Durable publisher (CONTRACT ONLY — lands with APPLY).
+
+    Persists each completed-stage event to Client360's EXISTING domain-event outbox via
+    ``app.services.events.publisher.publish`` under a registered event contract. Client360's outbox stays
+    the single durable bus; this is a bridge onto it, never a competing/parallel bus. It is not wired into
+    the read-only preview (which uses :class:`CollectingEventPublisher`) and requires the stage-event
+    contracts to be registered first, so ``publish`` is intentionally unimplemented in this phase."""
+
+    def publish(self, event: StageEvent) -> None:
+        raise NotImplementedError(
+            "OutboxEventPublisher lands with APPLY: it persists via app.services.events.publisher.publish "
+            "under registered stage-event contracts (the existing outbox is the single durable bus).")

@@ -23,6 +23,7 @@ from app.services.migration.config import MigrationConfig
 from app.services.migration.events import (
     CollectingEventPublisher,
     EventPublisher,
+    OutboxEventPublisher,
     Stage,
     StageEvent,
 )
@@ -32,7 +33,11 @@ from app.services.migration.handlers import (
     DocumentHandler,
     HandlerResult,
 )
-from app.services.migration.identity import CanonicalMatch, IdentityService
+from app.services.migration.identity import (
+    SUPPORTED_ENTITY_TYPES,
+    CanonicalMatch,
+    IdentityService,
+)
 from app.services.migration.ports import SourceAdapter
 from app.services.migration.stages import (
     ApplyService,
@@ -46,13 +51,22 @@ from app.services.migration.stages import (
     TransformationService,
     ValidationService,
 )
-from app.services.migration.storage import LocalFilesystemStorage, StorageService
+from app.services.migration.storage import (
+    LocalFilesystemStorage,
+    RepositoryArea,
+    StorageService,
+    repository_uri,
+)
+from app.services.migration.transform import TRANSFORMERS, DerivedArtifact, Transformer
 
 __all__ = [
     "VersionedEnterpriseArtifact", "EnterpriseArtifact", "IngestionRecord", "SourceItem", "CanonicalEntity",
-    "SourceAdapter", "IdentityService", "CanonicalMatch", "StorageService", "LocalFilesystemStorage",
+    "SourceAdapter", "IdentityService", "CanonicalMatch", "SUPPORTED_ENTITY_TYPES",
+    "StorageService", "LocalFilesystemStorage", "RepositoryArea", "repository_uri",
+    "Transformer", "DerivedArtifact", "TRANSFORMERS",
     "ArtifactHandler", "DocumentHandler", "HandlerResult", "HANDLERS", "Stage", "StageEvent",
-    "EventPublisher", "CollectingEventPublisher", "IngestionEngine", "IngestionJob", "DocumentMigrationJob",
+    "EventPublisher", "CollectingEventPublisher", "OutboxEventPublisher",
+    "IngestionEngine", "IngestionJob", "DocumentMigrationJob",
 ]
 
 #: The read-only preview pipeline: each stage is an independent service run in order.

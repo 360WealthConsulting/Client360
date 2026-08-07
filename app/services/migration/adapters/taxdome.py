@@ -32,8 +32,10 @@ class TaxDomeAdapter(SourceAdapter):
                 for name in filenames:
                     abs_path = os.path.join(dirpath, name)
                     rel_within = os.path.relpath(abs_path, entry.path).replace(os.sep, "/")
+                    source_rel = os.path.relpath(abs_path, root)
                     yield VersionedEnterpriseArtifact(
                         source_system=self.source_system, artifact_type="document", group_key=group,
+                        source_record_id=source_rel,           # TaxDome has no id export; the rel path is stable
+                        source_locator=abs_path,               # original source path (Storage Service reads via this)
                         payload={"abs_path": abs_path, "rel_within_group": rel_within, "category": "Tax"},
-                        provenance={"source_root": str(root),
-                                    "source_relative_path": os.path.relpath(abs_path, root)})
+                        provenance={"source_root": str(root), "source_relative_path": source_rel})
