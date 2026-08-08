@@ -257,3 +257,29 @@ def test_business_document_uses_relationship_entity_name(tmp_path):
     assert "Organization" not in row["entity"]
     assert row["proposed_destination"].endswith(str(
         Path("Businesses") / f"Star City Heating {_TAG}" / "Tax" / "2024" / f"1120S Return [{did}].pdf"))
+
+
+def test_org_only_document_routes_to_businesses(tmp_path):
+    """A document linked ONLY via organization_id (no person_id/household_id) must route to Businesses —
+    organization_id takes precedence over the Firm fallback."""
+    cfg = _cfg(tmp_path)
+    org = _org(f"VAL6 INC {_TAG}", entity_type="business")
+    src = tmp_path / "legacy" / "o.pdf"; sz, sha = _write(src, b"o" * 32)
+    did = _doc(None, "1120S.pdf", str(src), sz, sha, classification="tax",
+               effective_date=datetime.date(2024, 5, 1), organization_id=org)   # person_id NULL
+    result = RepositoryRelocationJob(cfg).run(Mode.PREVIEW)
+    row = _rows_by_id(result)[did]
+    assert row["area"] == "Businesses"                                # NOT Firm
+    assert row["entity"] == f"VAL6 INC {_TAG}"
+    assert result.counts["by_area"].get("Businesses", 0) >= 1
+
+
+def test_org_id_precedence_over_person_and_household():
+    """Pure precedence: organization_id wins over household_id and person_id; a null-linked doc is Firm."""
+    n = RepositoryNaming()
+    orgs = {9: "Acme LLC"}; hh = {3: "Smith Household"}; ppl = {7: "Smith, John"}
+    both = n.plan({"id": 1, "person_id": 7, "household_id": 3, "organization_id": 9, "original_name": "x.pdf"},
+                  people=ppl, households=hh, organizations=orgs)
+    assert both.area == "Businesses" and both.entity == "Acme LLC"
+    firm = n.plan({"id": 2, "original_name": "y.pdf"})
+    assert firm.area == "Firm"                                        # only when person/household/org all null
