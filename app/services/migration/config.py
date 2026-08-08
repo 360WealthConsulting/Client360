@@ -12,6 +12,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+#: The app's .env (same file app.db loads). Resolved relative to this module so it is found regardless of
+#: the current working directory — a standalone migration CLI may call from_env() before anything imports
+#: app.db (which is what loads .env when the app runs as a service).
+_APP_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+
 # Never treated as client documents — the AWS/Drake program backup (see the migration plan). General
 # scans skip anything beneath it. The Drake provider is the ONE sanctioned exception: it reads the
 # EXPLICITLY listed Drake roots below (some of which live under this path) to COUNT client artifacts for
@@ -62,6 +69,9 @@ class MigrationConfig:
 
     @classmethod
     def from_env(cls) -> MigrationConfig:
+        # Load the deployed app/.env so standalone migration CLIs honor the same configuration the
+        # running service uses. Idempotent and non-overriding (never clobbers an already-set env var).
+        load_dotenv(_APP_ENV_PATH)
         g = os.getenv
         return cls(
             migration_root=Path(g("CLIENT360_MIGRATION_ROOT", "Migration")),
