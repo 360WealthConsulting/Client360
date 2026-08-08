@@ -58,7 +58,11 @@ def _seed(tmp_path):
     jeff = _person(f"Jeffrey Fullerx {_TAG}", first="Jeffrey", last=f"Fullerx{_TAG}", email=f"jf{_TAG}@x.com")
     _sc(f"Jeffrey Fullerx {_TAG}", first="Jeffrey", last=f"Fullerx{_TAG}", email=f"jf{_TAG}@x.com")   # plausible link
     _person(f"William Suspx {_TAG}", first="William", last=f"Suspx{_TAG}", email=f"su{_TAG}@x.com")
-    _sc(f"Betty Suspx {_TAG}", first="Betty", last=f"Suspx{_TAG}", email=f"su{_TAG}@x.com")     # SUSPECT link -> excluded
+    _sc(f"Betty Suspx {_TAG}", first="Betty", last=f"Suspx{_TAG}", email=f"su{_TAG}@x.com")     # SUSPECT (diff first) -> excluded
+    # same first+last as an existing person, BUT the email is shared with another contact -> suspect, excluded
+    _person(f"Sam Sharedx {_TAG}", first="Sam", last=f"Sharedx{_TAG}", email=f"sh2{_TAG}@x.com")
+    _sc(f"Sam Sharedx {_TAG}", first="Sam", last=f"Sharedx{_TAG}", email=f"sh2{_TAG}@x.com")     # would-be plausible...
+    _sc(f"Pat Sharedx {_TAG}", first="Pat", last=f"Sharedx{_TAG}", email=f"sh2{_TAG}@x.com")     # ...shared identity -> both excluded
     _person(f"Aaa Zbb{_A}", first="Aaa", last=f"Zbb{_A}")                                       # household member
     _person(f"Ccc Zbb{_A}", first="Ccc", last=f"Zbb{_A}")                                       # household member
     _sc(f"Val6x Bizz{_A} INC", system="Drake", record_id=f"y2023-{_TAG}", raw={"return_type": "1120S"})  # business y1
@@ -82,7 +86,10 @@ def test_preview_is_readonly_and_plans_deterministic_set(tmp_path):
     assert c["business_source_contacts"] == 3                           # 2 Drake business years + 1 trust
     cats = {r["category"] for r in result.reconciliation}
     assert "business_canonicalization" in cats and "trust_canonicalization" in cats
-    assert not any(r["source_name"] == f"Betty Suspx {_TAG}" for r in result.reconciliation)   # suspect excluded
+    link_names = {r["source_name"] for r in result.reconciliation if r["category"] == "existing_person_link"}
+    assert f"Betty Suspx {_TAG}" not in link_names                      # suspect (different first name)
+    assert f"Sam Sharedx {_TAG}" not in link_names                      # suspect (shared email identity)
+    assert link_names == {f"Jeffrey Fullerx {_TAG}"}                    # exactly the validated plausible link
 
 
 def test_apply_guards_fail_closed(tmp_path):
@@ -116,10 +123,11 @@ def test_apply_writes_deterministic_set_and_is_idempotent(tmp_path):
             source_contacts.c.full_name == f"Jeffrey Fullerx {_TAG}")).scalar_one()
         assert c.execute(select(person_source_links.c.person_id).where(
             person_source_links.c.source_contact_id == jf_sc)).scalar_one() == jeff       # linked to existing
-        betty_sc = c.execute(select(source_contacts.c.id).where(
-            source_contacts.c.full_name == f"Betty Suspx {_TAG}")).scalar_one()
-        assert c.execute(select(func.count()).select_from(person_source_links).where(
-            person_source_links.c.source_contact_id == betty_sc)).scalar_one() == 0       # suspect NOT linked
+        for suspect_name in (f"Betty Suspx {_TAG}", f"Sam Sharedx {_TAG}"):
+            ssc = c.execute(select(source_contacts.c.id).where(
+                source_contacts.c.full_name == suspect_name)).scalar_one()
+            assert c.execute(select(func.count()).select_from(person_source_links).where(
+                person_source_links.c.source_contact_id == ssc)).scalar_one() == 0        # suspect NOT linked
         hh = list(c.execute(select(people.c.household_id).where(
             people.c.full_name.in_([f"Aaa Zbb{_A}", f"Ccc Zbb{_A}"]))).scalars())
         assert len(set(hh)) == 1 and hh[0] is not None                                    # one household
