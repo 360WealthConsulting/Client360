@@ -66,27 +66,54 @@ def _read_exception_folders(preview_dir):
         return [(r.get("source_folder") or "") for r in csv.DictReader(f)]
 
 
+def load_approved_set(path):
+    """Load the FROZEN approved set from an approved run's ``reconciliation.csv`` (pass the run directory
+    or the csv path). The approved set anchors scope: a post-APPLY run must not expand the repair set just
+    because earlier writes altered matching state."""
+    csvpath = path if str(path).endswith(".csv") else os.path.join(path, "reconciliation.csv")
+    approved = {"promotions": set(), "links": set(), "households": set(), "businesses": set()}
+    with open(csvpath, encoding="utf-8", newline="") as f:
+        for r in csv.DictReader(f):
+            cat, scid = (r.get("category") or ""), (r.get("source_contact_id") or "").strip()
+            if cat == "safe_person_promotion" and scid.isdigit():
+                approved["promotions"].add(int(scid))
+            elif cat == "existing_person_link" and scid.isdigit():
+                approved["links"].add(int(scid))
+            elif cat == "household_derivation":
+                approved["households"].add(r.get("source_name") or "")
+            elif cat.endswith("_canonicalization"):
+                kind = cat[: -len("_canonicalization")]
+                approved["businesses"].add((kind, _name_key(r.get("source_name") or "")))
+    return approved
+
+
 @dataclass
 class RepairPlan:
     promotions: list = field(default_factory=list)   # source_contact dicts (PENDING)
     links: list = field(default_factory=list)        # {sc, target_person_id, evidence} (PENDING)
-    households: list = field(default_factory=list)    # {folder, member_person_ids, name}
-    businesses: list = field(default_factory=list)    # {kind, name, source_contact_ids, source_record_ids}
+    households: list = field(default_factory=list)    # {folder, member_person_ids, name} (PENDING)
+    businesses: list = field(default_factory=list)    # {kind, name, source_contact_ids, source_record_ids} (PENDING)
     applied_promotions: int = 0                       # already promoted by a prior repair run
     applied_links: int = 0                            # already linked by a prior repair run
+    applied_households: int = 0                        # candidate whose members already share a household
+    applied_businesses: int = 0                        # group whose relationship_entities already exists
+    newly_eligible: dict = field(default_factory=lambda: {"promotions": 0, "links": 0,
+                                                          "households": 0, "businesses": 0})
 
     def counts(self):
-        """Pending work this run would do."""
+        """Pending work this run would still do (excludes already-applied)."""
         return {"promotions": len(self.promotions), "links": len(self.links),
                 "households": len(self.households), "businesses": len(self.businesses)}
 
     def guard_counts(self):
-        """STABLE intended totals (pending + already-applied-by-repair). Idempotent across re-runs, so the
-        approved expected counts still match after the repair has been applied. Households/businesses are
-        already stable (people stay unique; business source_contacts stay unlinked)."""
+        """STABLE intended totals for the FROZEN approved set (pending + already-applied-by-repair), for
+        EVERY category. Idempotent across re-runs: after the repair is applied, pending -> 0 and the
+        totals still equal the approved counts. Newly-eligible records (out of the approved scope) are
+        tracked in ``newly_eligible`` and never counted here."""
         return {"promotions": len(self.promotions) + self.applied_promotions,
                 "links": len(self.links) + self.applied_links,
-                "households": len(self.households), "businesses": len(self.businesses)}
+                "households": len(self.households) + self.applied_households,
+                "businesses": len(self.businesses) + self.applied_businesses}
 
 
 class CanonicalRepairJob(MigrationJob):
@@ -108,7 +135,10 @@ class CanonicalRepairJob(MigrationJob):
             people.c.normalized_email, people.c.normalized_phone, people.c.household_id)).mappings()]
         return linked, scs, ppl
 
-    def _plan(self, conn, folders) -> RepairPlan:
+    def _plan(self, conn, folders, approved=None) -> RepairPlan:
+        from sqlalchemy import select
+
+        from app.db import metadata
         linked, scs, ppl = self._snapshot(conn)
         by_email: dict = defaultdict(list)
         by_phone: dict = defaultdict(list)
@@ -127,8 +157,22 @@ class CanonicalRepairJob(MigrationJob):
         unlinked = [s for s in scs if s["id"] not in linked]
         email_counts = _counter(s["normalized_email"] for s in unlinked if s["normalized_email"])
         phone_counts = _counter(s["normalized_phone"] for s in unlinked if s["normalized_phone"])
+        # existing standalone entities, for business/trust applied-recognition
+        rel = metadata.tables["relationship_entities"]
+        existing_entities = {(r_[0], _name_key(r_[1])) for r_ in
+                             conn.execute(select(rel.c.entity_type, rel.c.name)) if r_[1]}
 
         plan = RepairPlan()
+
+        def in_scope(cat, key):
+            """True if this candidate is in the frozen approved set (or no approval -> first run)."""
+            if approved is None:
+                return True
+            if key in approved[cat]:
+                return True
+            plan.newly_eligible[cat] += 1
+            return False
+
         biz_groups: dict = {}
         for s in unlinked:
             kind = business_kind(s["source_system"], s.get("raw_data"))
@@ -142,7 +186,8 @@ class CanonicalRepairJob(MigrationJob):
                 continue
             action, _t, _e, _a = classify_contact(s, by_email, by_phone, email_counts, phone_counts)
             if action == "safe_person_promotion":
-                plan.promotions.append(s)
+                if in_scope("promotions", s["id"]):
+                    plan.promotions.append(s)
             elif action == "existing_person_link":
                 ne, np = s["normalized_email"], s["normalized_phone"]
                 cand = (by_email.get(ne) or by_phone.get(np) or [None])
@@ -153,30 +198,49 @@ class CanonicalRepairJob(MigrationJob):
                     phone_counts.get(np, 0) if (np and by_phone.get(np)) else 0)
                 if pid and plausible_link(s.get("first_name"), s.get("last_name"),
                                           tp.get("first_name"), tp.get("last_name"), share):
-                    plan.links.append({"sc": s, "target_person_id": pid,
-                                       "evidence": "unique non-shared email/phone; names not provably different"})
+                    if in_scope("links", s["id"]):
+                        plan.links.append({"sc": s, "target_person_id": pid,
+                                           "evidence": "unique non-shared email/phone; names not provably different"})
             # ambiguous / unresolved -> excluded (never applied here)
-        plan.businesses = [g for _k, g in sorted(biz_groups.items())]
 
+        # businesses: split PENDING (no entity yet) vs APPLIED (entity already exists)
+        for _k, g in sorted(biz_groups.items()):
+            gk = (g["kind"], _name_key(g["name"]))
+            if not in_scope("businesses", gk):
+                continue
+            if gk in existing_entities:
+                plan.applied_businesses += 1
+            else:
+                plan.businesses.append(g)
+
+        # households: split PENDING (members not yet in a shared household) vs APPLIED (already share one)
         for folder in folders:
             member_keys = _folder_person_keys(folder)
-            if len(member_keys) <= 1:
+            if len(member_keys) <= 1 or not all(len(by_name.get(k, [])) == 1 for k in member_keys):
                 continue
-            if all(len(by_name.get(k, [])) == 1 for k in member_keys):
-                pids = [by_name[k][0] for k in member_keys]
+            if not in_scope("households", folder):
+                continue
+            pids = [by_name[k][0] for k in member_keys]
+            hids = {prow[p]["household_id"] for p in pids}
+            if len(hids) == 1 and None not in hids:
+                plan.applied_households += 1
+            else:
                 lasts = {(prow[p]["last_name"] or "").strip() for p in pids}
                 name = (f"{next(iter(lasts)).title()} Household" if len(lasts) == 1 and next(iter(lasts))
                         else folder.strip())
                 plan.households.append({"folder": folder, "member_person_ids": pids, "name": name})
 
-        from sqlalchemy import func, select
-
-        from app.db import metadata
+        # already-applied promotions/links, restricted to the approved set when frozen
         psl = metadata.tables["person_source_links"]
-        plan.applied_promotions = conn.execute(select(func.count()).select_from(psl).where(
-            psl.c.match_method == "canonical_repair_promote")).scalar_one()
-        plan.applied_links = conn.execute(select(func.count()).select_from(psl).where(
-            psl.c.match_method == "canonical_repair_link")).scalar_one()
+        promoted = set(conn.execute(select(psl.c.source_contact_id).where(
+            psl.c.match_method == "canonical_repair_promote")).scalars())
+        relinked = set(conn.execute(select(psl.c.source_contact_id).where(
+            psl.c.match_method == "canonical_repair_link")).scalars())
+        if approved is not None:
+            promoted &= approved["promotions"]
+            relinked &= approved["links"]
+        plan.applied_promotions = len(promoted)
+        plan.applied_links = len(relinked)
         return plan
 
     def _rows(self, plan, applied=None) -> list[dict]:
@@ -204,24 +268,28 @@ class CanonicalRepairJob(MigrationJob):
         return rows
 
     # -- PREVIEW (read-only) -------------------------------------------------
-    def _preview(self, preview_dir=None, **_opts) -> Outcome:
+    def _preview(self, preview_dir=None, approved=None, **_opts) -> Outcome:
         from app.db import engine
         with engine.connect() as conn:
-            plan = self._plan(conn, _read_exception_folders(preview_dir))
-        counts = plan.guard_counts()                                    # stable intended totals (== approved expect)
-        counts["pending"] = plan.counts()                              # what an apply would still do
+            plan = self._plan(conn, _read_exception_folders(preview_dir), approved)
+        counts = plan.guard_counts()                                    # stable frozen totals (== approved expect)
+        counts["pending"] = plan.counts()                              # what an apply would still do (0 post-apply)
+        counts["newly_eligible_out_of_scope"] = dict(plan.newly_eligible)  # never enters the approved totals
         counts["business_source_contacts"] = sum(len(g["source_contact_ids"]) for g in plan.businesses)
         notes = [
             "PREVIEW ONLY — no writes. Deterministic set only; excludes duplicate-name excess, suspect "
             "links, ambiguous, unresolved, and ALL document/storage_uri/document_sources changes.",
-            "APPLY requires --confirm, a verified DB backup, and matching approved expected counts "
-            "(fails closed before any write if a count differs).",
+            "Totals are the frozen approved set (pending + already-applied). After APPLY, pending -> 0 and "
+            "totals are unchanged (idempotent).",
+            "newly_eligible_out_of_scope: records that became eligible only because earlier repair writes "
+            "altered matching state — reported, NOT added to the approved set (pass --approved to freeze).",
             "Drake repeated tax-years are deduped to ONE relationship_entities business/trust per identity.",
         ]
         return Outcome(counts=counts, exceptions=[], reconciliation=self._rows(plan), notes=notes)
 
     # -- APPLY (guarded, idempotent) -----------------------------------------
-    def _apply(self, job_id=None, preview_dir=None, confirm=False, backup=None, expect=None, **_opts) -> Outcome:
+    def _apply(self, job_id=None, preview_dir=None, confirm=False, backup=None, expect=None,
+               approved=None, **_opts) -> Outcome:
         if not confirm:
             raise RepairGuardError("APPLY requires explicit confirm=True.")
         if not backup or not os.path.isfile(backup) or os.path.getsize(backup) == 0:
@@ -239,7 +307,7 @@ class CanonicalRepairJob(MigrationJob):
 
         applied: dict = {}
         with engine.begin() as conn:
-            plan = self._plan(conn, _read_exception_folders(preview_dir))
+            plan = self._plan(conn, _read_exception_folders(preview_dir), approved)
             live = plan.guard_counts()
             if expect is not None and live != expect:
                 raise RepairGuardError(f"count drift — approved {expect} but live {live}; aborted before any write.")
