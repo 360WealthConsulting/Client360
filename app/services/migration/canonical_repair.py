@@ -122,14 +122,21 @@ class CanonicalRepairJob(MigrationJob):
             if action == "safe_person_promotion":
                 plan.promotions.append(s)
             elif action == "existing_person_link":
-                cand = (by_email.get(s["normalized_email"]) or by_phone.get(s["normalized_phone"]) or [None])
+                ne, np = s["normalized_email"], s["normalized_phone"]
+                cand = (by_email.get(ne) or by_phone.get(np) or [None])
                 pid = cand[0]
                 tp = prow.get(pid, {})
                 c_last, c_first = (s.get("last_name") or "").strip().lower(), (s.get("first_name") or "").strip().lower()
                 t_last, t_first = (tp.get("last_name") or "").strip().lower(), (tp.get("first_name") or "").strip().lower()
-                if pid and c_last and t_last and c_first and t_first and c_last == t_last and c_first == t_first:
+                # PLAUSIBLE only (matches the duplicate diagnostic): matching first+last AND the identity
+                # is NOT shared with another unlinked contact (share<=1). A shared email/phone is a
+                # spouse/household-shared identity -> suspect -> excluded, never linked here.
+                share = email_counts.get(ne, 0) if (ne and by_email.get(ne)) else (
+                    phone_counts.get(np, 0) if (np and by_phone.get(np)) else 0)
+                if (pid and c_last and t_last and c_first and t_first
+                        and c_last == t_last and c_first == t_first and share <= 1):
                     plan.links.append({"sc": s, "target_person_id": pid,
-                                       "evidence": "unique email/phone + matching first+last name"})
+                                       "evidence": "unique NON-shared email/phone + matching first+last name"})
             # ambiguous / unresolved -> excluded (never applied here)
         plan.businesses = [g for _k, g in sorted(biz_groups.items())]
 
