@@ -34,6 +34,28 @@ class RepairGuardError(RuntimeError):
     """APPLY aborted by a guard BEFORE any write (bad backup, missing confirm, or count drift)."""
 
 
+def plausible_link(contact_first, contact_last, target_first, target_last, share) -> bool:
+    """SINGLE SOURCE OF TRUTH (shared with diagnose_duplicate_people) for whether a proposed
+    existing-person link is plausible enough to auto-apply.
+
+    Plausible only when BOTH hold:
+      * the matched email/phone identity is NOT shared with another unlinked contact (``share <= 1``) —
+        a shared identity is a spouse/household-shared identity, held for review; and
+      * the names are not PROVABLY different — a same-last-name, different-first-name match is a spouse,
+        excluded. Missing structured names are tolerated (not proven different), which is why a contact
+        carrying only ``full_name`` still links to its uniquely-identified person.
+    """
+    cf, cl = (contact_first or "").strip().lower(), (contact_last or "").strip().lower()
+    tf, tl = (target_first or "").strip().lower(), (target_last or "").strip().lower()
+    same_last = (cl == tl) if (cl and tl) else None
+    same_first = (cf == tf) if (cf and tf) else None
+    if share > 1:
+        return False
+    if same_last and same_first is False:
+        return False
+    return True
+
+
 def _read_exception_folders(preview_dir):
     if not preview_dir:
         return []
@@ -126,17 +148,13 @@ class CanonicalRepairJob(MigrationJob):
                 cand = (by_email.get(ne) or by_phone.get(np) or [None])
                 pid = cand[0]
                 tp = prow.get(pid, {})
-                c_last, c_first = (s.get("last_name") or "").strip().lower(), (s.get("first_name") or "").strip().lower()
-                t_last, t_first = (tp.get("last_name") or "").strip().lower(), (tp.get("first_name") or "").strip().lower()
-                # PLAUSIBLE only (matches the duplicate diagnostic): matching first+last AND the identity
-                # is NOT shared with another unlinked contact (share<=1). A shared email/phone is a
-                # spouse/household-shared identity -> suspect -> excluded, never linked here.
+                # share = how many unlinked contacts share the matched identity (email preferred, else phone)
                 share = email_counts.get(ne, 0) if (ne and by_email.get(ne)) else (
                     phone_counts.get(np, 0) if (np and by_phone.get(np)) else 0)
-                if (pid and c_last and t_last and c_first and t_first
-                        and c_last == t_last and c_first == t_first and share <= 1):
+                if pid and plausible_link(s.get("first_name"), s.get("last_name"),
+                                          tp.get("first_name"), tp.get("last_name"), share):
                     plan.links.append({"sc": s, "target_person_id": pid,
-                                       "evidence": "unique NON-shared email/phone + matching first+last name"})
+                                       "evidence": "unique non-shared email/phone; names not provably different"})
             # ambiguous / unresolved -> excluded (never applied here)
         plan.businesses = [g for _k, g in sorted(biz_groups.items())]
 
