@@ -207,7 +207,12 @@ def validate_links(engine=None):
         t_last, t_first = (tp.get("last_name") or "").strip().lower(), (tp.get("first_name") or "").strip().lower()
         same_last = (c_last == t_last) if (c_last and t_last) else None
         same_first = (c_first == t_first) if (c_first and t_first) else None
-        verdict = "suspect_household_shared" if (share > 1 or (same_last and same_first is False)) else "plausible"
+        # Verdict uses the SHARED plausibility rule (single source of truth) so the diagnostic and the
+        # repair planner can never diverge.
+        from app.services.migration.canonical_repair import plausible_link
+        verdict = "plausible" if plausible_link(
+            s.get("first_name"), s.get("last_name"), tp.get("first_name"), tp.get("last_name"), share
+        ) else "suspect_household_shared"
         out.append({
             "source_contact_id": s["id"], "contact_name": s["full_name"], "target_person_id": pid,
             "target_person_name": tp["full_name"], "matched_on": matched_on, "identity_value": value,

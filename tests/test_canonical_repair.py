@@ -6,8 +6,26 @@ from sqlalchemy import func, or_, select
 
 from app.db import engine, households, metadata, people
 from app.services.migration.base import Mode
-from app.services.migration.canonical_repair import CanonicalRepairJob, RepairGuardError
+from app.services.migration.canonical_repair import (
+    CanonicalRepairJob,
+    RepairGuardError,
+    plausible_link,
+)
 from app.services.migration.config import MigrationConfig
+
+
+def test_plausible_link_rule():
+    # unique identity + matching first/last -> included
+    assert plausible_link("Jeffrey", "Fuller", "Jeffrey", "Fuller", 1) is True
+    # shared identity (share>1) + matching first/last -> excluded (household-shared)
+    assert plausible_link("Jeffrey", "Fuller", "Jeffrey", "Fuller", 2) is False
+    # different first name, same last -> excluded (spouse)
+    assert plausible_link("Betty", "Philips", "William", "Philips", 1) is False
+    # missing structured names on one side + unique identity -> included (the production Jeffrey/Jessica case)
+    assert plausible_link(None, None, "Jeffrey", "Fuller", 1) is True
+    assert plausible_link("Jessica", "Zielske", None, None, 1) is True
+    # missing names but SHARED identity -> still excluded (household exclusion never weakened)
+    assert plausible_link(None, None, None, None, 2) is False
 
 source_contacts = metadata.tables["source_contacts"]
 person_source_links = metadata.tables["person_source_links"]
