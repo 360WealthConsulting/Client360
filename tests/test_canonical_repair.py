@@ -9,6 +9,7 @@ from app.services.migration.base import Mode
 from app.services.migration.canonical_repair import (
     CanonicalRepairJob,
     RepairGuardError,
+    load_approved_set,
     plausible_link,
 )
 from app.services.migration.config import MigrationConfig
@@ -161,3 +162,23 @@ def test_apply_writes_deterministic_set_and_is_idempotent(tmp_path):
     r2 = job.run(Mode.APPLY, preview_dir=str(tmp_path), confirm=True, backup=str(good), expect=EXPECT)
     assert _entity_counts() == after1                                                     # idempotent
     assert all(row["action"].startswith("skipped") for row in r2.reconciliation if row["action"])
+
+
+def test_preview_after_apply_is_idempotent_and_freezes_scope(tmp_path):
+    """The exact production invariant: PREVIEW -> APPLY(approved set) -> PREVIEW(--approved) must show the
+    SAME approved totals, pending all zero, and a newly-eligible contact must NOT enter the frozen set."""
+    _seed(tmp_path)
+    good = tmp_path / "backup.dump"; good.write_text("PGDMP")
+    job = CanonicalRepairJob(MigrationConfig.from_env())
+
+    r_apply = job.run(Mode.APPLY, preview_dir=str(tmp_path), confirm=True, backup=str(good), expect=EXPECT)
+    approved = load_approved_set(r_apply.run_dir)                       # freeze scope from the applied manifest
+
+    # a NEW safe-promotion contact becomes eligible AFTER apply (repair altered matching state)
+    _sc(f"Newly Eligiblex {_TAG}", email=f"newelig{_TAG}@x.com")
+
+    r_prev = job.run(Mode.PREVIEW, preview_dir=str(tmp_path), approved=approved)
+    c = r_prev.counts
+    assert (c["promotions"], c["links"], c["households"], c["businesses"]) == (1, 1, 1, 2)   # frozen totals
+    assert c["pending"] == {"promotions": 0, "links": 0, "households": 0, "businesses": 0}   # all applied
+    assert c["newly_eligible_out_of_scope"]["promotions"] >= 1                               # excluded from set
