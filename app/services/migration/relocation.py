@@ -54,7 +54,10 @@ class RepositoryRelocationJob(MigrationJob):
 
         from app.db import engine, households, metadata, people
         documents = metadata.tables["documents"]
-        orgs = metadata.tables.get("organizations")
+        # documents.organization_id is a FK to relationship_entities (the canonical entity registry for
+        # businesses/trusts/etc.) — NOT a separate "organizations" table. Resolve org display names from
+        # there so business/trust documents use their real canonical name, not a generic "Organization" id.
+        rel = metadata.tables["relationship_entities"]
         with engine.connect() as conn:
             people_map = {}
             for r in conn.execute(select(people.c.id, people.c.first_name, people.c.last_name,
@@ -62,9 +65,8 @@ class RepositoryRelocationJob(MigrationJob):
                 last, first = (r["last_name"] or "").strip(), (r["first_name"] or "").strip()
                 people_map[r["id"]] = f"{last}, {first}".strip(", ") or (r["full_name"] or f"Person {r['id']}")
             hh_map = {r["id"]: r["name"] for r in conn.execute(select(households.c.id, households.c.name)).mappings()}
-            org_map = {}
-            if orgs is not None and "name" in orgs.c.keys():
-                org_map = {r["id"]: r["name"] for r in conn.execute(select(orgs.c.id, orgs.c.name)).mappings()}
+            org_map = {r["id"]: r["name"]
+                       for r in conn.execute(select(rel.c.id, rel.c.name)).mappings() if r["name"]}
             cols = [documents.c.id, documents.c.person_id, documents.c.household_id, documents.c.organization_id,
                     documents.c.original_name, documents.c.classification, documents.c.category,
                     documents.c.effective_date, documents.c.storage_uri, documents.c.size_bytes,

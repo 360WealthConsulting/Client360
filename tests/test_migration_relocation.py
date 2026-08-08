@@ -23,8 +23,9 @@ from app.services.migration.naming import RepositoryNaming
 from app.services.migration.relocation import RepositoryRelocationJob
 
 import_jobs = metadata.tables["import_jobs"]
+relationship_entities = metadata.tables["relationship_entities"]
 _TAG = uuid.uuid4().hex[:8]
-_CREATED = {"documents": [], "people": [], "households": []}
+_CREATED = {"documents": [], "people": [], "households": [], "relationship_entities": []}
 
 
 @pytest.fixture(autouse=True)
@@ -33,12 +34,23 @@ def _cleanup():
     with engine.begin() as c:
         if _CREATED["documents"]:
             c.execute(documents.delete().where(documents.c.id.in_(_CREATED["documents"])))
+        if _CREATED["relationship_entities"]:
+            c.execute(relationship_entities.delete().where(
+                relationship_entities.c.id.in_(_CREATED["relationship_entities"])))
         if _CREATED["people"]:
             c.execute(people.delete().where(people.c.id.in_(_CREATED["people"])))
         if _CREATED["households"]:
             c.execute(households.delete().where(households.c.id.in_(_CREATED["households"])))
     for k in _CREATED:
         _CREATED[k].clear()
+
+
+def _org(name, entity_type="business"):
+    with engine.begin() as c:
+        oid = c.execute(relationship_entities.insert().values(
+            entity_type=entity_type, name=name, active=True).returning(relationship_entities.c.id)).scalar_one()
+    _CREATED["relationship_entities"].append(oid)
+    return oid
 
 
 def _person(full_name, first=None, last=None, household_id=None):
@@ -58,13 +70,14 @@ def _household(name):
 
 
 def _doc(person_id, original_name, storage_uri, size, sha, *, classification=None, category=None,
-         effective_date=None, household_id=None, tags=None):
+         effective_date=None, household_id=None, organization_id=None, tags=None):
     with engine.begin() as c:
         did = c.execute(documents.insert().values(
-            person_id=person_id, household_id=household_id, original_name=original_name,
-            stored_name=f"reloc-{_TAG}-{uuid.uuid4().hex}", storage_path=storage_uri, storage_uri=storage_uri,
-            size_bytes=size, sha256=sha, classification=classification, category=category,
-            effective_date=effective_date, tags=tags or {}, status="active").returning(documents.c.id)).scalar_one()
+            person_id=person_id, household_id=household_id, organization_id=organization_id,
+            original_name=original_name, stored_name=f"reloc-{_TAG}-{uuid.uuid4().hex}",
+            storage_path=storage_uri, storage_uri=storage_uri, size_bytes=size, sha256=sha,
+            classification=classification, category=category, effective_date=effective_date,
+            tags=tags or {}, status="active").returning(documents.c.id)).scalar_one()
     _CREATED["documents"].append(did)
     return did
 
@@ -226,3 +239,21 @@ def test_apply_and_rollback_refused_before_any_write(tmp_path):
     assert _import_jobs_count() == before_jobs
     with engine.connect() as conn:
         assert conn.execute(select(documents.c.storage_uri).where(documents.c.id == did)).scalar_one() == str(s)
+
+
+def test_business_document_uses_relationship_entity_name(tmp_path):
+    """A document linked via organization_id must route to Businesses/<real relationship_entities name>,
+    not a generic 'Organization <id>' label."""
+    cfg = _cfg(tmp_path)
+    pid = _person(f"Owner {_TAG}", first="Amy", last=f"Owner{_TAG}")
+    org = _org(f"Star City Heating {_TAG}", entity_type="business")
+    src = tmp_path / "legacy" / "1120s.pdf"; sz, sha = _write(src, b"z" * 64)
+    did = _doc(pid, "1120S Return.pdf", str(src), sz, sha, classification="tax",
+               effective_date=datetime.date(2024, 3, 1), organization_id=org)   # org link wins over person
+    result = RepositoryRelocationJob(cfg).run(Mode.PREVIEW)
+    row = _rows_by_id(result)[did]
+    assert row["area"] == "Businesses"
+    assert row["entity"] == f"Star City Heating {_TAG}"                # real canonical name, not "Organization <id>"
+    assert "Organization" not in row["entity"]
+    assert row["proposed_destination"].endswith(str(
+        Path("Businesses") / f"Star City Heating {_TAG}" / "Tax" / "2024" / f"1120S Return [{did}].pdf"))
