@@ -339,31 +339,6 @@
     {% else %}<tr><td colspan="9">{% call ui.empty("No documents", "No documents are linked to this client yet.") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>
 
-  {% if sec.unassigned %}
-  <h2 class="section-title">Unassigned documents — resolve ownership</h2>
-  <p class="subtle">TaxDome folders not yet attached to a client. Resolve them here — no PowerShell required.</p>
-  {% for u in sec.unassigned %}
-  <article class="card">
-    <div class="detail-row"><strong>{{ u.folder }}</strong><span class="subtle">{{ u.files }} document(s)</span></div>
-    <form method="post" action="/client/documents/resolve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:8px">
-      <input type="hidden" name="folder" value="{{ u.folder }}">
-      <input type="hidden" name="return_to" value="{{ base }}?tab=documents">
-      {% if u.resolves_to.household_id %}
-        <input type="hidden" name="household_id" value="{{ u.resolves_to.household_id }}">
-        <button class="btn sm" type="submit">Link to matched household</button>
-      {% elif u.resolves_to.person_id %}
-        <input type="hidden" name="person_id" value="{{ u.resolves_to.person_id }}">
-        <button class="btn sm" type="submit">Link to matched client</button>
-      {% else %}
-        <label class="subtle">Link to person id <input class="input" type="number" name="person_id" style="max-width:110px"></label>
-        <label class="subtle">or household id <input class="input" type="number" name="household_id" style="max-width:110px"></label>
-        <button class="btn sm secondary" type="submit">Resolve</button>
-      {% endif %}
-    </form>
-    {% if u.suggestions %}<p class="subtle" style="margin-top:6px">Candidates: {% for s in u.suggestions %}{{ s.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-  </article>
-  {% endfor %}
-  {% endif %}
 
 {% elif active_tab == "vault" %}
   <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">

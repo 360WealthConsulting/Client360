@@ -33,6 +33,9 @@
 {# Administrator-only: employee & access management. Derived from the SAME capability the routes
    enforce (identity.manage) — visibility never grants access. #}
 {% set can_admin = 'identity.manage' in caps %}
+{# Document Management (unassigned-folder resolution worklist) is gated on the SAME capability the
+   route enforces (client.write) — the migration cleanup queue lives here, not in a client's Documents tab. #}
+{% set can_docmgmt = 'client.write' in caps %}
 {% set groups = [
   {"label": "Home", "items": [
     {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p}]},
@@ -75,6 +78,7 @@
     {"href": "/admin/employees", "label": "Employees", "match": "/admin/employees", "ico": "◐", "show": can_admin},
     {"href": "/admin/access-profiles", "label": "Roles & Access", "match": "/admin/access-profiles", "ico": "◆", "show": can_admin},
     {"href": "/admin/invitations", "label": "Invitations", "match": "/admin/invitations", "ico": "✉", "show": can_admin},
+    {"href": "/admin/documents/unassigned", "label": "Unassigned Documents", "match": "/admin/documents/unassigned", "ico": "❏", "show": can_docmgmt},
     {"href": "/admin/audit", "label": "Access Audit", "match": "/admin/audit", "ico": "▦", "show": can_admin}]},
   {"label": "Oversight", "items": [
     {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},

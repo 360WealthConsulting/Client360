@@ -40,6 +40,17 @@ def audit(request, principal, action, entity_type, entity_id=None, metadata=None
 def administration(request: Request, principal: Principal = Depends(require_capability("identity.manage"))):
     return templates.TemplateResponse(request=request, name="admin/identity.html", context={"identity": list_identity_data(), "principal": principal})
 
+
+@router.get("/documents/unassigned")
+def unassigned_documents(request: Request, principal: Principal = Depends(require_capability("client.write"))):
+    """Admin -> Document Management -> Unassigned Documents: the TaxDome folder ownership-resolution
+    worklist (migration cleanup), relocated OUT of client workspaces so it is not shown inside a client's
+    Documents tab. Reuses the existing resolve workflow (POST /client/documents/resolve) — no linkage or
+    remediation logic changes."""
+    from app.services.households import unresolved_taxdome_folders
+    return templates.TemplateResponse(request=request, name="admin/unassigned_documents.html",
+        context={"principal": principal, "unassigned": unresolved_taxdome_folders(limit=200)})
+
 @router.post("/users")
 def create_user(payload: UserInvite, request: Request, principal: Principal = Depends(require_capability("identity.manage"))):
     user_id = invite_user(payload.email, payload.display_name, payload.auth_subject); audit(request, principal, "identity.user_invited", "user", user_id); return {"id": user_id}
