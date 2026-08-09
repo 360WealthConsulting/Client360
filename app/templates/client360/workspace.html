@@ -313,7 +313,7 @@
       <th>Text</th><th>Ver</th><th>Modified</th><th>Actions</th></tr></thead><tbody>
     {% for d in sec.documents %}
       <tr>
-        <td><a href="/documents/{{ d.id }}/download">{{ d.name }}</a>
+        <td><a href="{{ d.download_url }}">{{ d.name }}</a>
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
         {# Type + Knowledge layer (Phase 6A): classified document type, classifier confidence, and
            structured-extraction status — surfaced inline, no Intelligence-specific screen. #}
@@ -331,7 +331,7 @@
         <td>{{ d.version_count }}</td>
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
         <td>
-          <a href="/documents/{{ d.id }}/download">Open</a>
+          <a href="{{ d.download_url }}">Open</a>
           {% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}
           {% if d.source_path %} · <span class="subtle" title="{{ d.source_path }}">Source</span>{% endif %}
         </td>
