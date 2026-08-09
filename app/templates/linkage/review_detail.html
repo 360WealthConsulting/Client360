@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ subject.display_name }} | Linkage Review{% endblock %}
+{% block crumb %}Linkage Review · {{ subject.display_name }}{% endblock %}
+{% block content %}
+{% call ui.page_head(subject.display_name, eyebrow="Linkage subject", desc=subject.source_system ~ " · " ~ evidence.document_count ~ " document(s) · status: " ~ exception.status) %}
+  <a class="btn secondary" href="/linkage/review">Back to queue</a>
+{% endcall %}
+
+{% if error %}<div class="alert bad" style="margin-bottom:14px"><span class="ico">!</span><div>{{ error }}</div></div>{% endif %}
+
+{% if current_resolution %}
+<div class="alert {{ 'good' if reusable_resolution else '' }}" style="margin-bottom:14px">
+  <div>Current durable resolution: <b>{{ current_resolution.decision }}</b>
+  {% if current_resolution.resulting_entity_id %} → {{ current_resolution.resulting_entity_type }} #{{ current_resolution.resulting_entity_id }}{% endif %}
+  {% if reusable_resolution %}(reusable knowledge){% else %}(not reusable){% endif %}</div>
+</div>
+{% endif %}
+
+<div class="grid" style="gap:16px; grid-template-columns:1fr 1fr">
+  <article class="card" style="padding:14px 16px">
+    <h3>Evidence</h3>
+    <p><b>Confidence:</b> {{ evidence.confidence }} · <b>Disposition:</b> {{ evidence.disposition }}</p>
+    <p><b>Match reason:</b> {{ evidence.match_reason or "—" }}</p>
+    <p><b>Held reason:</b> {{ evidence.held_reason or "—" }}</p>
+    <p><b>Deterministic outcome:</b> {% if evidence.deterministic_outcome %}{{ evidence.deterministic_outcome.entity_type }} #{{ evidence.deterministic_outcome.entity_id }}{% else %}none{% endif %}</p>
+    <p><b>Flags:</b>
+      {% for k, v in (evidence.evidence_flags or {}).items() %}{% if v %}{{ ui.badge(k, "warn") }} {% endif %}{% endfor %}</p>
+    <p><b>Identifiers:</b> {{ (evidence.identifiers or {}).emails|join(", ") or "—" }}
+       {% if (evidence.identifiers or {}).phones %} · {{ evidence.identifiers.phones|join(", ") }}{% endif %}
+       {% if (evidence.identifiers or {}).accounts %} · acct {{ evidence.identifiers.accounts|join(", ") }}{% endif %}</p>
+    <p><b>Provenance:</b> {% for sys, info in (evidence.provenance or {}).items() %}{{ sys }} ({{ info.count }}) {% endfor %}</p>
+    <details><summary>Documents ({{ evidence.documents|length }})</summary>
+      <ul>{% for d in evidence.documents %}<li>{{ d.original_name }} <span class="muted">#{{ d.document_id }}</span></li>{% endfor %}</ul>
+    </details>
+    <details><summary>Source contacts ({{ candidate_summary.source_contacts }})</summary>
+      <ul>{% for s in evidence.source_contact_candidates %}<li>{{ s.full_name }} — {{ s.basis }}{% if not s.deterministic %} (not deterministic){% endif %}</li>{% endfor %}</ul>
+    </details>
+    <details><summary>Relationships ({{ (evidence.relationships or [])|length }})</summary>
+      <ul>{% for rel in evidence.relationships %}<li>{{ rel.kind }} → household {{ rel.household_name }}</li>{% endfor %}</ul>
+    </details>
+  </article>
+
+  <article class="card" style="padding:14px 16px">
+    <h3>Resolve</h3>
+    {% if not can_write %}
+      <p class="muted">You have read-only access. Resolution controls require the <code>exception.write</code> capability.</p>
+    {% elif not is_open %}
+      <p>This subject is already <b>{{ exception.status }}</b>. Corrections are an explicit, separate flow:</p>
+      <form method="get" action="/linkage/review/{{ exception.id }}/confirm">
+        <input type="hidden" name="action" value="firm_material">
+        <input type="hidden" name="supersede" value="1">
+        <button class="btn secondary" type="submit">Correct → mark Firm material (supersede)</button>
+      </form>
+    {% else %}
+      {% macro candidate_form(kind, action, items) %}
+        <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="margin-bottom:10px">
+          <input type="hidden" name="action" value="{{ action }}">
+          <b>Link existing {{ kind }}</b>
+          {% if items %}
+            {% for it in items %}
+              <label style="display:block">
+                <input type="radio" name="target_entity_id" value="{{ it.id if it.id is defined else (it.person_id or it.household_id or it.entity_id) }}" required>
+                {{ it.label if it.label is defined else (it.full_name or it.name) }}
+                {% if it.basis is defined %}<span class="muted">— {{ it.basis }}{% if not it.deterministic %} (not deterministic){% endif %}</span>{% endif %}
+              </label>
+            {% endfor %}
+            <button class="btn" type="submit">Review &amp; confirm</button>
+          {% else %}<span class="muted">No suggested candidates — use search.</span>{% endif %}
+        </form>
+      {% endmacro %}
+
+      {{ candidate_form("person", "link_person", evidence.person_candidates if search_type != "person" else (evidence.person_candidates + (search_results or []))) }}
+      {{ candidate_form("household", "link_household", evidence.household_candidates if search_type != "household" else (evidence.household_candidates + (search_results or []))) }}
+      {{ candidate_form("business", "link_business", evidence.business_candidates if search_type != "business" else (evidence.business_candidates + (search_results or []))) }}
+
+      <form method="get" action="/linkage/review/{{ exception.id }}" style="margin:8px 0">
+        <b>Search canonical entity</b>
+        <select name="search_type">
+          <option value="person" {{ 'selected' if search_type=='person' }}>person</option>
+          <option value="household" {{ 'selected' if search_type=='household' }}>household</option>
+          <option value="business" {{ 'selected' if search_type=='business' }}>business</option>
+        </select>
+        <input type="text" name="q" value="{{ search_q or '' }}" placeholder="name…">
+        <button class="btn secondary" type="submit">Search</button>
+      </form>
+
+      <hr>
+      {% for act, kind in [("create_person","person"),("create_household","household"),("create_business","business")] %}
+      <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="margin-bottom:8px">
+        <input type="hidden" name="action" value="{{ act }}">
+        <b>Create {{ kind }}</b>
+        <input type="text" name="name" value="{{ subject.display_name }}" placeholder="{{ kind }} name">
+        <button class="btn" type="submit">Review &amp; confirm</button>
+      </form>
+      {% endfor %}
+
+      <hr>
+      <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="display:inline">
+        <input type="hidden" name="action" value="firm_material">
+        <button class="btn secondary" type="submit">Mark Firm material</button>
+      </form>
+      <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="display:inline">
+        <input type="hidden" name="action" value="defer">
+        <button class="btn secondary" type="submit">Defer</button>
+      </form>
+    {% endif %}
+  </article>
+</div>
+{% endblock %}
