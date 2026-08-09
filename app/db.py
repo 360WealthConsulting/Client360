@@ -35,6 +35,11 @@ document_facts = metadata.tables["document_facts"]
 # import. None here until the table exists; merge_people() checks for it and refuses clearly if absent.
 person_merge_history = metadata.tables.get("person_merge_history")
 
+# Durable resolution / alias knowledge ledger (feature/resolution-review). Tolerant bind: the reskn01
+# migration may not be applied yet in every environment, so this is None until the table exists; the
+# resolution_knowledge service checks for it and refuses clearly if absent.
+folder_resolution_decisions = metadata.tables.get("folder_resolution_decisions")
+
 # Client Vault (feature/client-vault-mvp) — employee-facing client document store.
 vault_documents = metadata.tables["vault_documents"]
 vault_document_versions = metadata.tables["vault_document_versions"]
