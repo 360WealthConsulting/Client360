@@ -22,8 +22,9 @@ from app.security.authorization import record_in_scope
 from app.services.timeline import add_timeline_event
 from app.services.work_management import authorized_assignments
 
-# Sprint 5.5 implemented the tax domain; Release 0.9.11 (ADR-18) adds the benefits domain.
-SUPPORTED_DOMAINS = frozenset({"tax", "benefits", "insurance"})
+# Sprint 5.5 implemented the tax domain; Release 0.9.11 (ADR-18) adds the benefits domain; the linkage
+# domain (migration lnkg01) turns unresolved ingestion subjects into review work in the same engine.
+SUPPORTED_DOMAINS = frozenset({"tax", "benefits", "insurance", "linkage"})
 
 ACTIVE_STATUSES = frozenset({"open", "acknowledged", "in_progress", "waiting", "escalated", "reopened"})
 CLOSED_STATUSES = frozenset({"resolved", "cancelled"})
@@ -100,6 +101,11 @@ def _authorize(connection, principal, row, *, write):
         for entity_type, entity_id in (("person", row["person_id"]), ("household", row["household_id"])):
             if entity_id and record_in_scope(principal, entity_type, entity_id, write=write, connection=connection):
                 return
+    elif row["domain"] == "linkage":
+        # Unresolved-subject review work is firm-wide, not client-record-scoped: the subject has no
+        # canonical owner yet, so there is nothing to scope to. The exception.* capability (enforced by
+        # _require on every raise/transition/resolve) is the authorization gate.
+        return
     raise ExceptionAuthorizationError("Exception is outside your record scope")
 
 
