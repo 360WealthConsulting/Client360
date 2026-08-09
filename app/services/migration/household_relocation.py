@@ -20,7 +20,6 @@ from app.services.migration.relocation import (
     RepositoryRelocationJob,
     _norm,
     _source_system,
-    _under,
 )
 
 _HOUSEHOLDS_AREA = "Households"
@@ -36,7 +35,6 @@ def _plan(config):
     job = RepositoryRelocationJob(config)
     docs, people_map, hh_map, org_map = job._load()
     dest_root = config.migration_dest_root
-    dest_norm = _norm(str(dest_root))
 
     scoped = [d for d in docs if _is_household_owned(d)]
     rows: list[dict] = []
@@ -60,7 +58,11 @@ def _plan(config):
             if info.is_placeholder:
                 placeholders += 1
                 exceptions.append({"document_id": d["id"], "reason": "cloud-only placeholder (must hydrate)"})
-            if _under(_norm(src), dest_norm):
+            # 'already_in_repository' means the file is EXACTLY at its projected canonical destination —
+            # NOT merely somewhere under the repository root. A document under Content but at a stale
+            # (e.g. old Clients\<person>) path is at the WRONG destination and must be relocated. This
+            # matches RepositoryRelocationJob._plan_apply's exact-match idempotency (src == dest).
+            if _norm(src) == _norm(dest_full):
                 state = "already_in_repository"
                 already += 1
             else:

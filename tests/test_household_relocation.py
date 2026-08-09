@@ -8,6 +8,7 @@ verifies + repoints storage_uri while retaining the source and preserving docume
 import dataclasses
 import hashlib
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
@@ -110,27 +111,36 @@ def test_preview_scopes_to_household_owned_only(tmp_path):
     assert d_hh in res["manifest"] and d_pp not in res["manifest"] and d_bb not in res["manifest"]
 
 
-def test_robinson_800_positive_needs_relocation(tmp_path):
+def test_robinson_800_under_content_wrong_path_is_needs_relocation(tmp_path):
+    # Reproduces the production bug: the file already lives UNDER Content, but at the OLD Clients\<person>
+    # path — that is the WRONG destination for a household-owned doc and MUST be needs_relocation.
     cfg = _cfg(tmp_path)
     hid = _household(f"Robinson Household {_TAG}")
-    src = tmp_path / "Clients" / "Robinson, Alicia" / "2025.pdf"
+    src = cfg.migration_dest_root / "Clients" / "Robinson, Alicia" / "Tax" / "2025" / "old.pdf"
     size, sha = _write(src, b"R" * 128)
     did = _doc("2025 Tax Return Documents (ROBINSON, SAMUEL M & ALICIA L).pdf", str(src), size, sha,
                household_id=hid)
     res = preview(config=cfg)
     row = next(r for r in res["rows"] if r["document_id"] == did)
     assert row["state"] == "needs_relocation" and row["area"] == "Households"
-    assert row["size_bytes"] == size and row["current_storage_uri"] == str(src)
-    assert "Households" in row["proposed_destination"] and did in res["manifest"]
+    assert "Clients" in row["current_storage_uri"]                 # current: old Clients path (under Content)
+    assert "Households" in row["proposed_destination"]             # proposed: Households destination
+    assert row["size_bytes"] == size and did in res["manifest"]
 
 
-def test_preview_already_in_repository_and_missing(tmp_path):
+def test_preview_already_at_exact_destination_and_missing(tmp_path):
     cfg = _cfg(tmp_path)
     hid = _household(f"HH {_TAG}")
-    inside = cfg.migration_dest_root / "Households" / f"HH {_TAG}" / "Tax" / "2025" / "x.pdf"
-    zi, hi = _write(inside, b"I" * 20)
-    d_in = _doc("x.pdf", str(inside), zi, hi, household_id=hid)
+    # insert with a temp source, learn the projected destination for its id, then place the file EXACTLY
+    # there — only an exact-destination match may count as already_in_repository.
+    src0 = tmp_path / "legacy" / "x.pdf"; z0, h0 = _write(src0, b"I" * 20)
+    d_in = _doc("x.pdf", str(src0), z0, h0, household_id=hid)
+    dest = next(r for r in preview(config=cfg)["rows"] if r["document_id"] == d_in)["proposed_destination"]
+    _write(Path(dest), b"I" * 20)
+    with engine.begin() as c:
+        c.execute(documents.update().where(documents.c.id == d_in).values(storage_uri=dest, storage_path=dest))
     d_missing = _doc("ghost.pdf", str(tmp_path / "nope" / "ghost.pdf"), 10, "0" * 64, household_id=hid)
+
     res = preview(config=cfg)
     states = {r["document_id"]: r["state"] for r in res["rows"]}
     assert states[d_in] == "already_in_repository" and d_in not in res["manifest"]
