@@ -56,7 +56,7 @@ def _instance(actor, pid, hid):
 def test_new_routes_registered_and_inventory():
     routes = {(getattr(r, "path", None), m) for r in app.routes for m in (getattr(r, "methods", None) or set())}
     assert NEW_ROUTES <= routes
-    assert len(app.routes) == 1098  # +4 Drake identity-review (merge-forward: /matches/drake GET + approve/reject/defer); +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)  # ... +7 compliance intelligence / supervisory ops (D.47) +8 executive reporting (D.48)
+    assert len(app.routes) == 1099  # +1 admin unassigned-documents queue (relocated out of client Documents tab)  # +4 Drake identity-review (merge-forward: /matches/drake GET + approve/reject/defer); +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)  # ... +7 compliance intelligence / supervisory ops (D.47) +8 executive reporting (D.48)
 
 
 def test_openapi_exposes_new_routes():

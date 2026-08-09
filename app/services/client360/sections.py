@@ -325,10 +325,11 @@ def _merge_documents(canonical, vault):
 def documents_view_model(docs):
     """The full Documents-tab section payload (list + supported sources + unassigned worklist + honest
     capability flags), shared by both compositions."""
+    # The client Documents tab shows ONLY documents owned by this client (person/household/organization).
+    # The unassigned-folder migration/cleanup queue lives in Admin -> Document Management, never here.
     return {
         "documents": docs,
         "supported_sources": list(_SUPPORTED_SOURCES),
-        "unassigned": _safe_unassigned(),
         "ocr_enabled": True, "ai_extraction_enabled": False, "multi_source_enabled": False,
     }
 
@@ -429,14 +430,6 @@ def documents(principal, ctx):
     vault = _vault_rows(principal, person_ids=[eid] if et == "person" else (),
                         household_id=eid if et == "household" else None)
     return documents_view_model(_merge_documents(canonical, vault))
-
-
-def _safe_unassigned():
-    try:
-        from app.services.households import unresolved_taxdome_folders
-        return unresolved_taxdome_folders(limit=25)
-    except Exception:      # noqa: BLE001 — the worklist must never break the Documents tab
-        return []
 
 
 def _scope(ctx):
