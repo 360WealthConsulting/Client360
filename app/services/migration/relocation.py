@@ -13,11 +13,17 @@ production — exactly the discipline used for the Enterprise Ingestion Platform
 """
 from __future__ import annotations
 
+import csv
+import hashlib
 import os
 
 from app.services.migration.base import MigrationJob, Mode, Outcome
+from app.services.migration.canonical_repair import RepairGuardError
 from app.services.migration.naming import RepositoryNaming
 from app.services.migration.storage import LocalFilesystemStorage, StorageService
+
+#: Areas that have a canonical owner (person/household/organization). Firm/Unfiled is NOT relocated here.
+_OWNED_AREAS = ("Clients", "Households", "Businesses")
 
 
 def _norm(path: str | None) -> str:
@@ -36,12 +42,29 @@ def _source_system(tags) -> str:
     return tags.get("source_system", "") if isinstance(tags, dict) else ""
 
 
+def load_approved_relocation(path):
+    """Load the FROZEN approved relocation scope from a relocation preview's reconciliation.csv (pass the
+    run directory or the csv). Keeps ONLY owned areas (Clients/Households/Businesses) in the
+    ``needs_relocation`` state — Firm/unfiled, already-in-repository, and missing_source are excluded.
+    Returns {document_id: (area, approved_source_uri, approved_destination)} — freezing ids AND paths."""
+    csvpath = path if str(path).endswith(".csv") else os.path.join(path, "reconciliation.csv")
+    out: dict[int, tuple[str, str, str]] = {}
+    with open(csvpath, encoding="utf-8", newline="") as f:
+        for r in csv.DictReader(f):
+            did = (r.get("document_id") or "").strip()
+            if (r.get("area") in _OWNED_AREAS and r.get("state") == "needs_relocation" and did.isdigit()):
+                out[int(did)] = (r["area"], r.get("current_storage_uri") or "",
+                                 r.get("proposed_destination") or "")
+    return out
+
+
 class RepositoryRelocationJob(MigrationJob):
     """Relocate existing canonical documents into the repository. Source-agnostic; read-only this phase."""
 
     source_system = "Repository Relocation"
-    #: Fail-closed: apply/rollback are declared in the pipeline but disabled until the preview is approved.
-    supported_modes = frozenset({Mode.PREVIEW, Mode.RECONCILE})
+    #: APPLY relocates owned documents only, frozen to an approved manifest (guarded). ROLLBACK stays
+    #: disabled until built.
+    supported_modes = frozenset({Mode.PREVIEW, Mode.RECONCILE, Mode.APPLY})
 
     def __init__(self, config=None, *, storage: StorageService | None = None, naming: RepositoryNaming | None = None):
         super().__init__(config)
@@ -197,3 +220,114 @@ class RepositoryRelocationJob(MigrationJob):
             "baseline, not a failure.",
         ]
         return Outcome(counts=counts, exceptions=exceptions, reconciliation=rows, notes=notes)
+
+    # -- APPLY (guarded, idempotent, copy -> verify -> repoint; never deletes source) ------------------
+    def _plan_apply(self, docs, people_map, hh_map, org_map, approved):
+        """Classify the frozen approved set into pending / applied / drift against current state.
+        Pure over the loaded snapshot — no writes, no byte reads."""
+        dest_root = self.config.migration_dest_root
+        dest_norm = _norm(str(dest_root))
+        by_id = {d["id"]: d for d in docs}
+        pending, applied, drift = [], [], []
+        from collections import Counter
+        applied_by_area: Counter = Counter()
+        for did, (area, appr_src, appr_dest) in approved.items():
+            d = by_id.get(did)
+            if d is None:
+                drift.append((did, "missing_document")); continue
+            placed = self.naming.plan(d, people=people_map, households=hh_map, organizations=org_map)
+            if placed.area not in _OWNED_AREAS:
+                drift.append((did, "owner_removed")); continue          # canonical owner gone -> out of scope
+            dest = placed.full(dest_root)
+            if _norm(dest) != _norm(appr_dest):
+                drift.append((did, "destination_drift")); continue      # planned dest changed since approval
+            src = d.get("storage_uri")
+            # idempotent: already relocated to dest (storage_uri repointed) -> applied
+            if src and _norm(src) == _norm(dest) and _under(_norm(src), dest_norm):
+                applied.append((did, area, src, dest)); applied_by_area[area] += 1; continue
+            if appr_src and _norm(src) != _norm(appr_src):
+                drift.append((did, "source_drift")); continue           # source path changed since approval
+            pending.append((did, area, src, dest, d.get("sha256"), d.get("size_bytes")))
+        return pending, applied, applied_by_area, drift
+
+    def _apply(self, job_id=None, approved=None, confirm=False, backup=None, expect=None, **_opts) -> Outcome:
+        if not confirm:
+            raise RepairGuardError("APPLY requires explicit confirm=True.")
+        if not backup or not os.path.isfile(backup) or os.path.getsize(backup) == 0:
+            raise RepairGuardError(f"APPLY requires a verified non-empty DB backup file (got: {backup!r}).")
+        if not approved:
+            raise RepairGuardError("APPLY requires an --approved relocation manifest (frozen scope).")
+
+        docs, people_map, hh_map, org_map = self._load()
+        pending, applied, applied_by_area, drift = self._plan_apply(docs, people_map, hh_map, org_map, approved)
+
+        # pre-write guard (read-only): missing source, cloud-only placeholder, or a destination that
+        # already exists but is NOT this document's verified copy (would be overwritten) -> fail closed.
+        blockers = []
+        for did, _area, src, dest, sha, _size in pending:
+            sinfo = self.storage.stat(src) if src else None
+            if not src or sinfo is None or not sinfo.exists:
+                blockers.append((did, "missing_source")); continue
+            if sinfo.is_placeholder:
+                blockers.append((did, "cloud_placeholder")); continue
+            dinfo = self.storage.stat(dest)
+            if dinfo.exists:
+                try:
+                    same = hashlib.sha256(self.storage.read(dest)).hexdigest() == sha
+                except OSError:
+                    same = False
+                if not same:
+                    blockers.append((did, "destination_collision"))
+
+        if drift or blockers:
+            raise RepairGuardError(
+                f"aborted before any write — drift={len(drift)} blockers={len(blockers)} "
+                f"(examples: {(drift + blockers)[:5]}). Frozen scope must match exactly.")
+
+        from collections import Counter
+        guard: Counter = Counter(applied_by_area)
+        for _did, area, *_ in pending:
+            guard[area] += 1
+        guard_counts = {a: guard.get(a, 0) for a in _OWNED_AREAS}
+        if expect is not None and guard_counts != expect:
+            raise RepairGuardError(f"count drift — approved {expect} but live {guard_counts}; aborted before any write.")
+
+        # ---- writes: copy -> verify -> repoint storage_uri, one document per transaction; source retained
+        from sqlalchemy import update
+
+        from app.db import engine, metadata
+        documents = metadata.tables["documents"]
+        rows: list[dict] = []
+        moved = 0
+        for did, area, src, dest, sha, size in pending:
+            data = self.storage.read(src)                                # source bytes
+            if hashlib.sha256(data).hexdigest() != sha or len(data) != (size or len(data)):
+                raise RepairGuardError(f"source integrity failure for document {did} — aborted; "
+                                       f"{moved} already relocated (verified) and left in place.")
+            self.storage.write(dest, data)                              # atomic temp+rename
+            v = self.storage.stat(dest)
+            if not v.exists or v.size != len(data) or hashlib.sha256(self.storage.read(dest)).hexdigest() != sha:
+                raise RepairGuardError(f"destination verification FAILED for document {did} — storage_uri "
+                                       f"NOT repointed; source retained. {moved} prior moves verified.")
+            rel = os.path.relpath(dest, str(self.config.migration_dest_root))
+            with engine.begin() as conn:                               # repoint ONLY after verified copy
+                conn.execute(update(documents).where(documents.c.id == did).values(
+                    storage_uri=dest, storage_path=rel, storage_provider="Client360 Repository"))
+            moved += 1
+            rows.append({"document_id": did, "area": area, "old_storage_uri": src, "new_storage_uri": dest,
+                         "sha256_verified": sha, "action": "copied_verified_and_repointed"})
+        for did, area, src, dest in applied:
+            rows.append({"document_id": did, "area": area, "old_storage_uri": src, "new_storage_uri": dest,
+                         "sha256_verified": "", "action": "skipped_already_relocated"})
+
+        counts = dict(guard_counts)
+        counts["total"] = sum(guard_counts.values())
+        counts["rows_inserted"] = moved                                # documents relocated + repointed
+        counts["skipped_already_relocated"] = len(applied)
+        notes = [
+            "APPLY complete: owned documents copied to D:\\Client360\\Content, SHA-256 + size verified, then "
+            "storage_uri repointed. Source bytes RETAINED (not deleted) as rollback; document_sources and "
+            "all provenance preserved; Firm/unfiled and missing_source excluded.",
+            "Rollback: restore the pre-apply DB backup (storage_uri) — source files were never removed.",
+        ]
+        return Outcome(counts=counts, exceptions=[], reconciliation=rows, notes=notes)

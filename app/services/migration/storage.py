@@ -94,3 +94,20 @@ class LocalFilesystemStorage(StorageService):
             return usage.free, usage.total
         except OSError:
             return None, None
+
+    def read(self, uri: str) -> bytes:
+        with open(uri, "rb") as f:
+            return f.read()
+
+    def write(self, uri: str, data: bytes) -> None:
+        """Atomic write: create parent dirs, write a temp file (fsynced), then os.replace into place so a
+        crash never leaves a partial destination file."""
+        parent = os.path.dirname(uri)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp = f"{uri}.part"
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, uri)
