@@ -32,7 +32,6 @@ from app.routes.compliance import router as compliance_router
 from app.routes.compliance_intelligence import router as compliance_intelligence_router
 from app.routes.configuration import router as configuration_router
 from app.routes.dashboard import router as dashboard_router
-from app.routes.home import router as home_router
 from app.routes.data_governance import router as data_governance_router
 from app.routes.data_governance_intelligence import router as data_governance_intelligence_router
 from app.routes.dev_auth import dev_auth_enabled
@@ -48,6 +47,7 @@ from app.routes.exceptions import router as exceptions_router
 from app.routes.executive_intelligence import router as executive_intelligence_router
 from app.routes.financial_operations import router as financial_operations_router
 from app.routes.governance import router as governance_router
+from app.routes.home import router as home_router
 from app.routes.households import router as households_router
 from app.routes.identity_governance import router as identity_governance_router
 from app.routes.identity_review import router as identity_review_router
@@ -56,6 +56,7 @@ from app.routes.integration import router as integration_router
 from app.routes.integration_hub import router as integration_hub_router
 from app.routes.knowledge import router as knowledge_router
 from app.routes.knowledge_management import router as knowledge_management_router
+from app.routes.linkage_review import router as linkage_review_router
 from app.routes.matches import router as matches_router
 from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
@@ -78,8 +79,8 @@ from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
 from app.routes.policy import router as policy_router
 from app.routes.portal import router as portal_router
-from app.routes.portal_api import router as portal_api_router
 from app.routes.portal_admin import router as portal_admin_router
+from app.routes.portal_api import router as portal_api_router
 from app.routes.portfolio import router as portfolio_router
 from app.routes.practice_management import router as practice_management_router
 from app.routes.projections import router as projections_router
@@ -210,6 +211,7 @@ app.include_router(search_router)
 app.include_router(source_router)
 app.include_router(matches_router)
 app.include_router(identity_review_router)
+app.include_router(linkage_review_router)
 app.include_router(people_router)
 app.include_router(person_edit_router)
 app.include_router(notes_router)

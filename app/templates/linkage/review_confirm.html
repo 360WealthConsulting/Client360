@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Confirm resolution | Linkage Review{% endblock %}
+{% block crumb %}Linkage Review · Confirm{% endblock %}
+{% block content %}
+{% call ui.page_head("Confirm resolution", eyebrow="Linkage subject", desc=subject.display_name) %}{% endcall %}
+
+{% if supersede %}<div class="alert bad" style="margin-bottom:14px"><span class="ico">!</span><div>This is a <b>correction</b> that will supersede the existing resolution. History is retained.</div></div>{% endif %}
+
+<article class="card" style="padding:16px; max-width:640px">
+  <p>You are about to apply this resolution to <b>{{ subject.display_name }}</b>
+     ({{ evidence.document_count }} document(s) from {{ subject.source_system }}):</p>
+  <p style="font-size:1.1em"><b>Action:</b> {{ action }}<br><b>Target:</b> {{ target_label }}</p>
+
+  <form method="post" action="/linkage/review/{{ exception.id }}/resolve">
+    <input type="hidden" name="action" value="{{ action }}">
+    <input type="hidden" name="target_entity_id" value="{{ target_entity_id }}">
+    <input type="hidden" name="source_contact_id" value="{{ source_contact_id }}">
+    <input type="hidden" name="name" value="{{ name }}">
+    {% if supersede %}<input type="hidden" name="supersede" value="true">{% endif %}
+    <input type="hidden" name="confirm" value="true">
+    <label style="display:block; margin:10px 0"><span>Notes (optional)</span>
+      <textarea name="notes" rows="2" style="width:100%"></textarea></label>
+    <button class="btn" type="submit">Confirm and apply</button>
+    <a class="btn secondary" href="/linkage/review/{{ exception.id }}">Cancel</a>
+  </form>
+</article>
+{% endblock %}

@@ -479,7 +479,9 @@ def list_exceptions(principal, *, domain="tax", status=None, severity=None, cate
         query = query.where(exceptions.c.status.notin_(tuple(CLOSED_STATUSES)))
 
     with engine.connect() as c:
-        if not (principal.can("record.read_all") or principal.can("record.write_all")):
+        # 'linkage' is firm-wide review work (unresolved subjects have no canonical owner to scope to);
+        # it is gated by exception.read only — never record-scoped. All other domains stay record-scoped.
+        if domain != "linkage" and not (principal.can("record.read_all") or principal.can("record.write_all")):
             assignments = authorized_assignments(c, principal)
             return_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "tax_return"}
             person_ids = {a["entity_id"] for a in assignments if a["entity_type"] == "person"}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Linkage Review | Client360{% endblock %}
+{% block crumb %}Linkage Review{% endblock %}
+{% block content %}
+{% call ui.page_head("Linkage Review", eyebrow="Unresolved subjects", desc="Folders whose documents have no canonical owner. Each is one Exception Engine review item — resolve it to a person, household, or business, mark it Firm material, or defer.") %}
+  <a class="btn secondary" href="/linkage/review?status={{ 'all' if status == 'open' else 'open' }}">{{ 'Show open only' if status == 'all' else 'Show all' }}</a>
+{% endcall %}
+
+{% if resolved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Resolved exception #{{ resolved }}.{% if result %} {{ result }}{% endif %}</div></div>{% endif %}
+{% if result and not resolved %}<div class="alert" style="margin-bottom:14px"><div>{{ result }}</div></div>{% endif %}
+
+{% if rows %}
+<div style="overflow-x:auto">
+<table class="table">
+  <thead><tr>
+    <th>Folder</th><th>Source</th><th>Docs</th><th>Confidence</th><th>Suggested</th>
+    <th>Candidates</th><th>Held reason</th><th>Status</th><th>Reviewer</th><th>Opened</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/linkage/review/{{ r.exception_id }}">{{ r.display_name }}</a>
+        {% if r.no_candidates %} {{ ui.badge("no candidates", "warn") }}{% endif %}</td>
+      <td>{{ r.source_system }}</td>
+      <td>{{ r.document_count }}</td>
+      <td>{{ r.confidence or "—" }}</td>
+      <td>{{ r.suggested_action or "—" }}</td>
+      <td>P{{ r.candidate_summary.people }} · H{{ r.candidate_summary.households }} · B{{ r.candidate_summary.businesses }}</td>
+      <td>{{ r.held_reason or "—" }}</td>
+      <td>{{ ui.badge(r.status, "good" if r.status == "resolved" else "") }}</td>
+      <td>{{ r.owner_user_id or "unassigned" }}</td>
+      <td>{{ r.opened_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted" style="margin-top:10px">{{ rows|length }} item(s).</p>
+{% else %}
+{{ ui.empty("Nothing to review", "No linkage subjects in this view.") }}
+{% endif %}
+{% endblock %}
