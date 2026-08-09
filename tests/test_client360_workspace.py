@@ -65,7 +65,7 @@ def _req(path="/client/1", qs=b""):
 # --- composition + contract --------------------------------------------------
 
 def test_registry_has_thirtyone_sections_with_builders():
-    assert len(SECTIONS) == 40  # +Dashboard +Tasks +Notes +Audit (Client Workspace beta tabs)
+    assert len(SECTIONS) == 39  # 40 minus the standalone Vault tab (consolidated into Documents)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 

@@ -28,8 +28,8 @@ SECTIONS = (
     SectionDef("insurance", "Insurance", "insurance.read", sections.insurance),
     SectionDef("benefits", "Benefits", "benefits.read", sections.benefits),
     SectionDef("opportunities", "Opportunities", "opportunity.view", sections.opportunities),
+    # The former standalone "Vault" tab is consolidated into "Documents" (canonical + Vault, one list).
     SectionDef("documents", "Documents", "documents.view", sections.documents),
-    SectionDef("vault", "Vault", "vault.view", sections.vault),
     SectionDef("meetings", "Meetings", None, sections.meetings),
     SectionDef("compliance", "Compliance", "compliance.review.read", sections.compliance),
     SectionDef("communications", "Communications", "communications.view", sections.communications),

@@ -256,8 +256,70 @@ def enrich_documents(rows):
             "taxdome_folder": tags.get("taxdome_folder"),
             "source_path": tags.get("source_path"),
             "sha256": sha,
+            "source_kind": "canonical",
+            "download_url": f"/documents/{r['id']}/download",
         })
     return docs
+
+
+# --- Vault documents merged into the unified Documents tab (ADR-072 consolidation) --------------------
+
+def _vault_row(d):
+    """Map one vault_documents row (from the Vault service) into the unified Documents-tab shape, with a
+    Vault source badge and the Vault download route. Vault permissions/audit stay with the Vault service."""
+    created = d.get("created_at")
+    return {
+        "id": d["id"], "name": d.get("display_name") or f"Vault document {d['id']}",
+        "document_type": d.get("document_type"), "category": d.get("category"),
+        "tax_year": created.year if created else None,
+        "owner_label": "Client Vault", "provenance": "vault",
+        "person_id": None, "household_id": None, "organization_id": None,
+        "source": "Vault", "source_kind": "vault",
+        "review_status": d.get("status"),
+        "ocr_status": None, "ocr_label": None, "ocr_engine": None, "ocr_completed_at": None,
+        "searchable_text": None, "ai_status": None,
+        "classification_confidence": None, "extraction_label": None,
+        "is_duplicate": False, "duplicate_count": 0,
+        "version_count": d.get("current_version") or 1,
+        "created_at": created, "updated_at": d.get("updated_at") or created,
+        "taxdome_folder": None, "source_path": None, "sources": [], "source_systems": [],
+        "sha256": d.get("checksum_sha256"),
+        "download_url": f"/api/vault/documents/{d['id']}/download",
+        "vault_document_id": d["id"],
+    }
+
+
+def _vault_rows(principal, *, person_ids=(), household_id=None):
+    """Vault documents linked to the given person(s) and/or household, authorized + record-scoped by the
+    existing Vault service. Deduped by vault document id across the anchors."""
+    from app.services.vault import service as vault_service
+    seen, rows = set(), []
+    targets = ([{"household_id": household_id}] if household_id else []) + \
+              [{"person_id": pid} for pid in person_ids if pid]
+    for kw in targets:
+        try:
+            listed = vault_service.list_documents(principal, limit=200, **kw)
+        except Exception:      # noqa: BLE001 — Vault must never break the Documents tab
+            listed = []
+        for d in listed:
+            if d["id"] in seen:
+                continue
+            seen.add(d["id"])
+            rows.append(_vault_row(d))
+    return rows
+
+
+def _merge_documents(canonical, vault):
+    """Canonical documents + Vault documents in one list. Deduped where deterministically possible: a
+    vault document whose checksum matches a canonical document's SHA-256 is the same underlying file and
+    is dropped in favor of the canonical record (its richer pipeline)."""
+    canon_sha = {r.get("sha256") for r in canonical if r.get("sha256")}
+    merged = list(canonical)
+    for v in vault:
+        if v.get("sha256") and v["sha256"] in canon_sha:
+            continue
+        merged.append(v)
+    return merged
 
 
 def documents_view_model(docs):
@@ -361,8 +423,12 @@ def documents(principal, ctx):
     from app.services.document_platform.relationships import documents_for_entity
     et, eid = ctx["entity_type"], ctx["entity_id"]
     rows = documents_for_entity(principal, et, eid, limit=200)
-    return documents_view_model(
-        _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows)))))
+    canonical = _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows))))
+    # Merge the client's linked Vault documents into the ONE Documents tab (Vault permissions/audit stay
+    # in the Vault service; canonical rows keep their pipeline). Person tab = vault links to this person.
+    vault = _vault_rows(principal, person_ids=[eid] if et == "person" else (),
+                        household_id=eid if et == "household" else None)
+    return documents_view_model(_merge_documents(canonical, vault))
 
 
 def _safe_unassigned():

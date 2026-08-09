@@ -271,6 +271,8 @@ def _documents(principal, ctx):
         _attach_classification,
         _attach_ocr,
         _attach_source_refs,
+        _merge_documents,
+        _vault_rows,
         documents_view_model,
         enrich_documents,
     )
@@ -283,9 +285,12 @@ def _documents(principal, ctx):
             seen.add(d["id"])
             d["provenance"] = et
             rows.append(d)
-    return {**documents_view_model(
-                _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows))))),
-            "deduped_by": "document_id", "count": len(rows)}
+    canonical = _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows))))
+    # Merge Vault documents linked to the household or any current member (Vault permissions/audit stay in
+    # the Vault service). Deduped against canonical by checksum where deterministically possible.
+    vault = _vault_rows(principal, person_ids=ctx["member_ids"], household_id=ctx["household_id"])
+    merged = _merge_documents(canonical, vault)
+    return {**documents_view_model(merged), "deduped_by": "document_id + checksum", "count": len(merged)}
 
 
 def _meetings(principal, ctx):

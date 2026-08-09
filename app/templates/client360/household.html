@@ -150,7 +150,7 @@
       <th>Text</th><th>Ver</th><th>Modified</th><th>Actions</th></tr></thead><tbody>
     {% for d in sec.documents %}
       <tr>
-        <td><a href="/documents/{{ d.id }}/download">{{ d.name }}</a>
+        <td><a href="{{ d.download_url }}">{{ d.name }}</a>
           {% if d.is_duplicate %}<br><span class="subtle" title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}</td>
         {# Type + Knowledge layer (Phase 6A): classified type, confidence, extraction status. #}
         <td>{{ d.document_type or "—" }}{% if d.tax_year %} · {{ d.tax_year }}{% endif %}
@@ -166,7 +166,7 @@
         <td><span class="subtle"{% if d.ocr_engine %} title="Captured by {{ d.ocr_engine }}"{% endif %}>{{ d.ocr_label }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%b %d, %Y") }}{% endif %}</span>{% if d.searchable_text %}<br><span class="subtle" title="This document's text can be found in search">🔍 Searchable</span>{% endif %}</td>
         <td>{{ d.version_count }}</td>
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
-        <td><a href="/documents/{{ d.id }}/download">Open</a>{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
+        <td><a href="{{ d.download_url }}">Open</a>{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
       </tr>
     {% else %}<tr><td colspan="9">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>
