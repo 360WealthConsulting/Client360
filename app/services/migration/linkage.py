@@ -124,9 +124,12 @@ class LinkageRemediationJob(MigrationJob):
             folders.setdefault(_folder(d.get("tags")), []).append(d)
         resolved = {f: self._resolve_folder(f, org_index) for f in folders}
 
+        from collections import Counter
         buckets = ("people", "households", "businesses", "ambiguous", "unmatched")
         doc_counts = dict.fromkeys(buckets, 0)
         folder_counts = dict.fromkeys(buckets, 0)
+        by_source_system: Counter = Counter()
+        from_named_folder = 0
         rows: list[dict] = []
         exceptions: list[dict] = []
 
@@ -136,9 +139,13 @@ class LinkageRemediationJob(MigrationJob):
             folder_counts[b] += 1
             doc_counts[b] += len(group)
             for d in group:
+                src_system = _source_system(d.get("tags"))
+                by_source_system[src_system or "(none)"] += 1
+                if folder:
+                    from_named_folder += 1
                 rows.append({
                     "document_id": d["id"], "source_folder": folder or "(none)",
-                    "original_name": d.get("original_name") or "",
+                    "source_system": src_system, "original_name": d.get("original_name") or "",
                     "resolution": b, "proposed_entity_type": res["entity_type"],
                     "proposed_entity_id": res["entity_id"], "match_reason": res["reason"],
                     "candidates": "; ".join(res["candidates"]),
@@ -159,6 +166,8 @@ class LinkageRemediationJob(MigrationJob):
             "folders_people": folder_counts["people"], "folders_households": folder_counts["households"],
             "folders_businesses": folder_counts["businesses"], "folders_ambiguous": folder_counts["ambiguous"],
             "folders_unmatched": folder_counts["unmatched"],
+            "documents_from_named_folder": from_named_folder,
+            "documents_by_source_system": dict(by_source_system),
         }
         if self.identity.note:
             counts["identity_note"] = self.identity.note
