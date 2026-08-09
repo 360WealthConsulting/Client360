@@ -161,6 +161,25 @@ def _login_redirect(request):
     return RedirectResponse(f"/auth/login?next={quote(target, safe='')}", 303)
 
 
+def _document_in_scope(connection, principal, document_id, *, write):
+    """A document is in the principal's record scope if ANY of its canonical owners — person, household,
+    OR organization — is in scope (``record.read_all`` bypasses via ``has_record_scope``). Household- and
+    organization-owned documents have ``person_id`` NULL; checking only person_id previously denied every
+    such document (including those reachable from the owning household workspace)."""
+    owner = connection.execute(
+        select(documents.c.person_id, documents.c.household_id, documents.c.organization_id)
+        .where(documents.c.id == document_id)).mappings().first()
+    if owner is None:
+        return False
+    return any(
+        entity_id is not None and has_record_scope(
+            connection, principal, entity_type, entity_id,
+            record_assignments=record_assignments, write=write)
+        for entity_type, entity_id in (("person", owner["person_id"]),
+                                       ("household", owner["household_id"]),
+                                       ("organization", owner["organization_id"])))
+
+
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request.state.request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
@@ -295,19 +314,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         document_match = re.match(r"^/documents/(\d+)", request.url.path)
         if document_match:
             with engine.connect() as connection:
-                person_id = connection.scalar(
-                    select(documents.c.person_id).where(
-                        documents.c.id == int(document_match.group(1))
-                    )
-                )
-                allowed = person_id is not None and has_record_scope(
-                    connection,
-                    principal,
-                    "person",
-                    person_id,
-                    record_assignments=record_assignments,
-                    write=request.method not in {"GET", "HEAD", "OPTIONS"},
-                )
+                allowed = _document_in_scope(
+                    connection, principal, int(document_match.group(1)),
+                    write=request.method not in {"GET", "HEAD", "OPTIONS"})
             if not allowed:
                 return _denied(
                     request,
