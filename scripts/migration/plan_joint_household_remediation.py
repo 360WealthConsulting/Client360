@@ -9,7 +9,9 @@ key is the stable Drake identifier hash and its provenance (``drake_identity.pri
 
 Couple buckets (one per distinct {taxpayer_hash, spouse_hash} pair):
   already_correct_shared_household   both hashes -> canonical people already sharing one household
-  both_canonical_safe_household      both hashes -> canonical people, no shared household yet
+  single_person_multi_hash_no_action both hashes -> the SAME canonical person (self-couple / duplicate
+                                     hashes): terminal, no couple, no household to form, no action
+  both_canonical_safe_household      both hashes -> two DISTINCT canonical people, no shared household yet
   one_canonical_plus_promotable      one hash -> canonical person; the other is a unique unresolved Drake
                                      identity (no existing-person candidates) -> safe spouse promotion
   both_promotable                    neither hash canonical, both unique unresolved identities
@@ -41,6 +43,7 @@ _RETURN_DOC_TYPES = {"federal_return", "state_return"}
 
 COUPLE_BUCKETS = (
     "already_correct_shared_household",
+    "single_person_multi_hash_no_action",
     "both_canonical_safe_household",
     "one_canonical_plus_promotable",
     "both_promotable",
@@ -89,6 +92,12 @@ def classify_couple(tp_hash, sp_hash, id_index, cand_index, prow):
         sp_hh = (prow.get(sp_person) or {}).get("household_id")
         detail["taxpayer_household_id"] = tp_hh
         detail["spouse_household_id"] = sp_hh
+        # Degenerate "self-couple": both stable Drake hashes resolve to the SAME canonical person (one
+        # person who appears as both taxpayer and spouse across years, or duplicate hashes). There is no
+        # second person and no couple to house — this is terminal, no-action reporting (the authoritative
+        # remediate_joint_households already no-ops it). It is NOT a both_canonical household candidate.
+        if tp_person and sp_person and tp_person == sp_person:
+            return "single_person_multi_hash_no_action", detail
         if tp_person and sp_person and tp_person != sp_person and tp_hh and sp_hh and tp_hh == sp_hh:
             return "already_correct_shared_household", detail
         return "both_canonical_safe_household", detail
@@ -194,7 +203,9 @@ def plan(engine=None):
                         "bucket": bucket, "years": c["years"], "spouse_person_id": other,
                         "household_id": (prow.get(pid) or {}).get("household_id")}
 
-    # documents: only provably-joint returns for a deterministically establishable couple/household
+    # BROAD survey (NOT the apply set): person-owned tax-ish documents whose owner is in an establishable
+    # couple, for a couple MFJ year. This is permissive (category='tax_document' counts) — it is a survey
+    # metric, deliberately NOT the deterministic re-ownership standard.
     doc_rows: list = []
     doc_bucket: Counter = Counter()
     for d in docs:
@@ -218,13 +229,24 @@ def plan(engine=None):
             "relocation_required": True,   # owner area Clients -> Households changes the path projection
         })
 
+    # STRICT, authoritative re-ownable count — delegate to the Stage B deterministic classifier so this
+    # metric means EXACTLY what re-ownership means (established household, correct person/household
+    # relationship, personal return, NOT business/entity, joint signature naming both members, MFJ year).
+    # Single source of truth: never a second copy of the Stage B rules. Lazy import avoids a circular
+    # import (joint_document_reownership imports this module).
+    from app.services.migration import joint_document_reownership as _jd
+    provable_joint_documents = _jd.preview(engine)["reownable"]
+
     return {
         "joint_returns": len(joint),
         "distinct_joint_couples": len(couples),
         "couple_bucket_counts": {b: bucket_counts.get(b, 0) for b in COUPLE_BUCKETS},
         "person_owned_joint_docs_total": len(docs),
-        "provable_joint_documents": len(doc_rows),
-        "provable_joint_documents_by_bucket": dict(doc_bucket),
+        # broad survey (permissive) — NOT the apply set; renamed so it is never mistaken for the proof set
+        "candidate_person_owned_tax_docs_in_couples": len(doc_rows),
+        "candidate_person_owned_tax_docs_by_bucket": dict(doc_bucket),
+        # strict, matches the Stage B deterministic re-ownership proof standard (authoritative)
+        "provable_joint_documents": provable_joint_documents,
         "couple_rows": couple_rows, "doc_rows": doc_rows,
     }
 
@@ -248,11 +270,15 @@ def _print(res):
     print("\n=== couple classification (deterministic; stable Drake hashes only) ===")
     for b in COUPLE_BUCKETS:
         print(f"  {b}: {res['couple_bucket_counts'][b]}")
-    print("\n=== joint-document analysis (narrow, proven only — NOT an apply set) ===")
-    print(f"  person_owned_joint_docs_total (broad, NOT apply): {res['person_owned_joint_docs_total']}")
-    print(f"  provable_joint_documents: {res['provable_joint_documents']}")
-    for b, n in sorted(res["provable_joint_documents_by_bucket"].items()):
+    print("\n=== joint-document analysis ===")
+    print(f"  person_owned_joint_docs_total (all person-owned candidates): "
+          f"{res['person_owned_joint_docs_total']}")
+    print(f"  candidate_person_owned_tax_docs_in_couples (BROAD survey, NOT apply): "
+          f"{res['candidate_person_owned_tax_docs_in_couples']}")
+    for b, n in sorted(res["candidate_person_owned_tax_docs_by_bucket"].items()):
         print(f"      {b}: {n}")
+    print(f"  provable_joint_documents (STRICT — Stage B deterministic re-ownership standard): "
+          f"{res['provable_joint_documents']}")
     print("\nRead-only plan complete. No writes, no person/household/document changes, no file movement.")
 
 
