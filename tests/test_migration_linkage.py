@@ -104,6 +104,11 @@ def test_remediation_preview_resolves_all_entity_kinds_readonly():
     assert d_junk not in by
     assert result.counts["junk_excluded"] >= 1
 
+    # source-system + named-folder aggregates (for the Firm/unfiled analysis)
+    assert result.counts["documents_by_source_system"].get("TaxDome Drive", 0) >= 6
+    assert result.counts["documents_from_named_folder"] >= 6         # all seeded docs come from named folders
+    assert by[d_person1]["source_system"] == "TaxDome Drive"        # per-row source system
+
     # READ-ONLY: no import_jobs row; every seeded document remains unlinked
     assert _import_jobs_count() == before_jobs
     with engine.connect() as conn:
