@@ -116,10 +116,11 @@ def download_document(document_id: int, request: Request):
         return render_error(request, 404,
                             detail="This document is no longer available. It may have been archived.")
 
-    # TaxDome-synced documents keep a durable Client360-local copy addressed by an absolute
-    # storage_uri; serve THAT copy (never the read-only Z:\ source). Directly-uploaded documents
-    # continue to resolve via their repo-relative storage_path.
-    if document["storage_provider"] == "Client360 Local" and document["storage_uri"]:
+    # Serve the absolute storage_uri whenever the document carries one — this covers every durable
+    # canonical copy (TaxDome-synced "Client360 Local" AND relocated "Client360 Repository" documents,
+    # whose storage_path is stored relative to the content root). Directly-uploaded legacy documents have
+    # no absolute storage_uri and continue to resolve via their repo-relative storage_path.
+    if document["storage_uri"] and Path(document["storage_uri"]).is_absolute():
         path = Path(document["storage_uri"])
     else:
         path = Path(document["storage_path"])
