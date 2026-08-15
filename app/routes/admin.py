@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 
 from app.db import audit_events, engine
 from app.security.audit import write_audit_event
@@ -141,14 +141,47 @@ def _documents_detail(conn, doc_ids):
     return out
 
 
+def _folder_category_counts(conn, folder_names):
+    """Per-folder document category counts using the SAME eligibility rule as the resolve service:
+    ELIGIBLE = all three ownership fields NULL (and not a permanent reject); ALREADY OWNED = any
+    ownership field set; PERMANENT REJECT = protected. Read-only; grouped queries."""
+    from app.db import documents
+    from app.importers.taxdome_drive import taxdome_filter
+    from app.services.households import PERMANENT_REJECT_DOCUMENT_IDS
+    fc = documents.c.tags["taxdome_folder"].astext
+    rejects = tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))
+    names = list(folder_names)
+    counts = {n: {"docs_in_folder": 0, "eligible": 0, "already_owned": 0, "reject": 0} for n in names}
+    if not names:
+        return counts
+    base = and_(taxdome_filter(documents), fc.in_(names))
+    not_reject = documents.c.id.notin_(rejects)
+
+    def _tally(key, predicate):
+        for name, n in conn.execute(select(fc, func.count()).where(predicate).group_by(fc)):
+            if name in counts:
+                counts[name][key] = n
+
+    _tally("docs_in_folder", base)
+    _tally("reject", and_(base, documents.c.id.in_(rejects)))
+    _tally("eligible", and_(base, not_reject, documents.c.person_id.is_(None),
+                            documents.c.household_id.is_(None), documents.c.organization_id.is_(None)))
+    _tally("already_owned", and_(base, not_reject, or_(
+        documents.c.person_id.isnot(None), documents.c.household_id.isnot(None),
+        documents.c.organization_id.isnot(None))))
+    return counts
+
+
 def _folder_samples_and_candidates(folders):
-    """Enrich each unresolved-folder row for the resolution UI: sample document names + candidate people
-    with full distinguishing info (designation/email/phone/household + record link). Read-only."""
+    """Enrich each folder row for the resolution UI: precise category counts (eligible / already-owned /
+    reject), sample ELIGIBLE document names, and candidate people with full distinguishing info
+    (designation/email/phone/household + record link). Read-only — never mutates."""
     from app.db import documents
     from app.importers.taxdome_drive import taxdome_filter
     fc = documents.c.tags["taxdome_folder"].astext
     out = []
     with engine.connect() as conn:
+        counts = _folder_category_counts(conn, [f["folder"] for f in folders])
         for f in folders:
             folder = f["folder"]
             samples = list(conn.scalars(
@@ -162,7 +195,10 @@ def _folder_samples_and_candidates(folders):
                 disp = _person_display(conn, pid) if pid else None
                 if disp:
                     cands.append(disp)
-            out.append({**f, "sample_documents": samples, "candidates": cands})
+            c = counts.get(folder, {"docs_in_folder": 0, "eligible": 0, "already_owned": 0, "reject": 0})
+            out.append({**f, "sample_documents": samples, "candidates": cands,
+                        "docs_in_folder": c["docs_in_folder"], "eligible": c["eligible"],
+                        "already_owned": c["already_owned"], "reject": c["reject"]})
     return out
 
 

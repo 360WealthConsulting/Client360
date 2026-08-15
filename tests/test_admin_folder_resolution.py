@@ -287,6 +287,60 @@ def test_documents_detail_shows_owner_name_and_view_link():
     assert row["view_url"] == f"/documents/{d}/download?inline=1"
 
 
+# --- worklist categorization (Affordable Measures scenario) -----------------------------------
+
+def test_worklist_categorizes_already_owned_folder_as_zero_eligible():
+    from app.routes.admin import _folder_samples_and_candidates
+    folder = f"Folder-{_TAG}-AM"
+    org = _org()
+    ids = [_doc(folder, organization_id=org) for _ in range(8)]   # 8 docs, all org-owned
+    rows = _folder_samples_and_candidates(
+        [{"folder": folder, "files": 8, "resolves_to": {}, "suggestions": []}])
+    r = rows[0]
+    assert r["docs_in_folder"] == 8
+    assert r["eligible"] == 0          # none are unresolved/assignable
+    assert r["already_owned"] == 8
+    assert r["reject"] == 0
+    assert r["sample_documents"] == []  # no eligible samples
+    # opening the worklist/preview must not mutate ownership
+    for did in ids:
+        assert _owner(did) == (None, None, org)
+
+
+def test_worklist_categorizes_mixed_folder():
+    from app.routes.admin import _folder_samples_and_candidates
+    folder = f"Folder-{_TAG}-MW"
+    org = _org()
+    _doc(folder, organization_id=org)
+    _doc(folder, organization_id=org)
+    free = _doc(folder)
+    rows = _folder_samples_and_candidates(
+        [{"folder": folder, "files": 3, "resolves_to": {}, "suggestions": []}])
+    r = rows[0]
+    assert r["docs_in_folder"] == 3 and r["eligible"] == 1 and r["already_owned"] == 2
+    assert _owner(free) == (None, None, None)
+
+
+def test_worklist_template_uses_preview_wording_and_zero_eligible_label():
+    from app.routes.admin import templates
+    from app.security.models import Principal
+    p = Principal(1, "a@e.com", "Admin", frozenset({"client.write"}))
+    eligible_folder = {"folder": "Real Client", "files": 2, "sample_documents": ["a.pdf"],
+                       "candidates": [{"id": 5338, "name": "Deborah McDaniel", "designation": "Person",
+                                       "email": None, "phone": None, "household_id": None,
+                                       "household_name": None, "link": "/client/5338"}],
+                       "docs_in_folder": 2, "eligible": 2, "already_owned": 0, "reject": 0}
+    owned_folder = {"folder": "Affordable Measures", "files": 8, "sample_documents": [], "candidates": [],
+                    "docs_in_folder": 8, "eligible": 0, "already_owned": 8, "reject": 0}
+    html = templates.get_template("admin/unassigned_documents.html").render(
+        request=None, principal=p, unassigned=[eligible_folder, owned_folder], q="", search=None,
+        ok=None, err=None)
+    assert "Preview → Deborah McDaniel (#5338)" in html      # candidate button is preview-only
+    assert "Assign to Deborah McDaniel" not in html          # never the pre-confirmation "Assign to"
+    assert "No eligible unassigned documents" in html        # zero-eligible label present
+    assert "8 already owned" in html
+
+
 # --- inline document view -----------------------------------------------------------------------
 
 def test_inline_viewable_types():
