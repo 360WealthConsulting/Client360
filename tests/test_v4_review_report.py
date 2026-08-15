@@ -11,6 +11,7 @@ import. Module import triggers a lightweight reflect against the test database.
 import importlib.util
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -54,3 +55,25 @@ def test_norm_and_person_heuristic(mod):
     assert mod.looks_like_person("john smith") is True
     assert mod.looks_like_person("2024") is False
     assert mod.looks_like_person("") is False
+
+
+# --- institution-in-filename bug: the owner context is the TOP-LEVEL TaxDome folder ---------------
+
+def test_top_level_owner_ignores_child_paths_and_filenames(mod):
+    # A payor/institution name deep in the path or filename must NOT become the owner identity.
+    assert mod.top_level_owner(r"TaxDome\Chris Lucas\Client uploaded documents\Centra W2.pdf") == "Chris Lucas"
+    assert mod.top_level_owner(r"TaxDome\Peter Russell\2021\1098 Lockwood Dr Wells Fargo 2021.pdf") == "Peter Russell"
+    # Forward slashes, no TaxDome root, and a bare folder name all resolve to the top-level client.
+    assert mod.top_level_owner("Chris Lucas/Client uploaded documents/Centra W2.pdf") == "Chris Lucas"
+    assert mod.top_level_owner("Debi McDaniel") == "Debi McDaniel"
+
+
+def test_owner_token_not_classified_institution_from_filename(mod):
+    # The client folders "Chris Lucas" / "Peter Russell" tokenize to person-looking names, and the
+    # institution keywords (Centra / Wells Fargo) live only in child paths/filenames -> the owner
+    # token itself carries no institution keyword, so it is never labeled INSTITUTION_OR_PAYOR.
+    for path in (r"TaxDome\Chris Lucas\Client uploaded documents\Centra W2.pdf",
+                 r"TaxDome\Peter Russell\2021\1098 Lockwood Dr Wells Fargo 2021.pdf"):
+        token = mod.norm(mod.top_level_owner(path))
+        assert not any(re.search(r"\b" + re.escape(k) + r"\b", token) for k in mod.INST_KW)
+        assert mod.looks_like_person(token) is True

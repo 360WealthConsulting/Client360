@@ -72,6 +72,17 @@ def looks_like_person(tok):
     return len(parts) in (2, 3) and all(p.isalpha() for p in parts)
 
 
+def top_level_owner(folder):
+    """The TOP-LEVEL TaxDome client folder = the owner context. Splits on both '/' and '\\', drops a
+    leading 'TaxDome'/'TaxDome Drive' root segment, and returns the first client segment. Child paths
+    and document filenames are intentionally ignored, so an institution/payor name appearing deeper in
+    the path (e.g. .../Client uploaded documents/Centra W2.pdf) can never become the owner identity."""
+    segs = [s for s in re.split(r"[/\\]", folder or "") if s.strip()]
+    if segs and re.sub(r"[^a-z0-9]+", "", segs[0].lower()) in ("taxdome", "taxdomedrive"):
+        segs = segs[1:]
+    return segs[0].strip() if segs else ""
+
+
 def safe_dumps(obj):
     # ASCII-only JSON so a non-UTF-8 stdout (e.g. Windows cp1252 when piped to Tee-Object) can never
     # raise UnicodeEncodeError while printing folder evidence. default=str covers sets/Decimals/etc.
@@ -107,11 +118,13 @@ def main():
             select(people.c.id, people.c.full_name,
                    (people.c.household_id if "household_id" in people.c else people.c.id).label("hh"))
         ).mappings().all()
-        by_name, pid_name, pid_hh = {}, {}, {}
+        by_name, pid_name, pid_hh, members = {}, {}, {}, {}
         for p in ppl:
             by_name.setdefault(norm(p["full_name"]), []).append(p["id"])
             pid_name[p["id"]] = p["full_name"]
             pid_hh[p["id"]] = p["hh"]
+            if p["hh"] is not None:
+                members.setdefault(p["hh"], set()).add(p["id"])
 
         hh_name, hh_by_name = {}, {}
         if households is not None:
@@ -236,9 +249,13 @@ def main():
             # continue. Matching rules and output fields are unchanged.
             try:
                 docs = f["docs"]
-                top = folder.split("/", 1)[0].strip()
+                # OWNER IDENTITY = the TOP-LEVEL TaxDome client folder only. Institution/payor words
+                # occurring inside child paths or document FILENAMES must NEVER classify the owning
+                # folder. Split on both separators and drop a leading "TaxDome" root segment.
+                top = top_level_owner(folder)
                 ntop = norm(top)
 
+                # inst_token is derived from the FOLDER TOKEN identity ONLY (never filenames/child paths).
                 inst_token = (ntop in inst_names) or any(re.search(r"\b" + re.escape(k) + r"\b", ntop) for k in INST_KW)
                 name_pids = list(by_name.get(ntop, []))
                 hh_hits = list(hh_by_name.get(ntop, []))
@@ -251,12 +268,20 @@ def main():
                     except Exception:  # noqa: BLE001
                         engine_sugg = []
                 lk = link_owner.get(ntop) or link_owner.get(norm(folder))
+                rhh = rper = None
+                if resolve_folder is not None and folder:
+                    try:
+                        rhh, rper = resolve_folder(conn, folder)
+                    except Exception:  # noqa: BLE001
+                        rhh, rper = None, None
 
                 folder_emails = sorted(f["emails"])
                 email_pids = set()
                 for ev in folder_emails:
                     email_pids |= email_to_pids.get(ev, set())
-                cand_ids = list(dict.fromkeys(name_pids + [p["id"] for p in engine_sugg if p["id"]] + sorted(email_pids)))
+                alias_pids = alias_to_pids.get(ntop, set())
+                corrob = email_pids | alias_pids  # independent-of-name corroborating person signals
+                cand_ids = list(dict.fromkeys(name_pids + [p["id"] for p in engine_sugg if p["id"]] + sorted(corrob)))
                 candidates = []
                 for pid in cand_ids[:8]:
                     candidates.append({
@@ -267,6 +292,7 @@ def main():
                         "phones": sorted(pid_phone.get(pid, set()))[:2],
                         "match": ("name_exact" if pid in name_pids else "")
                                  + ("+email" if pid in email_pids else "")
+                                 + ("+alias" if pid in alias_pids else "")
                                  + ("+engine" if pid in [p["id"] for p in engine_sugg] else ""),
                     })
 
@@ -275,12 +301,14 @@ def main():
                     for s in src_by_doc.get(d["did"], []):
                         src_ev.append(s)
 
-                # descriptive label (NOT a decision)
-                if any(d["did"] in PERMANENT_REJECT for d in docs):
+                reject_docs = [d["did"] for d in docs if d["did"] in PERMANENT_REJECT]
+                assignable_count = len([d for d in docs if d["did"] not in PERMANENT_REJECT])
+
+                # Descriptive label -- FOLDER IDENTITY ONLY. Documents inside the folder (incl. permanent
+                # rejects or institution-named files) never change the owning folder's label.
+                if inst_token:
                     label = "INSTITUTION_OR_PAYOR"
-                elif inst_token:
-                    label = "INSTITUTION_OR_PAYOR"
-                elif any(k in ntop for k in JUNK_KW) or ntop.isdigit() or ntop == "":
+                elif not ntop or ntop.isdigit() or any(k in ntop for k in JUNK_KW):
                     label = "TEST_JUNK"
                 elif hh_hits or " and " in (" " + ntop + " ") or "&" in top:
                     label = "HOUSEHOLD"
@@ -291,30 +319,102 @@ def main():
                 else:
                     label = "UNKNOWN"
 
-                # recommendation vs required human decision
+                # Decision bucket from folder identity + existing corroborating evidence.
+                etype = eid = ename = None
+                evidence = []
+                competing = None
                 if lk is not None:
-                    rec = "RECOMMEND " + lk[0] + " id=" + str(lk[1]) + " (explicit source-contact linkage)"
-                elif len(hh_hits) == 1 and label == "HOUSEHOLD":
-                    rec = "RECOMMEND household id=" + str(hh_hits[0]) + " '" + str(hh_name.get(hh_hits[0])) + "' (exact household name)"
-                elif len(name_pids) == 1 and (name_pids[0] in email_pids):
-                    rec = "RECOMMEND person id=" + str(name_pids[0]) + " '" + str(pid_name.get(name_pids[0])) + "' (unique name + email corroboration)"
-                elif label == "INSTITUTION_OR_PAYOR":
-                    rec = "DECISION NEEDED: confirm this folder is a payor/institution, not a client; if truly no client owner -> leave unresolved / mark institution."
-                elif label == "TEST_JUNK":
-                    rec = "DECISION NEEDED: confirm test/junk folder; candidate for archive/ignore, not assignment."
-                elif len(name_pids) > 1:
-                    rec = "DECISION NEEDED: multiple same-name people (" + str(len(name_pids)) + "); pick using SSN/DOB/address/email -- do NOT choose on name alone."
+                    etype, eid = lk
+                    ename = hh_name.get(eid) if etype == "household" else pid_name.get(eid)
+                    evidence.append("explicit source-contact/identity linkage")
+                    decision = "SAFE_AUTO_ASSIGN"
+                    reason = "explicit source-contact/identity linkage maps this folder to one owner"
+                elif rhh is not None:
+                    etype, eid, ename = "household", rhh, hh_name.get(rhh)
+                    evidence.append("resolve_folder -> household")
+                    decision = "SAFE_AUTO_ASSIGN"
+                    reason = "TaxDome folder resolves to one household (existing resolver)"
+                elif rper is not None and not inst_token:
+                    etype, eid, ename = "person", rper, pid_name.get(rper)
+                    evidence.append("resolve_folder -> person")
+                    decision = "SAFE_AUTO_ASSIGN"
+                    reason = "TaxDome folder resolves to one person (existing resolver)"
+                elif inst_token:
+                    decision = "NO_MATCH"
+                    reason = "folder identity is an institution/payor, not a client owner"
+                elif len(hh_hits) == 1:
+                    etype, eid, ename = "household", hh_hits[0], hh_name.get(hh_hits[0])
+                    evidence.append("folder token == household name (exact)")
+                    decision = "SAFE_AUTO_ASSIGN"
+                    reason = "folder token exactly matches one household"
+                elif len(name_pids) == 1 and name_pids[0] in corrob:
+                    pid = name_pids[0]
+                    etype, eid, ename = "person", pid, pid_name.get(pid)
+                    evidence.append("unique canonical name == folder token")
+                    evidence.append("corroborated by " + ("email" if pid in email_pids else "alias"))
+                    decision = "SAFE_AUTO_ASSIGN"
+                    reason = "unique canonical name matches folder AND is corroborated by an independent signal"
                 elif len(name_pids) == 1:
-                    rec = "DECISION NEEDED: unique name '" + str(pid_name.get(name_pids[0])) + "' (person id=" + str(name_pids[0]) + "); confirm this is the client before assigning (no independent corroboration found)."
+                    pid = name_pids[0]
+                    etype, eid, ename = "person", pid, pid_name.get(pid)
+                    competing = [{"person_id": pid, "name": pid_name.get(pid)}]
+                    decision = "MANUAL_REVIEW"
+                    reason = ("unique canonical name matches folder but NO independent corroboration "
+                              "(email/phone/alias/linkage) found; confirm before assigning")
+                elif len(name_pids) > 1:
+                    narrowed = [pid for pid in name_pids if pid in corrob]
+                    if len(narrowed) == 1:
+                        etype, eid, ename = "person", narrowed[0], pid_name.get(narrowed[0])
+                        evidence.append("duplicate name disambiguated to one person by email/alias")
+                        decision = "SAFE_AUTO_ASSIGN"
+                        reason = "duplicate canonical name resolved to exactly one person by a corroborating signal"
+                    else:
+                        competing = [{"person_id": pid, "name": pid_name.get(pid),
+                                      "household_id": pid_hh.get(pid),
+                                      "emails": sorted(pid_email.get(pid, set()))[:2]} for pid in name_pids[:8]]
+                        decision = "MANUAL_REVIEW"
+                        reason = ("multiple same-name people; corroboration did not resolve to exactly one -- "
+                                  "pick using SSN/DOB/address/email/linkage, never on name alone")
+                elif biz_hit is not None:
+                    etype, eid, ename = "organization", biz_hit[0], biz_hit[1]
+                    competing = [{"organization_id": biz_hit[0], "name": biz_hit[1]}]
+                    decision = "MANUAL_REVIEW"
+                    reason = "folder token matches a business/organization/trust; confirm it is the client owner (not a payor)"
+                elif len(corrob) == 1:
+                    pid = next(iter(corrob))
+                    etype, eid, ename = "person", pid, pid_name.get(pid)
+                    competing = [{"person_id": pid, "name": pid_name.get(pid)}]
+                    decision = "MANUAL_REVIEW"
+                    reason = "only an email/alias match (no folder-name match); the author may be a preparer -- verify"
                 elif engine_sugg:
-                    rec = "DECISION NEEDED: only fuzzy name suggestions; verify identity before assigning."
+                    competing = engine_sugg
+                    decision = "MANUAL_REVIEW"
+                    reason = "only fuzzy name suggestions; verify identity before assigning"
                 else:
-                    rec = "DECISION NEEDED: no canonical match; identify who this folder belongs to from the source documents."
+                    decision = "NO_MATCH"
+                    reason = "no credible canonical owner from folder identity or existing evidence"
+
+                # Joint routing: a person whose household has >=2 members present in the evidence -> household.
+                if decision == "SAFE_AUTO_ASSIGN" and etype == "person" and eid is not None:
+                    hh = pid_hh.get(eid)
+                    if hh is not None and len(members.get(hh, set()) & (corrob | set(name_pids))) >= 2:
+                        etype, eid, ename = "household", hh, hh_name.get(hh)
+                        evidence.append("two co-household members present -> household")
 
                 entry = {
                     "folder": folder,
+                    "top_level_owner_token": top,
                     "unresolved_docs": len(docs),
+                    "assignable_docs_excl_permanent_rejects": assignable_count,
+                    "contains_permanent_reject_docs": reject_docs,
+                    "decision": decision,
                     "label": label,
+                    "proposed_entity_type": etype,
+                    "proposed_entity_id": eid,
+                    "proposed_entity_name": ename,
+                    "corroborating_evidence": evidence,
+                    "reason": reason,
+                    "competing_candidates": competing,
                     "candidate_people": candidates,
                     "candidate_households": [{"id": h, "name": hh_name.get(h)} for h in hh_hits[:5]],
                     "candidate_business_org": ([{"id": biz_hit[0], "name": biz_hit[1]}] if biz_hit else []),
@@ -323,12 +423,21 @@ def main():
                     "folder_author_emails": folder_emails[:5],
                     "document_source_evidence": src_ev[:5],
                     "sample_documents": [{"id": d["did"], "name": d["name"]} for d in docs[:5]],
-                    "recommendation_or_decision": rec,
                 }
                 report.append(entry)
 
                 aprint("")
-                aprint("FOLDER: " + folder + "  (" + str(len(docs)) + " docs)  LABEL=" + label)
+                aprint("FOLDER: " + top + "  (" + str(len(docs)) + " docs)  LABEL=" + label
+                       + "  DECISION=" + decision)
+                if etype is not None:
+                    aprint("  proposed_owner: " + etype + " id=" + str(eid) + " '" + str(ename) + "'")
+                aprint("  reason: " + reason)
+                if evidence:
+                    aprint("  corroborating_evidence: " + safe_dumps(evidence))
+                if competing:
+                    aprint("  competing_candidates: " + safe_dumps(competing))
+                if reject_docs:
+                    aprint("  contains_permanent_reject_docs (excluded from assignable count): " + safe_dumps(reject_docs))
                 aprint("  candidate_people: " + safe_dumps(candidates))
                 aprint("  candidate_households: " + safe_dumps(entry["candidate_households"]))
                 aprint("  candidate_business_org: " + safe_dumps(entry["candidate_business_org"]))
@@ -336,7 +445,6 @@ def main():
                 aprint("  folder_author_emails: " + safe_dumps(folder_emails[:5]))
                 aprint("  document_source_evidence: " + safe_dumps(src_ev[:5]))
                 aprint("  sample_documents: " + safe_dumps(entry["sample_documents"]))
-                aprint("  => " + rec)
             except Exception as exc:  # noqa: BLE001 -- isolate one folder's failure; keep going
                 aprint("")
                 aprint("FOLDER: " + str(folder) + "  ERROR: " + repr(exc)
@@ -344,9 +452,23 @@ def main():
                 report.append({"folder": folder, "error": repr(exc)})
                 continue
 
+    decision_counts = {"SAFE_AUTO_ASSIGN": 0, "MANUAL_REVIEW": 0, "NO_MATCH": 0, "ERROR": 0}
+    safe_assignable_docs = 0
+    for r in report:
+        d = r.get("decision", "ERROR")
+        decision_counts[d] = decision_counts.get(d, 0) + 1
+        if d == "SAFE_AUTO_ASSIGN":
+            safe_assignable_docs += r.get("assignable_docs_excl_permanent_rejects", 0)
+    aprint("")
+    aprint("DECISION SUMMARY (over " + str(len(report)) + " shown folders):")
+    for k in ("SAFE_AUTO_ASSIGN", "MANUAL_REVIEW", "NO_MATCH", "ERROR"):
+        aprint("  " + k + ": " + str(decision_counts[k]) + " folders")
+    aprint("DOCUMENTS SAFELY ASSIGNABLE (SAFE_AUTO_ASSIGN, excl. permanent rejects): " + str(safe_assignable_docs))
+
     aprint("=== BEGIN_V4_REVIEW_JSON ===")
     print(safe_dumps({"total_unresolved_documents": total_docs, "total_unresolved_folders": len(folders),
-                      "shown": len(report), "folders": report}))
+                      "shown": len(report), "decision_counts": decision_counts,
+                      "documents_safely_assignable": safe_assignable_docs, "folders": report}))
     aprint("=== END_V4_REVIEW_JSON ===")
     return 0
 
