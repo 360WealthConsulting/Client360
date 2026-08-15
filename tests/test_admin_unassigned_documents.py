@@ -57,8 +57,8 @@ def test_client_workspace_templates_do_not_render_unassigned_queue():
 def test_admin_template_hosts_the_relocated_queue():
     src = Path("app/templates/admin/unassigned_documents.html").read_text(encoding="utf-8")
     assert "Unassigned documents — resolve ownership" in src
-    assert 'action="/client/documents/resolve"' in src   # resolve workflow preserved
-    assert 'name="return_to" value="/admin/documents/unassigned"' in src
+    # Folder resolution now posts to the admin preview/confirm endpoint (the human-resolution interface).
+    assert 'action="/admin/documents/unassigned/resolve"' in src
 
 
 # --- the admin route renders the unresolved queue -----------------------------

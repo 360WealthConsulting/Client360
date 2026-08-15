@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Confirm Assignment | Admin | Client360{% endblock %}
+{% block crumb %}Admin · Document Management · Confirm Assignment{% endblock %}
+{% block content %}
+{% call ui.page_head("Confirm folder assignment", eyebrow="Admin · Document Management",
+    desc="Review the exact destination and the documents that will be assigned. Nothing has changed yet.") %}
+  <a class="btn secondary" href="/admin/documents/unassigned">Cancel</a>
+{% endcall %}
+
+<article class="card" style="padding:16px 18px; max-width:720px">
+  <div class="detail-row"><span class="subtle">Source folder</span><strong>{{ folder }}</strong></div>
+  <div class="detail-row"><span class="subtle">Destination</span>
+    <strong>{{ preview.destination.entity_type }} #{{ preview.destination.entity_id }}
+    — {{ preview.destination.entity_name or "(name unavailable)" }}</strong></div>
+  <div class="detail-row"><span class="subtle">Documents to assign</span>
+    <strong>{{ preview.documents_affected }}</strong></div>
+
+  {% if preview.affected_document_ids %}
+  <p class="subtle" style="margin-top:8px">Document IDs:
+    {{ preview.affected_document_ids[:40] | join(", ") }}{% if preview.affected_document_ids|length > 40 %} … (+{{ preview.affected_document_ids|length - 40 }} more){% endif %}</p>
+  {% endif %}
+  {% if preview.excluded_permanent_rejects %}
+  <p class="subtle" style="color:var(--warn, #b45309)">Excluded permanent exceptions (never assigned):
+    {{ preview.excluded_permanent_rejects | join(", ") }}</p>
+  {% endif %}
+
+  {% if preview.documents_affected and preview.documents_affected > 0 %}
+  <form method="post" action="/admin/documents/unassigned/resolve" style="margin-top:14px">
+    <input type="hidden" name="folder" value="{{ folder }}">
+    <input type="hidden" name="entity_type" value="{{ entity_type }}">
+    <input type="hidden" name="entity_id" value="{{ entity_id }}">
+    <input type="hidden" name="confirm" value="yes">
+    <button class="btn" type="submit">Confirm — assign {{ preview.documents_affected }} document(s)</button>
+    <a class="btn secondary" href="/admin/documents/unassigned" style="margin-left:8px">Cancel</a>
+  </form>
+  {% else %}
+  <p class="subtle" style="margin-top:14px">No eligible documents to assign for this destination (already linked, or only permanent exceptions remain).</p>
+  <a class="btn secondary" href="/admin/documents/unassigned">Back</a>
+  {% endif %}
+</article>
+{% endblock %}

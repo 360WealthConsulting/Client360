@@ -41,15 +41,115 @@ def administration(request: Request, principal: Principal = Depends(require_capa
     return templates.TemplateResponse(request=request, name="admin/identity.html", context={"identity": list_identity_data(), "principal": principal})
 
 
+def _folder_samples_and_candidates(folders):
+    """Enrich each unresolved-folder row for the resolution UI: sample document names + candidate people
+    with distinguishing info (email/phone), plus household-name candidates. Read-only."""
+    from app.db import documents, households, people
+    from app.importers.taxdome_drive import taxdome_filter
+    fc = documents.c.tags["taxdome_folder"].astext
+    out = []
+    with engine.connect() as conn:
+        for f in folders:
+            folder = f["folder"]
+            samples = list(conn.scalars(
+                select(documents.c.original_name).where(
+                    taxdome_filter(documents), fc == folder,
+                    documents.c.person_id.is_(None), documents.c.household_id.is_(None),
+                    documents.c.organization_id.is_(None)).limit(4)))
+            cands = []
+            for s in (f.get("suggestions") or [])[:6]:
+                pid = s.get("id") if isinstance(s, dict) else None
+                row = conn.execute(select(people.c.id, people.c.full_name, people.c.primary_email,
+                                          people.c.primary_phone, people.c.household_id)
+                                   .where(people.c.id == pid)).mappings().first() if pid else None
+                if row:
+                    hh = conn.execute(select(households.c.name)
+                                      .where(households.c.id == row["household_id"])).scalar() \
+                        if row["household_id"] else None
+                    cands.append({"id": row["id"], "name": row["full_name"], "email": row["primary_email"],
+                                  "phone": row["primary_phone"], "household_id": row["household_id"],
+                                  "household_name": hh})
+            out.append({**f, "sample_documents": samples, "candidates": cands})
+    return out
+
+
+def _entity_search(q, limit=15):
+    """Search existing people / households / organizations by name for manual folder resolution."""
+    from app.db import households, people, relationship_entities
+    like = f"%{q.strip()}%"
+    res = {"people": [], "households": [], "organizations": []}
+    if not q.strip():
+        return res
+    with engine.connect() as conn:
+        res["people"] = [dict(r) for r in conn.execute(
+            select(people.c.id, people.c.full_name, people.c.primary_email, people.c.household_id)
+            .where(people.c.full_name.ilike(like)).order_by(people.c.full_name).limit(limit)).mappings()]
+        res["households"] = [dict(r) for r in conn.execute(
+            select(households.c.id, households.c.name)
+            .where(households.c.name.ilike(like)).order_by(households.c.name).limit(limit)).mappings()]
+        res["organizations"] = [dict(r) for r in conn.execute(
+            select(relationship_entities.c.id, relationship_entities.c.name,
+                   relationship_entities.c.entity_type)
+            .where(relationship_entities.c.name.ilike(like))
+            .order_by(relationship_entities.c.name).limit(limit)).mappings()]
+    return res
+
+
 @router.get("/documents/unassigned")
-def unassigned_documents(request: Request, principal: Principal = Depends(require_capability("client.write"))):
-    """Admin -> Document Management -> Unassigned Documents: the TaxDome folder ownership-resolution
-    worklist (migration cleanup), relocated OUT of client workspaces so it is not shown inside a client's
-    Documents tab. Reuses the existing resolve workflow (POST /client/documents/resolve) — no linkage or
-    remediation logic changes."""
+def unassigned_documents(request: Request, q: str = "",
+                         principal: Principal = Depends(require_capability("client.write"))):
+    """Admin -> Document Management -> Unassigned Documents: fast human-resolution worklist for the
+    remaining unresolved TaxDome folders. Groups unresolved documents by source folder, shows samples +
+    candidate people/households with distinguishing info, and lets an admin search the database by name.
+    A folder-level decision assigns all eligible documents in one audited operation (POST
+    /admin/documents/unassigned/resolve, preview -> confirm). Reuses the existing resolve service;
+    the six permanent V2 rejects are never assigned."""
     from app.services.households import unresolved_taxdome_folders
+    folders = _folder_samples_and_candidates(unresolved_taxdome_folders(limit=200))
     return templates.TemplateResponse(request=request, name="admin/unassigned_documents.html",
-        context={"principal": principal, "unassigned": unresolved_taxdome_folders(limit=200)})
+        context={"principal": principal, "unassigned": folders, "q": q,
+                 "search": _entity_search(q), "ok": request.query_params.get("ok"),
+                 "err": request.query_params.get("err")})
+
+
+@router.post("/documents/unassigned/resolve")
+def resolve_unassigned_folder(
+        request: Request, folder: str = Form(...), entity_type: str = Form(...),
+        entity_id: int = Form(...), confirm: str = Form(""),
+        principal: Principal = Depends(require_capability("client.write"))):
+    """Folder-level ownership resolution with a mandatory preview -> confirm step. Without confirm=yes it
+    renders the exact destination + affected-document count/ids for review; with confirm=yes it applies
+    the assignment to every eligible (non-reject, currently-NULL) document in the folder in one audited
+    operation. Record-scope enforced; the six permanent V2 rejects are excluded by the service."""
+    from app.security.authorization import record_in_scope
+    from app.services.households import resolve_folder_ownership
+    if entity_type not in {"person", "household", "organization"}:
+        return render_error(request, 400, detail="Invalid entity type.")
+    scope_type = {"person": "person", "household": "household", "organization": "organization"}[entity_type]
+    # Organizations are firm-scoped here (no per-record org assignments table); require record.write_all.
+    if entity_type == "organization":
+        if not principal.can("record.write_all"):
+            return render_error(request, 404, detail="Organization not found.")
+    elif not record_in_scope(principal, scope_type, entity_id, write=True):
+        return render_error(request, 404, detail="Destination not found.")
+    kwargs = {"person": {"person_id": entity_id}, "household": {"household_id": entity_id},
+              "organization": {"organization_id": entity_id}}[entity_type]
+    rid = getattr(request.state, "request_id", None)
+    try:
+        if confirm.strip().lower() != "yes":
+            preview = resolve_folder_ownership(folder, dry_run=True, **kwargs)
+            return templates.TemplateResponse(request=request, name="admin/unassigned_confirm.html",
+                context={"principal": principal, "folder": folder, "entity_type": entity_type,
+                         "entity_id": entity_id, "preview": preview})
+        result = resolve_folder_ownership(folder, actor_user_id=principal.user_id, request_id=rid, **kwargs)
+    except ValueError as exc:
+        return render_error(request, 400, detail=str(exc))
+    audit(request, principal, "document.folder_resolved", "taxdome_folder", None,
+          {"folder": folder, "destination": result["destination"],
+           "documents_updated": result["documents_affected"]})
+    msg = f"Assigned {result['documents_affected']} document(s) in '{folder}' to " \
+          f"{result['destination']['entity_type']} {result['destination']['entity_name']}."
+    return _back("/admin/documents/unassigned", ok=msg)
 
 @router.post("/users")
 def create_user(payload: UserInvite, request: Request, principal: Principal = Depends(require_capability("identity.manage"))):

@@ -38,6 +38,7 @@ from app.db import (
     household_relationships,
     households,
     people,
+    relationship_entities,
 )
 from app.services.household_derivation import _household_name
 
@@ -226,36 +227,95 @@ def duplicate_candidates(sha256_hex, *, limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None,
+# The six V2 permanent false-positive documents. They are NEVER assigned by folder resolution --
+# excluded from every ownership UPDATE and from the affected/count reported to the operator.
+PERMANENT_REJECT_DOCUMENT_IDS = frozenset({4704, 4716, 4717, 17932, 22336, 22338})
+
+_OWNER_FIELDS = ("person_id", "household_id", "organization_id")
+
+
+def _entity_label(conn, *, person_id=None, household_id=None, organization_id=None):
+    """Human-readable destination label for preview + audit (entity_type, id, name)."""
+    if person_id is not None:
+        name = conn.execute(select(people.c.full_name).where(people.c.id == person_id)).scalar()
+        return {"entity_type": "person", "entity_id": person_id, "entity_name": name}
+    if household_id is not None:
+        name = conn.execute(select(households.c.name).where(households.c.id == household_id)).scalar()
+        return {"entity_type": "household", "entity_id": household_id, "entity_name": name}
+    if organization_id is not None:
+        name = conn.execute(
+            select(relationship_entities.c.name).where(relationship_entities.c.id == organization_id)).scalar()
+        return {"entity_type": "organization", "entity_id": organization_id, "entity_name": name}
+    return {"entity_type": None, "entity_id": None, "entity_name": None}
+
+
+def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None, organization_id=None,
                              actor_user_id=None, request_id=None, dry_run: bool = False) -> dict:
-    """Link a TaxDome folder's currently-unlinked documents to an existing household and/or person —
-    the in-product, audited replacement for the ``--repair-links`` CLI for a single folder. Fills NULL
-    ownership only (never overwrites a manual link, never creates a duplicate row). No new ownership
-    logic: reuses the same folder-link the sync uses."""
-    if household_id is None and person_id is None:
-        raise ValueError("a household_id or person_id is required")
+    """Link a TaxDome folder's currently-unlinked documents to an existing person, household, and/or
+    organization in ONE operation — the in-product, audited replacement for the ``--repair-links`` CLI.
+
+    Safety: fills NULL ownership only (never overwrites a manual/auto link, never creates a duplicate),
+    and NEVER touches the six permanent V2 reject documents (``PERMANENT_REJECT_DOCUMENT_IDS``) even if
+    they sit in the folder. ``dry_run`` reports the exact destination, affected document ids, and count
+    without writing. On apply it records an audit event carrying the affected document ids and the
+    previous (NULL) ownership state, so a change is fully reconstructable."""
+    if household_id is None and person_id is None and organization_id is None:
+        raise ValueError("a person_id, household_id, or organization_id is required")
     from app.importers import taxdome_drive as td
-    if dry_run:
-        base = and_(td.taxdome_filter(documents),
-                    documents.c.tags["taxdome_folder"].astext == folder_name)
-        with engine.connect() as conn:
-            n = 0
-            if person_id is not None:
-                n += conn.execute(select(func.count()).select_from(documents)
-                                  .where(and_(base, documents.c.person_id.is_(None)))).scalar() or 0
-            if household_id is not None:
-                n += conn.execute(select(func.count()).select_from(documents)
-                                  .where(and_(base, documents.c.household_id.is_(None)))).scalar() or 0
-        return {"folder": folder_name, "documents_updated": n, "dry_run": True}
-    with engine.begin() as conn:
-        updated = td._apply_folder_link(conn, documents, folder_name, household_id, person_id)
-        if actor_user_id is not None and updated:
+    base = and_(td.taxdome_filter(documents),
+                documents.c.tags["taxdome_folder"].astext == folder_name,
+                documents.c.id.notin_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))))
+    assignments = {"person_id": person_id, "household_id": household_id, "organization_id": organization_id}
+
+    runner = engine.connect if dry_run else engine.begin
+    with runner() as conn:
+        # Which folder documents WOULD be a permanent reject (for transparency; never assigned).
+        rejects_in_folder = list(conn.scalars(
+            select(documents.c.id).where(and_(
+                td.taxdome_filter(documents),
+                documents.c.tags["taxdome_folder"].astext == folder_name,
+                documents.c.id.in_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS)))))))
+
+        affected_by_field, all_affected = {}, set()
+        for field, value in assignments.items():
+            if value is None:
+                continue
+            col = getattr(documents.c, field)
+            ids = list(conn.scalars(select(documents.c.id).where(and_(base, col.is_(None)))))
+            affected_by_field[field] = ids
+            all_affected.update(ids)
+            if not dry_run and ids:
+                conn.execute(documents.update()
+                             .where(documents.c.id.in_(ids)).values(**{field: value}))
+
+        label = _entity_label(conn, person_id=person_id, household_id=household_id,
+                              organization_id=organization_id)
+        affected_ids = sorted(all_affected)
+        result = {
+            "folder": folder_name, "dry_run": dry_run,
+            "destination": label,
+            "documents_affected": len(affected_ids),
+            "documents_updated": len(affected_ids),  # backward-compatible alias for existing callers
+            "affected_document_ids": affected_ids,
+            "affected_by_field": affected_by_field,
+            "excluded_permanent_rejects": sorted(rejects_in_folder),
+        }
+        if not dry_run and actor_user_id is not None and affected_ids:
             from app.security.audit import write_audit_event
-            write_audit_event(action="document.ownership_resolved", entity_type="taxdome_folder",
-                              entity_id=folder_name, actor_user_id=actor_user_id, request_id=request_id,
-                              metadata={"folder": folder_name, "household_id": household_id,
-                                        "person_id": person_id, "documents_updated": updated})
-    return {"folder": folder_name, "documents_updated": updated, "dry_run": False}
+            write_audit_event(
+                action="document.ownership_resolved", entity_type="taxdome_folder",
+                entity_id=folder_name, actor_user_id=actor_user_id, request_id=request_id,
+                metadata={
+                    "folder": folder_name, "destination": label,
+                    "person_id": person_id, "household_id": household_id,
+                    "organization_id": organization_id,
+                    "documents_updated": len(affected_ids),
+                    "affected_document_ids": affected_ids[:500],
+                    "affected_by_field": {k: v[:500] for k, v in affected_by_field.items()},
+                    "previous_ownership_state": "null (NULL-only fill; existing links untouched)",
+                    "excluded_permanent_rejects": sorted(rejects_in_folder),
+                })
+    return result
 
 
 def main(argv=None):

@@ -4,33 +4,65 @@
 {% block crumb %}Admin · Document Management · Unassigned Documents{% endblock %}
 {% block content %}
 {% call ui.page_head("Unassigned documents — resolve ownership", eyebrow="Admin · Document Management",
-    desc="TaxDome folders not yet attached to a client. This migration-cleanup worklist lives in Admin (never inside a client's Documents tab). Resolving a folder links its documents to an existing client or household — no PowerShell required.") %}
+    desc="Unresolved TaxDome folders. Resolving a folder assigns ALL of its eligible documents to one client, household, or organization in a single audited step. The six permanent exception documents are never assigned.") %}
   <a class="btn secondary" href="/admin">Back to Admin</a>
 {% endcall %}
+
+{% if ok %}<div class="banner ok">{{ ok }}</div>{% endif %}
+{% if err %}<div class="banner err">{{ err }}</div>{% endif %}
+
+<section class="card" style="padding:14px 16px; margin-bottom:14px">
+  <form method="get" action="/admin/documents/unassigned" class="row" style="gap:8px">
+    <input class="input" type="search" name="q" value="{{ q or '' }}" placeholder="Search people / households / organizations by name…" style="min-width:320px">
+    <button class="btn" type="submit">Search</button>
+  </form>
+  {% if q %}
+    <div class="subtle" style="margin-top:8px">Results for “{{ q }}” — copy an ID into a folder's manual field below.</div>
+    <div class="row" style="gap:24px; flex-wrap:wrap; margin-top:6px">
+      <div><strong>People</strong>{% for p in search.people %}<div class="subtle">#{{ p.id }} {{ p.full_name }}{% if p.primary_email %} · {{ p.primary_email }}{% endif %}</div>{% else %}<div class="subtle">—</div>{% endfor %}</div>
+      <div><strong>Households</strong>{% for h in search.households %}<div class="subtle">#{{ h.id }} {{ h.name }}</div>{% else %}<div class="subtle">—</div>{% endfor %}</div>
+      <div><strong>Organizations</strong>{% for o in search.organizations %}<div class="subtle">#{{ o.id }} {{ o.name }} ({{ o.entity_type }})</div>{% else %}<div class="subtle">—</div>{% endfor %}</div>
+    </div>
+  {% endif %}
+</section>
 
 {% if unassigned %}
 {% for u in unassigned %}
 <article class="card" style="padding:14px 16px; margin-bottom:10px">
-  <div class="detail-row"><strong>{{ u.folder }}</strong><span class="subtle">{{ u.files }} document(s)</span></div>
-  <form method="post" action="/client/documents/resolve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:8px">
+  <div class="detail-row"><strong>{{ u.folder }}</strong><span class="subtle">{{ u.files }} unresolved document(s)</span></div>
+  {% if u.sample_documents %}<p class="subtle" style="margin:4px 0">Samples: {% for s in u.sample_documents %}{{ s }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+
+  {% if u.candidates %}
+  <div style="margin:6px 0">
+    <div class="subtle">Suggested clients (Preview to confirm):</div>
+    {% for c in u.candidates %}
+      <form method="post" action="/admin/documents/unassigned/resolve" style="display:inline-block; margin:3px 6px 3px 0">
+        <input type="hidden" name="folder" value="{{ u.folder }}">
+        <input type="hidden" name="entity_type" value="person">
+        <input type="hidden" name="entity_id" value="{{ c.id }}">
+        <button class="btn sm" type="submit" title="{{ c.email or '' }} {{ c.phone or '' }}">
+          {{ c.name }} (#{{ c.id }}){% if c.household_name %} · {{ c.household_name }}{% endif %}</button>
+      </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" action="/admin/documents/unassigned/resolve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center">
     <input type="hidden" name="folder" value="{{ u.folder }}">
-    <input type="hidden" name="return_to" value="/admin/documents/unassigned">
-    {% if u.resolves_to.household_id %}
-      <input type="hidden" name="household_id" value="{{ u.resolves_to.household_id }}">
-      <button class="btn sm" type="submit">Link to matched household</button>
-    {% elif u.resolves_to.person_id %}
-      <input type="hidden" name="person_id" value="{{ u.resolves_to.person_id }}">
-      <button class="btn sm" type="submit">Link to matched client</button>
-    {% else %}
-      <label class="subtle">Link to person id <input class="input" type="number" name="person_id" style="max-width:110px"></label>
-      <label class="subtle">or household id <input class="input" type="number" name="household_id" style="max-width:110px"></label>
-      <button class="btn sm secondary" type="submit">Resolve</button>
-    {% endif %}
+    <label class="subtle">Assign to
+      <select name="entity_type" class="input">
+        <option value="person">Person</option>
+        <option value="household">Household</option>
+        <option value="organization">Organization</option>
+      </select>
+    </label>
+    <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:120px" required></label>
+    <button class="btn sm secondary" type="submit">Preview →</button>
+    <span class="subtle">or leave unresolved (no action)</span>
   </form>
-  {% if u.suggestions %}<p class="subtle" style="margin-top:6px">Candidates: {% for s in u.suggestions %}{{ s.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 </article>
 {% endfor %}
 {% else %}
-{{ ui.empty("No unassigned documents", "Every TaxDome folder is attached to a client or household.") }}
+{{ ui.empty("No unassigned documents", "Every TaxDome folder is attached to a client, household, or organization.") }}
 {% endif %}
 {% endblock %}
