@@ -161,11 +161,12 @@ def _login_redirect(request):
     return RedirectResponse(f"/auth/login?next={quote(target, safe='')}", 303)
 
 
-# Capability that gates the admin manual-resolution workflow (/admin/documents/unassigned). A holder
-# may READ a genuinely unassigned document (all ownership fields NULL) in order to inspect it and
-# determine its owner — resolving the circular case where an unowned document could never be viewed
-# and therefore never resolved. See _document_in_scope.
-ADMIN_DOC_REVIEW_CAPABILITY = "client.write"
+# Capabilities that authorize the admin manual-resolution workflow (/admin/documents/unassigned): the
+# workflow's own capability (client.write, which gates the review page) plus firm-wide-read / admin
+# capabilities. A holder of ANY of these may READ a genuinely unassigned document (all ownership fields
+# NULL) to inspect it and determine its owner — resolving the circular case where an unowned document
+# could never be viewed and therefore never resolved. See _document_in_scope.
+ADMIN_DOC_REVIEW_CAPABILITIES = ("client.write", "record.read_all", "identity.manage")
 
 
 def _document_in_scope(connection, principal, document_id, *, write):
@@ -174,8 +175,8 @@ def _document_in_scope(connection, principal, document_id, *, write):
     organization-owned documents have ``person_id`` NULL; checking only person_id previously denied every
     such document (including those reachable from the owning household workspace).
 
-    Narrow admin-review exception: a holder of ``ADMIN_DOC_REVIEW_CAPABILITY`` may READ a document whose
-    ownership is entirely NULL (person_id AND household_id AND organization_id all NULL) so they can
+    Narrow admin-review exception: a holder of any ``ADMIN_DOC_REVIEW_CAPABILITIES`` may READ a document
+    whose ownership is entirely NULL (person_id AND household_id AND organization_id all NULL) so they can
     inspect it in the admin manual-resolution workflow. Read-only (never for a write) and scoped strictly
     to genuinely-unassigned documents; already-owned documents fall through to the normal record-scope
     rules. This grants viewing only — it never assigns ownership (assignment is gated separately)."""
@@ -187,7 +188,7 @@ def _document_in_scope(connection, principal, document_id, *, write):
     if (not write
             and owner["person_id"] is None and owner["household_id"] is None
             and owner["organization_id"] is None
-            and principal.can(ADMIN_DOC_REVIEW_CAPABILITY)):
+            and any(principal.can(cap) for cap in ADMIN_DOC_REVIEW_CAPABILITIES)):
         return True
     return any(
         entity_id is not None and has_record_scope(

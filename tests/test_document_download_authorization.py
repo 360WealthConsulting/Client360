@@ -134,9 +134,11 @@ def test_organization_owned_document_allowed_with_org_scope():
     assert _in_scope(_principal(uid), doc) is True
 
 
-def test_unowned_document_denied_even_for_read_all():
+def test_firm_wide_read_admin_may_view_unowned_document_for_review():
+    # A firm-wide-read (record.read_all) admin may READ a genuinely unowned document to triage it in
+    # the manual-resolution workflow (read-only exception). Ownership stays NULL; write is still denied.
     doc = _doc()                          # firm/unfiled — no canonical owner
-    assert _in_scope(_principal(_user(), frozenset({"record.read_all"})), doc) is False
+    assert _in_scope(_principal(_user(), frozenset({"record.read_all"})), doc) is True
 
 
 def test_missing_document_denied():
@@ -151,14 +153,16 @@ def test_admin_can_view_genuinely_unassigned_document_for_review():
     assert _in_scope(admin, doc) is True                        # can inspect to determine owner
 
 
-def test_non_admin_cannot_view_unassigned_document():
+def test_identity_manage_admin_can_view_unassigned_document_for_review():
     doc = _doc()
-    assert _in_scope(_principal(_user()), doc) is False         # no client.write -> normal denial
+    assert _in_scope(_principal(_user(), frozenset({"identity.manage"})), doc) is True
 
 
-def test_read_all_alone_does_not_grant_the_admin_review_exception():
+def test_user_without_any_review_capability_denied_unassigned_document():
+    # A user holding only document.read (none of the review capabilities) is still denied an unowned doc.
     doc = _doc()
-    assert _in_scope(_principal(_user(), frozenset({"record.read_all"})), doc) is False
+    assert _in_scope(_principal(_user(), frozenset({"document.read"})), doc) is False
+    assert _in_scope(_principal(_user()), doc) is False         # no capabilities at all -> denied
 
 
 def test_admin_review_exception_is_read_only_not_write():
