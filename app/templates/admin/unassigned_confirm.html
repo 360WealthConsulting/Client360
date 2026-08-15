@@ -11,7 +11,7 @@
 <article class="card" style="padding:16px 18px; margin-bottom:12px">
   <div class="detail-row"><span class="subtle">Source folder</span><strong>{{ folder }}</strong></div>
 
-  <div style="margin-top:8px"><span class="subtle">Destination record</span>
+  <div style="margin-top:8px"><span class="subtle">PROPOSED OWNER</span>
   {% if destination.kind == "person" %}
     <div><strong>{% if destination.is_business %}Business Contact{% else %}Person{% endif %} #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
       <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open record ↗</a></div>

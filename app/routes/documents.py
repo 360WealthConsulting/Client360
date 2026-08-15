@@ -115,7 +115,8 @@ def _is_inline_viewable(content_type: str | None, name: str | None) -> bool:
     if ct == "application/pdf" or ct.startswith("image/") or ct == "text/plain":
         return True
     ext = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
-    return ext in {"pdf", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "txt"}
+    return ext in {"pdf", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "txt",
+                   "heic", "heif"}
 
 
 @router.get("/documents/{document_id}/download")

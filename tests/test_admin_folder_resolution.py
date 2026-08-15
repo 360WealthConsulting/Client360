@@ -20,6 +20,7 @@ from app.db import (
     relationship_entities,
 )
 from app.routes.admin import resolve_unassigned_folder
+from app.security.models import Principal
 from app.services import households as hh_service
 
 _TAG = uuid.uuid4().hex[:8]
@@ -323,7 +324,6 @@ def test_worklist_categorizes_mixed_folder():
 
 def test_worklist_template_uses_preview_wording_and_zero_eligible_label():
     from app.routes.admin import templates
-    from app.security.models import Principal
     p = Principal(1, "a@e.com", "Admin", frozenset({"client.write"}))
     eligible_folder = {"folder": "Real Client", "files": 2, "sample_documents": ["a.pdf"],
                        "candidates": [{"id": 5338, "name": "Deborah McDaniel", "designation": "Person",
@@ -348,4 +348,51 @@ def test_inline_viewable_types():
     assert _is_inline_viewable("application/pdf", "x.pdf") is True
     assert _is_inline_viewable("image/png", "x.png") is True
     assert _is_inline_viewable(None, "scan.jpg") is True          # extension fallback
+    assert _is_inline_viewable(None, "IMG_5178.HEIC") is True     # HEIC image inline
     assert _is_inline_viewable("application/vnd.ms-excel", "x.xlsx") is False
+
+
+# --- Review-before-decide surface --------------------------------------------------------------
+
+def test_folder_documents_splits_by_category():
+    from app.routes.admin import _folder_documents
+    folder = f"Folder-{_TAG}-REV"
+    e1, e2 = _doc(folder), _doc(folder)
+    owned = _doc(folder, organization_id=_org())
+    with engine.connect() as c:
+        eligible, already_owned, reject = _folder_documents(c, folder)
+    assert set(eligible) == {e1, e2}
+    assert already_owned == [owned]
+    assert reject == []
+
+
+def test_review_context_lists_docs_with_view_actions_and_no_mutation():
+    # Mirrors exactly what the review route builds (helpers), avoiding a full template render.
+    from app.routes.admin import _documents_detail, _folder_documents
+    folder = f"Folder-{_TAG}-RV2"
+    e = _doc(folder)
+    owned = _doc(folder, organization_id=_org())
+    with engine.connect() as c:
+        eligible_ids, owned_ids, reject_ids = _folder_documents(c, folder)
+        eligible_docs = _documents_detail(c, eligible_ids)
+        already_owned_docs = _documents_detail(c, owned_ids)
+    assert [d["id"] for d in eligible_docs] == [e]
+    assert [d["id"] for d in already_owned_docs] == [owned]
+    assert eligible_docs[0]["view_url"] == f"/documents/{e}/download?inline=1"     # authorized View
+    assert eligible_docs[0]["download_url"] == f"/documents/{e}/download"
+    assert _owner(e) == (None, None, None)                                          # read-only
+
+
+def test_review_route_registered_and_gated():
+    from app.main import app
+    match = [r for r in app.routes if getattr(r, "path", None) == "/admin/documents/unassigned/review"]
+    assert match and "GET" in match[0].methods
+
+
+def test_confirm_and_review_templates_list_all_categories():
+    from pathlib import Path
+    rev = Path("app/templates/admin/unassigned_review.html").read_text(encoding="utf-8")
+    assert "ELIGIBLE UNASSIGNED" in rev and "ALREADY OWNED" in rev and "PERMANENT REJECT" in rev
+    assert "View ↗" in rev and "Preview →" in rev
+    conf = Path("app/templates/admin/unassigned_confirm.html").read_text(encoding="utf-8")
+    assert "PROPOSED OWNER" in conf

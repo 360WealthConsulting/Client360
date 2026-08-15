@@ -36,6 +36,8 @@
   <div class="detail-row"><strong>{{ u.folder }}</strong>
     <span class="subtle">{{ u.docs_in_folder }} in folder · <strong>{{ u.eligible }} eligible unassigned</strong> · {{ u.already_owned }} already owned{% if u.reject %} · {{ u.reject }} protected{% endif %}</span></div>
   {% if u.sample_documents %}<p class="subtle" style="margin:4px 0">Eligible samples: {% for s in u.sample_documents %}{{ s }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  <p style="margin:4px 0"><a class="btn sm" href="/admin/documents/unassigned/review?folder={{ u.folder | urlencode }}">Review documents →</a>
+    <span class="subtle">inspect the actual files before deciding</span></p>
 
   {% if u.candidates %}
   <div style="margin:6px 0">
@@ -79,7 +81,8 @@
 <article class="card" style="padding:12px 16px; margin-bottom:8px; border-left:4px solid var(--muted, #6b7280)">
   <div class="detail-row"><strong>{{ u.folder }}</strong>
     <span class="subtle">{{ u.docs_in_folder }} in folder · <strong>0 eligible unassigned</strong> · {{ u.already_owned }} already owned{% if u.reject %} · {{ u.reject }} protected{% endif %} · 0 to assign</span></div>
-  <div class="subtle">No eligible unassigned documents — this folder is not actionable.</div>
+  <div class="subtle">No eligible unassigned documents — this folder is not actionable.
+    <a href="/admin/documents/unassigned/review?folder={{ u.folder | urlencode }}">Review documents →</a></div>
 </article>
 {% endfor %}
 {% endif %}

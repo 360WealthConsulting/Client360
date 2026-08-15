@@ -241,6 +241,53 @@ def unassigned_documents(request: Request, q: str = "",
                  "err": request.query_params.get("err")})
 
 
+def _folder_documents(conn, folder):
+    """Document ids for a folder, split by the SAME rule the resolve service uses:
+    eligible (all three ownership fields NULL, not reject) / already-owned / permanent-reject."""
+    from app.db import documents
+    from app.importers.taxdome_drive import taxdome_filter
+    from app.services.households import PERMANENT_REJECT_DOCUMENT_IDS
+    fc = documents.c.tags["taxdome_folder"].astext
+    rejects = tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))
+    base = and_(taxdome_filter(documents), fc == folder)
+    not_reject = documents.c.id.notin_(rejects)
+    eligible = sorted(conn.scalars(select(documents.c.id).where(and_(
+        base, not_reject, documents.c.person_id.is_(None), documents.c.household_id.is_(None),
+        documents.c.organization_id.is_(None)))))
+    owned = sorted(conn.scalars(select(documents.c.id).where(and_(
+        base, not_reject, or_(documents.c.person_id.isnot(None), documents.c.household_id.isnot(None),
+                              documents.c.organization_id.isnot(None))))))
+    reject = sorted(conn.scalars(select(documents.c.id).where(and_(base, documents.c.id.in_(rejects)))))
+    return eligible, owned, reject
+
+
+@router.get("/documents/unassigned/review")
+def review_unassigned_folder(request: Request, folder: str,
+                             principal: Principal = Depends(require_capability("client.write"))):
+    """Inspect every document in a source folder BEFORE choosing an owner. Read-only: lists eligible,
+    already-owned, and permanent-reject documents (each with an authorized View/Open link) plus the
+    candidate people, so an administrator can open the actual files and decide ownership. Opening/View
+    never mutates; assignment happens only via preview -> explicit Confirm."""
+    from app.importers.taxdome_drive import suggest_people
+    with engine.connect() as conn:
+        eligible_ids, owned_ids, reject_ids = _folder_documents(conn, folder)
+        eligible_docs = _documents_detail(conn, eligible_ids)
+        already_owned_docs = _documents_detail(conn, owned_ids)
+        excluded_docs = _documents_detail(conn, reject_ids)
+        candidates = []
+        try:
+            for s in (suggest_people(conn, folder) or [])[:6]:
+                disp = _person_display(conn, s.get("id")) if isinstance(s, dict) else None
+                if disp:
+                    candidates.append(disp)
+        except Exception:  # noqa: BLE001
+            candidates = []
+    return templates.TemplateResponse(request=request, name="admin/unassigned_review.html",
+        context={"principal": principal, "folder": folder, "eligible_docs": eligible_docs,
+                 "already_owned_docs": already_owned_docs, "excluded_docs": excluded_docs,
+                 "candidates": candidates})
+
+
 @router.post("/documents/unassigned/resolve")
 def resolve_unassigned_folder(
         request: Request, folder: str = Form(...), entity_type: str = Form(...),
