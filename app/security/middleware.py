@@ -161,16 +161,34 @@ def _login_redirect(request):
     return RedirectResponse(f"/auth/login?next={quote(target, safe='')}", 303)
 
 
+# Capability that gates the admin manual-resolution workflow (/admin/documents/unassigned). A holder
+# may READ a genuinely unassigned document (all ownership fields NULL) in order to inspect it and
+# determine its owner — resolving the circular case where an unowned document could never be viewed
+# and therefore never resolved. See _document_in_scope.
+ADMIN_DOC_REVIEW_CAPABILITY = "client.write"
+
+
 def _document_in_scope(connection, principal, document_id, *, write):
     """A document is in the principal's record scope if ANY of its canonical owners — person, household,
     OR organization — is in scope (``record.read_all`` bypasses via ``has_record_scope``). Household- and
     organization-owned documents have ``person_id`` NULL; checking only person_id previously denied every
-    such document (including those reachable from the owning household workspace)."""
+    such document (including those reachable from the owning household workspace).
+
+    Narrow admin-review exception: a holder of ``ADMIN_DOC_REVIEW_CAPABILITY`` may READ a document whose
+    ownership is entirely NULL (person_id AND household_id AND organization_id all NULL) so they can
+    inspect it in the admin manual-resolution workflow. Read-only (never for a write) and scoped strictly
+    to genuinely-unassigned documents; already-owned documents fall through to the normal record-scope
+    rules. This grants viewing only — it never assigns ownership (assignment is gated separately)."""
     owner = connection.execute(
         select(documents.c.person_id, documents.c.household_id, documents.c.organization_id)
         .where(documents.c.id == document_id)).mappings().first()
     if owner is None:
         return False
+    if (not write
+            and owner["person_id"] is None and owner["household_id"] is None
+            and owner["organization_id"] is None
+            and principal.can(ADMIN_DOC_REVIEW_CAPABILITY)):
+        return True
     return any(
         entity_id is not None and has_record_scope(
             connection, principal, entity_type, entity_id,

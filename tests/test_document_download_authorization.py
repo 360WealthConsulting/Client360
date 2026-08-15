@@ -141,3 +141,35 @@ def test_unowned_document_denied_even_for_read_all():
 
 def test_missing_document_denied():
     assert _in_scope(_principal(_user(), frozenset({"record.read_all"})), 999_000_777) is False
+
+
+# --- admin manual-resolution review: narrow read-only exception for UNASSIGNED documents ------
+
+def test_admin_can_view_genuinely_unassigned_document_for_review():
+    doc = _doc()  # all three ownership fields NULL
+    admin = _principal(_user(), frozenset({"client.write"}))   # gates /admin/documents/unassigned
+    assert _in_scope(admin, doc) is True                        # can inspect to determine owner
+
+
+def test_non_admin_cannot_view_unassigned_document():
+    doc = _doc()
+    assert _in_scope(_principal(_user()), doc) is False         # no client.write -> normal denial
+
+
+def test_read_all_alone_does_not_grant_the_admin_review_exception():
+    doc = _doc()
+    assert _in_scope(_principal(_user(), frozenset({"record.read_all"})), doc) is False
+
+
+def test_admin_review_exception_is_read_only_not_write():
+    doc = _doc()
+    admin = _principal(_user(), frozenset({"client.write"}))
+    assert _in_scope(admin, doc, write=True) is False           # exception never grants write
+
+
+def test_admin_review_exception_does_not_apply_to_owned_documents():
+    # A client.write holder with NO record scope for the owner is still denied an ALREADY-OWNED doc.
+    hid = _household()
+    doc = _doc(household_id=hid)
+    admin = _principal(_user(), frozenset({"client.write"}))
+    assert _in_scope(admin, doc) is False                       # normal record-scope rules apply
