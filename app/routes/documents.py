@@ -108,8 +108,18 @@ async def upload_person_document(
     )
 
 
+def _is_inline_viewable(content_type: str | None, name: str | None) -> bool:
+    """Types safe to render inline in the browser (PDF / image / plain text). Everything else
+    downloads. Falls back to the filename extension when no content_type is recorded."""
+    ct = (content_type or "").lower()
+    if ct == "application/pdf" or ct.startswith("image/") or ct == "text/plain":
+        return True
+    ext = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
+    return ext in {"pdf", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "txt"}
+
+
 @router.get("/documents/{document_id}/download")
-def download_document(document_id: int, request: Request):
+def download_document(document_id: int, request: Request, inline: bool = False):
     document = get_document(document_id)
 
     if document is None or document["archived"]:
@@ -129,10 +139,16 @@ def download_document(document_id: int, request: Request):
         return render_error(request, 404,
                             detail="The stored copy of this document could not be found on the server.")
 
+    # ?inline=1 renders viewable types (PDF/image/text) in the browser so an operator can inspect a
+    # document without downloading it. Authorization is unchanged (enforced by the middleware on this
+    # path). Non-viewable types always download.
+    disposition = "inline" if (inline and _is_inline_viewable(
+        document["content_type"], document["original_name"])) else "attachment"
     return FileResponse(
         path=path,
         media_type=document["content_type"] or "application/octet-stream",
         filename=document["original_name"],
+        content_disposition_type=disposition,
     )
 
 

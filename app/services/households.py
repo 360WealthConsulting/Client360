@@ -262,45 +262,51 @@ def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None, 
     if household_id is None and person_id is None and organization_id is None:
         raise ValueError("a person_id, household_id, or organization_id is required")
     from app.importers import taxdome_drive as td
-    base = and_(td.taxdome_filter(documents),
-                documents.c.tags["taxdome_folder"].astext == folder_name,
-                documents.c.id.notin_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))))
+    folder_docs = and_(td.taxdome_filter(documents),
+                       documents.c.tags["taxdome_folder"].astext == folder_name)
+    non_reject = and_(folder_docs,
+                      documents.c.id.notin_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))))
+    # A document is eligible ONLY when it has NO ownership at all. Folder resolution must NEVER add a
+    # second ownership dimension to a document already owned by a person, household, or organization.
+    all_null = and_(non_reject,
+                    documents.c.person_id.is_(None),
+                    documents.c.household_id.is_(None),
+                    documents.c.organization_id.is_(None))
     assignments = {"person_id": person_id, "household_id": household_id, "organization_id": organization_id}
 
     runner = engine.connect if dry_run else engine.begin
     with runner() as conn:
-        # Which folder documents WOULD be a permanent reject (for transparency; never assigned).
-        rejects_in_folder = list(conn.scalars(
+        # Permanent-reject documents in the folder (never assigned; surfaced for transparency).
+        rejects_in_folder = sorted(conn.scalars(
             select(documents.c.id).where(and_(
-                td.taxdome_filter(documents),
-                documents.c.tags["taxdome_folder"].astext == folder_name,
-                documents.c.id.in_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS)))))))
+                folder_docs, documents.c.id.in_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS)))))))
+        # Eligible = ALL THREE ownership fields NULL. Already-owned = any field set (never changed).
+        eligible_ids = sorted(conn.scalars(select(documents.c.id).where(all_null)))
+        already_owned_ids = sorted(conn.scalars(select(documents.c.id).where(and_(
+            non_reject, or_(documents.c.person_id.isnot(None),
+                            documents.c.household_id.isnot(None),
+                            documents.c.organization_id.isnot(None))))))
 
-        affected_by_field, all_affected = {}, set()
-        for field, value in assignments.items():
-            if value is None:
-                continue
-            col = getattr(documents.c, field)
-            ids = list(conn.scalars(select(documents.c.id).where(and_(base, col.is_(None)))))
-            affected_by_field[field] = ids
-            all_affected.update(ids)
-            if not dry_run and ids:
-                conn.execute(documents.update()
-                             .where(documents.c.id.in_(ids)).values(**{field: value}))
+        if not dry_run and eligible_ids:
+            for field, value in assignments.items():
+                if value is not None:
+                    conn.execute(documents.update()
+                                 .where(documents.c.id.in_(eligible_ids)).values(**{field: value}))
 
         label = _entity_label(conn, person_id=person_id, household_id=household_id,
                               organization_id=organization_id)
-        affected_ids = sorted(all_affected)
+        affected_by_field = {f: eligible_ids for f, v in assignments.items() if v is not None}
         result = {
             "folder": folder_name, "dry_run": dry_run,
             "destination": label,
-            "documents_affected": len(affected_ids),
-            "documents_updated": len(affected_ids),  # backward-compatible alias for existing callers
-            "affected_document_ids": affected_ids,
+            "documents_affected": len(eligible_ids),
+            "documents_updated": len(eligible_ids),  # backward-compatible alias for existing callers
+            "affected_document_ids": eligible_ids,
+            "already_owned_document_ids": already_owned_ids,
             "affected_by_field": affected_by_field,
-            "excluded_permanent_rejects": sorted(rejects_in_folder),
+            "excluded_permanent_rejects": rejects_in_folder,
         }
-        if not dry_run and actor_user_id is not None and affected_ids:
+        if not dry_run and actor_user_id is not None and eligible_ids:
             from app.security.audit import write_audit_event
             write_audit_event(
                 action="document.ownership_resolved", entity_type="taxdome_folder",
@@ -309,11 +315,12 @@ def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None, 
                     "folder": folder_name, "destination": label,
                     "person_id": person_id, "household_id": household_id,
                     "organization_id": organization_id,
-                    "documents_updated": len(affected_ids),
-                    "affected_document_ids": affected_ids[:500],
+                    "documents_updated": len(eligible_ids),
+                    "affected_document_ids": eligible_ids[:500],
                     "affected_by_field": {k: v[:500] for k, v in affected_by_field.items()},
-                    "previous_ownership_state": "null (NULL-only fill; existing links untouched)",
-                    "excluded_permanent_rejects": sorted(rejects_in_folder),
+                    "previous_ownership_state": "all NULL (only fully-unowned documents are eligible)",
+                    "skipped_already_owned_document_ids": already_owned_ids[:500],
+                    "excluded_permanent_rejects": rejects_in_folder,
                 })
     return result
 

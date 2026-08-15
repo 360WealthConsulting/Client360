@@ -39,8 +39,8 @@
 </article>
 
 {% if affected_docs %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px">
-  <div class="subtle" style="margin-bottom:6px">These {{ affected_docs|length }} document(s) will be assigned (open each to inspect before confirming):</div>
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
+  <div style="color:var(--ok, #15803d); font-weight:600; margin-bottom:6px">ELIGIBLE UNASSIGNED DOCUMENTS — will be assigned ({{ affected_docs|length }})</div>
   <div style="overflow-x:auto">
   <table class="table">
     <thead><tr><th>ID</th><th>Filename</th><th>Type / Year</th><th>Source folder</th><th>Current owner</th><th></th></tr></thead>
@@ -52,7 +52,31 @@
         <td class="subtle">{{ d.doc_type or "—" }}{% if d.doc_subtype %} / {{ d.doc_subtype }}{% endif %}{% if d.year %} · {{ d.year }}{% endif %}</td>
         <td class="subtle">{{ d.source_folder or d.source_path or "—" }}</td>
         <td class="subtle">{{ d.current_owner }}</td>
-        <td><a class="btn sm secondary" href="{{ d.download_url }}" target="_blank" rel="noopener">Open ↗</a></td>
+        <td><a class="btn sm secondary" href="{{ d.view_url }}" target="_blank" rel="noopener">View ↗</a>
+            <a class="btn sm secondary" href="{{ d.download_url }}">Download</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</article>
+{% endif %}
+
+{% if already_owned_docs %}
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
+  <div style="font-weight:600">ALREADY OWNED — WILL NOT BE CHANGED ({{ already_owned_docs|length }})</div>
+  <div class="subtle" style="margin-bottom:6px">These documents already have an owner, so folder resolution leaves them untouched.</div>
+  <div style="overflow-x:auto">
+  <table class="table">
+    <thead><tr><th>ID</th><th>Filename</th><th>Current owner</th><th></th></tr></thead>
+    <tbody>
+    {% for d in already_owned_docs %}
+      <tr>
+        <td class="subtle">{{ d.id }}</td>
+        <td>{{ d.name }}</td>
+        <td class="subtle">{{ d.current_owner }}</td>
+        <td><a class="btn sm secondary" href="{{ d.view_url }}" target="_blank" rel="noopener">View ↗</a>
+            <a class="btn sm secondary" href="{{ d.download_url }}">Download</a></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -63,10 +87,11 @@
 
 {% if excluded_docs %}
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
-  <div style="color:var(--warn, #b45309); font-weight:600">EXCLUDED — WILL NOT BE ASSIGNED (permanent exceptions)</div>
+  <div style="color:var(--warn, #b45309); font-weight:600">PERMANENT REJECTS — WILL NOT BE CHANGED (EXCLUDED — WILL NOT BE ASSIGNED)</div>
   {% for d in excluded_docs %}
     <div class="detail-row"><span>#{{ d.id }} · {{ d.name }}</span>
-      <a class="btn sm secondary" href="{{ d.download_url }}" target="_blank" rel="noopener">Open ↗</a></div>
+      <span><a class="btn sm secondary" href="{{ d.view_url }}" target="_blank" rel="noopener">View ↗</a>
+      <a class="btn sm secondary" href="{{ d.download_url }}">Download</a></span></div>
   {% endfor %}
 </article>
 {% endif %}

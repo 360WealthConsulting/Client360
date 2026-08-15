@@ -95,6 +95,55 @@ def test_resolve_assigns_all_null_docs_in_folder_to_person():
     assert _owner(d1)[0] == pid and _owner(d2)[0] == pid
 
 
+# --- CRITICAL: eligibility requires ALL THREE ownership fields NULL ----------------------------
+
+def test_organization_owned_doc_cannot_gain_person_id():
+    folder = f"Folder-{_TAG}-ORG"
+    org = _org()
+    owned = _doc(folder, organization_id=org)   # already owned by an organization (the Affordable Measures bug)
+    free = _doc(folder)
+    pid = _person()
+    res = hh_service.resolve_folder_ownership(folder, person_id=pid, actor_user_id=1, request_id="t")
+    assert res["affected_document_ids"] == [free]                 # only the all-NULL doc
+    assert owned in res["already_owned_document_ids"]
+    assert _owner(owned) == (None, None, org)                     # unchanged: no person_id added
+    assert _owner(free)[0] == pid
+
+
+def test_person_owned_doc_cannot_gain_household_or_organization():
+    folder = f"Folder-{_TAG}-PER"
+    p0 = _person()
+    owned = _doc(folder, person_id=p0)
+    hid, org = _household(), _org()
+    r1 = hh_service.resolve_folder_ownership(folder, household_id=hid, actor_user_id=1, request_id="t")
+    assert owned not in r1["affected_document_ids"] and owned in r1["already_owned_document_ids"]
+    r2 = hh_service.resolve_folder_ownership(folder, organization_id=org, actor_user_id=1, request_id="t")
+    assert owned not in r2["affected_document_ids"]
+    assert _owner(owned) == (p0, None, None)                     # untouched
+
+
+def test_household_owned_doc_cannot_gain_person_or_organization():
+    folder = f"Folder-{_TAG}-HH"
+    h0 = _household()
+    owned = _doc(folder, household_id=h0)
+    pid, org = _person(), _org()
+    hh_service.resolve_folder_ownership(folder, person_id=pid, actor_user_id=1, request_id="t")
+    hh_service.resolve_folder_ownership(folder, organization_id=org, actor_user_id=1, request_id="t")
+    assert _owner(owned) == (None, h0, None)                     # untouched
+
+
+def test_only_all_null_docs_are_eligible_mixed_folder():
+    folder = f"Folder-{_TAG}-MIX"
+    free1, free2 = _doc(folder), _doc(folder)
+    owned_p = _doc(folder, person_id=_person())
+    owned_o = _doc(folder, organization_id=_org())
+    pid = _person()
+    res = hh_service.resolve_folder_ownership(folder, person_id=pid, dry_run=True)
+    assert set(res["affected_document_ids"]) == {free1, free2}   # dry-run uses the same all-NULL predicate
+    assert set(res["already_owned_document_ids"]) == {owned_p, owned_o}
+    assert res["documents_affected"] == 2
+
+
 def test_resolve_does_not_overwrite_existing_ownership():
     folder = f"Folder-{_TAG}-B"
     keep = _person()
@@ -225,3 +274,24 @@ def test_destination_display_variants():
         assert h["kind"] == "household" and h["link"] == f"/client/household/{hid}"
         o = _destination_display(c, "organization", eid)
         assert o["kind"] == "organization" and o["link"] == f"/relationship-entities/{eid}"
+
+
+def test_documents_detail_shows_owner_name_and_view_link():
+    from app.routes.admin import _documents_detail
+    folder = f"Folder-{_TAG}-OWN"
+    org = _org()
+    d = _doc(folder, organization_id=org)
+    with engine.connect() as c:
+        row = _documents_detail(c, [d])[0]
+    assert row["current_owner_type"] == "organization" and row["current_owner_id"] == org
+    assert row["view_url"] == f"/documents/{d}/download?inline=1"
+
+
+# --- inline document view -----------------------------------------------------------------------
+
+def test_inline_viewable_types():
+    from app.routes.documents import _is_inline_viewable
+    assert _is_inline_viewable("application/pdf", "x.pdf") is True
+    assert _is_inline_viewable("image/png", "x.png") is True
+    assert _is_inline_viewable(None, "scan.jpg") is True          # extension fallback
+    assert _is_inline_viewable("application/vnd.ms-excel", "x.xlsx") is False

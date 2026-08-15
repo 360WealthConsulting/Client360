@@ -94,19 +94,28 @@ def _destination_display(conn, entity_type, entity_id):
     return {"kind": entity_type, "id": entity_id, "name": None}
 
 
-def _owner_label(row):
+def _owner_detail(conn, row):
+    """Current-owner type/id/name for a document row (name resolved when available)."""
+    from app.db import households, people, relationship_entities
     if row["person_id"] is not None:
-        return f"person #{row['person_id']}"
+        n = conn.execute(select(people.c.full_name).where(people.c.id == row["person_id"])).scalar()
+        return {"type": "person", "id": row["person_id"], "name": n,
+                "label": f"person #{row['person_id']}" + (f" — {n}" if n else "")}
     if row["household_id"] is not None:
-        return f"household #{row['household_id']}"
+        n = conn.execute(select(households.c.name).where(households.c.id == row["household_id"])).scalar()
+        return {"type": "household", "id": row["household_id"], "name": n,
+                "label": f"household #{row['household_id']}" + (f" — {n}" if n else "")}
     if row["organization_id"] is not None:
-        return f"organization #{row['organization_id']}"
-    return "Unassigned (NULL)"
+        n = conn.execute(select(relationship_entities.c.name)
+                         .where(relationship_entities.c.id == row["organization_id"])).scalar()
+        return {"type": "organization", "id": row["organization_id"], "name": n,
+                "label": f"organization #{row['organization_id']}" + (f" — {n}" if n else "")}
+    return {"type": None, "id": None, "name": None, "label": "Unassigned (NULL)"}
 
 
 def _documents_detail(conn, doc_ids):
     """Per-document detail for the confirmation page: id, filename, source folder/path, type/year,
-    current owner, and an authorized Open link. Read-only."""
+    current owner (type/id/name), an inline View link and a Download link. Read-only."""
     from app.db import documents
     if not doc_ids:
         return []
@@ -118,12 +127,15 @@ def _documents_detail(conn, doc_ids):
     out = []
     for r in rows:
         tags = r["tags"] or {}
+        owner = _owner_detail(conn, r)
         out.append({
             "id": r["id"], "name": r["original_name"],
             "source_folder": tags.get("taxdome_folder"), "source_path": r["storage_path"],
             "doc_type": r["category"], "doc_subtype": r["subcategory"],
             "year": tags.get("tax_year") or tags.get("year"),
-            "current_owner": _owner_label(r),
+            "current_owner": owner["label"], "current_owner_type": owner["type"],
+            "current_owner_id": owner["id"], "current_owner_name": owner["name"],
+            "view_url": f"/documents/{r['id']}/download?inline=1",
             "download_url": f"/documents/{r['id']}/download",
         })
     return out
@@ -222,11 +234,13 @@ def resolve_unassigned_folder(
             with engine.connect() as conn:
                 destination = _destination_display(conn, entity_type, entity_id)
                 affected_docs = _documents_detail(conn, preview["affected_document_ids"])
+                already_owned_docs = _documents_detail(conn, preview.get("already_owned_document_ids", []))
                 excluded_docs = _documents_detail(conn, preview["excluded_permanent_rejects"])
             return templates.TemplateResponse(request=request, name="admin/unassigned_confirm.html",
                 context={"principal": principal, "folder": folder, "entity_type": entity_type,
                          "entity_id": entity_id, "preview": preview, "destination": destination,
-                         "affected_docs": affected_docs, "excluded_docs": excluded_docs})
+                         "affected_docs": affected_docs, "already_owned_docs": already_owned_docs,
+                         "excluded_docs": excluded_docs})
         result = resolve_folder_ownership(folder, actor_user_id=principal.user_id, request_id=rid, **kwargs)
     except ValueError as exc:
         return render_error(request, 400, detail=str(exc))
