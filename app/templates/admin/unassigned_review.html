@@ -31,20 +31,44 @@
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
   <div style="color:var(--ok, #15803d); font-weight:600; margin-bottom:6px">ELIGIBLE UNASSIGNED — resolve individually ({{ eligible_docs|length }})</div>
   {% if eligible_docs %}
-    {% if candidates %}
-    <p class="subtle" style="margin:0 0 8px">Suggested owners (IDs to reuse below):
-      {% for c in candidates %}{{ c.name }} <strong>#{{ c.id }}</strong>{% if c.email %} ({{ c.email }}){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
-    {% endif %}
+    {% macro cand_form(doc_id, etype, eid, label) %}
+      <form method="post" action="/admin/documents/unassigned/resolve-document" style="display:inline-block; margin:2px 4px 2px 0">
+        <input type="hidden" name="document_id" value="{{ doc_id }}">
+        <input type="hidden" name="folder" value="{{ folder }}">
+        <input type="hidden" name="entity_type" value="{{ etype }}">
+        <input type="hidden" name="entity_id" value="{{ eid }}">
+        <button class="btn sm" type="submit">{{ label }}</button>
+      </form>
+    {% endmacro %}
     {% for d in eligible_docs %}
-    <div class="card" style="padding:10px 12px; margin-bottom:8px; background:var(--bg, #fafafa)">
+    <div class="card" style="padding:10px 12px; margin-bottom:10px; background:var(--bg, #fafafa)">
       <div class="detail-row"><span><strong>#{{ d.id }}</strong> · {{ d.name }}</span>
         <span class="subtle">{{ d.doc_type or "—" }}{% if d.year %} · {{ d.year }}{% endif %} · {{ d.current_owner }}
           <a class="btn sm secondary" href="{{ d.view_url }}" target="_blank" rel="noopener">View ↗</a>
           <a class="btn sm secondary" href="{{ d.download_url }}">Download</a></span></div>
+
+      {% if candidates or household_candidates or org_candidates %}
+      <div class="subtle" style="margin:6px 0 2px">Suggested owners for THIS document (Preview only — nothing changes until you confirm):</div>
+      {% for c in candidates %}
+        <div style="margin:2px 0">
+          {{ cand_form(d.id, "person", c.id, "Preview → Person: " ~ c.name ~ " (#" ~ c.id ~ ")") }}
+          <span class="subtle">{{ c.designation }}{% if c.email %} · {{ c.email }}{% endif %}{% if c.phone %} · {{ c.phone }}{% endif %}{% if c.household_name %} · Household: {{ c.household_name }} (#{{ c.household_id }}){% endif %}
+            <a href="{{ c.link }}" target="_blank" rel="noopener">record ↗</a></span>
+        </div>
+      {% endfor %}
+      {% for h in household_candidates %}
+        <div style="margin:2px 0">{{ cand_form(d.id, "household", h.id, "Preview → Household: " ~ h.name ~ " (#" ~ h.id ~ ")") }}</div>
+      {% endfor %}
+      {% for o in org_candidates %}
+        <div style="margin:2px 0">{{ cand_form(d.id, "organization", o.id, "Preview → Business: " ~ o.name ~ " (#" ~ o.id ~ ")") }}
+          <span class="subtle">{{ o.entity_type }}</span></div>
+      {% endfor %}
+      {% endif %}
+
       <form method="post" action="/admin/documents/unassigned/resolve-document" class="row" style="gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center">
         <input type="hidden" name="document_id" value="{{ d.id }}">
         <input type="hidden" name="folder" value="{{ folder }}">
-        <label class="subtle">Assign THIS document to
+        <label class="subtle">Choose another owner:
           <select name="entity_type" class="input">
             <option value="person">Person</option>
             <option value="household">Household</option>
@@ -52,7 +76,7 @@
           </select>
         </label>
         <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:110px" required></label>
-        <button class="btn sm" type="submit">Preview this document →</button>
+        <button class="btn sm secondary" type="submit">Preview this document →</button>
       </form>
     </div>
     {% endfor %}

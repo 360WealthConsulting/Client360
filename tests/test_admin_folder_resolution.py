@@ -313,6 +313,56 @@ def test_resolve_document_route_registered_and_gated():
     assert resolve_unassigned_document
 
 
+# --- per-document suggested-owner buttons (UI) ------------------------------------------------
+
+def test_folder_candidates_match_household_and_org_by_name():
+    from app.routes.admin import _folder_candidates
+    uniq = f"Zeta Holdings {_TAG}"          # used verbatim as the folder token
+    with engine.begin() as c:
+        eid = c.execute(relationship_entities.insert().values(entity_type="business", name=uniq, active=True)
+                        .returning(relationship_entities.c.id)).scalar_one()
+        hid = c.execute(households.insert().values(name=uniq).returning(households.c.id)).scalar_one()
+    _C["relationship_entities"].append(eid)
+    _C["households"].append(hid)
+    with engine.connect() as conn:
+        _people, hh_c, org_c = _folder_candidates(conn, uniq)
+    assert any(h["id"] == hid for h in hh_c)      # household name == folder token
+    assert any(o["id"] == eid for o in org_c)     # business name == folder token
+
+
+def test_review_template_renders_per_document_candidate_buttons():
+    from app.routes.admin import templates
+    p = Principal(1, "a@e.com", "Admin", frozenset({"client.write"}))
+    docs = [
+        {"id": 457, "name": "a.pdf", "doc_type": None, "year": None, "current_owner": "Unassigned (NULL)",
+         "view_url": "/documents/457/download?inline=1", "download_url": "/documents/457/download"},
+        {"id": 458, "name": "b.pdf", "doc_type": None, "year": None, "current_owner": "Unassigned (NULL)",
+         "view_url": "/documents/458/download?inline=1", "download_url": "/documents/458/download"},
+    ]
+    cands = [{"id": 7430, "name": "MARY HARDY", "designation": "Person", "email": "m@e.com",
+              "phone": "555", "household_id": None, "household_name": None, "link": "/client/7430"}]
+    hh = [{"id": 93, "name": "Hardy Household"}]
+    org = [{"id": 129, "name": "Affordable Measures", "entity_type": "business"}]
+    html = templates.get_template("admin/unassigned_review.html").render(
+        request=None, principal=p, folder="Adrianna Hardy", eligible_docs=docs,
+        already_owned_docs=[], excluded_docs=[], candidates=cands,
+        household_candidates=hh, org_candidates=org)
+    # the person candidate button is repeated PER eligible document (2 docs), separate from the bulk one
+    assert html.count("Preview → Person: MARY HARDY (#7430)") == 2
+    assert "Preview all → MARY HARDY (#7430)" in html      # bulk section still lists it once
+    assert "Preview → Household: Hardy Household (#93)" in html
+    assert "Preview → Business: Affordable Measures (#129)" in html
+    # each candidate button submits the correct per-document id + email context to distinguish
+    assert 'name="document_id" value="457"' in html and 'name="document_id" value="458"' in html
+    assert "m@e.com" in html
+    # manual fallback remains; buttons post to the per-document (not folder) route
+    assert "Choose another owner" in html
+    assert html.count('action="/admin/documents/unassigned/resolve-document"') >= 4
+    # bulk assignment remains a separate section using the folder route
+    assert "assign ALL remaining eligible" in html
+    assert 'action="/admin/documents/unassigned/resolve"' in html
+
+
 # --- confirmation-page presentation enrichment ------------------------------------------------
 
 def _business_person(name):

@@ -257,6 +257,48 @@ def unassigned_documents(request: Request, q: str = "",
                  "err": request.query_params.get("err")})
 
 
+def _folder_candidates(conn, folder):
+    """Suggested owners for a folder, for per-document actions: canonical people (engine suggestions,
+    enriched with distinguishing info) plus households and businesses/orgs whose name matches the
+    top-level folder token. Suggestions only — never assign. Returns (people, households, orgs)."""
+    import re as _re
+
+    from app.db import households, relationship_entities
+    from app.importers.taxdome_drive import suggest_people
+
+    def _norm(s):
+        return _re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+    people_c = []
+    try:
+        for s in (suggest_people(conn, folder) or [])[:6]:
+            disp = _person_display(conn, s.get("id")) if isinstance(s, dict) else None
+            if disp:
+                people_c.append(disp)
+    except Exception:  # noqa: BLE001
+        people_c = []
+
+    # Top-level TaxDome client folder token (drop a leading TaxDome root; ignore child paths).
+    segs = [s for s in _re.split(r"[/\\]", folder or "") if s.strip()]
+    if segs and _re.sub(r"[^a-z0-9]+", "", segs[0].lower()) in ("taxdome", "taxdomedrive"):
+        segs = segs[1:]
+    top = segs[0].strip() if segs else ""
+    ntop = _norm(top)
+    hh_c, org_c = [], []
+    if top:
+        like = f"%{top.strip()}%"
+        for r in conn.execute(select(households.c.id, households.c.name)
+                              .where(households.c.name.ilike(like)).limit(25)).mappings():
+            if _norm(r["name"]) == ntop:
+                hh_c.append({"id": r["id"], "name": r["name"]})
+        for e in conn.execute(select(relationship_entities.c.id, relationship_entities.c.name,
+                                     relationship_entities.c.entity_type)
+                              .where(relationship_entities.c.name.ilike(like)).limit(25)).mappings():
+            if _norm(e["name"]) == ntop:
+                org_c.append({"id": e["id"], "name": e["name"], "entity_type": e["entity_type"]})
+    return people_c, hh_c[:5], org_c[:5]
+
+
 def _folder_documents(conn, folder):
     """Document ids for a folder, split by the SAME rule the resolve service uses:
     eligible (all three ownership fields NULL, not reject) / already-owned / permanent-reject."""
@@ -284,24 +326,17 @@ def review_unassigned_folder(request: Request, folder: str,
     already-owned, and permanent-reject documents (each with an authorized View/Open link) plus the
     candidate people, so an administrator can open the actual files and decide ownership. Opening/View
     never mutates; assignment happens only via preview -> explicit Confirm."""
-    from app.importers.taxdome_drive import suggest_people
     with engine.connect() as conn:
         eligible_ids, owned_ids, reject_ids = _folder_documents(conn, folder)
         eligible_docs = _documents_detail(conn, eligible_ids)
         already_owned_docs = _documents_detail(conn, owned_ids)
         excluded_docs = _documents_detail(conn, reject_ids)
-        candidates = []
-        try:
-            for s in (suggest_people(conn, folder) or [])[:6]:
-                disp = _person_display(conn, s.get("id")) if isinstance(s, dict) else None
-                if disp:
-                    candidates.append(disp)
-        except Exception:  # noqa: BLE001
-            candidates = []
+        candidates, household_candidates, org_candidates = _folder_candidates(conn, folder)
     return templates.TemplateResponse(request=request, name="admin/unassigned_review.html",
         context={"principal": principal, "folder": folder, "eligible_docs": eligible_docs,
                  "already_owned_docs": already_owned_docs, "excluded_docs": excluded_docs,
-                 "candidates": candidates})
+                 "candidates": candidates, "household_candidates": household_candidates,
+                 "org_candidates": org_candidates})
 
 
 @router.post("/documents/unassigned/resolve")
