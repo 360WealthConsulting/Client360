@@ -72,6 +72,18 @@ def looks_like_person(tok):
     return len(parts) in (2, 3) and all(p.isalpha() for p in parts)
 
 
+def safe_dumps(obj):
+    # ASCII-only JSON so a non-UTF-8 stdout (e.g. Windows cp1252 when piped to Tee-Object) can never
+    # raise UnicodeEncodeError while printing folder evidence. default=str covers sets/Decimals/etc.
+    return json.dumps(obj, ensure_ascii=True, default=str)
+
+
+def aprint(s):
+    # Encoding-proof print: any non-ASCII byte in a folder name / candidate / filename is
+    # backslash-escaped rather than crashing the whole report on a non-UTF-8 console.
+    print(str(s).encode("ascii", "backslashreplace").decode("ascii"))
+
+
 def main():
     with engine.connect() as conn:
         fps = conn.execute(select(dc.id).where(dc.id.in_(sorted(PERMANENT_REJECT)))).scalars().all()
@@ -210,123 +222,134 @@ def main():
 
         ordered = sorted(folders.items(), key=lambda kv: -len(kv[1]["docs"]))[:TOP_N]
 
-        print("entity_type values in relationship_entities: " + str(sorted(etypes)))
-        print("SCHEMA DISCOVERY: email=" + str(sorted(set(disc["email"]))) + " phone="
-              + str(sorted(set(disc["phone"]))) + " alias=" + str(sorted(set(disc["alias"])))
-              + " link=" + str(sorted(set(disc["link"]))))
-        print("TOTAL UNRESOLVED DOCUMENTS: " + str(total_docs) + " | TOTAL UNRESOLVED FOLDERS: "
-              + str(len(folders)) + " | SHOWING TOP " + str(len(ordered)) + " BY DOC COUNT")
+        aprint("entity_type values in relationship_entities: " + str(sorted(etypes)))
+        aprint("SCHEMA DISCOVERY: email=" + str(sorted(set(disc["email"]))) + " phone="
+               + str(sorted(set(disc["phone"]))) + " alias=" + str(sorted(set(disc["alias"])))
+               + " link=" + str(sorted(set(disc["link"]))))
+        aprint("TOTAL UNRESOLVED DOCUMENTS: " + str(total_docs) + " | TOTAL UNRESOLVED FOLDERS: "
+               + str(len(folders)) + " | SHOWING TOP " + str(len(ordered)) + " BY DOC COUNT")
 
         report = []
         for folder, f in ordered:
-            docs = f["docs"]
-            top = folder.split("/", 1)[0].strip()
-            ntop = norm(top)
+            # One bad folder (odd encoding, unexpected evidence shape, etc.) must never terminate the
+            # whole report: collect + render each folder inside try/except, print an explicit ERROR and
+            # continue. Matching rules and output fields are unchanged.
+            try:
+                docs = f["docs"]
+                top = folder.split("/", 1)[0].strip()
+                ntop = norm(top)
 
-            inst_token = (ntop in inst_names) or any(re.search(r"\b" + re.escape(k) + r"\b", ntop) for k in INST_KW)
-            name_pids = list(by_name.get(ntop, []))
-            hh_hits = list(hh_by_name.get(ntop, []))
-            biz_hit = biz_names.get(ntop)
-            engine_sugg = []
-            if suggest_people is not None and folder:
-                try:
-                    engine_sugg = [{"id": x.get("id"), "name": x.get("full_name")}
-                                   for x in (suggest_people(conn, folder) or [])][:5]
-                except Exception:  # noqa: BLE001
-                    engine_sugg = []
-            lk = link_owner.get(ntop) or link_owner.get(norm(folder))
+                inst_token = (ntop in inst_names) or any(re.search(r"\b" + re.escape(k) + r"\b", ntop) for k in INST_KW)
+                name_pids = list(by_name.get(ntop, []))
+                hh_hits = list(hh_by_name.get(ntop, []))
+                biz_hit = biz_names.get(ntop)
+                engine_sugg = []
+                if suggest_people is not None and folder:
+                    try:
+                        engine_sugg = [{"id": x.get("id"), "name": x.get("full_name")}
+                                       for x in (suggest_people(conn, folder) or [])][:5]
+                    except Exception:  # noqa: BLE001
+                        engine_sugg = []
+                lk = link_owner.get(ntop) or link_owner.get(norm(folder))
 
-            folder_emails = sorted(f["emails"])
-            email_pids = set()
-            for ev in folder_emails:
-                email_pids |= email_to_pids.get(ev, set())
-            cand_ids = list(dict.fromkeys(name_pids + [p["id"] for p in engine_sugg if p["id"]] + sorted(email_pids)))
-            candidates = []
-            for pid in cand_ids[:8]:
-                candidates.append({
-                    "person_id": pid,
-                    "name": pid_name.get(pid),
-                    "household_id": pid_hh.get(pid),
-                    "emails": sorted(pid_email.get(pid, set()))[:3],
-                    "phones": sorted(pid_phone.get(pid, set()))[:2],
-                    "match": ("name_exact" if pid in name_pids else "")
-                             + ("+email" if pid in email_pids else "")
-                             + ("+engine" if pid in [p["id"] for p in engine_sugg] else ""),
-                })
+                folder_emails = sorted(f["emails"])
+                email_pids = set()
+                for ev in folder_emails:
+                    email_pids |= email_to_pids.get(ev, set())
+                cand_ids = list(dict.fromkeys(name_pids + [p["id"] for p in engine_sugg if p["id"]] + sorted(email_pids)))
+                candidates = []
+                for pid in cand_ids[:8]:
+                    candidates.append({
+                        "person_id": pid,
+                        "name": pid_name.get(pid),
+                        "household_id": pid_hh.get(pid),
+                        "emails": sorted(pid_email.get(pid, set()))[:3],
+                        "phones": sorted(pid_phone.get(pid, set()))[:2],
+                        "match": ("name_exact" if pid in name_pids else "")
+                                 + ("+email" if pid in email_pids else "")
+                                 + ("+engine" if pid in [p["id"] for p in engine_sugg] else ""),
+                    })
 
-            src_ev = []
-            for d in docs[:5]:
-                for s in src_by_doc.get(d["did"], []):
-                    src_ev.append(s)
+                src_ev = []
+                for d in docs[:5]:
+                    for s in src_by_doc.get(d["did"], []):
+                        src_ev.append(s)
 
-            # descriptive label (NOT a decision)
-            if any(d["did"] in PERMANENT_REJECT for d in docs):
-                label = "INSTITUTION_OR_PAYOR"
-            elif inst_token:
-                label = "INSTITUTION_OR_PAYOR"
-            elif any(k in ntop for k in JUNK_KW) or ntop.isdigit() or ntop == "":
-                label = "TEST_JUNK"
-            elif hh_hits or " and " in (" " + ntop + " ") or "&" in top:
-                label = "HOUSEHOLD"
-            elif biz_hit or any(k in (" " + ntop + " ") for k in BIZ_KW):
-                label = "BUSINESS"
-            elif name_pids or looks_like_person(ntop):
-                label = "PERSON"
-            else:
-                label = "UNKNOWN"
+                # descriptive label (NOT a decision)
+                if any(d["did"] in PERMANENT_REJECT for d in docs):
+                    label = "INSTITUTION_OR_PAYOR"
+                elif inst_token:
+                    label = "INSTITUTION_OR_PAYOR"
+                elif any(k in ntop for k in JUNK_KW) or ntop.isdigit() or ntop == "":
+                    label = "TEST_JUNK"
+                elif hh_hits or " and " in (" " + ntop + " ") or "&" in top:
+                    label = "HOUSEHOLD"
+                elif biz_hit or any(k in (" " + ntop + " ") for k in BIZ_KW):
+                    label = "BUSINESS"
+                elif name_pids or looks_like_person(ntop):
+                    label = "PERSON"
+                else:
+                    label = "UNKNOWN"
 
-            # recommendation vs required human decision
-            if lk is not None:
-                rec = "RECOMMEND " + lk[0] + " id=" + str(lk[1]) + " (explicit source-contact linkage)"
-            elif len(hh_hits) == 1 and label == "HOUSEHOLD":
-                rec = "RECOMMEND household id=" + str(hh_hits[0]) + " '" + str(hh_name.get(hh_hits[0])) + "' (exact household name)"
-            elif len(name_pids) == 1 and (name_pids[0] in email_pids):
-                rec = "RECOMMEND person id=" + str(name_pids[0]) + " '" + str(pid_name.get(name_pids[0])) + "' (unique name + email corroboration)"
-            elif label == "INSTITUTION_OR_PAYOR":
-                rec = "DECISION NEEDED: confirm this folder is a payor/institution, not a client; if truly no client owner -> leave unresolved / mark institution."
-            elif label == "TEST_JUNK":
-                rec = "DECISION NEEDED: confirm test/junk folder; candidate for archive/ignore, not assignment."
-            elif len(name_pids) > 1:
-                rec = "DECISION NEEDED: multiple same-name people (" + str(len(name_pids)) + "); pick using SSN/DOB/address/email — do NOT choose on name alone."
-            elif len(name_pids) == 1:
-                rec = "DECISION NEEDED: unique name '" + str(pid_name.get(name_pids[0])) + "' (person id=" + str(name_pids[0]) + "); confirm this is the client before assigning (no independent corroboration found)."
-            elif engine_sugg:
-                rec = "DECISION NEEDED: only fuzzy name suggestions; verify identity before assigning."
-            else:
-                rec = "DECISION NEEDED: no canonical match; identify who this folder belongs to from the source documents."
+                # recommendation vs required human decision
+                if lk is not None:
+                    rec = "RECOMMEND " + lk[0] + " id=" + str(lk[1]) + " (explicit source-contact linkage)"
+                elif len(hh_hits) == 1 and label == "HOUSEHOLD":
+                    rec = "RECOMMEND household id=" + str(hh_hits[0]) + " '" + str(hh_name.get(hh_hits[0])) + "' (exact household name)"
+                elif len(name_pids) == 1 and (name_pids[0] in email_pids):
+                    rec = "RECOMMEND person id=" + str(name_pids[0]) + " '" + str(pid_name.get(name_pids[0])) + "' (unique name + email corroboration)"
+                elif label == "INSTITUTION_OR_PAYOR":
+                    rec = "DECISION NEEDED: confirm this folder is a payor/institution, not a client; if truly no client owner -> leave unresolved / mark institution."
+                elif label == "TEST_JUNK":
+                    rec = "DECISION NEEDED: confirm test/junk folder; candidate for archive/ignore, not assignment."
+                elif len(name_pids) > 1:
+                    rec = "DECISION NEEDED: multiple same-name people (" + str(len(name_pids)) + "); pick using SSN/DOB/address/email -- do NOT choose on name alone."
+                elif len(name_pids) == 1:
+                    rec = "DECISION NEEDED: unique name '" + str(pid_name.get(name_pids[0])) + "' (person id=" + str(name_pids[0]) + "); confirm this is the client before assigning (no independent corroboration found)."
+                elif engine_sugg:
+                    rec = "DECISION NEEDED: only fuzzy name suggestions; verify identity before assigning."
+                else:
+                    rec = "DECISION NEEDED: no canonical match; identify who this folder belongs to from the source documents."
 
-            entry = {
-                "folder": folder,
-                "unresolved_docs": len(docs),
-                "label": label,
-                "candidate_people": candidates,
-                "candidate_households": [{"id": h, "name": hh_name.get(h)} for h in hh_hits[:5]],
-                "candidate_business_org": ([{"id": biz_hit[0], "name": biz_hit[1]}] if biz_hit else []),
-                "engine_name_suggestions": engine_sugg,
-                "source_contact_linkage": ({"type": lk[0], "id": lk[1]} if lk else None),
-                "folder_author_emails": folder_emails[:5],
-                "document_source_evidence": src_ev[:5],
-                "sample_documents": [{"id": d["did"], "name": d["name"]} for d in docs[:5]],
-                "recommendation_or_decision": rec,
-            }
-            report.append(entry)
+                entry = {
+                    "folder": folder,
+                    "unresolved_docs": len(docs),
+                    "label": label,
+                    "candidate_people": candidates,
+                    "candidate_households": [{"id": h, "name": hh_name.get(h)} for h in hh_hits[:5]],
+                    "candidate_business_org": ([{"id": biz_hit[0], "name": biz_hit[1]}] if biz_hit else []),
+                    "engine_name_suggestions": engine_sugg,
+                    "source_contact_linkage": ({"type": lk[0], "id": lk[1]} if lk else None),
+                    "folder_author_emails": folder_emails[:5],
+                    "document_source_evidence": src_ev[:5],
+                    "sample_documents": [{"id": d["did"], "name": d["name"]} for d in docs[:5]],
+                    "recommendation_or_decision": rec,
+                }
+                report.append(entry)
 
-            print("")
-            print("FOLDER: " + folder + "  (" + str(len(docs)) + " docs)  LABEL=" + label)
-            print("  candidate_people: " + json.dumps(candidates, ensure_ascii=False, default=str))
-            print("  candidate_households: " + json.dumps(entry["candidate_households"], ensure_ascii=False, default=str))
-            print("  candidate_business_org: " + json.dumps(entry["candidate_business_org"], ensure_ascii=False, default=str))
-            print("  source_contact_linkage: " + json.dumps(entry["source_contact_linkage"], ensure_ascii=False, default=str))
-            print("  folder_author_emails: " + json.dumps(folder_emails[:5], ensure_ascii=False, default=str))
-            print("  document_source_evidence: " + json.dumps(src_ev[:5], ensure_ascii=False, default=str))
-            print("  sample_documents: " + json.dumps(entry["sample_documents"], ensure_ascii=False, default=str))
-            print("  => " + rec)
+                aprint("")
+                aprint("FOLDER: " + folder + "  (" + str(len(docs)) + " docs)  LABEL=" + label)
+                aprint("  candidate_people: " + safe_dumps(candidates))
+                aprint("  candidate_households: " + safe_dumps(entry["candidate_households"]))
+                aprint("  candidate_business_org: " + safe_dumps(entry["candidate_business_org"]))
+                aprint("  source_contact_linkage: " + safe_dumps(entry["source_contact_linkage"]))
+                aprint("  folder_author_emails: " + safe_dumps(folder_emails[:5]))
+                aprint("  document_source_evidence: " + safe_dumps(src_ev[:5]))
+                aprint("  sample_documents: " + safe_dumps(entry["sample_documents"]))
+                aprint("  => " + rec)
+            except Exception as exc:  # noqa: BLE001 -- isolate one folder's failure; keep going
+                aprint("")
+                aprint("FOLDER: " + str(folder) + "  ERROR: " + repr(exc)
+                       + "  -- evidence/render failed for this folder; skipped, continuing")
+                report.append({"folder": folder, "error": repr(exc)})
+                continue
 
-    print("=== BEGIN_V4_REVIEW_JSON ===")
-    print(json.dumps({"total_unresolved_documents": total_docs, "total_unresolved_folders": len(folders),
-                      "shown": len(report), "folders": report}, ensure_ascii=False, default=str))
-    print("=== END_V4_REVIEW_JSON ===")
+    aprint("=== BEGIN_V4_REVIEW_JSON ===")
+    print(safe_dumps({"total_unresolved_documents": total_docs, "total_unresolved_folders": len(folders),
+                      "shown": len(report), "folders": report}))
+    aprint("=== END_V4_REVIEW_JSON ===")
     return 0
 
 
-sys.exit(main())
+if __name__ == "__main__":
+    sys.exit(main())
