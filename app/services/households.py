@@ -325,6 +325,58 @@ def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None, 
     return result
 
 
+def resolve_document_ownership(document_id, *, person_id=None, household_id=None, organization_id=None,
+                               actor_user_id=None, request_id=None, dry_run: bool = False) -> dict:
+    """Assign ONE document to a single owner — per-document manual resolution for the admin workflow.
+
+    Safety (identical guarantees to the folder resolver, scoped to one document): assigns only when the
+    document is genuinely unassigned (person_id AND household_id AND organization_id all NULL) and is not
+    one of the six permanent V2 rejects. The write is atomic and RE-CHECKED in the same statement
+    (WHERE all-NULL AND not-reject), so a stale/double confirmation cannot overwrite an owner or a
+    now-owned document. Never modifies an already-owned document; never assigns a permanent reject.
+    Returns {assigned, reason, destination, ...}; audits each successful single-document resolution."""
+    if person_id is None and household_id is None and organization_id is None:
+        raise ValueError("a person_id, household_id, or organization_id is required")
+    assignments = {"person_id": person_id, "household_id": household_id, "organization_id": organization_id}
+    runner = engine.connect if dry_run else engine.begin
+    with runner() as conn:
+        row = conn.execute(select(documents.c.id, documents.c.person_id, documents.c.household_id,
+                                  documents.c.organization_id, documents.c.original_name)
+                           .where(documents.c.id == document_id)).mappings().first()
+        if row is None:
+            raise ValueError("document not found")
+        label = _entity_label(conn, person_id=person_id, household_id=household_id,
+                              organization_id=organization_id)
+        base = {"document_id": document_id, "original_name": row["original_name"],
+                "destination": label, "dry_run": dry_run}
+        if document_id in PERMANENT_REJECT_DOCUMENT_IDS:
+            return {**base, "assigned": False, "reason": "permanent_reject"}
+        unassigned = (row["person_id"] is None and row["household_id"] is None
+                      and row["organization_id"] is None)
+        if not unassigned:
+            return {**base, "assigned": False, "reason": "already_owned"}
+        if dry_run:
+            return {**base, "assigned": False, "eligible": True, "would_assign": True}
+        values = {f: v for f, v in assignments.items() if v is not None}
+        updated = conn.execute(documents.update().where(and_(
+            documents.c.id == document_id,
+            documents.c.person_id.is_(None), documents.c.household_id.is_(None),
+            documents.c.organization_id.is_(None),
+            documents.c.id.notin_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))))).values(**values)).rowcount
+        if not updated:
+            return {**base, "assigned": False, "reason": "no_longer_eligible"}
+        if actor_user_id is not None:
+            from app.security.audit import write_audit_event
+            write_audit_event(
+                action="document.ownership_resolved", entity_type="document", entity_id=document_id,
+                actor_user_id=actor_user_id, request_id=request_id,
+                metadata={"document_id": document_id, "destination": label,
+                          "person_id": person_id, "household_id": household_id,
+                          "organization_id": organization_id, "scope": "single_document",
+                          "previous_ownership_state": "all NULL (single-document resolution)"})
+        return {**base, "assigned": True}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="python -m app.services.households",

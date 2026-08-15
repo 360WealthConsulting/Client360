@@ -350,6 +350,54 @@ def resolve_unassigned_folder(
           f"{result['destination']['entity_type']} {result['destination']['entity_name']}."
     return _back("/admin/documents/unassigned", ok=msg)
 
+
+@router.post("/documents/unassigned/resolve-document")
+def resolve_unassigned_document(
+        request: Request, document_id: int = Form(...), entity_type: str = Form(...),
+        entity_id: int = Form(...), folder: str = Form(""), confirm: str = Form(""),
+        principal: Principal = Depends(require_capability("client.write"))):
+    """Per-document ownership resolution (preview -> confirm). Assigns ONLY the given document id to the
+    selected owner, leaving sibling documents untouched. The service re-checks on write that the
+    document is still genuinely unassigned and not a permanent reject (stale/double-confirm safe).
+    Record-scope enforced; gated require_capability('client.write')."""
+    from app.security.authorization import record_in_scope
+    from app.services.households import resolve_document_ownership
+    if entity_type not in {"person", "household", "organization"}:
+        return render_error(request, 400, detail="Invalid entity type.")
+    if entity_type == "organization":
+        if not principal.can("record.write_all"):
+            return render_error(request, 404, detail="Organization not found.")
+    elif not record_in_scope(principal, entity_type, entity_id, write=True):
+        return render_error(request, 404, detail="Destination not found.")
+    kwargs = {"person": {"person_id": entity_id}, "household": {"household_id": entity_id},
+              "organization": {"organization_id": entity_id}}[entity_type]
+    rid = getattr(request.state, "request_id", None)
+    from urllib.parse import quote
+    back = ("/admin/documents/unassigned/review?folder=" + quote(folder, safe="")) if folder \
+        else "/admin/documents/unassigned"
+    try:
+        if confirm.strip().lower() != "yes":
+            preview = resolve_document_ownership(document_id, dry_run=True, **kwargs)
+            with engine.connect() as conn:
+                destination = _destination_display(conn, entity_type, entity_id)
+                docs = _documents_detail(conn, [document_id])
+            return templates.TemplateResponse(request=request, name="admin/unassigned_document_confirm.html",
+                context={"principal": principal, "folder": folder, "document_id": document_id,
+                         "entity_type": entity_type, "entity_id": entity_id, "destination": destination,
+                         "doc": (docs[0] if docs else None), "preview": preview})
+        result = resolve_document_ownership(document_id, actor_user_id=principal.user_id,
+                                            request_id=rid, **kwargs)
+    except ValueError as exc:
+        return render_error(request, 400, detail=str(exc))
+    if result.get("assigned"):
+        audit(request, principal, "document.single_resolved", "document", document_id,
+              {"destination": result["destination"], "folder": folder})
+        d = result["destination"]
+        return _back(back, ok=f"Document {document_id} assigned to {d['entity_type']} "
+                             f"{d['entity_name']}. Remaining documents are unchanged.")
+    return _back(back, err=f"Document {document_id} was not assigned ({result.get('reason', 'not eligible')}).")
+
+
 @router.post("/users")
 def create_user(payload: UserInvite, request: Request, principal: Principal = Depends(require_capability("identity.manage"))):
     user_id = invite_user(payload.email, payload.display_name, payload.auth_subject); audit(request, principal, "identity.user_invited", "user", user_id); return {"id": user_id}

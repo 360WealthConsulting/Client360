@@ -224,6 +224,95 @@ def test_permanent_reject_ids_constant_unchanged():
     assert hh_service.PERMANENT_REJECT_DOCUMENT_IDS == frozenset({4704, 4716, 4717, 17932, 22336, 22338})
 
 
+# --- per-document resolution ------------------------------------------------------------------
+
+def test_resolve_single_document_to_person():
+    folder = f"Folder-{_TAG}-SD"
+    d1, d2 = _doc(folder), _doc(folder)
+    pid = _person()
+    res = hh_service.resolve_document_ownership(d1, person_id=pid, actor_user_id=1, request_id="t")
+    assert res["assigned"] is True
+    assert _owner(d1) == (pid, None, None)
+    assert _owner(d2) == (None, None, None)          # sibling document untouched
+
+
+def test_resolve_single_document_to_household_and_organization():
+    folder = f"Folder-{_TAG}-SD2"
+    dh, do = _doc(folder), _doc(folder)
+    hid, org = _household(), _org()
+    assert hh_service.resolve_document_ownership(dh, household_id=hid, actor_user_id=1, request_id="t")["assigned"]
+    assert hh_service.resolve_document_ownership(do, organization_id=org, actor_user_id=1, request_id="t")["assigned"]
+    assert _owner(dh) == (None, hid, None)
+    assert _owner(do) == (None, None, org)
+
+
+def test_resolve_single_document_does_not_touch_siblings():
+    folder = f"Folder-{_TAG}-SD3"
+    target = _doc(folder)
+    siblings = [_doc(folder) for _ in range(3)]
+    hh_service.resolve_document_ownership(target, person_id=_person(), actor_user_id=1, request_id="t")
+    for s in siblings:
+        assert _owner(s) == (None, None, None)
+
+
+def test_already_owned_document_cannot_be_reassigned():
+    folder = f"Folder-{_TAG}-SD4"
+    p0 = _person()
+    owned = _doc(folder, person_id=p0)
+    res = hh_service.resolve_document_ownership(owned, person_id=_person(), actor_user_id=1, request_id="t")
+    assert res["assigned"] is False and res["reason"] == "already_owned"
+    assert _owner(owned) == (p0, None, None)          # unchanged
+
+
+def test_permanent_reject_cannot_be_assigned_individually(monkeypatch):
+    folder = f"Folder-{_TAG}-SD5"
+    reject = _doc(folder)
+    monkeypatch.setattr(hh_service, "PERMANENT_REJECT_DOCUMENT_IDS", frozenset({reject}))
+    res = hh_service.resolve_document_ownership(reject, person_id=_person(), actor_user_id=1, request_id="t")
+    assert res["assigned"] is False and res["reason"] == "permanent_reject"
+    assert _owner(reject) == (None, None, None)
+
+
+def test_stale_double_confirm_is_rejected():
+    folder = f"Folder-{_TAG}-SD6"
+    d = _doc(folder)
+    first = hh_service.resolve_document_ownership(d, person_id=_person(), actor_user_id=1, request_id="t")
+    assert first["assigned"] is True
+    # a second (stale) confirmation must NOT overwrite the now-owned document
+    second = hh_service.resolve_document_ownership(d, person_id=_person(), actor_user_id=1, request_id="t")
+    assert second["assigned"] is False and second["reason"] == "already_owned"
+
+
+def test_dry_run_single_document_reports_without_writing():
+    folder = f"Folder-{_TAG}-SD7"
+    d = _doc(folder)
+    pid = _person()
+    res = hh_service.resolve_document_ownership(d, person_id=pid, dry_run=True)
+    assert res["would_assign"] is True and res["destination"]["entity_id"] == pid
+    assert _owner(d) == (None, None, None)            # nothing written
+
+
+def test_single_resolution_writes_audit():
+    folder = f"Folder-{_TAG}-SD8"
+    d = _doc(folder)
+    hh_service.resolve_document_ownership(d, person_id=_person(), actor_user_id=1, request_id="t")
+    with engine.connect() as c:
+        row = c.execute(select(audit_events.c.action, audit_events.c.metadata)
+                        .where(audit_events.c.entity_type == "document",
+                               audit_events.c.entity_id == str(d))
+                        .order_by(audit_events.c.occurred_at.desc()).limit(1)).mappings().first()
+    assert row is not None and row["action"] == "document.ownership_resolved"
+    assert row["metadata"].get("scope") == "single_document"
+
+
+def test_resolve_document_route_registered_and_gated():
+    from app.main import app
+    from app.routes.admin import resolve_unassigned_document
+    match = [r for r in app.routes if getattr(r, "path", None) == "/admin/documents/unassigned/resolve-document"]
+    assert match and "POST" in match[0].methods
+    assert resolve_unassigned_document
+
+
 # --- confirmation-page presentation enrichment ------------------------------------------------
 
 def _business_person(name):
@@ -393,6 +482,9 @@ def test_confirm_and_review_templates_list_all_categories():
     from pathlib import Path
     rev = Path("app/templates/admin/unassigned_review.html").read_text(encoding="utf-8")
     assert "ELIGIBLE UNASSIGNED" in rev and "ALREADY OWNED" in rev and "PERMANENT REJECT" in rev
-    assert "View ↗" in rev and "Preview →" in rev
+    assert "View ↗" in rev
+    assert "Preview this document" in rev            # per-document resolution
+    assert "resolve-document" in rev
+    assert "assign ALL remaining eligible" in rev    # bulk action still offered
     conf = Path("app/templates/admin/unassigned_confirm.html").read_text(encoding="utf-8")
     assert "PROPOSED OWNER" in conf

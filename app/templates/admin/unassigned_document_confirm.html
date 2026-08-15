@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Confirm Document Assignment | Admin | Client360{% endblock %}
+{% block crumb %}Admin · Document Management · Confirm Document{% endblock %}
+{% block content %}
+{% call ui.page_head("Confirm document assignment", eyebrow="Admin · Document Management",
+    desc="Assign this single document. Other documents in the folder are not affected. Nothing has changed yet.") %}
+  <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back to review</a>
+{% endcall %}
+
+<article class="card" style="padding:16px 18px; max-width:760px">
+  {% if doc %}
+  <div class="detail-row"><span class="subtle">Document</span>
+    <strong>#{{ doc.id }} · {{ doc.name }}</strong></div>
+  <div class="detail-row"><span class="subtle">Current owner</span><span>{{ doc.current_owner }}</span></div>
+  <p style="margin:6px 0">
+    <a class="btn sm secondary" href="{{ doc.view_url }}" target="_blank" rel="noopener">View ↗</a>
+    <a class="btn sm secondary" href="{{ doc.download_url }}">Download</a>
+  </p>
+  {% endif %}
+
+  <div style="margin-top:8px"><span class="subtle">PROPOSED OWNER</span>
+  {% if destination.kind == "person" %}
+    <div><strong>{% if destination.is_business %}Business Contact{% else %}Person{% endif %} #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
+      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open record ↗</a></div>
+    <div class="subtle">
+      {% if destination.contact_type %}contact_type: {{ destination.contact_type }} · {% endif %}
+      {% if destination.email %}{{ destination.email }} · {% endif %}
+      {% if destination.phone %}{{ destination.phone }} · {% endif %}
+      {% if destination.household_name %}Household: {{ destination.household_name }} (#{{ destination.household_id }}){% else %}No household{% endif %}
+    </div>
+  {% elif destination.kind == "household" %}
+    <div><strong>Household #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
+      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open household ↗</a></div>
+    <div class="subtle">Members: {% for m in destination.members %}{{ m }}{% if not loop.last %}, {% endif %}{% else %}(none listed){% endfor %}</div>
+  {% elif destination.kind == "organization" %}
+    <div><strong>Organization #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
+      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open organization ↗</a></div>
+    <div class="subtle">Entity type: {{ destination.entity_type or "—" }}</div>
+  {% endif %}
+  </div>
+
+  {% if preview.would_assign %}
+  <form method="post" action="/admin/documents/unassigned/resolve-document" style="margin-top:14px">
+    <input type="hidden" name="document_id" value="{{ document_id }}">
+    <input type="hidden" name="entity_type" value="{{ entity_type }}">
+    <input type="hidden" name="entity_id" value="{{ entity_id }}">
+    <input type="hidden" name="folder" value="{{ folder }}">
+    <input type="hidden" name="confirm" value="yes">
+    <button class="btn" type="submit">Confirm — assign this document</button>
+    <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}" style="margin-left:8px">Cancel</a>
+  </form>
+  {% elif preview.reason == "already_owned" %}
+  <p class="subtle" style="margin-top:14px; color:var(--muted, #6b7280)">This document is already owned and will not be changed.</p>
+  <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
+  {% elif preview.reason == "permanent_reject" %}
+  <p class="subtle" style="margin-top:14px; color:var(--warn, #b45309)">This is a protected permanent-reject document and cannot be assigned.</p>
+  <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
+  {% else %}
+  <p class="subtle" style="margin-top:14px">This document is no longer eligible for assignment.</p>
+  <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
+  {% endif %}
+</article>
+{% endblock %}
