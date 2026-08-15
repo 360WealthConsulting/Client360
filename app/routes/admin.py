@@ -114,14 +114,18 @@ def _owner_detail(conn, row):
 
 
 _EXCEL_EXTS = {"xlsx", "xlsm"}
+_HEIF_EXTS = {"heic", "heif"}
 
 
 def _view_url(document_id, name):
-    """Route the View action by file type: Excel -> Client360 workbook preview; everything else ->
-    the existing inline document route (PDF/image open inline; other types download)."""
+    """Route the View action by file type: Excel -> Client360 workbook preview; HEIC/HEIF -> Client360
+    image preview (JPEG rendition); everything else -> the existing inline document route (PDF and
+    browser-native images open inline; other types download)."""
     ext = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
     if ext in _EXCEL_EXTS:
         return f"/documents/{document_id}/preview"
+    if ext in _HEIF_EXTS:
+        return f"/documents/{document_id}/image-preview"
     return f"/documents/{document_id}/download?inline=1"
 
 

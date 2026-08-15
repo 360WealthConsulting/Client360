@@ -74,7 +74,7 @@ def test_view_url_routes_excel_to_preview_others_to_inline():
     assert _view_url(5, "Expenses.xlsx") == "/documents/5/preview"
     assert _view_url(5, "book.xlsm") == "/documents/5/preview"
     assert _view_url(7, "2021 8879 S.pdf") == "/documents/7/download?inline=1"   # PDF unchanged
-    assert _view_url(7, "IMG_5178.HEIC") == "/documents/7/download?inline=1"
+    assert _view_url(7, "IMG_5178.HEIC") == "/documents/7/image-preview"          # HEIC -> image preview
     assert _view_url(7, "notes.docx") == "/documents/7/download?inline=1"        # other -> existing behavior
 
 

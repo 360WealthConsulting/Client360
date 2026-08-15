@@ -158,6 +158,35 @@ _PREVIEW_MAX_ROWS = 200
 _PREVIEW_MAX_COLS = 30
 _PREVIEW_MAX_FILE_BYTES = 25 * 1024 * 1024
 
+_HEIF_EXTS = {"heic", "heif"}
+_IMAGE_PREVIEW_MAX_PX = 2000
+_IMAGE_PREVIEW_MAX_FILE_BYTES = 40 * 1024 * 1024
+
+
+def convert_image_to_jpeg(path):
+    """Read an image (incl. HEIC/HEIF) and return a bounded JPEG (bytes) for browser display, or None if
+    conversion is unavailable or fails. READ-ONLY: opens + downscales in memory, NEVER writes, converts,
+    or replaces the source file. Returns None on a missing image library, a decompression bomb, or any
+    read error, so the caller can fail safely."""
+    try:
+        import io
+
+        from PIL import Image
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()   # enable HEIC/HEIF decoding when the plugin is present
+        except Exception:                        # noqa: BLE001 — non-HEIF images still work via Pillow
+            pass
+        with Image.open(path) as im:
+            im.load()
+            im = im.convert("RGB")
+            im.thumbnail((_IMAGE_PREVIEW_MAX_PX, _IMAGE_PREVIEW_MAX_PX))
+            out = io.BytesIO()
+            im.save(out, format="JPEG", quality=85)
+            return out.getvalue()
+    except Exception:  # noqa: BLE001 — library missing / unreadable / oversized: caller falls back
+        return None
+
 
 def _fmt_cell(value):
     """Render a workbook cell value for read-only display (dates/numbers/text handled reasonably)."""
@@ -237,6 +266,40 @@ def preview_document(document_id: int, request: Request, sheet: str = ""):
     return templates.TemplateResponse(request=request, name="admin/workbook_preview.html",
                                       context={**ctx, **result,
                                                "max_rows": _PREVIEW_MAX_ROWS, "max_cols": _PREVIEW_MAX_COLS})
+
+
+@router.get("/documents/{document_id}/image-preview")
+def image_preview_document(document_id: int, request: Request):
+    """Read-only Client360 image preview for browser-incompatible images (HEIC/HEIF): serves an
+    in-memory JPEG rendition so the image opens in a new tab instead of downloading. Authorization is
+    unchanged — the middleware enforces the same document-scope rules on this ``/documents/{id}`` path
+    (including the admin unassigned-document exception). Never modifies the source file, metadata, or
+    ownership. If conversion cannot be performed, renders a Client360 page explaining that and keeps
+    Download available."""
+    from fastapi.responses import Response
+    document = get_document(document_id)
+    if document is None or document["archived"]:
+        return render_error(request, 404,
+                            detail="This document is no longer available. It may have been archived.")
+    if document["storage_uri"] and Path(document["storage_uri"]).is_absolute():
+        path = Path(document["storage_uri"])
+    else:
+        path = Path(document["storage_path"])
+    ctx = {"filename": document["original_name"],
+           "download_url": f"/documents/{document_id}/download"}
+    if not path.exists():
+        return render_error(request, 404,
+                            detail="The stored copy of this document could not be found on the server.")
+    if path.stat().st_size > _IMAGE_PREVIEW_MAX_FILE_BYTES:
+        return templates.TemplateResponse(request=request, name="admin/image_preview.html",
+            context={**ctx, "error": "This image is too large to preview safely. Use Download instead."})
+    jpeg = convert_image_to_jpeg(path)
+    if jpeg is None:
+        return templates.TemplateResponse(request=request, name="admin/image_preview.html",
+            context={**ctx, "error": "This image could not be previewed in the browser. Use Download to "
+                                     "save the original file."})
+    return Response(content=jpeg, media_type="image/jpeg",
+                    headers={"content-disposition": "inline"})
 
 
 @router.post(

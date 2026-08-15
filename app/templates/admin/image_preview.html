@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ filename or "Image" }} — Preview | Client360{% endblock %}
+{% block crumb %}Document · Image Preview{% endblock %}
+{% block content %}
+{% call ui.page_head(filename or "Image preview", eyebrow="Read-only preview",
+    desc="A read-only view of this image. The original file is unchanged.") %}
+  <a class="btn secondary" href="{{ download_url }}">Download original</a>
+{% endcall %}
+<article class="card" style="padding:16px 18px">
+  <div class="subtle">{{ error or "This image cannot be previewed in the browser." }}</div>
+  <p style="margin-top:10px"><a class="btn" href="{{ download_url }}">Download original file</a></p>
+</article>
+{% endblock %}

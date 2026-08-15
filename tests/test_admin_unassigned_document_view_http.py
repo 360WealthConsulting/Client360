@@ -118,3 +118,12 @@ def test_http_workbook_preview_uses_same_authorization(monkeypatch):
     assert _authorize(monkeypatch, f"/documents/{did}/preview", {"document.read"}) == 403       # ordinary
     owned = _seed_doc(household_id=_household())
     assert _authorize(monkeypatch, f"/documents/{owned}/preview", {"client.write", "document.read"}) == 403
+
+
+def test_http_image_preview_uses_same_authorization(monkeypatch):
+    # The /image-preview (HEIC) path is gated identically to PDF/Excel document viewing.
+    did = _seed_doc()   # genuinely all-NULL
+    assert _authorize(monkeypatch, f"/documents/{did}/image-preview", {"client.write", "document.read"}) == 200
+    assert _authorize(monkeypatch, f"/documents/{did}/image-preview", {"document.read"}) == 403     # ordinary
+    owned = _seed_doc(household_id=_household())
+    assert _authorize(monkeypatch, f"/documents/{owned}/image-preview", {"client.write", "document.read"}) == 403
