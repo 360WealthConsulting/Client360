@@ -47,6 +47,25 @@
           <a class="btn sm secondary" href="{{ d.view_url }}" target="_blank" rel="noopener">View ↗</a>
           <a class="btn sm secondary" href="{{ d.download_url }}">Download</a></span></div>
 
+      {% set pr = d.proposal %}
+      {% if pr and pr.proposed_entity_id and pr.confidence not in ("NO_MATCH", "AMBIGUOUS") %}
+      <div class="card" style="padding:8px 10px; margin:6px 0; border-left:4px solid {% if pr.confidence == 'HIGH_CONFIDENCE' %}var(--ok, #15803d){% else %}var(--warn, #b45309){% endif %}">
+        <div><strong>PROPOSED OWNER (from document content):</strong>
+          {{ pr.proposed_entity_type }} #{{ pr.proposed_entity_id }} — {{ pr.proposed_entity_name or "(name)" }}
+          · <strong>Confidence: {{ pr.confidence }}</strong></div>
+        {% if pr.evidence %}<ul class="subtle" style="margin:4px 0 6px 18px">{% for e in pr.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        {{ cand_form(d.id, pr.proposed_entity_type, pr.proposed_entity_id, "Preview → proposed owner: " ~ (pr.proposed_entity_name or "") ~ " (#" ~ pr.proposed_entity_id ~ ")") }}
+      </div>
+      {% elif pr and pr.confidence == "AMBIGUOUS" %}
+      <div class="card" style="padding:8px 10px; margin:6px 0; border-left:4px solid var(--warn, #b45309)">
+        <div><strong>PROPOSED OWNER:</strong> Ambiguous — content matches more than one candidate; choose below.</div>
+        {% if pr.competing %}<div class="subtle">Competing: {% for c in pr.competing %}{{ c.name }} (#{{ c.person_id }}){% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+        {% if pr.evidence %}<ul class="subtle" style="margin:4px 0 0 18px">{% for e in pr.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      {% elif pr %}
+      <div class="subtle" style="margin:6px 0">PROPOSED OWNER: no confident content match ({{ pr.extraction_method }}) — choose below.</div>
+      {% endif %}
+
       {% if candidates or household_candidates or org_candidates %}
       <div class="subtle" style="margin:6px 0 2px">Suggested owners for THIS document (Preview only — nothing changes until you confirm):</div>
       {% for c in candidates %}

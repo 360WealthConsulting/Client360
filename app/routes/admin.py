@@ -326,12 +326,23 @@ def review_unassigned_folder(request: Request, folder: str,
     already-owned, and permanent-reject documents (each with an authorized View/Open link) plus the
     candidate people, so an administrator can open the actual files and decide ownership. Opening/View
     never mutates; assignment happens only via preview -> explicit Confirm."""
+    from app.services.document_owner_proposal import build_match_indexes, propose_document_owner
     with engine.connect() as conn:
         eligible_ids, owned_ids, reject_ids = _folder_documents(conn, folder)
         eligible_docs = _documents_detail(conn, eligible_ids)
         already_owned_docs = _documents_detail(conn, owned_ids)
         excluded_docs = _documents_detail(conn, reject_ids)
         candidates, household_candidates, org_candidates = _folder_candidates(conn, folder)
+        # Read-only content-based owner proposals (bounded; shared canonical indexes; never assigns).
+        idx = build_match_indexes(conn) if eligible_ids else None
+        proposals = {}
+        for did in eligible_ids[:30]:
+            try:
+                proposals[did] = propose_document_owner(did, conn=conn, idx=idx)
+            except Exception:  # noqa: BLE001 — one document's analysis can't break the page
+                proposals[did] = None
+        for d in eligible_docs:
+            d["proposal"] = proposals.get(d["id"])
     return templates.TemplateResponse(request=request, name="admin/unassigned_review.html",
         context={"principal": principal, "folder": folder, "eligible_docs": eligible_docs,
                  "already_owned_docs": already_owned_docs, "excluded_docs": excluded_docs,

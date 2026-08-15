@@ -46,3 +46,4 @@ urllib3==2.6.3
 uvicorn==0.39.0
 Pillow==11.3.0
 pillow-heif==0.22.0
+pypdf==5.9.0
