@@ -218,7 +218,7 @@ def preview_document(document_id: int, request: Request, sheet: str = ""):
            "download_url": f"/documents/{document_id}/download"}
     if ext not in _EXCEL_EXTS:
         ctx["error"] = "Preview is available for .xlsx/.xlsm workbooks only. Use Download for this file."
-        return templates.TemplateResponse(request=request, name="documents/workbook_preview.html",
+        return templates.TemplateResponse(request=request, name="admin/workbook_preview.html",
                                           context={**ctx, "sheetnames": [], "rows": []})
 
     if document["storage_uri"] and Path(document["storage_uri"]).is_absolute():
@@ -230,11 +230,11 @@ def preview_document(document_id: int, request: Request, sheet: str = ""):
                             detail="The stored copy of this document could not be found on the server.")
     if path.stat().st_size > _PREVIEW_MAX_FILE_BYTES:
         ctx["error"] = "This workbook is too large to preview safely. Use Download instead."
-        return templates.TemplateResponse(request=request, name="documents/workbook_preview.html",
+        return templates.TemplateResponse(request=request, name="admin/workbook_preview.html",
                                           context={**ctx, "sheetnames": [], "rows": []})
 
     result = read_workbook_preview(path, sheet=sheet)
-    return templates.TemplateResponse(request=request, name="documents/workbook_preview.html",
+    return templates.TemplateResponse(request=request, name="admin/workbook_preview.html",
                                       context={**ctx, **result,
                                                "max_rows": _PREVIEW_MAX_ROWS, "max_cols": _PREVIEW_MAX_COLS})
 
