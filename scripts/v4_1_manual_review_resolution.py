@@ -330,7 +330,7 @@ def main():
                     continue
 
                 # --- build side-by-side candidates with distinguishing evidence -----------------
-                cand_pids = list(dict.fromkeys(name_pids + sorted(corrob_pids)
+                cand_pids = list(dict.fromkeys(name_pids + sorted(corrob_pids, key=str)
                                                + [p["id"] for p in engine_sugg if p["id"]]))
                 candidates = []
                 for pid in cand_pids[:10]:
@@ -339,10 +339,10 @@ def main():
                         "name": pid_name.get(pid),
                         "household_id": pid_hh.get(pid),
                         "household_name": hh_name.get(pid_hh.get(pid)),
-                        "emails": sorted(pid_email.get(pid, set()))[:3],
-                        "phones": sorted(pid_phone.get(pid, set()))[:2],
-                        "address": sorted(pid_addr.get(pid, set()))[:1],
-                        "dob": sorted(pid_dob.get(pid, set()))[:1],
+                        "emails": sorted(pid_email.get(pid, set()), key=str)[:3],
+                        "phones": sorted(pid_phone.get(pid, set()), key=str)[:2],
+                        "address": sorted(pid_addr.get(pid, set()), key=str)[:1],
+                        "dob": sorted(pid_dob.get(pid, set()), key=str)[:1],
                         "existing_owned_documents": owned_docs.get(pid, 0),
                         "how_found": ("name_exact" if pid in name_pids else "")
                                      + ("+folder_corroboration" if pid in corrob_pids else "")
@@ -391,48 +391,67 @@ def main():
         results.sort(key=lambda x: -x.get("unresolved_docs", 0))
         results = results[:MAX_FOLDERS]
 
-        aprint("entity_type values in relationship_entities: " + str(sorted(etypes)))
-        aprint("SCHEMA DISCOVERY: " + safe_dumps({k: sorted(set(v)) for k, v in disc.items()}))
+        aprint("entity_type values in relationship_entities: " + str(sorted(etypes, key=str)))
+        aprint("SCHEMA DISCOVERY: " + safe_dumps({k: sorted(set(v), key=str) for k, v in disc.items()}))
         aprint("TOTAL UNRESOLVED DOCUMENTS (all folders): " + str(total_docs))
         aprint("MANUAL_REVIEW FOLDERS ANALYZED: " + str(len(results)))
         aprint("")
 
         totals = {"manual_review_folders": len(results), "documents_represented": 0,
                   "folders_safe_to_confirm": 0, "documents_assignable_after_confirmation": 0,
-                  "folders_needs_human_choice": 0, "folders_no_match": 0}
+                  "folders_needs_human_choice": 0, "folders_no_match": 0, "folders_errored": 0}
         for r in results:
-            if "error" in r:
-                continue
-            totals["documents_represented"] += r["unresolved_docs"]
-            rec = r["recommendation"]
-            if rec == "SAFE_TO_CONFIRM":
-                totals["folders_safe_to_confirm"] += 1
-                totals["documents_assignable_after_confirmation"] += r["eligible_docs_excl_permanent_rejects"]
-            elif rec == "NEEDS_HUMAN_CHOICE":
-                totals["folders_needs_human_choice"] += 1
-            elif rec == "NO_MATCH":
-                totals["folders_no_match"] += 1
+            # Rendering one folder must never crash the whole report: every field access is null-safe
+            # (.get with defaults + str()/safe_dumps coercion) and the body is isolated in try/except.
+            # Error-result entries are printed for completeness (not silently dropped) and not counted.
+            try:
+                if "error" in r:
+                    totals["folders_errored"] += 1
+                    aprint("FOLDER: " + str(r.get("folder", "?")) + "  DATA ERROR: "
+                           + str(r.get("error", "")) + "  -- shown for completeness; not counted")
+                    aprint("")
+                    continue
+                rec = r.get("recommendation", "NEEDS_HUMAN_CHOICE")
+                totals["documents_represented"] += int(r.get("unresolved_docs", 0) or 0)
+                if rec == "SAFE_TO_CONFIRM":
+                    totals["folders_safe_to_confirm"] += 1
+                    totals["documents_assignable_after_confirmation"] += int(
+                        r.get("eligible_docs_excl_permanent_rejects", 0) or 0)
+                elif rec == "NEEDS_HUMAN_CHOICE":
+                    totals["folders_needs_human_choice"] += 1
+                elif rec == "NO_MATCH":
+                    totals["folders_no_match"] += 1
 
-            aprint("FOLDER: " + r["owner_token"] + "  (" + str(r["unresolved_docs"]) + " docs, "
-                   + str(r["eligible_docs_excl_permanent_rejects"]) + " eligible)  => " + rec
-                   + " [" + str(r["confidence"]) + "]")
-            if r["best_candidate"]:
-                aprint("  best_candidate: person id=" + str(r["best_candidate"]["person_id"])
-                       + " '" + str(r["best_candidate"]["name"]) + "'")
-                aprint("  evidence_supporting_best: " + safe_dumps(r["evidence_supporting_best"]))
-            if r["business_org_candidate"]:
-                aprint("  business_org_candidate (verify client vs payor): " + safe_dumps(r["business_org_candidate"]))
-            aprint("  candidates: " + safe_dumps(r["candidates"]))
-            if r["fuzzy_suggestions"]:
-                aprint("  fuzzy_suggestions (never a confirm basis): " + safe_dumps(r["fuzzy_suggestions"]))
-            if r["contains_permanent_reject_docs"]:
-                aprint("  permanent_reject_docs (excluded): " + safe_dumps(r["contains_permanent_reject_docs"]))
-            aprint("  sample_documents: " + safe_dumps(r["sample_documents"]))
-            aprint("")
+                aprint("FOLDER: " + str(r.get("owner_token") or r.get("folder", "?")) + "  ("
+                       + str(r.get("unresolved_docs", 0)) + " docs, "
+                       + str(r.get("eligible_docs_excl_permanent_rejects", 0)) + " eligible)  => "
+                       + str(rec) + " [" + str(r.get("confidence", "")) + "]")
+                best = r.get("best_candidate")
+                if best:
+                    aprint("  best_candidate: person id=" + str(best.get("person_id"))
+                           + " '" + str(best.get("name")) + "'")
+                    aprint("  evidence_supporting_best: " + safe_dumps(r.get("evidence_supporting_best", [])))
+                if r.get("business_org_candidate"):
+                    aprint("  business_org_candidate (verify client vs payor): "
+                           + safe_dumps(r.get("business_org_candidate")))
+                aprint("  candidates: " + safe_dumps(r.get("candidates", [])))
+                if r.get("fuzzy_suggestions"):
+                    aprint("  fuzzy_suggestions (never a confirm basis): " + safe_dumps(r.get("fuzzy_suggestions")))
+                if r.get("contains_permanent_reject_docs"):
+                    aprint("  permanent_reject_docs (excluded): " + safe_dumps(r.get("contains_permanent_reject_docs")))
+                aprint("  sample_documents: " + safe_dumps(r.get("sample_documents", [])))
+                aprint("")
+            except Exception as exc:  # noqa: BLE001 -- one folder's render can't end the report
+                totals["folders_errored"] += 1
+                aprint("FOLDER: " + str(r.get("folder") or r.get("owner_token", "?"))
+                       + "  RENDER ERROR: " + repr(exc) + "  -- skipped, continuing")
+                aprint("")
+                continue
 
         aprint("TOTALS:")
         for k in ("manual_review_folders", "documents_represented", "folders_safe_to_confirm",
-                  "documents_assignable_after_confirmation", "folders_needs_human_choice", "folders_no_match"):
+                  "documents_assignable_after_confirmation", "folders_needs_human_choice",
+                  "folders_no_match", "folders_errored"):
             aprint("  " + k + ": " + str(totals[k]))
 
         aprint("=== BEGIN_V41_JSON ===")

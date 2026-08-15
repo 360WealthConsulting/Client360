@@ -84,3 +84,15 @@ def test_safe_dumps_is_ascii_and_aprint_never_raises(mod, capsys):
     assert out.isascii() and json.loads(out)["name"] == "Débi McDaniel"
     mod.aprint("Café résumé ☃ — Debi")
     assert "Caf" in capsys.readouterr().out
+
+
+def test_render_helpers_tolerate_null_and_missing_fields(mod):
+    # A candidate/result with None or missing fields must serialize without raising, so the render
+    # loop's null-safe access + safe_dumps cannot crash the report on unexpected production data.
+    candidate = {"person_id": None, "name": None, "emails": [], "address": [None], "dob": None,
+                 "existing_owned_documents": None}
+    out = mod.safe_dumps(candidate)
+    assert out.isascii()
+    json.loads(out)
+    # Mixed-type identifier sets (person_ids sourced from different tables) must sort without raising.
+    assert sorted({3, "10", 2, None}, key=str) is not None
