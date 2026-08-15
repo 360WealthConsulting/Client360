@@ -172,3 +172,56 @@ def test_resolve_route_registered_and_gated():
 
 def test_permanent_reject_ids_constant_unchanged():
     assert hh_service.PERMANENT_REJECT_DOCUMENT_IDS == frozenset({4704, 4716, 4717, 17932, 22336, 22338})
+
+
+# --- confirmation-page presentation enrichment ------------------------------------------------
+
+def _business_person(name):
+    with engine.begin() as c:
+        pid = c.execute(people.insert().values(full_name=name, active=True, contact_type="business",
+                                               primary_email="ap@measures.com", primary_phone="5551234")
+                        .returning(people.c.id)).scalar_one()
+    _C["people"].append(pid)
+    return pid
+
+
+def test_person_display_labels_business_contact():
+    from app.routes.admin import _person_display
+    pid = _business_person(f"Affordable Measures LLC {_TAG}")
+    with engine.connect() as c:
+        d = _person_display(c, pid)
+    assert d["is_business"] is True and d["designation"] == "Business Contact"
+    assert d["email"] == "ap@measures.com" and d["phone"] == "5551234"
+    assert d["link"] == f"/client/{pid}"
+
+
+def test_person_display_labels_individual_person():
+    from app.routes.admin import _person_display
+    pid = _person()  # no contact_type, non-business name
+    with engine.connect() as c:
+        d = _person_display(c, pid)
+    assert d["is_business"] is False and d["designation"] == "Person"
+
+
+def test_documents_detail_includes_filename_owner_and_download_link():
+    from app.routes.admin import _documents_detail
+    folder = f"Folder-{_TAG}-DET"
+    d1 = _doc(folder)
+    with engine.connect() as c:
+        rows = _documents_detail(c, [d1])
+    assert rows and rows[0]["id"] == d1
+    assert rows[0]["name"] == "f.pdf"
+    assert rows[0]["current_owner"] == "Unassigned (NULL)"
+    assert rows[0]["download_url"] == f"/documents/{d1}/download"
+    assert rows[0]["source_folder"] == folder
+
+
+def test_destination_display_variants():
+    from app.routes.admin import _destination_display
+    pid, hid, eid = _person(), _household(), _org()
+    with engine.connect() as c:
+        assert _destination_display(c, "person", pid)["kind"] == "person"
+        h = _destination_display(c, "household", hid)
+        assert h["kind"] == "household" and h["link"] == f"/client/household/{hid}"
+        o = _destination_display(c, "organization", eid)
+        assert o["kind"] == "organization" and o["link"] == f"/relationship-entities/{eid}"

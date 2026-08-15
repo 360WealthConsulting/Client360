@@ -41,10 +41,98 @@ def administration(request: Request, principal: Principal = Depends(require_capa
     return templates.TemplateResponse(request=request, name="admin/identity.html", context={"identity": list_identity_data(), "principal": principal})
 
 
+_BUSINESS_CONTACT_TYPES = {"business", "organization", "company", "entity", "business_contact", "org"}
+_BUSINESS_NAME_HINTS = (" llc", " inc", " corp", " co.", " company", " ltd", " pllc", " lp",
+                        " associates", " enterprises", " services", " group", " holdings")
+
+
+def _designation(contact_type, name):
+    """Whether a people-table row is a business contact (label + flag), from the existing
+    contact_type metadata, with a name-suffix fallback for display only."""
+    ct = (contact_type or "").strip().lower()
+    low = (name or "").lower()
+    is_biz = ct in _BUSINESS_CONTACT_TYPES or any(h in (" " + low + " ") for h in _BUSINESS_NAME_HINTS)
+    return ("Business Contact" if is_biz else "Person", is_biz)
+
+
+def _person_display(conn, pid):
+    """Full identifying view of a people-table record for the worklist + confirmation page."""
+    from app.db import households, people
+    r = conn.execute(select(people.c.id, people.c.full_name, people.c.contact_type,
+                            people.c.primary_email, people.c.primary_phone, people.c.household_id)
+                     .where(people.c.id == pid)).mappings().first()
+    if not r:
+        return None
+    hh = conn.execute(select(households.c.name).where(households.c.id == r["household_id"])).scalar() \
+        if r["household_id"] else None
+    designation, is_biz = _designation(r["contact_type"], r["full_name"])
+    return {"id": r["id"], "name": r["full_name"], "designation": designation, "is_business": is_biz,
+            "contact_type": r["contact_type"], "email": r["primary_email"], "phone": r["primary_phone"],
+            "household_id": r["household_id"], "household_name": hh, "link": f"/client/{r['id']}"}
+
+
+def _destination_display(conn, entity_type, entity_id):
+    """Complete destination identity for the confirmation page (person / household / organization)."""
+    from app.db import households, people, relationship_entities
+    if entity_type == "person":
+        d = _person_display(conn, entity_id) or {"id": entity_id, "name": None}
+        return {"kind": "person", **d}
+    if entity_type == "household":
+        r = conn.execute(select(households.c.id, households.c.name)
+                         .where(households.c.id == entity_id)).mappings().first()
+        members = list(conn.scalars(select(people.c.full_name)
+                                    .where(people.c.household_id == entity_id).order_by(people.c.full_name)))
+        return {"kind": "household", "id": entity_id, "name": (r["name"] if r else None),
+                "members": members, "link": f"/client/household/{entity_id}"}
+    if entity_type == "organization":
+        r = conn.execute(select(relationship_entities.c.id, relationship_entities.c.name,
+                                relationship_entities.c.entity_type)
+                         .where(relationship_entities.c.id == entity_id)).mappings().first()
+        return {"kind": "organization", "id": entity_id, "name": (r["name"] if r else None),
+                "entity_type": (r["entity_type"] if r else None),
+                "link": f"/relationship-entities/{entity_id}"}
+    return {"kind": entity_type, "id": entity_id, "name": None}
+
+
+def _owner_label(row):
+    if row["person_id"] is not None:
+        return f"person #{row['person_id']}"
+    if row["household_id"] is not None:
+        return f"household #{row['household_id']}"
+    if row["organization_id"] is not None:
+        return f"organization #{row['organization_id']}"
+    return "Unassigned (NULL)"
+
+
+def _documents_detail(conn, doc_ids):
+    """Per-document detail for the confirmation page: id, filename, source folder/path, type/year,
+    current owner, and an authorized Open link. Read-only."""
+    from app.db import documents
+    if not doc_ids:
+        return []
+    rows = conn.execute(
+        select(documents.c.id, documents.c.original_name, documents.c.category, documents.c.subcategory,
+               documents.c.tags, documents.c.storage_path, documents.c.person_id,
+               documents.c.household_id, documents.c.organization_id)
+        .where(documents.c.id.in_(list(doc_ids))).order_by(documents.c.id)).mappings().all()
+    out = []
+    for r in rows:
+        tags = r["tags"] or {}
+        out.append({
+            "id": r["id"], "name": r["original_name"],
+            "source_folder": tags.get("taxdome_folder"), "source_path": r["storage_path"],
+            "doc_type": r["category"], "doc_subtype": r["subcategory"],
+            "year": tags.get("tax_year") or tags.get("year"),
+            "current_owner": _owner_label(r),
+            "download_url": f"/documents/{r['id']}/download",
+        })
+    return out
+
+
 def _folder_samples_and_candidates(folders):
     """Enrich each unresolved-folder row for the resolution UI: sample document names + candidate people
-    with distinguishing info (email/phone), plus household-name candidates. Read-only."""
-    from app.db import documents, households, people
+    with full distinguishing info (designation/email/phone/household + record link). Read-only."""
+    from app.db import documents
     from app.importers.taxdome_drive import taxdome_filter
     fc = documents.c.tags["taxdome_folder"].astext
     out = []
@@ -59,16 +147,9 @@ def _folder_samples_and_candidates(folders):
             cands = []
             for s in (f.get("suggestions") or [])[:6]:
                 pid = s.get("id") if isinstance(s, dict) else None
-                row = conn.execute(select(people.c.id, people.c.full_name, people.c.primary_email,
-                                          people.c.primary_phone, people.c.household_id)
-                                   .where(people.c.id == pid)).mappings().first() if pid else None
-                if row:
-                    hh = conn.execute(select(households.c.name)
-                                      .where(households.c.id == row["household_id"])).scalar() \
-                        if row["household_id"] else None
-                    cands.append({"id": row["id"], "name": row["full_name"], "email": row["primary_email"],
-                                  "phone": row["primary_phone"], "household_id": row["household_id"],
-                                  "household_name": hh})
+                disp = _person_display(conn, pid) if pid else None
+                if disp:
+                    cands.append(disp)
             out.append({**f, "sample_documents": samples, "candidates": cands})
     return out
 
@@ -138,9 +219,14 @@ def resolve_unassigned_folder(
     try:
         if confirm.strip().lower() != "yes":
             preview = resolve_folder_ownership(folder, dry_run=True, **kwargs)
+            with engine.connect() as conn:
+                destination = _destination_display(conn, entity_type, entity_id)
+                affected_docs = _documents_detail(conn, preview["affected_document_ids"])
+                excluded_docs = _documents_detail(conn, preview["excluded_permanent_rejects"])
             return templates.TemplateResponse(request=request, name="admin/unassigned_confirm.html",
                 context={"principal": principal, "folder": folder, "entity_type": entity_type,
-                         "entity_id": entity_id, "preview": preview})
+                         "entity_id": entity_id, "preview": preview, "destination": destination,
+                         "affected_docs": affected_docs, "excluded_docs": excluded_docs})
         result = resolve_folder_ownership(folder, actor_user_id=principal.user_id, request_id=rid, **kwargs)
     except ValueError as exc:
         return render_error(request, 400, detail=str(exc))

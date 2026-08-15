@@ -4,39 +4,84 @@
 {% block crumb %}Admin · Document Management · Confirm Assignment{% endblock %}
 {% block content %}
 {% call ui.page_head("Confirm folder assignment", eyebrow="Admin · Document Management",
-    desc="Review the exact destination and the documents that will be assigned. Nothing has changed yet.") %}
+    desc="Review the destination record and every document that will be assigned. Nothing has changed yet.") %}
   <a class="btn secondary" href="/admin/documents/unassigned">Cancel</a>
 {% endcall %}
 
-<article class="card" style="padding:16px 18px; max-width:720px">
+<article class="card" style="padding:16px 18px; margin-bottom:12px">
   <div class="detail-row"><span class="subtle">Source folder</span><strong>{{ folder }}</strong></div>
-  <div class="detail-row"><span class="subtle">Destination</span>
-    <strong>{{ preview.destination.entity_type }} #{{ preview.destination.entity_id }}
-    — {{ preview.destination.entity_name or "(name unavailable)" }}</strong></div>
-  <div class="detail-row"><span class="subtle">Documents to assign</span>
-    <strong>{{ preview.documents_affected }}</strong></div>
 
-  {% if preview.affected_document_ids %}
-  <p class="subtle" style="margin-top:8px">Document IDs:
-    {{ preview.affected_document_ids[:40] | join(", ") }}{% if preview.affected_document_ids|length > 40 %} … (+{{ preview.affected_document_ids|length - 40 }} more){% endif %}</p>
-  {% endif %}
-  {% if preview.excluded_permanent_rejects %}
-  <p class="subtle" style="color:var(--warn, #b45309)">Excluded permanent exceptions (never assigned):
-    {{ preview.excluded_permanent_rejects | join(", ") }}</p>
-  {% endif %}
-
-  {% if preview.documents_affected and preview.documents_affected > 0 %}
-  <form method="post" action="/admin/documents/unassigned/resolve" style="margin-top:14px">
-    <input type="hidden" name="folder" value="{{ folder }}">
-    <input type="hidden" name="entity_type" value="{{ entity_type }}">
-    <input type="hidden" name="entity_id" value="{{ entity_id }}">
-    <input type="hidden" name="confirm" value="yes">
-    <button class="btn" type="submit">Confirm — assign {{ preview.documents_affected }} document(s)</button>
-    <a class="btn secondary" href="/admin/documents/unassigned" style="margin-left:8px">Cancel</a>
-  </form>
+  <div style="margin-top:8px"><span class="subtle">Destination record</span>
+  {% if destination.kind == "person" %}
+    <div><strong>{% if destination.is_business %}Business Contact{% else %}Person{% endif %} #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
+      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open record ↗</a></div>
+    <div class="subtle">
+      {% if destination.contact_type %}contact_type: {{ destination.contact_type }} · {% endif %}
+      {% if destination.email %}{{ destination.email }} · {% endif %}
+      {% if destination.phone %}{{ destination.phone }} · {% endif %}
+      {% if destination.household_name %}Household: {{ destination.household_name }} (#{{ destination.household_id }}){% elif destination.household_id %}Household #{{ destination.household_id }}{% else %}No household{% endif %}
+    </div>
+  {% elif destination.kind == "household" %}
+    <div><strong>Household #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
+      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open household ↗</a></div>
+    <div class="subtle">Members: {% for m in destination.members %}{{ m }}{% if not loop.last %}, {% endif %}{% else %}(none listed){% endfor %}</div>
+  {% elif destination.kind == "organization" %}
+    <div><strong>Organization #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
+      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open organization ↗</a></div>
+    <div class="subtle">Entity type: {{ destination.entity_type or "—" }}</div>
   {% else %}
-  <p class="subtle" style="margin-top:14px">No eligible documents to assign for this destination (already linked, or only permanent exceptions remain).</p>
-  <a class="btn secondary" href="/admin/documents/unassigned">Back</a>
+    <div><strong>{{ destination.kind }} #{{ destination.id }}</strong></div>
   {% endif %}
+  </div>
+
+  <div class="detail-row" style="margin-top:8px"><span class="subtle">Documents to assign</span>
+    <strong>{{ preview.documents_affected }}</strong></div>
 </article>
+
+{% if affected_docs %}
+<article class="card" style="padding:14px 16px; margin-bottom:12px">
+  <div class="subtle" style="margin-bottom:6px">These {{ affected_docs|length }} document(s) will be assigned (open each to inspect before confirming):</div>
+  <div style="overflow-x:auto">
+  <table class="table">
+    <thead><tr><th>ID</th><th>Filename</th><th>Type / Year</th><th>Source folder</th><th>Current owner</th><th></th></tr></thead>
+    <tbody>
+    {% for d in affected_docs %}
+      <tr>
+        <td class="subtle">{{ d.id }}</td>
+        <td>{{ d.name }}</td>
+        <td class="subtle">{{ d.doc_type or "—" }}{% if d.doc_subtype %} / {{ d.doc_subtype }}{% endif %}{% if d.year %} · {{ d.year }}{% endif %}</td>
+        <td class="subtle">{{ d.source_folder or d.source_path or "—" }}</td>
+        <td class="subtle">{{ d.current_owner }}</td>
+        <td><a class="btn sm secondary" href="{{ d.download_url }}" target="_blank" rel="noopener">Open ↗</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</article>
+{% endif %}
+
+{% if excluded_docs %}
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+  <div style="color:var(--warn, #b45309); font-weight:600">EXCLUDED — WILL NOT BE ASSIGNED (permanent exceptions)</div>
+  {% for d in excluded_docs %}
+    <div class="detail-row"><span>#{{ d.id }} · {{ d.name }}</span>
+      <a class="btn sm secondary" href="{{ d.download_url }}" target="_blank" rel="noopener">Open ↗</a></div>
+  {% endfor %}
+</article>
+{% endif %}
+
+{% if preview.documents_affected and preview.documents_affected > 0 %}
+<form method="post" action="/admin/documents/unassigned/resolve">
+  <input type="hidden" name="folder" value="{{ folder }}">
+  <input type="hidden" name="entity_type" value="{{ entity_type }}">
+  <input type="hidden" name="entity_id" value="{{ entity_id }}">
+  <input type="hidden" name="confirm" value="yes">
+  <button class="btn" type="submit">Confirm — assign {{ preview.documents_affected }} document(s)</button>
+  <a class="btn secondary" href="/admin/documents/unassigned" style="margin-left:8px">Cancel</a>
+</form>
+{% else %}
+<p class="subtle">No eligible documents to assign for this destination (already linked, or only permanent exceptions remain).</p>
+<a class="btn secondary" href="/admin/documents/unassigned">Back</a>
+{% endif %}
 {% endblock %}
