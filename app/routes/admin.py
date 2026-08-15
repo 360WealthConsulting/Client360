@@ -113,9 +113,21 @@ def _owner_detail(conn, row):
     return {"type": None, "id": None, "name": None, "label": "Unassigned (NULL)"}
 
 
+_EXCEL_EXTS = {"xlsx", "xlsm"}
+
+
+def _view_url(document_id, name):
+    """Route the View action by file type: Excel -> Client360 workbook preview; everything else ->
+    the existing inline document route (PDF/image open inline; other types download)."""
+    ext = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
+    if ext in _EXCEL_EXTS:
+        return f"/documents/{document_id}/preview"
+    return f"/documents/{document_id}/download?inline=1"
+
+
 def _documents_detail(conn, doc_ids):
     """Per-document detail for the confirmation page: id, filename, source folder/path, type/year,
-    current owner (type/id/name), an inline View link and a Download link. Read-only."""
+    current owner (type/id/name), a type-aware View link and a Download link. Read-only."""
     from app.db import documents
     if not doc_ids:
         return []
@@ -135,7 +147,7 @@ def _documents_detail(conn, doc_ids):
             "year": tags.get("tax_year") or tags.get("year"),
             "current_owner": owner["label"], "current_owner_type": owner["type"],
             "current_owner_id": owner["id"], "current_owner_name": owner["name"],
-            "view_url": f"/documents/{r['id']}/download?inline=1",
+            "view_url": _view_url(r["id"], r["original_name"]),
             "download_url": f"/documents/{r['id']}/download",
         })
     return out

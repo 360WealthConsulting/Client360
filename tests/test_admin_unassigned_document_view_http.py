@@ -109,3 +109,12 @@ def test_http_ordinary_user_denied_unassigned_document(monkeypatch):
 def test_http_owned_out_of_scope_document_still_denied(monkeypatch):
     did = _seed_doc(household_id=_household())   # already owned; admin has no record scope for it
     assert _authorize(monkeypatch, f"/documents/{did}/download?inline=1", {"client.write", "document.read"}) == 403
+
+
+def test_http_workbook_preview_uses_same_authorization(monkeypatch):
+    # The /preview path is gated identically to the document route (middleware document-scope check).
+    did = _seed_doc()   # genuinely all-NULL
+    assert _authorize(monkeypatch, f"/documents/{did}/preview", {"client.write", "document.read"}) == 200
+    assert _authorize(monkeypatch, f"/documents/{did}/preview", {"document.read"}) == 403       # ordinary
+    owned = _seed_doc(household_id=_household())
+    assert _authorize(monkeypatch, f"/documents/{owned}/preview", {"client.write", "document.read"}) == 403

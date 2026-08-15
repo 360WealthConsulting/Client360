@@ -153,6 +153,92 @@ def download_document(document_id: int, request: Request, inline: bool = False):
     )
 
 
+_EXCEL_EXTS = {"xlsx", "xlsm"}          # openpyxl reads these; legacy .xls is not supported here
+_PREVIEW_MAX_ROWS = 200
+_PREVIEW_MAX_COLS = 30
+_PREVIEW_MAX_FILE_BYTES = 25 * 1024 * 1024
+
+
+def _fmt_cell(value):
+    """Render a workbook cell value for read-only display (dates/numbers/text handled reasonably)."""
+    from datetime import date, datetime, time
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat() if value.time() == time(0, 0) else value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def read_workbook_preview(path, sheet=""):
+    """Read a bounded, READ-ONLY preview of an .xlsx/.xlsm workbook. Never writes or converts the file.
+    Returns {sheetnames, active, rows, truncated_rows, truncated_cols} or {error} on failure."""
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001 — malformed/unreadable workbook: fail safely
+        return {"error": f"This workbook could not be opened for preview ({type(exc).__name__})."}
+    try:
+        sheetnames = list(wb.sheetnames)
+        active = sheet if sheet in sheetnames else (sheetnames[0] if sheetnames else None)
+        rows, truncated_rows, truncated_cols = [], False, False
+        if active is not None:
+            ws = wb[active]
+            for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
+                if r_idx >= _PREVIEW_MAX_ROWS:
+                    truncated_rows = True
+                    break
+                cells = []
+                for c_idx, val in enumerate(row):
+                    if c_idx >= _PREVIEW_MAX_COLS:
+                        truncated_cols = True
+                        break
+                    cells.append(_fmt_cell(val))
+                rows.append(cells)
+        return {"sheetnames": sheetnames, "active": active, "rows": rows,
+                "truncated_rows": truncated_rows, "truncated_cols": truncated_cols}
+    finally:
+        wb.close()
+
+
+@router.get("/documents/{document_id}/preview")
+def preview_document(document_id: int, request: Request, sheet: str = ""):
+    """Read-only Client360 workbook preview for .xlsx/.xlsm documents, so an admin can inspect a
+    spreadsheet in a new tab instead of downloading it. Authorization is unchanged — the middleware
+    enforces the same document-scope rules on this ``/documents/{id}`` path (including the admin
+    unassigned-document exception). Never modifies the source file, metadata, or ownership."""
+    document = get_document(document_id)
+    if document is None or document["archived"]:
+        return render_error(request, 404,
+                            detail="This document is no longer available. It may have been archived.")
+    name = document["original_name"] or ""
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    ctx = {"document_id": document_id, "filename": name,
+           "download_url": f"/documents/{document_id}/download"}
+    if ext not in _EXCEL_EXTS:
+        ctx["error"] = "Preview is available for .xlsx/.xlsm workbooks only. Use Download for this file."
+        return templates.TemplateResponse(request=request, name="documents/workbook_preview.html",
+                                          context={**ctx, "sheetnames": [], "rows": []})
+
+    if document["storage_uri"] and Path(document["storage_uri"]).is_absolute():
+        path = Path(document["storage_uri"])
+    else:
+        path = Path(document["storage_path"])
+    if not path.exists():
+        return render_error(request, 404,
+                            detail="The stored copy of this document could not be found on the server.")
+    if path.stat().st_size > _PREVIEW_MAX_FILE_BYTES:
+        ctx["error"] = "This workbook is too large to preview safely. Use Download instead."
+        return templates.TemplateResponse(request=request, name="documents/workbook_preview.html",
+                                          context={**ctx, "sheetnames": [], "rows": []})
+
+    result = read_workbook_preview(path, sheet=sheet)
+    return templates.TemplateResponse(request=request, name="documents/workbook_preview.html",
+                                      context={**ctx, **result,
+                                               "max_rows": _PREVIEW_MAX_ROWS, "max_cols": _PREVIEW_MAX_COLS})
+
+
 @router.post(
     "/people/{person_id}/documents/{document_id}/archive"
 )
