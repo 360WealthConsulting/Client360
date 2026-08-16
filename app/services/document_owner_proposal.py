@@ -19,11 +19,20 @@ as CONTEXT only and can never be the proposed owner (Liberty University / Wells 
 """
 from __future__ import annotations
 
+import json
 import re
 
 from sqlalchemy import select
 
-from app.db import documents, engine, households, people, relationship_entities
+from app.db import (
+    documents,
+    engine,
+    households,
+    people,
+    person_source_links,
+    relationship_entities,
+    source_contacts,
+)
 
 PERMANENT_REJECT_DOCUMENT_IDS = frozenset({4704, 4716, 4717, 17932, 22336, 22338})
 
@@ -171,6 +180,7 @@ def build_match_indexes(conn):
                 idx["phone"].setdefault(ph, set()).add(pid)
         if r.get("household_id") is not None:
             idx["members"].setdefault(r["household_id"], set()).add(pid)
+    _augment_from_source_contacts(conn, idx)
     for h in conn.execute(select(households.c.id, households.c.name)).mappings():
         idx["hh_name"][h["id"]] = h["name"]
     for e in conn.execute(select(relationship_entities.c.id, relationship_entities.c.name,
@@ -181,6 +191,52 @@ def build_match_indexes(conn):
         else:
             idx["biz"][_norm(e["name"])] = (e["id"], e["name"])
     return idx
+
+
+def _augment_from_source_contacts(conn, idx):
+    """Union each canonical person's LINKED source-contact emails/phones/addresses into the match index.
+
+    In this data model the canonical `people` contact columns are largely NULL — the real emails, phones
+    and addresses were captured on `source_contacts` and connected through `person_source_links` (the
+    MDM canonical-field backfill is a separate, deferred task). Reading only the canonical columns left
+    the strongest disambiguating signals — email / phone / address — blind for almost the whole
+    population, so proposals collapsed to name-only. This is a READ-ONLY index enrichment: it writes no
+    canonical data, is source-agnostic (every linked source_system contributes equally), and only
+    enriches people already present in the canonical index (it never invents a new owner)."""
+    sc = source_contacts.c
+    j = person_source_links.join(source_contacts, person_source_links.c.source_contact_id == sc.id)
+    cols = [person_source_links.c.person_id, sc.email, sc.normalized_email, sc.phone,
+            sc.normalized_phone, sc.address_line_1, sc.postal_code, sc.raw_data]
+    for r in conn.execute(select(*cols).select_from(j)).mappings():
+        pid = r["person_id"]
+        info = idx["pid"].get(pid)
+        if info is None:
+            continue                                   # only enrich known canonical people
+        raw = r["raw_data"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (ValueError, TypeError):
+                raw = {}
+        raw = raw if isinstance(raw, dict) else {}
+        for e in (r["email"], r["normalized_email"], raw.get("home_email"), raw.get("work_email")):
+            e = (e or "").strip().lower()
+            if e and "@" in e:
+                idx["email"].setdefault(e, set()).add(pid)
+                if not info.get("email"):
+                    info["email"] = e
+        for ph in (_phone10(r["phone"]), _phone10(r["normalized_phone"]),
+                   _phone10(raw.get("home_phone")), _phone10(raw.get("work_phone"))):
+            if ph:
+                idx["phone"].setdefault(ph, set()).add(pid)
+                if not info.get("phone"):
+                    info["phone"] = ph
+        z = _zip5(r["postal_code"])
+        if z:
+            info["zips"].add(z)
+        st = _norm(r["address_line_1"])
+        if st:
+            info["streets"].add(st)
 
 
 # --- analysis ----------------------------------------------------------------------------------

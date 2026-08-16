@@ -12,25 +12,33 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.db import documents, engine, people
+from app.db import documents, engine, people, person_source_links, source_contacts
 from app.services import document_owner_proposal as dop
 from app.services.document_owner_proposal import analyze_identity
 
 _TAG = uuid.uuid4().hex[:8]
 _DOCS: list = []
 _PEOPLE: list = []
+_SC: list = []
+_LINKS: list = []
 
 
 @pytest.fixture(autouse=True)
 def _cleanup():
     yield
     with engine.begin() as c:
+        if _LINKS:
+            c.execute(person_source_links.delete().where(person_source_links.c.id.in_(_LINKS)))
+        if _SC:
+            c.execute(source_contacts.delete().where(source_contacts.c.id.in_(_SC)))
         if _DOCS:
             c.execute(documents.delete().where(documents.c.id.in_(_DOCS)))
         if _PEOPLE:
             c.execute(people.delete().where(people.c.id.in_(_PEOPLE)))
     _DOCS.clear()
     _PEOPLE.clear()
+    _SC.clear()
+    _LINKS.clear()
 
 
 def _idx():
@@ -239,6 +247,66 @@ def test_already_owned_document_is_not_eligible():
     did = _doc(person_id=_person_with(f"owned-{_TAG}@e.com"), name="x.txt")
     r = dop.propose_document_owner(did)
     assert r["eligible"] is False and r["reason"] == "already_owned"
+
+
+# --- source-contact enrichment (canonical contact fields are largely NULL in this data model) -------
+
+def _person_no_contact(full_name):
+    with engine.begin() as c:
+        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+                        .returning(people.c.id)).scalar_one()
+    _PEOPLE.append(pid)
+    return pid
+
+
+def _source_contact_link(pid, *, email=None, phone=None, raw=None):
+    with engine.begin() as c:
+        sid = c.execute(source_contacts.insert().values(
+            source_system="TaxDome", source_file="t.zip", source_record_id=uuid.uuid4().hex,
+            source_hash=uuid.uuid4().hex, email=email, phone=phone, raw_data=(raw or {})
+        ).returning(source_contacts.c.id)).scalar_one()
+        lid = c.execute(person_source_links.insert().values(
+            person_id=pid, source_contact_id=sid, match_method="email", confirmed=True
+        ).returning(person_source_links.c.id)).scalar_one()
+    _SC.append(sid)
+    _LINKS.append(lid)
+
+
+def test_build_indexes_reads_email_phone_from_linked_source_contacts():
+    email = f"srconly-{_TAG}@mail.com"
+    pid = _person_no_contact(f"Quibbleworth {_TAG}")           # NULL canonical email/phone
+    _source_contact_link(pid, email=email, phone="804-218-9034",
+                         raw={"home_email": f"home-{_TAG}@mail.com"})
+    with engine.connect() as conn:
+        idx = dop.build_match_indexes(conn)
+    assert pid in idx["email"].get(email, set())               # structured source email indexed
+    assert pid in idx["email"].get(f"home-{_TAG}@mail.com", set())   # raw_data home_email indexed
+    assert pid in idx["phone"].get("8042189034", set())        # source phone indexed
+
+
+def test_content_matches_person_via_source_contact_email_outside_folder(tmp_path):
+    # Person has NO canonical contact fields; the only email lives on a linked source_contact. A document
+    # whose content carries that email must still propose this person (folder is irrelevant here).
+    email = f"content-{_TAG}@mail.com"
+    pid = _person_no_contact(f"Zephyrina {_TAG}")
+    _source_contact_link(pid, email=email)
+    f = tmp_path / "notice.txt"
+    f.write_text(f"Please remit to {email} regarding the 2021 filing.\n")
+    did = _doc(f, name="notice.txt")
+    r = dop.propose_document_owner(did)
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
+    assert any("matched" in e for e in r["evidence"])
+    assert _owner(did) == (None, None, None)                   # still no mutation
+
+
+def test_content_matches_person_via_source_contact_phone(tmp_path):
+    pid = _person_no_contact(f"Thaddeus {_TAG}")
+    _source_contact_link(pid, phone="(804) 218-9034")
+    f = tmp_path / "call.txt"
+    f.write_text("Contact number on file: 804-218-9034\n")
+    did = _doc(f, name="call.txt")
+    r = dop.propose_document_owner(did)
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
 
 
 # --- UI --------------------------------------------------------------------------------------
