@@ -310,25 +310,24 @@ def _driveitem_to_record(drive_id, it):
     return rec
 
 
-def _connector_token(mod):
-    """Best-effort: obtain a Graph access token via the connector's OWN self-contained auth, so the
-    adapter's dry-run enumeration can authenticate exactly as the connector does. Returns None if the
-    connector needs no token here or its auth isn't self-contained (the enumerator then runs tokenless)."""
-    for loader, getter in (("_load_connected_account", "_acquire_token"), (None, "acquire_token"),
-                           (None, "get_access_token"), (None, "access_token")):
-        try:
-            get = getattr(mod, getter, None)
-            if get is None:
-                continue
-            if loader is not None:
-                load = getattr(mod, loader, None)
-                if load is None:
-                    continue
-                return get(load())
-            return get() if callable(get) else get
-        except Exception:  # noqa: BLE001 — auth is environment-specific; fall through
-            continue
-    return None
+def _connector_session(mod):
+    """Build an authenticated Graph session EXACTLY as the connector's own run() does — no generic auth
+    abstraction, just the three functions this deployment's connector already exposes:
+
+        account = latest_account()
+        token   = get_microsoft_access_token(account)
+        session = graph_session(token)
+
+    Returns the authenticated ``requests.Session`` (what ``iter_drive_items(session, drive_id)`` needs),
+    or None if the connector does not expose this exact auth path."""
+    latest = getattr(mod, "latest_account", None)
+    get_token = getattr(mod, "get_microsoft_access_token", None)
+    make_session = getattr(mod, "graph_session", None)
+    if not (callable(latest) and callable(get_token) and callable(make_session)):
+        return None
+    account = latest()
+    token = get_token(account)
+    return make_session(token)
 
 
 def _enumerate_metadata(mod, fn, drive_id, *, top, limit, timeout, diag, progress):
@@ -336,10 +335,11 @@ def _enumerate_metadata(mod, fn, drive_id, *, top, limit, timeout, diag, progres
     base metadata records import_sharepoint_items consumes. Files only (folders skipped)."""
     import time
     values = {"drive_id": drive_id, "limit": limit, "download": False, "dry_run": True}
-    token = _connector_token(mod)
-    if token is not None:
-        for k in ("token", "access_token"):
-            values[k] = token
+    # The connector's iter_drive_items(session, drive_id) needs an authenticated session; build it the
+    # same way run() does. _build_kwargs passes it only to an enumerator that declares `session`.
+    session = _connector_session(mod)
+    if session is not None:
+        values["session"] = session
     if top is not None:
         for k in ("top", "page_size", "first_page_size"):
             values[k] = int(top)

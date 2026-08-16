@@ -591,3 +591,101 @@ def test_partial_dry_run_does_not_report_existing_corpus_missing(tmp_path):
     _track()
     assert summary["missing"] == 0 and summary.get("missing_reconciliation_skipped")
     assert _doc_for(b["web_url"])["available"] is True         # the un-enumerated ref stays available
+
+
+# --- dry-run enumerator builds its session via the connector's OWN auth (latest_account -> token ->
+#     graph_session), then calls iter_drive_items(session, drive_id) — no generic auth abstraction ------
+
+def _session_delta_connector(recorder, *, files=10, folders=5):
+    """A connector shaped like production: iter_drive_items(session, drive_id) needs an authenticated
+    requests.Session, and run() builds it from latest_account -> get_microsoft_access_token -> graph_session.
+    The adapter must reuse those exact three functions to construct the session for dry-run enumeration."""
+    import types
+
+    def latest_account():
+        recorder.append("latest_account")
+        return {"id": "acct-1"}
+
+    def get_microsoft_access_token(account):
+        recorder.append(("token", account["id"]))
+        return f"tok:{account['id']}"
+
+    def graph_session(token):
+        recorder.append(("session", token))
+        return {"__session__": True, "token": token}          # stand-in for requests.Session
+
+    def run(*, drive_id, root, download, limit, manifest):     # present (needs_drive); NOT used in dry-run
+        recorder.append(("run", drive_id))
+        return {"status": "ok"}
+
+    def iter_drive_items(session, drive_id):                   # exact production signature (positional)
+        recorder.append(("iter", session, drive_id))
+        assert isinstance(session, dict) and session.get("__session__") is True   # the built session
+        for i in range(folders):
+            yield {"id": f"F{i}", "name": f"Folder{i}", "folder": {"childCount": 1},
+                   "parentReference": {"driveId": drive_id, "siteId": "S1", "path": "/drive/root:"}}
+        for i in range(files):
+            yield {"id": f"D{i}", "name": f"doc{i}.pdf", "file": {"mimeType": "application/pdf"},
+                   "size": 100 + i, "webUrl": f"https://sp/{drive_id}/doc{i}.pdf",
+                   "lastModifiedDateTime": "2024-01-01T00:00:00Z",
+                   "parentReference": {"driveId": drive_id, "siteId": "S1", "path": "/drive/root:/Clients"}}
+
+    return types.SimpleNamespace(latest_account=latest_account,
+                                 get_microsoft_access_token=get_microsoft_access_token,
+                                 graph_session=graph_session, run=run,
+                                 iter_drive_items=iter_drive_items)
+
+
+def test_enumerator_builds_session_from_connector_auth_path():
+    rec = []
+    diag = {}
+    stager = mi.resolve_sharepoint_stager(module=_session_delta_connector(rec), drive_ids=["drvS"],
+                                          dry_run=True, diag=diag)
+    items = stager()
+    # session was built via the connector's OWN three functions, in order...
+    assert rec[0] == "latest_account"
+    assert ("token", "acct-1") in rec and ("session", "tok:acct-1") in rec
+    # ...and iter_drive_items received exactly that authenticated session + the drive id
+    icall = next(c for c in rec if isinstance(c, tuple) and c[0] == "iter")
+    assert icall[1] == {"__session__": True, "token": "tok:acct-1"} and icall[2] == "drvS"
+    assert not any(c[0] == "run" for c in rec if isinstance(c, tuple))   # NOT a run() fallback
+    assert len(items) == 10 and diag["total_items"] == 10 and not diag.get("enum_errors")
+    assert items[0]["web_url"] == "https://sp/drvS/doc0.pdf" and items[0]["dry_run"] is True
+
+
+def test_session_enumerator_dry_run_10_items_no_download_no_canonical(tmp_path):
+    dest = tmp_path / "dest"
+    with engine.connect() as c:
+        before = c.execute(select(func.count()).select_from(documents)).scalar()
+    stager = mi.resolve_sharepoint_stager(module=_session_delta_connector([], files=12, folders=4),
+                                          drive_ids=["drvS2"], dry_run=True, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(dest), dry_run=True, ocr=False)
+    with engine.connect() as c:
+        after = c.execute(select(func.count()).select_from(documents)).scalar()
+    assert summary["status"] == "dry_run"
+    assert summary["items_examined"] == 10                     # capped by --limit 10
+    assert summary["missing"] == 0                             # guard: partial dry-run never reconciles
+    assert after == before                                     # no canonical DB mutation
+    assert not dest.exists() or not any(dest.rglob("*.*"))     # no download
+
+
+def test_enumerator_falls_back_to_run_only_when_auth_path_absent():
+    # If the connector does NOT expose the three auth functions, session can't be built and iter_drive_items
+    # (which requires session) is unusable -> clean fallback to run(), recorded in enum_errors.
+    import types
+    rec = []
+
+    def run(*, drive_id, root, download, limit, manifest):
+        rec.append(("run", drive_id, download))
+        return {"status": "ok", "files_seen": 0}
+
+    def iter_drive_items(session, drive_id):     # requires session, but no auth path exposed
+        yield {"id": "x", "name": "x.pdf", "file": {}, "webUrl": "u"}
+
+    diag = {}
+    stager = mi.resolve_sharepoint_stager(module=types.SimpleNamespace(run=run,
+                                          iter_drive_items=iter_drive_items),
+                                          drive_ids=["d1"], dry_run=True, diag=diag)
+    stager()
+    assert diag.get("enum_errors") and "session" in diag["enum_errors"][0]
+    assert any(c[0] == "run" for c in rec)       # fell back to run()
