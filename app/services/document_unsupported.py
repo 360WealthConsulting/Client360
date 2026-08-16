@@ -93,6 +93,70 @@ def inventory(*, limit=None):
             "by_source": dict(by_source.most_common())}
 
 
+def _identify(magic):
+    if magic[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return "OLE2 compound (legacy Office: .xls / .doc)"
+    if magic[:16].startswith(b"SQLite format 3\x00"):
+        return "SQLite 3 database"
+    if magic[:4] == b"PK\x03\x04":
+        return "ZIP container (docx / xlsx / zip)"
+    if magic[:4] == b"%PDF":
+        return "PDF"
+    if magic[:3] == b"\xff\xd8\xff":
+        return "JPEG image"
+    if magic[:8] == b"\x89PNG\r\n\x1a\n":
+        return "PNG image"
+    return "unknown / binary"
+
+
+def _sqlite_tables(path):
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)          # read-only open
+        try:
+            return [r[0] for r in con.execute(
+                "select name from sqlite_master where type='table' order by name")][:50]
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def inspect_files(doc_ids):
+    """READ-ONLY per-file inspection for the genuinely-unsupported formats: id, filename, source_path,
+    size, MIME/content_type, existence, magic-byte identification, and (for SQLite) the table names. It
+    reads only the first 16 bytes (+ SQLite schema, read-only). It never parses proprietary contents."""
+    out = []
+    with engine.connect() as conn:
+        for did in doc_ids:
+            row = conn.execute(select(documents.c.original_name, documents.c.content_type,
+                                      documents.c.storage_uri, documents.c.storage_path,
+                                      documents.c.size_bytes, documents.c.tags)
+                               .where(documents.c.id == did)).mappings().first()
+            if row is None:
+                out.append({"document_id": did, "error": "not_found"})
+                continue
+            path = _resolve_path(row)
+            exists = bool(path and path.exists())
+            magic = b""
+            size = row["size_bytes"]
+            if exists:
+                try:
+                    with open(str(path), "rb") as fh:
+                        magic = fh.read(16)
+                    size = size or path.stat().st_size
+                except Exception:  # noqa: BLE001
+                    magic = b""
+            info = {"document_id": did, "filename": row["original_name"], "extension": _ext(row["original_name"]),
+                    "source_path": (row["tags"] or {}).get("taxdome_folder"),
+                    "content_type": row["content_type"], "size_bytes": size, "file_exists": exists,
+                    "magic_hex": magic.hex(), "identified": _identify(magic) if exists else "file missing"}
+            if info["identified"].startswith("SQLite"):
+                info["sqlite_tables"] = _sqlite_tables(path)
+            out.append(info)
+    return out
+
+
 def reanalyze(*, doc_ids=None, limit=None):
     """Re-run ONLY the currently-UNSUPPORTED documents (or the given ids) with the OCR fallback enabled.
     Returns before/after bucket counts + newly_text / newly_identity / remaining. Assigns no ownership."""

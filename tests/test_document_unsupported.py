@@ -186,3 +186,86 @@ def test_reanalyze_reports_remaining_for_true_unsupported(tmp_path):
     res = du.reanalyze(doc_ids=[did])
     assert res["after_counts"].get("UNSUPPORTED", 0) == 1
     assert did in {r["document_id"] for r in res["remaining"]}
+
+
+# --- EML extractor (Phase 5 step 2) ---------------------------------------------------------------
+
+def _eml(path, *, frm, to, subject, body, attach=None, html=False):
+    lines = [f"From: {frm}", f"To: {to}", f"Subject: {subject}",
+             "Date: Mon, 01 Jan 2024 10:00:00 -0500", "MIME-Version: 1.0"]
+    if html:
+        lines += ["Content-Type: text/html; charset=utf-8", "", f"<html><body><p>{body}</p></body></html>"]
+    else:
+        lines += ["Content-Type: text/plain; charset=utf-8", "", body]
+    path.write_text("\r\n".join(lines) + "\r\n")
+
+
+def test_eml_extraction_headers_and_body(tmp_path):
+    f = tmp_path / "m.eml"
+    _eml(f, frm=f"Mary <mary-{_TAG}@x.com>", to="advisor@firm.com",
+         subject="Tax documents", body="Please find my W-2 attached. Thanks, Mary Hardy")
+    text, method = _extract(-1, f, "m.eml")
+    assert method == "eml"
+    assert f"mary-{_TAG}@x.com" in text and "Tax documents" in text and "Mary Hardy" in text
+
+
+def test_eml_html_body_converted(tmp_path):
+    f = tmp_path / "h.eml"
+    _eml(f, frm=f"c-{_TAG}@x.com", to="a@b.com", subject="Hi", body="Hello <b>Mary Hardy</b> world", html=True)
+    text, method = _extract(-1, f, "h.eml")
+    assert method == "eml" and "Mary Hardy" in text and "<b>" not in text
+
+
+def test_eml_corrupt_fails_safe(tmp_path):
+    f = tmp_path / "bad.eml"
+    f.write_bytes(b"\x00\x01\x02 not a message")
+    text, method = _extract(-1, f, "bad.eml")
+    assert method in ("eml", "unsupported")                # never raises; empty parse -> unsupported
+    assert _extract(-1, tmp_path / "missing.eml", "missing.eml")  # missing path handled by caller
+
+
+def test_eml_feeds_pipeline_matches_via_from(tmp_path):
+    email = f"emlp-{_TAG}@mail.com"
+    pid = _person(f"Emlina {_A}", email=email)
+    f = tmp_path / "p.eml"
+    _eml(f, frm=f"Emlina {_A} <{email}>", to="advisor@firm.com", subject="Docs", body="my statement")
+    did = _doc(f, "p.eml")
+    r = dop.propose_document_owner(did)
+    assert r["extraction_method"] == "eml" and r["proposed_entity_id"] == pid
+
+
+# --- XLS extractor (guarded on xlrd) --------------------------------------------------------------
+
+def test_xls_without_xlrd_stays_unsupported(tmp_path):
+    import importlib.util
+    if importlib.util.find_spec("xlrd") is not None:
+        pytest.skip("xlrd installed; fail-safe path not exercised")
+    f = tmp_path / "legacy.xls"
+    f.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 fake ole2")     # OLE2 magic but no xlrd -> ""
+    text, method = _extract(-1, f, "legacy.xls")
+    assert text == "" and method == "unsupported"          # guarded: no dependency -> fail safe
+
+
+# --- inspection (magic identification, read-only) -------------------------------------------------
+
+def test_inspect_identifies_formats(tmp_path):
+    ole = tmp_path / "a.xls"; ole.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest")
+    unk = tmp_path / "a.napiers"; unk.write_bytes(b"\x7f\x7f\x7f binaryjunk")
+    d_ole = _doc(ole, "a.xls")
+    d_unk = _doc(unk, "a.napiers")
+    rows = {r["document_id"]: r for r in du.inspect_files([d_ole, d_unk])}
+    assert rows[d_ole]["identified"].startswith("OLE2")
+    assert rows[d_unk]["identified"] == "unknown / binary"
+    assert _owner(d_ole) == (None, None, None)             # inspection writes nothing
+
+
+def test_inspect_sqlite_lists_tables(tmp_path):
+    import sqlite3
+    dbp = tmp_path / "store.db"
+    con = sqlite3.connect(str(dbp))
+    con.execute(f"create table clients_{_A} (id integer, name text)")
+    con.commit(); con.close()
+    did = _doc(dbp, "store.db")
+    row = du.inspect_files([did])[0]
+    assert row["identified"].startswith("SQLite")
+    assert f"clients_{_A}" in (row.get("sqlite_tables") or [])

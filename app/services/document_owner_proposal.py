@@ -224,6 +224,69 @@ def _ics_text(path):
     return "\n".join(out)
 
 
+def _html_to_text(html_str):
+    import html as _html
+    s = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", html_str)
+    s = re.sub(r"(?i)<br\s*/?>|</p>", "\n", s)
+    s = re.sub(r"<[^>]+>", " ", s)
+    return _html.unescape(s)
+
+
+def _eml_text(path):
+    """From/To/Cc/Subject/Date + the plain-text (or HTML-converted) body + attachment FILENAMES from a
+    .eml (RFC-822) message. Standard library only; "" on failure. Attachment CONTENTS are not parsed."""
+    import email
+    from email import policy
+    try:
+        with open(str(path), "rb") as fh:
+            msg = email.message_from_binary_file(fh, policy=policy.default)
+    except Exception:  # noqa: BLE001 — malformed message
+        return ""
+    parts = [f"{h}: {msg.get(h)}" for h in ("From", "To", "Cc", "Subject", "Date") if msg.get(h)]
+    body = ""
+    try:
+        b = msg.get_body(preferencelist=("plain", "html"))
+        if b is not None:
+            content = b.get_content()
+            body = _html_to_text(content) if b.get_content_type() == "text/html" else content
+    except Exception:  # noqa: BLE001
+        body = ""
+    if body and body.strip():
+        parts.append(body.strip())
+    try:
+        atts = [p.get_filename() for p in msg.iter_attachments() if p.get_filename()]
+    except Exception:  # noqa: BLE001
+        atts = []
+    if atts:
+        parts.append("Attachments: " + ", ".join(atts))
+    return "\n".join(parts)[:_MAX_TEXT_CHARS]
+
+
+def _xls_text(path):
+    """Legacy .xls (BIFF/OLE2) workbook cell text via xlrd, IF xlrd is installed. Guarded: without xlrd,
+    or on a non-xls / corrupt file, returns "" (stays unsupported) — the smallest safe legacy-Excel
+    support. xlrd 2.x reads ONLY .xls (never .xlsx), so it cannot collide with the openpyxl .xlsx path."""
+    try:
+        import xlrd
+    except ImportError:
+        return ""                                          # dependency not installed -> fail safe
+    try:
+        book = xlrd.open_workbook(str(path))
+    except Exception:  # noqa: BLE001 — not a genuine .xls / corrupt
+        return ""
+    parts = []
+    for sheet in book.sheets():
+        parts.append(str(sheet.name))
+        for r in range(min(sheet.nrows, _MAX_EXCEL_ROWS)):
+            vals = [str(sheet.cell_value(r, c)) for c in range(sheet.ncols)
+                    if str(sheet.cell_value(r, c)).strip()]
+            if vals:
+                parts.append(" ".join(vals))
+        if sum(len(p) for p in parts) >= _MAX_TEXT_CHARS:
+            break
+    return "\n".join(parts)[:_MAX_TEXT_CHARS]
+
+
 def _live_ocr(conn, document_id):
     """Trigger the EXISTING production OCR backend for one document (populates the document_ocr cache),
     then return its text. Reuses app.services.document_ocr.run_ocr + ocr_backend — it does NOT introduce a
@@ -267,6 +330,12 @@ def extract_document_text(conn, row, path, *, ocr=False):
     elif ext == "ics" and path is not None and path.exists():
         text = _ics_text(path)
         method = "ics" if text.strip() else "unsupported"
+    elif ext == "eml" and path is not None and path.exists():
+        text = _eml_text(path)
+        method = "eml" if text.strip() else "unsupported"
+    elif ext == "xls" and path is not None and path.exists():
+        text = _xls_text(path)
+        method = "xls" if text.strip() else "unsupported"
     elif ext == "pdf" and path is not None and path.exists():
         text = _pdf_text(path)
         if len(text.strip()) >= _MIN_NATIVE_CHARS:
