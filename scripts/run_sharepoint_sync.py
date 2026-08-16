@@ -72,11 +72,15 @@ def main(argv=None):
         print(f"  staging_root: {diag.get('staging_root')}")
         print(f"  drives discovered: {diag.get('drive_count')}   drive_ids: {diag.get('drive_ids')}")
         print(f"  total staged items returned: {diag.get('total_items')}")
+        if diag.get("enumerator"):
+            print(f"  dry-run enumerator: {diag.get('enumerator')}")
+        if diag.get("enum_errors"):
+            print(f"  enum_errors: {diag.get('enum_errors')}")
         for d in (diag.get("drives") or [])[:20]:
             print(f"    drive {d['drive_id']}: items={d['items']} source={d['source']} "
-                  f"download={d['download']} manifest_exists={d['manifest_exists']} "
-                  f"result_type={d['result_type']} result_keys={d.get('result_keys')} "
-                  f"result_counts={d.get('result_counts')} manifest={d['manifest']}")
+                  f"download={d['download']} manifest_exists={d.get('manifest_exists')} "
+                  f"result_type={d.get('result_type')} result_keys={d.get('result_keys')} "
+                  f"result_counts={d.get('result_counts')} manifest={d.get('manifest')}")
 
     print("SharePoint sync:", summary.get("status"))
     for k in ("items_examined", "canonical_created", "reused_canonical", "metadata_updated", "skipped",

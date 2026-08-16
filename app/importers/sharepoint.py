@@ -155,7 +155,20 @@ def import_sharepoint_items(items, *, destination_root=None, actor_user_id=None,
         if progress and summary["items_examined"] % max(progress_interval, 1) == 0:
             progress(summary)
 
-    _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable)
+    # Safety — "missing" reconciliation (marking every SharePoint ref NOT seen this pass as unavailable)
+    # is only valid against a COMPLETE, authoritative enumeration from a real sync. Skip it when that
+    # precondition does not hold, so the existing corpus is never falsely reported/marked missing:
+    #   * dry-run: a preview that may be partial (e.g. `--limit 10` enumerates only some items) and whose
+    #     staged records are metadata-only — computing "missing" here would flag the rest of the corpus.
+    #   * empty staging: zero seen items almost always means a connector/enumeration failure, not that
+    #     every document was deleted.
+    # A real (non-dry-run) sync with items still reconciles missing/deleted exactly as before.
+    if dry_run:
+        summary["missing_reconciliation_skipped"] = "dry-run preview (possibly partial); not reconciled"
+    elif seen_uris:
+        _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable)
+    else:
+        summary["missing_reconciliation_skipped"] = "no items staged (connector returned zero)"
     _audit(db, summary, actor_user_id, request_id, dry_run)
 
     summary["status"] = "dry_run" if dry_run else ("completed_with_errors" if summary["errors"]

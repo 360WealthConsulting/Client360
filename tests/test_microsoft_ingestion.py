@@ -496,3 +496,98 @@ def test_connector_timeout_surfaced_not_hung():
     with pytest.raises(TimeoutError) as exc:
         stager3()
     assert "exceeded 0.1s" in str(exc.value) and "--top" in str(exc.value)   # clean timeout message
+
+
+# --- dry-run stages metadata via the connector's delta ITERATOR (iter_drive_items), no download -------
+# Production connector: run(download=False) enumerates but returns ONLY a summary (no items, no manifest),
+# so the importer saw 0 staged items and (before the fix) reported the whole corpus missing. The adapter
+# now stages metadata via the connector's own delta iterator instead — files only, no content download.
+
+def _delta_connector(recorder, *, files=10, folders=5):
+    """A connector shaped like production: run() couples download+manifest (unusable for dry-run), while
+    iter_drive_items() yields raw Graph driveItems (files + folders) with NO download."""
+    import types
+
+    def run(*, drive_id, root, download, limit, manifest):     # present (needs_drive); NOT used in dry-run
+        recorder.append(("run", drive_id, download))
+        return {"status": "ok", "files_seen": 0}               # download=False -> summary only, 0 items
+
+    def iter_drive_items(*, drive_id, top=None, limit=None, download=True, dry_run=False):
+        recorder.append(("iter", drive_id, download, dry_run, top, limit))
+        for i in range(folders):                               # folders must be skipped (files only)
+            yield {"id": f"F{i}", "name": f"Folder{i}", "folder": {"childCount": 2},
+                   "parentReference": {"path": "/drive/root:", "driveId": drive_id, "siteId": "S1"}}
+        for i in range(files):
+            yield {"id": f"D{i}", "name": f"doc{i}.pdf", "file": {"mimeType": "application/pdf"},
+                   "size": 100 + i, "webUrl": f"https://sp/{drive_id}/doc{i}.pdf",
+                   "lastModifiedDateTime": "2024-01-01T00:00:00Z",
+                   "parentReference": {"path": "/drive/root:/Clients", "driveId": drive_id, "siteId": "S1"}}
+
+    return types.SimpleNamespace(run=run, iter_drive_items=iter_drive_items)
+
+
+def test_iter_drive_items_stages_file_metadata_without_download():
+    rec = []
+    diag = {}
+    stager = mi.resolve_sharepoint_stager(module=_delta_connector(rec), drive_ids=["drvZ"],
+                                          dry_run=True, diag=diag)
+    items = stager()
+    # 10 file records (5 folders skipped); each carries the base metadata import_sharepoint_items needs.
+    assert len(items) == 10 and diag["total_items"] == 10
+    assert diag["enumerator"] == "iter_drive_items"
+    r = items[0]
+    for k in ("drive_id", "item_id", "name", "parent_path", "web_url", "target", "size_bytes",
+              "modified_at"):
+        assert k in r, k
+    assert r["drive_id"] == "drvZ" and r["dry_run"] is True and r["status"] == "dry_run_metadata"
+    assert r["web_url"] == "https://sp/drvZ/doc0.pdf" and r["size_bytes"] == 100
+    # enumeration ran with download OFF; run() (the download path) was never invoked
+    assert ("iter", "drvZ", False, True, None, None) in rec
+    assert not any(c[0] == "run" for c in rec)
+    assert diag["drives"][0]["source"] == "delta_enumeration" and diag["drives"][0]["download"] is False
+
+
+def test_iter_dry_run_limit_10_examines_10_no_canonical_no_downloads(tmp_path):
+    # The exact --limit 10 dry-run validation shape: 10 staged metadata records -> items_examined == 10,
+    # while NO canonical documents are created and NO files are downloaded.
+    dest = tmp_path / "dest"
+    with engine.connect() as c:
+        docs_before = c.execute(select(func.count()).select_from(documents)).scalar()
+    stager = mi.resolve_sharepoint_stager(module=_delta_connector([], files=12, folders=3),
+                                          drive_ids=["drvL"], dry_run=True, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(dest), dry_run=True, ocr=False)
+    with engine.connect() as c:
+        docs_after = c.execute(select(func.count()).select_from(documents)).scalar()
+    assert summary["status"] == "dry_run"
+    assert summary["items_examined"] == 10                     # capped by --limit 10
+    assert docs_after == docs_before                           # canonical_created (in DB) == 0
+    assert not dest.exists() or not any(dest.rglob("*.*"))     # downloads == 0
+    assert summary["missing"] == 0                             # partial dry-run never reconciles missing
+    assert summary.get("missing_reconciliation_skipped")
+
+
+def test_missing_not_reconciled_against_empty_staging(tmp_path):
+    # A REAL sync that stages ZERO items (connector/enumeration failure) must NOT mark the existing
+    # corpus missing — this is the 21,697-false-missing guard.
+    it = _item(tmp_path, name="keep.pdf", uri=f"https://sp/{_A}/keep")
+    _run([it], tmp_path)                                       # ingest one real ref (available)
+    assert _doc_for(it["web_url"])["available"] is True
+    summary = _run([], tmp_path)                               # next sync stages nothing
+    assert summary["missing"] == 0 and summary.get("missing_reconciliation_skipped")
+    assert _doc_for(it["web_url"])["available"] is True        # untouched, still available
+
+
+def test_partial_dry_run_does_not_report_existing_corpus_missing(tmp_path):
+    # With existing refs in the corpus, a partial (limited) dry-run enumerating only some items must NOT
+    # report the un-enumerated remainder as missing.
+    a = _item(tmp_path, name="a.pdf", uri=f"https://sp/{_A}/a")
+    b = _item(tmp_path, name="b.pdf", uri=f"https://sp/{_A}/b")
+    _run([a, b], tmp_path)                                     # two real refs exist
+    # dry-run enumerates a single (already-known) item
+    summary = mi.run_sharepoint_sync(items=[{"name": "a.pdf", "web_url": a["web_url"], "item_id": "a",
+                                             "size": a["size"], "modified_at": "2024-01-01T00:00:00",
+                                             "dry_run": True}],
+                                     destination_root=str(tmp_path / "d"), dry_run=True, ocr=False)
+    _track()
+    assert summary["missing"] == 0 and summary.get("missing_reconciliation_skipped")
+    assert _doc_for(b["web_url"])["available"] is True         # the un-enumerated ref stays available

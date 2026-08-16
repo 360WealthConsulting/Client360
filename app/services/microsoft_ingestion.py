@@ -288,6 +288,85 @@ def _call_with_timeout(fn, kwargs, timeout):
     return box.get("result")
 
 
+# Connector per-drive delta ENUMERATORS (yield driveItems / metadata) — used for a dry run so metadata is
+# staged WITHOUT downloading content, when the connector's run(download=False) returns only a summary.
+_ENUMERATOR_NAMES = ("iter_drive_items", "iter_items", "enumerate_drive_items", "delta_items",
+                     "list_drive_items", "walk_drive")
+
+
+def _driveitem_to_record(drive_id, it):
+    """Convert a Microsoft Graph driveItem into the base metadata record import_sharepoint_items needs —
+    NO content, clearly marked dry-run. Deleted items carry the deleted marker for reconciliation."""
+    pr = it.get("parentReference") or {}
+    rec = {"drive_id": drive_id, "item_id": it.get("id"), "name": it.get("name"),
+           "parent_path": pr.get("path"), "folder_path": pr.get("path"),
+           "web_url": it.get("webUrl"), "target": it.get("webUrl"),
+           "size": it.get("size"), "size_bytes": it.get("size"),
+           "modified_at": it.get("lastModifiedDateTime"),
+           "site": pr.get("siteId"), "library": pr.get("driveId") or drive_id,
+           "status": "dry_run_metadata", "dry_run": True}
+    if "deleted" in it:
+        rec["deleted"] = True
+    return rec
+
+
+def _connector_token(mod):
+    """Best-effort: obtain a Graph access token via the connector's OWN self-contained auth, so the
+    adapter's dry-run enumeration can authenticate exactly as the connector does. Returns None if the
+    connector needs no token here or its auth isn't self-contained (the enumerator then runs tokenless)."""
+    for loader, getter in (("_load_connected_account", "_acquire_token"), (None, "acquire_token"),
+                           (None, "get_access_token"), (None, "access_token")):
+        try:
+            get = getattr(mod, getter, None)
+            if get is None:
+                continue
+            if loader is not None:
+                load = getattr(mod, loader, None)
+                if load is None:
+                    continue
+                return get(load())
+            return get() if callable(get) else get
+        except Exception:  # noqa: BLE001 — auth is environment-specific; fall through
+            continue
+    return None
+
+
+def _enumerate_metadata(mod, fn, drive_id, *, top, limit, timeout, diag, progress):
+    """Enumerate FILE metadata for a drive via the connector's delta iterator (no download). Yields the
+    base metadata records import_sharepoint_items consumes. Files only (folders skipped)."""
+    import time
+    values = {"drive_id": drive_id, "limit": limit, "download": False, "dry_run": True}
+    token = _connector_token(mod)
+    if token is not None:
+        for k in ("token", "access_token"):
+            values[k] = token
+    if top is not None:
+        for k in ("top", "page_size", "first_page_size"):
+            values[k] = int(top)
+    if progress is not None:
+        for k in ("progress", "on_page"):
+            values[k] = progress
+        progress({"phase": "drive_request", "drive_id": drive_id, "enumerator": fn.__name__})
+    t0 = time.monotonic()
+    raw = _call_with_timeout(lambda **kw: list(fn(**kw)), _build_kwargs(fn, values), timeout)
+    elapsed = round(time.monotonic() - t0, 2)
+    records = []
+    for it in (raw or []):
+        if not isinstance(it, dict) or "folder" in it:        # files only; skip folders
+            continue
+        records.append(_driveitem_to_record(drive_id, it))
+        if limit and len(records) >= int(limit):
+            break
+    if progress is not None:
+        progress({"phase": "drive_response", "drive_id": drive_id, "elapsed": elapsed, "items": len(records)})
+    if diag is not None:
+        diag["drives"].append({"drive_id": drive_id, "download": False, "limit": limit, "top": top,
+                               "elapsed_seconds": elapsed, "items": len(records),
+                               "source": "delta_enumeration", "result_type": "iter",
+                               "enumerator": fn.__name__})
+    return records
+
+
 def _stage_one(fn, root, drive_id, dry_run, diag, *, limit=None, top=None, timeout=None, progress=None):
     import time
     values = _connector_values(root=root, drive_id=drive_id, dry_run=dry_run, limit=limit, top=top,
@@ -356,9 +435,14 @@ def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, m
         needs_drive = "drive_id" in params and params["drive_id"].default is inspect.Parameter.empty
         ids = ((list(drive_ids) if drive_ids is not None else _discovered_drive_ids())
                if needs_drive else [None])
+        # Dry-run metadata enumerator (the connector's own delta iterator) — used to stage metadata
+        # WITHOUT downloading when run(download=False) returns only a summary.
+        enum_fn = next((getattr(mod, n) for n in _ENUMERATOR_NAMES
+                        if callable(getattr(mod, n, None))), None) if dry_run else None
         if diag is not None:
             diag.update({"entrypoint": fn.__name__, "entrypoint_params": list(params),
                          "staging_root": root, "needs_drive": needs_drive,
+                         "enumerator": enum_fn.__name__ if enum_fn else None,
                          "connector_callables": sorted(n for n in dir(mod)
                                                        if not n.startswith("_") and callable(getattr(mod, n, None))),
                          "drive_count": len([d for d in ids if d is not None]),
@@ -370,6 +454,15 @@ def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, m
                 "(they are stored in microsoft_drives), or stage via the connector CLI and use --manifest.")
         out = []
         for d in ids:
+            if enum_fn is not None:
+                # Dry-run: stage metadata via the connector's delta iterator (no download).
+                try:
+                    out += _enumerate_metadata(mod, enum_fn, d, top=top, limit=limit, timeout=timeout,
+                                               diag=diag, progress=progress)
+                    continue
+                except Exception as exc:  # noqa: BLE001 — fall back to run(); never crash the run
+                    if diag is not None:
+                        diag.setdefault("enum_errors", []).append(f"{d}: {exc}")
             out += _stage_one(fn, root, d, dry_run, diag, limit=limit, top=top, timeout=timeout,
                               progress=progress)
         if diag is not None:
