@@ -69,10 +69,54 @@ _STREET_RE = re.compile(
     r"boulevard|blvd|court|ct|way|place|pl|circle|cir|highway|hwy|parkway|pkwy|terrace|ter|"
     r"trail|trl)\b", re.IGNORECASE)
 _SSN_RE = re.compile(r"\b\d{3}[-\s]\d{2}[-\s](\d{4})\b")          # captures LAST FOUR only
-_LASTFIRST_RE = re.compile(r"\b([A-Z][A-Za-z'’\-]+),\s+([A-Z][A-Za-z'’\-]+)\b")
+# 'Last, First' in ANY case (PDF extraction often lowercases names).
+_LASTFIRST_RE = re.compile(r"\b([A-Za-z][A-Za-z'’\-]+),\s+([A-Za-z][A-Za-z'’\-]+)\b")
+# Split digit<->letter runs so PDF gluing like "2022mary" becomes "2022 mary".
+_DIGIT_ALPHA_RE = re.compile(r"(?<=\d)(?=[A-Za-z])|(?<=[A-Za-z])(?=\d)")
+# Tax/document labels that precede a taxpayer/recipient name — used as corroborating EVIDENCE only,
+# never a hard-coded owner rule and never a scoring change.
+_NAME_LABELS = frozenset({"dear", "recipient", "taxpayer", "employee", "applicant", "insured",
+                          "policyholder", "holder", "covered", "individual", "primary", "borrower",
+                          "member", "client", "name", "spouse", "for"})
 
 # Deterministic evidence weights (document CONTENT only; folder/filename are never scored).
 _POINTS = {"email": 100, "phone": 90, "address": 60, "name": 40}
+
+
+def _valid_nanp(d):
+    """A 10-digit run is a plausible US phone only if the area code and exchange start 2-9 (NANP). This
+    keeps arbitrary numeric form/application IDs from being read as phone numbers, without touching how
+    canonical phones are indexed (real phones still pass)."""
+    return len(d) == 10 and d[0] in "23456789" and d[3] in "23456789"
+
+
+def _content_name_candidates(text):
+    """Generate (full_names, first_last_pairs, labeled_pairs) from the WHOLE content, CASE-INSENSITIVELY.
+
+    Names in a document need NOT be capitalised — PDF text extraction frequently lowercases taxpayer
+    names ("dear mary hardy"). We tokenise the normalised content on token boundaries and emit 2-3 token
+    windows plus 'Last, First' forms; the caller looks each window up in the canonical name / (first,last)
+    indexes, so ONLY real canonical names become candidates (generic boilerplate like "affordable care"
+    matches nothing). Bounded by the already-capped text length. `labeled_pairs` are (first,last) windows
+    immediately preceded by a tax/document label word (Dear/Recipient/Taxpayer/...), used as evidence."""
+    toks = _norm(_DIGIT_ALPHA_RE.sub(" ", text)).split()
+    full, first_last, labeled = set(), set(), set()
+    n = len(toks)
+    for i in range(n - 1):
+        a, b = toks[i], toks[i + 1]
+        full.add(f"{a} {b}")
+        first_last.add((a, b))
+        if i > 0 and toks[i - 1] in _NAME_LABELS:
+            labeled.add((a, b))
+        if i + 2 < n:
+            c = toks[i + 2]
+            full.add(f"{a} {b} {c}")
+            first_last.add((a, c))              # first + last with a middle name/initial between
+            if i > 0 and toks[i - 1] in _NAME_LABELS:
+                labeled.add((a, c))
+    for m in _LASTFIRST_RE.finditer(text):
+        first_last.add((m.group(2).lower(), m.group(1).lower()))
+    return full, first_last, labeled
 
 
 def _zip5(s):
@@ -259,28 +303,21 @@ def analyze_identity(text, filename, folder, idx):
     extracted{}."""
     ntext = _norm(text)
     emails = sorted({m.group(0).lower() for m in _EMAIL_RE.finditer(text)})
-    phones = sorted({p for p in (_phone10(m.group(0)) for m in _PHONE_RE.finditer(text)) if p})
+    phones = sorted({p for p in (_phone10(m.group(0)) for m in _PHONE_RE.finditer(text))
+                     if p and _valid_nanp(p)})            # reject numeric form/application IDs
     doc_zips = {m.group(1) for m in _ZIP_RE.finditer(text)}
     doc_streets = {_norm(m.group(0)) for m in _STREET_RE.finditer(text)}
     ssn_last4 = sorted({m.group(1) for m in _SSN_RE.finditer(text)})   # last four only; never full
 
-    # Name phrases: 2-3 token capitalised windows (so a name is not lost inside a longer run) plus
-    # 'Last, First' forms. Each maps to full-name and (first,last) indexes.
-    full_names, first_last_pairs = set(), set()
-    for m in _NAME_RE.finditer(text):
-        toks = m.group(1).split()
-        for size in (3, 2):
-            for i in range(0, len(toks) - size + 1):
-                w = toks[i:i + size]
-                full_names.add(_norm(" ".join(w)))
-                first_last_pairs.add((_norm(w[0]), _norm(w[-1])))
-    for m in _LASTFIRST_RE.finditer(text):
-        first_last_pairs.add((_norm(m.group(2)), _norm(m.group(1))))
+    # Name candidates: CASE-INSENSITIVE 2-3 token windows over the whole content plus 'Last, First'
+    # forms (PDF extraction often lowercases names). Only windows present in the canonical name /
+    # (first,last) indexes below become candidates, so boilerplate matches nothing.
+    full_names, first_last_pairs, labeled_pairs = _content_name_candidates(text)
 
     institutions = sorted({nm for nm in full_names if nm in idx["inst"]}
                           | {k for k in _INST_KW if k in ntext})
 
-    signals, name_for = {}, {}
+    signals, name_for, labeled_pids = {}, {}, set()
 
     def _add(pid, sig):
         signals.setdefault(pid, set()).add(sig)
@@ -295,10 +332,13 @@ def analyze_identity(text, filename, folder, idx):
     for nm in full_names:
         if nm in idx["inst"]:
             continue                       # institution names are context, never a person
+        parts = nm.split()
         for pid in idx["name"].get(nm, ()):
             _add(pid, "name")
             name_for[pid] = idx["pid"].get(pid, {}).get("name")
             name_pid_counts[pid] = len(idx["name"].get(nm, []))
+            if (parts[0], parts[-1]) in labeled_pairs:
+                labeled_pids.add(pid)
     for pair in first_last_pairs:
         if " ".join(pair) in idx["inst"]:
             continue
@@ -306,6 +346,8 @@ def analyze_identity(text, filename, folder, idx):
             _add(pid, "name")
             name_for[pid] = idx["pid"].get(pid, {}).get("name")
             name_pid_counts.setdefault(pid, len(idx["first_last"].get(pair, [])))
+            if pair in labeled_pairs:
+                labeled_pids.add(pid)
 
     # Address corroboration for already-surfaced candidates (never surfaces new candidates alone).
     for pid in list(signals):
@@ -323,7 +365,8 @@ def analyze_identity(text, filename, folder, idx):
         info = idx["pid"].get(pid, {})
         ev = []
         if "name" in sigs:
-            ev.append(f"✓ exact name '{info.get('name')}'")
+            label = " (after a taxpayer/recipient label)" if pid in labeled_pids else ""
+            ev.append(f"✓ exact name '{info.get('name')}'{label}")
         if "email" in sigs:
             ev.append(f"✓ email {info.get('email')} matched")
         if "phone" in sigs:

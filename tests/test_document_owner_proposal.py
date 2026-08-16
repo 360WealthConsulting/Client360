@@ -172,6 +172,62 @@ def test_full_ssn_never_appears_in_evidence_or_extracted():
     assert "***-**-6789" in r["extracted"]["ssn_last4"]            # last four only, masked
 
 
+# --- case-insensitive name detection (the exact #459 structural production defect) -----------------
+
+# Real extracted 1095-A text: the taxpayer name is LOWERCASE and glued to a date ("2022mary hardy").
+_PROD_1095A = (
+    "DEPARTMENT OF HEALTH AND HUMAN SERVICES\n"
+    "January 4, 2022mary hardy\n316 Tilden St\nApt-C\nRichmond, VA 23221-2342\n"
+    "Dear mary hardy:\nBecause you and/or members of your household had Health Insurance "
+    "Marketplace coverage, the Internal Revenue Service ...\n")
+
+
+def test_lowercase_pdf_name_becomes_candidate_and_folder_does_not_override():
+    # exact structural case; the person's address is NOT in this index -> unique full name alone = MEDIUM
+    r = analyze_identity(_PROD_1095A, "Form1095a_2021.pdf", "Adrianna Hardy", _idx())
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", 7430, "MEDIUM")
+    assert any("MARY HARDY" in e for e in r["evidence"])          # detected despite lowercase text
+
+
+def test_lowercase_pdf_name_plus_matching_address_is_high():
+    idx = _idx()
+    idx["pid"][7430]["zips"] = {"23221"}
+    idx["pid"][7430]["streets"] = {"316 tilden st"}
+    r = analyze_identity(_PROD_1095A, "Form1095a_2021.pdf", "Adrianna Hardy", idx)
+    assert (r["proposed_entity_id"], r["confidence"]) == (7430, "HIGH")
+    assert any("address/ZIP matched" in e for e in r["evidence"])
+
+
+@pytest.mark.parametrize("form", ["MARY HARDY", "Mary Hardy", "mary hardy", "Mary A Hardy", "HARDY, MARY"])
+def test_name_case_and_format_variants_all_match(form):
+    r = analyze_identity(f"Dear {form}, regarding your 2021 filing.", "x.pdf", "Adrianna Hardy", _idx())
+    assert r["proposed_entity_id"] == 7430
+
+
+def test_lowercase_duplicate_name_stays_ambiguous():
+    r = analyze_identity("dear john smith, regarding your account", "x.pdf", "F", _idx())
+    assert r["confidence"] == "AMBIGUOUS" and r["proposed_entity_id"] is None
+
+
+def test_generic_lowercase_boilerplate_creates_no_owner():
+    txt = ("affordable care act application id and human services covered individual "
+           "primary applicant policy holder for the marketplace")
+    r = analyze_identity(txt, "notice.pdf", "Adrianna Hardy", _idx())
+    assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
+
+
+def test_transaction_workbook_without_identity_is_no_match():
+    txt = "ADOBE ID CREATIVE CLD\nADOBE PHOTOGPHY PLAN\nLATER.COM\nTotal 42.00"
+    r = analyze_identity(txt, "Expenses.xlsx", "Adrianna Hardy", _idx())
+    assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
+
+
+def test_numeric_form_ids_not_read_as_phone():
+    # 10-digit runs with an invalid area/exchange (leading 0/1) must not be treated as phone numbers
+    r = analyze_identity("Application ID 1019456998 and reference 1112223333", "x.pdf", "F", _idx())
+    assert r["extracted"]["phones"] == []
+
+
 # --- extraction + eligibility + no mutation --------------------------------------------------
 
 _UNIQUE_NAME = "Zebulon Quibbleworth"   # alpha-only + very unlikely to exist in the seeded test DB
