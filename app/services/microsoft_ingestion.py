@@ -21,7 +21,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db import audit_events, engine
 from app.security.audit import write_audit_event
@@ -174,14 +174,51 @@ def _build_kwargs(fn, values):
     return kwargs
 
 
-def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, module=None):
+def _read_manifest_file(path):
+    """Read the manifest the connector was told to write (the designed connector->importer handoff)."""
+    import json
+    from pathlib import Path
+    if not path or not Path(path).exists():
+        return None
+    try:
+        data = json.loads(Path(path).read_text())
+    except (ValueError, OSError):
+        return None
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("items"), list):
+        return data["items"]
+    return None
+
+
+def _stage_one(fn, root, drive_id, dry_run, diag):
+    values = _connector_values(root=root, drive_id=drive_id, dry_run=dry_run)
+    result = fn(**_build_kwargs(fn, values))
+    manifest_path = values["manifest"]
+    # Prefer the manifest FILE the connector was told to write (deterministic), else parse the return.
+    from_file = _read_manifest_file(manifest_path)
+    if from_file is not None:
+        items, source = from_file, "manifest_file"
+    else:
+        items, source = _stager_items(result), "run_return"
+    if diag is not None:
+        from pathlib import Path
+        diag["drives"].append({
+            "drive_id": drive_id, "download": values["download"], "limit": values["limit"],
+            "manifest": manifest_path, "manifest_exists": bool(manifest_path and Path(manifest_path).exists()),
+            "result_type": type(result).__name__, "items": len(items), "source": source})
+    return items
+
+
+def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, module=None, diag=None):
     """Return a zero-arg ``stager`` callable that invokes the REAL deployment connector's SharePoint
     staging entrypoint and yields the manifest items. It does NOT hard-import a specific function name:
     it discovers the connector's public staging callable and supplies exactly the arguments that callable
     declares, sourced from EXISTING SharePoint configuration (staging-root env, discovered drives, site-id
-    env; download=not dry_run). If the connector's entrypoint is per-drive (takes ``drive_id``), it runs
-    once per discovered drive and aggregates the manifest items. Raises a clear, actionable error when no
-    entrypoint is found or a required argument cannot be sourced. ``module``/``drive_ids`` are test hooks."""
+    env; download=not dry_run). Per-drive connectors (``run(*, drive_id, ...)``) run once per discovered
+    drive; items come from the manifest FILE the connector writes (else its return). When ``diag`` is a
+    dict it is filled with SAFE staging diagnostics (drive count/ids, staging root, per-drive manifest path
+    + item counts) — no secrets/tokens. ``module``/``drive_ids`` are test hooks."""
     def _do():
         mod = module
         if mod is None:
@@ -205,23 +242,51 @@ def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, m
         except (TypeError, ValueError):
             params = {}
         root = _staging_root()
-        # Per-drive connectors (run(*, drive_id, ...)) are called once per discovered drive.
         needs_drive = "drive_id" in params and params["drive_id"].default is inspect.Parameter.empty
-        if needs_drive:
-            ids = list(drive_ids) if drive_ids is not None else _discovered_drive_ids()
-            if not ids:
-                raise RuntimeError(
-                    "The SharePoint connector requires a drive_id but no drives are configured/discovered. "
-                    "Set MICROSOFT_SHAREPOINT_SITE_IDS and run the existing document sync to discover drives "
-                    "(they are stored in microsoft_drives), or stage via the connector CLI and use --manifest.")
-            out = []
-            for d in ids:
-                out += _stager_items(fn(**_build_kwargs(fn, _connector_values(root=root, drive_id=d,
-                                                                              dry_run=dry_run))))
-            return out
-        return _stager_items(fn(**_build_kwargs(fn, _connector_values(root=root, drive_id=None,
-                                                                      dry_run=dry_run))))
+        ids = ((list(drive_ids) if drive_ids is not None else _discovered_drive_ids())
+               if needs_drive else [None])
+        if diag is not None:
+            diag.update({"entrypoint": fn.__name__, "staging_root": root, "needs_drive": needs_drive,
+                         "drive_count": len([d for d in ids if d is not None]),
+                         "drive_ids": [d for d in ids if d is not None][:50], "drives": []})
+        if needs_drive and not ids:
+            raise RuntimeError(
+                "The SharePoint connector requires a drive_id but no drives are configured/discovered. "
+                "Set MICROSOFT_SHAREPOINT_SITE_IDS and run the existing document sync to discover drives "
+                "(they are stored in microsoft_drives), or stage via the connector CLI and use --manifest.")
+        out = []
+        for d in ids:
+            out += _stage_one(fn, root, d, dry_run, diag)
+        if diag is not None:
+            diag["total_items"] = len(out)
+        return out
     return _do
+
+
+def sharepoint_staging_diagnostics():
+    """READ-ONLY config/data diagnostics for the staging layer (no Microsoft Graph call, no downloads):
+    staging root, discovered-drive count/ids, site-id scope, and the count of existing SharePoint source
+    references already in the corpus. Explains 'why did staging return zero items?' without live I/O."""
+    import os
+
+    from app.db import metadata
+    ds = metadata.tables.get("document_sources")
+    existing_refs = 0
+    if ds is not None:
+        with engine.connect() as conn:
+            existing_refs = conn.execute(select(func.count()).select_from(ds)
+                                         .where(ds.c.source_system == "SharePoint")).scalar()
+    drive_ids = _discovered_drive_ids()
+    return {
+        "staging_root": _staging_root(),
+        "CLIENT360_SHAREPOINT_SOURCE_ROOT_set": bool(os.getenv("CLIENT360_SHAREPOINT_SOURCE_ROOT")),
+        "CLIENT360_SHAREPOINT_DOCUMENT_ROOT_set": bool(os.getenv("CLIENT360_SHAREPOINT_DOCUMENT_ROOT")),
+        "MICROSOFT_SHAREPOINT_SITE_IDS": [s.strip() for s in
+                                          (os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS") or "").split(",") if s.strip()],
+        "discovered_drive_count": len(drive_ids),
+        "discovered_drive_ids": drive_ids[:50],
+        "existing_sharepoint_source_refs": existing_refs,
+    }
 
 
 def ingestion_status(sources=("SharePoint", "Drake", "Outlook"), *, scan=500):

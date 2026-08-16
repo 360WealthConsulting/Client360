@@ -301,3 +301,47 @@ def test_stage_dry_run_is_read_only(tmp_path):
     with engine.connect() as c:
         after = c.execute(select(func.count()).select_from(documents)).scalar()
     assert summary["status"] == "dry_run" and after == before        # dry-run imports nothing
+
+
+# --- staging diagnostics (why did staging return zero items?) --------------------------------------
+
+def test_diag_reports_drive_and_item_counts():
+    rec = {}
+    diag = {}
+    stager = mi.resolve_sharepoint_stager(module=_run_stub(rec), drive_ids=["drvA", "drvB"],
+                                           dry_run=True, diag=diag)
+    items = stager()
+    assert diag["drive_count"] == 2 and diag["drive_ids"] == ["drvA", "drvB"]
+    assert diag["total_items"] == len(items) == 2          # one item per drive from the stub
+    assert diag["staging_root"] and diag["entrypoint"] == "run"
+    assert all(d["download"] is False for d in diag["drives"])   # dry-run: no download
+
+
+def test_diag_reads_manifest_file_when_run_returns_summary(tmp_path):
+    import json
+    import types
+
+    def run(*, drive_id, root, download, limit, manifest):
+        # connector writes items to the manifest FILE and returns a summary (no items in the return)
+        from pathlib import Path
+        Path(manifest).parent.mkdir(parents=True, exist_ok=True)
+        Path(manifest).write_text(json.dumps([{"name": "m.txt", "web_url": "u", "item_id": "i"}]))
+        return {"status": "ok", "files_seen": 1}           # summary only — items are in the file
+    mod = types.SimpleNamespace(run=run)
+    diag = {}
+    stager = mi.resolve_sharepoint_stager(module=mod, drive_ids=["drvC"], dry_run=True, diag=diag)
+    # point staging root at tmp so the manifest lands there
+    import os
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path)
+    try:
+        items = stager()
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    assert len(items) == 1 and diag["drives"][0]["source"] == "manifest_file"
+
+
+def test_staging_diagnostics_is_read_only():
+    d = mi.sharepoint_staging_diagnostics()
+    assert set(("staging_root", "discovered_drive_count", "discovered_drive_ids",
+                "MICROSOFT_SHAREPOINT_SITE_IDS", "existing_sharepoint_source_refs")) <= set(d)
+    assert isinstance(d["existing_sharepoint_source_refs"], int)
