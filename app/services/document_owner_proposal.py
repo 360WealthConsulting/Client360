@@ -441,9 +441,13 @@ def analyze_identity(text, filename, folder, idx):
 
 # --- orchestration -----------------------------------------------------------------------------
 
-def propose_document_owner(document_id, *, conn=None, idx=None):
+def propose_document_owner(document_id, *, conn=None, idx=None, with_text=False):
     """Read-only proposal for one document. Never writes. Returns a proposal dict; for ineligible or
-    permanent-reject documents returns {eligible: False, reason: ...} with no assignable proposal."""
+    permanent-reject documents returns {eligible: False, reason: ...} with no assignable proposal.
+
+    ``with_text=True`` includes the (bounded) extracted text under a ``"text"`` key so a caller (the
+    ingestion pipeline) can classify the document without re-extracting; the caller must not persist that
+    raw text — persisted evidence stays sanitized/masked."""
     own = conn if conn is not None else engine.connect()
     try:
         row = own.execute(select(documents.c.id, documents.c.original_name, documents.c.person_id,
@@ -468,6 +472,8 @@ def propose_document_owner(document_id, *, conn=None, idx=None):
         proposal = analyze_identity(text, row["original_name"], folder, indexes)
         proposal.update({"document_id": document_id, "filename": row["original_name"],
                          "source_folder": folder, "extraction_method": method, "eligible": True})
+        if with_text:
+            proposal["text"] = text
         return proposal
     finally:
         if conn is None:

@@ -13,7 +13,7 @@ CLASSIFIER_VERSION = "rules-v1"
 
 # The fixed document vocabulary (Phase 6A spec).
 DOC_TYPES = (
-    "1040", "1041", "1065", "1120", "1120S", "W-2", "1099", "K-1",
+    "1040", "1041", "1065", "1120", "1120S", "W-2", "1099", "1095-A", "8879", "K-1",
     "brokerage_statement", "bank_statement", "irs_notice", "state_notice",
     "drivers_license", "passport", "organizer", "engagement_letter", "insurance_policy",
     "benefits_enrollment", "trust_document", "estate_document", "financial_statement", "unknown",
@@ -32,6 +32,8 @@ _RULES: list[tuple[str, list[str], float]] = [
     ("K-1", [r"\bschedule\s*k-?1\b", r"\bk-1\b", r"partner'?s share of income"], 0.88),
     ("1040", [r"\bform\s*1040\b", r"\b1040\b", r"u\.?s\.? individual income tax return"], 0.9),
     ("W-2", [r"\bw-?2\b", r"wage and tax statement"], 0.9),
+    ("1095-A", [r"\b1095-?a\b", r"health insurance marketplace statement"], 0.9),
+    ("8879", [r"\b8879\b", r"e-?file signature authorization", r"irs e-file signature"], 0.88),
     ("1099", [r"\b1099-?(?:int|div|b|misc|nec|r|g|k)?\b", r"\bform\s*1099\b"], 0.85),
     ("irs_notice", [r"internal revenue service", r"\birs\b.*notice", r"notice\s*(?:cp|ltr)\s*\d+"], 0.8),
     ("state_notice", [r"(?:department|dept)\.? of revenue", r"franchise tax board",

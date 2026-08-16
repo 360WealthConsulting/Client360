@@ -84,9 +84,26 @@ def resolve_or_create_canonical(*, sha256: str, original_name: str, stored_name:
         return {"document_id": doc_id, "reused": False, "source_system": source_system}
 
     if conn is not None:
-        return _do(conn)
+        result = _do(conn)
+        _analyze_new_document(conn, result)
+        return result
     with engine.begin() as connection:
-        return _do(connection)
+        result = _do(connection)
+        _analyze_new_document(connection, result)     # same txn: the new doc is visible; savepoint-isolated
+    return result
+
+
+def _analyze_new_document(conn, result):
+    """Future-ingestion hook: analyze every NEW canonical document so it is auto-proposed after ingestion.
+    Fully guarded — savepoint-isolated inside analyze_and_persist and wrapped here — so an analysis failure
+    (or an unavailable pipeline) NEVER blocks ingestion and NEVER assigns ownership. Skips reused docs."""
+    try:
+        from app.services.document_pipeline import AUTO_ANALYZE_NEW_DOCUMENTS, analyze_and_persist
+        if not AUTO_ANALYZE_NEW_DOCUMENTS or result.get("reused"):
+            return
+        analyze_and_persist(result["document_id"], conn=conn)
+    except Exception:                                 # noqa: BLE001 — ingestion must always succeed
+        pass
 
 
 def sources_for_documents(document_ids) -> dict[int, list[dict]]:
