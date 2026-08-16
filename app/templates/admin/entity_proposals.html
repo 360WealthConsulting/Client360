@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}New-Entity Proposals | Admin | Client360{% endblock %}
+{% block crumb %}Admin · Document Management · New-Entity Proposals{% endblock %}
+{% block content %}
+{% call ui.page_head("New-entity proposals", eyebrow="Admin · Document Management",
+    desc="Documents whose extracted identity matched NO existing Client360 entity. Nothing is created
+          automatically — open the document, compare it to the evidence, then approve creation, reject, or
+          assign an existing entity if this is actually a duplicate.") %}
+  <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
+{% endcall %}
+
+{% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
+
+<div class="subtle" style="margin-bottom:10px">{{ proposals|length }} pending proposal(s).</div>
+
+{% for p in proposals %}
+<article class="card" style="padding:14px 16px; margin-bottom:14px">
+  <div class="detail-row">
+    <span><strong>#{{ p.document_id }}</strong> ·
+      <a href="{{ p.view_url }}" target="_blank" rel="noopener">{{ p.filename }}</a></span>
+    <span class="subtle">{{ p.source_system or "—" }} · {{ p.source_path or "—" }} · {{ p.extraction_method }}
+      <a class="btn sm secondary" href="{{ p.view_url }}" target="_blank" rel="noopener">View ↗</a></span>
+  </div>
+
+  <div style="margin:6px 0"><strong>Proposed:</strong>
+    <span class="tag">{{ p.entity_type | upper }}</span> — {{ p.primary_name }}
+    {% if p.members %}<span class="subtle">(members: {{ p.members | join(", ") }})</span>{% endif %}
+  </div>
+  <ul class="subtle" style="margin:2px 0 6px 18px">
+    {% if p.evidence.names %}<li>names: {{ p.evidence.names | join(", ") }}</li>{% endif %}
+    {% if p.evidence.business_name %}<li>business: {{ p.evidence.business_name }}</li>{% endif %}
+    {% if p.evidence.emails %}<li>emails: {{ p.evidence.emails | join(", ") }}</li>{% endif %}
+    {% if p.evidence.phones %}<li>phones: {{ p.evidence.phones | join(", ") }}</li>{% endif %}
+    {% if p.evidence.address %}<li>address: {{ p.evidence.address | join(", ") }}</li>{% endif %}
+    {% if p.evidence.tax_last4 %}<li>tax id (last 4): {{ p.evidence.tax_last4 | join(", ") }}</li>{% endif %}
+    <li>evidence classes: {{ p.evidence.evidence_classes | join(", ") }}</li>
+  </ul>
+
+  {% if p.candidates %}
+  <div class="subtle" style="margin:6px 0 2px">Possible existing matches (assign instead of creating a duplicate):</div>
+  {% for c in p.candidates %}
+    <form method="post" action="/admin/documents/entity-proposals/assign-existing" style="display:inline-block; margin:2px 4px 2px 0">
+      <input type="hidden" name="document_id" value="{{ p.document_id }}">
+      <input type="hidden" name="entity_type" value="{{ c.type }}">
+      <input type="hidden" name="entity_id" value="{{ c.id }}">
+      <button class="btn sm secondary" type="submit">Assign to existing {{ c.type }}: {{ c.name }} (#{{ c.id }})</button>
+    </form>
+  {% endfor %}
+  {% else %}<div class="subtle" style="margin:6px 0 2px">No existing candidates found.</div>{% endif %}
+
+  <div class="row" style="gap:14px; flex-wrap:wrap; align-items:flex-start; margin-top:10px">
+    <form method="post" action="/admin/documents/entity-proposals/approve" class="row" style="gap:8px; align-items:center">
+      <input type="hidden" name="document_id" value="{{ p.document_id }}">
+      <input type="hidden" name="entity_type" value="{{ p.entity_type }}">
+      <label class="subtle row" style="gap:6px; align-items:center">
+        <input type="checkbox" name="confirm" value="yes" required> confirm</label>
+      <button class="btn" type="submit">Approve — create {{ p.entity_type }} “{{ p.primary_name }}” →</button>
+    </form>
+    <form method="post" action="/admin/documents/entity-proposals/reject" class="row" style="gap:8px; align-items:center">
+      <input type="hidden" name="document_id" value="{{ p.document_id }}">
+      <input class="input" type="text" name="reason" placeholder="reason (optional)" style="max-width:180px">
+      <button class="btn sm secondary" type="submit">Reject</button>
+    </form>
+  </div>
+</article>
+{% else %}
+{% call ui.empty("No new-entity proposals", "Every unassigned document either matches an existing entity, lacks a coherent identity, or has already been decided.") %}{% endcall %}
+{% endfor %}
+{% endblock %}
