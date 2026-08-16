@@ -34,7 +34,8 @@ _MAX_EXCEL_ROWS = 120
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _PHONE_RE = re.compile(r"(?<!\d)(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}(?!\d)")
 # Capitalised / ALL-CAPS name-like phrases of 2-3 tokens (e.g. "Mary Hardy", "JENKINS RANDALL L").
-_NAME_RE = re.compile(r"\b([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]+){1,2})\b")
+# A token may be a single letter so a middle initial ("MARY A HARDY") does not break the phrase.
+_NAME_RE = re.compile(r"\b([A-Z][A-Za-z'’.\-]*(?:\s+[A-Z][A-Za-z'’.\-]*){1,2})\b")
 _INST_KW = ("university", "college", "bank", "credit union", "insurance", "mortgage", "irs",
             "internal revenue", "wells fargo", "liberty university", "fidelity", "vanguard",
             "navient", "nelnet", "department of", "state of")
@@ -51,6 +52,23 @@ def _phone10(s):
 
 def _ext(name):
     return (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
+
+
+_ZIP_RE = re.compile(r"(?<!\d)(\d{5})(?:-\d{4})?(?!\d)")
+_STREET_RE = re.compile(
+    r"\b\d{1,6}\s+[A-Za-z0-9.'\- ]{2,40}?\b(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|"
+    r"boulevard|blvd|court|ct|way|place|pl|circle|cir|highway|hwy|parkway|pkwy|terrace|ter|"
+    r"trail|trl)\b", re.IGNORECASE)
+_SSN_RE = re.compile(r"\b\d{3}[-\s]\d{2}[-\s](\d{4})\b")          # captures LAST FOUR only
+_LASTFIRST_RE = re.compile(r"\b([A-Z][A-Za-z'’\-]+),\s+([A-Z][A-Za-z'’\-]+)\b")
+
+# Deterministic evidence weights (document CONTENT only; folder/filename are never scored).
+_POINTS = {"email": 100, "phone": 90, "address": 60, "name": 40}
+
+
+def _zip5(s):
+    d = re.sub(r"\D", "", s or "")
+    return d[:5] if len(d) >= 5 else ""
 
 
 # --- text extraction ---------------------------------------------------------------------------
@@ -121,29 +139,38 @@ def extract_document_text(conn, row, path):
 # --- canonical match indexes -------------------------------------------------------------------
 
 def build_match_indexes(conn):
-    """Build read-only lookup indexes from existing canonical data (people/households/businesses)."""
-    idx = {"email": {}, "phone": {}, "name": {}, "pid": {}, "members": {}, "hh_name": {},
-           "biz": {}, "inst": set()}
-    pcols = people.c
-    for r in conn.execute(select(
-            pcols.id, pcols.full_name,
-            pcols.primary_email if "primary_email" in pcols else pcols.id,
-            pcols.normalized_email if "normalized_email" in pcols else pcols.id,
-            pcols.primary_phone if "primary_phone" in pcols else pcols.id,
-            (pcols.household_id if "household_id" in pcols else pcols.id).label("hh"))).mappings():
-        pid = r["id"]
-        idx["pid"][pid] = {"name": r["full_name"], "email": r.get("primary_email"),
-                           "phone": r.get("primary_phone"), "household_id": r["hh"]}
-        idx["name"].setdefault(_norm(r["full_name"]), []).append(pid)
+    """Build read-only lookup indexes from existing canonical data (people/households/businesses):
+    exact email/phone/full-name, a (first, last) name index (to match names carrying a middle name or
+    written 'Last, First'), and each person's ZIPs/streets for address corroboration."""
+    idx = {"email": {}, "phone": {}, "name": {}, "first_last": {}, "pid": {}, "members": {},
+           "hh_name": {}, "biz": {}, "inst": set()}
+    pc = people.c
+    sel = [pc.id, pc.full_name]
+    for name in ("primary_email", "normalized_email", "primary_phone", "normalized_phone",
+                 "household_id", "address_line_1", "city", "postal_code"):
+        if name in pc:
+            sel.append(pc[name])
+    for r in conn.execute(select(*sel)).mappings():
+        pid, full = r["id"], r["full_name"]
+        zips = {z for z in (_zip5(r.get("postal_code")),) if z}
+        streets = {s for s in (_norm(r.get("address_line_1")),) if s}
+        idx["pid"][pid] = {"name": full, "email": r.get("primary_email"),
+                           "phone": r.get("primary_phone"), "household_id": r.get("household_id"),
+                           "zips": zips, "streets": streets}
+        nfull = _norm(full)
+        idx["name"].setdefault(nfull, []).append(pid)
+        toks = nfull.split()
+        if len(toks) >= 2:
+            idx["first_last"].setdefault((toks[0], toks[-1]), []).append(pid)
         for e in (r.get("primary_email"), r.get("normalized_email")):
             e = (e or "").strip().lower()
             if e and "@" in e:
                 idx["email"].setdefault(e, set()).add(pid)
-        ph = _phone10(r.get("primary_phone"))
-        if ph:
-            idx["phone"].setdefault(ph, set()).add(pid)
-        if r["hh"] is not None:
-            idx["members"].setdefault(r["hh"], set()).add(pid)
+        for ph in (_phone10(r.get("primary_phone")), _phone10(r.get("normalized_phone"))):
+            if ph:
+                idx["phone"].setdefault(ph, set()).add(pid)
+        if r.get("household_id") is not None:
+            idx["members"].setdefault(r["household_id"], set()).add(pid)
     for h in conn.execute(select(households.c.id, households.c.name)).mappings():
         idx["hh_name"][h["id"]] = h["name"]
     for e in conn.execute(select(relationship_entities.c.id, relationship_entities.c.name,
@@ -158,26 +185,46 @@ def build_match_indexes(conn):
 
 # --- analysis ----------------------------------------------------------------------------------
 
+def _confidence(sigs, unique_name):
+    """Deterministic tier for one person candidate from its content signal set."""
+    if "email" in sigs or "phone" in sigs:
+        return "HIGH"                                   # exact email / phone = very strong
+    if "name" in sigs and "address" in sigs:
+        return "HIGH"                                   # taxpayer name + matching address = very strong
+    if "name" in sigs and unique_name:
+        return "MEDIUM"                                 # exact full name alone = plausible, inspect
+    return "LOW"                                         # ambiguous / weak
+
+
 def analyze_identity(text, filename, folder, idx):
-    """Pure content analysis: extract identity evidence from `text` and rank a proposed owner. Returns a
-    dict with proposed_entity_type/id/name, confidence, evidence[], competing[], and extracted{}."""
+    """Pure content analysis: extract identity evidence from `text`, score canonical candidates, and
+    return a proposal. Folder/filename are NEVER scored (content wins). Returns proposed_entity_type/id/
+    name, confidence (HIGH/MEDIUM/AMBIGUOUS/NO_MATCH), evidence[], competing[], best_candidates[],
+    extracted{}."""
     ntext = _norm(text)
     emails = sorted({m.group(0).lower() for m in _EMAIL_RE.finditer(text)})
     phones = sorted({p for p in (_phone10(m.group(0)) for m in _PHONE_RE.finditer(text)) if p})
-    # Capitalised runs can absorb adjacent label words ("Recipient MARY HARDY"), so look up every
-    # 2- and 3-token contiguous window of each run against the canonical name index, not the whole run.
-    name_phrases = set()
+    doc_zips = {m.group(1) for m in _ZIP_RE.finditer(text)}
+    doc_streets = {_norm(m.group(0)) for m in _STREET_RE.finditer(text)}
+    ssn_last4 = sorted({m.group(1) for m in _SSN_RE.finditer(text)})   # last four only; never full
+
+    # Name phrases: 2-3 token capitalised windows (so a name is not lost inside a longer run) plus
+    # 'Last, First' forms. Each maps to full-name and (first,last) indexes.
+    full_names, first_last_pairs = set(), set()
     for m in _NAME_RE.finditer(text):
         toks = m.group(1).split()
         for size in (3, 2):
             for i in range(0, len(toks) - size + 1):
-                name_phrases.add(_norm(" ".join(toks[i:i + size])))
+                w = toks[i:i + size]
+                full_names.add(_norm(" ".join(w)))
+                first_last_pairs.add((_norm(w[0]), _norm(w[-1])))
+    for m in _LASTFIRST_RE.finditer(text):
+        first_last_pairs.add((_norm(m.group(2)), _norm(m.group(1))))
 
-    # institution/payor CONTEXT (never an owner)
-    institutions = sorted({nm for nm in name_phrases if nm in idx["inst"]}
+    institutions = sorted({nm for nm in full_names if nm in idx["inst"]}
                           | {k for k in _INST_KW if k in ntext})
 
-    signals = {}   # pid -> set of signals
+    signals, name_for = {}, {}
 
     def _add(pid, sig):
         signals.setdefault(pid, set()).add(sig)
@@ -188,81 +235,106 @@ def analyze_identity(text, filename, folder, idx):
     for ph in phones:
         for pid in idx["phone"].get(ph, ()):
             _add(pid, "phone")
-    name_hits = {}   # norm name -> [pids]
-    for nm in name_phrases:
+    name_pid_counts = {}   # for uniqueness: how many people share a matched name
+    for nm in full_names:
         if nm in idx["inst"]:
             continue                       # institution names are context, never a person
-        pids = idx["name"].get(nm)
-        if pids:
-            name_hits[nm] = pids
-            for pid in pids:
-                _add(pid, "name")
+        for pid in idx["name"].get(nm, ()):
+            _add(pid, "name")
+            name_for[pid] = idx["pid"].get(pid, {}).get("name")
+            name_pid_counts[pid] = len(idx["name"].get(nm, []))
+    for pair in first_last_pairs:
+        if " ".join(pair) in idx["inst"]:
+            continue
+        for pid in idx["first_last"].get(pair, ()):
+            _add(pid, "name")
+            name_for[pid] = idx["pid"].get(pid, {}).get("name")
+            name_pid_counts.setdefault(pid, len(idx["first_last"].get(pair, [])))
 
-    evidence, competing = [], []
-    for e in emails[:5]:
-        owners = ", ".join(f"#{p}" for p in sorted(idx['email'].get(e, ()))) or "(no canonical match)"
-        evidence.append(f"email {e} maps to {owners}")
-    for ph in phones[:5]:
-        owners = ", ".join(f"#{p}" for p in sorted(idx['phone'].get(ph, ()))) or "(no canonical match)"
-        evidence.append(f"phone {ph} maps to {owners}")
-    for nm, pids in list(name_hits.items())[:6]:
-        evidence.append(f"name '{nm}' matches " + ", ".join(f"#{p}" for p in pids))
-    for inst in institutions[:5]:
-        evidence.append(f"institution/payor '{inst}' present (context only, not an owner)")
+    # Address corroboration for already-surfaced candidates (never surfaces new candidates alone).
+    for pid in list(signals):
+        info = idx["pid"].get(pid, {})
+        if (doc_zips & info.get("zips", set())) or any(
+                s and (s in ds or ds in s) for s in info.get("streets", set()) for ds in doc_streets):
+            _add(pid, "address")
 
-    extracted = {"emails": emails[:8], "phones": phones[:8],
-                 "names": sorted(name_hits.keys())[:8], "institutions": institutions[:8]}
+    # score + evidence
+    def _score(sigs):
+        return sum(_POINTS[s] for s in sigs)
+
+    def _evidence_for(pid):
+        sigs = signals[pid]
+        info = idx["pid"].get(pid, {})
+        ev = []
+        if "name" in sigs:
+            ev.append(f"✓ exact name '{info.get('name')}'")
+        if "email" in sigs:
+            ev.append(f"✓ email {info.get('email')} matched")
+        if "phone" in sigs:
+            ph = _phone10(info.get("phone"))
+            ev.append(f"✓ phone ending {ph[-4:]} matched" if ph else "✓ phone matched")
+        if "address" in sigs:
+            ev.append("✓ address/ZIP matched")
+        return ev
+
+    extracted = {"emails": emails[:8], "phones": [f"...{p[-4:]}" for p in phones[:8]],
+                 "names": sorted(name_for.values())[:8], "zips": sorted(doc_zips)[:8],
+                 "ssn_last4": [f"***-**-{d}" for d in ssn_last4[:4]], "institutions": institutions[:8]}
     result = {"proposed_entity_type": None, "proposed_entity_id": None, "proposed_entity_name": None,
-              "confidence": "NO_MATCH", "evidence": evidence, "competing": competing,
+              "confidence": "NO_MATCH", "evidence": [], "competing": [], "best_candidates": [],
               "extracted": extracted}
+    if institutions:
+        result["evidence"].append("context only (not an owner): " + ", ".join(institutions[:4]))
 
-    # Household (joint): two or more DISTINCT co-household members named in the content.
-    named_pids = {p for pids in name_hits.values() for p in pids} | set(signals)
+    # Household (joint): two or more DISTINCT co-household members named -> household (very strong).
+    named_pids = {pid for pid, s in signals.items() if "name" in s}
     for hh, mem in idx["members"].items():
         present = mem & named_pids
         if len(present) >= 2:
+            names = ", ".join(idx["pid"].get(p, {}).get("name") or f"#{p}" for p in sorted(present))
             result.update({"proposed_entity_type": "household", "proposed_entity_id": hh,
-                           "proposed_entity_name": idx["hh_name"].get(hh),
-                           "confidence": "HIGH_CONFIDENCE"})
-            result["evidence"].insert(0, f"two household members named in document map to household #{hh}")
+                           "proposed_entity_name": idx["hh_name"].get(hh), "confidence": "HIGH"})
+            result["evidence"] = [f"✓ two household members named: {names}"] + result["evidence"]
             result["competing"] = [{"person_id": p, "name": idx["pid"].get(p, {}).get("name")}
                                    for p in sorted(present)]
             return result
 
     if signals:
-        # rank people by number of independent signals
-        ranked = sorted(signals.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        ranked = sorted(signals.items(), key=lambda kv: (-_score(kv[1]), kv[0]))
         top_pid, top_sig = ranked[0]
-        tied = [pid for pid, s in ranked if len(s) == len(top_sig)]
-        strong = {"email", "phone"} & top_sig
-        if len(top_sig) >= 2:
-            conf = "HIGH_CONFIDENCE"
-        elif strong:
-            conf = "REVIEW_RECOMMENDED"        # single strong (email/phone) field
-        else:
-            conf = "REVIEW_RECOMMENDED"        # single exact-name field (never HIGH on name alone)
-        # ambiguity: more than one person tied on the same signal strength, or a duplicated name-only
-        name_only_dupe = (top_sig == {"name"}
-                          and any(len(idx["name"].get(nm, [])) > 1 for nm in name_hits))
-        if len(tied) > 1 or name_only_dupe:
-            result.update({"confidence": "AMBIGUOUS", "proposed_entity_type": None})
-            result["competing"] = [{"person_id": p, "name": idx["pid"].get(p, {}).get("name"),
-                                    "signals": sorted(signals[p])} for p in tied[:6]] or [
-                                   {"person_id": p, "name": idx["pid"].get(p, {}).get("name")}
-                                   for nm in name_hits for p in idx["name"].get(nm, [])][:6]
+        top_score = _score(top_sig)
+        tied = [pid for pid, s in ranked if _score(s) == top_score]
+        unique_name = name_pid_counts.get(top_pid, 2) == 1
+        conf = _confidence(top_sig, unique_name)
+        # If the leader has only a (possibly duplicated) name and there is a genuine tie, it is ambiguous.
+        if len(tied) > 1 and top_sig == {"name"}:
+            result.update({"confidence": "AMBIGUOUS"})
+            result["best_candidates"] = [{"person_id": p, "name": idx["pid"].get(p, {}).get("name"),
+                                          "confidence": "LOW"} for p in tied[:6]]
+            result["evidence"] = ["multiple candidates share this name; stronger evidence needed"] \
+                + result["evidence"]
             return result
-        info = idx["pid"].get(top_pid, {})
-        result.update({"proposed_entity_type": "person", "proposed_entity_id": top_pid,
-                       "proposed_entity_name": info.get("name"), "confidence": conf})
+        if conf in ("HIGH", "MEDIUM"):
+            result.update({"proposed_entity_type": "person", "proposed_entity_id": top_pid,
+                           "proposed_entity_name": idx["pid"].get(top_pid, {}).get("name"),
+                           "confidence": conf})
+            result["evidence"] = _evidence_for(top_pid) + result["evidence"]
+            return result
+        # LOW leader -> not a recommendation; expose best candidates for manual choice.
+        result.update({"confidence": "AMBIGUOUS" if len(tied) > 1 else "NO_MATCH"})
+        result["best_candidates"] = [{"person_id": p, "name": idx["pid"].get(p, {}).get("name"),
+                                      "confidence": "LOW"} for p, _s in ranked[:6]]
         return result
 
     # Business legal name in content (non-institution canonical business).
-    for nm in name_phrases:
+    for nm in full_names:
         if nm in idx["biz"]:
             bid, bname = idx["biz"][nm]
+            conf = "HIGH" if (doc_zips or doc_streets) else "MEDIUM"
             result.update({"proposed_entity_type": "organization", "proposed_entity_id": bid,
-                           "proposed_entity_name": bname, "confidence": "REVIEW_RECOMMENDED"})
-            result["evidence"].insert(0, f"business legal name '{bname}' (#{bid}) found in document")
+                           "proposed_entity_name": bname, "confidence": conf})
+            result["evidence"] = [f"✓ business legal name '{bname}' found in document"
+                                  + (" + address" if conf == "HIGH" else "")] + result["evidence"]
             return result
 
     return result

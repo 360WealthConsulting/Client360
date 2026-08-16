@@ -1,10 +1,12 @@
 """READ-ONLY content-based owner proposal for unassigned documents.
 
-Pure analysis tests (text -> ranked proposal, no DB) cover: exact identity, single-field, unique-name,
-duplicate-name ambiguity, mixed-owner split, institution/payor false-positive protection, household
-joint, business, and no-match. Integration tests cover extraction + eligibility + no mutation + UI.
+Pure analysis tests (text -> ranked proposal, no DB) cover extraction + deterministic scoring: email,
+phone, exact name, first/last + 'Last, First', address corroboration, common-surname weakness,
+disambiguation by a stronger identifier, source-folder-vs-content, household joint, business, no-match,
+and SSN masking. Integration tests cover extraction + eligibility + no mutation + UI.
 """
 import hashlib
+import json
 import uuid
 
 import pytest
@@ -33,14 +35,23 @@ def _cleanup():
 
 def _idx():
     return {
-        "email": {"jl@x.com": {2421}},
+        "email": {"jl@x.com": {2421}, "john@x.com": {100}},
         "phone": {"4403826802": {2421}},
         "name": {"jennifer suplita": [2421], "mary hardy": [7430], "adrianna lomasney": [5284],
                  "john smith": [100, 101], "deborah mcdaniel": [5338], "harold mcdaniel": [7530]},
-        "pid": {2421: {"name": "Jennifer Suplita"}, 7430: {"name": "MARY HARDY"},
-                5284: {"name": "Adrianna Lomasney"}, 100: {"name": "John Smith"},
-                101: {"name": "John Smith"}, 5338: {"name": "Deborah McDaniel"},
-                7530: {"name": "Harold McDaniel"}},
+        "first_last": {("mary", "hardy"): [7430], ("jennifer", "suplita"): [2421],
+                       ("john", "smith"): [100, 101], ("deborah", "mcdaniel"): [5338],
+                       ("harold", "mcdaniel"): [7530], ("adrianna", "lomasney"): [5284]},
+        "pid": {
+            2421: {"name": "Jennifer Suplita", "email": "jl@x.com", "phone": "4403826802",
+                   "zips": set(), "streets": set()},
+            7430: {"name": "MARY HARDY", "zips": {"23112"}, "streets": {"100 oak st"}},
+            5284: {"name": "Adrianna Lomasney", "zips": set(), "streets": set()},
+            100: {"name": "John Smith", "email": "john@x.com", "zips": set(), "streets": set()},
+            101: {"name": "John Smith", "zips": set(), "streets": set()},
+            5338: {"name": "Deborah McDaniel", "zips": set(), "streets": set()},
+            7530: {"name": "Harold McDaniel", "zips": set(), "streets": set()},
+        },
         "members": {113: {5338, 7530}},
         "hh_name": {113: "Mcdaniel Household"},
         "biz": {"widgets llc": (9, "Widgets LLC")},
@@ -48,65 +59,97 @@ def _idx():
     }
 
 
-# --- pure analysis -----------------------------------------------------------------------------
+# --- scoring / confidence ---------------------------------------------------------------------
 
-def test_exact_identity_name_plus_email_is_high():
+def test_exact_name_plus_email_is_high():
     r = analyze_identity("Taxpayer: Jennifer Suplita\nEmail: jl@x.com", "f.pdf", "F", _idx())
-    assert r["confidence"] == "HIGH_CONFIDENCE"
-    assert (r["proposed_entity_type"], r["proposed_entity_id"]) == ("person", 2421)
+    assert r["confidence"] == "HIGH" and (r["proposed_entity_type"], r["proposed_entity_id"]) == ("person", 2421)
 
 
-def test_single_email_is_review_not_high():
+def test_email_alone_is_high():
     r = analyze_identity("remittance to jl@x.com", "f.pdf", "F", _idx())
-    assert r["confidence"] == "REVIEW_RECOMMENDED"
-    assert r["proposed_entity_id"] == 2421
+    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 2421   # exact email = very strong
 
 
-def test_unique_name_only_is_review_not_high():
-    r = analyze_identity("2021 Form 1040 for MARY HARDY", "f.pdf", "F", _idx())
-    assert r["confidence"] == "REVIEW_RECOMMENDED"        # name alone never HIGH
+def test_phone_alone_is_high():
+    r = analyze_identity("Call 440-382-6802 regarding your return", "f.pdf", "F", _idx())
+    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 2421
+    assert any("phone ending 6802" in e for e in r["evidence"])
+
+
+def test_name_plus_address_zip_is_high():
+    r = analyze_identity("Recipient MARY HARDY, mailing ZIP 23112", "f.pdf", "F", _idx())
+    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 7430
+    assert any("address/ZIP matched" in e for e in r["evidence"])
+
+
+def test_exact_full_name_alone_is_medium():
+    r = analyze_identity("2021 Form 1040 for Jennifer Suplita", "f.pdf", "F", _idx())
+    assert r["confidence"] == "MEDIUM" and r["proposed_entity_id"] == 2421   # name alone never HIGH
+
+
+def test_first_last_matches_name_with_middle():
+    r = analyze_identity("Prepared for MARY A HARDY", "f.pdf", "F", _idx())
+    assert r["proposed_entity_id"] == 7430 and r["confidence"] == "MEDIUM"
+
+
+def test_last_comma_first_format_matches():
+    r = analyze_identity("HARDY, MARY  2021 1095-A", "f.pdf", "F", _idx())
     assert r["proposed_entity_id"] == 7430
+
+
+def test_common_surname_alone_is_not_high():
+    r = analyze_identity("Hardy 2021 tax return", "f.pdf", "F", _idx())   # single surname token only
+    assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
 
 
 def test_duplicate_name_is_ambiguous():
     r = analyze_identity("Prepared for John Smith", "f.pdf", "F", _idx())
-    assert r["confidence"] == "AMBIGUOUS"
-    assert r["proposed_entity_id"] is None
-    assert {c["person_id"] for c in r["competing"]} == {100, 101}
+    assert r["confidence"] == "AMBIGUOUS" and r["proposed_entity_id"] is None
+    assert {c["person_id"] for c in r["best_candidates"]} == {100, 101}
+
+
+def test_duplicate_name_disambiguated_by_email():
+    r = analyze_identity("John Smith  john@x.com", "f.pdf", "F", _idx())
+    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 100   # email breaks the tie
+
+
+def test_source_folder_does_not_override_content():
+    # document sits in the "Adrianna Hardy" folder but its content names Mary -> content wins
+    r = analyze_identity("Recipient MARY HARDY, ZIP 23112", "x.pdf", "Adrianna Hardy", _idx())
+    assert r["proposed_entity_id"] == 7430
 
 
 def test_mixed_owner_content_splits_by_document():
     idx = _idx()
-    only_adrianna = analyze_identity("Client: Adrianna Lomasney", "a.pdf", "Adrianna Hardy", idx)
-    only_mary = analyze_identity("Recipient MARY HARDY", "b.pdf", "Adrianna Hardy", idx)
+    assert analyze_identity("Client: Adrianna Lomasney", "a.pdf", "Adrianna Hardy", idx)["proposed_entity_id"] == 5284
+    assert analyze_identity("Recipient MARY HARDY", "b.pdf", "Adrianna Hardy", idx)["proposed_entity_id"] == 7430
     both = analyze_identity("Adrianna Lomasney and MARY HARDY", "c.pdf", "Adrianna Hardy", idx)
-    assert only_adrianna["proposed_entity_id"] == 5284
-    assert only_mary["proposed_entity_id"] == 7430
-    assert both["confidence"] == "AMBIGUOUS"              # two distinct, non-household people -> ambiguous
+    assert both["confidence"] == "AMBIGUOUS"
 
 
-def test_institution_name_alone_is_never_owner():
+def test_institution_alone_is_never_owner():
     r = analyze_identity("Wells Fargo mortgage statement 1098", "f.pdf", "F", _idx())
     assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
     assert "wells fargo" in r["extracted"]["institutions"]
 
 
-def test_institution_is_context_when_a_real_owner_is_present():
+def test_institution_is_context_when_real_owner_present():
     r = analyze_identity("Wells Fargo 1099 for Jennifer Suplita jl@x.com", "f.pdf", "F", _idx())
     assert (r["proposed_entity_type"], r["proposed_entity_id"]) == ("person", 2421)
-    assert "wells fargo" in r["extracted"]["institutions"]   # recorded, but not the owner
+    assert "wells fargo" in r["extracted"]["institutions"]
 
 
 def test_two_household_members_named_is_household_high():
     r = analyze_identity("Joint return: Deborah McDaniel and Harold McDaniel", "f.pdf", "F", _idx())
     assert (r["proposed_entity_type"], r["proposed_entity_id"]) == ("household", 113)
-    assert r["confidence"] == "HIGH_CONFIDENCE"
+    assert r["confidence"] == "HIGH"
 
 
 def test_business_legal_name_proposes_organization():
     r = analyze_identity("Invoice from Widgets LLC", "f.pdf", "F", _idx())
     assert (r["proposed_entity_type"], r["proposed_entity_id"]) == ("organization", 9)
-    assert r["confidence"] == "REVIEW_RECOMMENDED"
+    assert r["confidence"] == "MEDIUM"                       # no address -> MEDIUM, not HIGH
 
 
 def test_no_identity_is_no_match():
@@ -114,7 +157,14 @@ def test_no_identity_is_no_match():
     assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
 
 
-# --- extraction + eligibility + no mutation + reject ------------------------------------------
+def test_full_ssn_never_appears_in_evidence_or_extracted():
+    r = analyze_identity("SSN 123-45-6789 for Jennifer Suplita jl@x.com", "f.pdf", "F", _idx())
+    blob = json.dumps(r)
+    assert "123-45-6789" not in blob and "123456789" not in blob   # full SSN never leaks
+    assert "***-**-6789" in r["extracted"]["ssn_last4"]            # last four only, masked
+
+
+# --- extraction + eligibility + no mutation --------------------------------------------------
 
 _UNIQUE_NAME = "Zebulon Quibbleworth"   # alpha-only + very unlikely to exist in the seeded test DB
 
@@ -127,14 +177,14 @@ def _person_with(email, full_name=_UNIQUE_NAME):
     return pid
 
 
-def _doc(path=None, *, person_id=None, household_id=None, organization_id=None, name="f.txt"):
+def _doc(path=None, *, person_id=None, name="f.txt"):
     with engine.begin() as c:
         did = c.execute(documents.insert().values(
-            person_id=person_id, household_id=household_id, organization_id=organization_id,
-            original_name=name, stored_name=f"op-{_TAG}-{uuid.uuid4().hex}",
-            storage_path=str(path) if path else "x", storage_uri=str(path) if path else "C:\\x.txt",
-            size_bytes=10, sha256=hashlib.sha256(uuid.uuid4().bytes).hexdigest(), status="active",
-            archived=False, tags={"source_system": "TaxDome Drive", "taxdome_folder": f"F-{_TAG}"}
+            person_id=person_id, household_id=None, organization_id=None, original_name=name,
+            stored_name=f"op-{_TAG}-{uuid.uuid4().hex}", storage_path=str(path) if path else "x",
+            storage_uri=str(path) if path else "C:\\x.txt", size_bytes=10,
+            sha256=hashlib.sha256(uuid.uuid4().bytes).hexdigest(), status="active", archived=False,
+            tags={"source_system": "TaxDome Drive", "taxdome_folder": f"F-{_TAG}"}
         ).returning(documents.c.id)).scalar_one()
     _DOCS.append(did)
     return did
@@ -155,12 +205,11 @@ def test_extract_plaintext_and_propose_person_no_mutation(tmp_path):
     did = _doc(f, name="letter.txt")
     r = dop.propose_document_owner(did)
     assert r["eligible"] is True and r["extraction_method"] == "plaintext"
-    assert r["proposed_entity_type"] == "person" and r["proposed_entity_id"] == pid
-    assert r["confidence"] == "HIGH_CONFIDENCE"          # name + email corroboration
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
     assert _owner(did) == (None, None, None)             # READ-ONLY: nothing assigned
 
 
-def test_extract_excel_text(tmp_path):
+def test_extract_excel_cells(tmp_path):
     import openpyxl
     wb = openpyxl.Workbook(); ws = wb.active
     ws.append(["Client", f"unique-{_TAG}@mail.com"])
@@ -168,6 +217,15 @@ def test_extract_excel_text(tmp_path):
     with engine.connect() as conn:
         text, method = dop.extract_document_text(conn, {"id": -1, "original_name": "book.xlsx"}, f)
     assert method == "excel" and f"unique-{_TAG}@mail.com" in text
+
+
+def test_empty_excel_is_no_confident_match(tmp_path):
+    import openpyxl
+    wb = openpyxl.Workbook(); wb.active.append(["Total", 42])
+    f = tmp_path / "expenses.xlsx"; wb.save(f)
+    did = _doc(f, name="expenses.xlsx")
+    r = dop.propose_document_owner(did)
+    assert r["eligible"] is True and r["confidence"] == "NO_MATCH"
 
 
 def test_reject_document_is_not_eligible(monkeypatch):
@@ -192,13 +250,17 @@ def test_review_template_shows_proposal_confidence_and_evidence():
     doc = {"id": 457, "name": "a.pdf", "doc_type": None, "year": None, "current_owner": "Unassigned (NULL)",
            "view_url": "/documents/457/download?inline=1", "download_url": "/documents/457/download",
            "proposal": {"proposed_entity_type": "person", "proposed_entity_id": 7430,
-                        "proposed_entity_name": "MARY HARDY", "confidence": "HIGH_CONFIDENCE",
-                        "evidence": ["email m@e.com maps to #7430", "name 'mary hardy' matches #7430"],
-                        "competing": [], "extraction_method": "pdf_text"}}
+                        "proposed_entity_name": "MARY HARDY", "confidence": "HIGH",
+                        "evidence": ["✓ exact name 'MARY HARDY'", "✓ phone ending 9034 matched"],
+                        "competing": [], "best_candidates": [], "extraction_method": "pdf_text"}}
+    folder_cand = [{"id": 5284, "name": "Adrianna Lomasney", "designation": "Client", "email": None,
+                    "phone": None, "household_name": None, "household_id": None, "link": "#"}]
     html = templates.get_template("admin/unassigned_review.html").render(
         request=None, principal=p, folder="Adrianna Hardy", eligible_docs=[doc],
-        already_owned_docs=[], excluded_docs=[], candidates=[], household_candidates=[], org_candidates=[])
-    assert "PROPOSED OWNER (from document content)" in html
-    assert "MARY HARDY" in html and "HIGH_CONFIDENCE" in html
-    assert "email m@e.com maps to #7430" in html
+        already_owned_docs=[], excluded_docs=[], candidates=folder_cand,
+        household_candidates=[], org_candidates=[])
+    assert "PROPOSED OWNER (from DOCUMENT CONTENT)" in html
+    assert "MARY HARDY" in html and "Confidence: HIGH" in html
+    assert "✓ phone ending 9034 matched" in html
     assert "Preview → proposed owner: MARY HARDY (#7430)" in html
+    assert "SOURCE FOLDER / FILENAME suggestions" in html
