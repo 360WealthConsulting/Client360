@@ -188,3 +188,39 @@ def test_route_registered_and_gated():
     from app.main import app
     paths = {(getattr(r, "path", None)) for r in app.routes}
     assert "/admin/documents/high-confirm" in paths
+
+
+# --- View link exposes the EXISTING authorized document route for every row ----------------------
+
+def test_route_attaches_existing_authorized_view_url():
+    # The preview must reuse the same authorized View URL as /admin/documents/unassigned/review,
+    # NOT invent a new document-serving route.
+    from app.routes.admin import _view_url
+    from app.routes.admin_high_confirm import _with_view
+    rows = [{"document_id": 459, "filename": "Form1095a.pdf"}]
+    _with_view(rows)
+    assert rows[0]["view_url"] == _view_url(459, "Form1095a.pdf")
+
+
+def test_high_confirm_page_exposes_view_url_for_each_document():
+    from app.routes.admin import templates
+    ve, vr = "/documents/459/download?inline=1", "/documents/460/preview"
+    elig = [{"document_id": 459, "filename": "Form1095a.pdf", "source_path": "Adrianna Hardy",
+             "extraction_class": "ocr", "extraction_method": "ocr_cache", "proposed_entity_type": "person",
+             "proposed_entity_id": 7430, "proposed_entity_name": "MARY HARDY", "confidence": "HIGH",
+             "evidence_classes": ["name", "address"], "identity_provenance": "content",
+             "view_url": ve, "contradictions": []}]
+    rev = [{"document_id": 460, "filename": "Expenses.xlsx", "proposed_entity_type": "person",
+            "proposed_entity_id": 5284, "proposed_entity_name": "ADRIANNA",
+            "contradictions": ["foreign_strong_identifier"], "view_url": vr}]
+    html = templates.get_template("admin/high_confirm.html").render(
+        request=None, eligible=elig, review=rev, eligible_count=1, review_count=1)
+    # ELIGIBLE row: a View control AND a clickable filename, both to the authorized URL
+    assert "View ↗" in html
+    assert html.count(ve) >= 2                          # View button + filename link
+    assert f'>{"Form1095a.pdf"}</a>' in html            # filename is a hyperlink
+    # REVIEW REQUIRED row: same — View link present, filename clickable
+    assert html.count(vr) >= 2
+    assert f'>{"Expenses.xlsx"}</a>' in html
+    # no new document-serving path is invented (only /documents/... appears)
+    assert "http" not in ve and ve.startswith("/documents/")

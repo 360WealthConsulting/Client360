@@ -29,7 +29,7 @@
         <tr>
           <td><input type="checkbox" name="document_id" value="{{ r.document_id }}" checked></td>
           <td class="subtle">{{ r.document_id }}</td>
-          <td>{{ r.filename }}</td>
+          <td><a href="{{ r.view_url }}" target="_blank" rel="noopener">{{ r.filename }}</a></td>
           <td class="subtle">{{ r.source_path or "—" }}</td>
           <td class="subtle">{{ r.extraction_class }} · {{ r.extraction_method }}</td>
           <td><strong>{{ r.proposed_entity_type }} #{{ r.proposed_entity_id }}</strong> — {{ r.proposed_entity_name or "(name)" }}</td>
@@ -62,7 +62,7 @@
     {% for r in review %}
       <tr>
         <td class="subtle">{{ r.document_id }}</td>
-        <td>{{ r.filename }}</td>
+        <td><a href="{{ r.view_url }}" target="_blank" rel="noopener">{{ r.filename }}</a></td>
         <td class="subtle">{{ r.proposed_entity_type }} #{{ r.proposed_entity_id }} — {{ r.proposed_entity_name or "(name)" }}</td>
         <td class="subtle">{{ r.contradictions | join(", ") }}</td>
         <td><a class="btn sm secondary" href="{{ r.view_url }}" target="_blank" rel="noopener">View ↗</a></td>
