@@ -345,3 +345,80 @@ def test_staging_diagnostics_is_read_only():
     assert set(("staging_root", "discovered_drive_count", "discovered_drive_ids",
                 "MICROSOFT_SHAREPOINT_SITE_IDS", "existing_sharepoint_source_refs")) <= set(d)
     assert isinstance(d["existing_sharepoint_source_refs"], int)
+
+
+# --- dry-run enumerates metadata WITHOUT downloading (connector couples download+manifest) ----------
+
+def _enumerating_connector(tmp_path, recorder):
+    """Mimics production: run(download=False) alone returns a summary with 0 items and writes no
+    manifest; only when an enumerate/dry-run flag is set does it list metadata + write the manifest
+    (still no downloads)."""
+    import json
+    import types
+    from pathlib import Path
+
+    def run(*, drive_id, root, download, limit, manifest, dry_run=False):
+        recorder.append({"drive_id": drive_id, "download": download, "dry_run": dry_run})
+        if download or dry_run:                # enumerate metadata (no content download) into the manifest
+            Path(manifest).parent.mkdir(parents=True, exist_ok=True)
+            Path(manifest).write_text(json.dumps([
+                {"name": f"{drive_id}.pdf", "web_url": f"https://sp/{drive_id}/f", "item_id": "f1",
+                 "site": "S", "library": "D", "modified_at": "2024-01-01T00:00:00", "size": 10}]))
+            return {"status": "ok", "files_seen": 1, "files_downloaded": (1 if download else 0)}
+        return {"status": "ok", "files_seen": 0, "files_downloaded": 0}   # download=False, no flag -> nothing
+    return types.SimpleNamespace(run=run)
+
+
+def test_dry_run_enumerates_metadata(tmp_path):
+    import os
+    rec = []
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "stage")
+    try:
+        diag = {}
+        stager = mi.resolve_sharepoint_stager(module=_enumerating_connector(tmp_path, rec),
+                                               drive_ids=["d1"], dry_run=True, diag=diag)
+        items = stager()
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    assert rec and rec[0]["download"] is False and rec[0]["dry_run"] is True   # download stays OFF, enumerate ON
+    assert len(items) == 1 and diag["total_items"] == 1
+    assert diag["drives"][0]["manifest_exists"] is True and diag["drives"][0]["source"] == "manifest_file"
+
+
+def test_dry_run_creates_no_documents_or_ownership(tmp_path):
+    import os
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "stage")
+    try:
+        with engine.connect() as c:
+            before = c.execute(select(func.count()).select_from(documents)).scalar()
+        stager = mi.resolve_sharepoint_stager(module=_enumerating_connector(tmp_path, []),
+                                               drive_ids=["d2"], dry_run=True)
+        summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "dest"),
+                                         dry_run=True, ocr=False)
+        with engine.connect() as c:
+            after = c.execute(select(func.count()).select_from(documents)).scalar()
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    assert summary["status"] == "dry_run"
+    assert summary["items_examined"] >= 1          # enumerated metadata
+    assert after == before                         # but no canonical documents created / no ownership
+
+
+def test_dry_run_downloads_no_files(tmp_path):
+    import os
+    dest = tmp_path / "dest"
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "stage")
+    try:
+        stager = mi.resolve_sharepoint_stager(module=_enumerating_connector(tmp_path, []),
+                                               drive_ids=["d3"], dry_run=True)
+        mi.run_sharepoint_sync(stager=stager, destination_root=str(dest), dry_run=True, ocr=False)
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    # the importer's destination root has no downloaded/copied files in dry-run
+    assert not dest.exists() or not any(dest.rglob("*.*"))
+
+
+def test_stager_items_extracts_from_alt_dict_keys():
+    assert mi._stager_items({"staged": [{"name": "x"}]}) == [{"name": "x"}]
+    assert mi._stager_items({"documents": [{"name": "y"}]}) == [{"name": "y"}]
+    assert mi._stager_items({"status": "ok", "files_seen": 5}) == []   # summary only -> no items

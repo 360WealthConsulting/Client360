@@ -57,13 +57,16 @@ def main(argv=None):
 
     if diag:
         print("Staging diagnostics:")
-        print(f"  entrypoint: {diag.get('entrypoint')}   staging_root: {diag.get('staging_root')}")
+        print(f"  entrypoint: {diag.get('entrypoint')}   params: {diag.get('entrypoint_params')}")
+        print(f"  connector callables: {diag.get('connector_callables')}")
+        print(f"  staging_root: {diag.get('staging_root')}")
         print(f"  drives discovered: {diag.get('drive_count')}   drive_ids: {diag.get('drive_ids')}")
         print(f"  total staged items returned: {diag.get('total_items')}")
         for d in (diag.get("drives") or [])[:20]:
             print(f"    drive {d['drive_id']}: items={d['items']} source={d['source']} "
                   f"download={d['download']} manifest_exists={d['manifest_exists']} "
-                  f"result_type={d['result_type']} manifest={d['manifest']}")
+                  f"result_type={d['result_type']} result_keys={d.get('result_keys')} "
+                  f"result_counts={d.get('result_counts')} manifest={d['manifest']}")
 
     print("SharePoint sync:", summary.get("status"))
     for k in ("items_examined", "canonical_created", "reused_canonical", "metadata_updated", "skipped",

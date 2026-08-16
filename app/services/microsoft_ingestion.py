@@ -99,6 +99,10 @@ _SHAREPOINT_STAGER_NAMES = ("stage_sharepoint_content", "stage_content", "stage"
 _DEFAULT_SYNC_LIMIT = 100000
 
 
+_ITEM_LIST_KEYS = ("items", "manifest", "manifest_items", "staged", "staged_items", "documents",
+                   "results", "entries", "files")
+
+
 def _stager_items(result):
     import json
     from pathlib import Path
@@ -106,11 +110,18 @@ def _stager_items(result):
         return result[0]                                   # (manifest_items, run_record)
     if isinstance(result, list):
         return result
-    items = result.get("items") if isinstance(result, dict) else getattr(result, "items", None)
-    if isinstance(items, list):
-        return items
-    mp = result.get("manifest_path") if isinstance(result, dict) else getattr(result, "manifest_path", None)
-    if mp and Path(mp).exists():
+    if isinstance(result, dict):
+        for key in _ITEM_LIST_KEYS:
+            v = result.get(key)
+            if isinstance(v, list) and (not v or isinstance(v[0], dict)):
+                return v
+        mp = result.get("manifest_path") or result.get("manifest")
+    else:
+        items = getattr(result, "items", None)
+        if isinstance(items, list):
+            return items
+        mp = getattr(result, "manifest_path", None)
+    if isinstance(mp, str) and Path(mp).exists():
         return json.loads(Path(mp).read_text())
     return []
 
@@ -135,7 +146,12 @@ def _discovered_drive_ids():
 
 def _connector_values(*, root, drive_id, dry_run):
     """Values for the connector's known parameter names, sourced from EXISTING SharePoint configuration
-    (staging root env, discovered drive, site-id env) and the run mode (dry-run -> no download)."""
+    (staging root env, discovered drive, site-id env) and the run mode. For a DRY RUN we keep
+    ``download`` disabled (no file downloads) but ALSO set every standard enumerate-without-download flag
+    the connector might declare (``dry_run``/``plan_only``/``enumerate_only``/``metadata_only``/
+    ``no_download``/``list_only``), so a connector whose ``run(download=False)`` skips enumeration will
+    still list metadata + write its manifest. ``_build_kwargs`` passes ONLY the parameters the connector
+    actually declares, so unknown flags are simply ignored."""
     import os
     from pathlib import Path
     manifest = str(Path(root) / (f"{drive_id}_manifest.json" if drive_id else "manifest.json"))
@@ -144,10 +160,14 @@ def _connector_values(*, root, drive_id, dry_run):
         limit = int(os.getenv("CLIENT360_SHAREPOINT_SYNC_LIMIT", str(_DEFAULT_SYNC_LIMIT)))
     except ValueError:
         limit = _DEFAULT_SYNC_LIMIT
-    return {"drive_id": drive_id, "root": root, "staging_root": root,
-            "manifest": manifest, "manifest_path": manifest,
-            "download": not dry_run, "dry_run": dry_run, "limit": limit,
-            "site_ids": site_ids, "site_id": (site_ids[0] if site_ids else None)}
+    values = {"drive_id": drive_id, "root": root, "staging_root": root,
+              "manifest": manifest, "manifest_path": manifest,
+              "download": not dry_run, "limit": limit,
+              "site_ids": site_ids, "site_id": (site_ids[0] if site_ids else None)}
+    # enumerate-without-download flags (only the ones the connector declares are actually passed)
+    for flag in ("dry_run", "plan_only", "enumerate_only", "metadata_only", "no_download", "list_only"):
+        values[flag] = dry_run
+    return values
 
 
 def _build_kwargs(fn, values):
@@ -203,10 +223,14 @@ def _stage_one(fn, root, drive_id, dry_run, diag):
         items, source = _stager_items(result), "run_return"
     if diag is not None:
         from pathlib import Path
+        result_keys = sorted(result.keys()) if isinstance(result, dict) else None
+        result_counts = ({k: v for k, v in result.items() if isinstance(v, int)}
+                         if isinstance(result, dict) else None)
         diag["drives"].append({
             "drive_id": drive_id, "download": values["download"], "limit": values["limit"],
             "manifest": manifest_path, "manifest_exists": bool(manifest_path and Path(manifest_path).exists()),
-            "result_type": type(result).__name__, "items": len(items), "source": source})
+            "result_type": type(result).__name__, "result_keys": result_keys,
+            "result_counts": result_counts, "items": len(items), "source": source})
     return items
 
 
@@ -246,7 +270,10 @@ def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, m
         ids = ((list(drive_ids) if drive_ids is not None else _discovered_drive_ids())
                if needs_drive else [None])
         if diag is not None:
-            diag.update({"entrypoint": fn.__name__, "staging_root": root, "needs_drive": needs_drive,
+            diag.update({"entrypoint": fn.__name__, "entrypoint_params": list(params),
+                         "staging_root": root, "needs_drive": needs_drive,
+                         "connector_callables": sorted(n for n in dir(mod)
+                                                       if not n.startswith("_") and callable(getattr(mod, n, None))),
                          "drive_count": len([d for d in ids if d is not None]),
                          "drive_ids": [d for d in ids if d is not None][:50], "drives": []})
         if needs_drive and not ids:
@@ -277,8 +304,23 @@ def sharepoint_staging_diagnostics():
             existing_refs = conn.execute(select(func.count()).select_from(ds)
                                          .where(ds.c.source_system == "SharePoint")).scalar()
     drive_ids = _discovered_drive_ids()
+    connector_callables, entrypoint, entrypoint_params = None, None, None
+    try:
+        from app.connectors.microsoft365 import sharepoint_content as _mod
+        connector_callables = sorted(n for n in dir(_mod)
+                                     if not n.startswith("_") and callable(getattr(_mod, n, None)))
+        fn = next((getattr(_mod, n) for n in _SHAREPOINT_STAGER_NAMES
+                   if callable(getattr(_mod, n, None))), None)
+        if fn is not None:
+            import inspect
+            entrypoint = fn.__name__
+            entrypoint_params = list(inspect.signature(fn).parameters)
+    except Exception as exc:  # noqa: BLE001 — connector import is environment-specific
+        connector_callables = f"connector import failed: {exc}"
     return {
         "staging_root": _staging_root(),
+        "connector_callables": connector_callables,
+        "entrypoint": entrypoint, "entrypoint_params": entrypoint_params,
         "CLIENT360_SHAREPOINT_SOURCE_ROOT_set": bool(os.getenv("CLIENT360_SHAREPOINT_SOURCE_ROOT")),
         "CLIENT360_SHAREPOINT_DOCUMENT_ROOT_set": bool(os.getenv("CLIENT360_SHAREPOINT_DOCUMENT_ROOT")),
         "MICROSOFT_SHAREPOINT_SITE_IDS": [s.strip() for s in
