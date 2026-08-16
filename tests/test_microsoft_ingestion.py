@@ -830,3 +830,111 @@ def test_real_run_reuses_already_downloaded_file_no_duplicate(tmp_path):
     finally:
         del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
     assert _canonical_count("https://sp/drvDup/f1") == 1         # single source ref, no duplicate
+
+
+# --- Windows cross-volume staging: connector temp on D:, adapter default target on C: -> WinError 17 ---
+# Fix: hand the connector its OWN staging root so temp .part and final dest share a volume. safe_finalize
+# is the tracked cross-volume-safe fallback (copy+verify+unlink) if staging ever must span volumes.
+
+def test_connector_staging_root_prefers_connector_own_config():
+    import os
+    import types
+    mod = types.SimpleNamespace(DEFAULT_STAGING_ROOT=r"D:\Client360\Content\SharePoint")
+    assert mi._connector_staging_root(mod) == r"D:\Client360\Content\SharePoint"
+    os.environ["CLIENT360_SHAREPOINT_STAGING_ROOT"] = r"D:\Alt\Staging"
+    try:                                                     # env fallback when connector exposes nothing
+        assert mi._connector_staging_root(types.SimpleNamespace()) == r"D:\Alt\Staging"
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_STAGING_ROOT"]
+
+
+def test_safe_finalize_same_volume_uses_atomic_replace(tmp_path):
+    src = tmp_path / "a.part"
+    src.write_bytes(b"content-xyz")
+    dest = tmp_path / "sub" / "a.bin"
+    mi.safe_finalize(src, dest)
+    assert dest.read_bytes() == b"content-xyz" and not src.exists()   # moved atomically, temp gone
+
+
+def test_safe_finalize_cross_volume_copies_verifies_and_removes_temp(tmp_path, monkeypatch):
+    import errno
+    import os
+    src = tmp_path / "b.part"
+    payload = b"cross-volume-bytes-preserved"
+    src.write_bytes(payload)
+    dest = tmp_path / "other" / "b.bin"
+
+    def _exdev(a, b):                                        # simulate a cross-disk os.replace
+        raise OSError(errno.EXDEV, "The system cannot move the file to a different disk drive")
+    monkeypatch.setattr(os, "replace", _exdev)
+    mi.safe_finalize(src, dest)                             # must NOT raise WinError 17
+    assert dest.exists() and dest.read_bytes() == payload  # staged file exists, content/hash preserved
+    assert not src.exists()                                 # temp removed only AFTER the verified copy
+
+
+def _volume_of(path, base):
+    from pathlib import Path
+    rel = Path(path).resolve().relative_to(Path(base).resolve())
+    return rel.parts[0] if rel.parts else ""
+
+
+def _volume_sensitive_connector(base, rec, *, expose_root=True):
+    """Connector whose temp lives under its OWN content root (pretend D:). Its atomic finalize raises
+    WinError 17 when the target root is on a different 'volume' than the temp — exactly like production."""
+    import json
+    import os
+    import types
+    from pathlib import Path
+    content_root = Path(base) / "Dvol" / "Content" / "SharePoint"
+    tmp_dir = content_root / ".tmp"
+
+    def run(*, drive_id, root, download, limit, manifest):
+        rec.append(str(root))
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        part = tmp_dir / f"{drive_id}.part"
+        part.write_bytes(b"hello sharepoint statement body")
+        dest = Path(root) / f"{drive_id}.bin"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if _volume_of(part, base) != _volume_of(dest, base):     # cross-volume replace -> WinError 17
+            raise OSError(17, "The system cannot move the file to a different disk drive")
+        os.replace(str(part), str(dest))
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps([{"name": f"{drive_id}.pdf",
+            "web_url": f"https://sp/{drive_id}/f1", "item_id": "f1", "site": "S", "library": "D",
+            "modified_at": "2024-01-01T00:00:00", "size": dest.stat().st_size,
+            "local_path": str(dest)}]))
+        return {"status": "ok", "files_seen": 1, "downloaded": 1}
+
+    ns = types.SimpleNamespace(run=run)
+    if expose_root:
+        ns.DEFAULT_STAGING_ROOT = str(content_root)
+    return ns
+
+
+def test_real_run_stages_on_connector_volume_no_winerror17(tmp_path):
+    rec = []
+    conn = _volume_sensitive_connector(tmp_path, rec)
+    stager = mi.resolve_sharepoint_stager(module=conn, drive_ids=["drvV"], dry_run=False, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "canonical"),
+                                     dry_run=False, ocr=False)
+    _track()
+    assert not any("disk drive" in e for e in summary.get("errors", []))   # no WinError 17
+    assert summary["status"] == "completed" and summary["canonical_created"] == 1
+    assert rec and "Dvol" in rec[0]                         # adapter handed the connector its OWN root
+
+
+def test_cross_volume_reproduces_winerror17_without_alignment(tmp_path):
+    # Control: connector temp on Dvol, but its own root is hidden and the adapter root is forced to Cvol
+    # -> the connector's replace crosses volumes and fails, proving the alignment fix is what avoids it.
+    import os
+    rec = []
+    conn = _volume_sensitive_connector(tmp_path, rec, expose_root=False)
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "Cvol" / "_staging")
+    try:
+        stager = mi.resolve_sharepoint_stager(module=conn, drive_ids=["drvX"], dry_run=False, limit=10)
+        summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "canonical"),
+                                         dry_run=False, ocr=False)
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    assert summary["status"] == "error" and any("disk drive" in e for e in summary["errors"])
+    assert "Cvol" in rec[0]                                 # forced to the wrong volume in this control

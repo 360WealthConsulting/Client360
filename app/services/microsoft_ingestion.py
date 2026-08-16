@@ -133,6 +133,58 @@ def _staging_root():
             or r"C:\Client360\Data\Documents\SharePoint\_staging")
 
 
+def _connector_staging_root(mod):
+    """The staging root to hand the connector's ``run(root=...)`` for a REAL sync. Prefer the connector's
+    OWN configured storage root so downloaded temp files (``.part`` under its content root) and their final
+    destination live on the SAME Windows volume — a cross-volume ``os.replace`` raises WinError 17. Order:
+    the connector's declared default (which already resolves ``CLIENT360_SHAREPOINT_STAGING_ROOT`` on the
+    connector's volume, e.g. D:\\Client360\\Content\\SharePoint), then that env var, then the adapter's
+    existing staging root. No new path is invented — this reuses the connector's own configuration."""
+    import os
+    for cand in (getattr(mod, "DEFAULT_STAGING_ROOT", None), getattr(mod, "STAGING_ROOT", None),
+                 getattr(mod, "CONTENT_ROOT", None), os.getenv("CLIENT360_SHAREPOINT_STAGING_ROOT")):
+        if cand:
+            return str(cand)
+    return _staging_root()
+
+
+def safe_finalize(tmp, dest):
+    """Move a staged temp file to ``dest`` tolerantly across Windows volumes. Same volume -> atomic
+    ``os.replace``. Cross-volume (WinError 17 / ``errno.EXDEV``) -> stream-copy + fsync + verify SHA-256,
+    then remove the temp ONLY after the copy verifies (never a partial destination, never a temp deleted
+    before its content is safely copied). Returns the destination Path."""
+    import errno
+    import hashlib
+    import os
+    import shutil
+    from pathlib import Path
+    tmp, dest = Path(tmp), Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(str(tmp), str(dest))                 # atomic within one filesystem
+        return dest
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 17 and exc.errno != errno.EXDEV:
+            raise                                       # a real error, not a cross-volume move
+
+    def _sha(p):
+        h = hashlib.sha256()
+        with open(p, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    src_sha = _sha(tmp)
+    with open(tmp, "rb") as s, open(dest, "wb") as d:   # copy across the volume boundary
+        shutil.copyfileobj(s, d, 1 << 20)
+        d.flush()
+        os.fsync(d.fileno())
+    if _sha(dest) != src_sha:
+        raise OSError(f"cross-volume finalize verification failed for {dest}")
+    os.unlink(str(tmp))                                 # temp removed only after a verified copy
+    return dest
+
+
 def _discovered_drive_ids():
     """Drive ids the platform has already discovered (populated by the existing microsoft_document_sync
     job) — the existing configuration source for which drives to stage. No new setting invented."""
@@ -445,7 +497,9 @@ def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, m
             params = inspect.signature(fn).parameters
         except (TypeError, ValueError):
             params = {}
-        root = _staging_root()
+        # REAL sync stages on the connector's OWN volume (temp .part + final dest same disk -> no WinError
+        # 17). Dry-run enumerates only (no downloads/manifest writes), so its root is unchanged.
+        root = _staging_root() if dry_run else _connector_staging_root(mod)
         needs_drive = "drive_id" in params and params["drive_id"].default is inspect.Parameter.empty
         ids = ((list(drive_ids) if drive_ids is not None else _discovered_drive_ids())
                if needs_drive else [None])
