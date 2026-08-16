@@ -30,10 +30,19 @@ def main(argv=None):
     ap.add_argument("--site", action="append", default=None, help="site id(s) to stage (with --stage)")
     ap.add_argument("--drive-id", action="append", default=None,
                     help="override drive id(s) (else discovered from microsoft_drives)")
+    ap.add_argument("--limit", type=int, default=None, help="cap items the connector processes (fast test)")
+    ap.add_argument("--top", type=int, default=None,
+                    help="initial /root/delta $top page size (small first page, e.g. 10)")
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="per-drive wall-clock timeout in seconds (surface a slow initial delta cleanly)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--diagnose", action="store_true",
                     help="print READ-ONLY staging config/data diagnostics and exit (no Graph, no downloads)")
     args = ap.parse_args(argv)
+
+    def _progress(ev):
+        import time
+        print(f"    [{time.strftime('%H:%M:%S')}] {ev}", flush=True)
 
     if args.diagnose:
         from app.services.microsoft_ingestion import sharepoint_staging_diagnostics
@@ -49,7 +58,8 @@ def main(argv=None):
     elif args.stage:
         # Adapts to the deployment connector's real staging entrypoint (no hard-coded function name).
         stager = resolve_sharepoint_stager(site_ids=args.site, drive_ids=args.drive_id,
-                                           dry_run=args.dry_run, diag=diag)
+                                           dry_run=args.dry_run, diag=diag, limit=args.limit,
+                                           top=args.top, timeout=args.timeout, progress=_progress)
         summary = run_sharepoint_sync(stager=stager, trigger_source="manual", dry_run=args.dry_run)
     else:
         ap.error("provide --manifest <path>, --stage, or --diagnose")

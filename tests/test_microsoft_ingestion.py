@@ -422,3 +422,77 @@ def test_stager_items_extracts_from_alt_dict_keys():
     assert mi._stager_items({"staged": [{"name": "x"}]}) == [{"name": "x"}]
     assert mi._stager_items({"documents": [{"name": "y"}]}) == [{"name": "y"}]
     assert mi._stager_items({"status": "ok", "files_seen": 5}) == []   # summary only -> no items
+
+
+# --- Graph driveItem delta semantics + initial $top + progress + timeout --------------------------
+
+_DRIVE = "b!an9eHY8SsUSoKpMiW4vy9GHKx9mbaS1Eo_ha68ZssFa86B3K4zuaRJVGisg9UoId"
+
+
+def test_initial_delta_url_uses_small_top():
+    url = mi.initial_delta_url(_DRIVE, top=10)
+    assert url == f"https://graph.microsoft.com/v1.0/drives/{_DRIVE}/root/delta?$top=10"
+    assert mi.initial_delta_url(_DRIVE).endswith("/root/delta")   # no $top when unset
+
+
+def test_delta_pages_follow_nextlink_with_progress():
+    pages = {
+        f"https://graph.microsoft.com/v1.0/drives/{_DRIVE}/root/delta?$top=2":
+            {"value": [{"id": "1"}, {"id": "2"}], "@odata.nextLink": "https://g/next2"},
+        "https://g/next2": {"value": [{"id": "3"}]},   # no nextLink -> stop
+    }
+    events = []
+    def fetch(url, timeout):
+        return pages[url]
+    got = list(mi.iter_delta_pages(_DRIVE, fetch, top=2, progress=events.append))
+    assert [len(p) for p in got] == [2, 1]                         # two pages, then stop
+    kinds = [e["kind"] for e in events if e["phase"] == "response"]
+    assert kinds == ["initial", "nextLink"]                        # initial then continuation
+    assert all("elapsed" in e for e in events if e["phase"] == "response")
+
+
+def test_delta_page_failure_surfaces_cleanly():
+    def fetch(url, timeout):
+        raise TimeoutError("read timed out")
+    with pytest.raises(RuntimeError) as exc:
+        list(mi.iter_delta_pages(_DRIVE, fetch, top=10))
+    assert "delta page 1" in str(exc.value) and "read timed out" in str(exc.value)   # not a hang
+
+
+def test_limit_and_top_passthrough():
+    rec = {}
+    import types
+
+    def run(*, drive_id, root, download, limit, manifest, top=None, dry_run=False):
+        rec.update({"limit": limit, "top": top, "download": download})
+        return ([{"name": "a", "item_id": "1", "web_url": "u"}], {})
+    stager = mi.resolve_sharepoint_stager(module=types.SimpleNamespace(run=run), drive_ids=["d1"],
+                                          dry_run=True, limit=10, top=5)
+    stager()
+    assert rec["limit"] == 10 and rec["top"] == 5 and rec["download"] is False   # small page, no download
+
+
+def test_connector_timeout_surfaced_not_hung():
+    import time
+    import types
+
+    def run(*, drive_id, root, download, limit, manifest):
+        time.sleep(0.4)                                            # simulate a slow initial delta page
+        return {"status": "ok"}
+    stager = mi.resolve_sharepoint_stager(module=types.SimpleNamespace(run=run), drive_ids=["d1"],
+                                          dry_run=True, timeout=1)   # 0.4s < 1s -> returns
+    stager()                                                       # does not hang
+
+    stager2 = mi.resolve_sharepoint_stager(module=types.SimpleNamespace(run=run), drive_ids=["d1"],
+                                           dry_run=True, timeout=0)  # 0 disables; still returns
+    stager2()
+
+    def slow(*, drive_id, root, download, limit, manifest):
+        time.sleep(0.5)
+        return {}
+    diag = {}
+    stager3 = mi.resolve_sharepoint_stager(module=types.SimpleNamespace(run=slow), drive_ids=["d1"],
+                                           dry_run=True, timeout=0.1, diag=diag)
+    with pytest.raises(TimeoutError) as exc:
+        stager3()
+    assert "exceeded 0.1s" in str(exc.value) and "--top" in str(exc.value)   # clean timeout message

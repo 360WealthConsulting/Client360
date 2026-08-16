@@ -144,29 +144,36 @@ def _discovered_drive_ids():
         return [d for d in conn.execute(select(t.c.microsoft_drive_id)).scalars() if d]
 
 
-def _connector_values(*, root, drive_id, dry_run):
+def _connector_values(*, root, drive_id, dry_run, limit=None, top=None, progress=None):
     """Values for the connector's known parameter names, sourced from EXISTING SharePoint configuration
     (staging root env, discovered drive, site-id env) and the run mode. For a DRY RUN we keep
     ``download`` disabled (no file downloads) but ALSO set every standard enumerate-without-download flag
     the connector might declare (``dry_run``/``plan_only``/``enumerate_only``/``metadata_only``/
-    ``no_download``/``list_only``), so a connector whose ``run(download=False)`` skips enumeration will
-    still list metadata + write its manifest. ``_build_kwargs`` passes ONLY the parameters the connector
-    actually declares, so unknown flags are simply ignored."""
+    ``no_download``/``list_only``). ``limit`` (cap items) and ``top`` (the initial delta ``$top`` page size,
+    for a small first page) and a ``progress`` callback are supplied when the connector declares them.
+    ``_build_kwargs`` passes ONLY the parameters the connector actually declares, so unknown values are
+    simply ignored (never overriding a connector default with None)."""
     import os
     from pathlib import Path
     manifest = str(Path(root) / (f"{drive_id}_manifest.json" if drive_id else "manifest.json"))
     site_ids = [s.strip() for s in (os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS") or "").split(",") if s.strip()]
-    try:
-        limit = int(os.getenv("CLIENT360_SHAREPOINT_SYNC_LIMIT", str(_DEFAULT_SYNC_LIMIT)))
-    except ValueError:
-        limit = _DEFAULT_SYNC_LIMIT
+    if limit is None:
+        try:
+            limit = int(os.getenv("CLIENT360_SHAREPOINT_SYNC_LIMIT", str(_DEFAULT_SYNC_LIMIT)))
+        except ValueError:
+            limit = _DEFAULT_SYNC_LIMIT
     values = {"drive_id": drive_id, "root": root, "staging_root": root,
               "manifest": manifest, "manifest_path": manifest,
-              "download": not dry_run, "limit": limit,
+              "download": not dry_run, "limit": int(limit),
               "site_ids": site_ids, "site_id": (site_ids[0] if site_ids else None)}
-    # enumerate-without-download flags (only the ones the connector declares are actually passed)
     for flag in ("dry_run", "plan_only", "enumerate_only", "metadata_only", "no_download", "list_only"):
         values[flag] = dry_run
+    if top is not None:                                    # small first page for the initial /root/delta
+        for k in ("top", "page_size", "page_top", "first_page_size", "delta_page_size"):
+            values[k] = int(top)
+    if progress is not None:                               # per-page progress if the connector supports it
+        for k in ("progress", "on_page", "page_callback"):
+            values[k] = progress
     return values
 
 
@@ -211,9 +218,87 @@ def _read_manifest_file(path):
     return None
 
 
-def _stage_one(fn, root, drive_id, dry_run, diag):
-    values = _connector_values(root=root, drive_id=drive_id, dry_run=dry_run)
-    result = fn(**_build_kwargs(fn, values))
+GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+
+
+def initial_delta_url(drive_id, *, top=None, base_url=GRAPH_BASE_URL):
+    """The Microsoft Graph driveItem delta URL for a drive; ``$top`` requests a small FIRST page so the
+    initial /root/delta returns quickly instead of appearing to hang on a large drive."""
+    url = f"{base_url}/drives/{drive_id}/root/delta"
+    return f"{url}?$top={int(top)}" if top else url
+
+
+def iter_delta_pages(drive_id, fetch, *, top=None, base_url=GRAPH_BASE_URL, timeout=120, progress=None,
+                     max_pages=None):
+    """Yield each page's driveItems using Microsoft Graph driveItem DELTA semantics — GET
+    /drives/{id}/root/delta (optionally ``$top`` for a small first page), then follow ``@odata.nextLink``.
+    ``fetch(url, timeout)`` performs the authenticated GET and returns the JSON (injected so this is
+    testable and reuses the connector's auth). Prints/records progress BEFORE each request and AFTER each
+    response (page number, initial/nextLink, elapsed, item count) and surfaces a slow/failed page as a
+    CLEAR error instead of hanging. Read-only: enumerates metadata only, no downloads. This is the delta
+    contract — not a replacement crawler and no recursive traversal (delta already walks the hierarchy)."""
+    import time
+    url = initial_delta_url(drive_id, top=top, base_url=base_url)
+    page = 0
+    while url:
+        page += 1
+        kind = "initial" if page == 1 else "nextLink"
+        if progress:
+            progress({"phase": "request", "page": page, "kind": kind})
+        t0 = time.monotonic()
+        try:
+            data = fetch(url, timeout)
+        except Exception as exc:  # noqa: BLE001 — surface, don't hang
+            raise RuntimeError(f"Graph delta page {page} ({kind}) failed after "
+                               f"{time.monotonic() - t0:.1f}s: {exc}") from exc
+        elapsed = time.monotonic() - t0
+        items = data.get("value", []) if isinstance(data, dict) else []
+        if progress:
+            progress({"phase": "response", "page": page, "kind": kind,
+                      "elapsed": round(elapsed, 2), "items": len(items)})
+        yield items
+        url = data.get("@odata.nextLink") if isinstance(data, dict) else None
+        if max_pages and page >= max_pages:
+            break
+
+
+def _call_with_timeout(fn, kwargs, timeout):
+    """Call the connector with a wall-clock timeout so a slow initial /root/delta page surfaces a clear
+    error instead of appearing hung. Without a timeout, calls straight through."""
+    if not timeout:
+        return fn(**kwargs)
+    import threading
+    box = {}
+
+    def _worker():
+        try:
+            box["result"] = fn(**kwargs)
+        except Exception as exc:  # noqa: BLE001
+            box["error"] = exc
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise TimeoutError(
+            f"SharePoint connector call exceeded {timeout}s (the initial /root/delta page can be slow on a "
+            "large drive) — request a smaller first page with --top and/or cap with --limit.")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+def _stage_one(fn, root, drive_id, dry_run, diag, *, limit=None, top=None, timeout=None, progress=None):
+    import time
+    values = _connector_values(root=root, drive_id=drive_id, dry_run=dry_run, limit=limit, top=top,
+                               progress=progress)
+    if progress:
+        progress({"phase": "drive_request", "drive_id": drive_id, "top": top, "limit": values["limit"]})
+    t0 = time.monotonic()
+    result = _call_with_timeout(fn, _build_kwargs(fn, values), timeout)
+    elapsed = round(time.monotonic() - t0, 2)
+    if progress:
+        progress({"phase": "drive_response", "drive_id": drive_id, "elapsed": elapsed})
     manifest_path = values["manifest"]
     # Prefer the manifest FILE the connector was told to write (deterministic), else parse the return.
     from_file = _read_manifest_file(manifest_path)
@@ -228,13 +313,15 @@ def _stage_one(fn, root, drive_id, dry_run, diag):
                          if isinstance(result, dict) else None)
         diag["drives"].append({
             "drive_id": drive_id, "download": values["download"], "limit": values["limit"],
+            "top": top, "elapsed_seconds": elapsed,
             "manifest": manifest_path, "manifest_exists": bool(manifest_path and Path(manifest_path).exists()),
             "result_type": type(result).__name__, "result_keys": result_keys,
             "result_counts": result_counts, "items": len(items), "source": source})
     return items
 
 
-def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, module=None, diag=None):
+def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, module=None, diag=None,
+                              limit=None, top=None, timeout=None, progress=None):
     """Return a zero-arg ``stager`` callable that invokes the REAL deployment connector's SharePoint
     staging entrypoint and yields the manifest items. It does NOT hard-import a specific function name:
     it discovers the connector's public staging callable and supplies exactly the arguments that callable
@@ -283,7 +370,8 @@ def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, m
                 "(they are stored in microsoft_drives), or stage via the connector CLI and use --manifest.")
         out = []
         for d in ids:
-            out += _stage_one(fn, root, d, dry_run, diag)
+            out += _stage_one(fn, root, d, dry_run, diag, limit=limit, top=top, timeout=timeout,
+                              progress=progress)
         if diag is not None:
             diag["total_items"] = len(out)
         return out
