@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Context Review (A/B) | Admin | Client360{% endblock %}
+{% block crumb %}Admin · Document Management · Context Review{% endblock %}
+
+{% macro row(r, likely=False) %}
+<div class="card" style="padding:10px 12px; margin-bottom:10px; background:var(--bg, #fafafa)">
+  <div class="detail-row">
+    <span><strong>#{{ r.document_id }}</strong> ·
+      <a href="{{ r.view_url }}" target="_blank" rel="noopener">{{ r.filename }}</a></span>
+    <span class="subtle">{{ r.source_system or "—" }} · {{ r.source_path or "—" }}
+      <a class="btn sm secondary" href="{{ r.view_url }}" target="_blank" rel="noopener">View ↗</a></span>
+  </div>
+  <div style="margin:6px 0">
+    <span class="tag">{{ "CONTEXT_LIKELY" if likely else "CONTEXT_HIGH" }}</span>
+    {% if likely %}<span class="subtle" style="color:var(--warn, #b45309); font-weight:600">lower confidence — verify before approving</span>{% endif %}
+    <strong>Proposed owner:</strong> {{ r.proposed_owner_type }} #{{ r.proposed_owner_id }} — {{ r.proposed_owner_name or "(name)" }}
+  </div>
+  <ul class="subtle" style="margin:2px 0 6px 18px">
+    <li>context evidence: {{ r.evidence }}</li>
+    <li>folder mapping: {{ r.folder_mapping }}</li>
+    {% if r.supporting_documents %}<li>supported by resolved documents: {{ r.supporting_documents | join(", ") }}</li>{% endif %}
+    {% if r.contradicting_evidence %}<li style="color:var(--warn, #b45309)">contradiction: {{ r.contradicting_evidence }}</li>{% endif %}
+  </ul>
+  <form method="post" action="/admin/documents/context-review/approve" class="row" style="gap:8px; align-items:center">
+    <input type="hidden" name="document_id" value="{{ r.document_id }}">
+    <input type="hidden" name="entity_type" value="{{ r.proposed_owner_type }}">
+    <input type="hidden" name="entity_id" value="{{ r.proposed_owner_id }}">
+    <label class="subtle row" style="gap:6px; align-items:center"><input type="checkbox" name="confirm" value="yes" required> confirm</label>
+    <button class="btn {% if likely %}sm secondary{% endif %}" type="submit">Approve → {{ r.proposed_owner_name or (r.proposed_owner_type ~ " #" ~ r.proposed_owner_id) }}</button>
+  </form>
+</div>
+{% endmacro %}
+
+{% block content %}
+{% call ui.page_head("Context review — A / B", eyebrow="Admin · Document Management",
+    desc="NO_MATCH documents that source context can defensibly associate with an existing owner. Each
+          approval re-runs the context analysis live, requires the document still unowned and still the
+          same owner, and assigns through the existing atomic, audited path. CONFLICT, general and
+          possible-new-entity documents are intentionally not assignable here.") %}
+  <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
+{% endcall %}
+
+{% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
+
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
+  <div style="color:var(--ok, #15803d); font-weight:600; margin-bottom:6px">CONTEXT_HIGH — folder uniquely & reliably mapped ({{ high_count }})</div>
+  {% for r in context_high %}{{ row(r) }}{% else %}<div class="subtle">None.</div>{% endfor %}
+</article>
+
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+  <div style="color:var(--warn, #b45309); font-weight:600; margin-bottom:6px">CONTEXT_LIKELY — lower confidence, explicit approval only ({{ likely_count }})</div>
+  {% for r in context_likely %}{{ row(r, likely=True) }}{% else %}<div class="subtle">None.</div>{% endfor %}
+</article>
+{% endblock %}

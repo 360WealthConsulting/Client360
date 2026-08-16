@@ -235,6 +235,17 @@ def _classify(conn, did, proposal, text, folder, idx, folder_resolved, folder_de
     return base
 
 
+def classify_one(conn, did, idx, folder_resolved, folder_decisions, *, ocr=False):
+    """Live single-document NO_MATCH classification (or None if the document is not an eligible NO_MATCH).
+    Shared by the batch report, the review surface, and the pre-write recheck so all agree. READ-ONLY."""
+    proposal = propose_document_owner(did, conn=conn, idx=idx, with_text=True, ocr=ocr)
+    if not proposal.get("eligible") or proposal.get("confidence") != "NO_MATCH":
+        return None
+    text = proposal.pop("text", "")
+    folder = proposal.get("source_folder")
+    return _classify(conn, did, proposal, text, folder, idx, folder_resolved, folder_decisions)
+
+
 def analyze_nomatch(*, limit=None, ocr=False):
     """READ-ONLY. Classify every current NO_MATCH document by source context. Returns
     {total, counts{bucket->n}, rows[], folder_stats{}, top_folders[], reasons{}}. Writes nothing."""
@@ -248,16 +259,13 @@ def analyze_nomatch(*, limit=None, ocr=False):
         folder_resolved = _folder_resolved_owners(conn)
         folder_decisions = _folder_decision_map(conn)
         for did in ids:
-            proposal = propose_document_owner(did, conn=conn, idx=idx, with_text=True, ocr=ocr)
-            if not proposal.get("eligible") or proposal.get("confidence") != "NO_MATCH":
+            row = classify_one(conn, did, idx, folder_resolved, folder_decisions, ocr=ocr)
+            if row is None:
                 continue
-            text = proposal.pop("text", "")
-            folder = proposal.get("source_folder")
-            row = _classify(conn, did, proposal, text, folder, idx, folder_resolved, folder_decisions)
             counts[row["bucket"]] += 1
             reasons[row["evidence"]] += 1
-            if folder:
-                folder_nomatch[folder] += 1
+            if row["source_path"]:
+                folder_nomatch[row["source_path"]] += 1
             rows.append(row)
 
         # folder statistics
@@ -280,3 +288,37 @@ def analyze_nomatch(*, limit=None, ocr=False):
         "top_folders": top_folders,
         "reasons": top_reasons,
     }
+
+
+# --- Phase 4 review surface (CONTEXT_HIGH + CONTEXT_LIKELY only) -----------------------------------
+
+_ASSIGNABLE_BUCKETS = ("CONTEXT_HIGH", "CONTEXT_LIKELY")
+
+
+def context_candidates(*, limit=None):
+    """READ-ONLY rows for the review surface: only CONTEXT_HIGH + CONTEXT_LIKELY with a concrete proposed
+    owner. CONFLICT / GENERAL_OR_UNRESOLVED / POSSIBLE_NEW_ENTITY are excluded (never assignable here)."""
+    res = analyze_nomatch(limit=limit)
+    high = [r for r in res["rows"] if r["bucket"] == "CONTEXT_HIGH" and r["proposed_owner_id"]]
+    likely = [r for r in res["rows"] if r["bucket"] == "CONTEXT_LIKELY" and r["proposed_owner_id"]]
+    return {"context_high": high, "context_likely": likely,
+            "high_count": len(high), "likely_count": len(likely)}
+
+
+def approve_context(document_id, entity_type, entity_id, *, principal, request_id=None):
+    """Approve a CONTEXT_HIGH/LIKELY proposal. Re-runs the context analysis LIVE and requires the document
+    to be STILL an eligible NO_MATCH, STILL bucket A/B, and STILL mapped to the SAME owner the admin saw,
+    then assigns via the existing atomic ownership-resolution path (all-NULL recheck, never overwrites,
+    audits document.ownership_resolved). Creates no client, merges nothing, touches no permanent reject
+    (excluded upstream). Returns {ok, reason?, destination?}."""
+    with engine.connect() as conn:
+        idx = build_match_indexes(conn)
+        folder_resolved = _folder_resolved_owners(conn)
+        folder_decisions = _folder_decision_map(conn)
+        row = classify_one(conn, document_id, idx, folder_resolved, folder_decisions)
+    if row is None or row["bucket"] not in _ASSIGNABLE_BUCKETS:
+        return {"ok": False, "reason": "stale_context"}          # no longer an assignable A/B proposal
+    if (row["proposed_owner_type"], row["proposed_owner_id"]) != (entity_type, entity_id):
+        return {"ok": False, "reason": "owner_changed"}          # context now maps to a different owner
+    from app.services.document_review_queue import approve_ownership
+    return approve_ownership(document_id, entity_type, entity_id, principal=principal, request_id=request_id)
