@@ -241,3 +241,63 @@ def test_resolve_stager_reads_manifest_path_result(tmp_path):
     mf.write_text(json.dumps([{"name": "b.txt"}]))
     mod = types.SimpleNamespace(stage=lambda: {"manifest_path": str(mf)})
     assert mi.resolve_sharepoint_stager(module=mod)() == [{"name": "b.txt"}]
+
+
+# --- connector run(*, drive_id, root, download, limit, manifest) wiring ----------------------------
+
+def _run_stub(recorder, *, extra_required=False):
+    import types
+    if extra_required:
+        def run(*, drive_id, needs_this):     # a required arg we cannot source
+            recorder["called"] = True
+        return types.SimpleNamespace(run=run)
+
+    def run(*, drive_id, root, download, limit, manifest):
+        recorder.update({"drive_id": drive_id, "root": root, "download": download,
+                         "limit": limit, "manifest": manifest})
+        return ([{"name": "x.txt", "web_url": f"https://sp/{drive_id}", "item_id": drive_id}], {"status": "ok"})
+    return types.SimpleNamespace(run=run)
+
+
+def test_resolver_supplies_run_required_kwargs():
+    rec = {}
+    stager = mi.resolve_sharepoint_stager(module=_run_stub(rec), drive_ids=["drv1"], dry_run=True)
+    items = stager()
+    assert rec["drive_id"] == "drv1" and rec["download"] is False        # dry-run -> no download
+    assert rec["root"] and isinstance(rec["limit"], int) and rec["manifest"]
+    assert items and items[0]["item_id"] == "drv1"
+
+
+def test_missing_drive_configuration_is_clear_error():
+    stager = mi.resolve_sharepoint_stager(module=_run_stub({}), drive_ids=[], dry_run=True)
+    with pytest.raises(RuntimeError) as exc:
+        stager()
+    assert "drive_id" in str(exc.value)
+
+
+def test_unfillable_required_arg_is_clear_error():
+    stager = mi.resolve_sharepoint_stager(module=_run_stub({}, extra_required=True), drive_ids=["d1"])
+    with pytest.raises(RuntimeError) as exc:
+        stager()
+    assert "needs_this" in str(exc.value)
+
+
+def test_stage_dry_run_is_read_only(tmp_path):
+    import types
+    from pathlib import Path
+
+    def run(*, drive_id, root, download, limit, manifest):
+        f = Path(tmp_path) / f"{drive_id}.txt"
+        f.write_text("hello statement")
+        return ([{"name": "a.txt", "web_url": f"https://sp/{drive_id}/x", "item_id": "x",
+                  "site": "S", "library": "D", "modified_at": "2024-01-01T00:00:00",
+                  "local_path": str(f), "size": f.stat().st_size}], {})
+    mod = types.SimpleNamespace(run=run)
+    with engine.connect() as c:
+        before = c.execute(select(func.count()).select_from(documents)).scalar()
+    stager = mi.resolve_sharepoint_stager(module=mod, drive_ids=["drvX"], dry_run=True)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "dest"),
+                                     dry_run=True, ocr=False)
+    with engine.connect() as c:
+        after = c.execute(select(func.count()).select_from(documents)).scalar()
+    assert summary["status"] == "dry_run" and after == before        # dry-run imports nothing

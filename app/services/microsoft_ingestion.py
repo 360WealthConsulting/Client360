@@ -96,20 +96,7 @@ def run_sharepoint_sync(*, items=None, stager=None, destination_root=None, actor
 # production ImportError). The connector's designed decoupled contract is: connector CLI -> manifest ->
 # importer, so a manifest is always the reliable fallback.
 _SHAREPOINT_STAGER_NAMES = ("stage_sharepoint_content", "stage_content", "stage", "run_sync", "sync", "run")
-
-
-def _invoke_stager(fn, site_ids, dry_run):
-    import inspect
-    try:
-        params = inspect.signature(fn).parameters
-    except (TypeError, ValueError):
-        params = {}
-    kwargs = {}
-    if "site_ids" in params:
-        kwargs["site_ids"] = site_ids
-    if "dry_run" in params:
-        kwargs["dry_run"] = dry_run
-    return fn(**kwargs) if kwargs else fn()
+_DEFAULT_SYNC_LIMIT = 100000
 
 
 def _stager_items(result):
@@ -128,12 +115,73 @@ def _stager_items(result):
     return []
 
 
-def resolve_sharepoint_stager(*, site_ids=None, dry_run=False, module=None):
+def _staging_root():
+    import os
+    return (os.getenv("CLIENT360_SHAREPOINT_SOURCE_ROOT")
+            or os.getenv("CLIENT360_SHAREPOINT_DOCUMENT_ROOT")
+            or r"C:\Client360\Data\Documents\SharePoint\_staging")
+
+
+def _discovered_drive_ids():
+    """Drive ids the platform has already discovered (populated by the existing microsoft_document_sync
+    job) — the existing configuration source for which drives to stage. No new setting invented."""
+    from app.db import metadata
+    t = metadata.tables.get("microsoft_drives")
+    if t is None:
+        return []
+    with engine.connect() as conn:
+        return [d for d in conn.execute(select(t.c.microsoft_drive_id)).scalars() if d]
+
+
+def _connector_values(*, root, drive_id, dry_run):
+    """Values for the connector's known parameter names, sourced from EXISTING SharePoint configuration
+    (staging root env, discovered drive, site-id env) and the run mode (dry-run -> no download)."""
+    import os
+    from pathlib import Path
+    manifest = str(Path(root) / (f"{drive_id}_manifest.json" if drive_id else "manifest.json"))
+    site_ids = [s.strip() for s in (os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS") or "").split(",") if s.strip()]
+    try:
+        limit = int(os.getenv("CLIENT360_SHAREPOINT_SYNC_LIMIT", str(_DEFAULT_SYNC_LIMIT)))
+    except ValueError:
+        limit = _DEFAULT_SYNC_LIMIT
+    return {"drive_id": drive_id, "root": root, "staging_root": root,
+            "manifest": manifest, "manifest_path": manifest,
+            "download": not dry_run, "dry_run": dry_run, "limit": limit,
+            "site_ids": site_ids, "site_id": (site_ids[0] if site_ids else None)}
+
+
+def _build_kwargs(fn, values):
+    """Supply exactly the parameters the connector function declares, from `values`. Any REQUIRED
+    parameter (no default) we cannot source raises a clear, actionable error naming it."""
+    import inspect
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return {}
+    kwargs, missing = {}, []
+    for name, p in params.items():
+        if name in values:
+            kwargs[name] = values[name]
+        elif p.default is inspect.Parameter.empty and p.kind in (
+                inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+            missing.append(name)
+    if missing:
+        raise RuntimeError(
+            f"The SharePoint connector entrypoint requires argument(s) {missing} that continuous ingestion "
+            "cannot source from existing configuration. Set the corresponding SharePoint configuration "
+            "(e.g. MICROSOFT_SHAREPOINT_SITE_IDS, CLIENT360_SHAREPOINT_SOURCE_ROOT), or stage via the "
+            "connector's own CLI and pass its manifest with --manifest <path>.")
+    return kwargs
+
+
+def resolve_sharepoint_stager(*, site_ids=None, drive_ids=None, dry_run=False, module=None):
     """Return a zero-arg ``stager`` callable that invokes the REAL deployment connector's SharePoint
     staging entrypoint and yields the manifest items. It does NOT hard-import a specific function name:
-    on call it discovers the connector's public staging callable (adapting to the deployment's connector)
-    and raises a clear error — listing the connector's actual public callables and the connector-CLI +
-    --manifest contract — if none is found. ``module`` overrides the connector module (used by tests)."""
+    it discovers the connector's public staging callable and supplies exactly the arguments that callable
+    declares, sourced from EXISTING SharePoint configuration (staging-root env, discovered drives, site-id
+    env; download=not dry_run). If the connector's entrypoint is per-drive (takes ``drive_id``), it runs
+    once per discovered drive and aggregates the manifest items. Raises a clear, actionable error when no
+    entrypoint is found or a required argument cannot be sourced. ``module``/``drive_ids`` are test hooks."""
     def _do():
         mod = module
         if mod is None:
@@ -151,7 +199,28 @@ def resolve_sharepoint_stager(*, site_ids=None, dry_run=False, module=None):
                 f"Available public callables: {public}. Stage via the connector's own CLI "
                 "(python -m app.connectors.microsoft365.sharepoint_content --manifest <path>) and pass that "
                 "manifest to the sync with --manifest <path>.")
-        return _stager_items(_invoke_stager(fn, site_ids, dry_run))
+        import inspect
+        try:
+            params = inspect.signature(fn).parameters
+        except (TypeError, ValueError):
+            params = {}
+        root = _staging_root()
+        # Per-drive connectors (run(*, drive_id, ...)) are called once per discovered drive.
+        needs_drive = "drive_id" in params and params["drive_id"].default is inspect.Parameter.empty
+        if needs_drive:
+            ids = list(drive_ids) if drive_ids is not None else _discovered_drive_ids()
+            if not ids:
+                raise RuntimeError(
+                    "The SharePoint connector requires a drive_id but no drives are configured/discovered. "
+                    "Set MICROSOFT_SHAREPOINT_SITE_IDS and run the existing document sync to discover drives "
+                    "(they are stored in microsoft_drives), or stage via the connector CLI and use --manifest.")
+            out = []
+            for d in ids:
+                out += _stager_items(fn(**_build_kwargs(fn, _connector_values(root=root, drive_id=d,
+                                                                              dry_run=dry_run))))
+            return out
+        return _stager_items(fn(**_build_kwargs(fn, _connector_values(root=root, drive_id=None,
+                                                                      dry_run=dry_run))))
     return _do
 
 

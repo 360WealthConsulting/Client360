@@ -28,6 +28,8 @@ def main(argv=None):
     ap.add_argument("--manifest", default=None, help="already-staged manifest JSON")
     ap.add_argument("--stage", action="store_true", help="stage live via the connector first")
     ap.add_argument("--site", action="append", default=None, help="site id(s) to stage (with --stage)")
+    ap.add_argument("--drive-id", action="append", default=None,
+                    help="override drive id(s) (else discovered from microsoft_drives)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
@@ -36,7 +38,7 @@ def main(argv=None):
         summary = run_sharepoint_sync(items=items, trigger_source="manual", dry_run=args.dry_run)
     elif args.stage:
         # Adapts to the deployment connector's real staging entrypoint (no hard-coded function name).
-        stager = resolve_sharepoint_stager(site_ids=args.site, dry_run=args.dry_run)
+        stager = resolve_sharepoint_stager(site_ids=args.site, drive_ids=args.drive_id, dry_run=args.dry_run)
         summary = run_sharepoint_sync(stager=stager, trigger_source="manual", dry_run=args.dry_run)
     else:
         ap.error("provide --manifest <path> or --stage")
