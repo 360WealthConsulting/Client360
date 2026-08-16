@@ -347,16 +347,25 @@ def _enumerate_metadata(mod, fn, drive_id, *, top, limit, timeout, diag, progres
         for k in ("progress", "on_page"):
             values[k] = progress
         progress({"phase": "drive_request", "drive_id": drive_id, "enumerator": fn.__name__})
+
+    def _collect(**kw):
+        # STREAM the delta iterator and STOP as soon as `limit` FILE records are collected — exactly as
+        # the connector's own run() does. Never materialize the full feed (list(fn(...)) would drain the
+        # entire ~55k-item delta and hit the wall-clock timeout). The generator is consumed lazily; the
+        # break stops it, so item limit+1 (and beyond) is never pulled. `limit` counts FILE records, so
+        # folders/non-files passed over do not consume the budget.
+        records = []
+        for it in fn(**kw):
+            if not isinstance(it, dict) or "folder" in it:        # files only; skip folders
+                continue
+            records.append(_driveitem_to_record(drive_id, it))
+            if limit and len(records) >= int(limit):
+                break
+        return records
+
     t0 = time.monotonic()
-    raw = _call_with_timeout(lambda **kw: list(fn(**kw)), _build_kwargs(fn, values), timeout)
+    records = _call_with_timeout(_collect, _build_kwargs(fn, values), timeout)
     elapsed = round(time.monotonic() - t0, 2)
-    records = []
-    for it in (raw or []):
-        if not isinstance(it, dict) or "folder" in it:        # files only; skip folders
-            continue
-        records.append(_driveitem_to_record(drive_id, it))
-        if limit and len(records) >= int(limit):
-            break
     if progress is not None:
         progress({"phase": "drive_response", "drive_id": drive_id, "elapsed": elapsed, "items": len(records)})
     if diag is not None:

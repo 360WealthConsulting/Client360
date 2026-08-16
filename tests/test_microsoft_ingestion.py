@@ -689,3 +689,74 @@ def test_enumerator_falls_back_to_run_only_when_auth_path_absent():
     stager()
     assert diag.get("enum_errors") and "session" in diag["enum_errors"][0]
     assert any(c[0] == "run" for c in rec)       # fell back to run()
+
+
+# --- dry-run enumerator STREAMS the delta and stops at --limit (never materializes the full feed) -----
+# The production drive has ~55,708 files; list(iter_drive_items(...)) drains it all and hits the 120s
+# timeout. Correct behavior (like the connector's run()): stream and break once `limit` FILE records are
+# collected. The iterator below RAISES if pulled past the first 15 raw items, proving no materialization.
+
+def _counting_connector(consumed, *, files=10, folders=5):
+    import types
+
+    def latest_account():
+        return {"id": "acct-1"}
+
+    def get_microsoft_access_token(account):
+        return f"tok:{account['id']}"
+
+    def graph_session(token):
+        return {"__session__": True, "token": token}
+
+    def run(*, drive_id, root, download, limit, manifest):    # present (needs_drive); not used in dry-run
+        return {"status": "ok"}
+
+    def iter_drive_items(session, drive_id):
+        assert session and session.get("__session__") is True
+        for i in range(folders):                              # 5 folders first (skipped, don't count)
+            consumed.append(("folder", i))
+            yield {"id": f"F{i}", "name": f"Folder{i}", "folder": {"childCount": 1},
+                   "parentReference": {"driveId": drive_id, "siteId": "S1", "path": "/drive/root:"}}
+        for i in range(files):                                # then 10 files
+            consumed.append(("file", i))
+            yield {"id": f"D{i}", "name": f"doc{i}.pdf", "file": {"mimeType": "application/pdf"},
+                   "size": 100 + i, "webUrl": f"https://sp/{drive_id}/doc{i}.pdf",
+                   "lastModifiedDateTime": "2024-01-01T00:00:00Z",
+                   "parentReference": {"driveId": drive_id, "siteId": "S1", "path": "/drive/root:/Clients"}}
+        consumed.append(("OVERRUN",))                         # item 16+ must NEVER be pulled
+        raise AssertionError("iterator consumed past the first 15 raw items (limit not honored)")
+        yield  # pragma: no cover — unreachable; makes this unambiguously a generator
+
+    return types.SimpleNamespace(latest_account=latest_account,
+                                 get_microsoft_access_token=get_microsoft_access_token,
+                                 graph_session=graph_session, run=run,
+                                 iter_drive_items=iter_drive_items)
+
+
+def test_enumerator_streams_and_stops_at_limit_without_materializing():
+    consumed = []
+    diag = {}
+    stager = mi.resolve_sharepoint_stager(module=_counting_connector(consumed), drive_ids=["drvBig"],
+                                          dry_run=True, diag=diag, limit=10)
+    items = stager()
+    assert len(items) == 10                              # 5 folders skipped -> 10 file records
+    assert len(consumed) == 15                           # exactly 5 folders + 10 files consumed...
+    assert ("OVERRUN",) not in consumed                 # ...and item 16 was NEVER pulled
+    assert not diag.get("enum_errors")                  # streamed successfully, no run() fallback
+    assert diag["total_items"] == 10 and diag["drives"][0]["download"] is False
+
+
+def test_streamed_dry_run_examines_10_missing_0_no_download(tmp_path):
+    dest = tmp_path / "dest"
+    with engine.connect() as c:
+        before = c.execute(select(func.count()).select_from(documents)).scalar()
+    stager = mi.resolve_sharepoint_stager(module=_counting_connector([]), drive_ids=["drvBig2"],
+                                          dry_run=True, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(dest), dry_run=True, ocr=False)
+    with engine.connect() as c:
+        after = c.execute(select(func.count()).select_from(documents)).scalar()
+    assert summary["status"] == "dry_run"
+    assert summary["items_examined"] == 10              # streamed + stopped at the limit
+    assert summary["missing"] == 0                      # guard intact
+    assert after == before                              # no canonical DB mutation
+    assert not dest.exists() or not any(dest.rglob("*.*"))   # no download
