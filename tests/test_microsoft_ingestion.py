@@ -938,3 +938,115 @@ def test_cross_volume_reproduces_winerror17_without_alignment(tmp_path):
         del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
     assert summary["status"] == "error" and any("disk drive" in e for e in summary["errors"])
     assert "Cvol" in rec[0]                                 # forced to the wrong volume in this control
+
+
+# --- production-equivalent: connector finalizes with a REAL Path.replace/os.replace across volumes ------
+# The untracked prod connector downloads temp to D:\...\.tmp and replaces into the passed root on C:.
+# The tracked adapter wraps the connector call so that cross-volume replace/rename transparently falls
+# back to copy+verify+unlink — no WinError 17 — WITHOUT editing the per-deployment connector.
+
+def _real_replace_connector(base, rec, *, use_path_replace=False, ok_counts=True):
+    import json
+    import os
+    import types
+    from pathlib import Path
+    tmp_dir = Path(base) / "Dvol" / "Content" / "SharePoint" / ".tmp"     # connector temp on 'D:'
+
+    def run(*, drive_id, root, download, limit, manifest):
+        rec.append(str(root))
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        part = tmp_dir / f"{drive_id}.part"
+        part.write_bytes(b"hello sharepoint statement body")
+        dest = Path(root) / f"{drive_id}.bin"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if use_path_replace:
+            part.replace(dest)                          # pathlib.Path.replace (the dev connector's op)
+        else:
+            os.replace(str(part), str(dest))            # os.replace
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps([{"name": f"{drive_id}.pdf",
+            "web_url": f"https://sp/{drive_id}/f1", "item_id": "f1", "site": "S", "library": "D",
+            "modified_at": "2024-01-01T00:00:00", "size": dest.stat().st_size, "local_path": str(dest)}]))
+        return ({"status": "ok", "files_seen": 1, "downloaded": 1, "failed": 0} if ok_counts
+                else {"status": "ok", "files_seen": 1, "downloaded": 0, "failed": 1})
+
+    return types.SimpleNamespace(run=run)
+
+
+def _install_exdev(monkeypatch, tmp_path):
+    """Make os.replace raise EXDEV whenever src/dst are on different simulated volumes (else real)."""
+    import errno
+    import os
+    real = os.replace
+
+    def _repl(src, dst, *a, **k):
+        if _volume_of(src, tmp_path) != _volume_of(dst, tmp_path):
+            raise OSError(errno.EXDEV, "The system cannot move the file to a different disk drive")
+        return real(src, dst, *a, **k)
+    monkeypatch.setattr(os, "replace", _repl)
+
+
+def test_prod_path_os_replace_cross_volume_no_winerror17(tmp_path, monkeypatch):
+    _install_exdev(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLIENT360_SHAREPOINT_SOURCE_ROOT", str(tmp_path / "Cvol" / "_staging"))
+    rec = []
+    conn = _real_replace_connector(tmp_path, rec)       # temp Dvol, dest Cvol -> cross-volume replace
+    stager = mi.resolve_sharepoint_stager(module=conn, drive_ids=["drvR"], dry_run=False, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "canonical"),
+                                     dry_run=False, ocr=False)
+    _track()
+    assert not any("disk drive" in e for e in summary.get("errors", []))     # no WinError 17
+    assert summary["status"] == "completed" and summary["canonical_created"] == 1
+    assert "Cvol" in rec[0]                              # dest genuinely on the other volume
+    # staged file landed on the C: dest with correct content, and the D: temp was cleaned up
+    dest = tmp_path / "Cvol" / "_staging" / "drvR.bin"
+    assert dest.read_bytes() == b"hello sharepoint statement body"
+    assert not (tmp_path / "Dvol" / "Content" / "SharePoint" / ".tmp" / "drvR.part").exists()
+
+
+def test_prod_path_pathlib_replace_cross_volume_no_winerror17(tmp_path, monkeypatch):
+    _install_exdev(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLIENT360_SHAREPOINT_SOURCE_ROOT", str(tmp_path / "Cvol" / "_staging"))
+    rec = []
+    conn = _real_replace_connector(tmp_path, rec, use_path_replace=True)
+    stager = mi.resolve_sharepoint_stager(module=conn, drive_ids=["drvPR"], dry_run=False, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "canonical"),
+                                     dry_run=False, ocr=False)
+    _track()
+    assert not any("disk drive" in e for e in summary.get("errors", []))
+    assert summary["status"] == "completed" and summary["canonical_created"] == 1
+    assert (tmp_path / "Cvol" / "_staging" / "drvPR.bin").read_bytes() == b"hello sharepoint statement body"
+
+
+def test_prod_path_same_volume_dd_still_atomic(tmp_path, monkeypatch):
+    # Preferred config: connector temp and destination both on 'D:' -> plain atomic replace, no fallback.
+    _install_exdev(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLIENT360_SHAREPOINT_SOURCE_ROOT",
+                       str(tmp_path / "Dvol" / "Content" / "SharePoint" / "_staging"))
+    rec = []
+    conn = _real_replace_connector(tmp_path, rec)
+    stager = mi.resolve_sharepoint_stager(module=conn, drive_ids=["drvDD"], dry_run=False, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "canonical"),
+                                     dry_run=False, ocr=False)
+    _track()
+    assert summary["status"] == "completed" and summary["canonical_created"] == 1
+    assert "Dvol" in rec[0]                              # both temp and dest on the same volume
+    assert (tmp_path / "Dvol" / "Content" / "SharePoint" / "_staging" / "drvDD.bin").exists()
+
+
+def test_all_downloads_failed_reports_error_not_completed(tmp_path):
+    # files_seen>0, downloaded=0, no items -> must NOT report "completed".
+    import types
+    conn = types.SimpleNamespace(run=lambda **kw: {"status": "ok", "files_seen": 10,
+                                                   "downloaded": 0, "failed": 10})
+    stager = mi.resolve_sharepoint_stager(module=conn, drive_ids=["drvF"], dry_run=False, limit=10)
+    summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "dest"),
+                                     dry_run=False, ocr=False)
+    assert summary["status"] == "error" and summary["status"] != "completed"
+    assert any("download" in e.lower() for e in summary.get("errors", []))
+
+
+def test_diagnostics_report_real_staging_root_and_cross_volume_flag():
+    d = mi.sharepoint_staging_diagnostics()
+    assert "real_staging_root" in d and "connector_temp_root" in d
+    assert d["cross_volume_safe_finalize"] is True      # WinError 17 handled on the real path

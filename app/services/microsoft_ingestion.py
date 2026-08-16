@@ -19,6 +19,7 @@ item is recorded and skipped by the importer, and a whole-run failure is recorde
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -148,24 +149,22 @@ def _connector_staging_root(mod):
     return _staging_root()
 
 
-def safe_finalize(tmp, dest):
-    """Move a staged temp file to ``dest`` tolerantly across Windows volumes. Same volume -> atomic
-    ``os.replace``. Cross-volume (WinError 17 / ``errno.EXDEV``) -> stream-copy + fsync + verify SHA-256,
-    then remove the temp ONLY after the copy verifies (never a partial destination, never a temp deleted
-    before its content is safely copied). Returns the destination Path."""
+def _is_cross_volume_error(exc):
+    """True if an OSError is a cross-device/volume move refusal (Windows WinError 17 / POSIX EXDEV)."""
     import errno
+    return isinstance(exc, OSError) and (getattr(exc, "winerror", None) == 17 or exc.errno == errno.EXDEV)
+
+
+def _copy_across_volume(src, dst):
+    """Copy ``src`` -> ``dst`` across a volume boundary: stream + fsync + verify SHA-256, then remove
+    ``src`` ONLY after the copy verifies. Uses no rename/replace, so it is safe to call from inside a
+    replace/rename patch without re-entering it. Returns the destination Path."""
     import hashlib
     import os
     import shutil
     from pathlib import Path
-    tmp, dest = Path(tmp), Path(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.replace(str(tmp), str(dest))                 # atomic within one filesystem
-        return dest
-    except OSError as exc:
-        if getattr(exc, "winerror", None) != 17 and exc.errno != errno.EXDEV:
-            raise                                       # a real error, not a cross-volume move
+    src, dst = Path(src), Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
 
     def _sha(p):
         h = hashlib.sha256()
@@ -174,15 +173,75 @@ def safe_finalize(tmp, dest):
                 h.update(chunk)
         return h.hexdigest()
 
-    src_sha = _sha(tmp)
-    with open(tmp, "rb") as s, open(dest, "wb") as d:   # copy across the volume boundary
+    src_sha = _sha(src)
+    with open(src, "rb") as s, open(dst, "wb") as d:
         shutil.copyfileobj(s, d, 1 << 20)
         d.flush()
         os.fsync(d.fileno())
-    if _sha(dest) != src_sha:
-        raise OSError(f"cross-volume finalize verification failed for {dest}")
-    os.unlink(str(tmp))                                 # temp removed only after a verified copy
-    return dest
+    if _sha(dst) != src_sha:
+        raise OSError(f"cross-volume finalize verification failed for {dst}")
+    os.unlink(str(src))                                 # temp removed only after a verified copy
+    return dst
+
+
+def safe_finalize(tmp, dest):
+    """Move a staged temp file to ``dest`` tolerantly across Windows volumes. Same volume -> atomic
+    ``os.replace``. Cross-volume (WinError 17 / EXDEV) -> copy + verify + unlink. Returns the dest Path."""
+    import os
+    from pathlib import Path
+    tmp, dest = Path(tmp), Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(str(tmp), str(dest))                 # atomic within one filesystem
+        return dest
+    except OSError as exc:
+        if not _is_cross_volume_error(exc):
+            raise
+    return _copy_across_volume(tmp, dest)
+
+
+@contextmanager
+def _cross_volume_safe_moves():
+    """Wrap the connector's file finalization so a cross-volume move — its downloaded temp on one disk
+    (e.g. D:\\Client360\\Content\\SharePoint\\.tmp) and the destination on another (e.g. C:\\...\\_staging)
+    — transparently falls back to copy+verify+unlink instead of raising WinError 17. The connector is
+    untracked/per-deployment and finalizes with ``Path.replace`` / ``os.replace`` / ``os.rename`` (all of
+    which refuse cross-volume moves), so we patch that exact call family for the duration of the connector
+    download call ONLY, then restore. This is the tracked wrapper around the real, untracked finalize op."""
+    import os
+    from pathlib import Path
+    orig = {"os_replace": os.replace, "os_rename": os.rename,
+            "p_replace": Path.replace, "p_rename": Path.rename}
+
+    def _os_safe(base):
+        def _fn(src, dst, *a, **k):
+            try:
+                return base(src, dst, *a, **k)
+            except OSError as exc:
+                if not _is_cross_volume_error(exc):
+                    raise
+                _copy_across_volume(src, dst)
+        return _fn
+
+    def _path_safe(base):
+        def _fn(self, target):
+            try:
+                return base(self, target)
+            except OSError as exc:
+                if not _is_cross_volume_error(exc):
+                    raise
+                return _copy_across_volume(self, target)
+        return _fn
+
+    os.replace = _os_safe(orig["os_replace"])
+    os.rename = _os_safe(orig["os_rename"])
+    Path.replace = _path_safe(orig["p_replace"])
+    Path.rename = _path_safe(orig["p_rename"])
+    try:
+        yield
+    finally:
+        os.replace, os.rename = orig["os_replace"], orig["os_rename"]
+        Path.replace, Path.rename = orig["p_replace"], orig["p_rename"]
 
 
 def _discovered_drive_ids():
@@ -439,7 +498,10 @@ def _stage_one(fn, root, drive_id, dry_run, diag, *, limit=None, top=None, timeo
     if progress:
         progress({"phase": "drive_request", "drive_id": drive_id, "top": top, "limit": values["limit"]})
     t0 = time.monotonic()
-    result = _call_with_timeout(fn, _build_kwargs(fn, values), timeout)
+    # Real download/finalize path: wrap the connector call so its cross-volume Path.replace/os.replace
+    # (temp on one disk, dest on another) falls back to copy+verify+unlink instead of raising WinError 17.
+    with _cross_volume_safe_moves():
+        result = _call_with_timeout(fn, _build_kwargs(fn, values), timeout)
     elapsed = round(time.monotonic() - t0, 2)
     if progress:
         progress({"phase": "drive_response", "drive_id": drive_id, "elapsed": elapsed})
@@ -450,6 +512,16 @@ def _stage_one(fn, root, drive_id, dry_run, diag, *, limit=None, top=None, timeo
         items, source = from_file, "manifest_file"
     else:
         items, source = _stager_items(result), "run_return"
+    # Failure semantics: a connector that SAW files but downloaded none (all failed) must not look like a
+    # successful empty run. Surface it as a staging error so the run status is error, not "completed".
+    if isinstance(result, dict):
+        files_seen = result.get("files_seen") or result.get("seen") or 0
+        downloaded = result.get("downloaded") or result.get("files_downloaded") or 0
+        failed = result.get("failed") or result.get("files_failed") or 0
+        if files_seen and not downloaded and not items:
+            raise RuntimeError(
+                f"connector downloaded 0 of {files_seen} files for drive {drive_id} "
+                f"(failed={failed}); no items staged — treating the run as failed, not completed.")
     if diag is not None:
         from pathlib import Path
         result_keys = sorted(result.keys()) if isinstance(result, dict) else None
@@ -554,6 +626,8 @@ def sharepoint_staging_diagnostics():
                                          .where(ds.c.source_system == "SharePoint")).scalar()
     drive_ids = _discovered_drive_ids()
     connector_callables, entrypoint, entrypoint_params = None, None, None
+    _mod = None
+    real_staging_root, connector_temp_root = _staging_root(), None
     try:
         from app.connectors.microsoft365 import sharepoint_content as _mod
         connector_callables = sorted(n for n in dir(_mod)
@@ -564,10 +638,25 @@ def sharepoint_staging_diagnostics():
             import inspect
             entrypoint = fn.__name__
             entrypoint_params = list(inspect.signature(fn).parameters)
+        # Resolve exactly what a REAL run would use (same runtime function ingestion uses), and probe the
+        # connector's temp/content root if it exposes one (production exposes none -> the cross-volume-safe
+        # finalize handles it; this is why the exact temp volume no longer has to match).
+        real_staging_root = _connector_staging_root(_mod)
+        for attr in ("TEMP_ROOT", "TMP_ROOT", "_TMP_DIR", "TMP_DIR", "CONTENT_ROOT", "DEFAULT_STAGING_ROOT",
+                     "STAGING_ROOT"):
+            v = getattr(_mod, attr, None)
+            if v:
+                connector_temp_root = f"{attr}={v}"
+                break
+        else:
+            connector_temp_root = "not exposed by connector (cross-volume-safe finalize handles any volume)"
     except Exception as exc:  # noqa: BLE001 — connector import is environment-specific
         connector_callables = f"connector import failed: {exc}"
     return {
         "staging_root": _staging_root(),
+        "real_staging_root": real_staging_root,              # what a REAL run hands the connector (root=)
+        "connector_temp_root": connector_temp_root,          # where the connector downloads .part (if exposed)
+        "cross_volume_safe_finalize": True,                  # WinError 17 handled via copy+verify+unlink
         "connector_callables": connector_callables,
         "entrypoint": entrypoint, "entrypoint_params": entrypoint_params,
         "CLIENT360_SHAREPOINT_SOURCE_ROOT_set": bool(os.getenv("CLIENT360_SHAREPOINT_SOURCE_ROOT")),
