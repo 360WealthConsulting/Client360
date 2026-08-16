@@ -175,6 +175,55 @@ def _excel_text(path):
         return ""
 
 
+_DOCX_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _docx_text(path):
+    """Native text from a .docx (Office Open XML) using the standard library only (zipfile + XML) — no new
+    dependency. Returns the paragraph text, or "" on a corrupt/unreadable file (fails safe)."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+    try:
+        with zipfile.ZipFile(str(path)) as z:
+            data = z.read("word/document.xml")
+        root = ET.fromstring(data)
+    except Exception:  # noqa: BLE001 — corrupt zip / missing part / bad XML
+        return ""
+    paras = []
+    for p in root.iter(f"{_DOCX_W}p"):
+        run = "".join(t.text for t in p.iter(f"{_DOCX_W}t") if t.text)
+        if run.strip():
+            paras.append(run)
+    return "\n".join(paras)
+
+
+def _ics_text(path):
+    """Human/identity-bearing fields from an iCalendar (.ics): SUMMARY, DESCRIPTION, LOCATION, and the
+    ORGANIZER/ATTENDEE names (CN=) + emails (mailto:). Standard library only; "" on failure."""
+    try:
+        raw = path.read_text(errors="replace")
+    except Exception:  # noqa: BLE001
+        return ""
+    lines = []
+    for line in raw.splitlines():                          # RFC-5545 line unfolding
+        if line[:1] in (" ", "\t") and lines:
+            lines[-1] += line[1:]
+        else:
+            lines.append(line)
+    out = []
+    for line in lines:
+        if ":" not in line:
+            continue
+        prop, val = line.split(":", 1)
+        name = prop.split(";", 1)[0].upper()
+        if name in ("SUMMARY", "DESCRIPTION", "LOCATION", "ORGANIZER", "ATTENDEE", "CONTACT", "COMMENT"):
+            out.append(val.replace("mailto:", " ").strip())
+            m = re.search(r"CN=([^;:]+)", prop)
+            if m:
+                out.append(m.group(1).strip())
+    return "\n".join(out)
+
+
 def _live_ocr(conn, document_id):
     """Trigger the EXISTING production OCR backend for one document (populates the document_ocr cache),
     then return its text. Reuses app.services.document_ocr.run_ocr + ocr_backend — it does NOT introduce a
@@ -212,6 +261,12 @@ def extract_document_text(conn, row, path, *, ocr=False):
 
     if ext in {"xlsx", "xlsm"} and path is not None and path.exists():
         text, method = _excel_text(path), "excel"
+    elif ext == "docx" and path is not None and path.exists():
+        text = _docx_text(path)
+        method = "docx" if text.strip() else "unsupported"
+    elif ext == "ics" and path is not None and path.exists():
+        text = _ics_text(path)
+        method = "ics" if text.strip() else "unsupported"
     elif ext == "pdf" and path is not None and path.exists():
         text = _pdf_text(path)
         if len(text.strip()) >= _MIN_NATIVE_CHARS:
