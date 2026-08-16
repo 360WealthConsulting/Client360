@@ -28,7 +28,7 @@ from app.services.document_ocr import OcrBackendUnavailable
 
 log = logging.getLogger(__name__)
 
-_IMAGE_EXT = {"png", "jpg", "jpeg", "tif", "tiff"}
+_IMAGE_EXT = {"png", "jpg", "jpeg", "tif", "tiff", "heic", "heif"}
 # A PDF page with fewer real selectable characters than this is treated as image-only → OCR fallback.
 _MIN_TEXT_CHARS = 12
 _REQUIRED_LIBS = ("pypdf", "pytesseract", "pdf2image", "PIL")
@@ -98,6 +98,12 @@ def production_deps() -> OcrDeps:
         from PIL import Image, ImageSequence
     except ImportError as exc:      # a missing library is a backend problem, not an extraction failure
         raise OcrBackendUnavailable(f"OCR backend libraries missing: {exc}") from exc
+
+    try:      # HEIC/HEIF decode support (pillow-heif) is optional — register it when present.
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+    except Exception:  # noqa: BLE001 — HEIC simply stays unsupported if the lib is absent
+        pass
 
     tesseract_cmd = os.getenv("TESSERACT_CMD")
     if tesseract_cmd:

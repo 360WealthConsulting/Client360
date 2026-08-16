@@ -124,6 +124,18 @@ def _zip5(s):
     return d[:5] if len(d) >= 5 else ""
 
 
+def _placeholder_name(full):
+    """A canonical name is placeholder-quality when it is blank or every token is a single character
+    (e.g. 'A B', 'T T', 'C D', 'D F'). Real short names ('Al Vo', 'Ed Ng', 'Bo Li') have 2+ char tokens
+    and are NOT flagged, so legitimate short names are never excluded."""
+    toks = _norm(full).split()
+    return (not toks) or all(len(t) == 1 for t in toks)
+
+
+# Native-extracted text shorter than this on an OCR-capable document triggers the OCR fallback.
+_MIN_NATIVE_CHARS = 20
+
+
 # --- text extraction ---------------------------------------------------------------------------
 
 def _ocr_cache_text(conn, document_id):
@@ -163,29 +175,58 @@ def _excel_text(path):
         return ""
 
 
-def extract_document_text(conn, row, path):
-    """Return (text, method). Bounded and read-only. `row` is a documents mapping; `path` a Path/None."""
+def _live_ocr(conn, document_id):
+    """Trigger the EXISTING production OCR backend for one document (populates the document_ocr cache),
+    then return its text. Reuses app.services.document_ocr.run_ocr + ocr_backend — it does NOT introduce a
+    second OCR/matching engine. Fully guarded: if no engine/libraries are installed, the type is
+    unsupported, or extraction fails, it returns "" so the caller fails safe to manual review and document
+    ingestion is never blocked."""
+    try:
+        from app.services.document_ocr import run_ocr
+        from app.services.ocr_backend import build_production_extractor
+        extractor = build_production_extractor()          # raises OcrBackendUnavailable if not installed
+        run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess", batch_size=1)
+    except Exception:  # noqa: BLE001 — OCR unavailable/failure must never break extraction
+        return ""
+    return _ocr_cache_text(conn, document_id)
+
+
+def extract_document_text(conn, row, path, *, ocr=False):
+    """Return (text, method). Bounded and read-only w.r.t. documents/ownership. `row` is a documents
+    mapping; `path` a Path/None. Strategy: native extraction first (Excel cells, PDF text layer,
+    plaintext); if that yields no adequate text on an OCR-capable document and ``ocr=True``, fall back to
+    the existing OCR backend (cache first, then a live OCR run) and use that text. ``method`` is one of
+    excel / pdf_text / plaintext / ocr / ocr_cache / pdf_no_text / image_no_text / unsupported / none."""
     ext = _ext(row["original_name"])
     text, method = "", "none"
+
+    def _ocr_or_cache(fail_method):
+        cached = _ocr_cache_text(conn, row["id"])
+        if cached.strip():
+            return cached, "ocr_cache"
+        if ocr:
+            live = _live_ocr(conn, row["id"])
+            if live.strip():
+                return live, "ocr"
+        return "", fail_method
+
     if ext in {"xlsx", "xlsm"} and path is not None and path.exists():
         text, method = _excel_text(path), "excel"
     elif ext == "pdf" and path is not None and path.exists():
         text = _pdf_text(path)
-        method = "pdf_text" if text.strip() else "pdf_no_text"
-        if not text.strip():
-            text = _ocr_cache_text(conn, row["id"])
-            method = "ocr_cache" if text.strip() else "pdf_no_text"
+        if len(text.strip()) >= _MIN_NATIVE_CHARS:
+            method = "pdf_text"                            # good native text layer — do NOT OCR needlessly
+        else:
+            text, method = _ocr_or_cache("pdf_no_text")    # image-only/scanned PDF → OCR fallback
     elif ext in {"txt", "csv", "md", "log"} and path is not None and path.exists():
         try:
             text, method = path.read_text(errors="replace")[:_MAX_TEXT_CHARS], "plaintext"
         except Exception:  # noqa: BLE001
             text, method = "", "none"
     elif ext in {"png", "jpg", "jpeg", "gif", "tif", "tiff", "bmp", "heic", "heif"}:
-        text = _ocr_cache_text(conn, row["id"])
-        method = "ocr_cache" if text.strip() else "image_no_text"
+        text, method = _ocr_or_cache("image_no_text")
     else:
-        text = _ocr_cache_text(conn, row["id"])
-        method = "ocr_cache" if text.strip() else "unsupported"
+        text, method = _ocr_or_cache("unsupported")
     return (text or "")[:_MAX_TEXT_CHARS], method
 
 
@@ -211,10 +252,14 @@ def build_match_indexes(conn):
                            "phone": r.get("primary_phone"), "household_id": r.get("household_id"),
                            "zips": zips, "streets": streets}
         nfull = _norm(full)
-        idx["name"].setdefault(nfull, []).append(pid)
-        toks = nfull.split()
-        if len(toks) >= 2:
-            idx["first_last"].setdefault((toks[0], toks[-1]), []).append(pid)
+        if not _placeholder_name(full):
+            # Placeholder canonical records ("A B", "T T", "C D") must not produce an owner from NAME
+            # alone. They stay in the email/phone indexes below — a real identifier match is legitimate
+            # regardless of name quality — but are excluded from the name / first-last indexes.
+            idx["name"].setdefault(nfull, []).append(pid)
+            toks = nfull.split()
+            if len(toks) >= 2:
+                idx["first_last"].setdefault((toks[0], toks[-1]), []).append(pid)
         for e in (r.get("primary_email"), r.get("normalized_email")):
             e = (e or "").strip().lower()
             if e and "@" in e:
@@ -441,7 +486,7 @@ def analyze_identity(text, filename, folder, idx):
 
 # --- orchestration -----------------------------------------------------------------------------
 
-def propose_document_owner(document_id, *, conn=None, idx=None, with_text=False):
+def propose_document_owner(document_id, *, conn=None, idx=None, with_text=False, ocr=False):
     """Read-only proposal for one document. Never writes. Returns a proposal dict; for ineligible or
     permanent-reject documents returns {eligible: False, reason: ...} with no assignable proposal.
 
@@ -466,7 +511,7 @@ def propose_document_owner(document_id, *, conn=None, idx=None, with_text=False)
             path = Path(row["storage_uri"])
         elif row["storage_path"]:
             path = Path(row["storage_path"])
-        text, method = extract_document_text(own, row, path)
+        text, method = extract_document_text(own, row, path, ocr=ocr)
         indexes = idx if idx is not None else build_match_indexes(own)
         folder = (row["tags"] or {}).get("taxdome_folder")
         proposal = analyze_identity(text, row["original_name"], folder, indexes)

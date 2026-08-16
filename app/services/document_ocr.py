@@ -27,7 +27,7 @@ from sqlalchemy import or_, select
 from app.db import document_ocr, documents, engine
 
 # OCR applies to scanned/image documents and PDFs (a scanned document arrives as a PDF or image).
-SUPPORTED_EXT = {"pdf", "tif", "tiff", "png", "jpg", "jpeg"}
+SUPPORTED_EXT = {"pdf", "tif", "tiff", "png", "jpg", "jpeg", "heic", "heif"}
 DEFAULT_ENGINE = "client360-ocr"
 _TERMINAL_OK = "completed"
 

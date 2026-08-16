@@ -365,6 +365,89 @@ def test_content_matches_person_via_source_contact_phone(tmp_path):
     assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
 
 
+# --- candidate-quality guard (placeholder canonical people) ----------------------------------------
+
+def test_placeholder_name_helper():
+    assert dop._placeholder_name("A B") and dop._placeholder_name("T T") and dop._placeholder_name("D F")
+    assert dop._placeholder_name("") and dop._placeholder_name(None)
+    assert not dop._placeholder_name("Al Vo") and not dop._placeholder_name("Ed Ng")
+    assert not dop._placeholder_name("J R Smith")          # a real surname token present
+
+
+def test_placeholder_person_excluded_from_name_index_but_kept_in_pid():
+    pid = _person_no_contact("A B")                        # placeholder canonical record, no contact info
+    with engine.connect() as conn:
+        idx = dop.build_match_indexes(conn)
+    assert pid not in idx["name"].get("a b", [])
+    assert pid not in idx["first_last"].get(("a", "b"), [])
+    assert pid in idx["pid"]                                # still known (not deleted)
+
+
+def test_placeholder_name_produces_no_owner_from_content(tmp_path):
+    _person_no_contact("C D")
+    f = tmp_path / "doc.txt"
+    f.write_text("Prepared for C D on 2021 return\n")
+    did = _doc(f, name="doc.txt")
+    r = dop.propose_document_owner(did)
+    assert r["proposed_entity_id"] is None and r["confidence"] in ("NO_MATCH", "AMBIGUOUS")
+
+
+def test_legitimate_short_name_still_matches(tmp_path):
+    pid = _person_no_contact(f"Al Vo{_TAG[:3]}")           # genuine short name (2+ char tokens)
+    with engine.connect() as conn:
+        idx = dop.build_match_indexes(conn)
+    assert pid in idx["first_last"].get(("al", f"vo{_TAG[:3]}"), [])
+
+
+def test_placeholder_person_still_matchable_by_email(tmp_path):
+    email = f"ab-{_TAG}@mail.com"
+    pid = _person_no_contact("A B")                        # placeholder name, but a real linked email
+    _source_contact_link(pid, email=email)
+    f = tmp_path / "d.txt"
+    f.write_text(f"remit to {email}\n")
+    did = _doc(f, name="d.txt")
+    r = dop.propose_document_owner(did)
+    assert (r["proposed_entity_id"], r["confidence"]) == (pid, "HIGH")   # email is strong regardless
+
+
+# --- OCR / image extraction fallback --------------------------------------------------------------
+
+def test_heic_is_ocr_supported():
+    from app.services.document_ocr import is_ocr_supported
+    from app.services.ocr_backend import _IMAGE_EXT
+    assert is_ocr_supported("photo.HEIC") and is_ocr_supported("scan.jpg")
+    assert "heic" in _IMAGE_EXT and "heif" in _IMAGE_EXT
+
+
+def test_extract_live_ocr_fallback_for_image(monkeypatch):
+    monkeypatch.setattr(dop, "_live_ocr", lambda conn, did: "Recipient jl@x.com per statement")
+    with engine.connect() as conn:
+        text, method = dop.extract_document_text(conn, {"id": -1, "original_name": "scan.jpg"}, None, ocr=True)
+    assert method == "ocr" and "jl@x.com" in text
+
+
+def test_extract_no_ocr_when_disabled():
+    with engine.connect() as conn:
+        text, method = dop.extract_document_text(conn, {"id": -1, "original_name": "scan.jpg"}, None, ocr=False)
+    assert method == "image_no_text" and text == ""
+
+
+def test_live_ocr_guarded_when_backend_unavailable():
+    # dev/CI has no tesseract engine -> build_production_extractor raises -> _live_ocr returns "" safely
+    with engine.connect() as conn:
+        assert dop._live_ocr(conn, -1) == ""
+
+
+def test_scanned_pdf_uses_ocr_when_native_text_insufficient(monkeypatch, tmp_path):
+    f = tmp_path / "scan.pdf"
+    f.write_bytes(b"%PDF-1.4 fake")                        # no real text layer
+    monkeypatch.setattr(dop, "_pdf_text", lambda p: "")    # native yields nothing
+    monkeypatch.setattr(dop, "_live_ocr", lambda conn, did: "Dear jl@x.com, your 1095-A")
+    with engine.connect() as conn:
+        text, method = dop.extract_document_text(conn, {"id": -1, "original_name": "scan.pdf"}, f, ocr=True)
+    assert method == "ocr" and "jl@x.com" in text
+
+
 # --- UI --------------------------------------------------------------------------------------
 
 def test_review_template_shows_proposal_confidence_and_evidence():

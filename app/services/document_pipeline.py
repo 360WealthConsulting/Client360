@@ -36,13 +36,19 @@ from app.services.document_owner_proposal import (
 # blocks ingestion (see analyze_and_persist / the hook in document_sources). Toggle for future tuning.
 AUTO_ANALYZE_NEW_DOCUMENTS = True
 
+# DESIGN ONLY — DO NOT ENABLE without explicit direction. When True, a document carrying strong identity
+# evidence (email / phone) that resolves to NO existing canonical record routes to NEW_CLIENT_CANDIDATE
+# for human review. It NEVER creates or assigns a client; enabling it only changes the routing LABEL.
+EMIT_NEW_CLIENT_CANDIDATE = False
+
 PROPOSAL_FACT_TYPE = "owner_proposal"
 PIPELINE_VERSION = "pipeline-v1"
-ROUTES = ("HIGH", "MEDIUM", "AMBIGUOUS", "NO_MATCH", "UNSUPPORTED", "ERROR")
-_ROUTE_SCORE = {"HIGH": 0.9, "MEDIUM": 0.6, "AMBIGUOUS": 0.3, "NO_MATCH": 0.0,
-                "UNSUPPORTED": 0.0, "ERROR": 0.0}
+ROUTES = ("HIGH", "MEDIUM", "AMBIGUOUS", "NEW_CLIENT_CANDIDATE", "NO_MATCH", "UNSUPPORTED", "ERROR")
+_ROUTE_SCORE = {"HIGH": 0.9, "MEDIUM": 0.6, "AMBIGUOUS": 0.3, "NEW_CLIENT_CANDIDATE": 0.0,
+                "NO_MATCH": 0.0, "UNSUPPORTED": 0.0, "ERROR": 0.0}
 # extraction methods that mean "no usable text came out" (as opposed to text with no identity in it).
 _NO_TEXT_METHODS = {"unsupported", "image_no_text", "pdf_no_text", "none"}
+_OCR_METHODS = {"ocr", "ocr_cache"}
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")   # 4-digit year, not part of a longer digit run
 
 
@@ -57,16 +63,25 @@ def _detect_year(text, filename):
     return None
 
 
+def _has_strong_identity(proposal):
+    """Document content carries a strong personal identifier (email or phone) — used only to distinguish a
+    potential NEW_CLIENT_CANDIDATE from a true NO_MATCH. Never triggers any client creation."""
+    ex = proposal.get("extracted") or {}
+    return bool(ex.get("emails") or ex.get("phones"))
+
+
 def _route(proposal, text):
     conf = proposal.get("confidence")
     if conf in ("HIGH", "MEDIUM", "AMBIGUOUS"):
         return conf
     if not (text or "").strip() and proposal.get("extraction_method") in _NO_TEXT_METHODS:
         return "UNSUPPORTED"          # could not extract usable content (vs. content had no identity)
+    if EMIT_NEW_CLIENT_CANDIDATE and _has_strong_identity(proposal):
+        return "NEW_CLIENT_CANDIDATE"  # strong identity, no existing match — for human approval only
     return "NO_MATCH"
 
 
-def analyze_document(document_id, *, conn=None, idx=None):
+def analyze_document(document_id, *, conn=None, idx=None, ocr=False):
     """Run the full pipeline for ONE document and return a unified, READ-ONLY result dict:
     {document_id, filename, source_folder, eligible, reason?, doc_type, doc_type_confidence, year,
      proposed_entity_type/id/name, confidence, route, evidence, competing, best_candidates, extracted,
@@ -74,7 +89,7 @@ def analyze_document(document_id, *, conn=None, idx=None):
      documents come back with route 'SKIPPED' and no proposed owner."""
     own = conn if conn is not None else engine.connect()
     try:
-        proposal = propose_document_owner(document_id, conn=own, idx=idx, with_text=True)
+        proposal = propose_document_owner(document_id, conn=own, idx=idx, with_text=True, ocr=ocr)
         text = proposal.pop("text", "") if isinstance(proposal, dict) else ""
         if not proposal.get("eligible"):
             return {"document_id": document_id, "eligible": False,
@@ -158,13 +173,15 @@ def _persist_failure(conn, doc_id):
                                         "error": "analysis_failed"}, 0.0, now)
 
 
-def analyze_and_persist(document_id, *, conn, idx=None):
+def analyze_and_persist(document_id, *, conn, idx=None, ocr=False):
     """Analyze one document and persist its proposal state, SAVEPOINT-isolated so any failure rolls back
     only this analysis (never the surrounding ingestion transaction). Returns the result dict or None on
-    failure. `conn` must be inside a transaction. Never writes ownership; never raises."""
+    failure. `conn` must be inside a transaction. Never writes ownership; never raises. ``ocr`` is left
+    off on the ingestion path so heavy OCR never slows a bulk sync — the legacy batch and a future async
+    OCR worker fill in OCR text; the native proposal is generated immediately either way."""
     sp = conn.begin_nested()
     try:
-        result = analyze_document(document_id, conn=conn, idx=idx)
+        result = analyze_document(document_id, conn=conn, idx=idx, ocr=ocr)
         persist_proposal(conn, result)
         sp.commit()
         return result
@@ -211,18 +228,21 @@ def _unassigned_ids(conn, limit=None):
     return [r[0] for r in conn.execute(stmt) if r[0] not in PERMANENT_REJECT_DOCUMENT_IDS]
 
 
-def run_batch(*, limit=None, include_details=True):
-    """READ-ONLY analysis of every genuinely-unassigned document (person/household/organization all NULL),
-    excluding the six permanent rejects from assignability. Writes NOTHING and assigns NO ownership.
-    Returns {total, counts:{route->n}, details:[result,...]}. Per-document failures are bucketed ERROR."""
+def run_batch(*, limit=None, include_details=True, ocr=False):
+    """Analysis of every genuinely-unassigned document (person/household/organization all NULL), excluding
+    the six permanent rejects from assignability. Assigns NO ownership and never modifies documents. With
+    ``ocr=True`` it invokes the existing OCR backend for image-only/scanned documents (this populates the
+    document_ocr TEXT cache — a benign, idempotent side effect — but writes no ownership/document state).
+    Returns {total, counts:{route->n}, stats:{...}, details:[...]}; per-document failures bucket to ERROR."""
     counts = dict.fromkeys(ROUTES, 0)
+    stats = {"ocr_extracted": 0, "ocr_with_identity": 0, "unsupported_remaining": 0}
     details = []
     with engine.connect() as conn:
         ids = _unassigned_ids(conn, limit=limit)
         idx = build_match_indexes(conn)          # build once; reused across all documents
         for did in ids:
             try:
-                r = analyze_document(did, conn=conn, idx=idx)
+                r = analyze_document(did, conn=conn, idx=idx, ocr=ocr)
                 route = r.get("route") or "NO_MATCH"
                 if route not in counts:          # 'SKIPPED' shouldn't occur (rejects pre-excluded)
                     route = "NO_MATCH"
@@ -230,9 +250,15 @@ def run_batch(*, limit=None, include_details=True):
                 route = "ERROR"
                 r = {"document_id": did, "route": "ERROR", "error": str(exc)[:200]}
             counts[route] += 1
+            if r.get("extraction_method") in _OCR_METHODS:
+                stats["ocr_extracted"] += 1
+                if route in ("HIGH", "MEDIUM", "AMBIGUOUS", "NEW_CLIENT_CANDIDATE"):
+                    stats["ocr_with_identity"] += 1
+            if route == "UNSUPPORTED":
+                stats["unsupported_remaining"] += 1
             if include_details:
                 details.append(_detail(r))
-    return {"total": len(ids), "counts": counts, "details": details}
+    return {"total": len(ids), "counts": counts, "stats": stats, "details": details}
 
 
 def _detail(r):

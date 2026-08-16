@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.db import (
     document_classifications,
     document_facts,
+    document_ocr,
     documents,
     engine,
     people,
@@ -41,6 +42,7 @@ def _cleanup():
             c.execute(document_facts.delete().where(document_facts.c.document_id.in_(_DOCS)))
             c.execute(document_classifications.delete().where(
                 document_classifications.c.document_id.in_(_DOCS)))
+            c.execute(document_ocr.delete().where(document_ocr.c.document_id.in_(_DOCS)))
             c.execute(documents.delete().where(documents.c.id.in_(_DOCS)))
         if _LINKS:
             c.execute(person_source_links.delete().where(person_source_links.c.id.in_(_LINKS)))
@@ -279,3 +281,65 @@ def test_batch_excludes_already_owned(tmp_path):
     owned = _doc(name="owned.txt", person_id=_person(f"Owned {_TAG}"))
     out = dp.run_batch(include_details=True)
     assert owned not in {d["document_id"] for d in out["details"]}
+
+
+# --- OCR routing + stats --------------------------------------------------------------------------
+
+def _ocr_cache(did, text):
+    with engine.begin() as c:
+        c.execute(document_ocr.insert().values(document_id=did, status="completed", text=text,
+                                               char_count=len(text), engine="test"))
+
+
+def test_analyze_uses_cached_ocr_text_and_routes_high(tmp_path):
+    email = f"ocr-{_TAG}@mail.com"
+    pid = _person(f"Ocrina {_TAG}")
+    _source_email(pid, email)
+    did = _doc(path=None, name="scan.jpg")                 # image with no native text
+    _ocr_cache(did, f"Recipient Ocrina {_TAG}, remit to {email}")
+    r = dp.analyze_document(did)
+    assert r["route"] == "HIGH" and r["proposed_entity_id"] == pid
+    assert r["extraction_method"] == "ocr_cache"
+
+
+def test_batch_reports_ocr_stats(tmp_path):
+    email = f"stat-{_TAG}@mail.com"
+    pid = _person(f"Statina {_TAG}")
+    _source_email(pid, email)
+    did = _doc(path=None, name="scan2.jpg")
+    _ocr_cache(did, f"remit to {email}")
+    out = dp.run_batch(include_details=True)
+    assert set(out["stats"]) == {"ocr_extracted", "ocr_with_identity", "unsupported_remaining"}
+    assert out["stats"]["ocr_extracted"] >= 1 and out["stats"]["ocr_with_identity"] >= 1
+    assert {d["document_id"]: d["route"] for d in out["details"]}.get(did) == "HIGH"
+
+
+def test_image_without_ocr_routes_unsupported():
+    did = _doc(path=None, name="photo.heic")               # no file, no cache, batch native-only
+    r = dp.analyze_document(did, ocr=False)
+    assert r["route"] == "UNSUPPORTED"
+
+
+# --- NEW_CLIENT_CANDIDATE (design only; disabled by default) --------------------------------------
+
+def test_new_client_candidate_disabled_by_default(tmp_path):
+    f = tmp_path / "n.txt"
+    f.write_text(f"please contact newperson-{_TAG}@nowhere.com about the account\n")
+    did = _doc(path=f, name="n.txt")
+    r = dp.analyze_document(did)
+    assert r["route"] == "NO_MATCH"                         # unmatched email -> NO_MATCH while flag off
+
+
+def test_new_client_candidate_when_enabled_creates_no_client(monkeypatch, tmp_path):
+    monkeypatch.setattr(dp, "EMIT_NEW_CLIENT_CANDIDATE", True)
+    with engine.connect() as c:
+        before = len(c.execute(select(people.c.id)).all())
+    f = tmp_path / "n.txt"
+    f.write_text(f"please contact newperson2-{_TAG}@nowhere.com about the account\n")
+    did = _doc(path=f, name="n.txt")
+    r = dp.analyze_document(did)
+    assert r["route"] == "NEW_CLIENT_CANDIDATE"
+    with engine.connect() as c:
+        after = len(c.execute(select(people.c.id)).all())
+    assert after == before                                  # a document NEVER silently creates a client
+    assert _owner(did) == (None, None, None)

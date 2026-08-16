@@ -40,28 +40,37 @@ def main(argv=None):
     ap.add_argument("--route", choices=ROUTES, default=None, help="only print details for this route")
     ap.add_argument("--sample", type=int, default=5, help="details to print per route (default 5)")
     ap.add_argument("--doc", type=int, nargs="*", help="analyze only these document id(s)")
+    ap.add_argument("--ocr", action="store_true",
+                    help="OCR image-only/scanned docs via the existing backend (populates the OCR text "
+                         "cache; writes no ownership). Requires the OCR backend installed on the host.")
     args = ap.parse_args(argv)
 
     if args.doc:
         print("=" * 74)
         for did in args.doc:
-            _print_detail({**analyze_document(did)})
+            _print_detail({**analyze_document(did, ocr=args.ocr)})
         print("=" * 74)
-        print("READ-ONLY: nothing written; no ownership changed.")
+        print("READ-ONLY (ownership): nothing assigned; no document modified.")
         return 0
 
-    result = run_batch(limit=args.limit, include_details=True)
+    result = run_batch(limit=args.limit, include_details=True, ocr=args.ocr)
     c = result["counts"]
+    s = result["stats"]
     print("=" * 74)
-    print("UNASSIGNED DOCUMENT PIPELINE — READ-ONLY BATCH")
+    print("UNASSIGNED DOCUMENT PIPELINE — BATCH ANALYSIS" + ("  (OCR ON)" if args.ocr else "  (native)"))
     print("=" * 74)
-    print(f"TOTAL:       {result['total']}")
-    print(f"HIGH:        {c['HIGH']}")
-    print(f"MEDIUM:      {c['MEDIUM']}")
-    print(f"AMBIGUOUS:   {c['AMBIGUOUS']}")
-    print(f"NO_MATCH:    {c['NO_MATCH']}")
-    print(f"UNSUPPORTED: {c['UNSUPPORTED']}")
-    print(f"ERROR:       {c['ERROR']}")
+    print(f"TOTAL:                {result['total']}")
+    print(f"HIGH:                 {c['HIGH']}")
+    print(f"MEDIUM:               {c['MEDIUM']}")
+    print(f"AMBIGUOUS:            {c['AMBIGUOUS']}")
+    print(f"NEW_CLIENT_CANDIDATE: {c['NEW_CLIENT_CANDIDATE']}")
+    print(f"NO_MATCH:             {c['NO_MATCH']}")
+    print(f"UNSUPPORTED:          {c['UNSUPPORTED']}")
+    print(f"ERROR:                {c['ERROR']}")
+    print("-" * 74)
+    print(f"OCR-extracted:        {s['ocr_extracted']}")
+    print(f"OCR with identity:    {s['ocr_with_identity']}")
+    print(f"Unsupported remain:   {s['unsupported_remaining']}")
     print("=" * 74)
 
     routes = [args.route] if args.route else list(ROUTES)
@@ -74,7 +83,8 @@ def main(argv=None):
         for d in shown:
             _print_detail(d)
     print("\n" + "=" * 74)
-    print("READ-ONLY: nothing written; no ownership changed.")
+    print("No ownership assigned; no document modified." + (
+        "  (OCR text cache may have been populated.)" if args.ocr else "  (read-only)"))
     return 0
 
 

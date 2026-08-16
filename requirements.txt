@@ -47,3 +47,7 @@ uvicorn==0.39.0
 Pillow==11.3.0
 pillow-heif==0.22.0
 pypdf==5.9.0
+# OCR backend (image-only/scanned PDFs). Python wrappers only — the Tesseract and Poppler SYSTEM
+# binaries must also be installed on the host (verify with: python -m app.services.ocr_backend --preflight).
+pytesseract==0.3.13
+pdf2image==1.17.0
