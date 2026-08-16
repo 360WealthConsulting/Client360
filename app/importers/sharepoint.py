@@ -89,9 +89,11 @@ def sharepoint_doc_type(name: str) -> str:
     return "other"
 
 
-def _stored_name(item_key: str) -> str:
+def _stored_name(item_key: str, sha: str = "") -> str:
+    # Include the content hash so a CHANGED file at the same SharePoint URI produces a NEW canonical
+    # version with a unique stored_name (the old uri-only key collided on documents_stored_name_key).
     import hashlib
-    return "sharepoint:" + hashlib.sha256((item_key or "").encode("utf-8")).hexdigest()
+    return "sharepoint:" + hashlib.sha256(f"{item_key or ''}:{sha or ''}".encode()).hexdigest()
 
 
 def _item_uri(item: dict) -> str:
@@ -116,7 +118,8 @@ def _new_summary(dry_run: bool) -> dict:
     return {"items_examined": 0, "ignored": 0, "canonical_created": 0, "reused_canonical": 0,
             "source_refs_added": 0, "metadata_updated": 0, "skipped": 0, "deleted": 0,
             "missing": 0, "purged": 0, "bytes_copied": 0, "linked_person": 0,
-            "linked_household": 0, "errors": [], "dry_run": dry_run, "status": "started"}
+            "linked_household": 0, "affected_document_ids": [], "errors": [], "dry_run": dry_run,
+            "status": "started"}
 
 
 def import_sharepoint_items(items, *, destination_root=None, actor_user_id=None, request_id=None,
@@ -242,7 +245,7 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
             "last_synced_at": datetime.now(UTC).isoformat(),
         }
         result = resolve_or_create_canonical(
-            sha256=sha, original_name=filename, stored_name=_stored_name(uri),
+            sha256=sha, original_name=filename, stored_name=_stored_name(uri, sha),
             storage_provider=STORAGE_PROVIDER, storage_uri=storage_uri, storage_path=storage_path,
             size_bytes=size, content_type=item.get("content_type") or mimetypes.guess_type(filename)[0],
             category=infer_category(filename, safe_rel.as_posix()), tags=tags,
@@ -263,6 +266,9 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
 
     summary["reused_canonical" if result["reused"] else "canonical_created"] += 1
     summary["source_refs_added"] += 1
+    if not result["reused"]:
+        # A NEW canonical document (new content / new version) — the only case that needs analysis.
+        summary["affected_document_ids"].append(result["document_id"])
     if existing_ref is not None:
         summary["metadata_updated"] += 1
 

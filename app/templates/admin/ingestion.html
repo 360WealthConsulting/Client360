@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Ingestion Status | Admin | Client360{% endblock %}
+{% block crumb %}Admin · Ingestion Status{% endblock %}
+{% block content %}
+{% call ui.page_head("Ingestion status", eyebrow="Admin · Continuous Ingestion",
+    desc="Per-source sync runs. Runs are incremental — unchanged items are skipped without re-extraction
+          or OCR. New/changed documents flow through the existing owner-proposal pipeline; nothing is
+          auto-assigned and no client is auto-created.") %}
+  <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
+{% endcall %}
+
+<div style="overflow-x:auto">
+<table class="table">
+  <thead><tr>
+    <th>Source</th><th>Status</th><th>Last run</th><th>Last success</th>
+    <th>Scanned</th><th>New</th><th>Changed</th><th>Unchanged</th><th>Deleted</th>
+    <th>OCR'd</th><th>Errors</th><th>Cadence</th>
+  </tr></thead>
+  <tbody>
+  {% for s in sources %}
+    <tr>
+      <td><strong>{{ s.source }}</strong></td>
+      <td>{% if s.status in ("completed",) %}<span style="color:var(--ok, #15803d)">{{ s.status }}</span>
+          {% elif s.status in ("error", "completed_with_errors") %}<span style="color:var(--warn, #b45309)">{{ s.status }}</span>
+          {% else %}<span class="subtle">{{ s.status or "—" }}</span>{% endif %}</td>
+      <td class="subtle">{{ s.last_run or "—" }}</td>
+      <td class="subtle">{{ s.last_success or "—" }}</td>
+      <td>{{ s.scanned or 0 }}</td>
+      <td>{{ s.new or 0 }}</td>
+      <td>{{ s.changed or 0 }}</td>
+      <td>{{ s.unchanged or 0 }}</td>
+      <td>{{ s.deleted or 0 }}</td>
+      <td>{{ s.ocr_analyzed or 0 }}</td>
+      <td>{% if s.errors %}<span style="color:var(--warn, #b45309)">{{ s.errors }}</span>{% else %}0{% endif %}</td>
+      <td class="subtle">{{ s.cadence or "not scheduled" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="subtle" style="margin-top:8px">Scheduling is enabled separately after manual validation. Run a
+  source manually with its ingestion runner (see deployment notes); recurring schedules use the existing
+  job infrastructure at the cadence shown.</p>
+{% endblock %}
