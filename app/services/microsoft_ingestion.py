@@ -155,7 +155,11 @@ def _connector_values(*, root, drive_id, dry_run, limit=None, top=None, progress
     simply ignored (never overriding a connector default with None)."""
     import os
     from pathlib import Path
-    manifest = str(Path(root) / (f"{drive_id}_manifest.json" if drive_id else "manifest.json"))
+    # The deployment connector declares run(root: Path, manifest: Path) and its append_manifest() calls
+    # manifest.parent — so root/manifest MUST be pathlib.Path, not str. Dry-run never wrote a manifest, so
+    # this only surfaced on the first REAL download. Diagnostics/JSON stringify these at print time.
+    root = Path(root)
+    manifest = root / (f"{drive_id}_manifest.json" if drive_id else "manifest.json")
     site_ids = [s.strip() for s in (os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS") or "").split(",") if s.strip()]
     if limit is None:
         try:
@@ -402,7 +406,8 @@ def _stage_one(fn, root, drive_id, dry_run, diag, *, limit=None, top=None, timeo
         diag["drives"].append({
             "drive_id": drive_id, "download": values["download"], "limit": values["limit"],
             "top": top, "elapsed_seconds": elapsed,
-            "manifest": manifest_path, "manifest_exists": bool(manifest_path and Path(manifest_path).exists()),
+            "manifest": str(manifest_path),   # str for JSON/printing; the connector got a Path
+            "manifest_exists": bool(manifest_path and Path(manifest_path).exists()),
             "result_type": type(result).__name__, "result_keys": result_keys,
             "result_counts": result_counts, "items": len(items), "source": source})
     return items

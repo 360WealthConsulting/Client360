@@ -760,3 +760,73 @@ def test_streamed_dry_run_examines_10_missing_0_no_download(tmp_path):
     assert summary["missing"] == 0                      # guard intact
     assert after == before                              # no canonical DB mutation
     assert not dest.exists() or not any(dest.rglob("*.*"))   # no download
+
+
+# --- REAL (non-dry-run) invocation: connector run(root: Path, manifest: Path); append_manifest uses
+#     manifest.parent. The Path-vs-str boundary must hold (dry-run never wrote a manifest). ------------
+
+def test_connector_values_root_and_manifest_are_paths():
+    from pathlib import Path
+    v = mi._connector_values(root="/tmp/stage", drive_id="d1", dry_run=False, limit=10)
+    assert isinstance(v["root"], Path) and isinstance(v["staging_root"], Path)
+    assert isinstance(v["manifest"], Path) and isinstance(v["manifest_path"], Path)
+    assert v["manifest"].name == "d1_manifest.json" and v["manifest"].parent == Path("/tmp/stage")
+    # the exact operation that failed in production ('str' has no attribute 'parent') now works:
+    assert v["manifest"].parent == v["root"]
+
+
+def _path_asserting_connector(rec):
+    """Production-shaped run(root: Path, manifest: Path); append_manifest() touches manifest.parent."""
+    import json
+    import types
+    from pathlib import Path
+
+    def run(*, drive_id, root, download, limit, manifest):
+        rec.append({"root_is_path": isinstance(root, Path), "manifest_is_path": isinstance(manifest, Path),
+                    "download": download, "limit": limit})
+        manifest.parent.mkdir(parents=True, exist_ok=True)      # <- the '.parent' access that crashed
+        staged = manifest.parent / f"{drive_id}_f1.txt"
+        staged.write_text("hello statement body")               # a real downloaded file
+        manifest.write_text(json.dumps([{                       # append_manifest handoff
+            "name": "f1.pdf", "web_url": f"https://sp/{drive_id}/f1", "item_id": "f1",
+            "site": "S", "library": "D", "modified_at": "2024-01-01T00:00:00",
+            "size": staged.stat().st_size, "local_path": str(staged)}]))
+        return {"status": "ok", "files_seen": 1, "files_downloaded": 1}
+
+    return types.SimpleNamespace(run=run)
+
+
+def test_real_run_receives_path_root_and_manifest_no_parent_error(tmp_path):
+    import os
+    rec = []
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "stage")
+    try:
+        stager = mi.resolve_sharepoint_stager(module=_path_asserting_connector(rec),
+                                               drive_ids=["drvP"], dry_run=False, limit=10)
+        summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "dest"),
+                                         dry_run=False, ocr=False)
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    _track()
+    # no 'str object has no attribute parent' anywhere, and the file actually imported
+    assert not any("has no attribute 'parent'" in e for e in summary.get("errors", []))
+    assert summary["status"] == "completed" and summary["canonical_created"] == 1
+    # root AND manifest reached the connector as pathlib.Path
+    assert rec and rec[0]["root_is_path"] is True and rec[0]["manifest_is_path"] is True
+    assert rec[0]["download"] is True and rec[0]["limit"] == 10   # real run downloads; --limit preserved
+
+
+def test_real_run_reuses_already_downloaded_file_no_duplicate(tmp_path):
+    # If a prior attempt already staged/imported a file, a re-run dedupes (SHA-256) — no second canonical.
+    import os
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "stage")
+    try:
+        for _ in range(2):                                       # run the same real sync twice
+            stager = mi.resolve_sharepoint_stager(module=_path_asserting_connector([]),
+                                                   drive_ids=["drvDup"], dry_run=False, limit=10)
+            mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "dest"),
+                                   dry_run=False, ocr=False)
+            _track()
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    assert _canonical_count("https://sp/drvDup/f1") == 1         # single source ref, no duplicate
