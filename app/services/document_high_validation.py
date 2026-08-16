@@ -25,7 +25,7 @@ from collections import Counter
 
 from sqlalchemy import select
 
-from app.db import documents, engine, metadata
+from app.db import documents, engine, metadata, people, relationship_entities
 from app.services.document_owner_proposal import (
     _EMAIL_RE,
     _PHONE_RE,
@@ -189,6 +189,73 @@ def _provenance(proposal, folder, idx):
     return "both" if supports else "content"   # HIGH is always content-driven; folder can corroborate
 
 
+def _owner_exists(conn, etype, eid):
+    """The proposed owner record must still exist (it could have been deleted after the batch)."""
+    if eid is None:
+        return False
+    table = {"person": people, "household": _hh(), "organization": relationship_entities}.get(etype)
+    if table is None:
+        return False
+    return conn.execute(select(table.c.id).where(table.c.id == eid).limit(1)).scalar() is not None
+
+
+def _hh():
+    from app.db import households
+    return households
+
+
+def evaluate_high(conn, did, idx, *, ocr=False):
+    """Single source of truth — is document `did` a CLEAN, currently-HIGH proposal RIGHT NOW? READ-ONLY.
+
+    Returns {status, reason, proposal, contradictions}. status:
+      'ineligible' — not all-NULL / permanent-reject / missing (reason = why)
+      'not_high'   — proposal is not HIGH (reason = the actual confidence)
+      'excluded'   — HIGH but a contradiction fired (reason/contradictions = the classes)
+      'eligible'   — HIGH and contradiction-free and the owner record still exists
+    Used by the batch report, the bulk-confirm preview, AND the final pre-write recheck, so all three
+    agree by construction."""
+    proposal = propose_document_owner(did, conn=conn, idx=idx, with_text=True, ocr=ocr)
+    if not proposal.get("eligible"):
+        return {"status": "ineligible", "reason": proposal.get("reason"), "proposal": proposal,
+                "contradictions": []}
+    text = proposal.pop("text", "")
+    if proposal.get("confidence") != "HIGH":
+        return {"status": "not_high", "reason": proposal.get("confidence"), "proposal": proposal,
+                "contradictions": []}
+    folder = proposal.get("source_folder")
+    contradictions, _sig = _contradictions(proposal, text, folder, idx)
+    if not _owner_exists(conn, proposal.get("proposed_entity_type"), proposal.get("proposed_entity_id")):
+        contradictions = sorted(set(contradictions) | {"owner_missing"})
+    if contradictions:
+        return {"status": "excluded", "reason": contradictions, "proposal": proposal,
+                "contradictions": contradictions}
+    return {"status": "eligible", "reason": None, "proposal": proposal, "contradictions": []}
+
+
+def build_report_row(conn, did, proposal, contradictions, idx):
+    """A sanitized per-document report row (no raw text, no full SSN) shared by the report + preview."""
+    folder = proposal.get("source_folder")
+    source_system, source_path = _doc_meta(conn, did, folder)
+    method = proposal.get("extraction_method")
+    return {
+        "document_id": did,
+        "filename": proposal.get("filename"),
+        "source_system": source_system,
+        "source_path": source_path,
+        "extraction_method": method,
+        "extraction_class": "ocr" if method in ("ocr", "ocr_cache") else "native",
+        "proposed_entity_type": proposal.get("proposed_entity_type"),
+        "proposed_entity_id": proposal.get("proposed_entity_id"),
+        "proposed_entity_name": proposal.get("proposed_entity_name"),
+        "confidence": proposal.get("confidence"),
+        "evidence_classes": _evidence_classes(proposal.get("evidence") or []),
+        "evidence": (proposal.get("evidence") or [])[:6],
+        "identity_provenance": _provenance(proposal, folder, idx),
+        "contradictions": contradictions,
+        "eligible": not contradictions,
+    }
+
+
 def validate_high_proposals(*, limit=None, ocr=False):
     """READ-ONLY. Returns {high_total, eligible, excluded, native_high, ocr_high, reason_counts, rows}.
     Each row is a sanitized per-document record (no raw text, no full SSN). Writes nothing."""
@@ -199,38 +266,17 @@ def validate_high_proposals(*, limit=None, ocr=False):
         ids = _unassigned_ids(conn, limit=limit)
         idx = build_match_indexes(conn)
         for did in ids:
-            proposal = propose_document_owner(did, conn=conn, idx=idx, with_text=True, ocr=ocr)
-            if not proposal.get("eligible") or proposal.get("confidence") != "HIGH":
-                continue
-            text = proposal.pop("text", "")
-            folder = proposal.get("source_folder")
-            source_system, source_path = _doc_meta(conn, did, folder)
-            contradictions, _sig = _contradictions(proposal, text, folder, idx)
-            method = proposal.get("extraction_method")
-            is_ocr = method in ("ocr", "ocr_cache")
-            if is_ocr:
+            ev = evaluate_high(conn, did, idx, ocr=ocr)
+            if ev["status"] not in ("eligible", "excluded"):
+                continue                                       # only HIGH proposals are reported
+            row = build_report_row(conn, did, ev["proposal"], ev["contradictions"], idx)
+            if row["extraction_class"] == "ocr":
                 ocr_high += 1
             else:
                 native_high += 1
-            for c in contradictions:
+            for c in row["contradictions"]:
                 reasons[c] += 1
-            rows.append({
-                "document_id": did,
-                "filename": proposal.get("filename"),
-                "source_system": source_system,
-                "source_path": source_path,
-                "extraction_method": method,
-                "extraction_class": "ocr" if is_ocr else "native",
-                "proposed_entity_type": proposal.get("proposed_entity_type"),
-                "proposed_entity_id": proposal.get("proposed_entity_id"),
-                "proposed_entity_name": proposal.get("proposed_entity_name"),
-                "confidence": proposal.get("confidence"),
-                "evidence_classes": _evidence_classes(proposal.get("evidence") or []),
-                "evidence": (proposal.get("evidence") or [])[:6],
-                "identity_provenance": _provenance(proposal, folder, idx),
-                "contradictions": contradictions,
-                "eligible": not contradictions,
-            })
+            rows.append(row)
     eligible = [r for r in rows if r["eligible"]]
     excluded = [r for r in rows if not r["eligible"]]
     return {

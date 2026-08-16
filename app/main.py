@@ -12,6 +12,7 @@ from app.routes.activities import router as activities_router
 from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.activity_timeline import router as activity_timeline_router
 from app.routes.admin import router as admin_router
+from app.routes.admin_high_confirm import router as admin_high_confirm_router
 from app.routes.advisor_work import router as advisor_work_router
 from app.routes.ai_assist import router as ai_assist_router
 from app.routes.analytics import router as analytics_router
@@ -242,6 +243,7 @@ app.include_router(auth_router)
 if dev_auth_enabled():
     app.include_router(dev_auth_router)
 app.include_router(admin_router)
+app.include_router(admin_high_confirm_router)
 app.include_router(session_router)
 app.include_router(work_router)
 app.include_router(workflows_router)
