@@ -15,15 +15,15 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("", response_class=HTMLResponse)
 def wealth_dashboard(
     request: Request,
-    principal: Principal = Depends(require_capability("client.read")),
+    principal: Principal = Depends(require_capability("portfolio.firm_metrics")),
 ):
-    """Advisor-facing firm-wide wealth overview.
+    """Firm-wide wealth overview — privileged firm financial aggregates.
 
-    A read-only landing page for the WEALTH section. It reuses the existing
-    portfolio services (`get_wealth_dashboard` → `get_firm_portfolio_metrics`) —
-    no new aggregation, schema, or policy. Middleware additionally enforces
-    `record.read_all` (FIRM_WIDE_COLLECTION), so this is gated exactly like
-    `/portfolio`.
+    The whole page is firm-wide portfolio metrics (`get_wealth_dashboard` →
+    `get_firm_portfolio_metrics`: firm AUM, cash, largest household/position). It is
+    therefore gated on `portfolio.firm_metrics`, the dedicated firm-metrics capability —
+    NOT `client.read`/`record.read_all` — so an employee who can read records does not
+    automatically see firm AUM here. No new aggregation, schema, or business policy.
     """
     dashboard = get_wealth_dashboard()
     return templates.TemplateResponse(

@@ -7,6 +7,10 @@
 
 {% include "partials/exception_summary.html" %}
 
+{# Firm-wide financial aggregates are gated server-side: the values are absent from the context unless the
+   viewer holds portfolio.firm_metrics, and show_firm_metrics drives whether the section renders at all.
+   The whole "Book of business" section is omitted for unauthorized viewers (never shown as $0). #}
+{% if show_firm_metrics %}
 <h2 class="section-title">Book of business</h2>
 <div class="stat-grid">
   {{ ui.stat("Firm AUM", "${:,.0f}".format(dashboard.firm_aum or 0)) }}
@@ -16,6 +20,7 @@
   {{ ui.stat("Missing beneficiaries", dashboard.missing_beneficiaries, delta="needs review" if dashboard.missing_beneficiaries else "clear", trend="down" if dashboard.missing_beneficiaries else "up") }}
   {{ ui.stat("Accounts without reviews", dashboard.accounts_without_reviews, delta="follow up" if dashboard.accounts_without_reviews else "clear", trend="down" if dashboard.accounts_without_reviews else "up") }}
 </div>
+{% endif %}
 
 <h2 class="section-title">Records</h2>
 <div class="stat-grid">
@@ -23,7 +28,7 @@
   {{ ui.stat("Households", dashboard.households or 0) }}
   {{ ui.stat("Accounts", dashboard.accounts or 0) }}
   {{ ui.stat("Open tasks", dashboard.open_tasks or 0) }}
-  {{ ui.stat("Total account value", "${:,.2f}".format(dashboard.total_aum or 0)) }}
+  {% if show_firm_metrics %}{{ ui.stat("Total account value", "${:,.2f}".format(dashboard.total_aum or 0)) }}{% endif %}
 </div>
 
 <h2 class="section-title">Recent activity</h2>
