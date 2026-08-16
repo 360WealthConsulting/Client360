@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Review Queue (MEDIUM / AMBIGUOUS) | Admin | Client360{% endblock %}
+{% block crumb %}Admin · Document Management · Review Queue{% endblock %}
+
+{% macro approve_btn(doc_id, cand, primary=False) %}
+  <form method="post" action="/admin/documents/review-queue/approve" style="display:inline-block; margin:2px 4px 2px 0">
+    <input type="hidden" name="document_id" value="{{ doc_id }}">
+    <input type="hidden" name="entity_type" value="{{ cand.type }}">
+    <input type="hidden" name="entity_id" value="{{ cand.id }}">
+    <input type="hidden" name="confirm" value="yes">
+    <button class="btn {% if not primary %}sm secondary{% endif %}" type="submit">Approve → {{ cand.name or (cand.type ~ " #" ~ cand.id) }}</button>
+  </form>
+{% endmacro %}
+
+{% macro doc_row(r, ambiguous=False, review=False) %}
+<div class="card" style="padding:10px 12px; margin-bottom:10px; background:var(--bg, #fafafa)">
+  <div class="detail-row">
+    <span><strong>#{{ r.document_id }}</strong> ·
+      <a href="{{ r.view_url }}" target="_blank" rel="noopener">{{ r.filename }}</a></span>
+    <span class="subtle">{{ r.source_path or "—" }} · {{ r.extraction_class }}:{{ r.extraction_method }} · {{ r.confidence }}
+      <a class="btn sm secondary" href="{{ r.view_url }}" target="_blank" rel="noopener">View ↗</a></span>
+  </div>
+  {% if r.evidence_classes %}<div class="subtle" style="margin:2px 0">evidence: {{ r.evidence_classes | join(", ") }}</div>{% endif %}
+  {% if r.evidence %}<ul class="subtle" style="margin:2px 0 6px 18px">{% for e in r.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  {% if review and r.contradictions %}<div class="subtle" style="color:var(--warn, #b45309)">contradiction: {{ r.contradictions | join(", ") }}</div>{% endif %}
+
+  {% if ambiguous %}
+    <div class="subtle" style="margin:4px 0 2px">Choose the correct owner (no default — explicit choice required):</div>
+    {% if r.candidates %}{% for c in r.candidates %}{{ approve_btn(r.document_id, c) }}{% endfor %}
+    {% else %}<span class="subtle">No defensible candidates — use “Choose another owner”.</span>{% endif %}
+  {% else %}
+    {% if r.candidates and r.candidates[0].id %}
+      <div class="subtle" style="margin:4px 0 2px">Proposed owner:</div>
+      {{ approve_btn(r.document_id, r.candidates[0], primary=(not review)) }}
+    {% endif %}
+  {% endif %}
+
+  {# Manual fallback — one clear control; reuses the existing per-document resolution route. #}
+  <form method="post" action="/admin/documents/review-queue/approve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center">
+    <input type="hidden" name="document_id" value="{{ r.document_id }}">
+    <input type="hidden" name="confirm" value="yes">
+    <label class="subtle">Choose another owner:
+      <select name="entity_type" class="input">
+        <option value="person">Person</option><option value="household">Household</option><option value="organization">Organization</option>
+      </select></label>
+    <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:110px" required></label>
+    <button class="btn sm secondary" type="submit">Approve → chosen ID</button>
+  </form>
+</div>
+{% endmacro %}
+
+{% block content %}
+{% call ui.page_head("Review queue", eyebrow="Admin · Document Management",
+    desc="MEDIUM and AMBIGUOUS proposals that need a human decision. The document and its evidence are on
+          this page — click Approve beside the correct owner to assign it (atomic, audited, never
+          overwriting). Nothing is auto-assigned.") %}
+  <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
+{% endcall %}
+
+{% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
+
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+  <div style="font-weight:600; margin-bottom:6px">MEDIUM — proposed owner, explicit approval required ({{ medium_count }})</div>
+  {% for r in medium %}{{ doc_row(r) }}{% else %}<div class="subtle">None.</div>{% endfor %}
+</article>
+
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
+  <div style="font-weight:600; margin-bottom:6px">AMBIGUOUS — multiple candidates, choose one ({{ ambiguous_count }})</div>
+  {% for r in ambiguous %}{{ doc_row(r, ambiguous=True) }}{% else %}<div class="subtle">None.</div>{% endfor %}
+</article>
+
+{% if high_review %}
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+  <div style="color:var(--warn, #b45309); font-weight:600; margin-bottom:6px">HIGH — REVIEW REQUIRED (contradiction) · per-document only ({{ high_review_count }})</div>
+  {% for r in high_review %}{{ doc_row(r, review=True) }}{% endfor %}
+</article>
+{% endif %}
+{% endblock %}
