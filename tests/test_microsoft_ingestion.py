@@ -202,3 +202,42 @@ def test_ingestion_status_page_requires_identity_manage():
 def test_route_registered():
     from app.main import app
     assert "/admin/ingestion" in {getattr(r, "path", None) for r in app.routes}
+
+
+# --- connector staging entrypoint resolution (regression for the production ImportError) ----------
+
+def test_resolve_stager_uses_real_connector_entrypoint():
+    import types
+    mod = types.SimpleNamespace(
+        stage_sharepoint_content=lambda *, site_ids=None, dry_run=False: ([{"name": "a.txt"}], {"status": "ok"}))
+    stager = mi.resolve_sharepoint_stager(module=mod, dry_run=True)
+    assert stager() == [{"name": "a.txt"}]                # adapts to the connector's real function + return
+
+
+def test_resolve_stager_errors_clearly_when_entrypoint_absent():
+    import types
+    mod = types.SimpleNamespace(some_other_helper=lambda: None)   # connector without a known stager
+    stager = mi.resolve_sharepoint_stager(module=mod)
+    with pytest.raises(RuntimeError) as exc:
+        stager()
+    msg = str(exc.value)
+    assert "some_other_helper" in msg and "--manifest" in msg    # lists real callables + the reliable path
+
+
+def test_script_has_no_import_time_connector_dependency():
+    import importlib
+    import inspect
+    m = importlib.import_module("scripts.run_sharepoint_sync")     # must import without the connector present
+    assert hasattr(m, "main")
+    src = inspect.getsource(m)
+    # the bug was a hard import of a guessed connector function; it must not return
+    assert "sharepoint_content import" not in src and "stage_sharepoint_content" not in src
+
+
+def test_resolve_stager_reads_manifest_path_result(tmp_path):
+    import json
+    import types
+    mf = tmp_path / "m.json"
+    mf.write_text(json.dumps([{"name": "b.txt"}]))
+    mod = types.SimpleNamespace(stage=lambda: {"manifest_path": str(mf)})
+    assert mi.resolve_sharepoint_stager(module=mod)() == [{"name": "b.txt"}]

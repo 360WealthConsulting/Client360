@@ -7,11 +7,14 @@ A thin, repeatable orchestration over the EXISTING pieces — no second extracti
     re-hash/OCR, DELETED marks the source reference unavailable and NEVER deletes the canonical document)
     ->  OCR-on-need analysis for ONLY the new documents  ->  durable run record (audit) for admin visibility.
 
-The staging step (live Microsoft Graph enumeration + download) is the deployment connector
-``app.connectors.microsoft365.sharepoint_content.stage_sharepoint_content`` — injected here as ``stager``
-(or pre-staged ``items``) so this runner is testable and reuses the real connector at deploy time. Nothing
-here creates a client, assigns ambiguous ownership, or re-OCRs unchanged documents. Failures are isolated:
-a bad staged item is recorded and skipped by the importer, and a whole-run failure is recorded, not raised.
+The staging step (live Microsoft Graph enumeration + download) is the DEPLOYMENT connector
+``app.connectors.microsoft365.sharepoint_content`` (environment-specific; not a tracked module — it is
+staged per deployment). It is injected here as ``stager`` (or pre-staged ``items``) so this runner is
+testable and reuses whatever real connector the deployment ships. ``resolve_sharepoint_stager`` discovers
+the connector's real public staging entrypoint at call time rather than hard-importing a specific name, so
+a deployment whose connector exposes a different function does not break at import. Nothing here creates a
+client, assigns ambiguous ownership, or re-OCRs unchanged documents. Failures are isolated: a bad staged
+item is recorded and skipped by the importer, and a whole-run failure is recorded, not raised.
 """
 from __future__ import annotations
 
@@ -86,6 +89,70 @@ def run_sharepoint_sync(*, items=None, stager=None, destination_root=None, actor
     _record_run("SharePoint", summary, started=started, actor_user_id=actor_user_id,
                 trigger_source=trigger_source)
     return summary
+
+
+# Public SharePoint staging entrypoints tried, in priority order, on the deployment connector. The runner
+# adapts to whatever the connector exposes rather than hard-importing one name (the cause of the earlier
+# production ImportError). The connector's designed decoupled contract is: connector CLI -> manifest ->
+# importer, so a manifest is always the reliable fallback.
+_SHAREPOINT_STAGER_NAMES = ("stage_sharepoint_content", "stage_content", "stage", "run_sync", "sync", "run")
+
+
+def _invoke_stager(fn, site_ids, dry_run):
+    import inspect
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        params = {}
+    kwargs = {}
+    if "site_ids" in params:
+        kwargs["site_ids"] = site_ids
+    if "dry_run" in params:
+        kwargs["dry_run"] = dry_run
+    return fn(**kwargs) if kwargs else fn()
+
+
+def _stager_items(result):
+    import json
+    from pathlib import Path
+    if isinstance(result, tuple) and result and isinstance(result[0], list):
+        return result[0]                                   # (manifest_items, run_record)
+    if isinstance(result, list):
+        return result
+    items = result.get("items") if isinstance(result, dict) else getattr(result, "items", None)
+    if isinstance(items, list):
+        return items
+    mp = result.get("manifest_path") if isinstance(result, dict) else getattr(result, "manifest_path", None)
+    if mp and Path(mp).exists():
+        return json.loads(Path(mp).read_text())
+    return []
+
+
+def resolve_sharepoint_stager(*, site_ids=None, dry_run=False, module=None):
+    """Return a zero-arg ``stager`` callable that invokes the REAL deployment connector's SharePoint
+    staging entrypoint and yields the manifest items. It does NOT hard-import a specific function name:
+    on call it discovers the connector's public staging callable (adapting to the deployment's connector)
+    and raises a clear error — listing the connector's actual public callables and the connector-CLI +
+    --manifest contract — if none is found. ``module`` overrides the connector module (used by tests)."""
+    def _do():
+        mod = module
+        if mod is None:
+            from app.connectors.microsoft365 import (
+                sharepoint_content as mod,  # lazy: no import-time dep
+            )
+        fn = next((getattr(mod, n) for n in _SHAREPOINT_STAGER_NAMES
+                   if callable(getattr(mod, n, None))), None)
+        if fn is None:
+            public = sorted(n for n in dir(mod)
+                            if not n.startswith("_") and callable(getattr(mod, n, None)))
+            raise RuntimeError(
+                "No known SharePoint staging entrypoint in "
+                f"app.connectors.microsoft365.sharepoint_content (tried {list(_SHAREPOINT_STAGER_NAMES)}). "
+                f"Available public callables: {public}. Stage via the connector's own CLI "
+                "(python -m app.connectors.microsoft365.sharepoint_content --manifest <path>) and pass that "
+                "manifest to the sync with --manifest <path>.")
+        return _stager_items(_invoke_stager(fn, site_ids, dry_run))
+    return _do
 
 
 def ingestion_status(sources=("SharePoint", "Drake", "Outlook"), *, scan=500):

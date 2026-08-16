@@ -20,19 +20,7 @@ import argparse
 import json
 from pathlib import Path
 
-from app.services.microsoft_ingestion import run_sharepoint_sync
-
-
-def _stager(site_ids):
-    def _do():
-        from app.connectors.microsoft365.sharepoint_content import stage_sharepoint_content
-        result = stage_sharepoint_content(site_ids=site_ids)
-        manifest = getattr(result, "manifest_path", None) or (result.get("manifest_path")
-                                                              if isinstance(result, dict) else None)
-        if manifest and Path(manifest).exists():
-            return json.loads(Path(manifest).read_text())
-        return getattr(result, "items", None) or (result.get("items") if isinstance(result, dict) else []) or []
-    return _do
+from app.services.microsoft_ingestion import resolve_sharepoint_stager, run_sharepoint_sync
 
 
 def main(argv=None):
@@ -47,7 +35,9 @@ def main(argv=None):
         items = json.loads(Path(args.manifest).read_text())
         summary = run_sharepoint_sync(items=items, trigger_source="manual", dry_run=args.dry_run)
     elif args.stage:
-        summary = run_sharepoint_sync(stager=_stager(args.site), trigger_source="manual", dry_run=args.dry_run)
+        # Adapts to the deployment connector's real staging entrypoint (no hard-coded function name).
+        stager = resolve_sharepoint_stager(site_ids=args.site, dry_run=args.dry_run)
+        summary = run_sharepoint_sync(stager=stager, trigger_source="manual", dry_run=args.dry_run)
     else:
         ap.error("provide --manifest <path> or --stage")
         return 2
