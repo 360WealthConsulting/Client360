@@ -383,8 +383,14 @@ def test_review_template_shows_proposal_confidence_and_evidence():
         request=None, principal=p, folder="Adrianna Hardy", eligible_docs=[doc],
         already_owned_docs=[], excluded_docs=[], candidates=folder_cand,
         household_candidates=[], org_candidates=[])
-    assert "PROPOSED OWNER (from DOCUMENT CONTENT)" in html
-    assert "MARY HARDY" in html and "Confidence: HIGH" in html
+    # content-analysis box shows proposed owner + confidence + evidence, but NO ownership action button
+    assert "PROPOSED OWNER FROM DOCUMENT CONTENT" in html
+    assert "MARY HARDY" in html and "HIGH confidence" in html
     assert "✓ phone ending 9034 matched" in html
-    assert "Preview → proposed owner: MARY HARDY (#7430)" in html
+    assert "Preview → proposed owner" not in html and "Preview → " not in html  # no Preview ownership button
+    # the recommended candidate appears as an "Assign to …" button marked Recommended
+    assert "Assign to MARY HARDY (#7430)" in html
+    assert "✓ Recommended · HIGH confidence" in html
+    # the alternative folder candidate is also an "Assign to …" button (not duplicated with the recommendation)
+    assert "Assign to Adrianna Lomasney (#5284)" in html
     assert "SOURCE FOLDER / FILENAME suggestions" in html

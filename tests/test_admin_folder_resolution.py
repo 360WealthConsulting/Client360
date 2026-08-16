@@ -347,11 +347,13 @@ def test_review_template_renders_per_document_candidate_buttons():
         request=None, principal=p, folder="Adrianna Hardy", eligible_docs=docs,
         already_owned_docs=[], excluded_docs=[], candidates=cands,
         household_candidates=hh, org_candidates=org)
-    # the person candidate button is repeated PER eligible document (2 docs), separate from the bulk one
-    assert html.count("Preview → Person: MARY HARDY (#7430)") == 2
-    assert "Preview all → MARY HARDY (#7430)" in html      # bulk section still lists it once
-    assert "Preview → Household: Hardy Household (#93)" in html
-    assert "Preview → Business: Affordable Measures (#129)" in html
+    # per-document ownership buttons now say "Assign to ..." (no "Preview" ownership buttons) and repeat
+    # PER eligible document (2 docs), separate from the bulk section
+    assert html.count("Assign to MARY HARDY (#7430)") == 2
+    assert "Assign all → MARY HARDY (#7430)" in html       # bulk section (folder route) still lists it once
+    assert "Assign to Hardy Household (#93)" in html
+    assert "Assign to Affordable Measures (#129)" in html
+    assert "Preview → " not in html and "Preview this document" not in html  # no ownership Preview buttons
     # each candidate button submits the correct per-document id + email context to distinguish
     assert 'name="document_id" value="457"' in html and 'name="document_id" value="458"' in html
     assert "m@e.com" in html
@@ -533,7 +535,7 @@ def test_confirm_and_review_templates_list_all_categories():
     rev = Path("app/templates/admin/unassigned_review.html").read_text(encoding="utf-8")
     assert "ELIGIBLE UNASSIGNED" in rev and "ALREADY OWNED" in rev and "PERMANENT REJECT" in rev
     assert "View ↗" in rev
-    assert "Preview this document" in rev            # per-document resolution
+    assert "Assign — review &amp; confirm →" in rev  # per-document manual resolution (not "Preview")
     assert "resolve-document" in rev
     assert "assign ALL remaining eligible" in rev    # bulk action still offered
     conf = Path("app/templates/admin/unassigned_confirm.html").read_text(encoding="utf-8")

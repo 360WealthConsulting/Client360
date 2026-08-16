@@ -48,39 +48,57 @@
           <a class="btn sm secondary" href="{{ d.download_url }}">Download</a></span></div>
 
       {% set pr = d.proposal %}
+      {# CONTENT ANALYSIS — information only: proposed owner, confidence, evidence. No action button here. #}
       {% if pr and pr.proposed_entity_id and pr.confidence in ("HIGH", "MEDIUM") %}
       <div class="card" style="padding:8px 10px; margin:6px 0; border-left:4px solid {% if pr.confidence == 'HIGH' %}var(--ok, #15803d){% else %}var(--warn, #b45309){% endif %}">
-        <div><strong>PROPOSED OWNER (from DOCUMENT CONTENT):</strong>
+        <div><strong>PROPOSED OWNER FROM DOCUMENT CONTENT:</strong>
           {{ pr.proposed_entity_type }} #{{ pr.proposed_entity_id }} — {{ pr.proposed_entity_name or "(name)" }}
-          · <strong>Confidence: {{ pr.confidence }}</strong></div>
-        {% if pr.evidence %}<ul class="subtle" style="margin:4px 0 6px 18px">{% for e in pr.evidence[:6] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
-        {{ cand_form(d.id, pr.proposed_entity_type, pr.proposed_entity_id, "Preview → proposed owner: " ~ (pr.proposed_entity_name or "") ~ " (#" ~ pr.proposed_entity_id ~ ")") }}
+          · <strong>{{ pr.confidence }} confidence</strong></div>
+        {% if pr.evidence %}<ul class="subtle" style="margin:4px 0 2px 18px">{% for e in pr.evidence[:6] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
       {% elif pr and (pr.confidence in ("AMBIGUOUS", "NO_MATCH")) %}
       <div class="subtle" style="margin:6px 0">
-        <strong>PROPOSED OWNER (from DOCUMENT CONTENT): No confident match</strong> ({{ pr.extraction_method }}).
-        {% if pr.best_candidates %}<br>Best candidates:
+        <strong>PROPOSED OWNER FROM DOCUMENT CONTENT: No confident content match</strong> ({{ pr.extraction_method }}).
+        {% if pr.best_candidates %}<br>Possible matches:
           {% for c in pr.best_candidates %}{{ c.name }} (#{{ c.person_id }}) — {{ c.confidence }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
         {% if pr.evidence %}<ul style="margin:4px 0 0 18px">{% for e in pr.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
       {% endif %}
 
-      {% if candidates or household_candidates or org_candidates %}
-      <div class="subtle" style="margin:6px 0 2px">SOURCE FOLDER / FILENAME suggestions (the folder may be wrong — verify against content; Preview only):</div>
-      {% for c in candidates %}
+      {# OWNER CHOICES — each "Assign to…" opens the single-document confirmation screen for THIS document; #}
+      {# nothing is written until the explicit Confirm on that screen. This is per-document only. #}
+      {% set has_rec = pr and pr.proposed_entity_id and pr.confidence in ("HIGH", "MEDIUM") %}
+      {% if has_rec or candidates or household_candidates or org_candidates %}
+      <div class="subtle" style="margin:8px 0 2px"><strong>Assign this document to:</strong></div>
+      {% if has_rec %}
         <div style="margin:2px 0">
-          {{ cand_form(d.id, "person", c.id, "Preview → Person: " ~ c.name ~ " (#" ~ c.id ~ ")") }}
+          {{ cand_form(d.id, pr.proposed_entity_type, pr.proposed_entity_id, "Assign to " ~ (pr.proposed_entity_name or "") ~ " (#" ~ pr.proposed_entity_id ~ ")") }}
+          <span style="color:var(--ok, #15803d); font-weight:600">✓ Recommended · {{ pr.confidence }} confidence</span>
+        </div>
+      {% endif %}
+      {% for c in candidates %}
+        {% if not (has_rec and pr.proposed_entity_type == "person" and c.id == pr.proposed_entity_id) %}
+        <div style="margin:2px 0">
+          {{ cand_form(d.id, "person", c.id, "Assign to " ~ c.name ~ " (#" ~ c.id ~ ")") }}
           <span class="subtle">{{ c.designation }}{% if c.email %} · {{ c.email }}{% endif %}{% if c.phone %} · {{ c.phone }}{% endif %}{% if c.household_name %} · Household: {{ c.household_name }} (#{{ c.household_id }}){% endif %}
             <a href="{{ c.link }}" target="_blank" rel="noopener">record ↗</a></span>
         </div>
+        {% endif %}
       {% endfor %}
       {% for h in household_candidates %}
-        <div style="margin:2px 0">{{ cand_form(d.id, "household", h.id, "Preview → Household: " ~ h.name ~ " (#" ~ h.id ~ ")") }}</div>
+        {% if not (has_rec and pr.proposed_entity_type == "household" and h.id == pr.proposed_entity_id) %}
+        <div style="margin:2px 0">{{ cand_form(d.id, "household", h.id, "Assign to " ~ h.name ~ " (#" ~ h.id ~ ")") }}</div>
+        {% endif %}
       {% endfor %}
       {% for o in org_candidates %}
-        <div style="margin:2px 0">{{ cand_form(d.id, "organization", o.id, "Preview → Business: " ~ o.name ~ " (#" ~ o.id ~ ")") }}
+        {% if not (has_rec and pr.proposed_entity_type == "organization" and o.id == pr.proposed_entity_id) %}
+        <div style="margin:2px 0">{{ cand_form(d.id, "organization", o.id, "Assign to " ~ o.name ~ " (#" ~ o.id ~ ")") }}
           <span class="subtle">{{ o.entity_type }}</span></div>
+        {% endif %}
       {% endfor %}
+      {% if candidates or household_candidates or org_candidates %}
+      <div class="subtle" style="margin:4px 0 0">Some choices above come from SOURCE FOLDER / FILENAME suggestions — the folder may be wrong, so verify against the document content before assigning.</div>
+      {% endif %}
       {% endif %}
 
       <form method="post" action="/admin/documents/unassigned/resolve-document" class="row" style="gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center">
@@ -94,7 +112,7 @@
           </select>
         </label>
         <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:110px" required></label>
-        <button class="btn sm secondary" type="submit">Preview this document →</button>
+        <button class="btn sm secondary" type="submit">Assign — review &amp; confirm →</button>
       </form>
     </div>
     {% endfor %}
@@ -111,14 +129,14 @@
         <input type="hidden" name="folder" value="{{ folder }}">
         <input type="hidden" name="entity_type" value="person">
         <input type="hidden" name="entity_id" value="{{ c.id }}">
-        <button class="btn sm secondary" type="submit">Preview all → {{ c.name }} (#{{ c.id }})</button>
+        <button class="btn sm secondary" type="submit">Assign all → {{ c.name }} (#{{ c.id }})</button>
       </form>
       <span class="subtle">{{ c.designation }}{% if c.email %} · {{ c.email }}{% endif %}{% if c.household_name %} · Household: {{ c.household_name }} (#{{ c.household_id }}){% endif %}</span>
     </div>
   {% endfor %}
   <form method="post" action="/admin/documents/unassigned/resolve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center">
     <input type="hidden" name="folder" value="{{ folder }}">
-    <label class="subtle">Preview all — assign to
+    <label class="subtle">Assign all — assign to
       <select name="entity_type" class="input">
         <option value="person">Person</option>
         <option value="household">Household</option>
@@ -126,7 +144,7 @@
       </select>
     </label>
     <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:110px" required></label>
-    <button class="btn sm secondary" type="submit">Preview all →</button>
+    <button class="btn sm secondary" type="submit">Assign all — review &amp; confirm →</button>
   </form>
 </article>
 {% endif %}

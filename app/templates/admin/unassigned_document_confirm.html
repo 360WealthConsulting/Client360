@@ -47,7 +47,7 @@
     <input type="hidden" name="entity_id" value="{{ entity_id }}">
     <input type="hidden" name="folder" value="{{ folder }}">
     <input type="hidden" name="confirm" value="yes">
-    <button class="btn" type="submit">Confirm — assign this document</button>
+    <button class="btn" type="submit">Confirm — assign this document to {{ destination.name or (entity_type ~ " #" ~ entity_id) }}</button>
     <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}" style="margin-left:8px">Cancel</a>
   </form>
   {% elif preview.reason == "already_owned" %}
