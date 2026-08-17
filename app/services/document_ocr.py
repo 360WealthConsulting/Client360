@@ -318,8 +318,20 @@ def main(argv=None):
     p.add_argument("--max-attempts", type=int, default=3)
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args(argv)
+    # The PRODUCTION CLI must run the real OCR backend (Tesseract/Poppler via TESSERACT_CMD/POPPLER_PATH),
+    # not run_ocr's default_extractor stub (which always raises OcrBackendUnavailable and would fail every
+    # candidate). If the backend cannot be built, report the config error clearly and abort — never run the
+    # whole batch through the stub.
+    from app.services.ocr_backend import build_production_extractor
+    try:
+        extractor = build_production_extractor()
+    except OcrBackendUnavailable as exc:
+        print(f"OCR backend not available: {exc}")
+        print("  Set TESSERACT_CMD and POPPLER_PATH and install the OCR libraries "
+              "(pytesseract, pdf2image, pypdf, Pillow), then retry.")
+        return 2
     summary = run_ocr(mode=args.mode, batch_size=args.batch_size, max_attempts=args.max_attempts,
-                      dry_run=args.dry_run)
+                      dry_run=args.dry_run, extractor=extractor)
     for k in ("mode", "candidates", "completed", "failed", "skipped", "unsupported",
               "chars_extracted", "status"):
         print(f"  {k}: {summary[k]}")

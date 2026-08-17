@@ -352,3 +352,50 @@ def test_backend_unavailable_state_is_retryable_and_completes(tmp_path):
     deps, _ = _deps(pdf_texts=["the engine is now installed and this text is extracted"])
     s = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps), mode="retry")
     assert s["completed"] == 1 and _ocr(did)["status"] == "completed"   # retry succeeds once engine present
+
+
+# --- production CLI must build + pass the real extractor (never run_ocr's always-raising stub) ---------
+# Bug: document_ocr.main() called run_ocr() with no extractor, so run_ocr used default_extractor which
+# ALWAYS raises OcrBackendUnavailable -> `--mode retry` failed every candidate even with Tesseract/Poppler
+# installed. main() must build_production_extractor() and pass it in.
+
+def test_cli_builds_and_passes_production_extractor(tmp_path, monkeypatch):
+    # A failed candidate must transition to completed when the CLI wires the real (mocked) extractor.
+    did = _doc(tmp_path, f"{_TAG} clifix.pdf", sha="c1" * 32)
+    from app.services.document_ocr import record_ocr_unavailable
+    record_ocr_unavailable(did, "was unavailable before the engine was installed")
+    assert _ocr(did)["status"] == "failed"
+
+    deps, _ = _deps(pdf_texts=["the CLI now uses the real backend and extracts this text"])
+    built = {"n": 0}
+
+    def fake_build():
+        built["n"] += 1
+        return build_extractor(deps)
+    # Patch where main() imports it from (app.services.ocr_backend.build_production_extractor)
+    monkeypatch.setattr("app.services.ocr_backend.build_production_extractor", fake_build)
+
+    ocr.main(["--mode", "retry"])
+    assert built["n"] == 1                                      # CLI built the production extractor once
+    assert _ocr(did)["status"] == "completed"                  # failed candidate -> completed via real backend
+    assert _ocr(did)["text"]                                    # NOT default_extractor (which always raises)
+
+
+def test_cli_reports_backend_config_error_and_does_not_use_default_extractor(monkeypatch, capsys):
+    calls = {"run_ocr": 0}
+    real_run = ocr.run_ocr
+
+    def spy_run(*a, **k):
+        calls["run_ocr"] += 1
+        return real_run(*a, **k)
+    monkeypatch.setattr(ocr, "run_ocr", spy_run)
+
+    def boom():
+        raise OcrBackendUnavailable("Tesseract not on PATH and TESSERACT_CMD unset")
+    monkeypatch.setattr("app.services.ocr_backend.build_production_extractor", boom)
+
+    rc = ocr.main(["--mode", "retry"])
+    out = capsys.readouterr().out
+    assert rc == 2 and "OCR backend not available" in out       # clear config error
+    assert "TESSERACT_CMD" in out
+    assert calls["run_ocr"] == 0                                # never ran candidates through the stub
