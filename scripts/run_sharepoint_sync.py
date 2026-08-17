@@ -53,6 +53,7 @@ def main(argv=None):
     if args.inspect_manifest:
         from app.services.microsoft_ingestion import (
             analyze_manifest,
+            manifest_ocr_problems,
             manifest_ocr_status,
             manifest_path_records,
         )
@@ -63,6 +64,12 @@ def main(argv=None):
         for k, v in manifest_ocr_status(args.inspect_manifest).items():
             if k not in ("exists", "path"):
                 print(f"    {k}: {v}")
+        problems = manifest_ocr_problems(args.inspect_manifest)
+        if problems:
+            print(f"  OCR problems ({len(problems)}) — failed/timed_out documents (no contents):")
+            for pr in problems:
+                print(f"    - doc {pr['document_id']} [{pr['status']}] attempts={pr['attempts']} "
+                      f"{pr['name']}: {pr['last_error']}")
         rows = manifest_path_records(args.inspect_manifest)
         print(f"  records ({len(rows)} shown, path fields only — no contents):")
         for r in rows:

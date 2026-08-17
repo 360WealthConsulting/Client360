@@ -274,3 +274,55 @@ def test_run_ocr_summary_exposes_timed_out_counter(tmp_path):
     s = ocr.run_ocr(document_ids=[did], extractor=extractor, mode="reprocess")
     assert "timed_out" in s and s["timed_out"] == 1 and s["completed"] == 0
     assert s["status"] == "completed"                        # timeout is recorded, not a batch error
+
+
+# --- terminal OCR state for documents that never pass through OCR (native text / non-OCR types) -------
+# The analysis pipeline extracts text natively for text-layer PDFs and office/plaintext types and skips
+# the OCR backend, so those documents never got a terminal OCR state and lingered 'pending'. finalize_*
+# gives them a truthful terminal state without redoing OCR.
+
+from app.services.document_ocr import finalize_document_ocr_state  # noqa: E402
+
+
+def test_finalize_marks_non_ocr_type_unsupported(tmp_path):
+    did = _doc(tmp_path, f"{_TAG} notes.docx", sha="d" * 64)     # office type, no OCR row
+    assert finalize_document_ocr_state(did) == "unsupported"
+    assert _ocr(did)["status"] == "unsupported"
+
+
+def test_finalize_native_text_pdf_completes_and_stores_text(tmp_path, monkeypatch):
+    import app.services.document_owner_proposal as prop
+    monkeypatch.setattr(prop, "_pdf_text", lambda p: "a genuine selectable native text layer with content")
+    did = _doc(tmp_path, f"{_TAG} native.pdf", sha="n" * 64)
+    assert finalize_document_ocr_state(did) == "completed"
+    row = _ocr(did)
+    assert row["status"] == "completed" and "native text layer" in row["text"]
+    assert "pdf-text-layer" in row["engine"]                     # truthful: text layer, no OCR needed
+
+
+def test_finalize_ocr_supported_without_text_marks_failed(tmp_path, monkeypatch):
+    import app.services.document_owner_proposal as prop
+    monkeypatch.setattr(prop, "_pdf_text", lambda p: "")         # no usable native text
+    did = _doc(tmp_path, f"{_TAG} scan.pdf", sha="s" * 64)
+    assert finalize_document_ocr_state(did) == "failed"          # genuine gap, retryable — not 'completed'
+    assert _ocr(did)["status"] == "failed"
+
+
+def test_finalize_leaves_terminal_states_untouched(tmp_path):
+    from app.services.document_ocr import _write_state
+    did = _doc(tmp_path, f"{_TAG} done.pdf", sha="x" * 64)
+    _write_state(did, status="completed", text="existing text", engine_name="tesseract 5",
+                 source_hash="x" * 64, completed=True)
+    assert finalize_document_ocr_state(did) == "completed"
+    assert _ocr(did)["text"] == "existing text"                 # not rewritten
+
+    did2 = _doc(tmp_path, f"{_TAG} bad.pdf", sha="y" * 64)
+    _write_state(did2, status="failed", last_error="boom", source_hash="y" * 64, bump_attempt=True)
+    assert finalize_document_ocr_state(did2) == "failed"        # failed stays failed (identifiable)
+    assert _ocr(did2)["last_error"] == "boom"
+
+
+def test_finalize_is_idempotent(tmp_path):
+    did = _doc(tmp_path, f"{_TAG} sheet.xlsx", sha="z" * 64)
+    assert finalize_document_ocr_state(did) == "unsupported"
+    assert finalize_document_ocr_state(did) == "unsupported"    # second call is a no-op

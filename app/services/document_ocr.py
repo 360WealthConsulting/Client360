@@ -49,6 +49,62 @@ def is_ocr_supported(name: str | None) -> bool:
     return _ext(name) in SUPPORTED_EXT
 
 
+# States that are already terminal + truthful — the finalizer never disturbs them.
+_TERMINAL_STATES = ("completed", "failed", "timed_out", "unsupported", "skipped")
+
+
+def finalize_document_ocr_state(document_id):
+    """Give a document a TERMINAL, truthful OCR state after pipeline analysis.
+
+    The analysis pipeline extracts text natively for text-layer PDFs and office/plaintext types and only
+    calls the OCR backend when native text is inadequate — so those documents never pass through
+    ``run_ocr`` and would otherwise linger in a non-terminal ('pending'/none) OCR state even though they
+    were fully processed. This records the correct terminal state without re-doing OCR:
+
+      * non-OCR file type (docx/xlsx/txt/...) -> ``unsupported`` (OCR does not apply; handled natively),
+      * OCR-capable type with a usable native text layer (PDF) -> ``completed`` (text stored, engine
+        'pdf-text-layer'; no OCR was needed),
+      * OCR-capable type with NO usable text and still non-terminal -> ``failed`` (genuine gap, retryable).
+
+    Idempotent: a document already in a terminal state is left untouched (so the 42 completed / failed /
+    timed_out / unsupported rows are never rewritten). Never raises."""
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                select(documents.c.id, documents.c.original_name, documents.c.sha256,
+                       documents.c.storage_uri, documents.c.storage_path,
+                       document_ocr.c.status.label("ocr_state")).select_from(
+                    documents.outerjoin(document_ocr, document_ocr.c.document_id == documents.c.id))
+                .where(documents.c.id == document_id)).mappings().first()
+        if row is None:
+            return None
+        if row["ocr_state"] in _TERMINAL_STATES:
+            return row["ocr_state"]                          # already terminal + truthful
+        name, sha = row["original_name"], row["sha256"]
+        if not is_ocr_supported(name):
+            _write_state(document_id, status="unsupported", engine_name=None, source_hash=sha)
+            return "unsupported"
+        # OCR-capable and non-terminal => the pipeline used the native PDF text layer. Confirm + store it.
+        text = ""
+        path = _local_path(row)
+        if _ext(name) == "pdf" and path is not None:
+            from app.services.document_owner_proposal import _MIN_NATIVE_CHARS, _pdf_text
+            try:
+                text = _pdf_text(path) or ""
+            except Exception:  # noqa: BLE001 — treat an unreadable native layer as "no text"
+                text = ""
+            if len(text.strip()) >= _MIN_NATIVE_CHARS:
+                _write_state(document_id, status="completed", text=text.strip(),
+                             engine_name="pdf-text-layer (no OCR needed)", source_hash=sha, completed=True)
+                return "completed"
+        # OCR-capable but no usable text and not terminal -> a genuine gap (retryable), recorded truthfully.
+        _write_state(document_id, status="failed", source_hash=sha, bump_attempt=True,
+                     last_error="analysis produced no OCR state and no usable native text")
+        return "failed"
+    except Exception:  # noqa: BLE001 — finalization must never break the batch
+        return None
+
+
 def _local_path(row) -> Path | None:
     for key in ("storage_uri", "storage_path"):
         val = row.get(key)

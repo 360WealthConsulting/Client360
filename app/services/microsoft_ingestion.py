@@ -56,12 +56,16 @@ def _ocr_analyze(document_id):
     """Run the EXISTING pipeline with OCR-on-need for one document (native first; OCR only if native text
     is insufficient), persisting the proposal. Guarded — never raises, never hangs (OCR is bounded per
     page/document), never assigns ownership. Returns the resulting OCR status string."""
+    from app.services.document_ocr import finalize_document_ocr_state
     from app.services.document_pipeline import analyze_and_persist
     try:
         with engine.begin() as conn:
             analyze_and_persist(document_id, conn=conn, ocr=True)
     except Exception:  # noqa: BLE001 — analysis/OCR failure must never break the batch
         return "error"
+    # Native-text / non-OCR documents never pass through run_ocr; give them a terminal, truthful OCR
+    # state so a fully-processed document is not left 'pending' forever.
+    finalize_document_ocr_state(document_id)
     return _ocr_status_for(document_id)
 
 
@@ -628,6 +632,42 @@ def manifest_ocr_status(manifest_path):
                    "unsupported": "ocr_unsupported"}.get(st, "ocr_pending")
             out[key] += 1
     return out
+
+
+def manifest_ocr_problems(manifest_path):
+    """READ-ONLY: the imported documents for a manifest that are in a failed/timed_out OCR state — their
+    document_id, filename, status, attempts, and last_error (NO contents). Identifies exactly which docs
+    need attention."""
+    from pathlib import Path
+
+    from app.db import documents, metadata
+    from app.importers.sharepoint import _item_uri
+    p = Path(manifest_path)
+    if not p.exists():
+        return []
+    items = _usable_staged_records(
+        _parse_manifest_records(p.read_text(encoding="utf-8", errors="replace")) or [])
+    ds = metadata.tables.get("document_sources")
+    doc_ocr = metadata.tables.get("document_ocr")
+    if ds is None or doc_ocr is None:
+        return []
+    rows, seen = [], set()
+    with engine.connect() as conn:
+        for it in items:
+            did = conn.execute(select(ds.c.document_id).where(
+                ds.c.source_system == "SharePoint", ds.c.source_uri == _item_uri(it))
+                .order_by(ds.c.id.desc())).scalar()
+            if not did or did in seen:
+                continue
+            seen.add(did)
+            r = conn.execute(select(doc_ocr.c.status, doc_ocr.c.attempts, doc_ocr.c.last_error,
+                                    documents.c.original_name)
+                             .select_from(doc_ocr.join(documents, documents.c.id == doc_ocr.c.document_id))
+                             .where(doc_ocr.c.document_id == did)).mappings().first()
+            if r and r["status"] in ("failed", "timed_out"):
+                rows.append({"document_id": did, "name": r["original_name"], "status": r["status"],
+                             "attempts": r["attempts"], "last_error": (r["last_error"] or "")[:300]})
+    return rows
 
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"

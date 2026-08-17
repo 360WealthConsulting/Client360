@@ -1306,3 +1306,21 @@ def test_manifest_ocr_status_reports_imported_and_pending(tmp_path):
     d = mi.manifest_ocr_status(str(p))
     assert d["manifest_items"] == 3 and d["imported"] == 2 and d["not_imported"] == 1
     assert d["ocr_pending"] == 2 and d["ocr_completed"] == 0
+
+
+def test_ocr_analyze_finalizes_native_text_docs_not_pending(tmp_path, monkeypatch):
+    # A document analyzed via native text must end terminal (not 'none'/pending) after _ocr_analyze.
+    from app.db import documents
+    with engine.begin() as c:
+        did = c.execute(documents.insert().values(
+            original_name=f"{_A}_native.docx", stored_name=f"n-{uuid.uuid4().hex[:8]}",
+            storage_path=str(tmp_path / "n.docx"), storage_provider="Client360 Local",
+            storage_uri=str(tmp_path / "n.docx"), size_bytes=3,
+            sha256=uuid.uuid4().hex + uuid.uuid4().hex, status="active", archived=False)
+            .returning(documents.c.id)).scalar_one()
+    _SEEN_DOCS.add(did)
+    monkeypatch.setattr("app.services.document_pipeline.analyze_and_persist",
+                        lambda document_id, *, conn, idx=None, ocr=False: None)  # native path, no OCR row
+    status = mi._ocr_analyze(did)
+    assert status == "unsupported"                              # .docx -> terminal, not 'none'
+    assert mi._ocr_status_for(did) == "unsupported"
