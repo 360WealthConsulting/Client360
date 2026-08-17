@@ -1446,7 +1446,7 @@ def _clean_drive():
 
 
 def test_delta_checkpoint_persisted_and_reused(_clean_drive):
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) is None          # initial: no checkpoint
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None          # initial: no checkpoint
 
     # First (initial) sync: no stored link -> starts at /root/delta, returns all items + a deltaLink.
     base = "https://graph.microsoft.com/v1.0"
@@ -1458,7 +1458,7 @@ def test_delta_checkpoint_persisted_and_reused(_clean_drive):
             "@odata.deltaLink": f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA1"}}
     r1 = mi.sharepoint_delta_changes(_DRIVE_DELTA, lambda url, t: pages_initial[url])
     assert r1["resumed"] is False and len(r1["changed"]) == 2 and r1["deleted"] == []
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA1"
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA1"
 
     # Recurring sync: RESUMES from the stored deltaLink (not /root/delta), returns only changes + tombstones.
     seen = {}
@@ -1476,7 +1476,7 @@ def test_delta_checkpoint_persisted_and_reused(_clean_drive):
     assert r2["resumed"] is True
     assert [i["id"] for i in r2["changed"]] == ["2"]               # only the changed file
     assert [i["id"] for i in r2["deleted"]] == ["1"]              # tombstone -> deletion (source only)
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA2"
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA2"
 
 
 def test_delta_changes_follows_nextlink_and_persist_false(_clean_drive):
@@ -1490,14 +1490,15 @@ def test_delta_changes_follows_nextlink_and_persist_false(_clean_drive):
             "@odata.deltaLink": f"{base}/delta?token=T"}}
     r = mi.sharepoint_delta_changes(_DRIVE_DELTA, lambda url, t: pages[url], persist=False)
     assert r["pages"] == 2 and len(r["changed"]) == 2
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) is None          # persist=False -> checkpoint not written
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None          # persist=False -> checkpoint not written
 
 
 def test_delta_diagnostics_reports_checkpoint(_clean_drive):
-    mi.save_drive_delta_link(_DRIVE_DELTA, "https://graph/delta?token=Z")
+    mi.save_canonical_delta_link(_DRIVE_DELTA, "https://graph/delta?token=Z")
     rows = mi.sharepoint_delta_diagnostics(drive_ids=[_DRIVE_DELTA])
-    assert len(rows) == 1 and rows[0]["has_delta_checkpoint"] is True
-    assert rows[0]["last_synced_at"] is not None
+    assert len(rows) == 1 and rows[0]["canonical_checkpoint"] is True
+    assert rows[0]["canonical_last_synced_at"] is not None
+    assert rows[0]["source_sync_checkpoint"] is False           # legacy checkpoint untouched/separate
 
 
 # --- recurring delta-checkpointed canonical sync: seed, delta-only, deletions, hold-on-failure, rerun ---
@@ -1529,7 +1530,7 @@ def test_delta_sync_initial_seeds_checkpoint_and_imports(tmp_path, _clean_drive)
     _track()
     assert res["status"] == "completed" and res["changed"] == 2 and res["imported"] == 2
     assert res["drives"][0]["resumed"] is False and res["checkpoints_advanced"] == 1
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"     # checkpoint seeded
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"     # checkpoint seeded
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/i1") == 1
 
 
@@ -1556,7 +1557,7 @@ def test_delta_sync_subsequent_processes_only_changes_and_deletions(tmp_path, _c
     _track()
     assert seen["u"].endswith("token=D1") and res["drives"][0]["resumed"] is True   # resumed from checkpoint
     assert res["changed"] == 1 and res["deleted"] == 1 and res["imported"] == 1
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D2"          # advanced
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D2"          # advanced
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/new1") == 1                  # only the new item
     from app.db import documents
     with engine.connect() as c:                                                     # canonical NOT deleted
@@ -1580,7 +1581,7 @@ def test_delta_sync_holds_checkpoint_after_download_failure(tmp_path, _clean_dri
     _track()
     assert res["status"] == "completed_with_errors"
     assert res["drives"][0]["advanced"] is False and res["drives"][0]["download_failures"] == 1
-    assert mi.load_drive_delta_link(_DRIVE_DELTA) is None                # HELD — changes re-delivered next sync
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None                # HELD — changes re-delivered next sync
     assert any(e["phase"] == "download" for e in res["exceptions"])     # failure preserved
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/ok") == 1        # the good item still imported
 
@@ -1598,3 +1599,45 @@ def test_delta_sync_rerun_is_idempotent(tmp_path, _clean_drive):
     assert r1["imported"] == 1 and r1["drives"][0]["resumed"] is False
     assert r2["drives"][0]["resumed"] is True                           # second run resumed from checkpoint
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/d1") == 1        # no duplicate canonical on rerun
+
+
+def test_old_source_sync_delta_link_does_not_skip_canonical_baseline(tmp_path, _clean_drive):
+    # The pre-existing microsoft_document_sync checkpoint (microsoft_drives.delta_link) is populated, but
+    # the canonical downloader has NO checkpoint of its own -> it must do the FULL initial baseline from
+    # /root/delta, never resume from the legacy link, and never disturb it.
+    from datetime import UTC, datetime
+
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.db import metadata
+    t = metadata.tables["microsoft_drives"]
+    with engine.begin() as c:
+        c.execute(pg_insert(t).values(
+            microsoft_drive_id=_DRIVE_DELTA, source_type="sharepoint",
+            delta_link=f"{_B}/delta?token=LEGACY", last_synced_at=datetime.now(UTC)
+        ).on_conflict_do_update(index_elements=[t.c.microsoft_drive_id],
+                                set_={"delta_link": f"{_B}/delta?token=LEGACY"}))
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None        # canonical checkpoint absent
+
+    seen = {}
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("base1", _DRIVE_DELTA)], "@odata.deltaLink": f"{_B}/delta?token=CANON1"}}
+
+    def fetch(url, _t):
+        seen["u"] = url
+        return pages[url]
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=fetch, download=_dl_stub(tmp_path),
+                                       destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    # Full canonical baseline ran from /root/delta (NOT the legacy LEGACY link)
+    assert seen["u"].endswith("/root/delta") and res["drives"][0]["resumed"] is False
+    assert res["imported"] == 1 and res["checkpoints_advanced"] == 1
+    # Canonical checkpoint saved; legacy delta_link preserved untouched
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=CANON1"
+    with engine.connect() as c:
+        legacy = c.execute(select(t.c.delta_link).where(t.c.microsoft_drive_id == _DRIVE_DELTA)).scalar()
+    assert legacy == f"{_B}/delta?token=LEGACY"                     # legacy job's checkpoint intact
+
+    # Diagnostics show the two checkpoints SEPARATELY.
+    d = mi.sharepoint_delta_diagnostics(drive_ids=[_DRIVE_DELTA])[0]
+    assert d["source_sync_checkpoint"] is True and d["canonical_checkpoint"] is True

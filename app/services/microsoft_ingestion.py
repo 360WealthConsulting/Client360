@@ -760,38 +760,41 @@ def iter_delta_pages(drive_id, fetch, *, top=None, base_url=GRAPH_BASE_URL, time
 
 
 # --- durable per-drive delta checkpoint (@odata.deltaLink) for the CANONICAL SharePoint pipeline --------
-# The connector re-enumerates the drive each run (nextLink only) and skips unchanged downloads via a local
-# state file — it does NOT persist a Graph deltaLink. These helpers durably persist/reuse the deltaLink per
-# drive (reusing the existing microsoft_drives.delta_link column) so a RECURRING canonical sync resumes
-# from the checkpoint (changes only) instead of re-walking the whole drive.
+# IMPORTANT: microsoft_drives.delta_link is owned by the legacy microsoft_document_sync job. The canonical
+# downloader keeps its OWN dedicated checkpoint (canonical_delta_link) so a populated legacy delta_link can
+# never make the canonical sync skip its initial baseline. The two checkpoints are fully independent; the
+# legacy delta_link is never read or written here.
 
-def load_drive_delta_link(drive_id):
-    """The durably-persisted @odata.deltaLink for a drive, or None (initial sync)."""
+def load_canonical_delta_link(drive_id):
+    """The durably-persisted CANONICAL @odata.deltaLink for a drive, or None (=> do the initial baseline).
+    Reads canonical_delta_link ONLY — never the legacy microsoft_document_sync delta_link."""
     from app.db import metadata
     t = metadata.tables.get("microsoft_drives")
-    if t is None:
+    if t is None or "canonical_delta_link" not in t.c:
         return None
     with engine.connect() as conn:
-        return conn.execute(select(t.c.delta_link)
+        return conn.execute(select(t.c.canonical_delta_link)
                             .where(t.c.microsoft_drive_id == str(drive_id))).scalar()
 
 
-def save_drive_delta_link(drive_id, delta_link, *, source_type="sharepoint"):
-    """Durably persist a drive's new @odata.deltaLink (+ last_synced_at). Upserts microsoft_drives so a
-    not-yet-discovered drive is created; an existing row keeps its other fields."""
+def save_canonical_delta_link(drive_id, delta_link, *, source_type="sharepoint"):
+    """Persist the CANONICAL @odata.deltaLink (+ canonical_delta_synced_at). Upserts microsoft_drives so a
+    not-yet-discovered drive is created; on an existing row it updates ONLY the canonical columns — the
+    legacy delta_link / last_synced_at (owned by microsoft_document_sync) are left untouched."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from app.db import metadata
     t = metadata.tables.get("microsoft_drives")
-    if t is None or not delta_link:
+    if t is None or not delta_link or "canonical_delta_link" not in t.c:
         return
     now = datetime.now(UTC)
     with engine.begin() as conn:
         conn.execute(pg_insert(t).values(
             microsoft_drive_id=str(drive_id), source_type=source_type,
-            delta_link=delta_link, last_synced_at=now).on_conflict_do_update(
+            canonical_delta_link=delta_link, canonical_delta_synced_at=now).on_conflict_do_update(
             index_elements=[t.c.microsoft_drive_id],
-            set_={"delta_link": delta_link, "last_synced_at": now, "updated_at": now}))
+            set_={"canonical_delta_link": delta_link, "canonical_delta_synced_at": now,
+                  "updated_at": now}))          # never touches delta_link / last_synced_at (legacy job's)
 
 
 def _graph_fetch_from_session(session):
@@ -810,12 +813,12 @@ def sharepoint_delta_changes(drive_id, fetch, *, resume=True, persist=True, base
 
     Resumes from the durably-persisted @odata.deltaLink when present (``resume``), else initial
     /root/delta; follows @odata.nextLink; captures the NEW @odata.deltaLink and (``persist``) stores it via
-    save_drive_delta_link. Classifies driveItems into ``changed`` (new/modified files — feed to the
+    save_canonical_delta_link. Classifies driveItems into ``changed`` (new/modified files — feed to the
     canonical pipeline) and ``deleted`` (tombstones — mark the source reference unavailable; NEVER delete a
     canonical document). Read-only w.r.t. content (no downloads). ``fetch(url, timeout)`` performs the
     authenticated GET (injected — testable, reuses the connector session). Returns
     ``{changed, deleted, delta_link, resumed, pages}``."""
-    stored = load_drive_delta_link(drive_id) if resume else None
+    stored = load_canonical_delta_link(drive_id) if resume else None
     url = stored or initial_delta_url(drive_id, base_url=base_url)
     changed, deleted, delta_link, page = [], [], None, 0
     while url:
@@ -842,27 +845,39 @@ def sharepoint_delta_changes(drive_id, fetch, *, resume=True, persist=True, base
         if max_pages and page >= max_pages:
             break
     if persist and delta_link:
-        save_drive_delta_link(drive_id, delta_link)
+        save_canonical_delta_link(drive_id, delta_link)
     return {"changed": changed, "deleted": deleted, "delta_link": delta_link,
             "resumed": bool(stored), "pages": page}
 
 
 def sharepoint_delta_diagnostics(drive_ids=None):
-    """READ-ONLY proof of the delta checkpoint per drive: whether a @odata.deltaLink is durably stored and
-    when it was last advanced. No Graph call. Explains whether a recurring sync will resume vs re-enumerate."""
+    """READ-ONLY proof of BOTH per-drive checkpoints, separately (no Graph call):
+      * source_sync_checkpoint — the legacy microsoft_document_sync @odata.deltaLink (delta_link),
+      * canonical_checkpoint — the canonical SharePoint downloader's own @odata.deltaLink.
+    A canonical sync resumes ONLY from its own checkpoint; a legacy checkpoint never affects it."""
     from app.db import metadata
     t = metadata.tables.get("microsoft_drives")
     rows = []
-    if t is not None:
-        with engine.connect() as conn:
-            q = select(t.c.microsoft_drive_id, t.c.delta_link, t.c.last_synced_at)
-            if drive_ids:
-                q = q.where(t.c.microsoft_drive_id.in_([str(d) for d in drive_ids]))
-            for r in conn.execute(q.order_by(t.c.microsoft_drive_id)).mappings():
-                rows.append({"drive_id": r["microsoft_drive_id"],
-                             "has_delta_checkpoint": bool(r["delta_link"]),
-                             "last_synced_at": (r["last_synced_at"].isoformat()
-                                                if r["last_synced_at"] else None)})
+    if t is None:
+        return rows
+    has_canon = "canonical_delta_link" in t.c
+    cols = [t.c.microsoft_drive_id, t.c.delta_link, t.c.last_synced_at]
+    if has_canon:
+        cols += [t.c.canonical_delta_link, t.c.canonical_delta_synced_at]
+    with engine.connect() as conn:
+        q = select(*cols)
+        if drive_ids:
+            q = q.where(t.c.microsoft_drive_id.in_([str(d) for d in drive_ids]))
+        for r in conn.execute(q.order_by(t.c.microsoft_drive_id)).mappings():
+            rows.append({
+                "drive_id": r["microsoft_drive_id"],
+                "source_sync_checkpoint": bool(r["delta_link"]),          # legacy microsoft_document_sync
+                "source_sync_last_synced_at": (r["last_synced_at"].isoformat()
+                                               if r["last_synced_at"] else None),
+                "canonical_checkpoint": bool(r.get("canonical_delta_link")) if has_canon else False,
+                "canonical_last_synced_at": (r["canonical_delta_synced_at"].isoformat()
+                                             if has_canon and r.get("canonical_delta_synced_at") else None),
+            })
     return rows
 
 
@@ -998,7 +1013,7 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
             out["ocr_timed_out"] += counts["ocr_timed_out"]
         # Advance the checkpoint ONLY on a clean traversal + full download+import of every changed item.
         if dl_failures == 0 and import_item_failures == 0 and res["delta_link"]:
-            save_drive_delta_link(did, res["delta_link"])
+            save_canonical_delta_link(did, res["delta_link"])
             drv["advanced"] = True
             out["checkpoints_advanced"] += 1
         else:

@@ -101,10 +101,13 @@ def main(argv=None):
         rows = sharepoint_delta_diagnostics(drive_ids=args.drive_id)
         print(f"SharePoint delta checkpoint status (READ-ONLY, no Graph): {len(rows)} drive(s)")
         for r in rows:
-            print(f"  drive {r['drive_id']}: has_delta_checkpoint={r['has_delta_checkpoint']} "
-                  f"last_synced_at={r['last_synced_at']}")
+            print(f"  drive {r['drive_id']}:")
+            print(f"    source_sync (legacy microsoft_document_sync): checkpoint={r['source_sync_checkpoint']} "
+                  f"last_synced_at={r['source_sync_last_synced_at']}")
+            print(f"    canonical (this downloader):                  checkpoint={r['canonical_checkpoint']} "
+                  f"last_synced_at={r['canonical_last_synced_at']}")
         if not rows:
-            print("  (no drives recorded yet — a delta checkpoint is seeded on the first delta sync)")
+            print("  (no drives recorded yet — a canonical checkpoint is seeded on the first --delta-sync)")
         return 0
 
     if args.repair_storage:

@@ -422,8 +422,10 @@ microsoft_drives = Table(
     Column("source_type", String(50), nullable=False),
     Column("site_id", String(500)),
     Column("web_url", Text),
-    Column("delta_link", Text),
+    Column("delta_link", Text),                       # legacy microsoft_document_sync checkpoint
     Column("last_synced_at", DateTime(timezone=True)),
+    Column("canonical_delta_link", Text),             # independent canonical SharePoint downloader checkpoint
+    Column("canonical_delta_synced_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
