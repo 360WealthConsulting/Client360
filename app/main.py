@@ -16,6 +16,7 @@ from app.routes.admin_context_review import router as admin_context_review_route
 from app.routes.admin_entity_proposals import router as admin_entity_proposals_router
 from app.routes.admin_high_confirm import router as admin_high_confirm_router
 from app.routes.admin_ingestion import router as admin_ingestion_router
+from app.routes.admin_review_inbox import router as admin_review_inbox_router
 from app.routes.admin_review_queue import router as admin_review_queue_router
 from app.routes.advisor_work import router as advisor_work_router
 from app.routes.ai_assist import router as ai_assist_router
@@ -250,6 +251,7 @@ app.include_router(admin_router)
 app.include_router(admin_high_confirm_router)
 app.include_router(admin_entity_proposals_router)
 app.include_router(admin_review_queue_router)
+app.include_router(admin_review_inbox_router)
 app.include_router(admin_context_review_router)
 app.include_router(admin_ingestion_router)
 app.include_router(session_router)

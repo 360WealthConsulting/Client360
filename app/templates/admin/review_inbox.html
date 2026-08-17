@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Review Inbox | 360Plus{% endblock %}
+{% block crumb %}Review Inbox{% endblock %}
+{% block content %}
+{% call ui.page_head("Document review inbox", eyebrow="Review", desc="One place for the document-review backlog. Open a lane for its detailed proposal breakdown; counts here are the live top-line only.") %}
+{% endcall %}
+
+<div class="grid" style="display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); margin-bottom:18px">
+  <div class="card"><div class="subtle">Unassigned documents</div><div style="font-size:30px; font-weight:800">{{ unassigned_documents }}</div><div class="subtle">unowned · awaiting review</div></div>
+  <div class="card"><div class="subtle">OCR completed</div><div style="font-size:30px; font-weight:800">{{ ocr.completed }}</div><div class="subtle">of {{ total_documents }} documents</div></div>
+  <div class="card"><div class="subtle">OCR pending</div><div style="font-size:30px; font-weight:800">{{ ocr.pending }}</div><div class="subtle">not yet OCR'd</div></div>
+  <div class="card"><div class="subtle">OCR needs attention</div><div style="font-size:30px; font-weight:800">{{ ocr.failed + ocr.timed_out }}</div><div class="subtle">{{ ocr.failed }} failed · {{ ocr.timed_out }} timed out · {{ ocr.unsupported }} unsupported</div></div>
+</div>
+
+<h2 class="section-title">Review lanes</h2>
+<div class="grid" style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+  {% for lane in lanes %}
+  <a class="card" href="{{ lane.url }}" style="display:block; text-decoration:none">
+    <div style="font-weight:700">{{ lane.label }} →</div>
+    <div class="subtle" style="margin-top:6px">{{ lane.desc }}</div>
+  </a>
+  {% endfor %}
+</div>
+<p class="subtle" style="margin-top:14px">Every assignment goes through the same atomic, self-rechecking ownership write — nothing is auto-assigned from this page.</p>
+{% endblock %}
