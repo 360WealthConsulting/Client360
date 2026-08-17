@@ -1,1 +1,18 @@
-{% extends "portal/base.html" %}{% block title %}Settings{% endblock %}{% block content %}<h1>Portal Settings</h1><article class="work-card"><h3>Security</h3><p>Multi-factor authentication is required. Active sessions and registered devices are audited.</p></article><article class="work-card"><h3>Notifications</h3><p>In-app notifications are enabled. Email, SMS, and push hooks remain disabled until providers are configured.</p></article>{% endblock %}
+{% extends "portal/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Portal Settings</h1>
+<p class="portal-lead">How your account is secured and how we reach you.</p>
+<article class="portal-card">
+  <h3>Security</h3>
+  <p class="meta">Multi-factor authentication is required. Your active sessions and registered devices are recorded for your protection.</p>
+</article>
+<article class="portal-card">
+  <h3>Contact preferences</h3>
+  <p class="meta">Update your email, phone, and preferred contact method on your <a href="/portal/profile">profile</a>.</p>
+</article>
+<article class="portal-card">
+  <h3>Notifications</h3>
+  <p class="meta">In-app notifications are enabled. Email and text message alerts will be available once delivery is configured.</p>
+</article>
+{% endblock %}

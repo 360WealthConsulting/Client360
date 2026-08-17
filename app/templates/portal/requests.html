@@ -1,1 +1,24 @@
-{% extends "portal/base.html" %}{% block title %}Document Requests{% endblock %}{% block content %}<h1>Document Requests</h1>{% for row in portal.document_requests %}<article class="work-card"><h3>{{ row.title }}</h3><p>{{ row.status|title }}{% if row.due_date %} · Due {{ row.due_date }}{% endif %}</p><small>{{ row.description or '' }}</small></article>{% else %}<div class="empty">No document requests are pending.</div>{% endfor %}{% endblock %}
+{% extends "portal/base.html" %}
+{% block title %}Document Requests{% endblock %}
+{% block content %}
+<h1>Document Requests</h1>
+<p class="portal-lead">Items your advisor has asked you to provide. Upload a file to complete each one.</p>
+{% for row in portal.document_requests %}
+<article class="portal-card">
+  <h3>{{ row.title }}</h3>
+  {% if row.description %}<p class="meta">{{ row.description }}</p>{% endif %}
+  <p class="meta">
+    <span class="pill {{ 'ok' if row.status == 'uploaded' else 'pending' }}">{{ row.status|title }}</span>
+    {% if row.due_date %} · Due {{ row.due_date }}{% endif %}
+  </p>
+  {% if row.status != 'uploaded' %}
+  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/portal/upload?request_id={{ row.id }}">Upload for this request</a></p>
+  {% endif %}
+</article>
+{% else %}
+<div class="empty-state">
+  <h3>Nothing requested</h3>
+  <p>You have no outstanding document requests. Anything your advisor needs will appear here.</p>
+</div>
+{% endfor %}
+{% endblock %}

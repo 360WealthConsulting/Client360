@@ -1,1 +1,17 @@
-{% extends "portal/base.html" %}{% block title %}Notifications{% endblock %}{% block content %}<h1>Notifications</h1>{% for row in portal.notifications %}<article class="work-card"><h3>{{ row.title }}</h3><p>{{ row.body or '' }}</p><small>{{ row.channel|replace('_',' ')|title }} · {{ row.created_at }}</small></article>{% else %}<div class="empty">No notifications.</div>{% endfor %}{% endblock %}
+{% extends "portal/base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<h1>Notifications</h1>
+{% for row in portal.notifications %}
+<article class="portal-card">
+  <h3>{{ row.title }}</h3>
+  {% if row.body %}<p class="meta">{{ row.body }}</p>{% endif %}
+  <p class="meta">{{ row.channel|replace('_',' ')|title }} · {{ row.created_at.strftime('%b %d, %Y') if row.created_at else '' }}</p>
+</article>
+{% else %}
+<div class="empty-state">
+  <h3>No notifications</h3>
+  <p>You're all caught up.</p>
+</div>
+{% endfor %}
+{% endblock %}

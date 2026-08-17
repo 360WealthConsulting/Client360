@@ -1,1 +1,17 @@
-{% extends "portal/base.html" %}{% block title %}Tasks{% endblock %}{% block content %}<h1>Workflow Tasks</h1>{% for row in portal.tasks %}<article class="work-card"><h3>{{ row.name }}</h3><p>{{ row.workflow_name }} · {{ row.status|title }}</p></article>{% else %}<div class="empty">No tasks require your action.</div>{% endfor %}{% endblock %}
+{% extends "portal/base.html" %}
+{% block title %}Tasks{% endblock %}
+{% block content %}
+<h1>Your Tasks</h1>
+<p class="portal-lead">Steps that are waiting on you to keep things moving.</p>
+{% for row in portal.tasks %}
+<article class="portal-card">
+  <h3>{{ row.name }}</h3>
+  <p class="meta">{{ row.workflow_name }} · <span class="pill pending">{{ row.status|title }}</span></p>
+</article>
+{% else %}
+<div class="empty-state">
+  <h3>No tasks right now</h3>
+  <p>You have nothing to do at the moment. We'll notify you when a task needs your action.</p>
+</div>
+{% endfor %}
+{% endblock %}
