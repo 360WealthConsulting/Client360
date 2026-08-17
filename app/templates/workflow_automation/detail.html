@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ w.workflow.name }} | Workflow | Client360{% endblock %}
+{% block title %}{{ w.workflow.name }} | Workflow | 360Plus{% endblock %}
 {% block crumb %}Workflow{% endblock %}
 {% block content %}
 {{ ui.page_head(w.workflow.name, eyebrow="Workflow", desc=w.workflow.workflow_type ~ " · " ~ w.workflow.status|capitalize) }}

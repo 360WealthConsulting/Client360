@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Microsoft 365 Status | Client360{% endblock %}
+{% block title %}Microsoft 365 Status | 360Plus{% endblock %}
 {% block crumb %}Microsoft 365{% endblock %}
 {% block content %}
-{{ ui.page_head("Microsoft 365 integration", eyebrow="Microsoft 365", desc="Client360 connector status.") }}
+{{ ui.page_head("Microsoft 365 integration", eyebrow="Microsoft 365", desc="360Plus connector status.") }}
 <div class="card" style="max-width:900px">
   <div class="alert {{ 'good' if configured else 'warn' }}" style="margin-bottom:16px"><span class="ico">{{ '✓' if configured else '⚠' }}</span><div><b>{{ status_label }}</b><p style="margin-top:4px">{{ message }}</p></div></div>
   <div class="stack">

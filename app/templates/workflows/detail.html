@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ data.workflow.name }} | Client360{% endblock %}
+{% block title %}{{ data.workflow.name }} | 360Plus{% endblock %}
 {% block crumb %}{{ data.workflow.name }}{% endblock %}
 {% block content %}
 {{ ui.page_head(data.workflow.name, eyebrow="Workflow", desc=("Status: " ~ data.workflow.status|title ~ " · Template version " ~ data.workflow.template_version)) }}

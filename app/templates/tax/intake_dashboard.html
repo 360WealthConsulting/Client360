@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Tax Intake | Client360{% endblock %}
+{% extends "base.html" %}{% block title %}Tax Intake | 360Plus{% endblock %}
 {% block content %}<div class="page-header"><div><p class="eyebrow">Tax Practice</p><h1>Engagement intake</h1><p class="muted">Letters, organizers, questionnaires, documents, and readiness.</p></div></div>
 <div class="stats-grid">{% for label,value in data.metrics.items() %}<div class="stat-card"><span>{{ label.replace('_',' ')|title }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>
 <section class="panel"><h2>Client readiness</h2><div class="table-wrap"><table><thead><tr><th>Return</th><th>Organizer</th><th>Questionnaire</th><th>Missing</th><th>Overdue</th><th>Ready</th></tr></thead><tbody>

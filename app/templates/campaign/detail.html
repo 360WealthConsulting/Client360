@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ c.name }} | Campaigns | Client360{% endblock %}
+{% block title %}{{ c.name }} | Campaigns | 360Plus{% endblock %}
 {% block crumb %}Campaign{% endblock %}
 {% block content %}
 {{ ui.page_head(c.name, eyebrow="Campaign", desc=(c.campaign_type or "") ~ ((" · " ~ c.marketing_channel) if c.marketing_channel else "")) }}

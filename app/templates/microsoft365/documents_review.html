@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Microsoft Documents Review | Client360{% endblock %}
+{% block title %}Microsoft Documents Review | 360Plus{% endblock %}
 {% block crumb %}Documents Review{% endblock %}
 {% block content %}
 {{ ui.page_head("Microsoft documents review", eyebrow="Microsoft 365", desc=(documents|length ~ " unmatched document" ~ ("" if documents|length == 1 else "s"))) }}

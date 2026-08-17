@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ d.original_name }} | Documents | Client360{% endblock %}
+{% block title %}{{ d.original_name }} | Documents | 360Plus{% endblock %}
 {% block crumb %}Document{% endblock %}
 {% block content %}
 {{ ui.page_head(d.original_name, eyebrow="Document", desc=((d.classification or "")|capitalize) ~ " · " ~ d.status|capitalize) }}

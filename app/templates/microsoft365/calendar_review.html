@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Microsoft Calendar Review | Client360{% endblock %}
+{% block title %}Microsoft Calendar Review | 360Plus{% endblock %}
 {% block crumb %}Calendar Review{% endblock %}
 {% block content %}
 {{ ui.page_head("Microsoft calendar review", eyebrow="Microsoft 365", desc=(attendees|length ~ " unmatched attendee" ~ ("" if attendees|length == 1 else "s"))) }}

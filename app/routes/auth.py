@@ -29,7 +29,7 @@ def login(request: Request, next: str | None = None):
         request.session["post_login_redirect"] = safe_next
     redirect_uri = str(request.url_for("auth_callback"))
     try: url = OidcIdentityProvider().authorization_url(state=state, redirect_uri=redirect_uri)
-    except RuntimeError: return HTMLResponse("<h1>Client360 sign-in is not configured</h1><p>Configure the OIDC provider before enabling staff access.</p>", 503)
+    except RuntimeError: return HTMLResponse("<h1>360Plus sign-in is not configured</h1><p>Configure the OIDC provider before enabling staff access.</p>", 503)
     return RedirectResponse(url, 303)
 
 @router.get("/callback", name="auth_callback")

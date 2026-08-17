@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ record.full_name or "Source record" }} | Client360{% endblock %}
+{% block title %}{{ record.full_name or "Source record" }} | 360Plus{% endblock %}
 {% block crumb %}{{ record.full_name or "Source record" }}{% endblock %}
 {% block content %}
 {% call ui.page_head(record.full_name or "Source record", eyebrow="Source Record") %}

@@ -108,8 +108,8 @@ def _page() -> str:
     )
     return (
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
-        "<title>Client360 — Developer sign-in</title></head><body>"
-        "<h1>Client360 developer sign-in</h1>"
+        "<title>360Plus — Developer sign-in</title></head><body>"
+        "<h1>360Plus developer sign-in</h1>"
         "<p><strong>Development only.</strong> This provider is disabled in production. "
         "Each persona signs in through the real session path (no external IdP) with its "
         "seeded role's capabilities.</p>"

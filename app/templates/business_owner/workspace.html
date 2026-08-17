@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Business Owner Planning — {{ ws.person.full_name or ("Person " ~ ws.person.id) }} | Client360{% endblock %}
+{% block title %}Business Owner Planning — {{ ws.person.full_name or ("Person " ~ ws.person.id) }} | 360Plus{% endblock %}
 {% block crumb %}Business Owner Planning{% endblock %}
 {% block content %}
 {{ ui.page_head("Business Owner Planning", eyebrow="Advisor workspace", desc="Planning opportunities, risks, obligations, and follow-up across " ~ (ws.person.full_name or ("client " ~ ws.person.id)) ~ "'s businesses. A read-first composition of existing domains — it does not calculate tax, design plans, or place insurance.") }}

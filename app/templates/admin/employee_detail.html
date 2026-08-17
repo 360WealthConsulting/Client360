@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% set u = d.user %}
-{% block title %}{{ u.display_name }} | Employees | Client360{% endblock %}
+{% block title %}{{ u.display_name }} | Employees | 360Plus{% endblock %}
 {% block crumb %}Employee{% endblock %}
 {% block content %}
 {% call ui.page_head(u.display_name, eyebrow="Administration · Employee", desc=u.email) %}

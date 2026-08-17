@@ -161,7 +161,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Client360",
+    title="360Plus",
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

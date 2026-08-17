@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Search | Client360{% endblock %}
+{% block title %}Search | 360Plus{% endblock %}
 {% block crumb %}Search{% endblock %}
 {% block content %}
-{% call ui.page_head("Universal search", eyebrow="Client360", desc="Search once — open the client. People, households, businesses, trusts, estates, documents, and tax returns.") %}{% endcall %}
+{% call ui.page_head("Universal search", eyebrow="360Plus", desc="Search once — open the client. People, households, businesses, trusts, estates, documents, and tax returns.") %}{% endcall %}
 
 <form method="get" action="/search" class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px">
   <input class="input" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone, EIN, account #, policy #, document, tax year…" style="flex:1; min-width:280px" autofocus>

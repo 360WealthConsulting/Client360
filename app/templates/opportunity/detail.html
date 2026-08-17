@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ o.title }} | Pipeline | Client360{% endblock %}
+{% block title %}{{ o.title }} | Pipeline | 360Plus{% endblock %}
 {% block crumb %}Opportunity{% endblock %}
 {% block content %}
 {{ ui.page_head(o.title, eyebrow="Opportunity", desc=(o.primary_service_line or "") ~ ((" · " ~ o.source) if o.source else "")) }}

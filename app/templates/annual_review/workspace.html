@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Annual Review — {{ ws.person.full_name or ("Person " ~ ws.person.id) }} | Client360{% endblock %}
+{% block title %}Annual Review — {{ ws.person.full_name or ("Person " ~ ws.person.id) }} | 360Plus{% endblock %}
 {% block crumb %}Annual Review{% endblock %}
 {% block content %}
-{{ ui.page_head("Annual Review", eyebrow="Advisor workspace", desc="What to review with " ~ (ws.person.full_name or ("client " ~ ws.person.id)) ~ " today. A read-first composition of existing Client360 domains — it does not modify recommendations, work, timeline, compliance, or portfolio data.") }}
+{{ ui.page_head("Annual Review", eyebrow="Advisor workspace", desc="What to review with " ~ (ws.person.full_name or ("client " ~ ws.person.id)) ~ " today. A read-first composition of existing 360Plus domains — it does not modify recommendations, work, timeline, compliance, or portfolio data.") }}
 
 <p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/people/{{ ws.person.id }}">← Back to client</a></p>
 

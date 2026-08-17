@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>{% block title %}Client360{% endblock %}</title>
+  <title>{% block title %}360Plus{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <link rel="stylesheet" href="/static/css/work.css">
   <link rel="stylesheet" href="/static/css/tax.css">
@@ -94,7 +94,7 @@
 <div class="app-shell">
   <aside class="app-sidebar">
     <input type="checkbox" id="c360-nav" class="nav-toggle" hidden>
-    <a class="app-brand" href="/"><span class="mark" aria-hidden="true">C3</span><span class="name">Client360</span></a>
+    <a class="app-brand" href="/"><span class="mark" aria-hidden="true">3+</span><span class="name">360Plus</span></a>
     <nav class="app-nav" aria-label="Primary">
       {% for g in groups %}
         {% set visible = g["items"] | selectattr("show") | list %}
@@ -114,7 +114,7 @@
   <div class="app-main">
     <header class="app-header">
       <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" role="button" tabindex="0" aria-controls="c360-nav" aria-expanded="false" aria-label="Toggle navigation">☰</label>
-      <div class="crumbs"><a href="/">Client360</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
+      <div class="crumbs"><a href="/">360Plus</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
       <form class="app-search" method="get" action="/search" role="search">
         <span class="mag" aria-hidden="true">⌕</span>
         <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search people, households, and organizations">

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Reviewer Authority · {{ a.reviewer_name or a.principal_id }} | Client360{% endblock %}
+{% block title %}Reviewer Authority · {{ a.reviewer_name or a.principal_id }} | 360Plus{% endblock %}
 {% block crumb %}Reviewer Authority{% endblock %}
 {% block content %}
 {{ ui.page_head("Reviewer Authority", eyebrow="Compliance", desc=(a.reviewer_name or ("principal " ~ a.principal_id)) ~ " · " ~ a.reviewer_role) }}

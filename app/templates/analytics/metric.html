@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ metric.label }} | Analytics | Client360{% endblock %}
+{% block title %}{{ metric.label }} | Analytics | 360Plus{% endblock %}
 {% block crumb %}{{ metric.label }}{% endblock %}
 {% block content %}
 {{ ui.page_head(metric.label, eyebrow="Metric", desc=metric.category|capitalize ~ " · " ~ metric.unit) }}

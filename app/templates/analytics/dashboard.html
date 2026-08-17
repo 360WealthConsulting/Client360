@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% import "analytics/_widgets.html" as widgets %}
-{% block title %}{{ d.name }} | Analytics | Client360{% endblock %}
+{% block title %}{{ d.name }} | Analytics | 360Plus{% endblock %}
 {% block crumb %}{{ d.name }}{% endblock %}
 {% block content %}
 {{ ui.page_head(d.name, eyebrow="Analytics dashboard", desc=("Executive scorecard." if d.executive_only else "Operational scorecard over your book.")) }}

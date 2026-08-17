@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}{{ entity.name }} | Client360{% endblock %}
+{% block title %}{{ entity.name }} | 360Plus{% endblock %}
 {% block crumb %}{{ entity.name }}{% endblock %}
 {% block content %}
 {{ ui.page_head(entity.name, eyebrow=entity.entity_type.replace("_"," ").title()) }}

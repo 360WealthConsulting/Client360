@@ -36,7 +36,7 @@ def _page(body: str, status_code: int = 200) -> HTMLResponse:
     )
     return HTMLResponse(
         f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-        <title>Client360 — Developer Demo Login</title>
+        <title>360Plus — Developer Demo Login</title>
         <style>
           body {{ font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; color:#1f2937; }}
           h1 {{ color:#111827; }} .demo-banner {{ background:#fef3c7; border-left:4px solid #d97706; padding:10px 14px; }}
@@ -46,7 +46,7 @@ def _page(body: str, status_code: int = 200) -> HTMLResponse:
           .err {{ color:#b91c1c; }} code {{ background:#f3f4f6; padding:1px 4px; }}
         </style></head><body>
         <div class="demo-banner"><strong>Developer Demo Mode</strong> — fictional data only, demo database. Not for production.</div>
-        <h1>Client360 Demo Login</h1>
+        <h1>360Plus Demo Login</h1>
         {body}
         <form method="post" action="/demo/login">
           <label>Username <input name="username" autocomplete="off" required></label>
