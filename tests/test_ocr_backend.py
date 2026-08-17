@@ -439,3 +439,32 @@ def test_genuinely_corrupt_pdf_render_also_fails_and_propagates(tmp_path):
     f = _file(tmp_path, "damaged.pdf")
     with pytest.raises(Exception):                              # genuinely unreadable -> truthful failure
         ex(_row(f"{_TAG} damaged.pdf", f), f)
+
+
+# --- run_ocr progress telemetry (opt-in sink) ---------------------------------------------------------
+
+def test_run_ocr_emits_progress_telemetry(tmp_path):
+    ids = [_doc(tmp_path, f"{_TAG} p{i}.pdf", sha=(f"{i}e" * 32)[:64]) for i in range(3)]
+
+    def extractor(row, path):
+        if "p1" in row["original_name"]:
+            from app.services.document_ocr import OcrTimeout
+            raise OcrTimeout("page 1/1 timed out")
+        return {"text": f"text {row['id']}", "engine": "tesseract 5", "page_count": 1}
+    lines = []
+    s = ocr.run_ocr(document_ids=ids, extractor=extractor, mode="reprocess",
+                    progress=lines.append, report_every=1)
+    assert s["completed"] == 2 and s["timed_out"] == 1
+    tallies = [ln for ln in lines if ln.startswith("[ocr:reprocess]")]
+    assert tallies, "expected telemetry lines"
+    final = tallies[-1]
+    # comprehensive fields present, mapped from OCR outcomes
+    for token in ("3/3 (100.0%)", "elapsed=", "rate=", "eta=", "completed=2", "timed_out=1", "reused="):
+        assert token in final, token
+
+
+def test_run_ocr_no_progress_sink_is_silent_and_unchanged(tmp_path):
+    did = _doc(tmp_path, f"{_TAG} silent.pdf", sha="ab" * 32)
+    deps, _ = _deps(pdf_texts=["real selectable content for the silent run"])
+    s = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps))   # no progress= -> no telemetry
+    assert s["completed"] == 1                                              # behavior identical to before

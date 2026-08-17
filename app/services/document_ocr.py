@@ -163,25 +163,44 @@ def _new_summary(mode, dry_run):
             "status": "started"}
 
 
+# OCR summary counter -> ProgressReporter outcome bucket (skipped == already-completed == reused).
+_OCR_TELEMETRY_BUCKET = {"completed": "completed", "failed": "failed", "timed_out": "timed_out",
+                         "unsupported": "unsupported", "skipped": "reused"}
+
+
 def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user_id=None,
-            request_id=None, max_attempts=3, batch_size=200, dry_run=False) -> dict:
+            request_id=None, max_attempts=3, batch_size=200, dry_run=False, progress=None,
+            report_every=100, report_interval=60.0) -> dict:
     """Run OCR over canonical documents. ``mode``: ``initial``/``incremental`` (process anything not
     completed), ``retry`` (failed rows under ``max_attempts``), ``reprocess`` (force, or content changed).
     Idempotent: a completed, content-unchanged document is skipped unless ``mode='reprocess'``. Returns
-    a summary of counts."""
+    a summary of counts. Pass ``progress`` (a sink callable) to emit throttled per-phase telemetry (phase,
+    processed/total, %, elapsed, rolling throughput, ETA, completed/failed/unsupported/timed_out/reused)."""
+    from app.services.progress import ProgressReporter
     extractor = extractor or default_extractor
     summary = _new_summary(mode, dry_run)
     with engine.connect() as conn:
         cands = _candidates(conn, mode=mode, document_ids=document_ids,
                             max_attempts=max_attempts, batch_size=batch_size)
     summary["candidates"] = len(cands)
+    rep = (ProgressReporter(f"ocr:{mode}", total=len(cands), sink=progress,
+                            every=report_every, interval=report_interval)
+           if progress is not None else None)
 
     force = mode == "reprocess"      # reprocess re-OCRs completed docs; other modes skip unchanged
     for row in cands:
+        before = {k: summary[k] for k in _OCR_TELEMETRY_BUCKET}   # detect this doc's outcome by the delta
         try:
             _ocr_one(row, extractor, force, dry_run, summary)
-        except Exception as exc:      # noqa: BLE001 — record & continue
+            outcome = next((_OCR_TELEMETRY_BUCKET[k] for k in _OCR_TELEMETRY_BUCKET
+                            if summary[k] > before[k]), None)
+        except Exception as exc:      # noqa: BLE001 — record & continue (never blocks the batch)
             summary["errors"].append(f"doc {row['id']}: {exc}")
+            outcome = "failed"
+        if rep is not None:
+            rep.advance(outcome=outcome)
+    if rep is not None:
+        rep.emit()                    # final telemetry line
     _audit(summary, actor_user_id, request_id, dry_run)
     summary["status"] = "dry_run" if dry_run else ("completed_with_errors" if summary["errors"]
                                                    else "completed")
@@ -331,7 +350,8 @@ def main(argv=None):
               "(pytesseract, pdf2image, pypdf, Pillow), then retry.")
         return 2
     summary = run_ocr(mode=args.mode, batch_size=args.batch_size, max_attempts=args.max_attempts,
-                      dry_run=args.dry_run, extractor=extractor)
+                      dry_run=args.dry_run, extractor=extractor,
+                      progress=lambda line: print(line, flush=True))   # live phase telemetry
     for k in ("mode", "candidates", "completed", "failed", "skipped", "unsupported",
               "chars_extracted", "status"):
         print(f"  {k}: {summary[k]}")
