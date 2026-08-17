@@ -55,13 +55,16 @@ from pathlib import Path, PurePosixPath
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, and_, create_engine, func, or_, select
 
+from app.services.storage_paths import document_root as _document_root
+
 SOURCE_SYSTEM = "TaxDome Drive"          # tags.source_system discriminator (stable across the change)
 STORAGE_PROVIDER = "Client360 Local"     # documents.storage_provider for a retained local copy
 SYNC_VERSION = 2                          # bump when the sync semantics change
 
 DEFAULT_SOURCE_ROOT = os.getenv("TAXDOME_DRIVE_ROOT", "Z:\\")
-DEFAULT_DESTINATION_ROOT = os.getenv(
-    "CLIENT360_TAXDOME_DOCUMENT_ROOT", r"C:\Client360\Data\Documents\TaxDome")
+# CLIENT360_TAXDOME_DOCUMENT_ROOT still wins; else <CLIENT360_DATA_ROOT>\Documents\TaxDome; else the legacy
+# C:\Client360\Data\Documents\TaxDome (unchanged when no base is set).
+DEFAULT_DESTINATION_ROOT = _document_root("TaxDome", "CLIENT360_TAXDOME_DOCUMENT_ROOT")
 DEFAULT_PROGRESS_INTERVAL = int(os.getenv("TAXDOME_SYNC_PROGRESS_INTERVAL", "100") or "100")
 _CHUNK = 1024 * 1024
 

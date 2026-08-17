@@ -188,10 +188,10 @@ def _stager_items(result):
 
 
 def _staging_root():
-    import os
-    return (os.getenv("CLIENT360_SHAREPOINT_SOURCE_ROOT")
-            or os.getenv("CLIENT360_SHAREPOINT_DOCUMENT_ROOT")
-            or r"C:\Client360\Data\Documents\SharePoint\_staging")
+    # The overloaded CLIENT360_SHAREPOINT_SOURCE_ROOT/DOCUMENT_ROOT still win (compat); else derive from
+    # CLIENT360_DATA_ROOT; else the legacy _staging default. Unchanged when no base/override is set.
+    from app.services.storage_paths import sharepoint_staging_root
+    return sharepoint_staging_root()
 
 
 def _connector_staging_root(mod):

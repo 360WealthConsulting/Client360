@@ -44,12 +44,13 @@ from app.importers.taxdome_drive import (
     resolve_folder,
     sanitize_relative_path,
 )
+from app.services.storage_paths import document_root as _document_root
 
 SOURCE_SYSTEM = "SharePoint"
 STORAGE_PROVIDER = "Client360 Local"
 SYNC_VERSION = 1
-DEFAULT_DESTINATION_ROOT = os.getenv(
-    "CLIENT360_SHAREPOINT_DOCUMENT_ROOT", r"C:\Client360\Data\Documents\SharePoint")
+# CLIENT360_SHAREPOINT_DOCUMENT_ROOT still wins; else <CLIENT360_DATA_ROOT>\Documents\SharePoint; else legacy.
+DEFAULT_DESTINATION_ROOT = _document_root("SharePoint", "CLIENT360_SHAREPOINT_DOCUMENT_ROOT")
 
 _Database = namedtuple("_Database", "engine documents document_sources")
 
