@@ -125,6 +125,16 @@ def upload_document(principal, *, source, original_filename, display_name, categ
     if person_id not in scope["person_ids"]:
         raise PermissionError("Portal account cannot upload for this person.")
 
+    # If fulfilling a document request, that request must belong to a person the account can reach
+    # (documents scope). Without this a client could pass a forged request_id and flip ANOTHER
+    # client's request to "uploaded" (cross-client IDOR). Checked before any bytes are stored.
+    if request_id is not None:
+        with engine.connect() as conn:
+            req_person = conn.scalar(select(portal_document_requests.c.person_id).where(
+                portal_document_requests.c.id == request_id))
+        if req_person is None or req_person not in scope["person_ids"]:
+            raise PermissionError("Document request is outside portal access scope.")
+
     stored = storage.save_stream(source, original_filename=original_filename)
     now = datetime.now(UTC)
     with engine.begin() as conn:
