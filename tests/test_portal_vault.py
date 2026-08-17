@@ -168,7 +168,7 @@ def test_unauthorized_access_denied():
 
 def test_upload_creates_pending_vault_document(env):
     _, principal, pid, _ = env.account()
-    doc_id = pv.upload_document(principal, source=io.BytesIO(b"client w2"),
+    doc_id = pv.upload_document(principal, source=io.BytesIO(b"%PDF-1.4\nclient w2"),
                                 original_filename="w2.pdf", display_name="My W-2", category="tax")
     row = _doc_row(doc_id)
     assert row["status"] == "uploaded" and row["client_visible"] is True
@@ -181,7 +181,7 @@ def test_upload_creates_pending_vault_document(env):
 
 def test_approval_workflow_makes_upload_official(env):
     _, principal, pid, _ = env.account()
-    doc_id = pv.upload_document(principal, source=io.BytesIO(b"x"), original_filename="f.pdf",
+    doc_id = pv.upload_document(principal, source=io.BytesIO(b"%PDF-1.4\nx"), original_filename="f.pdf",
                                 display_name="Doc", category="general")
     assert _doc_row(doc_id)["status"] == "uploaded"          # pending
     pv.approve_upload(env.staff, doc_id, approved=True, actor_user_id=env.user_id)
@@ -218,7 +218,7 @@ def test_request_completion_marks_request_uploaded(env):
     _, principal, pid, hid = env.account()
     req_id = create_document_request(person_id=pid, household_id=hid, title="Upload your W-2",
                                      requested_by_user_id=env.user_id)
-    pv.upload_document(principal, source=io.BytesIO(b"w2"), original_filename="w2.pdf",
+    pv.upload_document(principal, source=io.BytesIO(b"%PDF-1.4\nw2"), original_filename="w2.pdf",
                        display_name="W-2", category="tax", request_id=req_id)
     with engine.connect() as c:
         status = c.scalar(select(portal_document_requests.c.status).where(
@@ -242,7 +242,7 @@ def test_secure_messaging_thread_and_reply(env):
 
 def test_audit_entries_for_upload_download_and_profile(env):
     _, principal, pid, _ = env.account()
-    doc_id = pv.upload_document(principal, source=io.BytesIO(b"a"), original_filename="a.pdf",
+    doc_id = pv.upload_document(principal, source=io.BytesIO(b"%PDF-1.4\na"), original_filename="a.pdf",
                                 display_name="A", category="general")
     assert _audit_count("portal.document.uploaded", doc_id) == 1
     pv.approve_upload(env.staff, doc_id, approved=True, actor_user_id=env.user_id)

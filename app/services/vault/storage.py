@@ -20,6 +20,33 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024                       # 50 MB
 ALLOWED_EXTENSIONS = frozenset({"pdf", "docx", "xlsx", "csv", "jpg", "jpeg", "png", "txt"})
 _KEY_RE = re.compile(r"^[0-9a-f]{2}/[0-9a-f]{32}\.[0-9a-z]{1,8}$")   # shard/uuid.ext — the only shape we accept
 
+# Leading-byte signatures for the binary allow-listed types. Used to reject files whose *content*
+# does not match their claimed extension (e.g. an executable or HTML renamed to ``.pdf``). The
+# Office formats (docx/xlsx) are ZIP containers, hence the PK signatures. ``csv`` and ``txt`` have no
+# reliable binary signature (and legitimate UTF-16 text contains NUL bytes), so they are not sniffed.
+_MAGIC = {
+    "pdf": (b"%PDF",),
+    "png": (b"\x89PNG\r\n\x1a\n",),
+    "jpg": (b"\xff\xd8\xff",),
+    "jpeg": (b"\xff\xd8\xff",),
+    "docx": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+    "xlsx": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+}
+
+
+def content_matches_extension(ext: str, header: bytes) -> bool:
+    """True if ``header`` (the file's leading bytes) is consistent with the claimed ``ext``.
+
+    Types without a reliable signature (csv, txt, or any not in ``_MAGIC``) are permitted. PDF may
+    carry a few leading bytes before ``%PDF`` in the wild, so it is matched within the first 1 KB;
+    the strict binary formats must appear at offset 0."""
+    signatures = _MAGIC.get((ext or "").lower())
+    if not signatures:
+        return True
+    if ext.lower() == "pdf":
+        return any(sig in header[:1024] for sig in signatures)
+    return any(header.startswith(sig) for sig in signatures)
+
 
 class VaultStorageError(ValueError):
     """Raised for validation failures (bad extension, oversize, unsafe key)."""
@@ -60,10 +87,14 @@ def resolve_path(storage_key: str) -> Path:
     return candidate
 
 
-def save_stream(source: BinaryIO, *, original_filename: str) -> dict:
+def save_stream(source: BinaryIO, *, original_filename: str, verify_content: bool = False) -> dict:
     """Validate + stream ``source`` into the vault. Returns
     ``{storage_key, checksum_sha256, file_size, extension}``. Enforces the size cap while writing
-    (a stream longer than the cap is aborted and the partial file removed)."""
+    (a stream longer than the cap is aborted and the partial file removed).
+
+    ``verify_content`` (opt-in for untrusted uploads such as the client portal) additionally checks
+    the file's leading bytes against its claimed extension and rejects a mismatch before the file is
+    kept. Trusted internal callers leave it off, so behavior for staff/import paths is unchanged."""
     ext = validate_extension(original_filename)
     storage_key = _new_key(ext)
     destination = resolve_path(storage_key)
@@ -71,12 +102,19 @@ def save_stream(source: BinaryIO, *, original_filename: str) -> dict:
 
     digest = hashlib.sha256()
     size = 0
+    first_chunk = True
     try:
         with destination.open("wb") as out:
             while True:
                 chunk = source.read(1024 * 1024)
                 if not chunk:
                     break
+                if first_chunk:
+                    first_chunk = False
+                    if verify_content and not content_matches_extension(ext, chunk):
+                        raise VaultStorageError(
+                            f"File contents do not match a '.{ext}' file. Please upload a genuine "
+                            f"{ext.upper()} file.")
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
                     raise VaultStorageError(f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.")

@@ -44,7 +44,7 @@ from app.routes.portal_api import api_download_document
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.vault import service as vault
-from tests._portal_util import fake_request, seed_portal_account, seed_staff_user
+from tests._portal_util import fake_request, sample_upload, seed_portal_account, seed_staff_user
 
 STAFF_CAPS = frozenset({"vault.view", "vault.upload", "vault.download", "vault.manage",
                         "vault.access.all", "record.read_all", "record.write_all"})
@@ -129,7 +129,7 @@ def test_upload_cannot_be_assigned_to_unauthorized_entities():
     _, bob, bob_pid, bob_hid = seed_portal_account(staff_uid)
 
     # (a) An upload always binds to the uploader's own person — there is no param to smuggle.
-    doc_id = pv.upload_document(alice, source=io.BytesIO(b"x"), original_filename="a.pdf",
+    doc_id = pv.upload_document(alice, source=io.BytesIO(sample_upload("pdf")), original_filename="a.pdf",
                                 display_name="A", category="general")
     with engine.connect() as c:
         assert c.scalar(select(vault_document_links.c.person_id).where(
@@ -139,7 +139,7 @@ def test_upload_cannot_be_assigned_to_unauthorized_entities():
     bob_req = create_document_request(person_id=bob_pid, household_id=bob_hid, title="Bob W-2",
                                       requested_by_user_id=staff_uid)
     with pytest.raises(PermissionError):
-        pv.upload_document(alice, source=io.BytesIO(b"x"), original_filename="b.pdf",
+        pv.upload_document(alice, source=io.BytesIO(sample_upload("pdf")), original_filename="b.pdf",
                            display_name="B", category="general", request_id=bob_req)
     with engine.connect() as c:
         assert c.scalar(select(portal_document_requests.c.status).where(
@@ -189,7 +189,7 @@ def test_every_mutation_is_audited():
     staff_uid = seed_staff_user()
     account_id, alice, alice_pid, alice_hid = seed_portal_account(staff_uid)
 
-    doc_id = pv.upload_document(alice, source=io.BytesIO(b"x"), original_filename="a.pdf",
+    doc_id = pv.upload_document(alice, source=io.BytesIO(sample_upload("pdf")), original_filename="a.pdf",
                                display_name="A", category="general")
     assert _audits("portal.document.uploaded", doc_id) == 1
 

@@ -135,7 +135,9 @@ def upload_document(principal, *, source, original_filename, display_name, categ
         if req_person is None or req_person not in scope["person_ids"]:
             raise PermissionError("Document request is outside portal access scope.")
 
-    stored = storage.save_stream(source, original_filename=original_filename)
+    # verify_content: client uploads are untrusted, so reject files whose bytes don't match the
+    # claimed extension (e.g. a renamed executable/HTML). Staff/import paths keep the default off.
+    stored = storage.save_stream(source, original_filename=original_filename, verify_content=True)
     now = datetime.now(UTC)
     with engine.begin() as conn:
         doc_id = conn.execute(vault_documents.insert().values(

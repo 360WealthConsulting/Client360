@@ -20,11 +20,19 @@ from app.routes.portal import (
     portal_upload_page,
     portal_upload_submit,
 )
-from tests._portal_util import fake_request, render, seed_portal_account, seed_staff_user
+from tests._portal_util import (
+    fake_request,
+    render,
+    sample_upload,
+    seed_portal_account,
+    seed_staff_user,
+)
 
 
 def _upload(principal, *, display_name, category="general", request_id=None,
-            filename="w2.pdf", body=b"client document"):
+            filename="w2.pdf", body=None):
+    if body is None:
+        body = sample_upload(filename.rsplit(".", 1)[-1])
     upload = UploadFile(io.BytesIO(body), filename=filename)
     return asyncio.run(portal_upload_submit(
         request=fake_request("/portal/upload", "POST"), file=upload,
@@ -58,7 +66,7 @@ def test_upload_prg_creates_pending_vault_document_on_own_person():
 
 def test_documents_page_lists_the_pending_upload():
     _, principal, _, _ = seed_portal_account(seed_staff_user())
-    pv.upload_document(principal, source=io.BytesIO(b"x"), original_filename="f.pdf",
+    pv.upload_document(principal, source=io.BytesIO(sample_upload("pdf")), original_filename="f.pdf",
                        display_name="Statement 2025", category="general")
     html = render(portal_documents_page(fake_request("/portal/documents"), principal))
     assert "Statement 2025" in html

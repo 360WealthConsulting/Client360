@@ -73,3 +73,22 @@ def fake_request(path="/portal/", method="GET", query=None, session=None, state_
 def render(response) -> str:
     """Body of a TemplateResponse/HTMLResponse as text."""
     return response.body.decode("utf-8")
+
+
+# Minimal but genuine leading bytes per type, so uploads pass the client-path content sniffing
+# (storage.content_matches_extension). Used by the portal upload tests instead of dummy bytes.
+_SAMPLE = {
+    "pdf": b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\nsample\n",
+    "png": b"\x89PNG\r\n\x1a\n" + b"\x00" * 16,
+    "jpg": b"\xff\xd8\xff\xe0" + b"\x00" * 16,
+    "jpeg": b"\xff\xd8\xff\xe0" + b"\x00" * 16,
+    "docx": b"PK\x03\x04" + b"\x00" * 16,
+    "xlsx": b"PK\x03\x04" + b"\x00" * 16,
+    "csv": b"a,b,c\n1,2,3\n",
+    "txt": b"hello world\n",
+}
+
+
+def sample_upload(ext="pdf") -> bytes:
+    """Valid minimal file content for ``ext`` (passes client-upload content validation)."""
+    return _SAMPLE.get(ext.lower(), _SAMPLE["pdf"])
