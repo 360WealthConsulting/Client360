@@ -33,15 +33,60 @@ RECOMMENDED_CADENCE = {"SharePoint": "every 5-10 minutes", "Outlook": "every 5-1
                        "Drake": "every 10-15 minutes"}
 
 
+def _ocr_status_for(document_id):
+    """The persisted OCR state for a document (completed / timed_out / failed / unsupported / pending),
+    or 'none' when no OCR was needed/attempted (e.g. native text extraction)."""
+    from app.db import metadata
+    t = metadata.tables.get("document_ocr")
+    if t is None:
+        return "none"
+    with engine.connect() as conn:
+        st = conn.execute(select(t.c.status).where(t.c.document_id == document_id)).scalar()
+    return st or "none"
+
+
+def _doc_name(document_id):
+    from app.db import documents
+    with engine.connect() as conn:
+        return conn.execute(select(documents.c.original_name)
+                            .where(documents.c.id == document_id)).scalar()
+
+
 def _ocr_analyze(document_id):
-    """Run the EXISTING pipeline with OCR-on-need for one NEW document (native first; OCR only if native
-    text is insufficient), persisting the proposal. Guarded — never raises, never assigns ownership."""
+    """Run the EXISTING pipeline with OCR-on-need for one document (native first; OCR only if native text
+    is insufficient), persisting the proposal. Guarded — never raises, never hangs (OCR is bounded per
+    page/document), never assigns ownership. Returns the resulting OCR status string."""
     from app.services.document_pipeline import analyze_and_persist
     try:
         with engine.begin() as conn:
-            return analyze_and_persist(document_id, conn=conn, ocr=True) is not None
-    except Exception:  # noqa: BLE001
-        return False
+            analyze_and_persist(document_id, conn=conn, ocr=True)
+    except Exception:  # noqa: BLE001 — analysis/OCR failure must never break the batch
+        return "error"
+    return _ocr_status_for(document_id)
+
+
+# OCR status -> run-summary counter bucket.
+_OCR_BUCKET = {"completed": "ocr_analyzed", "timed_out": "ocr_timed_out",
+               "failed": "ocr_failed", "error": "ocr_failed"}
+
+
+def _ocr_documents(document_ids, *, progress=None):
+    """OCR/analyze a list of documents with per-document isolation, bounded time, and progress. One
+    timed-out/failed document is counted and the loop continues. Cache-aware: a document with usable OCR
+    text already persisted is not re-OCR'd. Returns counters (ocr_analyzed/ocr_failed/ocr_timed_out/
+    ocr_other)."""
+    import time
+    counts = {"ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "ocr_other": 0}
+    total = len(document_ids)
+    for idx, did in enumerate(document_ids, 1):
+        t0 = time.monotonic()
+        status = _ocr_analyze(did)
+        elapsed = round(time.monotonic() - t0, 1)
+        counts[_OCR_BUCKET.get(status, "ocr_other")] += 1
+        if progress:
+            progress({"phase": "ocr", "index": idx, "total": total, "document_id": did,
+                      "file": _doc_name(did), "status": status, "elapsed": elapsed})
+    return counts
 
 
 def _record_run(source, summary, *, started, actor_user_id=None, trigger_source="manual", error=None):
@@ -61,7 +106,7 @@ def _record_run(source, summary, *, started, actor_user_id=None, trigger_source=
 
 def run_sharepoint_sync(*, items=None, stager=None, destination_root=None, actor_user_id=None,
                         request_id=None, trigger_source="manual", dry_run=False, ocr=True,
-                        authoritative=False):
+                        authoritative=False, ocr_progress=None):
     """Repeatable, incremental SharePoint sync. Provide pre-staged ``items`` (a manifest list) OR a
     ``stager`` callable (the deployment connector's incremental Graph enumeration). Returns the importer
     summary enriched with ``ocr_analyzed``; always records a durable run. Never raises on a run failure."""
@@ -83,12 +128,18 @@ def run_sharepoint_sync(*, items=None, stager=None, destination_root=None, actor
                     trigger_source=trigger_source, error=str(exc))
         return {"status": "error", "errors": [str(exc)]}
 
-    ocr_analyzed = 0
+    summary["ocr_analyzed"] = summary["ocr_failed"] = summary["ocr_timed_out"] = 0
     if ocr and not dry_run:
-        for did in summary.get("affected_document_ids", []):    # NEW documents only; unchanged never here
-            if _ocr_analyze(did):
-                ocr_analyzed += 1
-    summary["ocr_analyzed"] = ocr_analyzed
+        counts = _ocr_documents(summary.get("affected_document_ids", []), progress=ocr_progress)
+        summary["ocr_analyzed"], summary["ocr_failed"], summary["ocr_timed_out"] = (
+            counts["ocr_analyzed"], counts["ocr_failed"], counts["ocr_timed_out"])
+        # OCR errors are isolated: the batch completes, but a timeout/failure is surfaced in the status.
+        if summary["ocr_failed"] or summary["ocr_timed_out"]:
+            summary.setdefault("errors", []).append(
+                f"OCR: {summary['ocr_timed_out']} timed out, {summary['ocr_failed']} failed "
+                f"(documents imported; OCR can be resumed with --resume-ocr)")
+            if summary.get("status") == "completed":
+                summary["status"] = "completed_with_errors"
     _record_run("SharePoint", summary, started=started, actor_user_id=actor_user_id,
                 trigger_source=trigger_source)
     return summary
@@ -511,6 +562,72 @@ def manifest_path_records(path, *, limit=200):
             "item_id": r.get("item_id") or r.get("itemId") or r.get("id"),
         })
     return rows
+
+
+def _document_ids_for_items(items):
+    """Map staged items to their ALREADY-IMPORTED canonical document ids (via the SharePoint source ref),
+    de-duplicated, preserving order. Items not yet imported are simply absent (no Graph, no download)."""
+    from app.db import metadata
+    from app.importers.sharepoint import _item_uri
+    ds = metadata.tables.get("document_sources")
+    if ds is None:
+        return []
+    ids, seen = [], set()
+    with engine.connect() as conn:
+        for it in items:
+            did = conn.execute(
+                select(ds.c.document_id).where(ds.c.source_system == "SharePoint",
+                                               ds.c.source_uri == _item_uri(it))
+                .order_by(ds.c.id.desc())).scalar()
+            if did and did not in seen:
+                seen.add(did)
+                ids.append(did)
+    return ids
+
+
+def resume_ocr_for_items(items, *, ocr_progress=None):
+    """Resume OCR/analysis on the ALREADY-IMPORTED documents for these staged items — NO Graph, NO
+    download. Cache-aware (documents with usable OCR text are skipped), bounded per page/document, and
+    per-document isolated. Returns OCR counters plus the number of matched documents."""
+    dids = _document_ids_for_items(items)
+    counts = _ocr_documents(dids, progress=ocr_progress)
+    counts["ocr_documents"] = len(dids)
+    return counts
+
+
+def manifest_ocr_status(manifest_path):
+    """READ-ONLY status for a manifest (no Graph, no downloads, no imports): how many items are already
+    imported (have a SharePoint source ref) vs not, and the OCR state of the imported ones
+    (completed / pending / failed / timed_out / unsupported)."""
+    from pathlib import Path
+
+    from app.db import metadata
+    from app.importers.sharepoint import _item_uri
+    p = Path(manifest_path)
+    if not p.exists():
+        return {"exists": False, "path": str(p)}
+    items = _usable_staged_records(
+        _parse_manifest_records(p.read_text(encoding="utf-8", errors="replace")) or [])
+    ds = metadata.tables.get("document_sources")
+    doc_ocr = metadata.tables.get("document_ocr")
+    out = {"exists": True, "path": str(p), "manifest_items": len(items), "imported": 0,
+           "not_imported": 0, "ocr_completed": 0, "ocr_pending": 0, "ocr_failed": 0,
+           "ocr_timed_out": 0, "ocr_unsupported": 0}
+    with engine.connect() as conn:
+        for it in items:
+            did = (conn.execute(select(ds.c.document_id).where(
+                ds.c.source_system == "SharePoint", ds.c.source_uri == _item_uri(it))
+                .order_by(ds.c.id.desc())).scalar() if ds is not None else None)
+            if not did:
+                out["not_imported"] += 1
+                continue
+            out["imported"] += 1
+            st = (conn.execute(select(doc_ocr.c.status).where(doc_ocr.c.document_id == did)).scalar()
+                  if doc_ocr is not None else None)
+            key = {"completed": "ocr_completed", "timed_out": "ocr_timed_out", "failed": "ocr_failed",
+                   "unsupported": "ocr_unsupported"}.get(st, "ocr_pending")
+            out[key] += 1
+    return out
 
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"

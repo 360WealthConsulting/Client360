@@ -202,3 +202,75 @@ def test_backend_no_duplicate_document_or_ocr_rows(tmp_path):
 def _ocr(did):
     with engine.connect() as c:
         return c.execute(select(document_ocr).where(document_ocr.c.document_id == did)).mappings().first()
+
+
+# --- OCR resilience: bounded per page + per document, timeout isolated, cache preserved on resume ------
+
+from app.services.document_ocr import OcrTimeout  # noqa: E402
+
+
+def test_page_hang_raises_ocr_timeout(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setenv("OCR_PAGE_TIMEOUT_SECONDS", "1")
+
+    def slow(_img):
+        time.sleep(10)                                       # a stuck scanned page
+        return "never returns in time"
+    deps, calls = _deps(pdf_texts=[""], ocr_fn=slow)
+    ex = build_extractor(deps)
+    f = _file(tmp_path, "scan.pdf")
+    with pytest.raises(OcrTimeout):
+        ex(_row(f"{_TAG} scan.pdf", f), f)                   # page timeout fires, does not hang
+
+
+def test_document_deadline_stops_multi_page_scan(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setenv("OCR_PAGE_TIMEOUT_SECONDS", "10")     # pages individually fine...
+    monkeypatch.setenv("OCR_DOCUMENT_TIMEOUT_SECONDS", "1")  # ...but the whole document is capped
+
+    def slow(_img):
+        time.sleep(0.6)
+        return "page text"
+    deps, calls = _deps(pdf_texts=["", "", "", "", ""], ocr_fn=slow)   # 5 image-only pages
+    ex = build_extractor(deps)
+    f = _file(tmp_path, "big.pdf")
+    with pytest.raises(OcrTimeout):
+        ex(_row(f"{_TAG} big.pdf", f), f)
+    assert calls["ocr"] < 5                                  # stopped before OCR'ing every page
+
+
+def test_run_ocr_isolates_timeout_and_continues(tmp_path):
+    # One bad (hanging) document among many must not stop the rest — it is recorded timed_out and skipped.
+    ids = [_doc(tmp_path, f"{_TAG} doc{i}.pdf", sha=(f"{i}" * 64)[:64]) for i in range(5)]
+    bad = ids[2]
+
+    def extractor(row, path):
+        if row["id"] == bad:
+            raise OcrTimeout("page 1/1 timed out")
+        return {"text": f"good text for {row['id']}", "engine": "tesseract 5", "page_count": 1}
+    s = ocr.run_ocr(document_ids=ids, extractor=extractor, mode="reprocess")
+    assert s["timed_out"] == 1 and s["completed"] == 4       # 4 of 5 processed despite the poison doc
+    assert _ocr(bad)["status"] == "timed_out"
+    assert all(_ocr(d)["status"] == "completed" for d in ids if d != bad)
+    assert all(_ocr(d)["text"] for d in ids if d != bad)     # successful docs retain their OCR text
+
+
+def test_cached_ocr_skipped_and_text_retained_on_resume(tmp_path):
+    did = _doc(tmp_path, f"{_TAG} cached.pdf", sha="c" * 64)
+    deps, _ = _deps(pdf_texts=["real selectable content for the caching test body"])
+    assert ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps))["completed"] == 1
+    text1 = _ocr(did)["text"]
+    # resume (incremental, NOT reprocess) -> cached, skipped, text retained (no re-OCR)
+    s2 = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps), mode="incremental")
+    assert s2["skipped"] == 1 and s2["completed"] == 0
+    assert _ocr(did)["text"] == text1
+
+
+def test_run_ocr_summary_exposes_timed_out_counter(tmp_path):
+    did = _doc(tmp_path, f"{_TAG} to.pdf", sha="t" * 64)
+
+    def extractor(row, path):
+        raise OcrTimeout("page 1/1 timed out")
+    s = ocr.run_ocr(document_ids=[did], extractor=extractor, mode="reprocess")
+    assert "timed_out" in s and s["timed_out"] == 1 and s["completed"] == 0
+    assert s["status"] == "completed"                        # timeout is recorded, not a batch error

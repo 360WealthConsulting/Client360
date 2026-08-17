@@ -36,6 +36,11 @@ class OcrBackendUnavailable(RuntimeError):
     """No OCR engine is configured on this host — a supported document cannot be processed yet."""
 
 
+class OcrTimeout(RuntimeError):
+    """OCR exceeded its per-page or per-document time budget. Distinct from a generic extraction failure
+    so a timed-out document is recorded separately and the batch moves on to the next document."""
+
+
 def _ext(name: str | None) -> str:
     return (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
 
@@ -83,7 +88,7 @@ def _candidates(conn, *, mode, document_ids, max_attempts, batch_size):
     if document_ids is not None:
         stmt = stmt.where(documents.c.id.in_(tuple(document_ids) or (-1,)))
     elif mode == "retry":
-        stmt = stmt.where(document_ocr.c.status == "failed",
+        stmt = stmt.where(document_ocr.c.status.in_(("failed", "timed_out")),
                           document_ocr.c.attempts < max_attempts)
     elif mode == "reprocess":
         stmt = stmt.where(or_(document_ocr.c.document_id.is_(None),
@@ -97,7 +102,7 @@ def _candidates(conn, *, mode, document_ids, max_attempts, batch_size):
 
 
 def _new_summary(mode, dry_run):
-    return {"mode": mode, "candidates": 0, "completed": 0, "failed": 0, "skipped": 0,
+    return {"mode": mode, "candidates": 0, "completed": 0, "failed": 0, "timed_out": 0, "skipped": 0,
             "unsupported": 0, "chars_extracted": 0, "errors": [], "dry_run": dry_run,
             "status": "started"}
 
@@ -148,6 +153,10 @@ def _ocr_one(row, extractor, force, dry_run, summary):
     path = _local_path(row)
     try:
         text, engine_name, page_count = _normalize(extractor(dict(row), path))
+    except OcrTimeout as exc:     # a bounded OCR that overran — recorded distinctly, retryable, never fatal
+        _write_state(doc_id, status="timed_out", last_error=str(exc)[:2000], bump_attempt=True)
+        summary["timed_out"] += 1
+        return
     except Exception as exc:      # noqa: BLE001 — a failed extraction is retryable, not fatal
         _write_state(doc_id, status="failed", last_error=str(exc)[:2000], bump_attempt=True)
         summary["failed"] += 1

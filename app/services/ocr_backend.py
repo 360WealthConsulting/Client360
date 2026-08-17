@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.services.document_ocr import OcrBackendUnavailable
+from app.services.document_ocr import OcrBackendUnavailable, OcrTimeout
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,69 @@ _IMAGE_EXT = {"png", "jpg", "jpeg", "tif", "tiff", "heic", "heif"}
 # A PDF page with fewer real selectable characters than this is treated as image-only → OCR fallback.
 _MIN_TEXT_CHARS = 12
 _REQUIRED_LIBS = ("pypdf", "pytesseract", "pdf2image", "PIL")
+
+# OCR is bounded so one problematic scanned page/document can never hang the whole ingestion batch.
+_DEFAULT_PAGE_TIMEOUT = 45          # seconds per page (Tesseract), production-appropriate
+_DEFAULT_DOCUMENT_TIMEOUT = 300     # seconds per document (across all its OCR'd pages)
+
+
+def _int_env(name, default):
+    import os
+    try:
+        v = int(os.getenv(name, str(default)))
+        return v if v > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def ocr_page_timeout():
+    """Per-page Tesseract timeout (seconds). Config: ``OCR_PAGE_TIMEOUT_SECONDS`` (default 45)."""
+    return _int_env("OCR_PAGE_TIMEOUT_SECONDS", _DEFAULT_PAGE_TIMEOUT)
+
+
+def ocr_document_timeout():
+    """Per-document OCR budget (seconds) across all pages. Config: ``OCR_DOCUMENT_TIMEOUT_SECONDS``
+    (default 300)."""
+    return _int_env("OCR_DOCUMENT_TIMEOUT_SECONDS", _DEFAULT_DOCUMENT_TIMEOUT)
+
+
+def _bounded(call, seconds):
+    """Run ``call()`` with a wall-clock bound; raise :class:`OcrTimeout` if it overruns. The worker is a
+    daemon thread so even a stuck native call cannot keep the process alive — and in production Tesseract
+    is also given its own ``timeout=`` so the subprocess is killed, not just abandoned."""
+    if not seconds or seconds <= 0:
+        return call()
+    import threading
+    box = {}
+
+    def _w():
+        try:
+            box["r"] = call()
+        except BaseException as exc:  # noqa: BLE001 — propagate to the caller thread
+            box["e"] = exc
+
+    t = threading.Thread(target=_w, daemon=True)
+    t.start()
+    t.join(seconds)
+    if t.is_alive():
+        raise OcrTimeout(f"OCR step exceeded {seconds}s")
+    if "e" in box:
+        raise box["e"]
+    return box.get("r")
+
+
+def _ocr_page(deps, make_image, *, page_timeout, page_no, total, name):
+    """OCR one rendered page under the per-page timeout. Normalizes a Tesseract process timeout (which
+    pytesseract raises as RuntimeError) into :class:`OcrTimeout`. Logs page progress (no contents)."""
+    log.info("OCR page %d/%d of %s", page_no, total, name)
+    try:
+        return _bounded(lambda: deps.ocr_image(make_image()), page_timeout) or ""
+    except OcrTimeout:
+        raise
+    except RuntimeError as exc:
+        if "timeout" in str(exc).lower():
+            raise OcrTimeout(f"page {page_no}/{total} of {name} timed out: {exc}") from exc
+        raise
 
 
 @dataclass
@@ -62,11 +125,18 @@ def _extract(row, path, deps: OcrDeps) -> dict:
 
 
 def _extract_pdf(p: Path, deps: OcrDeps) -> dict:
+    import time
+    page_to, doc_to = ocr_page_timeout(), ocr_document_timeout()
+    deadline = time.monotonic() + doc_to if doc_to else None
     texts = list(deps.pdf_page_texts(p))
+    total = len(texts)
     used_ocr = False
     for i, layer in enumerate(texts):
         if len((layer or "").strip()) < _MIN_TEXT_CHARS:       # image-only page → render + OCR
-            texts[i] = deps.ocr_image(deps.render_pdf_page(p, i)) or ""
+            if deadline is not None and time.monotonic() > deadline:
+                raise OcrTimeout(f"document {p.name} OCR exceeded {doc_to}s at page {i + 1}/{total}")
+            texts[i] = _ocr_page(deps, lambda i=i: deps.render_pdf_page(p, i),
+                                 page_timeout=page_to, page_no=i + 1, total=total, name=p.name)
             used_ocr = True
     text = "\n\n".join((t or "").strip() for t in texts).strip()
     engine = ("pdf-text-layer" if not used_ocr
@@ -75,8 +145,17 @@ def _extract_pdf(p: Path, deps: OcrDeps) -> dict:
 
 
 def _extract_image(p: Path, deps: OcrDeps) -> dict:
+    import time
+    page_to, doc_to = ocr_page_timeout(), ocr_document_timeout()
+    deadline = time.monotonic() + doc_to if doc_to else None
     pages = list(deps.image_pages(p))                          # TIFF may hold multiple frames
-    texts = [deps.ocr_image(img) or "" for img in pages]
+    total = len(pages)
+    texts = []
+    for i, img in enumerate(pages):
+        if deadline is not None and time.monotonic() > deadline:
+            raise OcrTimeout(f"document {p.name} OCR exceeded {doc_to}s at page {i + 1}/{total}")
+        texts.append(_ocr_page(deps, lambda img=img: img, page_timeout=page_to,
+                               page_no=i + 1, total=total, name=p.name))
     text = "\n\n".join(t.strip() for t in texts).strip()
     return {"text": text, "engine": f"tesseract {deps.engine_version()}", "page_count": len(pages)}
 
@@ -126,7 +205,9 @@ def production_deps() -> OcrDeps:
         return [frame.copy() for frame in ImageSequence.Iterator(img)]
 
     def ocr_image(img) -> str:
-        return pytesseract.image_to_string(img)
+        # Give Tesseract its OWN process timeout so a stuck page kills the subprocess (pytesseract raises
+        # RuntimeError('Tesseract process timeout'), normalized to OcrTimeout by _ocr_page).
+        return pytesseract.image_to_string(img, timeout=ocr_page_timeout())
 
     def engine_version() -> str:
         return str(pytesseract.get_tesseract_version())

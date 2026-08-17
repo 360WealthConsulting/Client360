@@ -1256,3 +1256,53 @@ def test_manifest_path_records_diagnostic(tmp_path):
     assert len(good) == 3 and all(r["file_exists"] and r["target"] for r in good)
     assert rows[-1]["failed"] is True and rows[-1]["file_exists"] is False
     assert good[0]["item_id"] == "it0" and good[0]["drive_id"] == "drvT"
+
+
+# --- OCR batch resilience: counters, isolation, resume-without-download, read-only status --------------
+
+def test_run_summary_exposes_ocr_counters_and_isolates(tmp_path, monkeypatch):
+    items = [_item(tmp_path, name=f"o{i}.txt", uri=f"https://sp/{_A}/ocr{i}", body=f"unique body {i}")
+             for i in range(3)]
+    statuses = iter(["completed", "timed_out", "failed"])   # one each: analyzed / timed_out / failed
+    calls = []
+
+    def fake(did):
+        calls.append(did)
+        return next(statuses)
+    monkeypatch.setattr(mi, "_ocr_analyze", fake)
+    summary = mi.run_sharepoint_sync(items=items, destination_root=str(tmp_path / "dest"),
+                                     dry_run=False, ocr=True, authoritative=False)
+    _track()
+    assert len(calls) == 3                                   # every document processed (batch completed)
+    assert summary["ocr_analyzed"] == 1
+    assert summary["ocr_timed_out"] == 1 and summary["ocr_failed"] == 1
+    assert summary["status"] == "completed_with_errors"     # OCR issues surfaced, batch still completes
+
+
+def test_resume_ocr_runs_on_already_imported_docs_no_download(tmp_path, monkeypatch):
+    items = [_item(tmp_path, name=f"r{i}.txt", uri=f"https://sp/{_A}/res{i}", body=f"resume body {i}")
+             for i in range(3)]
+    mi.run_sharepoint_sync(items=items, destination_root=str(tmp_path / "dest"), dry_run=False,
+                           ocr=False, authoritative=False)  # import only (interrupted-run state)
+    _track()
+    seen = []
+    monkeypatch.setattr(mi, "_ocr_analyze", lambda did: (seen.append(did), "completed")[1])
+    counts = mi.resume_ocr_for_items(items)
+    assert counts["ocr_documents"] == 3 and counts["ocr_analyzed"] == 3 and len(seen) == 3
+
+
+def test_manifest_ocr_status_reports_imported_and_pending(tmp_path):
+    import json
+    items = [_item(tmp_path, name=f"m{i}.txt", uri=f"https://sp/{_A}/mst{i}") for i in range(2)]
+    mi.run_sharepoint_sync(items=items, destination_root=str(tmp_path / "dest"), dry_run=False,
+                           ocr=False, authoritative=False)  # imported, OCR not yet run
+    _track()
+    recs = [{"name": it["name"], "web_url": it["web_url"], "item_id": it["item_id"], "drive_id": "d",
+             "target": it["local_path"], "status": "downloaded"} for it in items]
+    recs.append({"name": "z.pdf", "web_url": f"https://sp/{_A}/notimported", "item_id": "z",
+                 "drive_id": "d", "status": "downloaded", "target": str(tmp_path / "nope.bin")})
+    p = tmp_path / "man.json"
+    p.write_text(json.dumps(recs))
+    d = mi.manifest_ocr_status(str(p))
+    assert d["manifest_items"] == 3 and d["imported"] == 2 and d["not_imported"] == 1
+    assert d["ocr_pending"] == 2 and d["ocr_completed"] == 0
