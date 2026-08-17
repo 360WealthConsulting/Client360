@@ -16,6 +16,7 @@ from app.portal.service import (PortalPrincipal, accept_invitation, client_actio
     revoke_portal_session, send_message, require_scope)
 from app.portal import appointments as portal_appointments
 from app.portal import consent as portal_consent
+from app.portal import profile as portal_profile
 from app.portal import vault_documents as portal_vault
 from app.services.vault.service import CATEGORIES as VAULT_CATEGORIES
 from app.services.vault.storage import VaultStorageError
@@ -319,6 +320,42 @@ async def portal_upload_submit(
     return RedirectResponse(
         "/portal/documents?notice=" + quote("Document uploaded — your advisor will review it shortly."),
         status_code=303)
+
+
+@router.get("/portal/profile", response_class=HTMLResponse)
+def portal_profile_page(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    """View + edit the fields the client is authorized to change (contact details + contact
+    preference). Reads through the profile service; never exposes internal identifiers."""
+    return templates.TemplateResponse(request=request, name="portal/profile.html", context={
+        "principal": principal,
+        "profile": portal_profile.get_profile(principal),
+        "notice": request.query_params.get("notice"),
+        "error": request.query_params.get("error")})
+
+
+@router.post("/portal/profile")
+def portal_profile_submit(
+        request: Request,
+        email: str | None = Form(None),
+        phone: str | None = Form(None),
+        address: str | None = Form(None),
+        city: str | None = Form(None),
+        state: str | None = Form(None),
+        postal_code: str | None = Form(None),
+        preferred_contact_method: str | None = Form(None),
+        principal: PortalPrincipal = Depends(current_portal)):
+    """Apply a client's profile edits via the audited profile service, then Post/Redirect/Get.
+    Only non-empty submitted values become candidate changes; the service allowlist
+    (``_PERSON_FIELDS``/``_ACCOUNT_FIELDS``) is the authority on what a client may modify, so any
+    protected field (e.g. legal name) is dropped server-side even if a forged field is posted."""
+    submitted = {"email": email, "phone": phone, "address": address, "city": city, "state": state,
+                 "postal_code": postal_code, "preferred_contact_method": preferred_contact_method}
+    changes = {k: v.strip() for k, v in submitted.items() if v is not None and v.strip()}
+    result = portal_profile.update_profile(
+        principal, changes, request_id=getattr(request.state, "request_id", "portal"),
+        ip_address=request.client.host if request.client else None)
+    msg = "Your profile was updated." if result.get("changed") else "No changes were made."
+    return RedirectResponse("/portal/profile?notice=" + quote(msg), status_code=303)
 
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}

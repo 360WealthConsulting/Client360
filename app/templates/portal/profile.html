@@ -1,0 +1,64 @@
+{% extends "portal/base.html" %}
+{% block title %}Profile{% endblock %}
+{% block flash %}
+  {% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Your Profile</h1>
+<p class="portal-lead">Keep your contact details current so your advisor can reach you. Changes are recorded and reviewed.</p>
+
+<form class="portal-form" method="post" action="/portal/profile">
+  <div class="field">
+    <label>Name</label>
+    <input type="text" value="{{ profile.full_name or '' }}" readonly disabled>
+    <span class="hint">To update your legal name, please message your advisor.</span>
+  </div>
+
+  <div class="field">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" value="{{ profile.primary_email or '' }}" maxlength="255">
+  </div>
+
+  <div class="field">
+    <label for="phone">Phone</label>
+    <input id="phone" name="phone" type="tel" value="{{ profile.primary_phone or '' }}" maxlength="40">
+  </div>
+
+  <div class="field">
+    <label for="address">Street address</label>
+    <input id="address" name="address" type="text" value="{{ profile.address_line_1 or '' }}" maxlength="255">
+  </div>
+
+  <div class="field">
+    <label for="city">City</label>
+    <input id="city" name="city" type="text" value="{{ profile.city or '' }}" maxlength="120">
+  </div>
+
+  <div class="field">
+    <label for="state">State</label>
+    <input id="state" name="state" type="text" value="{{ profile.state or '' }}" maxlength="60">
+  </div>
+
+  <div class="field">
+    <label for="postal_code">ZIP / Postal code</label>
+    <input id="postal_code" name="postal_code" type="text" value="{{ profile.postal_code or '' }}" maxlength="20">
+  </div>
+
+  <div class="field">
+    <label for="preferred_contact_method">Preferred contact method</label>
+    <select id="preferred_contact_method" name="preferred_contact_method">
+      {% set current = profile.preferred_contact_method or '' %}
+      <option value=""{% if not current %} selected{% endif %}>No preference</option>
+      <option value="email"{% if current == 'email' %} selected{% endif %}>Email</option>
+      <option value="phone"{% if current == 'phone' %} selected{% endif %}>Phone</option>
+      <option value="mail"{% if current == 'mail' %} selected{% endif %}>Mail</option>
+    </select>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Save changes</button>
+  </div>
+  <p class="hint" style="margin:.75rem 0 0;">Leave a field blank to keep its current value.</p>
+</form>
+{% endblock %}
