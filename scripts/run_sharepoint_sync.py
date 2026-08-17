@@ -47,6 +47,9 @@ def main(argv=None):
     ap.add_argument("--repair-storage", default=None, metavar="MANIFEST",
                     help="repair OCR-source linkage: backfill a local file for already-imported documents "
                          "that have none, from the manifest's staged files (no Graph, no download).")
+    ap.add_argument("--delta-status", action="store_true",
+                    help="print READ-ONLY per-drive delta checkpoint status (does a persisted "
+                         "@odata.deltaLink exist / when last advanced) and exit. No Graph call.")
     args = ap.parse_args(argv)
 
     def _progress(ev):
@@ -87,6 +90,17 @@ def main(argv=None):
         print("SharePoint staging diagnostics (READ-ONLY, no Graph call):")
         for k, v in sharepoint_staging_diagnostics().items():
             print(f"  {k}: {v}")
+        return 0
+
+    if args.delta_status:
+        from app.services.microsoft_ingestion import sharepoint_delta_diagnostics
+        rows = sharepoint_delta_diagnostics(drive_ids=args.drive_id)
+        print(f"SharePoint delta checkpoint status (READ-ONLY, no Graph): {len(rows)} drive(s)")
+        for r in rows:
+            print(f"  drive {r['drive_id']}: has_delta_checkpoint={r['has_delta_checkpoint']} "
+                  f"last_synced_at={r['last_synced_at']}")
+        if not rows:
+            print("  (no drives recorded yet — a delta checkpoint is seeded on the first delta sync)")
         return 0
 
     if args.repair_storage:

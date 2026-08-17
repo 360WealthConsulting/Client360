@@ -759,6 +759,113 @@ def iter_delta_pages(drive_id, fetch, *, top=None, base_url=GRAPH_BASE_URL, time
             break
 
 
+# --- durable per-drive delta checkpoint (@odata.deltaLink) for the CANONICAL SharePoint pipeline --------
+# The connector re-enumerates the drive each run (nextLink only) and skips unchanged downloads via a local
+# state file — it does NOT persist a Graph deltaLink. These helpers durably persist/reuse the deltaLink per
+# drive (reusing the existing microsoft_drives.delta_link column) so a RECURRING canonical sync resumes
+# from the checkpoint (changes only) instead of re-walking the whole drive.
+
+def load_drive_delta_link(drive_id):
+    """The durably-persisted @odata.deltaLink for a drive, or None (initial sync)."""
+    from app.db import metadata
+    t = metadata.tables.get("microsoft_drives")
+    if t is None:
+        return None
+    with engine.connect() as conn:
+        return conn.execute(select(t.c.delta_link)
+                            .where(t.c.microsoft_drive_id == str(drive_id))).scalar()
+
+
+def save_drive_delta_link(drive_id, delta_link, *, source_type="sharepoint"):
+    """Durably persist a drive's new @odata.deltaLink (+ last_synced_at). Upserts microsoft_drives so a
+    not-yet-discovered drive is created; an existing row keeps its other fields."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.db import metadata
+    t = metadata.tables.get("microsoft_drives")
+    if t is None or not delta_link:
+        return
+    now = datetime.now(UTC)
+    with engine.begin() as conn:
+        conn.execute(pg_insert(t).values(
+            microsoft_drive_id=str(drive_id), source_type=source_type,
+            delta_link=delta_link, last_synced_at=now).on_conflict_do_update(
+            index_elements=[t.c.microsoft_drive_id],
+            set_={"delta_link": delta_link, "last_synced_at": now, "updated_at": now}))
+
+
+def _graph_fetch_from_session(session):
+    """Build a ``fetch(url, timeout) -> json`` from the connector's authenticated Graph session (reuses the
+    connector's own auth; no new auth path)."""
+    def fetch(url, timeout):
+        resp = session.get(url, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    return fetch
+
+
+def sharepoint_delta_changes(drive_id, fetch, *, resume=True, persist=True, base_url=GRAPH_BASE_URL,
+                             timeout=120, progress=None, max_pages=None):
+    """Delta-CHECKPOINTED change feed for a drive (Microsoft Graph driveItem delta semantics).
+
+    Resumes from the durably-persisted @odata.deltaLink when present (``resume``), else initial
+    /root/delta; follows @odata.nextLink; captures the NEW @odata.deltaLink and (``persist``) stores it via
+    save_drive_delta_link. Classifies driveItems into ``changed`` (new/modified files — feed to the
+    canonical pipeline) and ``deleted`` (tombstones — mark the source reference unavailable; NEVER delete a
+    canonical document). Read-only w.r.t. content (no downloads). ``fetch(url, timeout)`` performs the
+    authenticated GET (injected — testable, reuses the connector session). Returns
+    ``{changed, deleted, delta_link, resumed, pages}``."""
+    stored = load_drive_delta_link(drive_id) if resume else None
+    url = stored or initial_delta_url(drive_id, base_url=base_url)
+    changed, deleted, delta_link, page = [], [], None, 0
+    while url:
+        page += 1
+        if progress:
+            progress({"phase": "request", "page": page, "resumed": bool(stored)})
+        data = fetch(url, timeout)
+        if not isinstance(data, dict):
+            data = {}
+        for it in data.get("value", []):
+            if not isinstance(it, dict):
+                continue
+            if "deleted" in it:                              # tombstone (file or folder)
+                deleted.append(it)
+            elif "folder" in it and "file" not in it:
+                continue                                     # a live folder is not a document
+            else:
+                changed.append(it)                           # new/modified file
+        if progress:
+            progress({"phase": "response", "page": page,
+                      "changed": len(changed), "deleted": len(deleted)})
+        url = data.get("@odata.nextLink")
+        delta_link = data.get("@odata.deltaLink") or delta_link
+        if max_pages and page >= max_pages:
+            break
+    if persist and delta_link:
+        save_drive_delta_link(drive_id, delta_link)
+    return {"changed": changed, "deleted": deleted, "delta_link": delta_link,
+            "resumed": bool(stored), "pages": page}
+
+
+def sharepoint_delta_diagnostics(drive_ids=None):
+    """READ-ONLY proof of the delta checkpoint per drive: whether a @odata.deltaLink is durably stored and
+    when it was last advanced. No Graph call. Explains whether a recurring sync will resume vs re-enumerate."""
+    from app.db import metadata
+    t = metadata.tables.get("microsoft_drives")
+    rows = []
+    if t is not None:
+        with engine.connect() as conn:
+            q = select(t.c.microsoft_drive_id, t.c.delta_link, t.c.last_synced_at)
+            if drive_ids:
+                q = q.where(t.c.microsoft_drive_id.in_([str(d) for d in drive_ids]))
+            for r in conn.execute(q.order_by(t.c.microsoft_drive_id)).mappings():
+                rows.append({"drive_id": r["microsoft_drive_id"],
+                             "has_delta_checkpoint": bool(r["delta_link"]),
+                             "last_synced_at": (r["last_synced_at"].isoformat()
+                                                if r["last_synced_at"] else None)})
+    return rows
+
+
 def _call_with_timeout(fn, kwargs, timeout):
     """Call the connector with a wall-clock timeout so a slow initial /root/delta page surfaces a clear
     error instead of appearing hung. Without a timeout, calls straight through."""

@@ -1427,3 +1427,74 @@ def test_repair_ocr_source_paths_backfills_from_manifest(tmp_path):
         row = c.execute(select(documents.c.storage_uri, documents.c.storage_path)
                         .where(documents.c.id == did)).mappings().first()
     assert _has_resolvable_file(row)                           # OCR source path restored
+
+
+# --- durable per-drive delta checkpoint (@odata.deltaLink) for the canonical recurring sync -----------
+
+_DRIVE_DELTA = "b!DELTAtestdrive" + uuid.uuid4().hex[:8]
+
+
+@pytest.fixture()
+def _clean_drive():
+    from app.db import metadata
+    t = metadata.tables["microsoft_drives"]
+    with engine.begin() as c:
+        c.execute(t.delete().where(t.c.microsoft_drive_id == _DRIVE_DELTA))
+    yield
+    with engine.begin() as c:
+        c.execute(t.delete().where(t.c.microsoft_drive_id == _DRIVE_DELTA))
+
+
+def test_delta_checkpoint_persisted_and_reused(_clean_drive):
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) is None          # initial: no checkpoint
+
+    # First (initial) sync: no stored link -> starts at /root/delta, returns all items + a deltaLink.
+    base = "https://graph.microsoft.com/v1.0"
+    pages_initial = {
+        f"{base}/drives/{_DRIVE_DELTA}/root/delta": {
+            "value": [{"id": "1", "name": "a.pdf", "file": {}, "webUrl": "u1"},
+                      {"id": "F", "name": "Folder", "folder": {}},          # folder skipped
+                      {"id": "2", "name": "b.pdf", "file": {}, "webUrl": "u2"}],
+            "@odata.deltaLink": f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA1"}}
+    r1 = mi.sharepoint_delta_changes(_DRIVE_DELTA, lambda url, t: pages_initial[url])
+    assert r1["resumed"] is False and len(r1["changed"]) == 2 and r1["deleted"] == []
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA1"
+
+    # Recurring sync: RESUMES from the stored deltaLink (not /root/delta), returns only changes + tombstones.
+    seen = {}
+    pages_resume = {
+        f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA1": {
+            "value": [{"id": "2", "name": "b.pdf", "file": {}, "webUrl": "u2"},   # modified
+                      {"id": "1", "deleted": {"state": "deleted"}, "name": "a.pdf"}],  # tombstone
+            "@odata.deltaLink": f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA2"}}
+
+    def fetch(url, t):
+        seen["url"] = url
+        return pages_resume[url]
+    r2 = mi.sharepoint_delta_changes(_DRIVE_DELTA, fetch)
+    assert seen["url"].endswith("token=DELTA1")                    # resumed from the persisted checkpoint
+    assert r2["resumed"] is True
+    assert [i["id"] for i in r2["changed"]] == ["2"]               # only the changed file
+    assert [i["id"] for i in r2["deleted"]] == ["1"]              # tombstone -> deletion (source only)
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{base}/drives/{_DRIVE_DELTA}/root/delta?token=DELTA2"
+
+
+def test_delta_changes_follows_nextlink_and_persist_false(_clean_drive):
+    base = "https://graph.microsoft.com/v1.0"
+    pages = {
+        f"{base}/drives/{_DRIVE_DELTA}/root/delta": {
+            "value": [{"id": "1", "name": "a.pdf", "file": {}}],
+            "@odata.nextLink": f"{base}/next2"},
+        f"{base}/next2": {
+            "value": [{"id": "2", "name": "b.pdf", "file": {}}],
+            "@odata.deltaLink": f"{base}/delta?token=T"}}
+    r = mi.sharepoint_delta_changes(_DRIVE_DELTA, lambda url, t: pages[url], persist=False)
+    assert r["pages"] == 2 and len(r["changed"]) == 2
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) is None          # persist=False -> checkpoint not written
+
+
+def test_delta_diagnostics_reports_checkpoint(_clean_drive):
+    mi.save_drive_delta_link(_DRIVE_DELTA, "https://graph/delta?token=Z")
+    rows = mi.sharepoint_delta_diagnostics(drive_ids=[_DRIVE_DELTA])
+    assert len(rows) == 1 and rows[0]["has_delta_checkpoint"] is True
+    assert rows[0]["last_synced_at"] is not None
