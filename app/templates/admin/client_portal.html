@@ -6,6 +6,24 @@
 {% call ui.page_head("Client Portal administration", eyebrow="Oversight", desc="Invite and govern external client portal access. Previewing an account shows its entitlements — it is never impersonation.") %}
   <a class="btn secondary" href="/admin/client-portal/diagnostics">Portal diagnostics</a>
 {% endcall %}
+{% if invited %}<div class="banner good">Invitation created for <b>{{ invited }}</b>. The activation link is delivered out-of-band (never shown here).</div>{% endif %}
+{% if error %}<div class="banner warn">Could not invite: {{ error }}</div>{% endif %}
+<h2 class="section-title">Invite a client</h2>
+<form method="post" action="/admin/client-portal/invite-form" class="card" style="display:grid; gap:10px; max-width:640px; grid-template-columns:1fr 1fr">
+  <label>Display name<input name="display_name" required></label>
+  <label>Email<input name="email" type="email" required></label>
+  <label>Person ID<input name="person_id" type="number" required></label>
+  <label>Household ID<input name="household_id" type="number" required></label>
+  <label>Access type
+    <select name="access_type">
+      <option value="self">self</option>
+      <option value="joint">joint</option>
+      <option value="delegate">delegate</option>
+    </select>
+  </label>
+  <label>Organization ID (optional)<input name="organization_id" type="number"></label>
+  <div style="grid-column:1 / -1"><button type="submit">Send portal invitation</button></div>
+</form>
 <h2 class="section-title">Portal accounts</h2>
 <div class="table-wrap">
   <table class="data">

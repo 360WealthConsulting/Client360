@@ -8,8 +8,8 @@ impersonation: staff can preview an account's entitlements but cannot assume its
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -53,8 +53,10 @@ def _accounts():
 
 @router.get("", response_class=HTMLResponse)
 def portal_admin_home(request: Request, principal: Principal = Depends(require_capability("client.read"))):
+    q = request.query_params
     return templates.TemplateResponse(request=request, name="admin/client_portal.html",
-                                      context={"accounts": _accounts(), "principal": principal})
+                                      context={"accounts": _accounts(), "principal": principal,
+                                               "invited": q.get("invited"), "error": q.get("error")})
 
 
 @router.get("/accounts")
@@ -76,6 +78,31 @@ def portal_admin_invite(payload: PortalInvite, request: Request,
            {"person_id": payload.person_id, "access_type": payload.access_type})
     # The activation token is NEVER returned in the response or logged — delivery is out-of-band.
     return {"account_id": account_id, "status": "invited"}
+
+
+@router.post("/invite-form")
+def portal_admin_invite_form(
+        request: Request,
+        person_id: int = Form(...), household_id: int = Form(...), email: str = Form(...),
+        display_name: str = Form(...), access_type: str = Form("self"),
+        organization_id: int | None = Form(None),
+        principal: Principal = Depends(require_capability("client.write"))):
+    """Browser form over the SAME scoped/audited invite service as POST /invite. Post/Redirect/Get so a
+    refresh never re-invites; a record-scope failure redirects with an error banner instead of a raw 403."""
+    if not record_in_scope(principal, "person", person_id, write=True):
+        return RedirectResponse("/admin/client-portal?error=Person+is+outside+your+record+scope",
+                                status_code=303)
+    try:
+        account_id, _token = invite_portal_account(
+            person_id=person_id, household_id=household_id, email=email.strip(),
+            display_name=display_name.strip(), access_type=access_type,
+            invited_by_user_id=principal.user_id, organization_id=organization_id)
+    except Exception as exc:  # noqa: BLE001 — surface a friendly banner, never a stack trace
+        return RedirectResponse(f"/admin/client-portal?error={type(exc).__name__}", status_code=303)
+    _audit(request, principal, "portal.admin.invited", account_id,
+           {"person_id": person_id, "access_type": access_type, "via": "form"})
+    # Token is delivered out-of-band; never shown here.
+    return RedirectResponse(f"/admin/client-portal?invited={display_name.strip()}", status_code=303)
 
 
 @router.post("/accounts/{account_id}/revoke", status_code=200)
