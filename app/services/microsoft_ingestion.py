@@ -18,6 +18,7 @@ item is recorded and skipped by the importer, and a whole-run failure is recorde
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from sqlalchemy import func, select
 
 from app.db import audit_events, engine
 from app.security.audit import write_audit_event
+
+log = logging.getLogger("client360.microsoft_ingestion")
 
 INGESTION_RUN_ACTION = "ingestion.sync_run"
 # Recommended production cadence (documented; scheduling is enabled separately, after manual validation).
@@ -799,12 +802,59 @@ def save_canonical_delta_link(drive_id, delta_link, *, source_type="sharepoint")
 
 def _graph_fetch_from_session(session):
     """Build a ``fetch(url, timeout) -> json`` from the connector's authenticated Graph session (reuses the
-    connector's own auth; no new auth path)."""
+    connector's own auth; no new auth path). A _ManagedGraphSession transparently re-authenticates on 401."""
     def fetch(url, timeout):
         resp = session.get(url, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
     return fetch
+
+
+class _GraphDownloadError(RuntimeError):
+    """A download failure carrying the HTTP status + Graph error code so the runner can log it and decide
+    hold-vs-manual-review. ``permanent`` marks a genuinely-unavailable item (404/410) — recorded for manual
+    review, NOT a checkpoint-holding failure."""
+
+    def __init__(self, message, *, status=None, graph_code=None, permanent=False):
+        super().__init__(message)
+        self.status = status
+        self.graph_code = graph_code
+        self.permanent = permanent
+
+
+def _graph_error(resp):
+    """Extract (code, message) from a Graph error body — never returns tokens/secrets."""
+    try:
+        err = (resp.json() or {}).get("error") or {}
+        return err.get("code"), (err.get("message") or "")[:300]
+    except Exception:  # noqa: BLE001 — non-JSON error body
+        return None, ""
+
+
+class _ManagedGraphSession:
+    """Wraps the connector's authenticated Graph session and transparently RE-AUTHENTICATES once on a 401
+    (access-token expiry) using the connector's own auth path (latest_account -> get_microsoft_access_token
+    -> graph_session). This is what lets a multi-hour baseline survive token expiration WITHOUT blind
+    retries — a single targeted re-auth per 401, then the request proceeds."""
+
+    def __init__(self, mod):
+        self._mod = mod
+        self._session = _connector_session(mod)
+
+    def rebuild(self):
+        self._session = _connector_session(self._mod)
+
+    def get(self, url, *, _reauth=True, **kw):
+        resp = self._session.get(url, **kw)
+        if getattr(resp, "status_code", None) == 401 and _reauth:
+            log.warning("Microsoft Graph returned 401 (access token expired) — re-authenticating and retrying")
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self.rebuild()
+            resp = self._session.get(url, **kw)
+        return resp
 
 
 def sharepoint_delta_changes(drive_id, fetch, *, resume=True, persist=True, base_url=GRAPH_BASE_URL,
@@ -916,29 +966,80 @@ def _delta_deletion_record(drive_id, it):
             "site": pr.get("siteId"), "library": pr.get("driveId") or drive_id, "deleted": True}
 
 
-def _download_delta_item(session, drive_id, it, staging_dir):
-    """Download ONE changed driveItem's content to a staged file (same-dir temp -> atomic replace, same
-    volume). Uses the pre-authorized @microsoft.graph.downloadUrl when present, else the item content
-    endpoint via the connector's session. Returns the staged local path."""
+def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_waits=6, sleep=None):
+    """Download ONE changed driveItem's content to a staged file (same-dir temp -> atomic replace).
+
+    Robust against the bulk-download failure seen in the baseline:
+      * RESUME: an already-downloaded staged file (right size) is reused — the 1,597 are never re-fetched.
+      * Always uses the AUTHENTICATED /drives/{id}/items/{id}/content endpoint (a fresh 302 redirect per
+        request) — NEVER the pre-authorized @microsoft.graph.downloadUrl captured at enumeration, which
+        expires ~1h later and caused every later download to fail at once.
+      * Token expiry is handled by the injected _ManagedGraphSession (re-auth on 401).
+      * 429 throttling honors Retry-After (bounded) instead of blindly hammering.
+      * 404/410 => a PERMANENT _GraphDownloadError (genuinely unavailable -> manual review, not a hold).
+    Returns the staged local path. Never logs tokens/secrets."""
     import os
+    import time
     from pathlib import Path
 
     from app.importers.taxdome_drive import sanitize_relative_path
+    sleep = sleep or time.sleep
     item_id = str(it.get("id"))
     name = sanitize_relative_path(it.get("name") or item_id).name
     dest_dir = Path(staging_dir) / "_delta"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{item_id}__{name}"
-    url = it.get("@microsoft.graph.downloadUrl") or f"{GRAPH_BASE_URL}/drives/{drive_id}/items/{item_id}/content"
+    declared = it.get("size")
+    if dest.exists() and (declared is None or dest.stat().st_size == int(declared)):
+        return str(dest)                                  # RESUME: reuse the already-staged file
+    url = f"{GRAPH_BASE_URL}/drives/{drive_id}/items/{item_id}/content"   # fresh, authenticated, never stale
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with session.get(url, stream=True, timeout=120) as resp:
-        resp.raise_for_status()
-        with open(tmp, "wb") as fh:
-            for chunk in resp.iter_content(chunk_size=1 << 20):
-                if chunk:
-                    fh.write(chunk)
-    os.replace(str(tmp), str(dest))                       # same directory -> same volume
-    return str(dest)
+    waits = 0
+    while True:
+        resp = session.get(url, stream=True, timeout=120, allow_redirects=True)
+        status = getattr(resp, "status_code", 0)
+        if status == 429:                                 # throttled -> honor Retry-After (bounded)
+            retry_after = _retry_after_seconds(resp)
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+            waits += 1
+            if waits > max_throttle_waits:
+                raise _GraphDownloadError(f"throttled: {waits} Retry-After waits exhausted",
+                                          status=429, graph_code="tooManyRequests")
+            sleep(retry_after)
+            continue
+        if status in (404, 410):                          # genuinely gone -> manual review (permanent)
+            code, msg = _graph_error(resp)
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+            raise _GraphDownloadError(f"item unavailable: HTTP {status} {code} {msg}",
+                                      status=status, graph_code=code, permanent=True)
+        if status >= 400:                                 # other error -> transient/systematic (hold)
+            code, msg = _graph_error(resp)
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+            raise _GraphDownloadError(f"download failed: HTTP {status} {code} {msg}",
+                                      status=status, graph_code=code)
+        with resp:
+            with open(tmp, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=1 << 20):
+                    if chunk:
+                        fh.write(chunk)
+        os.replace(str(tmp), str(dest))                   # same directory -> same volume
+        return str(dest)
+
+
+def _retry_after_seconds(resp, *, default=5, cap=60):
+    try:
+        return min(int(resp.headers.get("Retry-After", default) or default), cap)
+    except (TypeError, ValueError):
+        return default
 
 
 def _staged_size(it, local_path):
@@ -1037,25 +1138,31 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
     missing, canonical documents are never deleted), then run OCR-on-need. Existing dedupe/idempotency is
     unchanged (import resolves by content hash and skips unchanged).
 
-    Checkpoint safety: the new deltaLink is advanced ONLY after the FULL Graph traversal completes AND
-    every changed item was downloaded + imported. A partial/failed/interrupted run (traversal error, a
-    download/import failure) HOLDS the checkpoint so those changes are re-delivered next sync. OCR failures
-    do NOT hold the checkpoint (the document is already canonical; OCR retry is separate) — bad documents /
-    OCR failures / unsupported / corrupt scans are isolated and preserved as ``exceptions`` for cleanup."""
+    Downloads use a re-authenticating session (survives token expiry) and the fresh authenticated /content
+    endpoint (never a stale pre-authorized URL), honor 429 Retry-After, and RESUME by reusing already-staged
+    files — so a large baseline survives multi-hour runs and can be safely re-run.
+
+    Checkpoint safety: the deltaLink is advanced ONLY after the FULL Graph traversal completes AND every
+    changed item was downloaded + imported, EXCEPT that genuinely-unavailable items (HTTP 404/410) are
+    routed to the manual-review ``exceptions`` queue and do NOT hold the checkpoint. A TRANSIENT/systematic
+    download failure (auth/throttle/5xx/connection) or an import failure HOLDS the checkpoint so those
+    changes are re-delivered next sync. OCR failures never hold the checkpoint (the document is already
+    canonical; OCR retry is separate). Bad documents / OCR failures / unsupported / corrupt scans are
+    isolated and preserved as ``exceptions`` for cleanup."""
     from app.importers.sharepoint import import_sharepoint_items
     started = datetime.now(UTC)
     staging = staging_root or _staging_root()
     if fetch is None or download is None:
         if session is None:
             from app.connectors.microsoft365 import sharepoint_content as _mod
-            session = _connector_session(_mod)
+            session = _ManagedGraphSession(_mod)          # transparent re-auth on 401 (token expiry)
         fetch = fetch or _graph_fetch_from_session(session)
         download = download or (lambda d, it: _download_delta_item(session, d, it, staging))
     ids = list(drive_ids) if drive_ids is not None else _discovered_drive_ids()
     rep = _DeltaProgress(every=report_every, interval=report_interval, sink=report, now=now)
     out = {"status": "completed", "drives": [], "changed": 0, "deleted": 0, "imported": 0,
-           "ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "checkpoints_advanced": 0,
-           "exceptions": []}
+           "download_failures": 0, "permanent_failures": 0, "ocr_analyzed": 0, "ocr_failed": 0,
+           "ocr_timed_out": 0, "checkpoints_advanced": 0, "exceptions": []}
     for did in ids:
         drv = {"drive_id": did, "advanced": False}
         rep.set_drive(did)
@@ -1071,17 +1178,30 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
             out["drives"].append(drv)
             continue
         rep.set_changed(len(res["changed"]))
-        records, dl_failures = [], 0
+        records, dl_failures, permanent_failures = [], 0, 0
         for it in res["changed"]:                         # download changed items (isolated per item)
             try:
                 lp = download(did, it)
                 records.append(_delta_item_record(did, it, lp))
                 rep.on_download(_staged_size(it, lp))     # progress: enumerated/downloaded/bytes (throttled)
             except Exception as exc:  # noqa: BLE001 — one bad item is non-blocking; keep going
-                dl_failures += 1
                 rep.on_download_failed()
-                out["exceptions"].append({"drive_id": did, "item_id": it.get("id"),
-                                          "phase": "download", "error": str(exc)[:500]})
+                status = getattr(exc, "status", None)
+                graph_code = getattr(exc, "graph_code", None)
+                permanent = bool(getattr(exc, "permanent", False))
+                # Rich, secret-free failure log: item id, filename, HTTP status, Graph code/message, type.
+                log.warning("delta download failed: drive=%s item=%s name=%r http_status=%s graph_code=%s "
+                            "permanent=%s exception=%s: %s", did, it.get("id"), it.get("name"), status,
+                            graph_code, permanent, type(exc).__name__, str(exc)[:300])
+                out["exceptions"].append({
+                    "drive_id": did, "item_id": it.get("id"), "name": it.get("name"), "phase": "download",
+                    "http_status": status, "graph_code": graph_code, "permanent": permanent,
+                    "exception_type": type(exc).__name__, "error": str(exc)[:500],
+                    "review": "manual_review" if permanent else "retry_next_sync"})
+                if permanent:
+                    permanent_failures += 1               # genuinely gone -> manual review; does NOT hold
+                else:
+                    dl_failures += 1                      # transient/systematic -> HOLD the checkpoint
         records.extend(_delta_deletion_record(did, it) for it in res["deleted"])
         try:
             summary = import_sharepoint_items(records, destination_root=destination_root,
@@ -1124,8 +1244,11 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
             out["status"] = "completed_with_errors"
             rep.set_checkpoint("HELD (download/import failures)")
         rep.emit()                                        # final per-drive line (with the checkpoint outcome)
+        out["download_failures"] += dl_failures
+        out["permanent_failures"] += permanent_failures
         drv.update({"resumed": res["resumed"], "changed": len(res["changed"]),
                     "deleted": len(res["deleted"]), "download_failures": dl_failures,
+                    "permanent_failures": permanent_failures,
                     "import_item_failures": import_item_failures})
         out["drives"].append(drv)
     _record_run("SharePoint", {"status": out["status"], "items_examined": out["imported"],

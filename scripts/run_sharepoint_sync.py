@@ -126,9 +126,10 @@ def main(argv=None):
         res = run_sharepoint_delta_sync(drive_ids=args.drive_id, timeout=args.timeout or 120,
                                         progress=_progress)
         print("SharePoint delta sync:", res["status"])
-        for k in ("changed", "deleted", "imported", "ocr_analyzed", "ocr_failed", "ocr_timed_out",
-                  "checkpoints_advanced"):
-            print(f"  {k}: {res[k]}")
+        for k in ("changed", "deleted", "imported", "download_failures", "permanent_failures",
+                  "ocr_analyzed", "ocr_failed", "ocr_timed_out", "checkpoints_advanced"):
+            if k in res:
+                print(f"  {k}: {res[k]}")
         for d in res["drives"]:
             print(f"  drive {d['drive_id']}: resumed={d.get('resumed')} advanced={d['advanced']} "
                   f"changed={d.get('changed')} deleted={d.get('deleted')} "

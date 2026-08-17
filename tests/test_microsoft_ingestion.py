@@ -1715,3 +1715,190 @@ def test_delta_sync_progress_does_not_change_result_vs_none(tmp_path, _clean_dri
     _track()
     assert r["imported"] == 2 and r["checkpoints_advanced"] == 1 and r["drives"][0]["advanced"] is True
     assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"
+
+
+# --- bulk-download failure fix: fresh /content endpoint, token re-auth, throttle, resume, classify -----
+
+class _FakeResp:
+    def __init__(self, status=200, body=b"data", headers=None, json_body=None):
+        self.status_code = status
+        self._body = body
+        self.headers = headers or {}
+        self._json = json_body
+
+    def iter_content(self, chunk_size=1):
+        for i in range(0, len(self._body), chunk_size):
+            yield self._body[i:i + chunk_size]
+
+    def json(self):
+        if self._json is None:
+            raise ValueError("no json body")
+        return self._json
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeSession:
+    def __init__(self, responses):
+        self._responses = responses            # list (popped) or callable(url, kw)
+        self.calls = []
+
+    def get(self, url, **kw):
+        self.calls.append(url)
+        return self._responses(url, kw) if callable(self._responses) else self._responses.pop(0)
+
+
+def test_delta_download_uses_fresh_content_endpoint_not_stale_url(tmp_path):
+    from pathlib import Path
+    sess = _FakeSession([_FakeResp(200, b"file bytes here")])
+    it = {"id": "X1", "name": "a.pdf", "size": len(b"file bytes here"),
+          "@microsoft.graph.downloadUrl": "https://stale.example/expired?token=OLD"}
+    p = mi._download_delta_item(sess, "DRV", it, str(tmp_path))
+    assert Path(p).read_bytes() == b"file bytes here"
+    assert sess.calls[0].endswith("/drives/DRV/items/X1/content")   # fresh authenticated endpoint
+    assert "stale.example" not in sess.calls[0]                     # NOT the pre-authorized expiring URL
+
+
+def test_delta_download_resumes_existing_staged_file(tmp_path):
+    from pathlib import Path
+    dest_dir = Path(tmp_path) / "_delta"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "R1__r.pdf").write_bytes(b"12345")
+    sess = _FakeSession([])                                          # must NOT be called
+    p = mi._download_delta_item(sess, "DRV", {"id": "R1", "name": "r.pdf", "size": 5}, str(tmp_path))
+    assert Path(p).read_bytes() == b"12345" and sess.calls == []     # reused, no redownload
+
+
+def test_delta_download_honors_retry_after_then_succeeds(tmp_path):
+    from pathlib import Path
+    slept = []
+    sess = _FakeSession([_FakeResp(429, headers={"Retry-After": "2"}), _FakeResp(200, b"ok")])
+    p = mi._download_delta_item(sess, "DRV", {"id": "T1", "name": "t.pdf", "size": 2}, str(tmp_path),
+                                sleep=slept.append)
+    assert Path(p).read_bytes() == b"ok" and slept == [2]           # honored Retry-After, then succeeded
+
+
+def test_delta_download_404_is_permanent(tmp_path):
+    sess = _FakeSession([_FakeResp(404, json_body={"error": {"code": "itemNotFound", "message": "gone"}})])
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(sess, "DRV", {"id": "G1", "name": "g.pdf"}, str(tmp_path))
+    assert ei.value.permanent is True and ei.value.status == 404 and ei.value.graph_code == "itemNotFound"
+
+
+def test_delta_download_5xx_is_transient(tmp_path):
+    sess = _FakeSession([_FakeResp(503, json_body={"error": {"code": "serviceNotAvailable", "message": "x"}})])
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(sess, "DRV", {"id": "S1", "name": "s.pdf"}, str(tmp_path))
+    assert ei.value.permanent is False and ei.value.status == 503
+
+
+def test_managed_graph_session_reauths_on_401():
+    import types
+    state = {"builds": 0}
+
+    class _S:
+        def __init__(self, n):
+            self.n = n
+
+        def get(self, url, **kw):
+            return _FakeResp(401 if self.n == 1 else 200, b"ok")
+
+    def graph_session(_tok):
+        state["builds"] += 1
+        return _S(state["builds"])
+    mod = types.SimpleNamespace(latest_account=lambda: {"id": "a"},
+                                get_microsoft_access_token=lambda acct: "tok",
+                                graph_session=graph_session)
+    ms = mi._ManagedGraphSession(mod)                               # build #1
+    r = ms.get("https://graph.microsoft.com/v1.0/x")
+    assert r.status_code == 200 and state["builds"] == 2           # re-auth rebuilt once, then 200
+
+
+def test_delta_sync_permanent_failure_manual_review_not_holding(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("good", _DRIVE_DELTA), _changed("gone", _DRIVE_DELTA)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+
+    def dl(drive_id, it):
+        if it["id"] == "gone":
+            raise mi._GraphDownloadError("HTTP 404", status=404, graph_code="itemNotFound", permanent=True)
+        f = tmp_path / f"{it['id']}.bin"
+        f.write_text("body")
+        return str(f)
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                       destination_root=str(tmp_path / "c"), ocr=False, report=lambda ln: None)
+    _track()
+    assert res["permanent_failures"] == 1 and res["download_failures"] == 0
+    assert res["checkpoints_advanced"] == 1                         # gone item -> manual review, still advances
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"
+    assert any(e.get("review") == "manual_review" and e.get("http_status") == 404 for e in res["exceptions"])
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/good") == 1
+
+
+def test_delta_sync_transient_failure_holds_checkpoint(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("ok", _DRIVE_DELTA), _changed("boom", _DRIVE_DELTA)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+
+    def dl(drive_id, it):
+        if it["id"] == "boom":
+            raise mi._GraphDownloadError("HTTP 503", status=503, graph_code="serviceNotAvailable")
+        f = tmp_path / f"{it['id']}.bin"
+        f.write_text("ok")
+        return str(f)
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                       destination_root=str(tmp_path / "c"), ocr=False, report=lambda ln: None)
+    _track()
+    assert res["download_failures"] == 1 and res["permanent_failures"] == 0
+    assert res["checkpoints_advanced"] == 0                         # transient -> HELD for retry
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/ok") == 1   # good item still imported (isolation)
+
+
+def test_delta_sync_resume_reuses_staged_and_recovers(tmp_path, _clean_drive):
+    staging = str(tmp_path / "stage")
+
+    def _it(iid):
+        return {"id": iid, "name": f"{iid}.pdf", "size": len(f"body-{iid}".encode()),
+                "webUrl": f"https://sp/{_DRIVE_DELTA}/{iid}", "lastModifiedDateTime": "2024-01-01T00:00:00"}
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_it("a"), _it("b")], "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    fail_b = {"on": True}
+
+    class Sess:
+        def __init__(self):
+            self.hits = []
+
+        def get(self, url, **kw):
+            self.hits.append(url)
+            item = url.rsplit("/items/", 1)[1].split("/")[0]
+            if item == "b" and fail_b["on"]:
+                return _FakeResp(503, json_body={"error": {"code": "x", "message": "y"}})
+            return _FakeResp(200, f"body-{item}".encode())
+    sess = Sess()
+
+    def dl(drive_id, it):
+        return mi._download_delta_item(sess, drive_id, it, staging)
+    r1 = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                      destination_root=str(tmp_path / "c"), ocr=False, report=lambda ln: None)
+    _track()
+    assert r1["download_failures"] == 1 and r1["checkpoints_advanced"] == 0    # b failed -> held
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None
+    n1 = len(sess.hits)
+
+    fail_b["on"] = False                                                        # b recovers
+    r2 = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                      destination_root=str(tmp_path / "c"), ocr=False, report=lambda ln: None)
+    _track()
+    assert r2["checkpoints_advanced"] == 1                                      # now advances to the end
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"
+    assert [u for u in sess.hits[n1:] if "/items/a/" in u] == []                # 'a' reused (not re-fetched)
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/a") == 1                # no duplicates on resume
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/b") == 1
