@@ -174,10 +174,10 @@ def test_empty_state_render():
 
 def test_navigation_link_present():
     base = pathlib.Path("app/templates/portal/base.html").read_text()
-    assert 'href="/portal/action-needed"' in base
+    assert "/portal/action-needed" in base           # declared in the (data-driven) portal nav
     u, p, h, portal, r = _case()
     body = P.portal_action_needed(_req(), principal=portal).body.decode()
-    assert 'href="/portal/action-needed"' in body
+    assert 'href="/portal/action-needed"' in body     # and rendered as a real link in the shell
 
 
 def test_client_visible_policy_is_single_source_of_truth():
