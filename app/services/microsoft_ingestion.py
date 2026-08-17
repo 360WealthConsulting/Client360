@@ -60,7 +60,8 @@ def _record_run(source, summary, *, started, actor_user_id=None, trigger_source=
 
 
 def run_sharepoint_sync(*, items=None, stager=None, destination_root=None, actor_user_id=None,
-                        request_id=None, trigger_source="manual", dry_run=False, ocr=True):
+                        request_id=None, trigger_source="manual", dry_run=False, ocr=True,
+                        authoritative=False):
     """Repeatable, incremental SharePoint sync. Provide pre-staged ``items`` (a manifest list) OR a
     ``stager`` callable (the deployment connector's incremental Graph enumeration). Returns the importer
     summary enriched with ``ocr_analyzed``; always records a durable run. Never raises on a run failure."""
@@ -75,7 +76,8 @@ def run_sharepoint_sync(*, items=None, stager=None, destination_root=None, actor
         return summary
     try:
         summary = import_sharepoint_items(staged, destination_root=destination_root,
-                                          actor_user_id=actor_user_id, request_id=request_id, dry_run=dry_run)
+                                          actor_user_id=actor_user_id, request_id=request_id,
+                                          dry_run=dry_run, authoritative=authoritative)
     except Exception as exc:  # noqa: BLE001
         _record_run("SharePoint", {"status": "error"}, started=started, actor_user_id=actor_user_id,
                     trigger_source=trigger_source, error=str(exc))
@@ -342,10 +344,25 @@ def _manifest_identity(r):
     return ("ns", str(r.get("name")), str(r.get("size")))
 
 
+def _normalize_staged_record(r):
+    """Set ``local_path`` from the connector's actual download path field (``target``/...) when it isn't
+    already a valid local file — so the importer can find the downloaded file. Other fields are preserved.
+    Also mirror ``size_bytes`` -> ``size`` for the importer's change-detection. Never fabricates a path."""
+    from app.importers.sharepoint import resolved_staged_path
+    out = dict(r)
+    staged = resolved_staged_path(out)
+    if staged:
+        out["local_path"] = staged
+    if out.get("size") is None and out.get("size_bytes") is not None:
+        out["size"] = out["size_bytes"]
+    return out
+
+
 def _usable_staged_records(records):
-    """From raw manifest records keep the importable ones: drop explicitly-failed records, and dedup by
-    stable SharePoint identity so append-only/retried manifests don't import the same file twice. Latest
-    successful record per identity wins (freshest metadata), preserving first-seen order."""
+    """From raw manifest records keep the importable ones: drop explicitly-failed records, dedup by stable
+    SharePoint identity so append-only/retried manifests don't import the same file twice (latest success
+    per identity wins, first-seen order), and normalize each record's staged local_path (``target`` ->
+    ``local_path`` when it is an existing file)."""
     by_key, order = {}, []
     for r in (records or []):
         if _record_failed(r):
@@ -354,7 +371,7 @@ def _usable_staged_records(records):
         if key not in by_key:
             order.append(key)
         by_key[key] = r                                    # last successful record wins
-    return [by_key[k] for k in order]
+    return [_normalize_staged_record(by_key[k]) for k in order]
 
 
 def _parse_manifest_records(text):
@@ -468,6 +485,32 @@ def _parse_is_whole_json(text):
         return True
     except ValueError:
         return False
+
+
+def manifest_path_records(path, *, limit=200):
+    """READ-ONLY per-record path fields for a manifest (no contents, no Graph, no import): name, status,
+    target, local_path, file_exists (does a real staged file resolve?), drive_id, item_id. For confirming
+    that successful records point at existing downloaded files before reconciling."""
+    from pathlib import Path
+
+    from app.importers.sharepoint import resolved_staged_path
+    p = Path(path)
+    if not p.exists():
+        return []
+    records = _parse_manifest_records(p.read_text(encoding="utf-8", errors="replace")) or []
+    rows = []
+    for r in records[:limit]:
+        rows.append({
+            "name": r.get("name"),
+            "status": r.get("status") or r.get("result") or r.get("outcome"),
+            "failed": _record_failed(r),
+            "target": r.get("target") or r.get("dest") or r.get("destination") or r.get("downloaded_path"),
+            "local_path": r.get("local_path"),
+            "file_exists": bool(resolved_staged_path(r)),
+            "drive_id": r.get("drive_id") or r.get("driveId"),
+            "item_id": r.get("item_id") or r.get("itemId") or r.get("id"),
+        })
+    return rows
 
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"

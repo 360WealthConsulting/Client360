@@ -37,7 +37,10 @@ def main(argv=None):
     ap.add_argument("--diagnose", action="store_true",
                     help="print READ-ONLY staging config/data diagnostics and exit (no Graph, no downloads)")
     ap.add_argument("--inspect-manifest", default=None, metavar="PATH",
-                    help="print READ-ONLY manifest diagnostics (counts, failed, duplicates) and exit")
+                    help="print READ-ONLY manifest diagnostics (counts, failed, duplicates, path fields)")
+    ap.add_argument("--authoritative", action="store_true",
+                    help="the staged input is a COMPLETE drive snapshot; only then reconcile missing/"
+                         "deleted refs. NEVER use with --manifest, --limit, or a partial batch.")
     args = ap.parse_args(argv)
 
     def _progress(ev):
@@ -45,10 +48,17 @@ def main(argv=None):
         print(f"    [{time.strftime('%H:%M:%S')}] {ev}", flush=True)
 
     if args.inspect_manifest:
-        from app.services.microsoft_ingestion import analyze_manifest
+        from app.services.microsoft_ingestion import analyze_manifest, manifest_path_records
         print(f"SharePoint manifest diagnostics (READ-ONLY, no Graph, no import): {args.inspect_manifest}")
         for k, v in analyze_manifest(args.inspect_manifest).items():
             print(f"  {k}: {v}")
+        rows = manifest_path_records(args.inspect_manifest)
+        print(f"  records ({len(rows)} shown, path fields only — no contents):")
+        for r in rows:
+            print(f"    - name={r['name']} status={r['status']} failed={r['failed']} "
+                  f"file_exists={r['file_exists']} drive_id={r['drive_id']} item_id={r['item_id']}")
+            print(f"        target={r['target']}")
+            print(f"        local_path={r['local_path']}")
         return 0
 
     if args.diagnose:
@@ -65,13 +75,21 @@ def main(argv=None):
         from app.services.microsoft_ingestion import load_manifest_items
         items = load_manifest_items(args.manifest)
         print(f"Loaded {len(items)} usable staged item(s) from manifest: {args.manifest}")
-        summary = run_sharepoint_sync(items=items, trigger_source="manual", dry_run=args.dry_run)
+        # A manifest is a PARTIAL/manual batch -> never authoritative (never reconciles missing/deleted).
+        summary = run_sharepoint_sync(items=items, trigger_source="manual", dry_run=args.dry_run,
+                                      authoritative=False)
     elif args.stage:
+        # Authoritative (reconcile missing/deleted) ONLY for a complete, non-limited, non-dry-run snapshot.
+        authoritative = bool(args.authoritative) and not args.limit and not args.dry_run
+        if args.authoritative and not authoritative:
+            print("NOTE: --authoritative ignored because --limit/--dry-run makes this a partial batch; "
+                  "missing/deleted reconciliation is skipped.")
         # Adapts to the deployment connector's real staging entrypoint (no hard-coded function name).
         stager = resolve_sharepoint_stager(site_ids=args.site, drive_ids=args.drive_id,
                                            dry_run=args.dry_run, diag=diag, limit=args.limit,
                                            top=args.top, timeout=args.timeout, progress=_progress)
-        summary = run_sharepoint_sync(stager=stager, trigger_source="manual", dry_run=args.dry_run)
+        summary = run_sharepoint_sync(stager=stager, trigger_source="manual", dry_run=args.dry_run,
+                                      authoritative=authoritative)
     else:
         ap.error("provide --manifest <path>, --stage, or --diagnose")
         return 2

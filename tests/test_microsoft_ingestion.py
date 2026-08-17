@@ -1155,3 +1155,104 @@ def test_manifest_reconcile_via_stage_one_from_connector(tmp_path):
     _track()
     assert diag["total_items"] == 10 and diag["drives"][0]["source"] == "manifest_file"
     assert summary["status"] == "completed" and summary["items_examined"] == 10 and summary["missing"] == 0
+
+
+# --- BUG1 target->local_path normalization + BUG2 authoritative/full-snapshot reconciliation ----------
+# Production successful records carry the download path in `target`, not `local_path`; and --manifest is a
+# PARTIAL batch that must never reconcile the 21,697 existing refs as missing.
+
+def _trec(tmp_path, i, *, drive="drvT", field="target", status="downloaded"):
+    """A production-shaped successful record: identity + `target` (download destination), NO local_path."""
+    f = tmp_path / f"{drive}_{i}_{uuid.uuid4().hex}.txt"
+    f.write_text(f"statement body {i}")
+    r = {"name": f"doc{i}.pdf", "web_url": f"https://sp/{drive}/doc{i}", "item_id": f"it{i}",
+         "drive_id": drive, "site": "S", "library": "D", "modified_at": "2024-01-01T00:00:00",
+         "size_bytes": f.stat().st_size, "status": status}
+    r[field] = str(f)                                       # connector's destination field, not local_path
+    return r
+
+
+def test_manifest_target_field_normalized_to_local_path(tmp_path):
+    import json
+    recs = [_trec(tmp_path, i) for i in range(10)]
+    assert all("local_path" not in r for r in recs)         # production shape: target only
+    p = tmp_path / "m.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in recs) + "\n")
+    items = mi.load_manifest_items(str(p))
+    assert len(items) == 10 and all(it.get("local_path") for it in items)   # target -> local_path
+    summary = mi.run_sharepoint_sync(items=items, destination_root=str(tmp_path / "dest"),
+                                     dry_run=False, ocr=False, authoritative=False)
+    _track()
+    assert summary["items_examined"] == 10
+    assert not any("local_path" in e for e in summary.get("errors", []))     # no missing-local_path errors
+    assert summary["canonical_created"] == 10 and summary["missing"] == 0
+    assert summary["status"] == "completed"
+
+
+def test_direct_items_target_normalized_by_importer(tmp_path):
+    # Even without the adapter parser, the importer resolves `target` -> local_path.
+    recs = [_trec(tmp_path, i, drive="drvD") for i in range(3)]
+    summary = mi.run_sharepoint_sync(items=recs, destination_root=str(tmp_path / "dest"),
+                                     dry_run=False, ocr=False, authoritative=False)
+    _track()
+    assert summary["items_examined"] == 3 and summary["canonical_created"] == 3
+    assert not summary.get("errors")
+
+
+def test_partial_manifest_does_not_reconcile_existing_refs(tmp_path):
+    seeds = [_item(tmp_path, name=f"s{i}.txt", uri=f"https://sp/{_A}/seed{i}") for i in range(3)]
+    _run(seeds, tmp_path, authoritative=True)               # establish 3 existing available refs
+    for s in seeds:
+        assert _doc_for(s["web_url"])["available"] is True
+    other = [_trec(tmp_path, 99, drive="drvP")]             # a partial batch of a DIFFERENT item
+    summary = mi.run_sharepoint_sync(items=other, destination_root=str(tmp_path / "dest"),
+                                     dry_run=False, ocr=False, authoritative=False)
+    _track()
+    assert summary["missing"] == 0
+    assert summary.get("missing_reconciliation_skipped") == "partial/non-authoritative batch"
+    for s in seeds:
+        assert _doc_for(s["web_url"])["available"] is True  # existing corpus untouched
+
+
+def test_authoritative_full_sync_still_reconciles_missing(tmp_path):
+    a = _item(tmp_path, name="a.txt", uri=f"https://sp/{_A}/full_a")
+    _run([a], tmp_path, authoritative=True)
+    b = _item(tmp_path, name="b.txt", uri=f"https://sp/{_A}/full_b")
+    summary = _run([b], tmp_path, authoritative=True)       # complete snapshot without 'a' -> a missing
+    assert summary["missing"] == 1
+    assert _doc_for(a["web_url"])["available"] is False
+
+
+def test_dry_run_never_authoritative_even_if_flag_true(tmp_path):
+    # authoritative must never override dry-run into reconciliation.
+    a = _item(tmp_path, name="a.txt", uri=f"https://sp/{_A}/dr_a")
+    _run([a], tmp_path, authoritative=True)
+    summary = _run([_item(tmp_path, name="b.txt", uri=f"https://sp/{_A}/dr_b")], tmp_path,
+                   authoritative=True, dry_run=True)
+    assert summary["missing"] == 0 and summary.get("missing_reconciliation_skipped")
+    assert _doc_for(a["web_url"])["available"] is True      # dry-run marked nothing
+
+
+def test_all_manifest_items_fail_status_not_success(tmp_path):
+    recs = [{"name": f"x{i}.pdf", "web_url": f"https://sp/dF/x{i}", "item_id": f"x{i}", "drive_id": "dF",
+             "size": 10, "modified_at": "2024-01-01T00:00:00",
+             "target": str(tmp_path / f"missing_{i}.bin"), "status": "downloaded"} for i in range(10)]
+    summary = mi.run_sharepoint_sync(items=recs, destination_root=str(tmp_path / "dest"),
+                                     dry_run=False, ocr=False, authoritative=False)
+    assert summary["status"] in ("completed_with_errors", "error") and summary["status"] != "completed"
+    assert len(summary.get("errors", [])) == 10 and summary["canonical_created"] == 0
+    assert summary["missing"] == 0                          # partial batch never reconciles, even on failure
+
+
+def test_manifest_path_records_diagnostic(tmp_path):
+    import json
+    recs = [_trec(tmp_path, i) for i in range(3)]
+    recs.append({"name": "bad.pdf", "item_id": "bad", "drive_id": "drvT", "status": "failed"})
+    p = tmp_path / "m.json"
+    p.write_text(json.dumps(recs))
+    rows = mi.manifest_path_records(str(p))
+    assert len(rows) == 4
+    good = [r for r in rows if not r["failed"]]
+    assert len(good) == 3 and all(r["file_exists"] and r["target"] for r in good)
+    assert rows[-1]["failed"] is True and rows[-1]["file_exists"] is False
+    assert good[0]["item_id"] == "it0" and good[0]["drive_id"] == "drvT"

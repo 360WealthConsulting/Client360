@@ -122,8 +122,24 @@ def _new_summary(dry_run: bool) -> dict:
             "status": "started"}
 
 
+# The staged local file may be recorded under any of these keys — the connector uses its destination
+# field (e.g. `target`); the importer needs an EXISTING local file. Never fabricated from the name.
+_STAGED_PATH_FIELDS = ("local_path", "target", "dest", "destination", "downloaded_path", "staged_path",
+                       "local_file", "file_path", "path")
+
+
+def resolved_staged_path(item):
+    """The staged local file for an item: ``local_path`` if it exists, else the connector's download path
+    field (``target``/...) — accepted ONLY if it resolves to an existing FILE. None if none exists."""
+    for field in _STAGED_PATH_FIELDS:
+        v = item.get(field)
+        if v and Path(str(v)).is_file():
+            return str(v)
+    return None
+
+
 def import_sharepoint_items(items, *, destination_root=None, actor_user_id=None, request_id=None,
-                            dry_run=False, purge_missing=False, progress=None,
+                            dry_run=False, purge_missing=False, authoritative=False, progress=None,
                             progress_interval=100) -> dict:
     """Integrate structured SharePoint items into the canonical document model (ADR-072/073).
 
@@ -156,14 +172,16 @@ def import_sharepoint_items(items, *, destination_root=None, actor_user_id=None,
             progress(summary)
 
     # Safety — "missing" reconciliation (marking every SharePoint ref NOT seen this pass as unavailable)
-    # is only valid against a COMPLETE, authoritative enumeration from a real sync. Skip it when that
-    # precondition does not hold, so the existing corpus is never falsely reported/marked missing:
-    #   * dry-run: a preview that may be partial (e.g. `--limit 10` enumerates only some items) and whose
-    #     staged records are metadata-only — computing "missing" here would flag the rest of the corpus.
-    #   * empty staging: zero seen items almost always means a connector/enumeration failure, not that
-    #     every document was deleted.
-    # A real (non-dry-run) sync with items still reconciles missing/deleted exactly as before.
-    if dry_run:
+    # is ONLY valid against a COMPLETE, AUTHORITATIVE drive enumeration. It must be opted into explicitly
+    # (authoritative=True) — never inferred from dry_run=False. Skip it otherwise so a partial batch never
+    # falsely marks/reports the rest of the corpus missing:
+    #   * non-authoritative: a partial/manual batch — a --manifest reconcile, a --limit run, or any input
+    #     that is NOT a full drive snapshot. Reconciling here would flag every unseen ref (the 21,697 bug).
+    #   * dry-run: a preview (also never authoritative) whose records may be metadata-only.
+    #   * empty staging: zero seen items means a connector/enumeration failure, not a mass deletion.
+    if not authoritative:
+        summary["missing_reconciliation_skipped"] = "partial/non-authoritative batch"
+    elif dry_run:
         summary["missing_reconciliation_skipped"] = "dry-run preview (possibly partial); not reconciled"
     elif seen_uris:
         _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable)
@@ -196,6 +214,8 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
         return
 
     size_hint = item.get("size")
+    if size_hint is None:
+        size_hint = item.get("size_bytes")            # connector may record size under size_bytes
     modified = item.get("modified_at")
     # Incremental fast path: an unchanged item (same size + modified) is skipped without re-hashing.
     with db.engine.connect() as conn:
@@ -216,8 +236,10 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
             summary["bytes_copied"] += int(size_hint)
         return
 
-    local_path = item.get("local_path")
-    if not local_path or not Path(local_path).exists():
+    # Normalize the staged file: prefer local_path, else the connector's download target (e.g. `target`),
+    # accepted only if it is an existing FILE. Never fabricate a path from the item name.
+    local_path = resolved_staged_path(item)
+    if not local_path:
         raise ValueError("missing staged local_path for a live SharePoint item")
     staged = Path(local_path)
     sha = _content_sha256(staged)
@@ -348,6 +370,9 @@ def _parse_args(argv=None):
     p.add_argument("--destination-root", default=None)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--purge-missing", action="store_true")
+    p.add_argument("--authoritative", action="store_true",
+                   help="the manifest is a COMPLETE drive snapshot; only then reconcile missing/deleted "
+                        "refs. Omit for a partial/manual batch (default): missing is never reconciled.")
     return p.parse_args(argv)
 
 
@@ -355,7 +380,8 @@ def main(argv=None):
     args = _parse_args(argv)
     items = json.loads(Path(args.manifest).read_text())
     summary = import_sharepoint_items(items, destination_root=args.destination_root,
-                                      dry_run=args.dry_run, purge_missing=args.purge_missing)
+                                      dry_run=args.dry_run, purge_missing=args.purge_missing,
+                                      authoritative=args.authoritative)
     label = "DRY RUN — no changes made" if args.dry_run else "SharePoint integration complete"
     print(f"SharePoint {label}.")
     for k in ("items_examined", "ignored", "canonical_created", "reused_canonical", "source_refs_added",

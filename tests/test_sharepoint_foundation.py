@@ -229,8 +229,9 @@ def test_missing_item_marked_unavailable_on_next_sync(tmp_path):
     dst = tmp_path / "dst"
     it = _item(tmp_path)
     _run([it], destination_root=dst)
-    # A subsequent sync no longer contains the item → marked unavailable (never deletes canonical).
-    summary = _run([_item(tmp_path)], destination_root=dst)
+    # A subsequent COMPLETE (authoritative) sync no longer contains the item → marked unavailable
+    # (never deletes canonical). Missing reconciliation only runs for an authoritative full snapshot.
+    summary = _run([_item(tmp_path)], destination_root=dst, authoritative=True)
     assert summary["missing"] == 1
     gone = next(r for r in _sp_rows() if r["source_uri"] == it["web_url"])
     assert gone["available"] is False
