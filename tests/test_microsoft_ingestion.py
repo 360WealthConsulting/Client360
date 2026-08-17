@@ -1498,3 +1498,103 @@ def test_delta_diagnostics_reports_checkpoint(_clean_drive):
     rows = mi.sharepoint_delta_diagnostics(drive_ids=[_DRIVE_DELTA])
     assert len(rows) == 1 and rows[0]["has_delta_checkpoint"] is True
     assert rows[0]["last_synced_at"] is not None
+
+
+# --- recurring delta-checkpointed canonical sync: seed, delta-only, deletions, hold-on-failure, rerun ---
+
+_B = "https://graph.microsoft.com/v1.0"
+
+
+def _dl_stub(tmp_path):
+    def download(drive_id, it):
+        f = tmp_path / f"{it['id']}.bin"
+        f.write_text(f"content of {it['id']}")             # deterministic per id -> stable sha (dedupe)
+        return str(f)
+    return download
+
+
+def _changed(item_id, drive):
+    return {"id": item_id, "name": f"{item_id}.pdf", "file": {}, "size": 7 + len(item_id),
+            "webUrl": f"https://sp/{drive}/{item_id}", "lastModifiedDateTime": "2024-01-01T00:00:00"}
+
+
+def test_delta_sync_initial_seeds_checkpoint_and_imports(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("i1", _DRIVE_DELTA), _changed("i2", _DRIVE_DELTA),
+                  {"id": "F", "name": "Folder", "folder": {}}],          # folder skipped
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u],
+                                       download=_dl_stub(tmp_path),
+                                       destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    assert res["status"] == "completed" and res["changed"] == 2 and res["imported"] == 2
+    assert res["drives"][0]["resumed"] is False and res["checkpoints_advanced"] == 1
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"     # checkpoint seeded
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/i1") == 1
+
+
+def test_delta_sync_subsequent_processes_only_changes_and_deletions(tmp_path, _clean_drive):
+    seed = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("keep", _DRIVE_DELTA)], "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    dl = _dl_stub(tmp_path)
+    mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: seed[u], download=dl,
+                                 destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    did = _doc_for(f"https://sp/{_DRIVE_DELTA}/keep")["document_id"]
+
+    resume = {f"{_B}/delta?token=D1": {
+        "value": [_changed("new1", _DRIVE_DELTA),
+                  {"id": "keep", "deleted": {"state": "deleted"}}],       # tombstone, no webUrl
+        "@odata.deltaLink": f"{_B}/delta?token=D2"}}
+    seen = {}
+
+    def fetch2(url, t):
+        seen["u"] = url
+        return resume[url]
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=fetch2, download=dl,
+                                       destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    assert seen["u"].endswith("token=D1") and res["drives"][0]["resumed"] is True   # resumed from checkpoint
+    assert res["changed"] == 1 and res["deleted"] == 1 and res["imported"] == 1
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D2"          # advanced
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/new1") == 1                  # only the new item
+    from app.db import documents
+    with engine.connect() as c:                                                     # canonical NOT deleted
+        assert c.execute(select(documents.c.id).where(documents.c.id == did)).scalar() == did
+    assert _doc_for(f"https://sp/{_DRIVE_DELTA}/keep")["available"] is False         # source ref unavailable
+
+
+def test_delta_sync_holds_checkpoint_after_download_failure(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("ok", _DRIVE_DELTA), _changed("boom", _DRIVE_DELTA)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+
+    def dl(drive_id, it):
+        if it["id"] == "boom":
+            raise RuntimeError("network reset during download")
+        f = tmp_path / f"{it['id']}.bin"
+        f.write_text("ok")
+        return str(f)
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                       destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    assert res["status"] == "completed_with_errors"
+    assert res["drives"][0]["advanced"] is False and res["drives"][0]["download_failures"] == 1
+    assert mi.load_drive_delta_link(_DRIVE_DELTA) is None                # HELD — changes re-delivered next sync
+    assert any(e["phase"] == "download" for e in res["exceptions"])     # failure preserved
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/ok") == 1        # the good item still imported
+
+
+def test_delta_sync_rerun_is_idempotent(tmp_path, _clean_drive):
+    page = {"value": [_changed("d1", _DRIVE_DELTA)], "@odata.deltaLink": f"{_B}/delta?token=SAME"}
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": page, f"{_B}/delta?token=SAME": page}
+    dl = _dl_stub(tmp_path)
+    r1 = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                      destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    r2 = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                      destination_root=str(tmp_path / "canon"), ocr=False)
+    _track()
+    assert r1["imported"] == 1 and r1["drives"][0]["resumed"] is False
+    assert r2["drives"][0]["resumed"] is True                           # second run resumed from checkpoint
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/d1") == 1        # no duplicate canonical on rerun

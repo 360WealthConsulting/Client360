@@ -50,6 +50,10 @@ def main(argv=None):
     ap.add_argument("--delta-status", action="store_true",
                     help="print READ-ONLY per-drive delta checkpoint status (does a persisted "
                          "@odata.deltaLink exist / when last advanced) and exit. No Graph call.")
+    ap.add_argument("--delta-sync", action="store_true",
+                    help="delta-checkpointed recurring sync: resume from the persisted @odata.deltaLink "
+                         "(or initial /root/delta), download+import only new/changed, apply deletions, "
+                         "advance the checkpoint only on success. Use for future incremental syncs.")
     args = ap.parse_args(argv)
 
     def _progress(ev):
@@ -113,6 +117,25 @@ def main(argv=None):
         for d in res["details"][:50]:
             print(f"    - doc {d['document_id']}: {d['action']} {d.get('staged') or d.get('web_url') or ''}")
         return 0
+
+    if args.delta_sync:
+        from app.services.microsoft_ingestion import run_sharepoint_delta_sync
+        res = run_sharepoint_delta_sync(drive_ids=args.drive_id, timeout=args.timeout or 120,
+                                        progress=_progress)
+        print("SharePoint delta sync:", res["status"])
+        for k in ("changed", "deleted", "imported", "ocr_analyzed", "ocr_failed", "ocr_timed_out",
+                  "checkpoints_advanced"):
+            print(f"  {k}: {res[k]}")
+        for d in res["drives"]:
+            print(f"  drive {d['drive_id']}: resumed={d.get('resumed')} advanced={d['advanced']} "
+                  f"changed={d.get('changed')} deleted={d.get('deleted')} "
+                  f"dl_failures={d.get('download_failures')} import_failures={d.get('import_item_failures')}"
+                  f"{'  HELD: ' + d['held_reason'] if d.get('held_reason') else ''}")
+        if res["exceptions"]:
+            print(f"  exceptions ({len(res['exceptions'])}) — preserved for cleanup:")
+            for e in res["exceptions"][:20]:
+                print(f"    - drive {e.get('drive_id')} [{e.get('phase')}] {e.get('item_id') or ''}: {e.get('error')}")
+        return 1 if res["status"] == "completed_with_errors" else 0
 
     diag = {}
     if args.manifest:

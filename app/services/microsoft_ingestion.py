@@ -866,6 +866,155 @@ def sharepoint_delta_diagnostics(drive_ids=None):
     return rows
 
 
+def _source_uri_for_external_id(item_id):
+    """The stored SharePoint source_uri for an item id (source_external_id) — so a delta tombstone (which
+    may carry no webUrl) resolves to the existing source reference and marks IT unavailable."""
+    from app.db import metadata
+    ds = metadata.tables.get("document_sources")
+    if ds is None or not item_id:
+        return None
+    with engine.connect() as conn:
+        return conn.execute(select(ds.c.source_uri).where(
+            ds.c.source_system == "SharePoint", ds.c.source_external_id == str(item_id))
+            .order_by(ds.c.id.desc())).scalar()
+
+
+def _delta_item_record(drive_id, it, local_path):
+    """A real staged item record (with local_path) for import_sharepoint_items — from a delta driveItem."""
+    pr = it.get("parentReference") or {}
+    return {"drive_id": drive_id, "item_id": it.get("id"), "name": it.get("name"),
+            "web_url": it.get("webUrl"), "parent_path": pr.get("path"),
+            "folder_path": pr.get("path"), "size": it.get("size"),
+            "modified_at": it.get("lastModifiedDateTime"), "created_at": it.get("createdDateTime"),
+            "site": pr.get("siteId"), "library": pr.get("driveId") or drive_id,
+            "content_type": (it.get("file") or {}).get("mimeType"), "local_path": local_path}
+
+
+def _delta_deletion_record(drive_id, it):
+    """A deletion record for import_sharepoint_items — marks the SharePoint source reference unavailable
+    (never deletes the canonical document). Resolves the stored source_uri by item id when the tombstone
+    carries no webUrl."""
+    item_id = it.get("id")
+    pr = it.get("parentReference") or {}
+    return {"drive_id": drive_id, "item_id": item_id, "name": it.get("name") or str(item_id),
+            "web_url": it.get("webUrl") or _source_uri_for_external_id(item_id),
+            "site": pr.get("siteId"), "library": pr.get("driveId") or drive_id, "deleted": True}
+
+
+def _download_delta_item(session, drive_id, it, staging_dir):
+    """Download ONE changed driveItem's content to a staged file (same-dir temp -> atomic replace, same
+    volume). Uses the pre-authorized @microsoft.graph.downloadUrl when present, else the item content
+    endpoint via the connector's session. Returns the staged local path."""
+    import os
+    from pathlib import Path
+
+    from app.importers.taxdome_drive import sanitize_relative_path
+    item_id = str(it.get("id"))
+    name = sanitize_relative_path(it.get("name") or item_id).name
+    dest_dir = Path(staging_dir) / "_delta"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{item_id}__{name}"
+    url = it.get("@microsoft.graph.downloadUrl") or f"{GRAPH_BASE_URL}/drives/{drive_id}/items/{item_id}/content"
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    with session.get(url, stream=True, timeout=120) as resp:
+        resp.raise_for_status()
+        with open(tmp, "wb") as fh:
+            for chunk in resp.iter_content(chunk_size=1 << 20):
+                if chunk:
+                    fh.write(chunk)
+    os.replace(str(tmp), str(dest))                       # same directory -> same volume
+    return str(dest)
+
+
+def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, download=None,
+                              staging_root=None, destination_root=None, timeout=120, ocr=True,
+                              actor_user_id=None, trigger_source="scheduled", progress=None):
+    """Delta-CHECKPOINTED recurring canonical SharePoint sync.
+
+    Per drive: resume from the durably-persisted @odata.deltaLink (or initial /root/delta on first sync),
+    download ONLY new/changed files, feed changed + deleted items to import_sharepoint_items
+    (non-authoritative — deletions mark the source reference unavailable, unseen items are NEVER marked
+    missing, canonical documents are never deleted), then run OCR-on-need. Existing dedupe/idempotency is
+    unchanged (import resolves by content hash and skips unchanged).
+
+    Checkpoint safety: the new deltaLink is advanced ONLY after the FULL Graph traversal completes AND
+    every changed item was downloaded + imported. A partial/failed/interrupted run (traversal error, a
+    download/import failure) HOLDS the checkpoint so those changes are re-delivered next sync. OCR failures
+    do NOT hold the checkpoint (the document is already canonical; OCR retry is separate) — bad documents /
+    OCR failures / unsupported / corrupt scans are isolated and preserved as ``exceptions`` for cleanup."""
+    from app.importers.sharepoint import import_sharepoint_items
+    started = datetime.now(UTC)
+    staging = staging_root or _staging_root()
+    if fetch is None or download is None:
+        if session is None:
+            from app.connectors.microsoft365 import sharepoint_content as _mod
+            session = _connector_session(_mod)
+        fetch = fetch or _graph_fetch_from_session(session)
+        download = download or (lambda d, it: _download_delta_item(session, d, it, staging))
+    ids = list(drive_ids) if drive_ids is not None else _discovered_drive_ids()
+    out = {"status": "completed", "drives": [], "changed": 0, "deleted": 0, "imported": 0,
+           "ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "checkpoints_advanced": 0,
+           "exceptions": []}
+    for did in ids:
+        drv = {"drive_id": did, "advanced": False}
+        try:                                              # full delta traversal (persist=False — advance later)
+            res = sharepoint_delta_changes(did, fetch, resume=True, persist=False,
+                                           timeout=timeout, progress=progress)
+        except Exception as exc:  # noqa: BLE001 — traversal incomplete: HOLD the checkpoint
+            out["exceptions"].append({"drive_id": did, "phase": "traversal", "error": str(exc)[:500]})
+            out["status"] = "completed_with_errors"
+            drv["held_reason"] = "delta traversal failed"
+            out["drives"].append(drv)
+            continue
+        records, dl_failures = [], 0
+        for it in res["changed"]:                         # download changed items (isolated per item)
+            try:
+                records.append(_delta_item_record(did, it, download(did, it)))
+            except Exception as exc:  # noqa: BLE001
+                dl_failures += 1
+                out["exceptions"].append({"drive_id": did, "item_id": it.get("id"),
+                                          "phase": "download", "error": str(exc)[:500]})
+        records.extend(_delta_deletion_record(did, it) for it in res["deleted"])
+        try:
+            summary = import_sharepoint_items(records, destination_root=destination_root,
+                                              actor_user_id=actor_user_id, dry_run=False,
+                                              authoritative=False)
+        except Exception as exc:  # noqa: BLE001 — catastrophic import failure: HOLD the checkpoint
+            out["exceptions"].append({"drive_id": did, "phase": "import", "error": str(exc)[:500]})
+            out["status"] = "completed_with_errors"
+            drv["held_reason"] = "import failed"
+            out["drives"].append(drv)
+            continue
+        import_item_failures = len(summary.get("errors", []))
+        for e in summary.get("errors", []):
+            out["exceptions"].append({"drive_id": did, "phase": "import_item", "error": e})
+        out["changed"] += len(res["changed"])
+        out["deleted"] += len(res["deleted"])
+        out["imported"] += summary.get("canonical_created", 0) + summary.get("reused_canonical", 0)
+        if ocr:                                           # OCR failures preserved; do NOT hold the checkpoint
+            counts = _ocr_documents(summary.get("affected_document_ids", []), progress=progress)
+            out["ocr_analyzed"] += counts["ocr_analyzed"]
+            out["ocr_failed"] += counts["ocr_failed"]
+            out["ocr_timed_out"] += counts["ocr_timed_out"]
+        # Advance the checkpoint ONLY on a clean traversal + full download+import of every changed item.
+        if dl_failures == 0 and import_item_failures == 0 and res["delta_link"]:
+            save_drive_delta_link(did, res["delta_link"])
+            drv["advanced"] = True
+            out["checkpoints_advanced"] += 1
+        else:
+            drv["held_reason"] = (f"{dl_failures} download + {import_item_failures} import failure(s) — "
+                                  "checkpoint held; changes re-delivered next sync")
+            out["status"] = "completed_with_errors"
+        drv.update({"resumed": res["resumed"], "changed": len(res["changed"]),
+                    "deleted": len(res["deleted"]), "download_failures": dl_failures,
+                    "import_item_failures": import_item_failures})
+        out["drives"].append(drv)
+    _record_run("SharePoint", {"status": out["status"], "items_examined": out["imported"],
+                               "canonical_created": out["imported"], "ocr_analyzed": out["ocr_analyzed"]},
+                started=started, actor_user_id=actor_user_id, trigger_source=trigger_source)
+    return out
+
+
 def _call_with_timeout(fn, kwargs, timeout):
     """Call the connector with a wall-clock timeout so a slow initial /root/delta page surfaces a clear
     error instead of appearing hung. Without a timeout, calls straight through."""
