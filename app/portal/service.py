@@ -147,6 +147,10 @@ def send_message(principal, thread_id, body, attachment_document_ids=None):
             if owner not in scope["person_ids"]: raise PermissionError("Attachment is outside portal access scope")
             connection.execute(portal_message_attachments.insert().values(message_id=message_id, document_id=document_id))
     add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure portal message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
+    # Service-level audit for the client reply, symmetric with create_thread (opening message) and
+    # staff_send_message. Placed after the transaction commits and only reached on success — an
+    # out-of-scope reply raises PermissionError above (rolling the insert back) and is never audited.
+    write_audit_event(action="portal.message.sent", entity_type="portal_message", entity_id=message_id, request_id=f"portal-message-{uuid.uuid4()}", metadata={"portal_account_id": principal.account_id, "thread_id": thread_id})
     return message_id
 
 def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachment_document_ids=None):
