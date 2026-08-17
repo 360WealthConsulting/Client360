@@ -1902,3 +1902,48 @@ def test_delta_sync_resume_reuses_staged_and_recovers(tmp_path, _clean_drive):
     assert [u for u in sess.hits[n1:] if "/items/a/" in u] == []                # 'a' reused (not re-fetched)
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/a") == 1                # no duplicates on resume
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/b") == 1
+
+
+# --- Graph 'root:/...' path normalization (import-blocking bug) + security guard stays intact -----------
+
+def test_normalize_graph_folder_strips_only_transport_prefix():
+    from app.importers.sharepoint import _normalize_graph_folder
+    assert _normalize_graph_folder(
+        "/drives/b!xyz/root:/360 Wealth Consulting, LLC/Accounts") == "360 Wealth Consulting, LLC/Accounts"
+    assert _normalize_graph_folder("/drive/root:/Statements") == "Statements"
+    assert _normalize_graph_folder("/drives/id/root:") == ""            # drive root -> no folder
+    assert _normalize_graph_folder("Clients/Jane Doe") == "Clients/Jane Doe"   # already relative, unchanged
+    assert _normalize_graph_folder("") == ""
+
+
+def test_graph_root_path_imports_and_preserves_hierarchy(tmp_path):
+    from pathlib import Path
+
+    from app.importers import sharepoint
+    f = tmp_path / "f.pdf"
+    f.write_text("graph root: path content unique")
+    item = {"name": "f.pdf", "web_url": f"https://sp/{_A}/rootpath", "item_id": "rp1", "drive_id": "b!x",
+            "site": "SiteX", "library": "Docs",
+            "folder_path": "/drives/b!x/root:/360 Wealth Consulting, LLC/Accounts/Jane Doe",
+            "modified_at": "2024-01-01T00:00:00", "size": f.stat().st_size, "local_path": str(f)}
+    summary = sharepoint.import_sharepoint_items([item], destination_root=str(tmp_path / "dest"))
+    _track()
+    assert summary["canonical_created"] == 1 and not summary["errors"]  # no 'unsafe path segment root:'
+    landed = Path(tmp_path) / "dest" / "SiteX" / "Docs" / "360 Wealth Consulting, LLC" / "Accounts" / "Jane Doe"
+    assert landed.exists() and any(landed.iterdir())                    # hierarchy preserved verbatim
+
+
+def test_path_guard_still_rejects_traversal_behind_and_without_prefix():
+    import pytest as _pytest
+
+    from app.importers.sharepoint import _rel_path
+    from app.importers.taxdome_drive import sanitize_relative_path
+    # traversal / drive letters HIDDEN behind the Graph prefix are still rejected after normalization
+    for folder in ("/drives/id/root:/../../etc/passwd", "root:/../secret",
+                   "/drive/root:/a/../../b", "/drives/id/root:/root:/x"):
+        with _pytest.raises(ValueError):
+            sanitize_relative_path(_rel_path({"site": "S", "library": "D", "folder_path": folder}, "x.pdf"))
+    # and the guard is unchanged for non-Graph unsafe paths
+    for folder in ("../../secret", "C:/Windows/System32", "a/../../b"):
+        with _pytest.raises(ValueError):
+            sanitize_relative_path(_rel_path({"site": "S", "library": "D", "folder_path": folder}, "x.pdf"))

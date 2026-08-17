@@ -102,10 +102,33 @@ def _item_uri(item: dict) -> str:
             or f"sharepoint://{item.get('site','')}/{item.get('library','')}/{item.get('item_id','')}")
 
 
+def _normalize_graph_folder(path: str) -> str:
+    """Strip the Microsoft Graph transport PREFIX from a driveItem ``parentReference.path`` so only the
+    real SharePoint folder hierarchy remains, e.g.::
+
+        /drives/<drive-id>/root:/360 Wealth Consulting, LLC/Accounts  ->  360 Wealth Consulting, LLC/Accounts
+        /drive/root:/Statements                                       ->  Statements
+        /drives/<drive-id>/root:                                      ->  ''  (drive root)
+        Clients/Jane Doe                                              ->  Clients/Jane Doe  (already relative)
+
+    This removes ONLY the ``…/root:`` transport syntax. The folder hierarchy is preserved verbatim and the
+    result is still passed through :func:`sanitize_relative_path`, so the general unsafe-path guard
+    (``..``, absolute paths, drive letters, any residual ``:`` segment) is fully intact — e.g. a traversal
+    hidden behind the prefix (``…/root:/../../etc``) normalizes to ``../../etc`` and is still rejected."""
+    if not path:
+        return ""
+    p = str(path)
+    marker = "root:"
+    idx = p.find(marker)                                   # SharePoint folder names cannot contain ':'
+    if idx != -1:
+        p = p[idx + len(marker):]                          # keep only what follows the transport prefix
+    return p.strip("/")
+
+
 def _rel_path(item: dict, filename: str) -> str:
     """Human-meaningful relative path under the destination root: Site/Library/<folder>/<file>."""
     parts = [str(item.get("site") or "Site"), str(item.get("library") or "Documents")]
-    folder = (item.get("folder_path") or item.get("folder") or "").strip("/")
+    folder = _normalize_graph_folder(item.get("folder_path") or item.get("folder") or "")
     if folder:
         parts.extend(folder.split("/"))
     parts.append(filename)
