@@ -326,3 +326,29 @@ def test_finalize_is_idempotent(tmp_path):
     did = _doc(tmp_path, f"{_TAG} sheet.xlsx", sha="z" * 64)
     assert finalize_document_ocr_state(did) == "unsupported"
     assert finalize_document_ocr_state(did) == "unsupported"    # second call is a no-op
+
+
+# --- OCR backend unavailable must record a truthful RETRYABLE state, not a silent no-state -------------
+# Root cause of the pilot's 25 "no OCR state" docs: _live_ocr swallowed build_production_extractor()'s
+# OcrBackendUnavailable and returned "" WITHOUT writing any document_ocr row, so scanned/image documents
+# were left stateless and later mislabeled. They must instead be recorded failed (retryable).
+
+def test_live_ocr_records_failed_state_when_backend_unavailable(tmp_path):
+    from app.services.document_owner_proposal import _live_ocr
+    did = _doc(tmp_path, f"{_TAG} scan.png", sha="p" * 64)      # image genuinely needs OCR
+    with engine.connect() as conn:
+        text = _live_ocr(conn, did)                            # CI has no OCR engine -> build fails
+    assert text == ""                                          # still fails safe (ingestion not blocked)
+    row = _ocr(did)
+    assert row is not None and row["status"] == "failed"       # NOT silently stateless
+    assert "OCR backend unavailable" in (row["last_error"] or "")
+
+
+def test_backend_unavailable_state_is_retryable_and_completes(tmp_path):
+    from app.services.document_ocr import record_ocr_unavailable
+    did = _doc(tmp_path, f"{_TAG} retry.pdf", sha="q" * 64)
+    record_ocr_unavailable(did, "no engine on host")
+    assert _ocr(did)["status"] == "failed"                     # recorded, retryable
+    deps, _ = _deps(pdf_texts=["the engine is now installed and this text is extracted"])
+    s = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps), mode="retry")
+    assert s["completed"] == 1 and _ocr(did)["status"] == "completed"   # retry succeeds once engine present

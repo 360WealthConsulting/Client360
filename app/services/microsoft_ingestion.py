@@ -614,9 +614,10 @@ def manifest_ocr_status(manifest_path):
         _parse_manifest_records(p.read_text(encoding="utf-8", errors="replace")) or [])
     ds = metadata.tables.get("document_sources")
     doc_ocr = metadata.tables.get("document_ocr")
-    out = {"exists": True, "path": str(p), "manifest_items": len(items), "imported": 0,
-           "not_imported": 0, "ocr_completed": 0, "ocr_pending": 0, "ocr_failed": 0,
+    out = {"exists": True, "path": str(p), "manifest_items": len(items), "unique_documents": 0,
+           "imported": 0, "not_imported": 0, "ocr_completed": 0, "ocr_pending": 0, "ocr_failed": 0,
            "ocr_timed_out": 0, "ocr_unsupported": 0}
+    seen = set()
     with engine.connect() as conn:
         for it in items:
             did = (conn.execute(select(ds.c.document_id).where(
@@ -625,12 +626,16 @@ def manifest_ocr_status(manifest_path):
             if not did:
                 out["not_imported"] += 1
                 continue
-            out["imported"] += 1
+            out["imported"] += 1                             # per-item (references)
+            if did in seen:
+                continue                                     # OCR state counted once per unique document
+            seen.add(did)
             st = (conn.execute(select(doc_ocr.c.status).where(doc_ocr.c.document_id == did)).scalar()
                   if doc_ocr is not None else None)
             key = {"completed": "ocr_completed", "timed_out": "ocr_timed_out", "failed": "ocr_failed",
                    "unsupported": "ocr_unsupported"}.get(st, "ocr_pending")
             out[key] += 1
+    out["unique_documents"] = len(seen)                       # OCR buckets sum to this, matching the detail
     return out
 
 

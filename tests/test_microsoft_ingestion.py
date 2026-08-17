@@ -1293,7 +1293,8 @@ def test_resume_ocr_runs_on_already_imported_docs_no_download(tmp_path, monkeypa
 
 def test_manifest_ocr_status_reports_imported_and_pending(tmp_path):
     import json
-    items = [_item(tmp_path, name=f"m{i}.txt", uri=f"https://sp/{_A}/mst{i}") for i in range(2)]
+    items = [_item(tmp_path, name=f"m{i}.txt", uri=f"https://sp/{_A}/mst{i}", body=f"distinct body {i}")
+             for i in range(2)]
     mi.run_sharepoint_sync(items=items, destination_root=str(tmp_path / "dest"), dry_run=False,
                            ocr=False, authoritative=False)  # imported, OCR not yet run
     _track()
@@ -1324,3 +1325,25 @@ def test_ocr_analyze_finalizes_native_text_docs_not_pending(tmp_path, monkeypatc
     status = mi._ocr_analyze(did)
     assert status == "unsupported"                              # .docx -> terminal, not 'none'
     assert mi._ocr_status_for(did) == "unsupported"
+
+
+def test_manifest_ocr_status_dedupes_ocr_counts_by_document(tmp_path):
+    # Two manifest items with identical content dedupe to ONE canonical document (two source refs). The
+    # aggregate OCR counts must be per-unique-document so they match the per-document problem list
+    # (reconciles the pilot's ocr_failed=27 aggregate vs 26 detailed).
+    import json
+    a = _item(tmp_path, name="dup.txt", uri=f"https://sp/{_A}/dupA", body="identical content body")
+    b = _item(tmp_path, name="dup.txt", uri=f"https://sp/{_A}/dupB", body="identical content body")
+    mi.run_sharepoint_sync(items=[a, b], destination_root=str(tmp_path / "dest"), dry_run=False,
+                           ocr=False, authoritative=False)
+    _track()
+    recs = [{"name": it["name"], "web_url": it["web_url"], "item_id": it["item_id"], "drive_id": "d",
+             "target": it["local_path"], "status": "downloaded"} for it in (a, b)]
+    p = tmp_path / "m.json"
+    p.write_text(json.dumps(recs))
+    d = mi.manifest_ocr_status(str(p))
+    assert d["manifest_items"] == 2 and d["imported"] == 2      # per-item references (unchanged)
+    assert d["unique_documents"] == 1                           # deduped to one canonical document
+    total = (d["ocr_completed"] + d["ocr_pending"] + d["ocr_failed"] + d["ocr_timed_out"]
+             + d["ocr_unsupported"])
+    assert total == 1                                           # OCR buckets sum to unique docs, not items

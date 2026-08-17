@@ -290,15 +290,20 @@ def _xls_text(path):
 def _live_ocr(conn, document_id):
     """Trigger the EXISTING production OCR backend for one document (populates the document_ocr cache),
     then return its text. Reuses app.services.document_ocr.run_ocr + ocr_backend — it does NOT introduce a
-    second OCR/matching engine. Fully guarded: if no engine/libraries are installed, the type is
-    unsupported, or extraction fails, it returns "" so the caller fails safe to manual review and document
-    ingestion is never blocked."""
+    second OCR/matching engine. Fails safe to manual review (returns "") so ingestion is never blocked,
+    but ALWAYS records a truthful OCR state: if the engine/libraries are unavailable the document is left
+    in a retryable 'failed (OCR backend unavailable)' state — NOT silently stateless (which previously made
+    scanned/image documents look like they had 'no usable native text')."""
+    from app.services.document_ocr import record_ocr_unavailable, run_ocr
     try:
-        from app.services.document_ocr import run_ocr
         from app.services.ocr_backend import build_production_extractor
         extractor = build_production_extractor()          # raises OcrBackendUnavailable if not installed
+    except Exception as exc:  # noqa: BLE001 — backend/libs/config missing: record state, don't drop it
+        record_ocr_unavailable(document_id, str(exc))
+        return ""
+    try:
         run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess", batch_size=1)
-    except Exception:  # noqa: BLE001 — OCR unavailable/failure must never break extraction
+    except Exception:  # noqa: BLE001 — a per-run failure is already recorded as state by run_ocr/_ocr_one
         return ""
     return _ocr_cache_text(conn, document_id)
 

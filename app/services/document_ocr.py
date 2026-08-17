@@ -261,6 +261,18 @@ def _write_state(doc_id, *, status, text=None, engine_name=None, page_count=None
         conn.execute(documents.update().where(documents.c.id == doc_id).values(ocr_status=status))
 
 
+def record_ocr_unavailable(document_id, reason):
+    """Record that OCR was REQUIRED for a document but the backend could not be built/configured (engine
+    or libraries not installed on this host). Writes a truthful, RETRYABLE 'failed' state — never a silent
+    no-state that leaves a scanned/image document stuck with no OCR row. Retry mode re-attempts it once the
+    engine is installed. Never raises."""
+    try:
+        _write_state(document_id, status="failed", bump_attempt=True,
+                     last_error=f"OCR backend unavailable: {reason}"[:2000])
+    except Exception:  # noqa: BLE001 — recording must never break the caller
+        pass
+
+
 def _audit(summary, actor_user_id, request_id, dry_run):
     if dry_run:
         return
