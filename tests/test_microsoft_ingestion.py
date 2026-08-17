@@ -1641,3 +1641,77 @@ def test_old_source_sync_delta_link_does_not_skip_canonical_baseline(tmp_path, _
     # Diagnostics show the two checkpoints SEPARATELY.
     d = mi.sharepoint_delta_diagnostics(drive_ids=[_DRIVE_DELTA])[0]
     assert d["source_sync_checkpoint"] is True and d["canonical_checkpoint"] is True
+
+
+# --- --delta-sync progress reporting (throttled every N files OR interval; non-blocking; no semantic change)
+
+def test_delta_sync_progress_emits_every_n_files(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed(f"p{i}", _DRIVE_DELTA) for i in range(5)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    lines = []
+    res = mi.run_sharepoint_delta_sync(
+        drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=_dl_stub(tmp_path),
+        destination_root=str(tmp_path / "canon"), ocr=False,
+        report=lines.append, report_every=2, report_interval=10 ** 9, now=lambda: 0.0)  # count-only trigger
+    _track()
+    tallies = [ln for ln in lines if ln.startswith("[delta-progress]")]
+    assert len(tallies) >= 2                                    # emitted during the download loop, not just once
+    assert all("downloaded=" in ln and "bytes=" in ln and "canonical_created=" in ln for ln in tallies)
+    # semantics unchanged: full baseline, checkpoint advanced, all imported
+    assert res["imported"] == 5 and res["checkpoints_advanced"] == 1
+    final = tallies[-1]
+    assert "downloaded=5" in final and "canonical_created=5" in final and "checkpoint=ADVANCED" in final
+    assert "bytes=0" not in final                              # real byte total accumulated
+
+
+def test_delta_sync_progress_emits_on_interval_even_with_few_files(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("only1", _DRIVE_DELTA)], "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    ticks = {"n": 0}
+
+    def clock():                                               # each call jumps 61s -> interval always tripped
+        ticks["n"] += 1
+        return ticks["n"] * 61.0
+    lines = []
+    mi.run_sharepoint_delta_sync(
+        drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=_dl_stub(tmp_path),
+        destination_root=str(tmp_path / "canon"), ocr=False,
+        report=lines.append, report_every=10 ** 9, report_interval=60, now=clock)  # time-only trigger
+    _track()
+    assert any(ln.startswith("[delta-progress]") and "downloaded=1" in ln for ln in lines)  # time-based emit
+
+
+def test_delta_sync_progress_reports_download_failure_and_hold_nonblocking(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("good", _DRIVE_DELTA), _changed("boom", _DRIVE_DELTA)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+
+    def dl(drive_id, it):
+        if it["id"] == "boom":
+            raise RuntimeError("network reset")
+        f = tmp_path / f"{it['id']}.bin"
+        f.write_text("ok body")
+        return str(f)
+    lines = []
+    mi.run_sharepoint_delta_sync(
+        drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+        destination_root=str(tmp_path / "canon"), ocr=False, report=lines.append, now=lambda: 0.0)
+    _track()
+    final = [ln for ln in lines if ln.startswith("[delta-progress]")][-1]
+    assert "download_failed=1" in final and "downloaded=1" in final    # bad item non-blocking; good one done
+    assert "checkpoint=HELD" in final                                  # progress shows the held state
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None           # checkpoint semantics unchanged (held)
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/good") == 1
+
+
+def test_delta_sync_progress_does_not_change_result_vs_none(tmp_path, _clean_drive):
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("x1", _DRIVE_DELTA), _changed("x2", _DRIVE_DELTA)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    r = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u],
+                                     download=_dl_stub(tmp_path), destination_root=str(tmp_path / "c"),
+                                     ocr=False, report=lambda ln: None)   # progress sink present but silent
+    _track()
+    assert r["imported"] == 2 and r["checkpoints_advanced"] == 1 and r["drives"][0]["advanced"] is True
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"

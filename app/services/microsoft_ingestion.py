@@ -941,9 +941,94 @@ def _download_delta_item(session, drive_id, it, staging_dir):
     return str(dest)
 
 
+def _staged_size(it, local_path):
+    """Bytes for progress accounting: the driveItem's declared size, else the staged file size."""
+    sz = it.get("size")
+    if sz is not None:
+        return int(sz)
+    try:
+        import os
+        return os.path.getsize(local_path)
+    except OSError:
+        return 0
+
+
+class _DeltaProgress:
+    """Throttled progress reporter for --delta-sync: emits a one-line tally at least every ``every`` files
+    OR ``interval`` seconds (whichever comes first). Cheap — plain counters + a throttled sink call, so it
+    never materially slows ingestion and never touches checkpoint semantics. ``now``/``sink`` are injected
+    for testing."""
+
+    def __init__(self, *, every=100, interval=60, sink=None, now=None):
+        import time
+        self._every, self._interval = every, interval
+        self._sink = sink or (lambda line: print(line, flush=True))
+        self._now = now or time.monotonic
+        self._start = self._now()
+        self._last_emit, self._last_count, self._processed = self._start, 0, 0
+        self.drive = None
+        self.checkpoint = "NOT_ADVANCED (baseline running)"
+        self.t = {"enumerated": 0, "changed": 0, "downloaded": 0, "download_failed": 0, "bytes": 0,
+                  "reused_existing": 0, "canonical_created": 0, "canonical_reused": 0,
+                  "ocr_completed": 0, "ocr_failed": 0, "ocr_unsupported": 0, "ocr_timed_out": 0}
+
+    def set_drive(self, drive_id):
+        self.drive, self.checkpoint = drive_id, "NOT_ADVANCED (baseline running)"
+
+    def set_changed(self, n):
+        self.t["changed"] = n
+
+    def on_download(self, size_bytes):
+        self.t["enumerated"] += 1
+        self.t["downloaded"] += 1
+        self.t["bytes"] += int(size_bytes or 0)
+        self._processed += 1
+        self._maybe_emit()
+
+    def on_download_failed(self):
+        self.t["enumerated"] += 1
+        self.t["download_failed"] += 1
+        self._processed += 1
+        self._maybe_emit()
+
+    def on_import(self, summary):
+        self.t["canonical_created"] += summary.get("canonical_created", 0)
+        self.t["canonical_reused"] += summary.get("reused_canonical", 0)
+        self.t["reused_existing"] += summary.get("skipped", 0)
+
+    def on_ocr(self, status):
+        key = {"completed": "ocr_completed", "failed": "ocr_failed", "error": "ocr_failed",
+               "unsupported": "ocr_unsupported", "timed_out": "ocr_timed_out"}.get(status)
+        if key:
+            self.t[key] += 1
+        self._processed += 1
+        self._maybe_emit()
+
+    def set_checkpoint(self, state):
+        self.checkpoint = state
+
+    def _maybe_emit(self):
+        if (self._processed - self._last_count) >= self._every or \
+                (self._now() - self._last_emit) >= self._interval:
+            self.emit()
+
+    def emit(self):
+        self._last_emit, self._last_count = self._now(), self._processed
+        t = self.t
+        self._sink(
+            f"[delta-progress] drive={self.drive} elapsed={self._now() - self._start:.1f}s "
+            f"enumerated={t['enumerated']} changed={t['changed']} downloaded={t['downloaded']} "
+            f"download_failed={t['download_failed']} reused_existing={t['reused_existing']} "
+            f"canonical_created={t['canonical_created']} canonical_reused={t['canonical_reused']} "
+            f"ocr_completed={t['ocr_completed']} ocr_failed={t['ocr_failed']} "
+            f"ocr_unsupported={t['ocr_unsupported']} ocr_timed_out={t['ocr_timed_out']} "
+            f"bytes={t['bytes']} checkpoint={self.checkpoint}")
+
+
 def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, download=None,
                               staging_root=None, destination_root=None, timeout=120, ocr=True,
-                              actor_user_id=None, trigger_source="scheduled", progress=None):
+                              actor_user_id=None, trigger_source="scheduled", progress=None,
+                              report=None, report_every=100, report_interval=60, now=None):
     """Delta-CHECKPOINTED recurring canonical SharePoint sync.
 
     Per drive: resume from the durably-persisted @odata.deltaLink (or initial /root/delta on first sync),
@@ -967,11 +1052,13 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
         fetch = fetch or _graph_fetch_from_session(session)
         download = download or (lambda d, it: _download_delta_item(session, d, it, staging))
     ids = list(drive_ids) if drive_ids is not None else _discovered_drive_ids()
+    rep = _DeltaProgress(every=report_every, interval=report_interval, sink=report, now=now)
     out = {"status": "completed", "drives": [], "changed": 0, "deleted": 0, "imported": 0,
            "ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "checkpoints_advanced": 0,
            "exceptions": []}
     for did in ids:
         drv = {"drive_id": did, "advanced": False}
+        rep.set_drive(did)
         try:                                              # full delta traversal (persist=False — advance later)
             res = sharepoint_delta_changes(did, fetch, resume=True, persist=False,
                                            timeout=timeout, progress=progress)
@@ -979,14 +1066,20 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
             out["exceptions"].append({"drive_id": did, "phase": "traversal", "error": str(exc)[:500]})
             out["status"] = "completed_with_errors"
             drv["held_reason"] = "delta traversal failed"
+            rep.set_checkpoint("HELD (traversal failed)")
+            rep.emit()
             out["drives"].append(drv)
             continue
+        rep.set_changed(len(res["changed"]))
         records, dl_failures = [], 0
         for it in res["changed"]:                         # download changed items (isolated per item)
             try:
-                records.append(_delta_item_record(did, it, download(did, it)))
-            except Exception as exc:  # noqa: BLE001
+                lp = download(did, it)
+                records.append(_delta_item_record(did, it, lp))
+                rep.on_download(_staged_size(it, lp))     # progress: enumerated/downloaded/bytes (throttled)
+            except Exception as exc:  # noqa: BLE001 — one bad item is non-blocking; keep going
                 dl_failures += 1
+                rep.on_download_failed()
                 out["exceptions"].append({"drive_id": did, "item_id": it.get("id"),
                                           "phase": "download", "error": str(exc)[:500]})
         records.extend(_delta_deletion_record(did, it) for it in res["deleted"])
@@ -998,8 +1091,12 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
             out["exceptions"].append({"drive_id": did, "phase": "import", "error": str(exc)[:500]})
             out["status"] = "completed_with_errors"
             drv["held_reason"] = "import failed"
+            rep.set_checkpoint("HELD (import failed)")
+            rep.emit()
             out["drives"].append(drv)
             continue
+        rep.on_import(summary)
+        rep.emit()                                        # a line around the bulk import boundary
         import_item_failures = len(summary.get("errors", []))
         for e in summary.get("errors", []):
             out["exceptions"].append({"drive_id": did, "phase": "import_item", "error": e})
@@ -1007,7 +1104,11 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
         out["deleted"] += len(res["deleted"])
         out["imported"] += summary.get("canonical_created", 0) + summary.get("reused_canonical", 0)
         if ocr:                                           # OCR failures preserved; do NOT hold the checkpoint
-            counts = _ocr_documents(summary.get("affected_document_ids", []), progress=progress)
+            def _ocr_prog(ev, _rep=rep):
+                _rep.on_ocr(ev.get("status"))            # progress: OCR completed/failed/unsupported/timed_out
+                if progress:
+                    progress(ev)
+            counts = _ocr_documents(summary.get("affected_document_ids", []), progress=_ocr_prog)
             out["ocr_analyzed"] += counts["ocr_analyzed"]
             out["ocr_failed"] += counts["ocr_failed"]
             out["ocr_timed_out"] += counts["ocr_timed_out"]
@@ -1016,10 +1117,13 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
             save_canonical_delta_link(did, res["delta_link"])
             drv["advanced"] = True
             out["checkpoints_advanced"] += 1
+            rep.set_checkpoint("ADVANCED")
         else:
             drv["held_reason"] = (f"{dl_failures} download + {import_item_failures} import failure(s) — "
                                   "checkpoint held; changes re-delivered next sync")
             out["status"] = "completed_with_errors"
+            rep.set_checkpoint("HELD (download/import failures)")
+        rep.emit()                                        # final per-drive line (with the checkpoint outcome)
         drv.update({"resumed": res["resumed"], "changed": len(res["changed"]),
                     "deleted": len(res["deleted"]), "download_failures": dl_failures,
                     "import_item_failures": import_item_failures})
