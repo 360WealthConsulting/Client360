@@ -7,6 +7,15 @@ from sqlalchemy import and_, insert, or_, select, update
 
 from app.db import documents, engine, people
 
+# Reuse the SINGLE vault validation implementation (no second security implementation) so an
+# untrusted client upload landing in the documents table gets the same controls as the vault path.
+from app.services.vault.storage import (
+    MAX_UPLOAD_BYTES,
+    VaultStorageError,
+    content_matches_extension,
+    validate_extension,
+)
+
 DOCUMENT_ROOT = Path("documents")
 
 
@@ -33,19 +42,40 @@ def save_person_document(
     category: str | None = None,
     description: str | None = None,
     uploaded_by: str | None = None,
+    verify_content: bool = False,
 ) -> int:
+    """Store an uploaded stream as a person document.
+
+    ``verify_content`` (opt-in for UNTRUSTED client uploads) applies the same controls as the vault
+    client-upload path — extension allow-list, streamed size cap, and leading-byte/extension content
+    validation — by calling the single vault validation implementation. Trusted internal callers
+    leave it off, so their behavior is unchanged. Filename safety (only a short, sanitized suffix is
+    ever used, appended to a random name) and SHA-256 already apply on every path."""
+    ext = validate_extension(original_name) if verify_content else None
     stored_name = f"{uuid.uuid4().hex}{_safe_suffix(original_name)}"
     destination = _person_directory(person_id) / stored_name
 
     digest = hashlib.sha256()
     size_bytes = 0
+    first_chunk = True
 
     try:
         with destination.open("wb") as output:
             while chunk := source.read(1024 * 1024):
-                output.write(chunk)
-                digest.update(chunk)
+                if verify_content and first_chunk:
+                    first_chunk = False
+                    if not content_matches_extension(ext, chunk):
+                        raise VaultStorageError(
+                            f"File contents do not match a '.{ext}' file. Please upload a genuine "
+                            f"{ext.upper()} file.")
                 size_bytes += len(chunk)
+                if verify_content and size_bytes > MAX_UPLOAD_BYTES:
+                    raise VaultStorageError(
+                        f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
+                digest.update(chunk)
+                output.write(chunk)
+        if verify_content and size_bytes == 0:
+            raise VaultStorageError("Empty file.")
 
         with engine.begin() as connection:
             document_id = connection.execute(

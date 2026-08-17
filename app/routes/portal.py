@@ -457,14 +457,24 @@ def api_documents(principal: PortalPrincipal = Depends(current_portal)): return 
 def api_requests(principal: PortalPrincipal = Depends(current_portal)): return {"requests": client_document_requests(principal)}
 @router.post("/api/v1/portal/requests/{request_id}/upload", status_code=201)
 async def api_request_upload(request_id: int, file: UploadFile = File(...), principal: PortalPrincipal = Depends(current_portal)):
+    # Legacy request-fulfilment upload. Storage stays in the `documents` table because the request's
+    # uploaded_document_id / document_versions FKs and confirm_request_upload are documents-bound (a
+    # vault doc id could not satisfy those FKs), so it cannot route through portal_vault.upload_document
+    # without breaking fulfilment. Instead it now applies the SAME client-upload controls via
+    # save_person_document(verify_content=True): extension allow-list, streamed size cap, content/
+    # magic-byte validation, filename/path safety and SHA-256. Scope + confirmation semantics preserved.
     with engine.connect() as connection: row = connection.execute(select(portal_document_requests).where(portal_document_requests.c.id == request_id)).mappings().one_or_none()
     if not row: raise HTTPException(404, "Document request not found")
     try: require_scope(principal, person_id=row["person_id"], household_id=row["household_id"], permission="documents")
-    except PermissionError as exc: raise HTTPException(403, str(exc))
-    document_id = save_person_document(person_id=row["person_id"], original_name=file.filename or "portal-upload", source=file.file, content_type=file.content_type, category="portal_request", description=row["title"], uploaded_by=principal.display_name)
-    await file.close()
+    except PermissionError as exc: raise HTTPException(403, str(exc)) from exc
+    try:
+        document_id = save_person_document(person_id=row["person_id"], original_name=file.filename or "portal-upload", source=file.file, content_type=file.content_type, category="portal_request", description=row["title"], uploaded_by=principal.display_name, verify_content=True)
+    except VaultStorageError as exc:
+        raise HTTPException(400, str(exc)) from exc      # bad extension / oversize / content mismatch / empty
+    finally:
+        await file.close()
     try: version = confirm_request_upload(principal, request_id, document_id)
-    except PermissionError as exc: raise HTTPException(403, str(exc))
+    except PermissionError as exc: raise HTTPException(403, str(exc)) from exc
     return {"document_id": document_id, "version": version, "status": "uploaded"}
 
 @router.get("/api/v1/portal/tasks")
