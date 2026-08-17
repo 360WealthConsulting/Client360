@@ -639,6 +639,46 @@ def manifest_ocr_status(manifest_path):
     return out
 
 
+def repair_ocr_source_paths(manifest_path, *, destination_root=None, dry_run=False):
+    """Repair the OCR-source linkage for already-imported documents whose canonical row has NO resolvable
+    local file (e.g. a reused/migrated document with empty/stale storage) by backfilling a local copy from
+    the manifest's still-present STAGED file. NO Graph, NO download. Safe: content-verified, only fills a
+    MISSING file, never overwrites/changes canonical content. ``dry_run`` reports what would be repaired."""
+    from app.db import documents
+    from app.importers.sharepoint import (
+        _has_resolvable_file,
+        backfill_local_source,
+        resolved_staged_path,
+    )
+    items = load_manifest_items(manifest_path)
+    out = {"checked": 0, "missing_source": 0, "repaired": 0, "no_staged_file": 0, "details": []}
+    for it in items:
+        staged = resolved_staged_path(it)
+        dids = _document_ids_for_items([it])
+        did = dids[0] if dids else None
+        if did is None:
+            continue
+        out["checked"] += 1
+        with engine.connect() as conn:
+            row = conn.execute(select(documents.c.storage_uri, documents.c.storage_path)
+                               .where(documents.c.id == did)).mappings().first()
+        if _has_resolvable_file(row):
+            continue
+        out["missing_source"] += 1
+        if not staged:
+            out["no_staged_file"] += 1
+            out["details"].append({"document_id": did, "action": "no_staged_file",
+                                   "web_url": it.get("web_url")})
+            continue
+        if dry_run:
+            out["details"].append({"document_id": did, "action": "would_backfill", "staged": staged})
+            continue
+        if backfill_local_source(did, staged, destination_root=destination_root):
+            out["repaired"] += 1
+            out["details"].append({"document_id": did, "action": "backfilled", "staged": staged})
+    return out
+
+
 def manifest_ocr_problems(manifest_path):
     """READ-ONLY: the imported documents for a manifest that are in a failed/timed_out OCR state — their
     document_id, filename, status, attempts, and last_error (NO contents). Identifies exactly which docs

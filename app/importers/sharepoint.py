@@ -138,6 +138,43 @@ def resolved_staged_path(item):
     return None
 
 
+def _has_resolvable_file(row) -> bool:
+    """True if a documents row points at an existing local file (storage_uri or storage_path)."""
+    if row is None:
+        return False
+    for key in ("storage_uri", "storage_path"):
+        v = row.get(key) if hasattr(row, "get") else None
+        if v and Path(str(v)).exists():
+            return True
+    return False
+
+
+def backfill_local_source(document_id, staged_path, *, destination_root=None) -> bool:
+    """Give a canonical document a resolvable LOCAL file for OCR/analysis by copying a staged file into the
+    canonical store and pointing storage_uri/path at it. SAFE: a no-op if the document already has a
+    resolvable file; the staged content SHA must match the document's sha256 (never links the wrong file);
+    never overwrites a good copy; never changes canonical identity/content. Returns True if it backfilled."""
+    staged = Path(staged_path)
+    if not staged.is_file():
+        return False
+    db = _database()
+    destination = Path(destination_root or DEFAULT_DESTINATION_ROOT)
+    with db.engine.begin() as conn:
+        row = conn.execute(select(db.documents.c.storage_uri, db.documents.c.storage_path,
+                                  db.documents.c.sha256, db.documents.c.original_name)
+                           .where(db.documents.c.id == document_id)).mappings().first()
+        if row is None or _has_resolvable_file(row):
+            return False
+        if row["sha256"] and _content_sha256(staged) != row["sha256"]:
+            return False                                   # safety: staged file must be this document
+        safe_rel = sanitize_relative_path(row["original_name"] or staged.name)
+        dest_abs = destination / Path(*safe_rel.parts)
+        _copy_verified(staged, dest_abs)
+        conn.execute(db.documents.update().where(db.documents.c.id == document_id)
+                     .values(storage_uri=str(dest_abs), storage_path=str(safe_rel)))
+    return True
+
+
 def import_sharepoint_items(items, *, destination_root=None, actor_user_id=None, request_id=None,
                             dry_run=False, purge_missing=False, authoritative=False, progress=None,
                             progress_interval=100) -> dict:
@@ -258,7 +295,19 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
             storage_uri, storage_path = str(dest_abs), str(safe_rel)
             summary["bytes_copied"] += size
         else:
-            storage_uri, storage_path = "", ""             # reuse ignores storage_*
+            storage_uri, storage_path = "", ""             # reuse ignores storage_* (keeps existing copy)
+            # ...BUT if the reused canonical has NO resolvable local file (e.g. a prior migrated/dedup
+            # document with empty/stale storage), OCR/analysis would have no source. Backfill a local copy
+            # from the staged file — only when missing, content verified, never overwriting a good file.
+            ex = conn.execute(select(db.documents.c.storage_uri, db.documents.c.storage_path)
+                              .where(db.documents.c.id == existing_doc)).mappings().first()
+            if not _has_resolvable_file(ex):
+                dest_abs = (destination / Path(*safe_rel.parts))
+                _copy_verified(staged, dest_abs)
+                conn.execute(db.documents.update().where(db.documents.c.id == existing_doc)
+                             .values(storage_uri=str(dest_abs), storage_path=str(safe_rel)))
+                summary["bytes_copied"] += size
+                summary["storage_backfilled"] = summary.get("storage_backfilled", 0) + 1
 
         household_id = item.get("household_id")
         person_id = item.get("person_id")

@@ -44,6 +44,9 @@ def main(argv=None):
     ap.add_argument("--resume-ocr", action="store_true",
                     help="with --manifest: reconcile (no download) then run OCR/analysis on the already-"
                          "imported documents. Cache-aware; bounded per page/document; safe to re-run.")
+    ap.add_argument("--repair-storage", default=None, metavar="MANIFEST",
+                    help="repair OCR-source linkage: backfill a local file for already-imported documents "
+                         "that have none, from the manifest's staged files (no Graph, no download).")
     args = ap.parse_args(argv)
 
     def _progress(ev):
@@ -84,6 +87,17 @@ def main(argv=None):
         print("SharePoint staging diagnostics (READ-ONLY, no Graph call):")
         for k, v in sharepoint_staging_diagnostics().items():
             print(f"  {k}: {v}")
+        return 0
+
+    if args.repair_storage:
+        from app.services.microsoft_ingestion import repair_ocr_source_paths
+        print(f"Repairing OCR-source linkage from staged files (no Graph, no download){' [DRY RUN]' if args.dry_run else ''}: "
+              f"{args.repair_storage}")
+        res = repair_ocr_source_paths(args.repair_storage, dry_run=args.dry_run)
+        for k in ("checked", "missing_source", "repaired", "no_staged_file"):
+            print(f"  {k}: {res[k]}")
+        for d in res["details"][:50]:
+            print(f"    - doc {d['document_id']}: {d['action']} {d.get('staged') or d.get('web_url') or ''}")
         return 0
 
     diag = {}

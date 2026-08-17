@@ -399,3 +399,43 @@ def test_cli_reports_backend_config_error_and_does_not_use_default_extractor(mon
     assert rc == 2 and "OCR backend not available" in out       # clear config error
     assert "TESSERACT_CMD" in out
     assert calls["run_ocr"] == 0                                # never ran candidates through the stub
+
+
+# --- PDF whose text layer is unreadable by pypdf (e.g. "Cannot find Root object") falls back to render --
+# Doc 29184 Vanguard: pypdf raised and aborted the whole document. Poppler can often still render it, so
+# _extract_pdf now falls back to full-page render + OCR instead of failing.
+
+def test_pdf_text_layer_unreadable_falls_back_to_render_ocr(tmp_path):
+    def bad_texts(_p):
+        raise Exception("Cannot find Root object; is this really a PDF?")
+    deps = OcrDeps(bad_texts, lambda p, i: f"pg-{i}", lambda p: [], lambda img: f"ocr[{img}]",
+                   lambda: "5.4.0", pdf_render_all=lambda p: ["imgA", "imgB"])
+    ex = build_extractor(deps)
+    f = _file(tmp_path, "vanguard.pdf")
+    r = ex(_row(f"{_TAG} Vanguard Change form.pdf", f), f)
+    assert r["page_count"] == 2 and "ocr[imgA]" in r["text"] and "ocr[imgB]" in r["text"]
+    assert "rendered" in r["engine"] and "text layer unreadable" in r["engine"]
+
+
+def test_unreadable_pdf_without_render_fallback_raises(tmp_path):
+    def bad_texts(_p):
+        raise Exception("Cannot find Root object")
+    deps = OcrDeps(bad_texts, lambda p, i: None, lambda p: [], lambda img: "", lambda: "5.4.0")  # no render_all
+    ex = build_extractor(deps)
+    f = _file(tmp_path, "corrupt.pdf")
+    with pytest.raises(Exception):                              # no fallback -> recorded failed by run_ocr
+        ex(_row(f"{_TAG} corrupt.pdf", f), f)
+
+
+def test_genuinely_corrupt_pdf_render_also_fails_and_propagates(tmp_path):
+    def bad_texts(_p):
+        raise Exception("Cannot find Root object")
+
+    def bad_render(_p):
+        raise Exception("poppler: Document base stream is not seekable / PDF file is damaged")
+    deps = OcrDeps(bad_texts, lambda p, i: None, lambda p: [], lambda img: "", lambda: "5.4.0",
+                   pdf_render_all=bad_render)
+    ex = build_extractor(deps)
+    f = _file(tmp_path, "damaged.pdf")
+    with pytest.raises(Exception):                              # genuinely unreadable -> truthful failure
+        ex(_row(f"{_TAG} damaged.pdf", f), f)

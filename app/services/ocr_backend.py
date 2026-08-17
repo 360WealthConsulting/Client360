@@ -105,6 +105,9 @@ class OcrDeps:
     image_pages: Callable[[Path], list[object]]      # load an image file → list of page images
     ocr_image: Callable[[object], str]               # OCR a single image → text
     engine_version: Callable[[], str]                # Tesseract version string
+    pdf_render_all: Callable[[Path], list] | None = None  # render ALL PDF pages (fallback when the text
+    #                                                        layer is unreadable by pypdf); poppler tolerates
+    #                                                        many malformed PDFs pypdf rejects.
 
 
 def _ext(name: str | None) -> str:
@@ -124,11 +127,39 @@ def _extract(row, path, deps: OcrDeps) -> dict:
     raise ValueError(f"Unsupported OCR file type: .{ext}")   # document_ocr already gates this; defensive
 
 
+def _extract_pdf_via_render(p: Path, deps: OcrDeps, *, page_to, doc_to, reason) -> dict:
+    """Fallback for a PDF whose text layer is unreadable (e.g. pypdf 'Cannot find Root object'): render
+    EVERY page with poppler (more tolerant of malformed PDFs) and OCR them. If the renderer also cannot
+    open the file it is genuinely corrupt and the error propagates (recorded truthfully as failed)."""
+    import time
+    render_all = getattr(deps, "pdf_render_all", None)
+    if render_all is None:
+        raise RuntimeError(f"PDF text layer unreadable and no render fallback available: {reason}")
+    images = list(_bounded(lambda: list(render_all(p)), doc_to))   # bounded; raises if poppler can't open
+    total = len(images)
+    deadline = time.monotonic() + doc_to if doc_to else None
+    texts = []
+    for i, img in enumerate(images):
+        if deadline is not None and time.monotonic() > deadline:
+            raise OcrTimeout(f"document {p.name} OCR exceeded {doc_to}s at page {i + 1}/{total}")
+        texts.append(_ocr_page(deps, lambda img=img: img, page_timeout=page_to,
+                               page_no=i + 1, total=total, name=p.name))
+    text = "\n\n".join(t.strip() for t in texts).strip()
+    return {"text": text, "page_count": total,
+            "engine": f"tesseract {deps.engine_version()} (rendered; text layer unreadable)"}
+
+
 def _extract_pdf(p: Path, deps: OcrDeps) -> dict:
     import time
     page_to, doc_to = ocr_page_timeout(), ocr_document_timeout()
     deadline = time.monotonic() + doc_to if doc_to else None
-    texts = list(deps.pdf_page_texts(p))
+    try:
+        texts = list(deps.pdf_page_texts(p))
+    except OcrTimeout:
+        raise
+    except Exception as exc:  # noqa: BLE001 — pypdf couldn't parse the PDF; try a poppler render fallback
+        log.warning("PDF text-layer read failed for %s (%s) — falling back to full-page render", p.name, exc)
+        return _extract_pdf_via_render(p, deps, page_to=page_to, doc_to=doc_to, reason=str(exc))
     total = len(texts)
     used_ocr = False
     for i, layer in enumerate(texts):
@@ -200,6 +231,10 @@ def production_deps() -> OcrDeps:
             raise RuntimeError(f"Failed to render page {index + 1} of {p.name}")
         return imgs[0]
 
+    def pdf_render_all(p: Path):
+        # Poppler renders every page; tolerates many malformed PDFs pypdf rejects (the text-layer fallback).
+        return convert_from_path(str(p), poppler_path=poppler_path)
+
     def image_pages(p: Path) -> list:
         img = Image.open(str(p))
         return [frame.copy() for frame in ImageSequence.Iterator(img)]
@@ -212,7 +247,8 @@ def production_deps() -> OcrDeps:
     def engine_version() -> str:
         return str(pytesseract.get_tesseract_version())
 
-    return OcrDeps(pdf_page_texts, render_pdf_page, image_pages, ocr_image, engine_version)
+    return OcrDeps(pdf_page_texts, render_pdf_page, image_pages, ocr_image, engine_version,
+                   pdf_render_all=pdf_render_all)
 
 
 def build_production_extractor():

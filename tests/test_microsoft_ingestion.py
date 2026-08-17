@@ -1347,3 +1347,83 @@ def test_manifest_ocr_status_dedupes_ocr_counts_by_document(tmp_path):
     total = (d["ocr_completed"] + d["ocr_pending"] + d["ocr_failed"] + d["ocr_timed_out"]
              + d["ocr_unsupported"])
     assert total == 1                                           # OCR buckets sum to unique docs, not items
+
+
+# --- doc 39364 class: a reused/migrated canonical with no resolvable local file must get an OCR source ---
+
+def _sha_of(text):
+    import hashlib
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def test_import_reuse_backfills_missing_local_source(tmp_path):
+    # A prior storage-less canonical (empty storage) with content hash S; importing a SharePoint item with
+    # the same content reuses it and must BACKFILL a local file so OCR/analysis has a source.
+    from app.db import documents
+    body = "vanguard/yates statement content — unique for reuse backfill"
+    sha = _sha_of(body)
+    with engine.begin() as c:
+        did = c.execute(documents.insert().values(
+            original_name="s2067.pdf", stored_name=f"pre-{uuid.uuid4().hex[:8]}",
+            storage_provider="Client360 Local", storage_uri="", storage_path="",
+            size_bytes=len(body), sha256=sha, status="active", archived=False)
+            .returning(documents.c.id)).scalar_one()
+    _SEEN_DOCS.add(did)
+    item = _item(tmp_path, name="s2067.pdf", uri=f"https://sp/{_A}/yates", body=body)
+    summary = mi.run_sharepoint_sync(items=[item], destination_root=str(tmp_path / "canon"),
+                                     dry_run=False, ocr=False, authoritative=False)
+    _track()
+    assert summary.get("storage_backfilled") == 1              # reuse detected the missing file and filled it
+    from app.importers.sharepoint import _has_resolvable_file
+    with engine.connect() as c:
+        row = c.execute(select(documents.c.storage_uri, documents.c.storage_path)
+                        .where(documents.c.id == did)).mappings().first()
+    assert _has_resolvable_file(row)                           # OCR source now resolves
+
+
+def test_backfill_local_source_refuses_on_sha_mismatch(tmp_path):
+    from app.db import documents
+    from app.importers.sharepoint import backfill_local_source
+    with engine.begin() as c:
+        did = c.execute(documents.insert().values(
+            original_name="x.pdf", stored_name=f"x-{uuid.uuid4().hex[:6]}",
+            storage_provider="Client360 Local", storage_uri="", storage_path="",
+            size_bytes=3, sha256="a" * 64, status="active", archived=False)
+            .returning(documents.c.id)).scalar_one()
+    _SEEN_DOCS.add(did)
+    wrong = tmp_path / "wrong.pdf"
+    wrong.write_text("different content — wrong file")         # sha != 'a'*64
+    assert backfill_local_source(did, str(wrong), destination_root=str(tmp_path / "c")) is False
+    with engine.connect() as c:
+        row = c.execute(select(documents.c.storage_uri).where(documents.c.id == did)).mappings().first()
+    assert not row["storage_uri"]                              # never linked the wrong file
+
+
+def test_repair_ocr_source_paths_backfills_from_manifest(tmp_path):
+    # Reproduce 39364: an imported doc whose canonical storage no longer resolves, repaired from the
+    # manifest's still-present staged file (no Graph, no download).
+    import json
+
+    from app.db import documents
+    body = "s2067 content used for the repair-from-manifest test path"
+    item = _item(tmp_path, name="s2067.pdf", uri=f"https://sp/{_A}/repair", body=body)
+    mi.run_sharepoint_sync(items=[item], destination_root=str(tmp_path / "canon"), dry_run=False,
+                           ocr=False, authoritative=False)
+    _track()
+    did = _doc_for(item["web_url"])["document_id"]
+    with engine.begin() as c:                                   # break the canonical storage pointer
+        c.execute(documents.update().where(documents.c.id == did)
+                  .values(storage_uri=str(tmp_path / "gone" / "missing.pdf"), storage_path=""))
+    p = tmp_path / "m.json"
+    p.write_text(json.dumps([{"name": "s2067.pdf", "web_url": item["web_url"], "item_id": item["item_id"],
+                              "drive_id": "d", "target": item["local_path"], "status": "downloaded"}]))
+    # dry-run reports without changing anything
+    dry = mi.repair_ocr_source_paths(str(p), destination_root=str(tmp_path / "canon"), dry_run=True)
+    assert dry["missing_source"] == 1 and dry["repaired"] == 0
+    res = mi.repair_ocr_source_paths(str(p), destination_root=str(tmp_path / "canon"))
+    assert res["missing_source"] == 1 and res["repaired"] == 1
+    from app.importers.sharepoint import _has_resolvable_file
+    with engine.connect() as c:
+        row = c.execute(select(documents.c.storage_uri, documents.c.storage_path)
+                        .where(documents.c.id == did)).mappings().first()
+    assert _has_resolvable_file(row)                           # OCR source path restored
