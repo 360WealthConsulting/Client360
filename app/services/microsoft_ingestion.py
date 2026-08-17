@@ -316,21 +316,158 @@ def _build_kwargs(fn, values):
     return kwargs
 
 
-def _read_manifest_file(path):
-    """Read the manifest the connector was told to write (the designed connector->importer handoff)."""
+# A manifest record is "failed" (never importable) if it explicitly says so; anything else — including a
+# record with no status field (the classic array format) — is treated as a successful staged item.
+_MANIFEST_FAILED_STATUSES = {"failed", "failure", "error", "download_failed", "downloadfailed",
+                             "errored", "skipped_error", "incomplete"}
+
+
+def _record_failed(r):
+    if not isinstance(r, dict):
+        return True
+    status = str(r.get("status") or r.get("result") or r.get("outcome") or r.get("state") or "").lower()
+    return (status in _MANIFEST_FAILED_STATUSES or r.get("failed") is True
+            or r.get("ok") is False or r.get("success") is False or bool(r.get("error")))
+
+
+def _manifest_identity(r):
+    """Stable SharePoint identity for dedup: drive_id+item_id, else the web URL, else name+size."""
+    did = r.get("drive_id") or r.get("driveId")
+    iid = r.get("item_id") or r.get("itemId") or r.get("id")
+    if did and iid:
+        return ("di", str(did), str(iid))
+    uri = r.get("web_url") or r.get("webUrl") or r.get("source_uri") or r.get("uri")
+    if uri:
+        return ("uri", str(uri))
+    return ("ns", str(r.get("name")), str(r.get("size")))
+
+
+def _usable_staged_records(records):
+    """From raw manifest records keep the importable ones: drop explicitly-failed records, and dedup by
+    stable SharePoint identity so append-only/retried manifests don't import the same file twice. Latest
+    successful record per identity wins (freshest metadata), preserving first-seen order."""
+    by_key, order = {}, []
+    for r in (records or []):
+        if _record_failed(r):
+            continue
+        key = _manifest_identity(r)
+        if key not in by_key:
+            order.append(key)
+        by_key[key] = r                                    # last successful record wins
+    return [by_key[k] for k in order]
+
+
+def _parse_manifest_records(text):
+    """Parse a connector manifest tolerant of the real on-disk shapes: a JSON array, an object wrapping a
+    list (items/manifest/...), JSONL (one object per line, append-only), or concatenated JSON objects.
+    Returns a list of record dicts (possibly empty), or None if nothing parseable was found."""
     import json
+    text = (text or "").strip()
+    if not text:
+        return []
+    try:                                                   # 1) whole-file JSON (array or object)
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    if isinstance(data, dict):
+        for key in _ITEM_LIST_KEYS:
+            if isinstance(data.get(key), list):
+                return [r for r in data[key] if isinstance(r, dict)]
+        vals = [v for v in data.values() if isinstance(v, dict)]
+        return vals if vals else [data]
+    records = []                                           # 2) JSONL / one object per line (append-only)
+    for line in text.splitlines():
+        line = line.strip().rstrip(",")
+        if not line or line in ("[", "]"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            records.append(obj)
+        elif isinstance(obj, list):
+            records.extend(r for r in obj if isinstance(r, dict))
+    if records:
+        return records
+    dec = json.JSONDecoder()                               # 3) concatenated objects, no separators
+    idx, n = 0, len(text)
+    while idx < n:
+        while idx < n and text[idx] in " \t\r\n,":
+            idx += 1
+        if idx >= n:
+            break
+        try:
+            obj, end = dec.raw_decode(text, idx)
+        except ValueError:
+            break
+        if isinstance(obj, dict):
+            records.append(obj)
+        elif isinstance(obj, list):
+            records.extend(r for r in obj if isinstance(r, dict))
+        idx = end
+    return records or None
+
+
+def _read_manifest_file(path):
+    """Read + parse the connector manifest (the designed connector->importer handoff), tolerant of array /
+    object / JSONL / concatenated formats, returning the USABLE staged records (failed dropped, deduped)."""
     from pathlib import Path
     if not path or not Path(path).exists():
         return None
     try:
-        data = json.loads(Path(path).read_text())
-    except (ValueError, OSError):
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
         return None
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and isinstance(data.get("items"), list):
-        return data["items"]
-    return None
+    records = _parse_manifest_records(text)
+    if records is None:
+        return None
+    return _usable_staged_records(records)
+
+
+def load_manifest_items(path):
+    """Public: usable staged items from a manifest file (for reconciling an already-staged/downloaded run
+    WITHOUT re-downloading). Empty list if the file is absent/unparseable."""
+    return _read_manifest_file(path) or []
+
+
+def analyze_manifest(path):
+    """READ-ONLY manifest diagnostics — no Graph, no downloads, no imports: record count, successful vs
+    failed records, unique SharePoint item ids, duplicate records, and the parsed staged-item count."""
+    from collections import Counter
+    from pathlib import Path
+    p = Path(path)
+    if not p.exists():
+        return {"exists": False, "path": str(p)}
+    text = p.read_text(encoding="utf-8", errors="replace")
+    records = _parse_manifest_records(text) or []
+    ok = [r for r in records if not _record_failed(r)]
+    failed = [r for r in records if _record_failed(r)]
+    ids = [str(r.get("item_id") or r.get("itemId") or r.get("id") or "") for r in records]
+    dup_counts = Counter(_manifest_identity(r) for r in ok)
+    duplicates = sum(c - 1 for c in dup_counts.values() if c > 1)
+    fmt = ("json_array/object" if text.strip()[:1] in ("[", "{")
+           and _parse_is_whole_json(text) else "jsonl_or_concatenated")
+    return {
+        "exists": True, "path": str(p), "bytes": len(text), "format": fmt,
+        "record_count": len(records),
+        "successful_records": len(ok),
+        "failed_records": len(failed),
+        "unique_item_ids": len({i for i in ids if i}),
+        "duplicate_records": duplicates,
+        "parsed_staged_items": len(_usable_staged_records(records)),
+    }
+
+
+def _parse_is_whole_json(text):
+    import json
+    try:
+        json.loads(text)
+        return True
+    except ValueError:
+        return False
 
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
@@ -509,9 +646,9 @@ def _stage_one(fn, root, drive_id, dry_run, diag, *, limit=None, top=None, timeo
     # Prefer the manifest FILE the connector was told to write (deterministic), else parse the return.
     from_file = _read_manifest_file(manifest_path)
     if from_file is not None:
-        items, source = from_file, "manifest_file"
+        items, source = from_file, "manifest_file"          # already usable (failed dropped, deduped)
     else:
-        items, source = _stager_items(result), "run_return"
+        items, source = _usable_staged_records(_stager_items(result)), "run_return"
     # Failure semantics: a connector that SAW files but downloaded none (all failed) must not look like a
     # successful empty run. Surface it as a staging error so the run status is error, not "completed".
     if isinstance(result, dict):

@@ -17,8 +17,6 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import json
-from pathlib import Path
 
 from app.services.microsoft_ingestion import resolve_sharepoint_stager, run_sharepoint_sync
 
@@ -38,11 +36,20 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--diagnose", action="store_true",
                     help="print READ-ONLY staging config/data diagnostics and exit (no Graph, no downloads)")
+    ap.add_argument("--inspect-manifest", default=None, metavar="PATH",
+                    help="print READ-ONLY manifest diagnostics (counts, failed, duplicates) and exit")
     args = ap.parse_args(argv)
 
     def _progress(ev):
         import time
         print(f"    [{time.strftime('%H:%M:%S')}] {ev}", flush=True)
+
+    if args.inspect_manifest:
+        from app.services.microsoft_ingestion import analyze_manifest
+        print(f"SharePoint manifest diagnostics (READ-ONLY, no Graph, no import): {args.inspect_manifest}")
+        for k, v in analyze_manifest(args.inspect_manifest).items():
+            print(f"  {k}: {v}")
+        return 0
 
     if args.diagnose:
         from app.services.microsoft_ingestion import sharepoint_staging_diagnostics
@@ -53,7 +60,11 @@ def main(argv=None):
 
     diag = {}
     if args.manifest:
-        items = json.loads(Path(args.manifest).read_text())
+        # Robust parse (array / JSONL / append-only) + drop failed + dedupe by SharePoint identity, so an
+        # already-downloaded run can be reconciled/imported WITHOUT re-downloading.
+        from app.services.microsoft_ingestion import load_manifest_items
+        items = load_manifest_items(args.manifest)
+        print(f"Loaded {len(items)} usable staged item(s) from manifest: {args.manifest}")
         summary = run_sharepoint_sync(items=items, trigger_source="manual", dry_run=args.dry_run)
     elif args.stage:
         # Adapts to the deployment connector's real staging entrypoint (no hard-coded function name).

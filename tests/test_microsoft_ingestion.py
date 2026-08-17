@@ -1050,3 +1050,108 @@ def test_diagnostics_report_real_staging_root_and_cross_volume_flag():
     d = mi.sharepoint_staging_diagnostics()
     assert "real_staging_root" in d and "connector_temp_root" in d
     assert d["cross_volume_safe_finalize"] is True      # WinError 17 handled on the real path
+
+
+# --- manifest parsing: array / JSONL append-only, failed excluded, retries deduped ------------------
+# Production connector downloads succeed and write a manifest, but _read_manifest_file returned 0 because
+# the file is append-only (JSONL / retried records), not a single JSON array. Parser must handle both,
+# drop failed records, and dedupe retries by SharePoint identity (drive_id+item_id / web_url).
+
+def _mrec(tmp_path, i, *, drive="drvM", status="downloaded", body=None):
+    body = body if body is not None else f"statement body number {i}"
+    f = tmp_path / f"{drive}_{i}_{uuid.uuid4().hex}.txt"
+    f.write_text(body)
+    return {"name": f"doc{i}.pdf", "web_url": f"https://sp/{drive}/doc{i}", "item_id": f"itm{i}",
+            "drive_id": drive, "site": "S", "library": "D", "modified_at": "2024-01-01T00:00:00",
+            "size": f.stat().st_size, "local_path": str(f), "status": status}
+
+
+def test_parse_manifest_json_array(tmp_path):
+    recs = [_mrec(tmp_path, i) for i in range(10)]
+    p = tmp_path / "manifest.json"
+    p.write_text(__import__("json").dumps(recs, indent=2))
+    got = mi._read_manifest_file(str(p))
+    assert len(got) == 10
+
+
+def test_parse_manifest_jsonl_appendonly_excludes_failed_and_dedupes(tmp_path):
+    import json
+    lines = []
+    for i in range(10):                                     # 10 good downloads
+        lines.append(json.dumps(_mrec(tmp_path, i)))
+    lines.insert(3, json.dumps({"name": "doc3.pdf", "web_url": "https://sp/drvM/doc3",
+                                "item_id": "itm3", "drive_id": "drvM", "status": "failed",
+                                "error": "HTTP 500"}))       # a FAILED attempt for an item that later succeeds
+    lines.append(json.dumps(_mrec(tmp_path, 0)))            # a RETRY duplicate of item 0 (success again)
+    lines.append(json.dumps({"name": "z.pdf", "web_url": "https://sp/drvM/z", "item_id": "z",
+                             "drive_id": "drvM", "status": "download_failed"}))   # purely-failed item
+    p = tmp_path / "manifest.jsonl"
+    p.write_text("\n".join(lines) + "\n")
+    got = mi._read_manifest_file(str(p))
+    ids = sorted(r["item_id"] for r in got)
+    assert ids == [f"itm{i}" for i in range(10)]           # 10 unique successes; failed + dup + z excluded
+    assert len(got) == 10
+
+
+def test_analyze_manifest_reports_counts(tmp_path):
+    import json
+    recs = [_mrec(tmp_path, i) for i in range(10)]
+    recs.append({"item_id": "itm0", "drive_id": "drvM", "web_url": "https://sp/drvM/doc0",
+                 "name": "doc0.pdf", "status": "downloaded"})           # duplicate of itm0
+    recs.append({"item_id": "bad", "drive_id": "drvM", "status": "failed"})
+    p = tmp_path / "m.json"
+    p.write_text(json.dumps(recs))
+    d = mi.analyze_manifest(str(p))
+    assert d["record_count"] == 12 and d["successful_records"] == 11 and d["failed_records"] == 1
+    assert d["unique_item_ids"] == 11 and d["duplicate_records"] == 1 and d["parsed_staged_items"] == 10
+
+
+def test_manifest_jsonl_end_to_end_items_examined_10_and_reuse(tmp_path):
+    import json
+    recs = [_mrec(tmp_path, i) for i in range(10)]
+    recs.insert(0, {"item_id": "itm0", "drive_id": "drvM", "web_url": "https://sp/drvM/doc0",
+                    "status": "failed", "error": "timeout"})            # early failed attempt (deduped out)
+    p = tmp_path / "manifest.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in recs) + "\n")
+    items = mi.load_manifest_items(str(p))
+    assert len(items) == 10
+    r1 = mi.run_sharepoint_sync(items=items, destination_root=str(tmp_path / "dest"),
+                                dry_run=False, ocr=False)
+    _track()
+    assert r1["status"] == "completed" and r1["items_examined"] == 10
+    assert r1["canonical_created"] == 10 and r1["missing"] == 0
+    # rerun the SAME manifest -> reused/skipped, no duplicate canonical documents
+    r2 = mi.run_sharepoint_sync(items=mi.load_manifest_items(str(p)),
+                                destination_root=str(tmp_path / "dest"), dry_run=False, ocr=False)
+    _track()
+    assert r2["items_examined"] == 10 and r2["canonical_created"] == 0 and r2["missing"] == 0
+    assert _canonical_count("https://sp/drvM/doc0") == 1   # no duplicate canonical on rerun
+
+
+def test_manifest_reconcile_via_stage_one_from_connector(tmp_path):
+    # The full staging path: connector writes an append-only JSONL manifest; _stage_one must parse it to
+    # 10 items (not 0), with failed rows excluded.
+    import json
+    import types
+    from pathlib import Path
+
+    def run(*, drive_id, root, download, limit, manifest):
+        Path(manifest).parent.mkdir(parents=True, exist_ok=True)
+        recs = [_mrec(tmp_path, i, drive=drive_id) for i in range(10)]
+        recs.append({"item_id": "itm0", "drive_id": drive_id, "status": "failed"})   # retried-failed dup
+        Path(manifest).write_text("\n".join(json.dumps(r) for r in recs) + "\n")
+        return {"status": "ok", "files_seen": 11, "downloaded": 10, "failed": 1}
+
+    import os
+    os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"] = str(tmp_path / "stage")
+    try:
+        diag = {}
+        stager = mi.resolve_sharepoint_stager(module=types.SimpleNamespace(run=run),
+                                               drive_ids=["drvC"], dry_run=False, diag=diag, limit=10)
+        summary = mi.run_sharepoint_sync(stager=stager, destination_root=str(tmp_path / "dest"),
+                                         dry_run=False, ocr=False)
+    finally:
+        del os.environ["CLIENT360_SHAREPOINT_SOURCE_ROOT"]
+    _track()
+    assert diag["total_items"] == 10 and diag["drives"][0]["source"] == "manifest_file"
+    assert summary["status"] == "completed" and summary["items_examined"] == 10 and summary["missing"] == 0
