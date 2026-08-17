@@ -1,1 +1,54 @@
-{% extends "portal/base.html" %}{% block title %}Documents{% endblock %}{% block content %}<h1>Shared Documents</h1>{% for row in portal.documents %}<article class="work-card"><h3>{{ row.original_name }}</h3><p>{{ row.category or 'Document' }} · {{ row.created_at }}</p></article>{% else %}<div class="empty">No documents are shared.</div>{% endfor %}{% endblock %}
+{% extends "portal/base.html" %}
+{% block title %}Documents{% endblock %}
+{% block flash %}
+  {% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="portal-section-head">
+  <div>
+    <h1>Your Documents</h1>
+    <p class="portal-lead">Documents your advisor has shared with you, and the files you have uploaded.</p>
+  </div>
+  <a class="btn" href="/portal/upload">Upload a document</a>
+</div>
+
+{% if requests %}
+<h2 style="font-size:1.1rem;margin:0 0 .75rem;">Requested from you</h2>
+{% for req in requests %}
+<article class="portal-card">
+  <h3>{{ req.title }}</h3>
+  {% if req.description %}<p class="meta">{{ req.description }}</p>{% endif %}
+  <p class="meta">
+    <span class="pill pending">{{ req.status|title }}</span>
+    {% if req.due_date %} · Due {{ req.due_date }}{% endif %}
+  </p>
+  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/portal/upload?request_id={{ req.id }}">Upload for this request</a></p>
+</article>
+{% endfor %}
+{% endif %}
+
+<h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem;">Shared &amp; uploaded</h2>
+{% for doc in documents %}
+<article class="portal-card">
+  <h3>{{ doc.display_name }}</h3>
+  <p class="meta">
+    {% if doc.pending_approval %}<span class="pill pending">Awaiting review</span>
+    {% elif doc.client_status == 'Approved' %}<span class="pill ok">{{ doc.client_status }}</span>
+    {% elif doc.client_status == 'Rejected' %}<span class="pill stop">{{ doc.client_status }}</span>
+    {% else %}<span class="pill review">{{ doc.client_status }}</span>{% endif %}
+    · {{ doc.category|title }}
+    {% if doc.uploaded_by_client %} · Uploaded by you{% endif %}
+  </p>
+  {% if doc.downloadable %}
+  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/api/portal/documents/{{ doc.id }}/download">Download</a></p>
+  {% endif %}
+</article>
+{% else %}
+<div class="empty-state">
+  <h3>No documents yet</h3>
+  <p>When your advisor shares a document, or you upload one, it will appear here.</p>
+  <a class="btn" href="/portal/upload">Upload your first document</a>
+</div>
+{% endfor %}
+{% endblock %}

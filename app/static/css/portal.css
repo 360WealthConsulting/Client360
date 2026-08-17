@@ -1,0 +1,303 @@
+/* 360Plus Client Portal — client-facing presentation layer.
+ *
+ * Builds on the shared design tokens in main.css (--primary, --surface, --text …)
+ * and adds the portal shell: brand header, responsive navigation, cards, forms,
+ * flash banners, secure-message threads and empty states. Client-only — never
+ * loaded by the internal staff surfaces. */
+
+:root {
+    --portal-nav: #0f2748;          /* 360Plus deep navy */
+    --portal-nav-accent: #1d4ed8;
+    --portal-max: 960px;
+}
+
+body.portal {
+    background: var(--bg);
+}
+
+/* --- brand header ------------------------------------------------------- */
+.portal-header {
+    background: var(--portal-nav);
+    color: #fff;
+    padding: 0.85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.portal-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #fff;
+    letter-spacing: 0.01em;
+}
+.portal-brand .mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #2563eb, #1e3a8a);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+.portal-brand small {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.75;
+}
+.portal-user {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+}
+.portal-user .who {
+    opacity: 0.9;
+}
+.portal-logout {
+    margin: 0;
+}
+.portal-logout button {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.portal-logout button:hover {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+/* --- primary navigation ------------------------------------------------- */
+.portal-nav {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0.5rem;
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+}
+.portal-nav a {
+    color: var(--text-muted);
+    padding: 0.85rem 0.9rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+}
+.portal-nav a:hover {
+    color: var(--text);
+}
+.portal-nav a.active {
+    color: var(--primary-dark);
+    border-bottom-color: var(--primary);
+}
+
+/* --- page shell -------------------------------------------------------- */
+.portal-main {
+    max-width: var(--portal-max);
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 3rem;
+}
+.portal-main h1 {
+    font-size: 1.5rem;
+    margin: 0 0 0.35rem;
+}
+.portal-lead {
+    color: var(--text-muted);
+    margin: 0 0 1.5rem;
+}
+.portal-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 0 1rem;
+    flex-wrap: wrap;
+}
+
+/* --- cards -------------------------------------------------------------- */
+.portal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 0.9rem;
+}
+.portal-card h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.02rem;
+}
+.portal-card .meta {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin: 0;
+}
+.portal-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* --- status pills ------------------------------------------------------- */
+.pill {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+.pill.ok      { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.pill.pending { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
+.pill.review  { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+.pill.stop    { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+
+/* --- forms -------------------------------------------------------------- */
+.portal-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.25rem 1.35rem;
+    max-width: 560px;
+}
+.portal-form.wide { max-width: 100%; }
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 1rem;
+}
+.field label {
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+.field .hint {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+.field input,
+.field select,
+.field textarea {
+    font: inherit;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    width: 100%;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+    border-color: var(--primary);
+}
+.field textarea { min-height: 110px; resize: vertical; }
+.btn {
+    display: inline-block;
+    font: inherit;
+    font-weight: 600;
+    padding: 0.6rem 1.1rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    background: var(--primary);
+    color: #fff;
+}
+.btn:hover { background: var(--primary-dark); }
+.btn.secondary {
+    background: #fff;
+    color: var(--primary-dark);
+    border-color: var(--border);
+}
+.btn.secondary:hover { background: var(--surface-muted); }
+.form-actions {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* --- flash banners ------------------------------------------------------ */
+.flash {
+    border-radius: var(--radius);
+    padding: 0.8rem 1rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.92rem;
+    border: 1px solid transparent;
+}
+.flash.success { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.flash.error   { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+
+/* --- empty states ------------------------------------------------------- */
+.empty-state {
+    text-align: center;
+    padding: 2.5rem 1rem;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    background: var(--surface-muted);
+}
+.empty-state h3 { margin: 0 0 0.35rem; color: var(--text); }
+.empty-state p { margin: 0 0 1rem; }
+
+/* --- secure messages ---------------------------------------------------- */
+.thread-list a { display: block; }
+.msg {
+    max-width: 80%;
+    padding: 0.7rem 0.9rem;
+    border-radius: 12px;
+    margin-bottom: 0.6rem;
+    font-size: 0.94rem;
+    line-height: 1.4;
+}
+.msg .msg-meta {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+}
+.msg.from-client {
+    background: var(--primary);
+    color: #fff;
+    margin-left: auto;
+}
+.msg.from-client .msg-meta { color: rgba(255, 255, 255, 0.8); }
+.msg.from-staff {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+.msg.note {
+    background: #fef9c3;
+    border: 1px solid #fde68a;
+    color: #713f12;
+}
+.msg-body { white-space: pre-wrap; word-break: break-word; }
+
+/* --- responsive --------------------------------------------------------- */
+@media (max-width: 640px) {
+    .portal-header { padding: 0.75rem 1rem; }
+    .portal-main { padding: 1.25rem 1rem 2.5rem; }
+    .msg { max-width: 92%; }
+    .portal-form { padding: 1.1rem; }
+}

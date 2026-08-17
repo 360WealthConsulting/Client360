@@ -1,0 +1,38 @@
+{% extends "portal/base.html" %}
+{% block title %}Upload a Document{% endblock %}
+{% block flash %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Upload a Document</h1>
+<p class="portal-lead">Securely send a file to your advisor. It is reviewed before it becomes part of your records.</p>
+
+<form class="portal-form" method="post" action="/portal/upload" enctype="multipart/form-data">
+  {% if request_id %}<input type="hidden" name="request_id" value="{{ request_id }}">
+  <p class="meta" style="margin:0 0 1rem;">This upload will fulfil the requested item.</p>{% endif %}
+
+  <div class="field">
+    <label for="file">File</label>
+    <input id="file" name="file" type="file" required>
+    <span class="hint">PDF, images, and Office documents are accepted.</span>
+  </div>
+
+  <div class="field">
+    <label for="display_name">Document name</label>
+    <input id="display_name" name="display_name" type="text" maxlength="200" required
+           placeholder="e.g. 2025 W-2">
+  </div>
+
+  <div class="field">
+    <label for="category">Category</label>
+    <select id="category" name="category">
+      {% for cat in categories %}<option value="{{ cat }}">{{ cat|title }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Upload securely</button>
+    <a class="btn secondary" href="/portal/documents">Cancel</a>
+  </div>
+</form>
+{% endblock %}

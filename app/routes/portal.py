@@ -1,6 +1,7 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -15,6 +16,9 @@ from app.portal.service import (PortalPrincipal, accept_invitation, client_actio
     revoke_portal_session, send_message, require_scope)
 from app.portal import appointments as portal_appointments
 from app.portal import consent as portal_consent
+from app.portal import vault_documents as portal_vault
+from app.services.vault.service import CATEGORIES as VAULT_CATEGORIES
+from app.services.vault.storage import VaultStorageError
 from app.portal.financial import financial_summary
 from app.services.documents import save_person_document
 from app.services.exception_engine import ExceptionNotFoundError
@@ -246,6 +250,75 @@ def api_portal_document_download(document_id: int, principal: PortalPrincipal = 
     _stats.note("downloads")
     return FileResponse(str(path), media_type=row["content_type"] or "application/octet-stream",
                         filename=row["original_name"])
+
+
+# --- Browser (HTML) client surfaces over the EXISTING portal services --------
+# These render polished pages and use Post/Redirect/Get for mutations. They reuse the
+# same scoped, audited services as the JSON APIs — no parallel implementation. Declared
+# before the /portal/{page} catch-all so the specific paths win.
+
+@router.post("/portal/logout")
+def portal_logout_browser(request: Request):
+    """Browser sign-out: revoke the portal session, then redirect to the login page.
+    Safe for an unauthenticated POST (idempotent) so a stale tab can always sign out."""
+    revoke_portal_session(request.session.pop("portal_session_token", None))
+    request.session.clear()
+    return RedirectResponse("/portal/login", status_code=303)
+
+
+@router.get("/portal/documents", response_class=HTMLResponse)
+def portal_documents_page(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    """Client-visible Vault documents + open document requests. Reads only through the
+    scoped Vault↔Portal bridge and the request service."""
+    return templates.TemplateResponse(request=request, name="portal/documents.html", context={
+        "principal": principal,
+        "documents": portal_vault.portal_documents(principal),
+        "requests": client_document_requests(principal),
+        "notice": request.query_params.get("notice"),
+        "error": request.query_params.get("error")})
+
+
+@router.get("/portal/upload", response_class=HTMLResponse)
+def portal_upload_page(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    return templates.TemplateResponse(request=request, name="portal/upload.html", context={
+        "principal": principal, "categories": VAULT_CATEGORIES,
+        "request_id": request.query_params.get("request_id"),
+        "error": request.query_params.get("error")})
+
+
+@router.post("/portal/upload")
+async def portal_upload_submit(
+        request: Request,
+        file: UploadFile = File(...),
+        display_name: str = Form(...),
+        category: str = Form("general"),
+        request_id: int | None = Form(None),
+        principal: PortalPrincipal = Depends(current_portal)):
+    """Browser upload over the SAME secure client-upload backend (portal_vault.upload_document):
+    the file lands as a PENDING vault document scoped to the account's person, awaiting employee
+    approval — authorization, ownership, storage and audit are all enforced by the service.
+    Post/Redirect/Get: success → documents page; failure → back to the form with a banner."""
+    name = (display_name or file.filename or "").strip()
+    if not name:
+        return RedirectResponse("/portal/upload?error=Please+name+the+document", status_code=303)
+    try:
+        portal_vault.upload_document(
+            principal, source=file.file, original_filename=file.filename, display_name=name,
+            category=category, request_id=request_id,
+            http_request_id=getattr(request.state, "request_id", "portal"),
+            ip_address=request.client.host if request.client else None)
+    except PermissionError:
+        # Scope denial: never reveal entity existence; friendly banner, no stack trace.
+        return RedirectResponse("/portal/upload?error=You+are+not+able+to+upload+this+document",
+                                status_code=303)
+    except (VaultStorageError, ValueError):
+        return RedirectResponse("/portal/upload?error=That+file+could+not+be+accepted",
+                                status_code=303)
+    finally:
+        await file.close()
+    return RedirectResponse(
+        "/portal/documents?notice=" + quote("Document uploaded — your advisor will review it shortly."),
+        status_code=303)
 
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}

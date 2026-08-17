@@ -265,7 +265,7 @@ def test_route_inventory():
 
 def test_total_route_count():
     from app.main import app
-    assert len(app.routes) == 1117  # +1 admin per-document resolution (resolve-document)  # +1 document image preview (HEIC/HEIF)  # +1 document workbook preview (admin review)  # +1 admin unassigned-documents review (inspect-before-assign)  # +1 admin unassigned-documents folder-resolution (preview/confirm)  # +1 admin unassigned-documents queue (relocated out of client Documents tab)  # +4 Drake identity-review (merge-forward: /matches/drake GET + approve/reject/defer); +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
+    assert len(app.routes) == 1121  # +1 admin per-document resolution (resolve-document)  # +1 document image preview (HEIC/HEIF)  # +1 document workbook preview (admin review)  # +1 admin unassigned-documents review (inspect-before-assign)  # +1 admin unassigned-documents folder-resolution (preview/confirm)  # +1 admin unassigned-documents queue (relocated out of client Documents tab)  # +4 Drake identity-review (merge-forward: /matches/drake GET + approve/reject/defer); +3 client workspace task/note mutations  # +1 document resolve-ownership  # +1 multi-select access-profile editor  # +9 employee & access management  # +2 staff home dashboard (staff-home-dashboard-mvp)  # +3 work-item detail (work-engine-ui)  # +13 client portal API (client-portal-mvp)  # +8 client vault (client-vault-mvp)
 
 
 def test_brief_route_404_out_of_scope():
