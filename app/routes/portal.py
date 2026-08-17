@@ -123,8 +123,11 @@ async def api_portal_census_upload(organization_id: int, file: UploadFile = File
         document_id = employer_census_upload(principal, organization_id, original_name=file.filename,
                                              source=file.file, content_type=file.content_type)
     except PermissionError:
-        raise HTTPException(404, "Organization not found")
-    await file.close()
+        raise HTTPException(404, "Organization not found") from None   # scope denial never discloses existence
+    except VaultStorageError as exc:
+        raise HTTPException(400, str(exc)) from exc                    # bad extension / oversize / content mismatch / empty
+    finally:
+        await file.close()
     return {"document_id": document_id, "status": "uploaded"}
 
 # --- Insurance policyholder surface (Phase 7) — read-only, org/person-scoped via the EXISTING

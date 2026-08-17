@@ -299,9 +299,13 @@ def employer_census_upload(principal, organization_id, *, original_name, source,
     require_org_scope(principal, organization_id, permission="census")
     from app.db import benefit_document_links
     from app.services.documents import save_person_document
+    # Untrusted external (employer) upload: apply the same content controls as the other portal upload
+    # paths — extension allow-list, streamed size cap, and content/magic-byte validation. Census files
+    # are CSV/XLSX, both allow-listed. Raises VaultStorageError on a bad file; the route maps it to 400.
     document_id = save_person_document(person_id=principal.person_id, original_name=original_name or "census.csv",
                                        source=source, content_type=content_type, category="benefits_census",
-                                       description="Employer census upload", uploaded_by=principal.display_name)
+                                       description="Employer census upload", uploaded_by=principal.display_name,
+                                       verify_content=True)
     with engine.begin() as connection:
         connection.execute(benefit_document_links.insert().values(
             document_id=document_id, organization_id=organization_id, doc_kind="census"))

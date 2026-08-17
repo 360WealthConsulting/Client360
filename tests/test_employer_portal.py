@@ -12,19 +12,21 @@ from datetime import date, timedelta
 
 import pytest
 from fastapi import HTTPException
-from starlette.requests import Request
 from sqlalchemy import func, select
+from starlette.requests import Request
 
-from app.db import (audit_events, engine, households, people, portal_notifications, users)
-from app.security import benefits_crypto
-from app.security.models import Principal
+from app.db import audit_events, engine, households, people, portal_notifications, users
 from app.portal import service as ps
 from app.portal.service import PortalPrincipal
 from app.routes import portal as P
+from app.security import benefits_crypto
+from app.security.models import Principal
 from app.services import benefits_detectors as det
 from app.services import engagement_service as es
 from app.services import exception_engine as ee
 from app.services import organization_service as org
+from app.services.vault.storage import VaultStorageError
+from tests._portal_util import sample_upload
 
 os.environ.setdefault("BENEFITS_FIELD_KEY", benefits_crypto.generate_key())
 TODAY = date.today()
@@ -191,6 +193,73 @@ def test_census_upload_out_of_scope_is_hidden():
             async def close(self): return None
         asyncio.get_event_loop().run_until_complete(
             P.api_portal_census_upload(o2, file=_F(), principal=emp1))
+
+
+# --- census upload validation (H3): untrusted employer upload gets the same content controls ---
+
+class _CensusFile:
+    """Minimal UploadFile stand-in for driving the census route directly."""
+    def __init__(self, name, body, content_type="application/octet-stream"):
+        self.filename = name
+        self.content_type = content_type
+        self.file = io.BytesIO(body)
+    async def close(self):
+        return None
+
+
+def _route_census(org_id, principal, name, body):
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(
+        P.api_portal_census_upload(org_id, file=_CensusFile(name, body), principal=principal))
+
+
+def test_census_allowed_formats_succeed():
+    s = _staff(); o = _org(s); emp = _employer_account(s, o)
+    # CSV (not content-sniffed) and XLSX (valid ZIP/PK header) are both allow-listed → accepted.
+    assert ps.employer_census_upload(emp, o, original_name="census.csv",
+                                     source=io.BytesIO(b"emp,dob\n1,2000-01-01\n"), content_type="text/csv")
+    assert ps.employer_census_upload(emp, o, original_name="roster.xlsx",
+                                     source=io.BytesIO(sample_upload("xlsx")), content_type=None)
+
+
+def test_census_disallowed_extension_rejected():
+    s = _staff(); o = _org(s); emp = _employer_account(s, o)
+    with pytest.raises(VaultStorageError):
+        ps.employer_census_upload(emp, o, original_name="payload.exe",
+                                  source=io.BytesIO(b"MZ\x90\x00 executable"), content_type=None)
+    # The route surfaces it as a client-safe 400, not a 500.
+    with pytest.raises(HTTPException) as ei:
+        _route_census(o, emp, "payload.exe", b"MZ\x90\x00 executable")
+    assert ei.value.status_code == 400
+
+
+def test_census_content_extension_mismatch_rejected():
+    s = _staff(); o = _org(s); emp = _employer_account(s, o)
+    # .xlsx name but not a ZIP/PK container → content sniffing rejects it.
+    with pytest.raises(VaultStorageError):
+        ps.employer_census_upload(emp, o, original_name="fake.xlsx",
+                                  source=io.BytesIO(b"<html>not a spreadsheet</html>"), content_type=None)
+    with pytest.raises(HTTPException) as ei:
+        _route_census(o, emp, "fake.xlsx", b"<html>not a spreadsheet</html>")
+    assert ei.value.status_code == 400
+
+
+def test_census_empty_file_rejected():
+    s = _staff(); o = _org(s); emp = _employer_account(s, o)
+    with pytest.raises(VaultStorageError):
+        ps.employer_census_upload(emp, o, original_name="census.csv",
+                                  source=io.BytesIO(b""), content_type="text/csv")
+
+
+def test_census_oversized_rejected(monkeypatch):
+    monkeypatch.setattr("app.services.documents.MAX_UPLOAD_BYTES", 4)     # tiny cap for the test
+    s = _staff(); o = _org(s); emp = _employer_account(s, o)
+    with pytest.raises(VaultStorageError):
+        ps.employer_census_upload(emp, o, original_name="census.csv",
+                                  source=io.BytesIO(b"emp,dob\n1,2000-01-01\n"), content_type="text/csv")
+    with pytest.raises(HTTPException) as ei:
+        _route_census(o, emp, "census.csv", b"emp,dob\n1,2000-01-01\n")
+    assert ei.value.status_code == 400
 
 
 # --- employer notifications (existing provider/outcome architecture) ---------
