@@ -6,13 +6,13 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.db import documents, engine, portal_document_requests, portal_notifications, portal_sessions
+from app.db import documents, engine, portal_document_requests, portal_notifications, portal_sessions, portal_threads
 from app.portal.service import (PortalPrincipal, accept_invitation, client_action_detail,
     client_action_needed, client_document_requests,
     client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
     confirm_request_upload, create_portal_session, create_thread, dashboard,
     employer_action_detail, employer_action_needed, employer_census_upload, employer_organization_ids,
-    list_messages, mark_read, request_password_reset, consume_password_reset,
+    list_messages, mark_read, portal_scope, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
 from app.portal import appointments as portal_appointments
 from app.portal import consent as portal_consent
@@ -320,6 +320,69 @@ async def portal_upload_submit(
     return RedirectResponse(
         "/portal/documents?notice=" + quote("Document uploaded — your advisor will review it shortly."),
         status_code=303)
+
+
+@router.get("/portal/messages", response_class=HTMLResponse)
+def portal_messages_page(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    """List the client's secure threads + a compose form. Reads through the scoped thread service."""
+    return templates.TemplateResponse(request=request, name="portal/messages.html", context={
+        "principal": principal, "threads": client_threads(principal),
+        "notice": request.query_params.get("notice"), "error": request.query_params.get("error")})
+
+
+@router.post("/portal/messages/new")
+def portal_messages_new(request: Request, subject: str = Form(...), body: str = Form(...),
+                        principal: PortalPrincipal = Depends(current_portal)):
+    """Start a new thread on the client's OWN record. Person/household are derived server-side from
+    the account's messages scope — never accepted from the client — so a client cannot open a thread
+    against someone else's record. create_thread re-checks scope (permission='messages')."""
+    if not (subject or "").strip() or not (body or "").strip():
+        return RedirectResponse("/portal/messages?error=" + quote("A subject and message are required."),
+                                status_code=303)
+    scope = portal_scope(principal.account_id, permission="messages")
+    household_id = next(iter(scope["household_ids"]), None)
+    if household_id is None or principal.person_id not in scope["person_ids"]:
+        return RedirectResponse("/portal/messages?error=" + quote("Messaging is not enabled on your account."),
+                                status_code=303)
+    try:
+        thread_id = create_thread(principal, household_id=household_id, person_id=principal.person_id,
+                                  subject=subject.strip(), body=body.strip())
+    except PermissionError:
+        return RedirectResponse("/portal/messages?error=" + quote("Messaging is not enabled on your account."),
+                                status_code=303)
+    return RedirectResponse(f"/portal/messages/{thread_id}?notice=" + quote("Message sent."), status_code=303)
+
+
+@router.get("/portal/messages/{thread_id}", response_class=HTMLResponse)
+def portal_message_thread_page(thread_id: int, request: Request,
+                               principal: PortalPrincipal = Depends(current_portal)):
+    """Show one thread's client-visible messages (internal staff notes are never returned by
+    list_messages). Out-of-scope threads deny existence with 404."""
+    try:
+        messages = list_messages(principal, thread_id)
+    except PermissionError:
+        raise HTTPException(404, "Conversation not found") from None
+    with engine.connect() as connection:
+        subject = connection.scalar(select(portal_threads.c.subject).where(portal_threads.c.id == thread_id))
+    return templates.TemplateResponse(request=request, name="portal/message_thread.html", context={
+        "principal": principal, "thread_id": thread_id, "subject": subject or "Conversation",
+        "messages": messages,
+        "notice": request.query_params.get("notice"), "error": request.query_params.get("error")})
+
+
+@router.post("/portal/messages/{thread_id}/reply")
+def portal_message_reply(thread_id: int, request: Request, body: str = Form(...),
+                         principal: PortalPrincipal = Depends(current_portal)):
+    """Reply into an existing thread via the scoped send_message service (permission='messages').
+    Out-of-scope threads deny existence with 404."""
+    if not (body or "").strip():
+        return RedirectResponse(f"/portal/messages/{thread_id}?error=" + quote("Please enter a reply."),
+                                status_code=303)
+    try:
+        send_message(principal, thread_id, body.strip())
+    except PermissionError:
+        raise HTTPException(404, "Conversation not found") from None
+    return RedirectResponse(f"/portal/messages/{thread_id}?notice=" + quote("Reply sent."), status_code=303)
 
 
 @router.get("/portal/profile", response_class=HTMLResponse)

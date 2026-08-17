@@ -1,1 +1,40 @@
-{% extends "portal/base.html" %}{% block title %}Messages{% endblock %}{% block content %}<h1>Secure Messages</h1>{% for row in portal.messages %}<article class="work-card"><h3>{{ row.subject }}</h3><p>{{ row.status|title }} · Updated {{ row.updated_at }}</p></article>{% else %}<div class="empty">No secure conversations.</div>{% endfor %}{% endblock %}
+{% extends "portal/base.html" %}
+{% block title %}Messages{% endblock %}
+{% block flash %}
+  {% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Secure Messages</h1>
+<p class="portal-lead">A private, encrypted channel between you and your advisory team.</p>
+
+<details class="portal-card" {% if not threads %}open{% endif %}>
+  <summary style="cursor:pointer;font-weight:600;">Start a new conversation</summary>
+  <form method="post" action="/portal/messages/new" style="margin-top:1rem;">
+    <div class="field">
+      <label for="subject">Subject</label>
+      <input id="subject" name="subject" type="text" maxlength="200" required>
+    </div>
+    <div class="field">
+      <label for="body">Message</label>
+      <textarea id="body" name="body" required></textarea>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Send message</button></div>
+  </form>
+</details>
+
+<h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem;">Your conversations</h2>
+<ul class="portal-list thread-list">
+{% for t in threads %}
+  <li><a class="portal-card" href="/portal/messages/{{ t.id }}">
+    <h3>{{ t.subject }}</h3>
+    <p class="meta"><span class="pill {{ 'ok' if t.status == 'closed' else 'review' }}">{{ t.status|title }}</span> · Updated {{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</p>
+  </a></li>
+{% else %}
+  <li><div class="empty-state">
+    <h3>No conversations yet</h3>
+    <p>Start a secure conversation with your advisor using the form above.</p>
+  </div></li>
+{% endfor %}
+</ul>
+{% endblock %}

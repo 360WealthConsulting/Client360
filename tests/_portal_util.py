@@ -53,13 +53,17 @@ def seed_portal_account(staff_user_id: int, *, permissions=None):
     return account_id, resolve_portal_session(token), pid, hid
 
 
-def fake_request(path="/portal/", method="GET", query=None, session=None):
-    """A minimal object with the attributes the portal routes read off ``request``."""
+def fake_request(path="/portal/", method="GET", query=None, session=None, state_principal=None):
+    """A minimal object with the attributes the portal routes (and templates) read off ``request``.
+
+    ``state_principal`` populates ``request.state.principal`` so the staff base template can render.
+    """
     return SimpleNamespace(
         method=method,
         url=SimpleNamespace(path=path),
         query_params=query or {},
-        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}"),
+        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}",
+                              principal=state_principal, demo_mode=False),
         client=SimpleNamespace(host="127.0.0.1"),
         headers={"user-agent": "pytest", "accept": "text/html"},
         session=session if session is not None else {},

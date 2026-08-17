@@ -14,10 +14,17 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.db import engine, portal_access_grants, portal_accounts
+from app.db import (
+    engine,
+    people,
+    portal_access_grants,
+    portal_accounts,
+    portal_messages,
+    portal_threads,
+)
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import visibility
-from app.portal.service import invite_portal_account, portal_scope
+from app.portal.service import invite_portal_account, portal_scope, staff_send_message
 from app.security.audit import write_audit_event
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
@@ -150,6 +157,83 @@ def portal_admin_preview(account_id: int, principal: Principal = Depends(require
     return {"account_id": account_id, "granted_permissions": sorted(granted),
             "household_ids": sorted(scope["household_ids"]), "person_count": len(scope["person_ids"]),
             "visible_fields": fields}
+
+
+# --- Staff secure-messaging: the reply side of the two-way conversation --------
+# A portal client can open/read/reply to a thread on their own record (external portal
+# principal). This is the STAFF counterpart: an accountable employee reads the thread
+# (including internal notes) and replies through the existing ``staff_send_message`` service.
+# Authorization is BOTH capability (client.read to view, client.write to reply) AND record
+# scope on the thread's person/household — the buttons never carry authority; every handler
+# re-checks. Out-of-scope threads deny existence with 404.
+
+def _load_thread(thread_id):
+    with engine.connect() as connection:
+        return connection.execute(select(portal_threads).where(
+            portal_threads.c.id == thread_id)).mappings().one_or_none()
+
+
+def _thread_in_scope(principal, thread, *, write=False):
+    """A thread is in scope when its person OR its household is in the staff record scope."""
+    for entity_type, entity_id in (("person", thread["person_id"]), ("household", thread["household_id"])):
+        if entity_id is not None and record_in_scope(principal, entity_type, entity_id, write=write):
+            return True
+    return False
+
+
+@router.get("/threads", response_class=HTMLResponse)
+def portal_admin_threads(request: Request, principal: Principal = Depends(require_capability("client.read"))):
+    """Recent secure threads the staff member is allowed to service (record-scoped)."""
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(portal_threads.c.id, portal_threads.c.subject, portal_threads.c.status,
+                   portal_threads.c.updated_at, portal_threads.c.person_id,
+                   portal_threads.c.household_id, people.c.full_name)
+            .select_from(portal_threads.outerjoin(people, people.c.id == portal_threads.c.person_id))
+            .order_by(portal_threads.c.updated_at.desc()).limit(100)).mappings().all()
+    threads = [dict(r) for r in rows if _thread_in_scope(principal, r)]
+    return templates.TemplateResponse(request=request, name="admin/portal_threads.html",
+                                      context={"threads": threads, "principal": principal,
+                                               "error": request.query_params.get("error"),
+                                               "notice": request.query_params.get("notice")})
+
+
+@router.get("/threads/{thread_id}", response_class=HTMLResponse)
+def portal_admin_thread(thread_id: int, request: Request,
+                        principal: Principal = Depends(require_capability("client.read"))):
+    thread = _load_thread(thread_id)
+    if not thread or not _thread_in_scope(principal, thread):
+        raise HTTPException(404, "Thread not found")           # out-of-scope never discloses existence
+    with engine.connect() as connection:
+        messages = connection.execute(select(portal_messages).where(
+            portal_messages.c.thread_id == thread_id).order_by(portal_messages.c.sent_at)).mappings().all()
+        client_name = connection.scalar(select(people.c.full_name).where(
+            people.c.id == thread["person_id"])) if thread["person_id"] else None
+    return templates.TemplateResponse(request=request, name="admin/portal_thread.html", context={
+        "thread": dict(thread), "messages": [dict(m) for m in messages], "client_name": client_name,
+        "principal": principal, "error": request.query_params.get("error"),
+        "notice": request.query_params.get("notice")})
+
+
+@router.post("/threads/{thread_id}/reply")
+def portal_admin_thread_reply(thread_id: int, request: Request, body: str = Form(...),
+                              internal_note: str | None = Form(None),
+                              principal: Principal = Depends(require_capability("client.write"))):
+    """Staff reply (or internal note) into a thread. Requires client.write AND write record scope on
+    the thread. Delegates to the existing ``staff_send_message`` service (audited)."""
+    thread = _load_thread(thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    if not _thread_in_scope(principal, thread, write=True):
+        raise HTTPException(403, "Thread is outside your record scope")
+    if not (body or "").strip():
+        return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?error=Reply+cannot+be+empty",
+                                status_code=303)
+    staff_send_message(thread_id=thread_id, user_id=principal.user_id, body=body.strip(),
+                       internal_note=bool(internal_note))
+    kind = "Internal note added" if internal_note else "Reply sent to client"
+    return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?notice={kind.replace(' ', '+')}",
+                            status_code=303)
 
 
 @router.get("/diagnostics")

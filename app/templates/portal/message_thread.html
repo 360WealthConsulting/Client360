@@ -1,0 +1,29 @@
+{% extends "portal/base.html" %}
+{% block title %}{{ subject }}{% endblock %}
+{% block flash %}
+  {% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<p style="margin:0 0 .5rem;"><a href="/portal/messages">&larr; All messages</a></p>
+<h1>{{ subject }}</h1>
+
+<div class="portal-card">
+{% for m in messages %}
+  <div class="msg {{ 'from-client' if m.sender_portal_account_id else 'from-staff' }}">
+    <div class="msg-body">{{ m.body }}</div>
+    <span class="msg-meta">{{ 'You' if m.sender_portal_account_id else 'Your advisor' }} · {{ m.sent_at.strftime('%b %d, %Y %I:%M %p') if m.sent_at else '' }}</span>
+  </div>
+{% else %}
+  <p class="meta">No messages in this conversation yet.</p>
+{% endfor %}
+</div>
+
+<form class="portal-form wide" method="post" action="/portal/messages/{{ thread_id }}/reply" style="margin-top:1rem;">
+  <div class="field">
+    <label for="body">Reply</label>
+    <textarea id="body" name="body" required></textarea>
+  </div>
+  <div class="form-actions"><button class="btn" type="submit">Send reply</button></div>
+</form>
+{% endblock %}
