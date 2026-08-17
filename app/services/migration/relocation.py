@@ -299,6 +299,14 @@ class RepositoryRelocationJob(MigrationJob):
         documents = metadata.tables["documents"]
         rows: list[dict] = []
         moved = 0
+        # Long-running copy+verify+repoint phase -> comprehensive telemetry (opt-in sink via progress=).
+        _sink = _opts.get("progress")
+        rep = None
+        if _sink is not None:
+            from app.services.progress import ProgressReporter
+            rep = ProgressReporter("migration:relocate", total=len(pending), sink=_sink)
+            rep.record("reused", len(applied))                          # already-relocated, verified earlier
+            rep.set_checkpoint("apply-in-progress")
         for did, area, src, dest, sha, size in pending:
             data = self.storage.read(src)                                # source bytes
             if hashlib.sha256(data).hexdigest() != sha or len(data) != (size or len(data)):
@@ -314,8 +322,13 @@ class RepositoryRelocationJob(MigrationJob):
                 conn.execute(update(documents).where(documents.c.id == did).values(
                     storage_uri=dest, storage_path=rel, storage_provider="Client360 Repository"))
             moved += 1
+            if rep is not None:
+                rep.advance(outcome="completed")
             rows.append({"document_id": did, "area": area, "old_storage_uri": src, "new_storage_uri": dest,
                          "sha256_verified": sha, "action": "copied_verified_and_repointed"})
+        if rep is not None:
+            rep.set_checkpoint("apply-complete")
+            rep.emit()
         for did, area, src, dest in applied:
             rows.append({"document_id": did, "area": area, "old_storage_uri": src, "new_storage_uri": dest,
                          "sha256_verified": "", "action": "skipped_already_relocated"})

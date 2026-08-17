@@ -301,6 +301,28 @@ def test_relocation_apply_copies_verifies_repoints_retains_source(tmp_path):
     assert r2.counts["rows_inserted"] == 0 and r2.counts["skipped_already_relocated"] == 3
 
 
+def test_relocation_apply_emits_progress_telemetry(tmp_path):
+    from app.services.migration.relocation import load_approved_relocation
+    cfg = _cfg(tmp_path)
+    p = _person(f"Tel {_TAG}", first="Tel", last=f"Emetry{_TAG}")
+    s1 = tmp_path / "legacy" / "a.pdf"; z1, h1 = _write(s1, b"A" * 100)
+    s2 = tmp_path / "legacy" / "b.pdf"; z2, h2 = _write(s2, b"B" * 90)
+    _doc(p, "A.pdf", str(s1), z1, h1, classification="tax", effective_date=datetime.date(2024, 1, 1))
+    _doc(p, "B.pdf", str(s2), z2, h2, classification="tax", effective_date=datetime.date(2024, 1, 1))
+    backup = tmp_path / "bk.dump"; backup.write_text("PGDMP")
+    job = RepositoryRelocationJob(cfg)
+    approved = load_approved_relocation(job.run(Mode.PREVIEW).run_dir)
+    expect = {"Clients": 2, "Households": 0, "Businesses": 0}
+    lines = []
+    job.run(Mode.APPLY, approved=approved, confirm=True, backup=str(backup), expect=expect,
+            progress=lines.append)                                       # opt-in telemetry sink
+    tallies = [ln for ln in lines if ln.startswith("[migration:relocate]")]
+    assert tallies, "expected relocation telemetry"
+    final = tallies[-1]
+    for token in ("2/2 (100.0%)", "elapsed=", "rate=", "eta=", "completed=2", "checkpoint=apply-complete"):
+        assert token in final, token
+
+
 def test_relocation_apply_guards_fail_closed(tmp_path):
     from app.services.migration.relocation import RepairGuardError, load_approved_relocation
     cfg = _cfg(tmp_path)
