@@ -37,10 +37,44 @@ def test_readiness_returns_503_when_database_unavailable(monkeypatch):
     assert body["checks"]["database"] == "error"
 
 
+def test_readiness_failure_does_not_leak_connection_detail(monkeypatch):
+    # When the DB probe fails, the raised error (which may carry the DSN/credentials) must be logged only,
+    # never surfaced in the public 503 body. The body exposes only the coarse "error" label.
+    import app.routes.ops as ops
+
+    secret_dsn = "postgresql://app:SUPERSECRET@db.internal:5432/client360"
+
+    def _boom():
+        raise RuntimeError(f"could not connect to server: {secret_dsn}")
+
+    monkeypatch.setattr(ops.engine, "connect", _boom)
+    response = ops.readiness()
+    assert response.status_code == 503
+    raw = response.body.decode()
+    for leaked in ("SUPERSECRET", "db.internal", secret_dsn, "could not connect"):
+        assert leaked not in raw
+    assert json.loads(raw)["checks"]["database"] == "error"
+
+
 def test_health_is_database_independent():
     from app.routes.dashboard import health
     # Liveness probe must not touch the database.
     assert health()["status"] == "ok"
+
+
+def test_liveness_still_ok_when_database_unavailable(monkeypatch):
+    # Even with the database engine broken, liveness must keep answering "ok" so orchestrators do not kill
+    # a live process during a transient DB outage (that is readiness's job, not liveness's).
+    import app.routes.dashboard as dash
+    import app.routes.ops as ops
+
+    def _boom():
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(ops.engine, "connect", _boom)
+    assert dash.health()["status"] == "ok"
+    # And readiness, sharing the same engine, correctly reports not-ready.
+    assert ops.readiness().status_code == 503
 
 
 def test_readiness_is_a_public_path():

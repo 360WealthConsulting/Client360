@@ -54,3 +54,72 @@ def test_gated_route_status_satisfies_expectation(server):
 def test_service_level_checks_still_pass():
     assert smoke.route_registration()["ok"] is True
     assert smoke.auth_gating()["ok"] is True
+
+
+# --- DB-backed readiness in the smoke gate (Phase 1B) ------------------------
+
+def test_smoke_readiness_passes_when_database_available():
+    # With the (disposable) test DB reachable and migrated, the in-process readiness probe is ready.
+    result = smoke.readiness_check()
+    assert result["ok"] is True
+    assert result["status_code"] == 200
+    assert result["database"] == "ok"
+
+
+def test_smoke_run_reports_and_gates_on_readiness_when_ready():
+    result = smoke.run()                       # no --url: service-level checks only
+    assert result["readiness"]["ok"] is True
+    assert result["ok"] is True
+
+
+def test_smoke_fails_on_readiness_failure(monkeypatch):
+    # A deployment whose database is unreachable MUST fail smoke — not pass on static process health.
+    import app.routes.ops as ops
+
+    def _boom():
+        raise RuntimeError("connection refused: postgresql://app:PWD@db.internal/client360")
+
+    monkeypatch.setattr(ops.engine, "connect", _boom)
+
+    rc = smoke.readiness_check()
+    assert rc["ok"] is False
+    assert rc["status_code"] == 503
+    assert rc["database"] == "error"
+    # The failure label must not carry the connection string / credentials from the raised error.
+    assert "PWD" not in str(rc) and "db.internal" not in str(rc)
+
+    # Route/auth checks are unaffected by the DB being down, but the overall gate still FAILS on readiness.
+    result = smoke.run()
+    assert result["route_registration"]["ok"] is True
+    assert result["auth_gating"]["ok"] is True
+    assert result["readiness"]["ok"] is False
+    assert result["ok"] is False
+
+
+class _ReadinessDownHandler(BaseHTTPRequestHandler):
+    """A running deployment that is UP but NOT READY: /readiness answers 503, everything else is healthy."""
+
+    def do_GET(self):
+        code = {"/health": 200, "/readiness": 503, "/portal/login": 200,
+                "/static/css/main.css": 200, "/home": 303, "/work": 303}.get(self.path, 404)
+        self.send_response(code)
+        if code in (302, 303):
+            self.send_header("Location", "/portal/login")
+        self.end_headers()
+
+    def log_message(self, *a):
+        pass
+
+
+def test_smoke_http_readiness_503_fails_smoke():
+    # The live HTTP probe must treat a 503 (not-ready) as a smoke FAILURE, not an acceptable "up" state.
+    httpd = HTTPServer(("127.0.0.1", 0), _ReadinessDownHandler)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    try:
+        out = smoke.http_smoke(f"http://127.0.0.1:{httpd.server_address[1]}")
+        assert out["results"]["/readiness"]["status"] == 503
+        assert out["results"]["/readiness"]["ok"] is False   # 503 is a failure now
+        assert out["ok"] is False
+    finally:
+        httpd.shutdown()
