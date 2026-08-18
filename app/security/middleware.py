@@ -90,6 +90,31 @@ RULES = (
         "client.read",
     ),
 )
+# Phase 1A — fail-closed staff authorization. A mutating staff route matched by NEITHER the RULES map NOR
+# a require_capability dependency is DENIED by default (it used to fail open). These prefixes are the only
+# authenticated staff MUTATIONS that legitimately carry no capability — session/bootstrap mechanics
+# (e.g. POST /auth/logout). Reads are never affected by the fail-closed rule.
+STAFF_MUTATION_EXEMPT_PREFIXES = ("/auth/",)
+
+
+def _staff_mutation_exempt(path: str) -> bool:
+    return any(path.startswith(p) for p in STAFF_MUTATION_EXEMPT_PREFIXES)
+
+
+def _route_self_protected(request) -> bool:
+    """Whether the request path+method is served by a route that protects itself with require_capability.
+    The self-protected matchers are built once from the app's routes and cached on ``app.state`` (routes
+    are static after startup)."""
+    app = request.app
+    matchers = getattr(app.state, "_c360_self_protected_matchers", None)
+    if matchers is None:
+        from app.security.route_coverage import build_self_protected_matchers
+        matchers = build_self_protected_matchers(app.routes)
+        app.state._c360_self_protected_matchers = matchers
+    from app.security.route_coverage import path_is_self_protected
+    return path_is_self_protected(matchers, request.url.path, request.method)
+
+
 RECORD_PATH = re.compile(r"^/(people|households)/(\d+)")
 FIRM_WIDE_COLLECTION = re.compile(
     r"^/(?:$|api/(?:stats|search)(?:/|$)|search(?:/|$)|people/?$|households/?$|"
@@ -282,6 +307,22 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 request,
                 principal,
                 "authorization.denied",
+                "route",
+                request.url.path,
+                "Access denied",
+            )
+        # Phase 1A — FAIL CLOSED: a mutating staff route matched by no RULES pattern (capability is None)
+        # is denied UNLESS the route protects itself with require_capability or is an exempt session route.
+        # This closes the fail-open default so a newly added staff mutation can never become available just
+        # by being absent from RULES. Reads (GET/HEAD/OPTIONS) are deliberately unaffected.
+        if (capability is None
+                and request.method not in {"GET", "HEAD", "OPTIONS"}
+                and not _staff_mutation_exempt(request.url.path)
+                and not _route_self_protected(request)):
+            return _denied(
+                request,
+                principal,
+                "authorization.uncovered_mutation_denied",
                 "route",
                 request.url.path,
                 "Access denied",
