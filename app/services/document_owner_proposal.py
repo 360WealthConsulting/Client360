@@ -294,7 +294,7 @@ def _live_ocr(conn, document_id):
     but ALWAYS records a truthful OCR state: if the engine/libraries are unavailable the document is left
     in a retryable 'failed (OCR backend unavailable)' state — NOT silently stateless (which previously made
     scanned/image documents look like they had 'no usable native text')."""
-    from app.services.document_ocr import record_ocr_unavailable, run_ocr
+    from app.services.document_ocr import live_ocr_observer, record_ocr_unavailable, run_ocr
     try:
         from app.services.ocr_backend import build_production_extractor
         extractor = build_production_extractor()          # raises OcrBackendUnavailable if not installed
@@ -310,9 +310,14 @@ def _live_ocr(conn, document_id):
     # batch_size=1. When isolation is intentionally disabled the in-process path is preserved verbatim.
     from app.jobs.ocr_runner import _PRODUCTION_FACTORY, _isolation_enabled
     isolate = _isolation_enabled()
+    # When the SharePoint baseline loop is active it publishes a heartbeat observer here; forwarding it to
+    # run_ocr keeps the baseline status heartbeat alive DURING a long isolated OCR document (reusing the
+    # existing observer → run_ocr → subprocess-isolation on_heartbeat plumbing). None for every other caller.
+    observer = live_ocr_observer.get()
     try:
         run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess", batch_size=1,
-                isolate=isolate, factory_ref=(_PRODUCTION_FACTORY if isolate else None))
+                isolate=isolate, factory_ref=(_PRODUCTION_FACTORY if isolate else None),
+                observer=observer)
     except Exception:  # noqa: BLE001 — a per-run failure is already recorded as state by run_ocr/_ocr_one
         return ""
     return _ocr_cache_text(conn, document_id)

@@ -18,6 +18,7 @@ a (retryable) failure.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import time as _time
 import uuid
@@ -29,6 +30,12 @@ from sqlalchemy import func, or_, select
 from app.db import document_ocr, documents, engine
 
 _log = logging.getLogger(__name__)
+
+# Optional observer for the SharePoint baseline live-OCR path. When the baseline loop
+# (microsoft_ingestion._ocr_documents) sets this, _live_ocr forwards it to run_ocr so the existing
+# subprocess-isolation heartbeat callback reaches the baseline status tracker DURING a long OCR document.
+# Default None → the operational runner and every other caller are completely unaffected.
+live_ocr_observer = contextvars.ContextVar("live_ocr_observer", default=None)
 
 # OCR applies to scanned/image documents and PDFs (a scanned document arrives as a PDF or image).
 SUPPORTED_EXT = {"pdf", "tif", "tiff", "png", "jpg", "jpeg", "heic", "heif"}

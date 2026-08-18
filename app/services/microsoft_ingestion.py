@@ -76,23 +76,123 @@ def _ocr_analyze(document_id):
 _OCR_BUCKET = {"completed": "ocr_analyzed", "timed_out": "ocr_timed_out",
                "failed": "ocr_failed", "error": "ocr_failed"}
 
+# OCR status -> OcrRunTracker outcome bucket (native/cached success == completed; anything else that still
+# advanced but isn't a fresh OCR result == skipped).
+_TRACKER_OUTCOME = {"completed": "completed", "timed_out": "timed_out", "failed": "failed",
+                    "error": "failed", "unsupported": "unsupported"}
+
+
+def _tracker_outcome(status):
+    return _TRACKER_OUTCOME.get(status, "skipped")
+
+
+def _safe(fn, *args, **kwargs):
+    """Run an observational status-tracker call; a tracking failure must NEVER change baseline behavior."""
+    try:
+        fn(*args, **kwargs)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _new_ocr_tracker(total):
+    """A persistent :class:`OcrRunTracker` scoped to EXACTLY this baseline/resume batch (``total`` is the
+    real ``len(document_ids)`` passed to :func:`_ocr_documents`, never a firm-wide count). Reuses the
+    runner's status config (``OCR_STATUS_ENABLED``), run-id helper, and status format — no second format.
+    Observational only: any failure returns None so tracking never alters the OCR loop."""
+    try:
+        from app.jobs.ocr_runner import _default_run_id, _status_enabled
+        if not _status_enabled(None):
+            return None
+        from app.jobs.ocr_status import OcrRunTracker
+        return OcrRunTracker(run_id=_default_run_id("sharepoint-baseline"),
+                             mode="sharepoint-baseline", total=total)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class _HeartbeatObserver:
+    """Forwards ONLY heartbeats to the tracker. The baseline loop drives on_document_start/on_document_result
+    itself (so cached/native documents advance too), so run_ocr's observer must not also count documents —
+    it exists purely to keep the heartbeat alive DURING a long isolated OCR document."""
+    __slots__ = ("_tracker",)
+
+    def __init__(self, tracker):
+        self._tracker = tracker
+
+    def heartbeat(self):
+        self._tracker.heartbeat()
+
+
+def _install_ocr_heartbeat(tracker):
+    """Publish a heartbeat observer on the live-OCR context var so _live_ocr → run_ocr → subprocess
+    isolation routes its heartbeats to this tracker (reusing the existing isolation heartbeat callback).
+    Returns a reset token, or None."""
+    if tracker is None:
+        return None
+    try:
+        from app.services.document_ocr import live_ocr_observer
+        return live_ocr_observer.set(_HeartbeatObserver(tracker))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _remove_ocr_heartbeat(token):
+    if token is None:
+        return
+    try:
+        from app.services.document_ocr import live_ocr_observer
+        live_ocr_observer.reset(token)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _finish_tracker(tracker, *, ok, error=None):
+    if tracker is None:
+        return
+    try:
+        from app.jobs.ocr_status import COMPLETED, FAILED
+        tracker.finish(COMPLETED if ok else FAILED, error=error)
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def _ocr_documents(document_ids, *, progress=None):
     """OCR/analyze a list of documents with per-document isolation, bounded time, and progress. One
     timed-out/failed document is counted and the loop continues. Cache-aware: a document with usable OCR
     text already persisted is not re-OCR'd. Returns counters (ocr_analyzed/ocr_failed/ocr_timed_out/
-    ocr_other)."""
+    ocr_other).
+
+    Persists a scoped operational status/heartbeat artifact for THIS batch (total == len(document_ids))
+    via the shared OcrRunTracker, so a resumed baseline is observable (working vs. frozen). Tracking is
+    purely observational — it never changes queue construction, scope, cache behavior, or the OCR result."""
     import time
     counts = {"ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "ocr_other": 0}
     total = len(document_ids)
-    for idx, did in enumerate(document_ids, 1):
-        t0 = time.monotonic()
-        status = _ocr_analyze(did)
-        elapsed = round(time.monotonic() - t0, 1)
-        counts[_OCR_BUCKET.get(status, "ocr_other")] += 1
-        if progress:
-            progress({"phase": "ocr", "index": idx, "total": total, "document_id": did,
-                      "file": _doc_name(did), "status": status, "elapsed": elapsed})
+    tracker = _new_ocr_tracker(total)                 # None if tracking disabled/unavailable
+    token = _install_ocr_heartbeat(tracker)           # route live-OCR heartbeats to this tracker
+    if tracker is not None:
+        _safe(tracker.start)
+        _safe(tracker.mark_running)
+    try:
+        for idx, did in enumerate(document_ids, 1):
+            name = _doc_name(did)
+            if tracker is not None:
+                _safe(tracker.on_document_start, did, name)
+            t0 = time.monotonic()
+            status = _ocr_analyze(did)
+            elapsed = round(time.monotonic() - t0, 1)
+            counts[_OCR_BUCKET.get(status, "ocr_other")] += 1
+            if tracker is not None:
+                _safe(tracker.on_document_result, did, name, _tracker_outcome(status))
+            if progress:
+                progress({"phase": "ocr", "index": idx, "total": total, "document_id": did,
+                          "file": name, "status": status, "elapsed": elapsed})
+    except BaseException as exc:                       # a crash in the loop → record FAILED, then propagate
+        _finish_tracker(tracker, ok=False, error=exc)
+        raise
+    finally:
+        _remove_ocr_heartbeat(token)
+    _finish_tracker(tracker, ok=True)
     return counts
 
 
