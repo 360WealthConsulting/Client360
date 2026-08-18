@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 
 from sqlalchemy import text
 
@@ -36,7 +37,17 @@ log = logging.getLogger(__name__)
 
 # Session-level advisory lock key (arbitrary, namespaced to OCR). Guards against concurrent sweeps.
 _OCR_LOCK_KEY = 511_005_002
-_ACCUM = ("candidates", "completed", "failed", "skipped", "unsupported", "chars_extracted")
+_ACCUM = ("candidates", "completed", "failed", "timed_out", "skipped", "unsupported", "chars_extracted")
+
+# The production extraction backend as a picklable dotted reference, so the per-document child process
+# builds it itself (spawn-safe; the child never imports app.db).
+_PRODUCTION_FACTORY = "app.services.ocr_backend.build_production_extractor"
+
+
+def _isolation_enabled() -> bool:
+    """Per-document subprocess isolation (real wall-clock timeout). On by default in production; a
+    pathological document can never freeze the migration. Disable only for diagnostics."""
+    return os.getenv("OCR_SUBPROCESS_ISOLATION", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @contextlib.contextmanager
@@ -54,7 +65,7 @@ def _advisory_lock():
 
 def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_size=50,
               max_batches=10_000, loop=True, actor_user_id=None, request_id=None,
-              progress=None) -> dict:
+              progress=None, isolate=None, factory_ref=None) -> dict:
     """Run an OCR sweep. Resumable + concurrency-safe. Returns accumulated counts + status.
 
     ``loop=True`` processes batches until nothing remains (initial/incremental/reprocess);
@@ -67,15 +78,23 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
     if document_ids is not None:
         loop = False      # a targeted set is a single pass (ids are always re-selected otherwise)
 
+    # Per-document subprocess isolation: production runs each document in a killable child process (real
+    # wall-clock timeout). A caller-supplied in-process extractor stays in-process unless it ALSO provides
+    # a factory_ref (used by the isolation tests).
+    if isolate is None:
+        isolate = _isolation_enabled() if extractor is None else (factory_ref is not None)
     if extractor is None:
         try:
             from app.services.ocr_backend import build_production_extractor
-            extractor = build_production_extractor()
+            extractor = build_production_extractor()          # availability check (fast fail if libs missing)
         except OcrBackendUnavailable as exc:
             log.warning("OCR sweep %s aborted: %s", mode, exc)
             totals["status"] = "backend_unavailable"
             totals["error"] = str(exc)
             return totals
+        if isolate and factory_ref is None:
+            factory_ref = _PRODUCTION_FACTORY
+    totals["isolated"] = bool(isolate and factory_ref)
 
     with _advisory_lock() as acquired:
         if not acquired:
@@ -86,21 +105,25 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
         for _ in range(max_batches):
             s = document_ocr.run_ocr(mode=mode, document_ids=document_ids, extractor=extractor,
                                      batch_size=batch_size, actor_user_id=actor_user_id,
-                                     request_id=request_id)
+                                     request_id=request_id,
+                                     isolate=bool(isolate and factory_ref), factory_ref=factory_ref)
             totals["batches"] += 1
             for k in _ACCUM:
                 totals[k] += s[k]
             totals["errors"] += len(s["errors"])
-            log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d skipped=%d",
+            log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d timed_out=%d skipped=%d",
                      mode, totals["batches"], s["candidates"], s["completed"], s["failed"],
-                     s["skipped"])
+                     s["timed_out"], s["skipped"])
             if progress:
                 progress(totals)
             # Stop when a batch found no candidates, or when a single-batch (retry) run is requested,
-            # or when a full batch produced only skips (nothing left to actually do).
+            # or when a full batch produced only skips (nothing left to actually do). A batch that timed
+            # documents out IS progress (each gets a timed_out row, excluded next pass) — it must NOT halt
+            # the sweep, or a run of pathological documents would strand every document after them.
             if not loop or s["candidates"] == 0:
                 break
-            if s["completed"] == 0 and s["failed"] == 0 and s["unsupported"] == 0:
+            if (s["completed"] == 0 and s["failed"] == 0 and s["unsupported"] == 0
+                    and s["timed_out"] == 0):
                 break
 
     totals["status"] = "completed_with_errors" if totals["errors"] else "completed"
@@ -119,21 +142,27 @@ def run_incremental(*, extractor=None, batch_size=50, actor_user_id=None) -> dic
                      actor_user_id=actor_user_id, request_id="ocr-incremental")
 
 
-def run_retry(*, extractor=None, batch_size=50, max_attempts=3, actor_user_id=None) -> dict:
+def run_retry(*, extractor=None, batch_size=50, max_attempts=3, actor_user_id=None,
+              isolate=None, factory_ref=None) -> dict:
     """Retry failed documents (attempts < max_attempts) — one batch per invocation."""
     from app.services import document_ocr
+    if isolate is None:
+        isolate = _isolation_enabled() if extractor is None else (factory_ref is not None)
     if extractor is None:
         try:
             from app.services.ocr_backend import build_production_extractor
             extractor = build_production_extractor()
         except OcrBackendUnavailable as exc:
             return {"mode": "retry", "status": "backend_unavailable", "error": str(exc)}
+        if isolate and factory_ref is None:
+            factory_ref = _PRODUCTION_FACTORY
     with _advisory_lock() as acquired:
         if not acquired:
             return {"mode": "retry", "status": "locked"}
         s = document_ocr.run_ocr(mode="retry", extractor=extractor, batch_size=batch_size,
                                  max_attempts=max_attempts, actor_user_id=actor_user_id,
-                                 request_id="ocr-retry")
+                                 request_id="ocr-retry",
+                                 isolate=bool(isolate and factory_ref), factory_ref=factory_ref)
     s["status"] = "completed_with_errors" if s["errors"] else "completed"
     return s
 

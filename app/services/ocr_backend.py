@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.services.document_ocr import OcrBackendUnavailable, OcrTimeout
+from app.services.ocr_exceptions import OcrBackendUnavailable, OcrTimeout
 
 log = logging.getLogger(__name__)
 

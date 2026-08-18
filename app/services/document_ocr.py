@@ -18,6 +18,8 @@ a (retryable) failure.
 """
 from __future__ import annotations
 
+import logging
+import time as _time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,19 +28,17 @@ from sqlalchemy import or_, select
 
 from app.db import document_ocr, documents, engine
 
+_log = logging.getLogger(__name__)
+
 # OCR applies to scanned/image documents and PDFs (a scanned document arrives as a PDF or image).
 SUPPORTED_EXT = {"pdf", "tif", "tiff", "png", "jpg", "jpeg", "heic", "heif"}
 DEFAULT_ENGINE = "client360-ocr"
 _TERMINAL_OK = "completed"
 
 
-class OcrBackendUnavailable(RuntimeError):
-    """No OCR engine is configured on this host — a supported document cannot be processed yet."""
-
-
-class OcrTimeout(RuntimeError):
-    """OCR exceeded its per-page or per-document time budget. Distinct from a generic extraction failure
-    so a timed-out document is recorded separately and the batch moves on to the next document."""
+# Re-exported from the db-free module so ``from app.services.document_ocr import OcrTimeout`` keeps working
+# while the extraction backend + subprocess worker import them without pulling in app.db.
+from app.services.ocr_exceptions import OcrBackendUnavailable, OcrTimeout  # noqa: E402,F401
 
 
 def _ext(name: str | None) -> str:
@@ -170,7 +170,8 @@ _OCR_TELEMETRY_BUCKET = {"completed": "completed", "failed": "failed", "timed_ou
 
 def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user_id=None,
             request_id=None, max_attempts=3, batch_size=200, dry_run=False, progress=None,
-            report_every=100, report_interval=60.0) -> dict:
+            report_every=100, report_interval=60.0, isolate=False, factory_ref=None,
+            hard_timeout=None, stall_timeout=None) -> dict:
     """Run OCR over canonical documents. ``mode``: ``initial``/``incremental`` (process anything not
     completed), ``retry`` (failed rows under ``max_attempts``), ``reprocess`` (force, or content changed).
     Idempotent: a completed, content-unchanged document is skipped unless ``mode='reprocess'``. Returns
@@ -187,11 +188,18 @@ def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user
                             every=report_every, interval=report_interval)
            if progress is not None else None)
 
+    if isolate and (hard_timeout is None or stall_timeout is None):
+        from app.services.ocr_isolation import default_bounds
+        _hard, _stall = default_bounds()
+        hard_timeout = hard_timeout if hard_timeout is not None else _hard
+        stall_timeout = stall_timeout if stall_timeout is not None else _stall
+
     force = mode == "reprocess"      # reprocess re-OCRs completed docs; other modes skip unchanged
     for row in cands:
         before = {k: summary[k] for k in _OCR_TELEMETRY_BUCKET}   # detect this doc's outcome by the delta
         try:
-            _ocr_one(row, extractor, force, dry_run, summary)
+            _ocr_one(row, extractor, force, dry_run, summary, isolate=isolate, factory_ref=factory_ref,
+                     hard_timeout=hard_timeout, stall_timeout=stall_timeout)
             outcome = next((_OCR_TELEMETRY_BUCKET[k] for k in _OCR_TELEMETRY_BUCKET
                             if summary[k] > before[k]), None)
         except Exception as exc:      # noqa: BLE001 — record & continue (never blocks the batch)
@@ -207,7 +215,8 @@ def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user
     return summary
 
 
-def _ocr_one(row, extractor, force, dry_run, summary):
+def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_ref=None,
+             hard_timeout=None, stall_timeout=None):
     doc_id, name, sha = row["id"], row["original_name"], row["sha256"]
 
     if not is_ocr_supported(name):
@@ -226,9 +235,21 @@ def _ocr_one(row, extractor, force, dry_run, summary):
         return
 
     path = _local_path(row)
+    started = _time.monotonic()
     try:
-        text, engine_name, page_count = _normalize(extractor(dict(row), path))
-    except OcrTimeout as exc:     # a bounded OCR that overran — recorded distinctly, retryable, never fatal
+        if isolate:
+            # Real wall-clock isolation: run extraction in a child process the parent can kill, so a
+            # pathological document can never freeze the batch (see app.services.ocr_isolation).
+            from app.services import ocr_isolation
+            result = ocr_isolation.run_document(
+                factory_ref, dict(row), str(path) if path else None,
+                hard_timeout=hard_timeout, stall_timeout=stall_timeout, doc_id=doc_id, name=name)
+        else:
+            result = extractor(dict(row), path)
+        text, engine_name, page_count = _normalize(result)
+    except OcrTimeout as exc:     # overran/stalled — recorded distinctly, retryable, never fatal
+        _log.warning("OCR timed out: doc=%s file=%s elapsed=%.1fs — recording timed_out, continuing",
+                     doc_id, name, _time.monotonic() - started)
         _write_state(doc_id, status="timed_out", last_error=str(exc)[:2000], bump_attempt=True)
         summary["timed_out"] += 1
         return
