@@ -38,7 +38,7 @@ class ProgressReporter:
     window. ``sink`` receives each formatted line (defaults to stdout); ``now`` is the monotonic clock."""
 
     def __init__(self, phase, total=None, *, every=100, interval=60.0, window_seconds=60.0,
-                 sink=None, now=None):
+                 sink=None, now=None, extra_outcomes=()):
         self.phase = phase
         self.total = int(total) if total is not None else None
         self._every = max(int(every), 1)
@@ -47,7 +47,10 @@ class ProgressReporter:
         self._sink = sink if sink is not None else (lambda line: print(line, flush=True))
         self._now = now or _time.monotonic
         self.processed = 0
-        self.counts = dict.fromkeys(OUTCOMES, 0)
+        # Standard buckets plus any phase-specific extras (e.g. OCR's ``encrypted``). Extras default to none
+        # so every other phase's telemetry is byte-for-byte unchanged.
+        self._extra_outcomes = tuple(o for o in extra_outcomes if o not in OUTCOMES)
+        self.counts = dict.fromkeys(OUTCOMES + self._extra_outcomes, 0)
         self.checkpoint = None
         self._start = self._now()
         self._last_emit = self._start
@@ -110,7 +113,7 @@ class ProgressReporter:
     def snapshot(self):
         """A structured dict of every telemetry field (for logging/tests — no text parsing needed)."""
         pct, eta = self.percentage(), self.eta_seconds()
-        return {
+        snap = {
             "phase": self.phase,
             "processed": self.processed,
             "total": self.total,
@@ -125,16 +128,20 @@ class ProgressReporter:
             "reused": self.counts["reused"],
             "checkpoint": self.checkpoint,
         }
+        for o in self._extra_outcomes:               # phase-specific buckets (e.g. OCR ``encrypted``)
+            snap[o] = self.counts[o]
+        return snap
 
     def format(self):
         s = self.snapshot()
         pct = f"{s['percentage']}%" if s["percentage"] is not None else "?"
         tot = s["total"] if s["total"] is not None else "?"
         eta = f"{s['eta_seconds']}s" if s["eta_seconds"] is not None else "?"
+        extra = "".join(f" {o}={s[o]}" for o in self._extra_outcomes)   # e.g. " encrypted=3"
         return (f"[{s['phase']}] {s['processed']}/{tot} ({pct}) elapsed={s['elapsed_seconds']}s "
                 f"rate={s['throughput_per_sec']}/s eta={eta} completed={s['completed']} "
                 f"failed={s['failed']} unsupported={s['unsupported']} timed_out={s['timed_out']} "
-                f"reused={s['reused']} checkpoint={s['checkpoint']}")
+                f"reused={s['reused']}{extra} checkpoint={s['checkpoint']}")
 
     def _maybe_emit(self, now=None):
         now = now if now is not None else self._now()

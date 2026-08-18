@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 
-from app.services.ocr_exceptions import OcrBackendUnavailable, OcrTimeout
+from app.services.ocr_exceptions import OcrBackendUnavailable, OcrEncryptedPdf, OcrTimeout
 
 log = logging.getLogger(__name__)
 
@@ -149,6 +149,10 @@ def run_document(factory_ref, row, path, *, hard_timeout, stall_timeout, heartbe
                 raise OcrTimeout(message)
             if type_name == "OcrBackendUnavailable":
                 raise OcrBackendUnavailable(message)
+            if type_name == "OcrEncryptedPdf":
+                # A distinct terminal outcome must survive the child->parent boundary intact so the caller
+                # records 'unsupported (password_required)' rather than a generic retryable failure.
+                raise OcrEncryptedPdf(message)
             raise RuntimeError(f"OCR failed at stage '{stage}': {type_name}: {message}")
     finally:
         if proc.is_alive():

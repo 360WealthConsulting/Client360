@@ -18,6 +18,24 @@ class OcrTimeout(RuntimeError):
     separately and the batch moves on to the next document."""
 
 
+# Stable, machine-detectable error code for an encrypted / password-protected PDF. It is written verbatim
+# into ``document_ocr.last_error`` and operator surfaces match on the ``password_required:`` prefix to show
+# "Password required / Encrypted PDF" and to tell it apart from an ordinary unsupported file type. Keep the
+# prefix stable — UI/reporting parse it. (No schema change: the persisted status stays ``unsupported``; a
+# first-class ``encrypted`` status is a possible later schema-evolution phase, not needed for correctness.)
+ENCRYPTED_PDF_ERROR_CODE = "password_required"
+ENCRYPTED_PDF_LAST_ERROR = "password_required: encrypted PDF; OCR skipped (no password)"
+
+
+class OcrEncryptedPdf(RuntimeError):
+    """A PDF is encrypted / password-protected and cannot be read without a password.
+
+    A DISTINCT, TERMINAL outcome — never a transient failure. It is recorded as ``unsupported`` with the
+    structured :data:`ENCRYPTED_PDF_LAST_ERROR` reason, counted separately (``encrypted``), NOT retried,
+    and the batch moves straight to the next document. We NEVER guess, crack, or bypass the password —
+    detection is read-only and stops before any expensive rendering/OCR."""
+
+
 class OcrIsolationError(ValueError):
     """A caller of ``run_ocr`` did not make an explicit isolation choice, so the call is refused rather
     than silently running production OCR in-process (an unkillable path with no wall-clock timeout).

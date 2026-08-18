@@ -46,7 +46,9 @@ _TERMINAL_OK = "completed"
 # Re-exported from the db-free module so ``from app.services.document_ocr import OcrTimeout`` keeps working
 # while the extraction backend + subprocess worker import them without pulling in app.db.
 from app.services.ocr_exceptions import (  # noqa: E402,F401
+    ENCRYPTED_PDF_LAST_ERROR,
     OcrBackendUnavailable,
+    OcrEncryptedPdf,
     OcrIsolationError,
     OcrTimeout,
 )
@@ -222,13 +224,15 @@ def count_candidates(*, mode="incremental", document_ids=None, max_attempts=3) -
 
 def _new_summary(mode, dry_run):
     return {"mode": mode, "candidates": 0, "completed": 0, "failed": 0, "timed_out": 0, "skipped": 0,
-            "unsupported": 0, "chars_extracted": 0, "errors": [], "dry_run": dry_run,
+            "unsupported": 0, "encrypted": 0, "chars_extracted": 0, "errors": [], "dry_run": dry_run,
             "status": "started"}
 
 
 # OCR summary counter -> ProgressReporter outcome bucket (skipped == already-completed == reused).
+# ``encrypted`` is its OWN bucket (password-protected PDFs) so operators can distinguish it from ordinary
+# unsupported file types in progress/status telemetry, even though the persisted status is 'unsupported'.
 _OCR_TELEMETRY_BUCKET = {"completed": "completed", "failed": "failed", "timed_out": "timed_out",
-                         "unsupported": "unsupported", "skipped": "reused"}
+                         "unsupported": "unsupported", "skipped": "reused", "encrypted": "encrypted"}
 
 
 def _observe(observer, method, *args):
@@ -270,7 +274,8 @@ def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user
                             max_attempts=max_attempts, batch_size=batch_size)
     summary["candidates"] = len(cands)
     rep = (ProgressReporter(f"ocr:{mode}", total=len(cands), sink=progress,
-                            every=report_every, interval=report_interval)
+                            every=report_every, interval=report_interval,
+                            extra_outcomes=("encrypted",))
            if progress is not None else None)
 
     if isolate and (hard_timeout is None or stall_timeout is None):
@@ -342,6 +347,16 @@ def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_
         _write_state(doc_id, status="timed_out", last_error=str(exc)[:2000], bump_attempt=True)
         summary["timed_out"] += 1
         return
+    except OcrEncryptedPdf:       # password-protected — TERMINAL, distinct, NOT a retryable failure
+        # Recorded as 'unsupported' (the schema's terminal non-retryable state — no migration) with the
+        # structured password_required reason so operators can distinguish it from other unsupported files.
+        # attempts are NOT bumped: this is a determinate outcome, not a transient failure to retry. The
+        # batch continues to the next document immediately.
+        _log.info("OCR skipped (encrypted/password-protected PDF): doc=%s file=%s — recording unsupported "
+                  "(%s), not retrying", doc_id, name, ENCRYPTED_PDF_LAST_ERROR)
+        _write_state(doc_id, status="unsupported", last_error=ENCRYPTED_PDF_LAST_ERROR, bump_attempt=False)
+        summary["encrypted"] += 1
+        return
     except Exception as exc:      # noqa: BLE001 — a failed extraction is retryable, not fatal
         _write_state(doc_id, status="failed", last_error=str(exc)[:2000], bump_attempt=True)
         summary["failed"] += 1
@@ -410,7 +425,7 @@ def _audit(summary, actor_user_id, request_id, dry_run):
         action="document.ocr_run", entity_type="document", entity_id=None,
         actor_user_id=actor_user_id, request_id=request_id or f"ocr-{uuid.uuid4()}",
         metadata={k: summary[k] for k in ("mode", "candidates", "completed", "failed",
-                                          "skipped", "unsupported", "chars_extracted")})
+                                          "skipped", "unsupported", "encrypted", "chars_extracted")})
 
 
 def extract_text(document_id: int, *, extractor=None, actor_user_id=None, request_id=None) -> dict:

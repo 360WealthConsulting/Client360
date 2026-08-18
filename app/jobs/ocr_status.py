@@ -26,8 +26,10 @@ RUNNING = "RUNNING"
 COMPLETED = "COMPLETED"
 FAILED = "FAILED"
 
-_COUNT_KEYS = ("completed", "failed", "timed_out", "unsupported", "skipped")
+_COUNT_KEYS = ("completed", "failed", "timed_out", "unsupported", "skipped", "encrypted")
 # run_ocr reports an already-completed (reused) document as "reused"; it is a "skipped" count here.
+# ``encrypted`` (password-protected PDFs) is tracked distinctly so operators can tell it apart from
+# ordinary unsupported file types even though the persisted document_ocr.status is 'unsupported'.
 _OUTCOME_ALIAS = {"reused": "skipped"}
 
 DEFAULT_STALE_SECONDS = 90.0

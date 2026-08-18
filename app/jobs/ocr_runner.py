@@ -37,7 +37,8 @@ log = logging.getLogger(__name__)
 
 # Session-level advisory lock key (arbitrary, namespaced to OCR). Guards against concurrent sweeps.
 _OCR_LOCK_KEY = 511_005_002
-_ACCUM = ("candidates", "completed", "failed", "timed_out", "skipped", "unsupported", "chars_extracted")
+_ACCUM = ("candidates", "completed", "failed", "timed_out", "skipped", "unsupported", "encrypted",
+          "chars_extracted")
 
 # The production extraction backend as a picklable dotted reference, so the per-document child process
 # builds it itself (spawn-safe; the child never imports app.db).
@@ -157,9 +158,9 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
                 for k in _ACCUM:
                     totals[k] += s[k]
                 totals["errors"] += len(s["errors"])
-                log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d timed_out=%d skipped=%d",
-                         mode, totals["batches"], s["candidates"], s["completed"], s["failed"],
-                         s["timed_out"], s["skipped"])
+                log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d timed_out=%d "
+                         "encrypted=%d skipped=%d", mode, totals["batches"], s["candidates"],
+                         s["completed"], s["failed"], s["timed_out"], s["encrypted"], s["skipped"])
                 if progress:
                     progress(totals)
                 # Stop when a batch found no candidates, or when a single-batch (retry) run is requested,

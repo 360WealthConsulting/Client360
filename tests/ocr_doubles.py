@@ -75,6 +75,15 @@ def slow_ok_factory():
     return extractor
 
 
+def encrypted_pdf_factory():
+    """The extractor raises :class:`OcrEncryptedPdf` — simulates a password-protected PDF detected by the
+    backend. Drives the distinct terminal 'unsupported (password_required)' outcome + no-retry behavior."""
+    def extractor(row, path):
+        from app.services.ocr_exceptions import OcrEncryptedPdf
+        raise OcrEncryptedPdf(f"encrypted/password-protected PDF: {row.get('original_name')}")
+    return extractor
+
+
 def selective_factory():
     """Hangs on documents whose name contains 'HANG' (hard-cap killed), succeeds otherwise — drives the
     full run_ocr loop: one document times out, the next completes."""

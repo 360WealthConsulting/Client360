@@ -163,7 +163,7 @@ def test_sweep_continues_past_an_all_timeout_batch(monkeypatch):
 
     def _batch(**counts):
         base = {k: 0 for k in ("candidates", "completed", "failed", "timed_out", "skipped",
-                               "unsupported", "chars_extracted")}
+                               "unsupported", "encrypted", "chars_extracted")}
         return {**base, **counts, "errors": []}
 
     # Batch 1 times out every document it selects; batch 2 completes one; batch 3 is empty.

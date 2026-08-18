@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.services.ocr_exceptions import OcrBackendUnavailable, OcrTimeout
+from app.services.ocr_exceptions import OcrBackendUnavailable, OcrEncryptedPdf, OcrTimeout
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +108,9 @@ class OcrDeps:
     pdf_render_all: Callable[[Path], list] | None = None  # render ALL PDF pages (fallback when the text
     #                                                        layer is unreadable by pypdf); poppler tolerates
     #                                                        many malformed PDFs pypdf rejects.
+    pdf_is_encrypted: Callable[[Path], bool] | None = None  # True only when a PDF needs a password we do
+    #                                                        NOT have (read-only, cheap; checked BEFORE any
+    #                                                        render/OCR). None on older/fake deps -> skipped.
 
 
 def _ext(name: str | None) -> str:
@@ -151,6 +154,13 @@ def _extract_pdf_via_render(p: Path, deps: OcrDeps, *, page_to, doc_to, reason) 
 
 def _extract_pdf(p: Path, deps: OcrDeps) -> dict:
     import time
+    # Deterministic, read-only encryption check BEFORE any text extraction, poppler render, or OCR. An
+    # encrypted/password-protected PDF is a distinct TERMINAL outcome (recorded 'unsupported' +
+    # password_required), never a transient failure and never retried — so we stop here rather than burning
+    # the render fallback + OCR budget on a file we cannot read. We never attempt to guess the password.
+    is_encrypted = getattr(deps, "pdf_is_encrypted", None)
+    if is_encrypted is not None and is_encrypted(p):
+        raise OcrEncryptedPdf(f"encrypted/password-protected PDF: {p.name}")
     page_to, doc_to = ocr_page_timeout(), ocr_document_timeout()
     deadline = time.monotonic() + doc_to if doc_to else None
     try:
@@ -235,6 +245,20 @@ def production_deps() -> OcrDeps:
         # Poppler renders every page; tolerates many malformed PDFs pypdf rejects (the text-layer fallback).
         return convert_from_path(str(p), poppler_path=poppler_path)
 
+    def pdf_is_encrypted(p: Path) -> bool:
+        # True ONLY when the PDF needs a password we do not have. Encrypted-but-empty-password PDFs (common:
+        # encrypted for permissions/metadata yet readable) return False. Cheap + read-only: no rendering, no
+        # OCR, no password guessing beyond the standard empty user/owner password pypdf itself tries.
+        reader = pypdf.PdfReader(str(p))
+        if not getattr(reader, "is_encrypted", False):
+            return False
+        try:
+            reader.decrypt("")                       # attempt the empty user/owner password only
+            _ = reader.pages[0] if len(reader.pages) else None   # readable => not password-required
+            return False
+        except Exception:  # noqa: BLE001 — still locked: a real password we don't have is required
+            return True
+
     def image_pages(p: Path) -> list:
         img = Image.open(str(p))
         return [frame.copy() for frame in ImageSequence.Iterator(img)]
@@ -248,7 +272,7 @@ def production_deps() -> OcrDeps:
         return str(pytesseract.get_tesseract_version())
 
     return OcrDeps(pdf_page_texts, render_pdf_page, image_pages, ocr_image, engine_version,
-                   pdf_render_all=pdf_render_all)
+                   pdf_render_all=pdf_render_all, pdf_is_encrypted=pdf_is_encrypted)
 
 
 def build_production_extractor():
