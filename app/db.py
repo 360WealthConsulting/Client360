@@ -99,6 +99,14 @@ automation_actions = metadata.tables["automation_actions"]
 workflow_escalations = metadata.tables["workflow_escalations"]
 portal_accounts = metadata.tables["portal_accounts"]
 portal_access_grants = metadata.tables["portal_access_grants"]
+
+# Client Feature & Access Control framework (migration caf01). Tolerant bind (``.get``) like the MDM-1
+# tables above: an environment that has not applied caf01 yet imports cleanly; the features service
+# checks for None and fails closed rather than KeyError-ing at import.
+client_product_entitlements = metadata.tables.get("client_product_entitlements")
+client_feature_overrides = metadata.tables.get("client_feature_overrides")
+firm_feature_controls = metadata.tables.get("firm_feature_controls")
+client_status = metadata.tables.get("client_status")
 portal_invitations = metadata.tables["portal_invitations"]
 portal_auth_tokens = metadata.tables["portal_auth_tokens"]
 portal_devices = metadata.tables["portal_devices"]

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Access & Features | 360Plus{% endblock %}
+{% block crumb %}Access & Features{% endblock %}
+{% block content %}
+{% call ui.page_head("Access & Features", eyebrow="Client controls",
+    desc="Status, product entitlements, and per-feature access for this " ~ subject_type ~ ". Effective access is enforced server-side; this screen reflects it, it does not grant it.") %}
+{% endcall %}
+{% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
+{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+
+{% if not access_summary.portal_open %}
+<div class="banner warn">
+  <strong>Portal access is closed for this client.</strong>
+  {% for r in access_summary.reasons %}{{ r }}{% if not loop.last %} · {% endif %}{% endfor %}.
+  While closed, all normal client portal functionality is denied server-side regardless of individual feature settings.
+</div>
+{% endif %}
+
+<h2 class="section-title">Client status</h2>
+<form method="post" action="/client/access/{{ subject_type }}/{{ subject_id }}/status" class="card" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+  <label>Status
+    <select name="status">
+      {% for s in statuses %}<option value="{{ s }}"{% if status and status.status == s %} selected{% endif %}>{{ s.replace('_',' ')|title }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Disposition (if Needs Review)
+    <select name="disposition">
+      <option value="">—</option>
+      {% for d in dispositions %}<option value="{{ d }}"{% if status and status.disposition == d %} selected{% endif %}>{{ d|title }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn" type="submit">Save status</button>
+  <span class="subtle">Status does not itself grant feature access.</span>
+</form>
+
+<h2 class="section-title" style="margin-top:1.5rem;">Product entitlements</h2>
+<div class="card" style="display:flex;gap:1rem;flex-wrap:wrap;">
+  {% for p in products %}
+  <form method="post" action="/client/access/{{ subject_type }}/{{ subject_id }}/entitlement" style="display:flex;gap:.4rem;align-items:center;">
+    <input type="hidden" name="product" value="{{ p }}">
+    <strong>{{ p|title }}</strong>
+    {% if p in entitlements %}
+      <span class="pill ok">Entitled</span>
+      {% if p != 'core' %}<button class="btn secondary" name="action" value="revoke" type="submit">Revoke</button>{% else %}<span class="subtle">baseline</span>{% endif %}
+    {% else %}
+      <span class="pill">Not entitled</span>
+      <button class="btn" name="action" value="grant" type="submit">Grant</button>
+    {% endif %}
+  </form>
+  {% endfor %}
+</div>
+
+<h2 class="section-title" style="margin-top:1.5rem;">Effective feature access</h2>
+{% for product in products %}
+<h3 style="margin:1rem 0 .5rem;">{{ product|title }}</h3>
+<table class="table">
+  <thead><tr><th>Feature</th><th>Effective</th><th>Why</th><th>Firm state</th><th>Override</th></tr></thead>
+  <tbody>
+  {% for f in features if f.product == product %}
+    <tr>
+      <td>{{ f.label }}</td>
+      <td>
+        {% if f.allowed %}<span class="pill ok">Allowed</span>{% else %}<span class="pill stop">Denied</span>{% endif %}
+      </td>
+      <td class="subtle">{{ f.explanation }}</td>
+      <td>
+        <span class="pill {{ 'stop' if f.firm_state in ('disabled','internal_only') else ('pending' if f.firm_state=='beta' else 'ok') }}">{{ f.firm_state.replace('_',' ')|title }}</span>
+      </td>
+      <td>
+        <form method="post" action="/client/access/{{ subject_type }}/{{ subject_id }}/feature" style="display:flex;gap:.3rem;">
+          <input type="hidden" name="feature_key" value="{{ f.feature }}">
+          <select name="state">
+            {% for s in override_states %}<option value="{{ s }}"{% if f.override == s %} selected{% endif %}>{{ s|title }}</option>{% endfor %}
+          </select>
+          <button class="btn secondary" type="submit">Set</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+{% endblock %}

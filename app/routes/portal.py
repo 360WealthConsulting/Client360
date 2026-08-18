@@ -232,8 +232,10 @@ def api_portal_appointment_request(payload: AppointmentRequest, principal: Porta
 
 @router.get("/api/v1/portal/documents/{document_id}/download")
 def api_portal_document_download(document_id: int, principal: PortalPrincipal = Depends(current_portal)):
-    # File-security: resolve the document, enforce person scope under the documents grant, and stream from
-    # the authoritative document store only after the scope check. Out-of-scope never discloses existence.
+    # The document_download feature is enforced centrally by the auth middleware (see
+    # app/services/features/portal_gate.py) before this route runs, so a client with the feature disabled
+    # is denied 403 even by direct URL/API call. Then the existing per-person documents-grant scope check
+    # applies. Out-of-scope never discloses existence.
     with engine.connect() as connection:
         row = connection.execute(select(documents.c.person_id, documents.c.storage_path,
             documents.c.original_name, documents.c.content_type, documents.c.archived).where(

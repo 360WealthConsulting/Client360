@@ -33,6 +33,7 @@ from app.routes.campaign import router as campaign_router
 from app.routes.capacity_planning import router as capacity_planning_router
 from app.routes.change_management import router as change_management_router
 from app.routes.client360 import router as client360_router
+from app.routes.client_access import router as client_access_router
 from app.routes.communications import router as communications_router
 from app.routes.compliance import router as compliance_router
 from app.routes.compliance_intelligence import router as compliance_intelligence_router
@@ -240,6 +241,7 @@ app.include_router(portfolio_router)
 app.include_router(wealth_router)
 app.include_router(workspace_router)
 app.include_router(client360_router)
+app.include_router(client_access_router)
 app.include_router(ai_assist_router)
 app.include_router(vault_router)
 app.include_router(auth_router)

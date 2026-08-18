@@ -234,6 +234,21 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 if "text/html" in request.headers.get("accept", ""):
                     return RedirectResponse("/portal/login", 303)
                 return JSONResponse({"detail": "Portal authentication required", "request_id": request.state.request_id}, status_code=401)
+            # Server-side Client Feature & Access Control enforcement, centralized here (like the staff
+            # RULES map): the master portal kill switch (lifecycle status + portal_access) and the mapped
+            # Core feature are checked BEFORE the route runs, so a disabled feature cannot be reached by
+            # direct URL/API call. Auth/logout/security-reset paths are exempt inside evaluate().
+            from app.services.features import portal_gate
+            _allowed, _freason, _feature = portal_gate.evaluate(
+                portal_principal, request.url.path, request.method)
+            if not _allowed:
+                # Never leak the internal reason to the client; the staff Access & Features screen shows it.
+                denied = JSONResponse({"detail": "This feature is not available on your account.",
+                                       "request_id": request.state.request_id}, status_code=403)
+                denied.headers["x-request-id"] = request.state.request_id
+                denied.headers["x-content-type-options"] = "nosniff"
+                denied.headers["x-frame-options"] = "DENY"
+                return denied
             response = await call_next(request)
             if response.status_code < 400 and request.method not in {"GET", "HEAD", "OPTIONS"}:
                 write_audit_event(action="portal.route.mutated", entity_type="portal_route", entity_id=request.url.path, request_id=request.state.request_id, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), metadata={"portal_account_id": portal_principal.account_id, "method": request.method, "status_code": response.status_code})
