@@ -99,10 +99,14 @@ def _kill_tree(proc) -> None:
 
 
 def run_document(factory_ref, row, path, *, hard_timeout, stall_timeout, heartbeat_interval=5.0,
-                 doc_id=None, name=None) -> dict:
+                 doc_id=None, name=None, on_heartbeat=None) -> dict:
     """Extract one document in an interruptible child process. Returns the extraction dict, or raises
     :class:`OcrTimeout` on stall/overrun (after killing the tree), or the child's own exception (so the
-    caller records it as a failure). The parent process always survives and never leaks a child."""
+    caller records it as a failure). The parent process always survives and never leaks a child.
+
+    ``on_heartbeat`` (optional) is called each time the worker reports progress — purely observational
+    (operational status/heartbeat); it never affects the timeout, stall, or kill behavior, and any
+    exception it raises is swallowed."""
     import multiprocessing as mp
 
     ctx = mp.get_context("spawn")
@@ -131,6 +135,11 @@ def run_document(factory_ref, row, path, *, hard_timeout, stall_timeout, heartbe
                     f"document OCR made no progress for {stall_timeout:.0f}s (stalled)") from None
             kind = msg[0]
             if kind == "hb":
+                if on_heartbeat is not None:
+                    try:
+                        on_heartbeat()                       # observational only — never affects the kill path
+                    except Exception:  # noqa: BLE001 — a broken status sink must not disturb the watchdog
+                        pass
                 continue                                     # progress — reset the stall window
             if kind == "ok":
                 return msg[1]

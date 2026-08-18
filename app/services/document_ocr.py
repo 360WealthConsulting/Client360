@@ -24,7 +24,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.db import document_ocr, documents, engine
 
@@ -132,29 +132,51 @@ def _normalize(result) -> tuple[str, str, int | None]:
     return (result or "", DEFAULT_ENGINE, None)
 
 
+def _candidate_join():
+    return documents.outerjoin(document_ocr, document_ocr.c.document_id == documents.c.id)
+
+
+def _candidate_conditions(*, mode, document_ids, max_attempts):
+    """The exact WHERE predicate that selects OCR candidates for a run mode. Shared by :func:`_candidates`
+    (the batch selector) and :func:`count_candidates` (the read-only denominator) so the two can never
+    drift apart."""
+    conds = [documents.c.status != "deleted"]
+    if document_ids is not None:
+        conds.append(documents.c.id.in_(tuple(document_ids) or (-1,)))
+    elif mode == "retry":
+        conds.append(document_ocr.c.status.in_(("failed", "timed_out")))
+        conds.append(document_ocr.c.attempts < max_attempts)
+    elif mode == "reprocess":
+        conds.append(or_(document_ocr.c.document_id.is_(None),
+                         document_ocr.c.source_hash != documents.c.sha256,
+                         document_ocr.c.status != _TERMINAL_OK))
+    else:  # initial / incremental — not-yet-attempted (failed rows are the retry mode's job, so a
+        # resumable batch sweep terminates instead of re-selecting a poison document every batch)
+        conds.append(or_(document_ocr.c.document_id.is_(None),
+                         document_ocr.c.status.in_(("pending", "processing"))))
+    return conds
+
+
 def _candidates(conn, *, mode, document_ids, max_attempts, batch_size):
     """Select canonical documents to OCR for the given run mode (record-scope is enforced by the
     caller's document_ids when present; sweeps run firm-wide by design, like the source-sync jobs)."""
-    j = documents.outerjoin(document_ocr, document_ocr.c.document_id == documents.c.id)
     cols = [documents.c.id, documents.c.original_name, documents.c.sha256,
             documents.c.storage_uri, documents.c.storage_path,
             document_ocr.c.status.label("ocr_state"), document_ocr.c.attempts,
             document_ocr.c.source_hash]
-    stmt = select(*cols).select_from(j).where(documents.c.status != "deleted")
-    if document_ids is not None:
-        stmt = stmt.where(documents.c.id.in_(tuple(document_ids) or (-1,)))
-    elif mode == "retry":
-        stmt = stmt.where(document_ocr.c.status.in_(("failed", "timed_out")),
-                          document_ocr.c.attempts < max_attempts)
-    elif mode == "reprocess":
-        stmt = stmt.where(or_(document_ocr.c.document_id.is_(None),
-                              document_ocr.c.source_hash != documents.c.sha256,
-                              document_ocr.c.status != _TERMINAL_OK))
-    else:  # initial / incremental — not-yet-attempted (failed rows are the retry mode's job, so a
-        # resumable batch sweep terminates instead of re-selecting a poison document every batch)
-        stmt = stmt.where(or_(document_ocr.c.document_id.is_(None),
-                              document_ocr.c.status.in_(("pending", "processing"))))
-    return conn.execute(stmt.order_by(documents.c.id).limit(batch_size)).mappings().all()
+    stmt = (select(*cols).select_from(_candidate_join())
+            .where(*_candidate_conditions(mode=mode, document_ids=document_ids, max_attempts=max_attempts))
+            .order_by(documents.c.id).limit(batch_size))
+    return conn.execute(stmt).mappings().all()
+
+
+def count_candidates(*, mode="incremental", document_ids=None, max_attempts=3) -> int:
+    """Read-only count of the documents a sweep would still process for ``mode`` (ignoring batch size).
+    Operational only — gives the status tracker a best-effort denominator; never mutates anything."""
+    stmt = (select(func.count()).select_from(_candidate_join())
+            .where(*_candidate_conditions(mode=mode, document_ids=document_ids, max_attempts=max_attempts)))
+    with engine.connect() as conn:
+        return int(conn.execute(stmt).scalar() or 0)
 
 
 def _new_summary(mode, dry_run):
@@ -168,10 +190,25 @@ _OCR_TELEMETRY_BUCKET = {"completed": "completed", "failed": "failed", "timed_ou
                          "unsupported": "unsupported", "skipped": "reused"}
 
 
+def _observe(observer, method, *args):
+    """Invoke an optional operational observer hook (status/heartbeat tracker). Purely observational and
+    fully isolated: a missing hook or any exception it raises is swallowed so tracking can never affect
+    OCR processing."""
+    if observer is None:
+        return
+    fn = getattr(observer, method, None)
+    if fn is None:
+        return
+    try:
+        fn(*args)
+    except Exception:  # noqa: BLE001 — a broken status sink must never break the OCR run
+        pass
+
+
 def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user_id=None,
             request_id=None, max_attempts=3, batch_size=200, dry_run=False, progress=None,
             report_every=100, report_interval=60.0, isolate=False, factory_ref=None,
-            hard_timeout=None, stall_timeout=None) -> dict:
+            hard_timeout=None, stall_timeout=None, observer=None) -> dict:
     """Run OCR over canonical documents. ``mode``: ``initial``/``incremental`` (process anything not
     completed), ``retry`` (failed rows under ``max_attempts``), ``reprocess`` (force, or content changed).
     Idempotent: a completed, content-unchanged document is skipped unless ``mode='reprocess'``. Returns
@@ -196,15 +233,17 @@ def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user
 
     force = mode == "reprocess"      # reprocess re-OCRs completed docs; other modes skip unchanged
     for row in cands:
+        _observe(observer, "on_document_start", row["id"], row["original_name"])
         before = {k: summary[k] for k in _OCR_TELEMETRY_BUCKET}   # detect this doc's outcome by the delta
         try:
             _ocr_one(row, extractor, force, dry_run, summary, isolate=isolate, factory_ref=factory_ref,
-                     hard_timeout=hard_timeout, stall_timeout=stall_timeout)
+                     hard_timeout=hard_timeout, stall_timeout=stall_timeout, observer=observer)
             outcome = next((_OCR_TELEMETRY_BUCKET[k] for k in _OCR_TELEMETRY_BUCKET
                             if summary[k] > before[k]), None)
         except Exception as exc:      # noqa: BLE001 — record & continue (never blocks the batch)
             summary["errors"].append(f"doc {row['id']}: {exc}")
             outcome = "failed"
+        _observe(observer, "on_document_result", row["id"], row["original_name"], outcome)
         if rep is not None:
             rep.advance(outcome=outcome)
     if rep is not None:
@@ -216,7 +255,7 @@ def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user
 
 
 def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_ref=None,
-             hard_timeout=None, stall_timeout=None):
+             hard_timeout=None, stall_timeout=None, observer=None):
     doc_id, name, sha = row["id"], row["original_name"], row["sha256"]
 
     if not is_ocr_supported(name):
@@ -241,9 +280,11 @@ def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_
             # Real wall-clock isolation: run extraction in a child process the parent can kill, so a
             # pathological document can never freeze the batch (see app.services.ocr_isolation).
             from app.services import ocr_isolation
+            on_hb = getattr(observer, "heartbeat", None) if observer is not None else None
             result = ocr_isolation.run_document(
                 factory_ref, dict(row), str(path) if path else None,
-                hard_timeout=hard_timeout, stall_timeout=stall_timeout, doc_id=doc_id, name=name)
+                hard_timeout=hard_timeout, stall_timeout=stall_timeout, doc_id=doc_id, name=name,
+                on_heartbeat=on_hb)
         else:
             result = extractor(dict(row), path)
         text, engine_name, page_count = _normalize(result)

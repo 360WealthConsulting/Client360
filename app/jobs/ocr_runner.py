@@ -50,6 +50,33 @@ def _isolation_enabled() -> bool:
     return os.getenv("OCR_SUBPROCESS_ISOLATION", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _status_enabled(status) -> bool:
+    """Persistent run-status/heartbeat tracking. On by default in production so a resumed migration is
+    observable (working vs. frozen). Explicit ``status`` arg overrides the ``OCR_STATUS_ENABLED`` env."""
+    if status is not None:
+        return bool(status)
+    return os.getenv("OCR_STATUS_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_run_id(mode) -> str:
+    from datetime import UTC, datetime
+    return f"ocr-{mode}-{os.getpid()}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+
+
+def _make_tracker(mode, *, document_ids, max_attempts, status_path, run_id, clock):
+    """Build a run tracker with a best-effort candidate total. Tracking never fails the run: if the
+    count query errors, the total is simply left unknown."""
+    from app.jobs import ocr_status
+    from app.services import document_ocr
+    try:
+        total = document_ocr.count_candidates(mode=mode, document_ids=document_ids,
+                                              max_attempts=max_attempts)
+    except Exception:  # noqa: BLE001 — a denominator is nice-to-have, never required
+        total = None
+    return ocr_status.OcrRunTracker(status_path, run_id=run_id or _default_run_id(mode),
+                                    mode=mode, total=total, clock=clock)
+
+
 @contextlib.contextmanager
 def _advisory_lock():
     """Hold a Postgres session advisory lock for the duration of a sweep. Yields True if acquired."""
@@ -65,7 +92,8 @@ def _advisory_lock():
 
 def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_size=50,
               max_batches=10_000, loop=True, actor_user_id=None, request_id=None,
-              progress=None, isolate=None, factory_ref=None) -> dict:
+              progress=None, isolate=None, factory_ref=None,
+              status=None, status_path=None, run_id=None, clock=None) -> dict:
     """Run an OCR sweep. Resumable + concurrency-safe. Returns accumulated counts + status.
 
     ``loop=True`` processes batches until nothing remains (initial/incremental/reprocess);
@@ -100,31 +128,50 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
         if not acquired:
             log.info("OCR sweep %s skipped: another OCR run holds the lock.", mode)
             totals["status"] = "locked"
-            return totals
+            return totals      # do NOT touch the status file — the lock holder owns it
 
-        for _ in range(max_batches):
-            s = document_ocr.run_ocr(mode=mode, document_ids=document_ids, extractor=extractor,
-                                     batch_size=batch_size, actor_user_id=actor_user_id,
-                                     request_id=request_id,
-                                     isolate=bool(isolate and factory_ref), factory_ref=factory_ref)
-            totals["batches"] += 1
-            for k in _ACCUM:
-                totals[k] += s[k]
-            totals["errors"] += len(s["errors"])
-            log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d timed_out=%d skipped=%d",
-                     mode, totals["batches"], s["candidates"], s["completed"], s["failed"],
-                     s["timed_out"], s["skipped"])
-            if progress:
-                progress(totals)
-            # Stop when a batch found no candidates, or when a single-batch (retry) run is requested,
-            # or when a full batch produced only skips (nothing left to actually do). A batch that timed
-            # documents out IS progress (each gets a timed_out row, excluded next pass) — it must NOT halt
-            # the sweep, or a run of pathological documents would strand every document after them.
-            if not loop or s["candidates"] == 0:
-                break
-            if (s["completed"] == 0 and s["failed"] == 0 and s["unsupported"] == 0
-                    and s["timed_out"] == 0):
-                break
+        # The tracker is created only inside the lock, so exactly one runner ever writes the status file.
+        from app.jobs import ocr_status
+        tracker = None
+        if _status_enabled(status):
+            tracker = _make_tracker(mode, document_ids=document_ids, max_attempts=3,
+                                    status_path=status_path, run_id=run_id, clock=clock)
+            tracker.start()
+            tracker.mark_running()
+            totals["run_id"] = tracker.snapshot()["run_id"]
+            totals["status_path"] = tracker.path
+        try:
+            for _ in range(max_batches):
+                s = document_ocr.run_ocr(mode=mode, document_ids=document_ids, extractor=extractor,
+                                         batch_size=batch_size, actor_user_id=actor_user_id,
+                                         request_id=request_id,
+                                         isolate=bool(isolate and factory_ref), factory_ref=factory_ref,
+                                         observer=tracker)
+                totals["batches"] += 1
+                for k in _ACCUM:
+                    totals[k] += s[k]
+                totals["errors"] += len(s["errors"])
+                log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d timed_out=%d skipped=%d",
+                         mode, totals["batches"], s["candidates"], s["completed"], s["failed"],
+                         s["timed_out"], s["skipped"])
+                if progress:
+                    progress(totals)
+                # Stop when a batch found no candidates, or when a single-batch (retry) run is requested,
+                # or when a full batch produced only skips (nothing left to actually do). A batch that
+                # timed documents out IS progress (each gets a timed_out row, excluded next pass) — it
+                # must NOT halt the sweep, or pathological documents would strand every document after them.
+                if not loop or s["candidates"] == 0:
+                    break
+                if (s["completed"] == 0 and s["failed"] == 0 and s["unsupported"] == 0
+                        and s["timed_out"] == 0):
+                    break
+        except BaseException as exc:      # runner-level crash → record FAILED, then propagate
+            if tracker is not None:
+                tracker.finish(ocr_status.FAILED, error=exc)
+            raise
+        if tracker is not None:
+            tracker.finish(ocr_status.COMPLETED,
+                           error=(f"{totals['errors']} document error(s)" if totals["errors"] else None))
 
     totals["status"] = "completed_with_errors" if totals["errors"] else "completed"
     return totals
@@ -185,7 +232,21 @@ def main(argv=None):
     p.add_argument("--max-attempts", type=int, default=3)
     p.add_argument("--document-id", type=int, action="append", dest="document_ids",
                    help="Restrict to specific canonical document id(s); repeatable (reprocess mode).")
+    p.add_argument("--status", action="store_true",
+                   help="Read-only: print the current OCR run status/heartbeat and exit. Never starts a "
+                        "run and never modifies the status file.")
+    p.add_argument("--status-file", default=None, help="Status file path for --status (default: env/temp).")
+    p.add_argument("--stale-seconds", type=float, default=None,
+                   help="Heartbeat age (s) beyond which --status reports a RUNNING run as STALE/frozen.")
     args = p.parse_args(argv)
+    if args.status:      # read-only status query — does not touch the run or the file
+        from app.jobs import ocr_status
+        status_argv = []
+        if args.status_file:
+            status_argv += ["--file", args.status_file]
+        if args.stale_seconds is not None:
+            status_argv += ["--stale-seconds", str(args.stale_seconds)]
+        return ocr_status.main(status_argv)
     if args.mode == "retry":
         result = run_retry(batch_size=args.batch_size, max_attempts=args.max_attempts)
     elif args.mode == "reprocess":
