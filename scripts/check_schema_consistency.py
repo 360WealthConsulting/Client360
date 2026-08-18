@@ -11,11 +11,12 @@ anything, so it is safe against any database:
   3. Every table in the connected database has a primary key.
 
 It deliberately does NOT require the declared metadata to be *equal* to the
-database: app/database/schema.py is a PARTIAL target_metadata (it declares the
-autogenerate-managed core), while many later domains are created by hand-written
+database: app/database/schema.py is a PARTIAL declarative core (it declares ~245
+of the ~381 live tables), while many later domains are created by hand-written
 migrations and reached via reflection in app/db.py. Equality is therefore not an
-invariant — and running `alembic revision --autogenerate` against this partial
-metadata would emit destructive drops. See docs/DATABASE.md.
+invariant. schema.py is NOT Alembic's target_metadata; `alembic revision
+--autogenerate` is DISABLED (it would otherwise emit destructive drops from this
+partial metadata). See docs/DATABASE.md.
 
 Usage:
     DATABASE_URL=postgresql://localhost/<db> python scripts/check_schema_consistency.py
@@ -68,9 +69,10 @@ def main() -> int:
     # Informational: the partial-metadata gap is expected, not a failure.
     hand_written = len(reflected_tables - declared_tables)
     print(
-        f"INFO: {len(reflected_tables)} tables in DB; {len(declared_tables)} declared in "
-        f"target_metadata; {hand_written} created by hand-written migrations "
-        f"(autogenerate is NOT safe — see docs/DATABASE.md)."
+        f"INFO: {len(reflected_tables)} tables in DB; {len(declared_tables)} declared in schema.py; "
+        f"{hand_written} created by hand-written migrations. schema.py is a partial declarative core and "
+        f"is NOT Alembic's target; `alembic revision --autogenerate` is DISABLED (Phase 0A) — see "
+        f"docs/DATABASE.md."
     )
 
     # 3. Every table has a primary key.

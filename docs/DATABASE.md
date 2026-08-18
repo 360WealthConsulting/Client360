@@ -5,16 +5,19 @@ the validated state of the foundation, and the known risks. It preserves the
 existing schema and migration history (ADR-013) — it does **not** redesign them.
 
 ## Layout
-- **`app/database/schema.py`** — SQLAlchemy Core `MetaData` (`metadata`) plus
-  `DATABASE_URL`. This is Alembic's `target_metadata`. It declares the
-  **autogenerate-managed core** (currently 52 tables).
+- **`app/database/schema.py`** — SQLAlchemy Core `MetaData` (`metadata`) plus `DATABASE_URL`. It is the
+  app's **declarative core** (imported by `app/platform/outbox.py` and tests) and supplies `DATABASE_URL`
+  to Alembic — but it is a **partial** metadata (~245 of ~381 live tables, some columns stale) and is
+  **NOT** used as Alembic's `target_metadata` (that would be a destructive-autogenerate trap — Phase 0A).
 - **`app/db.py`** — creates the engine and **reflects the whole database** at
   import, exposing `Table` objects for every table (currently 151). Application
   code uses these reflected tables (SQLAlchemy Core; no ORM session layer).
 - **`migrations/`** + **`alembic.ini`** — the authoritative migration history
   (single linear graph; one head).
-- **`migrations/env.py`** — imports `metadata` + `DATABASE_URL` from
-  `app.database.schema`; runs with `compare_type=True`.
+- **`migrations/env.py`** — imports `DATABASE_URL` from `app.database.schema` (connection URL only).
+  Alembic has **no `target_metadata`**, and `revision --autogenerate` is **rejected/fails closed** (see
+  the warning below). It deliberately does NOT use schema.py's partial `metadata`. `alembic upgrade`/
+  `downgrade`/`current`/`heads` are unaffected.
 
 ## Validated state (E1.3)
 | Invariant | Result |
@@ -33,19 +36,24 @@ existing schema and migration history (ADR-013) — it does **not** redesign the
    enforces a single head (`check_migration_heads.sh`).
 3. **Every migration is reversible.** Provide a working `downgrade`; CI walks the
    whole graph down and back up (`check_migrations_reversible.sh`).
-4. **Hand-write migrations for non-core domains.** See the autogenerate warning
-   below. When you add a table to the autogenerate-managed core, add it to
-   `app/database/schema.py` *and* write the migration.
+4. **Hand-write every migration.** Autogenerate is disabled (see the warning below); write
+   `upgrade()`/`downgrade()` by hand. Updating `app/database/schema.py` is optional (it is the app's
+   declarative core, not an Alembic target) — do it only if app code/tests need the new `Table` object.
 5. Keep migrations data-safe: no destructive change without a backup and an
    explicit, reviewed decision.
 
-> ⚠️ **Autogenerate is NOT safe against this database.** `target_metadata`
-> (`app/database/schema.py`) is a **partial** declaration: it holds 52 of the
-> 151 tables. The other 99 (tax_*, portal_*, benefit_*, insurance_*, workflow
-> extras, exceptions, …) are created by **hand-written migrations** and reached
-> via reflection. Running `alembic revision --autogenerate` would therefore emit
-> **destructive `drop_table` operations** for those 99 tables. Write migrations
-> by hand, or extend `schema.py` first and review the diff line by line.
+> ⛔ **Autogenerate is DISABLED and fails closed (Phase 0A).** `migrations/env.py` rejects
+> `alembic revision --autogenerate` — it terminates with a clear error **before any revision file is
+> created** and does not fall back to schema.py. This is deliberate: `app/database/schema.py` is a
+> partial, stale metadata (~245 of the ~381 live tables; stale columns such as `documents.person_id`),
+> so autogenerating against it would emit destructive `drop_table` / `drop_column` / NOT-NULL-reversion
+> operations. Client360 migrations are **hand-authored**:
+> ```bash
+> alembic revision -m "<short description>"   # then write upgrade()/downgrade() by hand
+> ```
+> `schema.py` remains the app's declarative core (imported by `app/platform/outbox.py` and tests) but is
+> **not** an Alembic target. `tests/test_alembic_autogenerate_guard.py` fails if autogenerate ever
+> succeeds, writes a file, or if env.py points back at schema.py's metadata.
 
 ## Consistency checks
 | Check | What it proves | Safe against |
@@ -55,6 +63,7 @@ existing schema and migration history (ADR-013) — it does **not** redesign the
 | `scripts/check_migrations_reversible.sh` | every downgrade works | **disposable** DB only |
 | `scripts/check_schema_consistency.py` | single head · declared⊆DB · every table has a PK | any (read-only) |
 | `tests/test_e1_3_database_foundation.py` | the same invariants, in the suite (runs in CI) | test DB |
+| `tests/test_alembic_autogenerate_guard.py` | `--autogenerate` is rejected (no revision file); normal ops work; env never targets stale schema.py | test DB |
 
 Run locally:
 ```bash
@@ -89,15 +98,15 @@ python scripts/check_schema_consistency.py
   environment-aware via `app/config.py` (`validate_startup_configuration`).
 
 ## Known risks & technical debt (documented; forward-only candidates)
-- **Partial `target_metadata` (52/151).** Autogenerate is unsafe (see warning).
-  *Forward-only candidate:* incrementally declare the remaining tables in
-  `schema.py` (or adopt reflection-as-target) so autogenerate becomes usable.
-  Not done in E1.3 (large, and the hand-written workflow is safe today).
-- **`alembic check` is unusable** here for two reasons: (a) 60 `json`-typed
-  columns trip its type comparison (`SELECT '{}'::json = '{}'` — `json` has no
-  `=` operator in PostgreSQL), and (b) the partial metadata would report drops.
-  Do **not** wire `alembic check` into CI. *Forward-only candidates:* migrate
-  `json` → `jsonb` where appropriate; resolve the partial-metadata gap.
+- **Partial `target_metadata` — NEUTRALIZED (Phase 0A).** The destructive-autogenerate trap is closed:
+  `migrations/env.py` has no target metadata and **rejects `--autogenerate`** outright, so it can never
+  drop the hand-authored tables from the stale `schema.py`. `schema.py` staleness is now cosmetic **for
+  Alembic** (it remains the app's declarative core). Guarded by
+  `tests/test_alembic_autogenerate_guard.py`. *Forward-only candidate (unchanged):* converge or retire
+  `schema.py` as a declarative artifact.
+- **`alembic check` is still unusable** here: its 60 `json`-typed columns trip type comparison
+  (`SELECT '{}'::json = '{}'` — `json` has no `=` operator in PostgreSQL) and there is no target
+  metadata. Do **not** wire `alembic check` into CI.
 - **No connection-retry / pool tuning.** Defaults are used. Adequate for current
   scale; revisit if reliability/scale requires it (would be an ADR-tracked change).
 
@@ -106,6 +115,7 @@ python scripts/check_schema_consistency.py
 |---|---|
 | `Multiple head revisions are present` | Rebase your migration onto head; keep one head |
 | `DATABASE_URL is missing` | Set it in `app/.env` (see `config/.env.example`) |
-| Autogenerate wants to drop many tables | Expected — target_metadata is partial; hand-write the migration |
+| `alembic revision --autogenerate` fails "autogenerate is DISABLED" | Expected (Phase 0A) — author the migration by hand: `alembic revision -m "..."` |
+| Autogenerate ever succeeds or proposes dropping tables/columns | The trap is back — `migrations/env.py` must reject `--autogenerate` and must not target schema.py `metadata` |
 | Downgrade fails in CI | Your migration's `downgrade` is broken/missing — fix it |
 | Schema not at head | `scripts/dev.sh migrate` |
