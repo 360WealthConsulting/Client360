@@ -57,6 +57,15 @@ def grandchild_hang_factory():
     return extractor
 
 
+def boom_factory():
+    """The extractor raises immediately — simulates an in-child extraction failure (missing file, backend
+    unavailable, etc.). Drives the 'runner reported failures' reproduction: each such document is recorded
+    as a failed OCR row and the loop continues."""
+    def extractor(row, path):
+        raise RuntimeError(f"simulated extraction failure for {row.get('original_name')}")
+    return extractor
+
+
 def slow_ok_factory():
     """Succeeds, but only after a short delay — long enough that the worker emits several heartbeats
     first, so the parent's on_heartbeat fires *during* the document (proves live-progress heartbeats)."""

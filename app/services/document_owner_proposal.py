@@ -301,8 +301,18 @@ def _live_ocr(conn, document_id):
     except Exception as exc:  # noqa: BLE001 — backend/libs/config missing: record state, don't drop it
         record_ocr_unavailable(document_id, str(exc))
         return ""
+    # Route this single-document re-OCR through the SAME hardened subprocess isolation the operational
+    # runner uses (commit 186badf): a pathological/hanging document is killed by the hard wall-clock
+    # timeout and control returns here, so the SharePoint ``_ocr_documents`` loop proceeds to the next
+    # document instead of freezing the whole baseline. Reuses the runner's production factory ref and its
+    # OCR_SUBPROCESS_ISOLATION check — no second config mechanism, no duplicated dotted string. Queue,
+    # scope, cache, and reprocess semantics are UNCHANGED: still exactly ONE document, mode='reprocess',
+    # batch_size=1. When isolation is intentionally disabled the in-process path is preserved verbatim.
+    from app.jobs.ocr_runner import _PRODUCTION_FACTORY, _isolation_enabled
+    isolate = _isolation_enabled()
     try:
-        run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess", batch_size=1)
+        run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess", batch_size=1,
+                isolate=isolate, factory_ref=(_PRODUCTION_FACTORY if isolate else None))
     except Exception:  # noqa: BLE001 — a per-run failure is already recorded as state by run_ocr/_ocr_one
         return ""
     return _ocr_cache_text(conn, document_id)
