@@ -7,9 +7,10 @@ A thin, repeatable orchestration over the EXISTING pieces — no second extracti
     re-hash/OCR, DELETED marks the source reference unavailable and NEVER deletes the canonical document)
     ->  OCR-on-need analysis for ONLY the new documents  ->  durable run record (audit) for admin visibility.
 
-The staging step (live Microsoft Graph enumeration + download) is the DEPLOYMENT connector
-``app.connectors.microsoft365.sharepoint_content`` (environment-specific; not a tracked module — it is
-staged per deployment). It is injected here as ``stager`` (or pre-staged ``items``) so this runner is
+The staging step (live Microsoft Graph enumeration + download) is the connector
+``app.connectors.microsoft365.sharepoint_content`` (version-controlled and tested, but deployment-
+CONFIGURED — site IDs + staging root come from env, never hard-coded). It is injected here as ``stager``
+(or pre-staged ``items``) so this runner is
 testable and reuses whatever real connector the deployment ships. ``resolve_sharepoint_stager`` discovers
 the connector's real public staging entrypoint at call time rather than hard-importing a specific name, so
 a deployment whose connector exposes a different function does not break at import. Nothing here creates a
