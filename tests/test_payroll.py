@@ -277,27 +277,61 @@ def test_staff_create_account_route_persists_and_redirects():
     assert len(pay.list_accounts(org, principal=staff)) == 1
 
 
+def test_portal_route_uses_standard_current_portal_dependency():
+    # Consistency fix: the portal payroll route authenticates via the standard current_portal dependency
+    # (not ad-hoc request.state extraction), so the portal RBAC-coverage guard recognizes it as gated.
+    from app.main import app
+    from app.routes.portal import current_portal
+    route = next(r for r in app.routes
+                 if getattr(r, "path", None) == "/portal/business/{organization_id}/payroll")
+    calls, stack = [], [getattr(route, "dependant", None)]
+    while stack:
+        d = stack.pop()
+        if d is None:
+            continue
+        if getattr(d, "call", None) is not None:
+            calls.append(d.call)
+        stack.extend(getattr(d, "dependencies", []) or [])
+    assert current_portal in calls
+
+
 def test_portal_route_requires_signed_in_client():
+    # 401 is enforced by the shared current_portal dependency the route now uses.
     from fastapi import HTTPException
 
-    from app.routes import payroll as routes
-    org = _business()
+    from app.routes.portal import current_portal
     with pytest.raises(HTTPException) as ei:
-        routes.portal_payroll(org, fake_request(f"/portal/business/{org}/payroll"))
-    assert ei.value.status_code == 401                          # no portal principal
+        current_portal(fake_request("/portal/business/1/payroll"))   # no portal principal on state
+    assert ei.value.status_code == 401
 
 
 def test_portal_route_blocks_out_of_scope_business(monkeypatch):
+    import types
+
     from fastapi import HTTPException
 
     from app.routes import payroll as routes
     org = _business()
-    req = fake_request(f"/portal/business/{org}/payroll",
-                       state_principal=None)
     # A signed-in portal client whose scope does NOT include this org -> 404 (never reveals payroll).
-    import types
-    req.state.portal_principal = types.SimpleNamespace(account_id=999)
+    principal = types.SimpleNamespace(account_id=999)
     monkeypatch.setattr("app.portal.service.portal_scope", lambda account_id, **k: {"organization_ids": []})
     with pytest.raises(HTTPException) as ei:
-        routes.portal_payroll(org, req)
+        routes.portal_payroll(org, fake_request(f"/portal/business/{org}/payroll"), principal=principal)
     assert ei.value.status_code == 404
+
+
+def test_portal_route_blocks_disabled_feature(monkeypatch):
+    import types
+
+    from fastapi import HTTPException
+
+    from app.routes import payroll as routes
+    org = _business()
+    # In-scope client, but the Payroll feature is not enabled for the business -> 403.
+    principal = types.SimpleNamespace(account_id=42)
+    monkeypatch.setattr("app.portal.service.portal_scope",
+                        lambda account_id, **k: {"organization_ids": [org]})
+    monkeypatch.setattr("app.services.features.service.client_can", lambda *a, **k: False)
+    with pytest.raises(HTTPException) as ei:
+        routes.portal_payroll(org, fake_request(f"/portal/business/{org}/payroll"), principal=principal)
+    assert ei.value.status_code == 403

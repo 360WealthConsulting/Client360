@@ -14,6 +14,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db import engine, relationship_entities
+from app.portal.service import PortalPrincipal
+from app.routes.portal import current_portal
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services import payroll as pay
@@ -157,12 +159,11 @@ def set_issue_status(organization_id: int, issue_id: int, status: str = Form(...
 # --- client-facing portal view (separate access path) ------------------------
 
 @router.get("/portal/business/{organization_id}/payroll", response_class=HTMLResponse)
-def portal_payroll(organization_id: int, request: Request):
-    """Read-only client view. Gated by the per-client Payroll feature + portal scope — NOT by staff
-    capabilities. Shows only client-safe headline numbers."""
-    principal = getattr(request.state, "portal_principal", None)
-    if principal is None:
-        raise HTTPException(401, "Sign in required")
+def portal_payroll(organization_id: int, request: Request,
+                   principal: PortalPrincipal = Depends(current_portal)):
+    """Read-only client view. Authenticated by the standard portal dependency (401 without a portal
+    session); then gated by portal scope (404 if the business is not the client's) and the per-client
+    Payroll feature (403). NOT gated by staff capabilities. Shows only client-safe headline numbers."""
     from app.portal.service import portal_scope
     from app.services.features.service import client_can
     scope = portal_scope(principal.account_id)
