@@ -32,3 +32,6 @@ documents/
 
 # Vault local storage (VAULT_STORAGE_ROOT default)
 /data/
+
+# Rollback / pre-migration database backups (scripts/rollback.sh, CLIENT360_BACKUP_DIR default)
+/backups/

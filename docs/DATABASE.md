@@ -24,7 +24,7 @@ existing schema and migration history (ADR-013) — it does **not** redesign the
 |---|---|
 | Single Alembic head | ✅ `d0l1n2o3i4k5` |
 | Schema at head (`current == heads`) | ✅ |
-| Full reversibility (base ↔ head, every downgrade) | ✅ `check_migrations_reversible.sh` |
+| STRUCTURAL reversibility (base ↔ head DDL runs; NOT data-preserving) | ✅ `check_migrations_reversible.sh` — see **Rollback (data-safe)** below |
 | Every table has a primary key | ✅ 151/151 |
 | Every declared table exists in the DB | ✅ 52/52 |
 
@@ -87,6 +87,51 @@ python -m alembic upgrade head
 # Verify before commit:
 python -m alembic heads            # must show ONE head
 python scripts/check_schema_consistency.py
+```
+
+## Rollback (data-safe)
+
+⚠️ **Alembic reversibility is STRUCTURAL, not data-preserving.** `check_migrations_reversible.sh` proves
+every `downgrade`'s DDL runs on an empty schema — it does **not** test downgrade-with-data. Several
+downgrades `DELETE` from append-only tables (`audit_events`, `exception_events`), and every `drop_table`/
+`drop_column` in a downgrade destroys the data it held. **So a rollback can silently lose data.**
+
+Rollback is therefore gated behind a **verified backup** (`app/deploy/rollback.py`, wrapped by
+`scripts/rollback.sh`). It refuses to downgrade unless a `pg_dump` custom-format backup has been created
+**and** verified with `pg_restore --list`, and the operator has confirmed:
+
+```bash
+# 1. Plan only — prints current/target + where the backup will go; makes NO change:
+scripts/rollback.sh --to <revision> --dry-run
+#    (or: python -m app.deploy rollback --to <revision> --dry-run)
+
+# 2. Execute — takes+verifies a backup, prints its location, prompts, then downgrades:
+CLIENT360_BACKUP_DIR=/durable/backups scripts/rollback.sh --to <revision>
+#    add --yes to skip the interactive prompt (a verified backup is STILL taken)
+```
+
+Gate order (any refusal/failure before the downgrade leaves the DB untouched):
+**connectivity → confirmation → create backup → verify backup → print backup location → downgrade → verify head.**
+- **Fail closed:** if backup creation or verification fails, the downgrade never runs.
+- **Backup location** is printed before any downgrade begins; the backup is retained afterward.
+- Set `CLIENT360_BACKUP_DIR` to durable storage (default `<repo>/backups`). An operator backup hook can be
+  supplied via `CLIENT360_BACKUP_CMD` (it receives the target path in `CLIENT360_BACKUP_FILE` and must write
+  a `pg_restore`-readable dump there; it is verified the same way).
+- Forward migration (`app.deploy.migrate` / `scripts/dev.sh migrate`, upgrade-only) is **unchanged**.
+
+### Manual restore (auto-restore is intentionally NOT done)
+Automatic restore-on-failed-downgrade is **deliberately not implemented**: restoring means dropping and
+recreating the live database from the dump — a destructive, environment-sensitive operation (e.g. encrypted
+Microsoft token caches need the original `MICROSOFT_TOKEN_KEY`, or accounts must reconnect) that must be a
+deliberate operator decision, not an automatic reaction to a partial failure. On a failed downgrade the
+tool prints the manual procedure:
+
+```bash
+# Restore into a SCRATCH database first and verify (never straight over the live DB):
+scripts/restore_rehearsal.sh <backup.dump> client360_restore_rehearsal
+# Then, once verified, restore into the target (operator decision):
+dropdb <db> && createdb <db>
+pg_restore --no-owner --dbname=<db> <backup.dump>
 ```
 
 ## Connection & startup
