@@ -36,7 +36,10 @@ from app.services.vault.storage import (
     _KEY_RE,  # reuse the exact key-shape validation (no duplication)
 )
 
-_LOCAL_PROVIDERS = {None, "", "local", "file", "filesystem"}
+# Local, on-disk providers whose bytes this tool can verify. "Client360 Local" is what the TaxDome /
+# SharePoint / Drake importers write (app/importers/*.py), and "Client360 Repository" is what the
+# migration relocation writes (app/services/migration/relocation.py) — both are canonical local files.
+_LOCAL_PROVIDERS = {None, "", "local", "file", "filesystem", "Client360 Local", "Client360 Repository"}
 _READ_CHUNK = 1024 * 1024
 
 

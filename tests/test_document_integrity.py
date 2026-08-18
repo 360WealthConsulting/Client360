@@ -111,6 +111,71 @@ def test_remote_provider_is_skipped_not_missing(tmp_path):
     assert all(r["id"] != doc_id for r in report["records"])          # not evaluated as a local file
 
 
+# --- importer provider recognition (the real values our importers write) -----
+
+def test_client360_local_provider_is_verified(tmp_path):
+    # "Client360 Local" is what the TaxDome/SharePoint/Drake importers write.
+    body = b"%PDF-1.4 taxdome copy"
+    f = tmp_path / "tax.pdf"
+    f.write_bytes(body)
+    doc_id = _insert_document(storage_path=str(f), sha256=_sha(body), provider="Client360 Local")
+    report = di.verify(stores=("documents",), compute_hash=True)
+    rec = _rec_for(report, "documents", doc_id)                       # actually evaluated, not skipped
+    assert rec["status"] == "found" and rec["hash"] == "match"
+
+
+def test_client360_repository_provider_is_verified(tmp_path):
+    # "Client360 Repository" is what the migration relocation writes.
+    body = b"%PDF-1.4 relocated"
+    f = tmp_path / "repo.pdf"
+    f.write_bytes(body)
+    doc_id = _insert_document(storage_path=str(f), sha256=_sha(body), provider="Client360 Repository")
+    report = di.verify(stores=("documents",), compute_hash=True)
+    rec = _rec_for(report, "documents", doc_id)
+    assert rec["status"] == "found" and rec["hash"] == "match"
+
+
+def test_existing_local_providers_still_recognized(tmp_path):
+    body = b"plain local bytes"
+    f = tmp_path / "x.pdf"
+    f.write_bytes(body)
+    ids = {p: _insert_document(storage_path=str(f), sha256=_sha(body), provider=p)
+           for p in ("local", "file", "filesystem")}
+    report = di.verify(stores=("documents",), compute_hash=True)
+    for doc_id in ids.values():
+        rec = _rec_for(report, "documents", doc_id)
+        assert rec["status"] == "found" and rec["hash"] == "match"
+
+
+def test_unknown_provider_is_still_skipped_not_treated_as_local(tmp_path):
+    # A genuinely remote/unknown provider must NOT be verified as a local file, even if a path exists.
+    f = tmp_path / "present.pdf"
+    f.write_bytes(b"bytes")
+    doc_id = _insert_document(storage_path=str(f), sha256=_sha(b"bytes"), provider="s3")
+    report = di.verify(stores=("documents",), compute_hash=True)
+    assert report["skipped_remote_provider"] >= 1
+    assert all(r["id"] != doc_id for r in report["records"])          # skipped, never a local record
+
+
+def test_newly_recognized_provider_missing_file_fails(tmp_path):
+    # A missing file under "Client360 Local" must FAIL (be counted missing), not be silently skipped.
+    doc_id = _insert_document(storage_path=str(tmp_path / "gone.pdf"),
+                              sha256=_sha(b"x"), provider="Client360 Local")
+    report = di.verify(stores=("documents",), compute_hash=True)
+    assert _rec_for(report, "documents", doc_id)["status"] == "missing"
+    assert any(r["id"] == doc_id for r in report["missing_files"])
+
+
+def test_newly_recognized_provider_hash_mismatch_fails(tmp_path):
+    # A hash mismatch under "Client360 Repository" must FAIL as a mismatch, not be skipped.
+    f = tmp_path / "changed.pdf"
+    f.write_bytes(b"actual bytes")
+    doc_id = _insert_document(storage_path=str(f), sha256="9" * 64, provider="Client360 Repository")
+    report = di.verify(stores=("documents",), compute_hash=True)
+    assert _rec_for(report, "documents", doc_id)["status"] == "mismatch"
+    assert any(r["id"] == doc_id for r in report["sha256_mismatches"])
+
+
 # --- orphan scan -------------------------------------------------------------
 
 def test_scan_orphans_reports_unreferenced_files(tmp_path):
