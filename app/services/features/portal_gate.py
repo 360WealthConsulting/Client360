@@ -48,6 +48,8 @@ _RULES: tuple[tuple[re.Pattern[str], frozenset[str] | None, str], ...] = (
     (re.compile(r"^/portal/profile$"), frozenset({"POST"}), "profile_editing"),
     (re.compile(r"^/api/(v1/)?portal/notifications"), None, "portal_notifications"),
     (re.compile(r"^/portal/notifications"), None, "portal_notifications"),
+    (re.compile(r"^/portal/billing/invoices/\d+"), None, "invoice_view"),
+    (re.compile(r"^/portal/billing"), None, "billing"),
 )
 
 

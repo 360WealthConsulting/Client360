@@ -1,0 +1,34 @@
+{% extends "portal/base.html" %}
+{% block title %}Billing{% endblock %}
+{% block flash %}
+  {% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Billing</h1>
+<p class="portal-lead">Your services, invoices, and payment history.</p>
+
+<h2 style="font-size:1.1rem;margin:1.25rem 0 .5rem;">Current services</h2>
+{% for a in agreements %}
+<article class="portal-card"><h3>{{ a.title }}</h3><p class="meta"><span class="pill ok">{{ a.status|title }}</span></p></article>
+{% else %}<div class="empty-state"><h3>No active services</h3><p>Your current service agreements will appear here.</p></div>{% endfor %}
+
+<h2 style="font-size:1.1rem;margin:1.5rem 0 .5rem;">Invoices</h2>
+{% for i in invoices %}
+<a class="portal-card" href="/portal/billing/invoices/{{ i.id }}" style="display:block;">
+  <h3>{{ i.number }}</h3>
+  <p class="meta">
+    {% if i.effective_status == 'past_due' %}<span class="pill stop">Past due</span>
+    {% elif i.effective_status == 'paid' %}<span class="pill ok">Paid</span>
+    {% else %}<span class="pill review">{{ i.effective_status|replace('_',' ')|title }}</span>{% endif %}
+    · Total {{ money(i.total_cents) }} · <strong>Amount due {{ money(i.balance_cents) }}</strong>
+    {% if i.due_date %} · Due {{ i.due_date }}{% endif %}
+  </p>
+</a>
+{% else %}<div class="empty-state"><h3>No invoices</h3><p>You have no invoices at this time.</p></div>{% endfor %}
+
+<h2 style="font-size:1.1rem;margin:1.5rem 0 .5rem;">Payment history</h2>
+{% for p in payments %}
+<article class="portal-card"><p class="meta">{{ p.received_on }} · {{ money(p.amount_cents) }} · {{ p.method|title }}</p></article>
+{% else %}<div class="empty-state"><p>No payments recorded yet.</p></div>{% endfor %}
+{% endblock %}

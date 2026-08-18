@@ -70,6 +70,13 @@ _FEATURE_LIST: tuple[Feature, ...] = (
     _feat("client_requests", "core", "Client Requests", _CORE),
     _feat("portal_notifications", "core", "Portal Notifications", _CORE),
     _feat("email_notifications", "core", "Email Notifications", _CORE),
+    # Billing & Invoicing (MVP): the billing area + invoice viewing are Core (default enabled). Online
+    # payments and autopay front unbuilt processor integrations, so they default firm-DISABLED and must
+    # stay off until a payment processor is configured.
+    _feat("billing", "core", "Billing", _CORE),
+    _feat("invoice_view", "core", "Invoice View", _CORE),
+    _feat("online_payments", "core", "Online Payments", _OFF),
+    _feat("autopay", "core", "Autopay", _OFF),
     # WEALTH
     _feat("wealth_dashboard", "wealth", "Wealth Dashboard", _OFF),
     _feat("schwab_accounts", "wealth", "Schwab Accounts", _OFF),

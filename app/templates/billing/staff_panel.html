@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Billing | 360Plus{% endblock %}
+{% block crumb %}Billing{% endblock %}
+{% block content %}
+{% call ui.page_head("Billing & Invoicing", eyebrow="Client billing",
+    desc="Service agreements, invoices, balances and payments for this " ~ subject_type ~ ". Balances and past-due status are derived; issued invoice terms are locked.") %}
+{% endcall %}
+{% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
+{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+
+<div class="stat-grid" style="margin-bottom:1rem;">
+  <div class="card"><span class="detail-label">Open balance</span><h3>{{ money(summary.open_balance_cents) }}</h3></div>
+  <div class="card"><span class="detail-label">Overdue</span><h3>{{ money(summary.overdue_balance_cents) }}</h3></div>
+  <div class="card"><span class="detail-label">Next billing</span><h3>{{ summary.next_billing_on or '—' }}</h3></div>
+  <div class="card"><span class="detail-label">Last payment</span><h3>{{ money(summary.last_payment.amount_cents) if summary.last_payment else '—' }}</h3></div>
+  <div class="card"><span class="detail-label">Active-client signal</span><h3>{{ 'Yes' if signal.active_signal else 'No' }}</h3>
+    <span class="subtle">{{ signal.reasons|join(', ') or 'no billing evidence' }}</span></div>
+</div>
+
+<h2 class="section-title">Service agreements</h2>
+<table class="table"><thead><tr><th>Title</th><th>Status</th><th>Default</th><th></th></tr></thead><tbody>
+{% for a in agreements %}
+  <tr><td>{{ a.title }}</td><td>{{ a.status|title }}</td><td>{{ money(a.default_amount_cents) if a.default_amount_cents else '—' }}</td>
+    <td style="display:flex;gap:.4rem;">
+      <form method="post" action="/billing/agreements/{{ a.id }}/status" style="margin:0;">
+        <input type="hidden" name="status" value="{{ 'ended' if a.status=='active' else 'active' }}">
+        <button class="btn secondary" type="submit">{{ 'End' if a.status=='active' else 'Activate' }}</button></form>
+      <form method="post" action="/billing/agreements/{{ a.id }}/schedules" style="margin:0;display:flex;gap:.3rem;">
+        <select name="frequency"><option value="monthly">Monthly</option><option value="annual">Annual</option></select>
+        <input name="amount" placeholder="$ amount" size="8" required>
+        <button class="btn secondary" type="submit">Add schedule</button></form>
+    </td></tr>
+{% else %}<tr><td colspan="4" class="subtle">No agreements.</td></tr>{% endfor %}
+</tbody></table>
+<form method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/agreements" class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+  <label>New agreement<input name="title" required placeholder="Monthly Bookkeeping"></label>
+  <label>Service line<input name="service_line_code" placeholder="tax / wealth / accounting…"></label>
+  <label>Default amount<input name="amount" placeholder="$250.00"></label>
+  <button class="btn" type="submit">Create agreement</button>
+</form>
+
+<h2 class="section-title" style="margin-top:1.5rem;">Invoices</h2>
+<div style="display:flex;gap:.6rem;margin-bottom:.5rem;">
+  <form method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/invoices" style="margin:0;"><button class="btn" type="submit">New draft invoice</button></form>
+  <form method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/generate" style="margin:0;"><button class="btn secondary" type="submit">Generate due invoices</button></form>
+</div>
+<table class="table"><thead><tr><th>Number</th><th>Status</th><th>Total</th><th>Balance</th><th>Due</th><th></th></tr></thead><tbody>
+{% for i in invoices %}
+  <tr><td>{{ i.number }}</td>
+    <td><span class="pill {{ 'stop' if i.effective_status=='past_due' else ('ok' if i.effective_status=='paid' else 'review') }}">{{ i.effective_status|replace('_',' ')|title }}</span></td>
+    <td>{{ money(i.total_cents) }}</td><td>{{ money(i.balance_cents) }}</td><td>{{ i.due_date or '—' }}</td>
+    <td><a class="btn secondary" href="/billing/invoices/{{ i.id }}">Open</a></td></tr>
+{% else %}<tr><td colspan="6" class="subtle">No invoices.</td></tr>{% endfor %}
+</tbody></table>
+
+<h2 class="section-title" style="margin-top:1.5rem;">Payment history</h2>
+<table class="table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th></tr></thead><tbody>
+{% for p in payments %}<tr><td>{{ p.received_on }}</td><td>{{ money(p.amount_cents) }}</td><td>{{ p.method|title }}</td></tr>
+{% else %}<tr><td colspan="3" class="subtle">No payments.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

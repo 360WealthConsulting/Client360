@@ -107,6 +107,13 @@ client_product_entitlements = metadata.tables.get("client_product_entitlements")
 client_feature_overrides = metadata.tables.get("client_feature_overrides")
 firm_feature_controls = metadata.tables.get("firm_feature_controls")
 client_status = metadata.tables.get("client_status")
+
+# Billing & Invoicing MVP (migration billing01). Tolerant bind — the billing service checks for None.
+service_agreements = metadata.tables.get("service_agreements")
+billing_schedules = metadata.tables.get("billing_schedules")
+invoices = metadata.tables.get("invoices")
+invoice_line_items = metadata.tables.get("invoice_line_items")
+payments = metadata.tables.get("payments")
 portal_invitations = metadata.tables["portal_invitations"]
 portal_auth_tokens = metadata.tables["portal_auth_tokens"]
 portal_devices = metadata.tables["portal_devices"]

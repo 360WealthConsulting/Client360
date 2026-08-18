@@ -1,0 +1,36 @@
+{% extends "portal/base.html" %}
+{% block title %}{{ invoice.number }}{% endblock %}
+{% block content %}
+<p style="margin:0 0 .5rem;"><a href="/portal/billing">&larr; Billing</a></p>
+<h1>Invoice {{ invoice.number }}</h1>
+
+<div class="portal-card">
+  <p class="meta">
+    {% if invoice.effective_status == 'past_due' %}<span class="pill stop">Past due</span>
+    {% elif invoice.effective_status == 'paid' %}<span class="pill ok">Paid</span>
+    {% else %}<span class="pill review">{{ invoice.effective_status|replace('_',' ')|title }}</span>{% endif %}
+    {% if invoice.issue_date %} · Issued {{ invoice.issue_date }}{% endif %}
+    {% if invoice.due_date %} · Due {{ invoice.due_date }}{% endif %}
+  </p>
+  <table style="width:100%;border-collapse:collapse;margin-top:.5rem;">
+    <thead><tr style="text-align:left;"><th>Description</th><th style="text-align:right;">Amount</th></tr></thead>
+    <tbody>
+    {% for l in invoice.line_items %}
+      <tr><td>{{ l.description }}{% if l.quantity > 1 %} (×{{ l.quantity }}){% endif %}</td>
+        <td style="text-align:right;">{% if l.kind == 'credit' %}({{ money(l.amount_cents) }}){% else %}{{ money(l.amount_cents) }}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td style="text-align:right;padding-top:.5rem;"><strong>Total</strong></td><td style="text-align:right;padding-top:.5rem;"><strong>{{ money(invoice.total_cents) }}</strong></td></tr>
+      <tr><td style="text-align:right;"><strong>Amount due</strong></td><td style="text-align:right;"><strong>{{ money(invoice.balance_cents) }}</strong></td></tr>
+    </tfoot>
+  </table>
+</div>
+
+{% if invoice.payments %}
+<h2 style="font-size:1.1rem;margin:1.25rem 0 .5rem;">Payments</h2>
+{% for p in invoice.payments %}
+<article class="portal-card"><p class="meta">{{ p.received_on }} · {{ money(p.amount_cents) }} · {{ p.method|title }}</p></article>
+{% endfor %}
+{% endif %}
+{% endblock %}
