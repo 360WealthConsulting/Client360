@@ -190,6 +190,16 @@ benefit_provider_connections = metadata.tables["benefit_provider_connections"]
 benefit_obligation_templates = metadata.tables["benefit_obligation_templates"]
 benefit_obligations = metadata.tables["benefit_obligations"]
 
+# Payroll Hub foundation (migration payroll01). Tolerant bind — the payroll service checks for None,
+# so environments not yet migrated to payroll01 import cleanly and fail closed.
+payroll_providers = metadata.tables.get("payroll_providers")
+payroll_accounts = metadata.tables.get("payroll_accounts")
+payroll_employees = metadata.tables.get("payroll_employees")
+payroll_runs = metadata.tables.get("payroll_runs")
+payroll_document_links = metadata.tables.get("payroll_document_links")
+payroll_issues = metadata.tables.get("payroll_issues")
+payroll_provider_connections = metadata.tables.get("payroll_provider_connections")
+
 # Insurance Operations (Release 0.10.0, Phase 0)
 insurance_carrier_profiles = metadata.tables["insurance_carrier_profiles"]
 insurance_product_families = metadata.tables["insurance_product_families"]

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Payroll | {{ org_name }}{% endblock %}
+{% block crumb %}Payroll{% endblock %}
+{% macro money(cents) %}{% if cents is none %}—{% else %}${{ "{:,.2f}".format(cents / 100) }}{% endif %}{% endmacro %}
+{% block content %}
+<div class="page-header"><div>
+  <p class="eyebrow">{{ org_name }}</p>
+  <h1>Payroll</h1>
+  <p class="muted">A summary of your payroll. For questions, message your team.</p>
+</div></div>
+
+<div class="stat-grid">
+  {{ ui.stat("Next payroll", summary.next_payroll_date or "—") }}
+  {{ ui.stat("Active employees", summary.employee_count or 0) }}
+  {{ ui.stat("Latest pay date", summary.latest_pay_date or "—") }}
+  {{ ui.stat("Latest gross payroll", money(summary.latest_gross_cents)) }}
+</div>
+{% endblock %}

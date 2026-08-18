@@ -83,6 +83,7 @@ from app.routes.operations import router as operations_router
 from app.routes.opportunity import router as opportunity_router
 from app.routes.ops import router as ops_router
 from app.routes.orchestration import router as orchestration_router
+from app.routes.payroll import router as payroll_router
 from app.routes.people import router as people_router
 from app.routes.person_edit import router as person_edit_router
 from app.routes.policy import router as policy_router
@@ -214,6 +215,7 @@ app.include_router(activity_timeline_router)
 app.include_router(ops_router)
 app.include_router(exceptions_router)
 app.include_router(benefits_router)
+app.include_router(payroll_router)
 app.include_router(insurance_router)
 app.include_router(search_router)
 app.include_router(source_router)
