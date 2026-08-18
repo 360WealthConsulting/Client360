@@ -6,7 +6,18 @@
 {% endblock %}
 {% block content %}
 <p style="margin:0 0 .5rem;"><a href="/portal/messages">&larr; All messages</a></p>
-<h1>{{ subject }}</h1>
+<h1>{{ subject }}{% if topic %} <span class="pill review" style="vertical-align:middle;">{{ topic|title }}</span>{% endif %}</h1>
+
+{% if linked_requests %}
+<div class="portal-card">
+  <h3 style="margin:0 0 .5rem;">Linked requests</h3>
+  <ul class="portal-list">
+  {% for r in linked_requests %}
+    <li class="meta">{{ r.title }} — <span class="pill {{ 'ok' if r.status in ('uploaded','approved') else 'pending' }}">{{ r.status|title }}</span>{% if r.due_date %} · Due {{ r.due_date }}{% endif %}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <div class="portal-card">
 {% for m in messages %}

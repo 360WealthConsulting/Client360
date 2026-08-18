@@ -15,6 +15,7 @@ from app.portal.service import (PortalPrincipal, accept_invitation, client_actio
     list_messages, mark_read, portal_scope, request_password_reset, consume_password_reset,
     revoke_portal_session, send_message, require_scope)
 from app.portal import appointments as portal_appointments
+from app.portal import communication_hub as portal_hub
 from app.portal import consent as portal_consent
 from app.portal import profile as portal_profile
 from app.portal import vault_documents as portal_vault
@@ -329,14 +330,16 @@ async def portal_upload_submit(
 
 @router.get("/portal/messages", response_class=HTMLResponse)
 def portal_messages_page(request: Request, principal: PortalPrincipal = Depends(current_portal)):
-    """List the client's secure threads + a compose form. Reads through the scoped thread service."""
+    """List the client's conversations (topic, unread staff response, linked requests) + compose form."""
     return templates.TemplateResponse(request=request, name="portal/messages.html", context={
-        "principal": principal, "threads": client_threads(principal),
+        "principal": principal, "threads": portal_hub.client_conversations(principal),
+        "topics": portal_hub.TOPICS,
         "notice": request.query_params.get("notice"), "error": request.query_params.get("error")})
 
 
 @router.post("/portal/messages/new")
 def portal_messages_new(request: Request, subject: str = Form(...), body: str = Form(...),
+                        topic: str | None = Form(None),
                         principal: PortalPrincipal = Depends(current_portal)):
     """Start a new thread on the client's OWN record. Person/household are derived server-side from
     the account's messages scope — never accepted from the client — so a client cannot open a thread
@@ -349,9 +352,10 @@ def portal_messages_new(request: Request, subject: str = Form(...), body: str = 
     if household_id is None or principal.person_id not in scope["person_ids"]:
         return RedirectResponse("/portal/messages?error=" + quote("Messaging is not enabled on your account."),
                                 status_code=303)
+    safe_topic = topic if topic in portal_hub.TOPICS else None      # client-chosen topic; else unassigned
     try:
         thread_id = create_thread(principal, household_id=household_id, person_id=principal.person_id,
-                                  subject=subject.strip(), body=body.strip())
+                                  subject=subject.strip(), body=body.strip(), topic=safe_topic)
     except PermissionError:
         return RedirectResponse("/portal/messages?error=" + quote("Messaging is not enabled on your account."),
                                 status_code=303)
@@ -364,14 +368,18 @@ def portal_message_thread_page(thread_id: int, request: Request,
     """Show one thread's client-visible messages (internal staff notes are never returned by
     list_messages). Out-of-scope threads deny existence with 404."""
     try:
-        messages = list_messages(principal, thread_id)
+        messages = list_messages(principal, thread_id)          # client-visible only; internal notes never returned
     except PermissionError:
         raise HTTPException(404, "Conversation not found") from None
     with engine.connect() as connection:
-        subject = connection.scalar(select(portal_threads.c.subject).where(portal_threads.c.id == thread_id))
+        row = connection.execute(select(portal_threads.c.subject, portal_threads.c.topic).where(
+            portal_threads.c.id == thread_id)).mappings().one_or_none()
+    portal_hub.mark_thread_read_client(principal, thread_id)     # relationship-level client read marker
     return templates.TemplateResponse(request=request, name="portal/message_thread.html", context={
-        "principal": principal, "thread_id": thread_id, "subject": subject or "Conversation",
-        "messages": messages,
+        "principal": principal, "thread_id": thread_id,
+        "subject": (row["subject"] if row else None) or "Conversation",
+        "topic": row["topic"] if row else None, "messages": messages,
+        "linked_requests": portal_hub.linked_requests(thread_id),
         "notice": request.query_params.get("notice"), "error": request.query_params.get("error")})
 
 

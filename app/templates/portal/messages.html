@@ -16,6 +16,14 @@
       <input id="subject" name="subject" type="text" maxlength="200" required>
     </div>
     <div class="field">
+      <label for="topic">Topic</label>
+      <select id="topic" name="topic">
+        <option value="">General / Other</option>
+        {% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
+      </select>
+      <span class="hint">Helps us route your message to the right team.</span>
+    </div>
+    <div class="field">
       <label for="body">Message</label>
       <textarea id="body" name="body" required></textarea>
     </div>
@@ -27,8 +35,12 @@
 <ul class="portal-list thread-list">
 {% for t in threads %}
   <li><a class="portal-card" href="/portal/messages/{{ t.id }}">
-    <h3>{{ t.subject }}</h3>
-    <p class="meta"><span class="pill {{ 'ok' if t.status == 'closed' else 'review' }}">{{ t.status|title }}</span> · Updated {{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</p>
+    <h3>{{ t.subject }}{% if t.unread %} <span class="pill stop">New reply</span>{% endif %}</h3>
+    <p class="meta">
+      {% if t.topic %}<span class="pill review">{{ t.topic|title }}</span> · {% endif %}
+      <span class="pill {{ 'ok' if t.status == 'resolved' else 'review' }}">{{ t.status|title }}</span>
+      {% if t.linked_requests %} · {{ t.linked_requests }} linked request(s){% endif %}
+      · Updated {{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</p>
   </a></li>
 {% else %}
   <li><div class="empty-state">

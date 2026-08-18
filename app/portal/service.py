@@ -126,10 +126,11 @@ def require_scope(principal, *, person_id=None, household_id=None, permission=No
         raise PermissionError("Household is outside portal access scope" if permission is None else f"Portal grant does not allow {permission}")
     return scope
 
-def create_thread(principal, *, household_id, person_id, subject, body):
+def create_thread(principal, *, household_id, person_id, subject, body, topic=None, organization_id=None):
     require_scope(principal, person_id=person_id, household_id=household_id, permission="messages")
+    now = datetime.now(timezone.utc)
     with engine.begin() as connection:
-        thread_id = connection.execute(portal_threads.insert().values(household_id=household_id, person_id=person_id, subject=subject, created_by_portal_account_id=principal.account_id).returning(portal_threads.c.id)).scalar_one()
+        thread_id = connection.execute(portal_threads.insert().values(household_id=household_id, person_id=person_id, subject=subject, topic=topic, organization_id=organization_id, created_by_portal_account_id=principal.account_id, last_client_message_at=now, updated_at=now).returning(portal_threads.c.id)).scalar_one()
         connection.execute(portal_thread_participants.insert().values(thread_id=thread_id, portal_account_id=principal.account_id, participant_role="client"))
         message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_portal_account_id=principal.account_id, body=body, visibility="client").returning(portal_messages.c.id)).scalar_one()
     add_timeline_event(person_id=person_id, household_id=household_id, source="client_portal", event_type="secure_message", title="Secure portal message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
@@ -146,6 +147,9 @@ def send_message(principal, thread_id, body, attachment_document_ids=None):
             owner = connection.scalar(select(documents.c.person_id).where(documents.c.id == document_id))
             if owner not in scope["person_ids"]: raise PermissionError("Attachment is outside portal access scope")
             connection.execute(portal_message_attachments.insert().values(message_id=message_id, document_id=document_id))
+        # Relationship-owned activity marker: a client reply makes the thread unread for staff.
+        now = datetime.now(timezone.utc)
+        connection.execute(portal_threads.update().where(portal_threads.c.id == thread_id).values(last_client_message_at=now, updated_at=now))
     add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure portal message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     # Service-level audit for the client reply, symmetric with create_thread (opening message) and
     # staff_send_message. Placed after the transaction commits and only reached on success — an
@@ -159,6 +163,11 @@ def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachm
         if not thread: raise ValueError("Thread not found")
         message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_user_id=user_id, body=body, visibility="internal" if internal_note else "client").returning(portal_messages.c.id)).scalar_one()
         for document_id in attachment_document_ids or []: connection.execute(portal_message_attachments.insert().values(message_id=message_id, document_id=document_id))
+        # A client-visible staff reply is the "last staff response" + makes the thread unread for the
+        # client; an internal note is staff-only and never changes the client-facing markers.
+        if not internal_note:
+            now = datetime.now(timezone.utc)
+            connection.execute(portal_threads.update().where(portal_threads.c.id == thread_id).values(last_staff_message_at=now, updated_at=now))
     if not internal_note:
         add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure staff message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     write_audit_event(action="portal.internal_note.created" if internal_note else "portal.message.sent", entity_type="portal_message", entity_id=message_id, actor_user_id=user_id, request_id=f"portal-staff-message-{uuid.uuid4()}", metadata={"thread_id": thread_id, "visibility": "internal" if internal_note else "client"})

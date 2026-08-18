@@ -3,19 +3,32 @@
 {% block title %}Secure Messages | 360Plus{% endblock %}
 {% block crumb %}Secure Messages{% endblock %}
 {% block content %}
-{% call ui.page_head("Client secure messages", eyebrow="Client Portal", desc="Threads you are authorised to service. Open one to read the full conversation and reply to the client or add an internal note.") %}
+{% call ui.page_head("Communication Hub", eyebrow="Client Portal", desc="Conversations you are authorised to service. Filter by what needs attention; open one to read the full thread (incl. internal notes), reply, route, resolve, or link a request.") %}
 {% endcall %}
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
+<nav class="filters" style="margin-bottom:1rem;display:flex;gap:.4rem;flex-wrap:wrap;">
+  <a class="btn{{ ' secondary' if active_filter }}" href="/admin/client-portal/threads">All</a>
+  <a class="btn{{ '' if active_filter=='unread' else ' secondary' }}" href="?filter=unread">Unread</a>
+  <a class="btn{{ '' if active_filter=='mine' else ' secondary' }}" href="?filter=mine">Assigned to me</a>
+  <a class="btn{{ '' if active_filter=='unassigned' else ' secondary' }}" href="?filter=unassigned">Unassigned</a>
+  <a class="btn{{ '' if active_status=='open' else ' secondary' }}" href="?status=open">Open</a>
+  <a class="btn{{ '' if active_status=='resolved' else ' secondary' }}" href="?status=resolved">Resolved</a>
+  {% for tp in topics %}<a class="btn{{ '' if active_topic==tp else ' secondary' }}" href="?topic={{ tp }}">{{ tp|title }}</a>{% endfor %}
+</nav>
+
 {% if threads %}
 <table class="table">
-  <thead><tr><th>Subject</th><th>Client</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+  <thead><tr><th></th><th>Subject</th><th>Client</th><th>Topic</th><th>Assigned</th><th>Status</th><th>Last activity</th><th></th></tr></thead>
   <tbody>
   {% for t in threads %}
     <tr>
+      <td>{% if t.unread %}<span class="pill stop" title="Unread client message">●</span>{% endif %}</td>
       <td>{{ t.subject }}</td>
       <td>{{ t.full_name or '—' }}</td>
+      <td>{{ t.topic|title if t.topic else '—' }}</td>
+      <td>{{ 'Team' if t.assigned_team_id else ('User #' ~ t.assigned_user_id if t.assigned_user_id else 'Unassigned') }}</td>
       <td>{{ t.status|title }}</td>
       <td>{{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</td>
       <td><a class="btn secondary" href="/admin/client-portal/threads/{{ t.id }}">Open</a></td>
@@ -24,6 +37,6 @@
   </tbody>
 </table>
 {% else %}
-<div class="card"><p>No secure client threads are in your record scope.</p></div>
+<div class="card"><p>No conversations match this filter in your record scope.</p></div>
 {% endif %}
 {% endblock %}

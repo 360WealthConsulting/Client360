@@ -9,6 +9,48 @@
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
+<div class="card" style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;">
+  <span><b>Topic:</b> {{ thread.topic|title if thread.topic else 'Unassigned' }}</span>
+  <span><b>Assigned:</b> {{ assigned_name or ('Team #' ~ thread.assigned_team_id if thread.assigned_team_id else 'Unassigned (review)') }}</span>
+  <span><b>Status:</b> {{ thread.status|title }}</span>
+  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/resolve" style="margin:0;">
+    <input type="hidden" name="action" value="{{ 'reopen' if thread.status == 'resolved' else 'resolve' }}">
+    <button class="btn secondary" type="submit">{{ 'Reopen' if thread.status == 'resolved' else 'Resolve' }}</button>
+  </form>
+</div>
+
+<details class="card"><summary style="cursor:pointer;font-weight:600;">Route / topic</summary>
+  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/assign" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:.75rem;">
+    <label>Topic<select name="topic"><option value="">—</option>{% for tp in topics %}<option value="{{ tp }}"{% if thread.topic==tp %} selected{% endif %}>{{ tp|title }}</option>{% endfor %}</select></label>
+    <label>Assign to employee
+      <select name="assigned_user_id">
+        <option value="">— Unassigned —</option>
+        {% for u in assignable_users %}<option value="{{ u.id }}"{% if thread.assigned_user_id==u.id %} selected{% endif %}>{{ u.display_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Assign to team
+      <select name="assigned_team_id">
+        <option value="">— None —</option>
+        {% for t in assignable_teams %}<option value="{{ t.id }}"{% if thread.assigned_team_id==t.id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Update routing</button>
+  </form>
+</details>
+
+<details class="card"><summary style="cursor:pointer;font-weight:600;">Linked requests ({{ linked_requests|length }})</summary>
+  {% for r in linked_requests %}<p class="meta">{{ r.title }} — {{ r.status|title }}{% if r.due_date %} · Due {{ r.due_date }}{% endif %}</p>{% endfor %}
+  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/create-request" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:.5rem;">
+    <label>New request title<input name="title" required></label>
+    <label>Description<input name="description"></label>
+    <button class="btn secondary" type="submit">Create &amp; link request</button>
+  </form>
+  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/link-request" style="display:flex;gap:10px;align-items:end;margin-top:.5rem;">
+    <label>Link existing request id<input name="request_ref" type="number" required></label>
+    <button class="btn secondary" type="submit">Link</button>
+  </form>
+</details>
+
 <div class="card" style="display:flex;flex-direction:column;gap:.75rem;">
 {% for m in messages %}
   <div style="padding:.6rem .8rem;border-radius:10px;

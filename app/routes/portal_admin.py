@@ -19,9 +19,9 @@ from app.db import (
     people,
     portal_access_grants,
     portal_accounts,
-    portal_messages,
     portal_threads,
 )
+from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import visibility
 from app.portal.service import invite_portal_account, portal_scope, staff_send_message
@@ -173,44 +173,40 @@ def _load_thread(thread_id):
             portal_threads.c.id == thread_id)).mappings().one_or_none()
 
 
-def _thread_in_scope(principal, thread, *, write=False):
-    """A thread is in scope when its person OR its household is in the staff record scope."""
-    for entity_type, entity_id in (("person", thread["person_id"]), ("household", thread["household_id"])):
-        if entity_id is not None and record_in_scope(principal, entity_type, entity_id, write=write):
-            return True
-    return False
-
-
 @router.get("/threads", response_class=HTMLResponse)
 def portal_admin_threads(request: Request, principal: Principal = Depends(require_capability("client.read"))):
-    """Recent secure threads the staff member is allowed to service (record-scoped)."""
-    with engine.connect() as connection:
-        rows = connection.execute(
-            select(portal_threads.c.id, portal_threads.c.subject, portal_threads.c.status,
-                   portal_threads.c.updated_at, portal_threads.c.person_id,
-                   portal_threads.c.household_id, people.c.full_name)
-            .select_from(portal_threads.outerjoin(people, people.c.id == portal_threads.c.person_id))
-            .order_by(portal_threads.c.updated_at.desc()).limit(100)).mappings().all()
-    threads = [dict(r) for r in rows if _thread_in_scope(principal, r)]
+    """Communication hub work-queue: conversations the staff member can service, filterable by unread /
+    assigned-to-me / unassigned / topic / status (record-scoped)."""
+    q = request.query_params
+    threads = hub.staff_inbox(
+        principal, unread=q.get("filter") == "unread",
+        assigned_to_me=q.get("filter") == "mine", unassigned=q.get("filter") == "unassigned",
+        topic=q.get("topic") or None, status=q.get("status") or None)
     return templates.TemplateResponse(request=request, name="admin/portal_threads.html",
                                       context={"threads": threads, "principal": principal,
-                                               "error": request.query_params.get("error"),
-                                               "notice": request.query_params.get("notice")})
+                                               "topics": hub.TOPICS, "active_filter": q.get("filter"),
+                                               "active_topic": q.get("topic"), "active_status": q.get("status"),
+                                               "error": q.get("error"), "notice": q.get("notice")})
 
 
 @router.get("/threads/{thread_id}", response_class=HTMLResponse)
 def portal_admin_thread(thread_id: int, request: Request,
                         principal: Principal = Depends(require_capability("client.read"))):
     thread = _load_thread(thread_id)
-    if not thread or not _thread_in_scope(principal, thread):
+    if not thread or not hub.thread_in_staff_scope(principal, thread):
         raise HTTPException(404, "Thread not found")           # out-of-scope never discloses existence
-    with engine.connect() as connection:
-        messages = connection.execute(select(portal_messages).where(
-            portal_messages.c.thread_id == thread_id).order_by(portal_messages.c.sent_at)).mappings().all()
-        client_name = connection.scalar(select(people.c.full_name).where(
-            people.c.id == thread["person_id"])) if thread["person_id"] else None
+    messages = hub.staff_thread_messages(thread_id)            # includes internal notes (staff view)
+    client_name = None
+    if thread["person_id"]:
+        with engine.connect() as connection:
+            client_name = connection.scalar(select(people.c.full_name).where(
+                people.c.id == thread["person_id"]))
+    hub.mark_thread_read_staff(thread_id, actor_user_id=principal.user_id)   # relationship-level read
     return templates.TemplateResponse(request=request, name="admin/portal_thread.html", context={
-        "thread": dict(thread), "messages": [dict(m) for m in messages], "client_name": client_name,
+        "thread": dict(thread), "messages": messages, "client_name": client_name,
+        "assigned_name": hub.staff_name(thread["assigned_user_id"]),
+        "linked_requests": hub.linked_requests(thread_id), "topics": hub.TOPICS,
+        "assignable_users": hub.assignable_users(), "assignable_teams": hub.assignable_teams(),
         "principal": principal, "error": request.query_params.get("error"),
         "notice": request.query_params.get("notice")})
 
@@ -221,11 +217,7 @@ def portal_admin_thread_reply(thread_id: int, request: Request, body: str = Form
                               principal: Principal = Depends(require_capability("client.write"))):
     """Staff reply (or internal note) into a thread. Requires client.write AND write record scope on
     the thread. Delegates to the existing ``staff_send_message`` service (audited)."""
-    thread = _load_thread(thread_id)
-    if not thread:
-        raise HTTPException(404, "Thread not found")
-    if not _thread_in_scope(principal, thread, write=True):
-        raise HTTPException(403, "Thread is outside your record scope")
+    _guard_thread_write(principal, thread_id)
     if not (body or "").strip():
         return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?error=Reply+cannot+be+empty",
                                 status_code=303)
@@ -234,6 +226,90 @@ def portal_admin_thread_reply(thread_id: int, request: Request, body: str = Form
     kind = "Internal note added" if internal_note else "Reply sent to client"
     return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?notice={kind.replace(' ', '+')}",
                             status_code=303)
+
+
+def _guard_thread_write(principal, thread_id):
+    """Load a thread + enforce write record scope. Returns the thread or raises 404/403."""
+    thread = _load_thread(thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    if not hub.thread_in_staff_scope(principal, thread, write=True):
+        raise HTTPException(403, "Thread is outside your record scope")
+    return thread
+
+
+def _thread_redirect(thread_id, *, notice=None, error=None):
+    from urllib.parse import quote
+    q = ("?notice=" + quote(notice)) if notice else (("?error=" + quote(error)) if error else "")
+    return RedirectResponse(f"/admin/client-portal/threads/{thread_id}{q}", status_code=303)
+
+
+def _opt_int(value):
+    """Coerce a selector value ('' = Unassigned) to int or None; a non-numeric value is invalid.
+    Accepts an int directly (direct service/test calls) as well as the form's string."""
+    if value is None or isinstance(value, int):
+        return value
+    v = value.strip()
+    if not v:
+        return None
+    if not v.isdigit():
+        raise ValueError("Invalid selection")
+    return int(v)
+
+
+@router.post("/threads/{thread_id}/assign")
+def portal_admin_thread_assign(thread_id: int, request: Request,
+                               assigned_user_id: str | None = Form(None),
+                               assigned_team_id: str | None = Form(None), topic: str | None = Form(None),
+                               principal: Principal = Depends(require_capability("client.write"))):
+    """Reassign / route a conversation and/or set its topic from the employee/team selectors (audited
+    prev→new). client.write + record scope; only valid, selectable users/teams are accepted server-side;
+    an empty selection is the valid Unassigned state."""
+    _guard_thread_write(principal, thread_id)
+    try:
+        user_id, team_id = _opt_int(assigned_user_id), _opt_int(assigned_team_id)
+        hub.reassign_thread(principal.user_id, thread_id, user_id=user_id, team_id=team_id,
+                            topic=topic or None, request_id=request.state.request_id)
+    except ValueError as exc:
+        return _thread_redirect(thread_id, error=str(exc))
+    return _thread_redirect(thread_id, notice="Conversation routing updated.")
+
+
+@router.post("/threads/{thread_id}/resolve")
+def portal_admin_thread_resolve(thread_id: int, request: Request, action: str = Form("resolve"),
+                                principal: Principal = Depends(require_capability("client.write"))):
+    """Resolve or reopen a conversation (audited). client.write + record scope."""
+    _guard_thread_write(principal, thread_id)
+    hub.set_thread_state(principal.user_id, thread_id, resolved=(action == "resolve"),
+                         request_id=request.state.request_id)
+    return _thread_redirect(thread_id, notice=f"Conversation {action}d.")
+
+
+@router.post("/threads/{thread_id}/link-request")
+def portal_admin_thread_link_request(thread_id: int, request: Request, request_ref: int = Form(...),
+                                     principal: Principal = Depends(require_capability("client.write"))):
+    """Link an existing document request to this conversation (same client only). client.write + scope."""
+    _guard_thread_write(principal, thread_id)
+    try:
+        hub.link_request(principal.user_id, thread_id, request_ref, request_id=request.state.request_id)
+    except PermissionError:
+        return _thread_redirect(thread_id, error="That request belongs to a different client.")
+    except ValueError as exc:
+        return _thread_redirect(thread_id, error=str(exc))
+    return _thread_redirect(thread_id, notice="Request linked to conversation.")
+
+
+@router.post("/threads/{thread_id}/create-request")
+def portal_admin_thread_create_request(thread_id: int, request: Request, title: str = Form(...),
+                                       description: str | None = Form(None),
+                                       principal: Principal = Depends(require_capability("client.write"))):
+    """Turn a conversation into an actionable document request (linked back). client.write + scope."""
+    _guard_thread_write(principal, thread_id)
+    if not (title or "").strip():
+        return _thread_redirect(thread_id, error="A request title is required.")
+    hub.create_request_from_thread(principal.user_id, thread_id, title=title.strip(),
+                                   description=(description or None), request_id=request.state.request_id)
+    return _thread_redirect(thread_id, notice="Document request created and linked.")
 
 
 @router.get("/diagnostics")
