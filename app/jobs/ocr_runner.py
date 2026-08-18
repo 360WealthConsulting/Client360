@@ -45,8 +45,14 @@ _PRODUCTION_FACTORY = "app.services.ocr_backend.build_production_extractor"
 
 
 def _isolation_enabled() -> bool:
-    """Per-document subprocess isolation (real wall-clock timeout). On by default in production; a
-    pathological document can never freeze the migration. Disable only for diagnostics."""
+    """Per-document subprocess isolation (real wall-clock hard cap + stall watchdog). ON BY DEFAULT — the
+    single gate every production OCR entrypoint consults (the operational runner, the SharePoint baseline
+    live-OCR path, and the ``python -m app.services.document_ocr`` CLI), so a pathological document can
+    never freeze the parent process.
+
+    ``OCR_SUBPROCESS_ISOLATION=0`` is a DIAGNOSTICS-ONLY escape hatch (run extraction in-process, no
+    wall-clock timeout). It must never be set in production: without isolation a single wedged PDF/image
+    hangs the whole run. Unset / ``1`` / ``true`` / ``yes`` / ``on`` all mean isolated (the default)."""
     return os.getenv("OCR_SUBPROCESS_ISOLATION", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 

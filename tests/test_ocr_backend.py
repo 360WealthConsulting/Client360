@@ -176,7 +176,7 @@ def test_backend_end_to_end_extracts_and_indexes(tmp_path):
     token = f"balancesheet{uuid.uuid4().hex[:6]}"
     did = _doc(tmp_path, f"{_TAG} statement.pdf", person_id=pid)
     deps, _ = _deps(pdf_texts=[f"assets liabilities {token} equity totals here"])
-    s = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps))
+    s = ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps))
     assert s["completed"] == 1
     row = _ocr(did)
     assert row["status"] == "completed" and row["engine"] == "pdf-text-layer"
@@ -191,8 +191,8 @@ def test_backend_no_duplicate_document_or_ocr_rows(tmp_path):
     deps, _ = _deps(pdf_texts=["selectable content for the document body"])
     with engine.connect() as c:
         n_docs_before = c.execute(select(documents.c.id)).rowcount
-    ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps))
-    ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps), mode="reprocess")
+    ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps))
+    ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps), mode="reprocess")
     with engine.connect() as c:
         n_docs_after = c.execute(select(documents.c.id)).rowcount
         n_ocr = c.execute(select(document_ocr.c.id).where(document_ocr.c.document_id == did)).rowcount
@@ -248,7 +248,7 @@ def test_run_ocr_isolates_timeout_and_continues(tmp_path):
         if row["id"] == bad:
             raise OcrTimeout("page 1/1 timed out")
         return {"text": f"good text for {row['id']}", "engine": "tesseract 5", "page_count": 1}
-    s = ocr.run_ocr(document_ids=ids, extractor=extractor, mode="reprocess")
+    s = ocr.run_ocr(isolate=False, document_ids=ids, extractor=extractor, mode="reprocess")
     assert s["timed_out"] == 1 and s["completed"] == 4       # 4 of 5 processed despite the poison doc
     assert _ocr(bad)["status"] == "timed_out"
     assert all(_ocr(d)["status"] == "completed" for d in ids if d != bad)
@@ -258,10 +258,10 @@ def test_run_ocr_isolates_timeout_and_continues(tmp_path):
 def test_cached_ocr_skipped_and_text_retained_on_resume(tmp_path):
     did = _doc(tmp_path, f"{_TAG} cached.pdf", sha="c" * 64)
     deps, _ = _deps(pdf_texts=["real selectable content for the caching test body"])
-    assert ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps))["completed"] == 1
+    assert ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps))["completed"] == 1
     text1 = _ocr(did)["text"]
     # resume (incremental, NOT reprocess) -> cached, skipped, text retained (no re-OCR)
-    s2 = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps), mode="incremental")
+    s2 = ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps), mode="incremental")
     assert s2["skipped"] == 1 and s2["completed"] == 0
     assert _ocr(did)["text"] == text1
 
@@ -271,7 +271,7 @@ def test_run_ocr_summary_exposes_timed_out_counter(tmp_path):
 
     def extractor(row, path):
         raise OcrTimeout("page 1/1 timed out")
-    s = ocr.run_ocr(document_ids=[did], extractor=extractor, mode="reprocess")
+    s = ocr.run_ocr(isolate=False, document_ids=[did], extractor=extractor, mode="reprocess")
     assert "timed_out" in s and s["timed_out"] == 1 and s["completed"] == 0
     assert s["status"] == "completed"                        # timeout is recorded, not a batch error
 
@@ -350,7 +350,7 @@ def test_backend_unavailable_state_is_retryable_and_completes(tmp_path):
     record_ocr_unavailable(did, "no engine on host")
     assert _ocr(did)["status"] == "failed"                     # recorded, retryable
     deps, _ = _deps(pdf_texts=["the engine is now installed and this text is extracted"])
-    s = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps), mode="retry")
+    s = ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps), mode="retry")
     assert s["completed"] == 1 and _ocr(did)["status"] == "completed"   # retry succeeds once engine present
 
 
@@ -361,6 +361,13 @@ def test_backend_unavailable_state_is_retryable_and_completes(tmp_path):
 
 def test_cli_builds_and_passes_production_extractor(tmp_path, monkeypatch):
     # A failed candidate must transition to completed when the CLI wires the real (mocked) extractor.
+    # Pinned to the diagnostics in-process mode (OCR_SUBPROCESS_ISOLATION=0): the CLI now isolates BY
+    # DEFAULT, which extracts in a spawned child that rebuilds the backend from the production factory ref
+    # and so cannot see this monkeypatched in-process fake. This test asserts the original bug fix — the
+    # CLI builds + passes the REAL backend, never run_ocr's always-raising default_extractor stub — which
+    # is only observable in-process. The now-default ISOLATED wiring (isolate=True + production factory
+    # ref) is covered by tests/test_document_ocr_cli_isolation.py.
+    monkeypatch.setenv("OCR_SUBPROCESS_ISOLATION", "0")
     did = _doc(tmp_path, f"{_TAG} clifix.pdf", sha="c1" * 32)
     from app.services.document_ocr import record_ocr_unavailable
     record_ocr_unavailable(did, "was unavailable before the engine was installed")
@@ -452,7 +459,7 @@ def test_run_ocr_emits_progress_telemetry(tmp_path):
             raise OcrTimeout("page 1/1 timed out")
         return {"text": f"text {row['id']}", "engine": "tesseract 5", "page_count": 1}
     lines = []
-    s = ocr.run_ocr(document_ids=ids, extractor=extractor, mode="reprocess",
+    s = ocr.run_ocr(isolate=False, document_ids=ids, extractor=extractor, mode="reprocess",
                     progress=lines.append, report_every=1)
     assert s["completed"] == 2 and s["timed_out"] == 1
     tallies = [ln for ln in lines if ln.startswith("[ocr:reprocess]")]
@@ -466,5 +473,5 @@ def test_run_ocr_emits_progress_telemetry(tmp_path):
 def test_run_ocr_no_progress_sink_is_silent_and_unchanged(tmp_path):
     did = _doc(tmp_path, f"{_TAG} silent.pdf", sha="ab" * 32)
     deps, _ = _deps(pdf_texts=["real selectable content for the silent run"])
-    s = ocr.run_ocr(document_ids=[did], extractor=build_extractor(deps))   # no progress= -> no telemetry
+    s = ocr.run_ocr(isolate=False, document_ids=[did], extractor=build_extractor(deps))   # no progress= -> no telemetry
     assert s["completed"] == 1                                              # behavior identical to before

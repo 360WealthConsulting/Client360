@@ -45,7 +45,41 @@ _TERMINAL_OK = "completed"
 
 # Re-exported from the db-free module so ``from app.services.document_ocr import OcrTimeout`` keeps working
 # while the extraction backend + subprocess worker import them without pulling in app.db.
-from app.services.ocr_exceptions import OcrBackendUnavailable, OcrTimeout  # noqa: E402,F401
+from app.services.ocr_exceptions import (  # noqa: E402,F401
+    OcrBackendUnavailable,
+    OcrIsolationError,
+    OcrTimeout,
+)
+
+# Sentinel for run_ocr's ``isolate`` parameter: distinguishes "caller omitted an isolation choice" from an
+# explicit ``True``/``False``. Omission is FAIL-CLOSED (see _resolve_isolation) — it never silently selects
+# the in-process path, so a future production caller cannot accidentally reintroduce an unkillable OCR run.
+_ISOLATE_UNSET = object()
+
+
+def _resolve_isolation(isolate, factory_ref):
+    """Resolve run_ocr's isolation decision, failing closed on omission.
+
+      * explicit ``isolate=True``  -> isolated, but REQUIRES a ``factory_ref`` (the child rebuilds the
+        extractor from a picklable dotted reference; an in-process extractor object cannot be spawned);
+      * explicit ``isolate=False`` -> deliberate in-process path (tests/diagnostics, or the
+        OCR_SUBPROCESS_ISOLATION=0 escape hatch) — preserved verbatim;
+      * OMITTED with a ``factory_ref`` -> isolated (the safe default when isolation is even possible);
+      * OMITTED with no ``factory_ref`` -> refuse (:class:`OcrIsolationError`): the caller must state an
+        explicit choice rather than silently running production OCR in-process."""
+    if isolate is _ISOLATE_UNSET:
+        if factory_ref is not None:
+            return True
+        raise OcrIsolationError(
+            "run_ocr() requires an explicit isolation choice: pass factory_ref=<dotted factory> for the "
+            "isolated production path (real wall-clock hard cap + stall watchdog), or isolate=False to "
+            "deliberately run in-process (tests/diagnostics — fake extractors that cannot cross the spawn "
+            "boundary). Omitting isolation is refused so an unkillable OCR path cannot be reintroduced.")
+    if isolate and factory_ref is None:
+        raise OcrIsolationError(
+            "run_ocr(isolate=True) requires factory_ref=<dotted factory>: the isolated child rebuilds the "
+            "extractor from a picklable reference, so an in-process extractor object cannot be used.")
+    return bool(isolate)
 
 
 def _ext(name: str | None) -> str:
@@ -214,14 +248,21 @@ def _observe(observer, method, *args):
 
 def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user_id=None,
             request_id=None, max_attempts=3, batch_size=200, dry_run=False, progress=None,
-            report_every=100, report_interval=60.0, isolate=False, factory_ref=None,
+            report_every=100, report_interval=60.0, isolate=_ISOLATE_UNSET, factory_ref=None,
             hard_timeout=None, stall_timeout=None, observer=None) -> dict:
     """Run OCR over canonical documents. ``mode``: ``initial``/``incremental`` (process anything not
     completed), ``retry`` (failed rows under ``max_attempts``), ``reprocess`` (force, or content changed).
     Idempotent: a completed, content-unchanged document is skipped unless ``mode='reprocess'``. Returns
     a summary of counts. Pass ``progress`` (a sink callable) to emit throttled per-phase telemetry (phase,
-    processed/total, %, elapsed, rolling throughput, ETA, completed/failed/unsupported/timed_out/reused)."""
+    processed/total, %, elapsed, rolling throughput, ETA, completed/failed/unsupported/timed_out/reused).
+
+    ISOLATION IS FAIL-CLOSED (see :func:`_resolve_isolation`): every caller must make an explicit choice.
+    Pass ``factory_ref=`` for the isolated production path (killable child process + real wall-clock hard
+    cap / stall watchdog), or ``isolate=False`` for the deliberate in-process path (tests/diagnostics).
+    Omitting isolation entirely is refused with :class:`OcrIsolationError` so a new production caller can
+    never silently reintroduce an unkillable in-process OCR run."""
     from app.services.progress import ProgressReporter
+    isolate = _resolve_isolation(isolate, factory_ref)
     extractor = extractor or default_extractor
     summary = _new_summary(mode, dry_run)
     with engine.connect() as conn:
@@ -373,9 +414,25 @@ def _audit(summary, actor_user_id, request_id, dry_run):
 
 
 def extract_text(document_id: int, *, extractor=None, actor_user_id=None, request_id=None) -> dict:
-    """Convenience: OCR a single canonical document now (forces reprocessing of that id)."""
-    return run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess",
-                   actor_user_id=actor_user_id, request_id=request_id)
+    """Convenience: OCR a single canonical document now (forces reprocessing of that id).
+
+    Safe by default: with no injected ``extractor`` this runs the PRODUCTION backend under subprocess
+    isolation — the same shared OCR_SUBPROCESS_ISOLATION gate + production factory ref the operational
+    runner and the SharePoint live-OCR path use — so a pathological document is killed by the wall-clock
+    hard cap / stall watchdog and can never wedge the caller. Passing an in-process ``extractor`` object
+    selects the EXPLICIT in-process path (tests/diagnostics: a fake extractor cannot cross the spawn
+    boundary); production never passes one."""
+    if extractor is not None:
+        # Explicit in-process path for an injected (fake) extractor — never used by production.
+        return run_ocr(document_ids=[document_id], extractor=extractor, mode="reprocess",
+                       actor_user_id=actor_user_id, request_id=request_id, isolate=False)
+    from app.jobs.ocr_runner import _PRODUCTION_FACTORY, _isolation_enabled
+    from app.services.ocr_backend import build_production_extractor
+    prod = build_production_extractor()                       # availability check (raises if not installed)
+    isolate = _isolation_enabled()
+    return run_ocr(document_ids=[document_id], extractor=prod, mode="reprocess",
+                   actor_user_id=actor_user_id, request_id=request_id,
+                   isolate=isolate, factory_ref=(_PRODUCTION_FACTORY if isolate else None))
 
 
 def ocr_for_documents(document_ids) -> dict[int, dict]:
@@ -418,8 +475,21 @@ def main(argv=None):
         print("  Set TESSERACT_CMD and POPPLER_PATH and install the OCR libraries "
               "(pytesseract, pdf2image, pypdf, Pillow), then retry.")
         return 2
+    # Production/default: run every document in a killable CHILD PROCESS with the real wall-clock hard cap
+    # + stall watchdog (app.services.ocr_isolation), so a pathological PDF/image can never wedge this CLI
+    # parent process. Reuses the operational runner's SINGLE isolation gate (OCR_SUBPROCESS_ISOLATION) and
+    # its production factory ref — no second config knob, no duplicated timeout mechanism. The non-isolated
+    # in-process path is a DIAGNOSTICS-ONLY escape hatch: it is reachable only by deliberately setting
+    # OCR_SUBPROCESS_ISOLATION=0 (never by accident) and it warns loudly below.
+    from app.jobs.ocr_runner import _PRODUCTION_FACTORY, _isolation_enabled
+    isolate = _isolation_enabled()
+    if not isolate:
+        print("WARNING: OCR subprocess isolation is DISABLED via OCR_SUBPROCESS_ISOLATION=0 — DIAGNOSTICS "
+              "ONLY. A pathological document can wedge this process with no wall-clock timeout. Do NOT use "
+              "this mode in production.", flush=True)
     summary = run_ocr(mode=args.mode, batch_size=args.batch_size, max_attempts=args.max_attempts,
                       dry_run=args.dry_run, extractor=extractor,
+                      isolate=isolate, factory_ref=(_PRODUCTION_FACTORY if isolate else None),
                       progress=lambda line: print(line, flush=True))   # live phase telemetry
     for k in ("mode", "candidates", "completed", "failed", "skipped", "unsupported",
               "chars_extracted", "status"):
