@@ -9,6 +9,7 @@ candidates, and deterministic output.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -84,6 +85,19 @@ def _ocr(doc_id, *, status, text=None, last_error=None):
 
 def _run(tmp_path, **kw):
     return reconcile_documents(config=_cfg(tmp_path), **kw)
+
+
+# --- baseline recovery scope (uploaded_by + created_at window) ---------------
+
+def _batch_doc(*, uploaded_by, created_at, status="active", name="b.pdf"):
+    """A document with explicit uploaded_by + created_at, for baseline-scope tests."""
+    sfx = uuid.uuid4().hex
+    with engine.begin() as c:
+        return c.execute(insert(documents).values(
+            original_name=f"{_TAG} {name}", stored_name=f"s-{sfx}", storage_provider="SharePoint Online",
+            storage_path=f"/x/{sfx}", size_bytes=1, sha256=(sfx + sfx)[:64],
+            status=status, archived=False, uploaded_by=uploaded_by, created_at=created_at).returning(
+            documents.c.id)).scalar_one()
 
 
 # --- unit: the bucket mapper is total + mutually exclusive --------------------
@@ -296,3 +310,66 @@ def test_supported_modes_are_reconcile_only():
     assert job.supported_modes == frozenset({Mode.RECONCILE})
     with pytest.raises(ModeNotSupported):
         job.run(Mode.APPLY)                                   # write modes are refused before any DB access
+
+
+_TZ = timezone(timedelta(hours=-4))
+_START = datetime(2026, 8, 17, 11, 0, 0, tzinfo=_TZ)
+_END = datetime(2026, 8, 17, 15, 0, 0, tzinfo=_TZ)
+_UPLOADER = "SharePoint Sync"
+
+
+def test_baseline_scope_selects_exactly_the_intended_records(tmp_path):
+    # Exactly the in-window 'SharePoint Sync' non-deleted documents are scoped.
+    intended = [_batch_doc(uploaded_by=_UPLOADER, created_at=_START + timedelta(hours=1, minutes=i))
+                for i in range(4)]
+    r = _run(tmp_path, expected_population=4, baseline_uploaded_by=_UPLOADER,
+             baseline_created_from=_START, baseline_created_to=_END)
+    c = r.counts
+    assert c["scope_mode"] == "baseline"
+    assert c["scoped_population"] == 4 and c["population_difference"] == 0
+    assert c["invariant_ok"] is True and c["reconciliation_status"] == "PASS"
+    assert c["baseline_uploaded_by"] == _UPLOADER
+    _ = intended
+
+
+def test_baseline_scope_excludes_older_newer_other_uploader_and_deleted(tmp_path):
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_START + timedelta(hours=1))          # IN (1)
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_START - timedelta(minutes=1))        # older → excluded
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_END)                                 # >= end (half-open) → excluded
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_END + timedelta(hours=1))            # newer → excluded
+    _batch_doc(uploaded_by="Manual Upload", created_at=_START + timedelta(hours=1))    # other uploader → excluded
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_START + timedelta(hours=1), status="deleted")  # deleted → excluded
+    r = _run(tmp_path, expected_population=1, baseline_uploaded_by=_UPLOADER,
+             baseline_created_from=_START, baseline_created_to=_END)
+    assert r.counts["scoped_population"] == 1 and r.counts["invariant_ok"] is True
+
+
+def test_baseline_upper_bound_is_half_open(tmp_path):
+    # A document created exactly at `created_to` is EXCLUDED (window is [from, to)).
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_START + timedelta(hours=1))          # IN
+    _batch_doc(uploaded_by=_UPLOADER, created_at=_END)                                 # at boundary → OUT
+    r = _run(tmp_path, expected_population=1, baseline_uploaded_by=_UPLOADER,
+             baseline_created_from=_START, baseline_created_to=_END)
+    assert r.counts["scoped_population"] == 1
+
+
+def test_generic_source_system_scope_is_broader_than_baseline(tmp_path):
+    # The same records, but generic source_system scope also picks up SharePoint-referenced documents that
+    # the baseline window would exclude — proving the modes are distinct and generic can be broader.
+    in_window = _batch_doc(uploaded_by=_UPLOADER, created_at=_START + timedelta(hours=1))
+    older = _batch_doc(uploaded_by=_UPLOADER, created_at=_START - timedelta(days=30))
+    other_uploader = _batch_doc(uploaded_by="Manual Upload", created_at=_START + timedelta(hours=1))
+    for d in (in_window, older, other_uploader):
+        _src(d, system="SharePoint")                     # all three carry a SharePoint source ref
+    baseline = _run(tmp_path, baseline_uploaded_by=_UPLOADER,
+                    baseline_created_from=_START, baseline_created_to=_END)
+    generic = _run(tmp_path, sharepoint_source="SharePoint")
+    assert baseline.counts["scope_mode"] == "baseline" and generic.counts["scope_mode"] == "source_system"
+    assert baseline.counts["scoped_population"] == 1                      # only the in-window batch
+    assert generic.counts["scoped_population"] >= 3                       # broader: all SharePoint-referenced
+    assert generic.counts["scoped_population"] > baseline.counts["scoped_population"]
+
+
+def test_baseline_requires_all_three_parameters(tmp_path):
+    with pytest.raises(ValueError):
+        _run(tmp_path, baseline_uploaded_by=_UPLOADER, baseline_created_from=_START)   # missing created_to

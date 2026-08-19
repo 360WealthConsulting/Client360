@@ -85,19 +85,54 @@ class DocumentReconciliationJob(MigrationJob):
 
     def _reconcile(self, *, sharepoint_source: str = "SharePoint", taxdome_source: str = "TaxDome",
                    expected_population: int | None = None, owner_proposal_limit: int = 0,
-                   **_opts) -> Outcome:
+                   baseline_uploaded_by: str | None = None, baseline_created_from=None,
+                   baseline_created_to=None, **_opts) -> Outcome:
         counts: dict = {}
         exceptions: list[dict] = []
         reconciliation: list[dict] = []
+
+        # --- population scope: BASELINE (recovery batch) XOR generic source_system -------------------
+        # The two modes are mutually exclusive: baseline targets an EXACT ingestion/recovery batch by
+        # documents.uploaded_by + a half-open created_at window [from, to); generic targets every document
+        # that carries a source_system reference. Baseline never joins document_sources, so a broader
+        # source_system population can never widen it. The Aug-2026 recovery values are supplied by the
+        # caller/CLI — nothing is hard-coded here.
+        baseline = any(v is not None for v in
+                       (baseline_uploaded_by, baseline_created_from, baseline_created_to))
+        if baseline:
+            if not (baseline_uploaded_by and baseline_created_from is not None
+                    and baseline_created_to is not None):
+                raise ValueError(
+                    "baseline scope requires uploaded_by, created_from, and created_to together")
+            scope_mode = "baseline"
+            scope_conds = [documents.c.uploaded_by == baseline_uploaded_by,
+                           documents.c.status != "deleted",
+                           documents.c.created_at >= baseline_created_from,
+                           documents.c.created_at < baseline_created_to]   # half-open: excludes >= to
+            scope_desc = (f"uploaded_by={baseline_uploaded_by!r}, created_at in "
+                          f"[{baseline_created_from}, {baseline_created_to}), status != 'deleted'")
+        else:
+            scope_mode = "source_system"
+            scope_conds = [documents.c.id.in_(select(document_sources.c.document_id).where(
+                               document_sources.c.source_system == sharepoint_source)),
+                           documents.c.status != "deleted"]
+            scope_desc = f"source_system={sharepoint_source!r}, status != 'deleted'"
+
         notes: list[str] = [
             "READ-ONLY reconcile: no documents / document_ocr / document_sources / ownership / "
             "source_contacts / migration state were modified.",
-            f"Scope: documents with a document_sources ref for source_system='{sharepoint_source}' and "
-            "documents.status != 'deleted' (matches the OCR candidate scope).",
+            f"Population scope [{scope_mode}]: {scope_desc}.",
         ]
+        counts["scope_mode"] = scope_mode
+        if baseline:
+            counts["baseline_uploaded_by"] = baseline_uploaded_by
+            counts["baseline_created_from"] = str(baseline_created_from)
+            counts["baseline_created_to"] = str(baseline_created_to)
 
         with engine.connect() as conn:      # plain connection — SELECT only, never committed
             # -- scoped population + one OCR row per document -----------------------------------------
+            # (source_system doc-id set is still used by the source-integrity checks below, regardless of
+            # the population scope mode.)
             sp_doc_ids = select(document_sources.c.document_id).where(
                 document_sources.c.source_system == sharepoint_source)
             scoped_stmt = (
@@ -111,7 +146,7 @@ class DocumentReconciliationJob(MigrationJob):
                          func.length(func.btrim(document_ocr.c.text)) > 0).label("has_text"))
                 .select_from(documents.outerjoin(
                     document_ocr, document_ocr.c.document_id == documents.c.id))
-                .where(documents.c.id.in_(sp_doc_ids), documents.c.status != "deleted")
+                .where(*scope_conds)
                 .order_by(documents.c.id))       # stable order → deterministic sample + exception ordering
             rows = conn.execute(scoped_stmt).mappings().all()
             actual = len(rows)
@@ -394,9 +429,16 @@ class DocumentReconciliationJob(MigrationJob):
 
 def reconcile_documents(*, sharepoint_source: str = "SharePoint", taxdome_source: str = "TaxDome",
                         expected_population: int | None = None, owner_proposal_limit: int = 0,
-                        config=None):
+                        baseline_uploaded_by: str | None = None, baseline_created_from=None,
+                        baseline_created_to=None, config=None):
     """Convenience entry: run the read-only reconcile and return the :class:`MigrationResult`
-    (artifacts are written under the run directory). Never writes to Client360."""
+    (artifacts are written under the run directory). Never writes to Client360.
+
+    Baseline mode: pass ``baseline_uploaded_by`` + ``baseline_created_from`` + ``baseline_created_to``
+    (datetimes) to scope EXACTLY a recovery/ingestion batch by ``documents.uploaded_by`` and a half-open
+    ``created_at`` window — mutually exclusive with the generic ``source_system`` scope."""
     job = DocumentReconciliationJob(config)
     return job.run(Mode.RECONCILE, sharepoint_source=sharepoint_source, taxdome_source=taxdome_source,
-                   expected_population=expected_population, owner_proposal_limit=owner_proposal_limit)
+                   expected_population=expected_population, owner_proposal_limit=owner_proposal_limit,
+                   baseline_uploaded_by=baseline_uploaded_by, baseline_created_from=baseline_created_from,
+                   baseline_created_to=baseline_created_to)
