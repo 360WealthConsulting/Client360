@@ -330,3 +330,82 @@ def test_preview_makes_no_network_calls_and_no_writes(tag, tmp_path):
     assert conn.downloaded == []                                 # preview never hits the connector
     row = _doc_row(did)
     assert row["storage_uri"] is None                            # and never writes storage
+
+
+# --- historical drive-id in metadata.library (production root cause) ----------
+
+# The exact shape observed in production: metadata.library holds a Graph drive id, not a display name.
+HISTORICAL_DRIVE_ID = "b!an9eHY8SsUSoKpMiW4vy9GHKx9mbaS1Eo_ha68ZssFa86B3K4zuaRJVGisg9UoId"
+
+
+def _spy_drives(record):
+    """A drives_fn that records every enumeration call (so tests can assert it is/ isn't used)."""
+    def _fn(site_id, token):
+        record.append(site_id)
+        return [{"id": "drive-from-name", "name": "Client Documents"}]
+    return _fn
+
+
+def test_resolve_drive_uses_historical_drive_id_directly():
+    calls = []
+    conn = rs.RestageConnector("tok", drives_fn=_spy_drives(calls))
+    # metadata.site is NOT a usable composite id here — irrelevant for a drive-id library.
+    assert conn.resolve_drive("not-a-real-site", HISTORICAL_DRIVE_ID) == HISTORICAL_DRIVE_ID
+
+
+def test_resolve_drive_does_not_enumerate_when_drive_id_present():
+    calls = []
+    conn = rs.RestageConnector("tok", drives_fn=_spy_drives(calls))
+    conn.resolve_drive("not-a-real-site", HISTORICAL_DRIVE_ID)
+    assert calls == []                                           # zero Graph drive enumeration
+
+
+def test_resolve_drive_falls_back_to_display_name_resolution():
+    calls = []
+    conn = rs.RestageConnector("tok", drives_fn=_spy_drives(calls))
+    # Newer ref: real display name resolved against the site's drives.
+    assert conn.resolve_drive("site-123", "Client Documents") == "drive-from-name"
+    assert calls == ["site-123"]                                # enumerated once
+    # Cached per site — a second lookup does not re-enumerate.
+    assert conn.resolve_drive("site-123", "Client Documents") == "drive-from-name"
+    assert calls == ["site-123"]
+    # An unknown display name under an enumerated site does not resolve.
+    assert conn.resolve_drive("site-123", "No Such Library") is None
+
+
+def test_resolve_drive_fails_closed_on_blank_or_invalid_metadata():
+    calls = []
+    conn = rs.RestageConnector("tok", drives_fn=_spy_drives(calls))
+    assert conn.resolve_drive("site-1", "") is None             # blank library
+    assert conn.resolve_drive("site-1", None) is None           # missing library
+    assert conn.resolve_drive("", "Client Documents") is None   # missing site for name resolution
+    assert calls == []                                          # never enumerated for invalid input
+
+
+def test_apply_recovers_historical_drive_id_ref_without_enumeration(tag, tmp_path):
+    """End-to-end apply over a historical ref: the real RestageConnector uses the b!… drive id
+    verbatim, downloads by (drive_id, item_id), verifies, and backfills — no drive enumeration."""
+    blob = b"historical source body"
+    sha = _sha(blob)
+    did = _insert_doc(uploaded_by=tag, sha=sha)
+    _insert_ref(did, item_id="item-1", source_hash=sha,
+                library=HISTORICAL_DRIVE_ID, site="not-a-composite-site-id")
+
+    def _no_enum(site_id, token):
+        raise AssertionError("must not enumerate site drives when a drive id is already present")
+
+    def _download(drive_id, item_id, token, dest):
+        assert drive_id == HISTORICAL_DRIVE_ID                   # used verbatim, as the drive id
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(blob)
+        return len(blob), _sha(blob)
+
+    conn = rs.RestageConnector("tok", drives_fn=_no_enum, download_fn=_download)
+    report = rs.run_restage(
+        uploaded_by=tag, created_from=WINDOW_FROM, created_to=WINDOW_TO, apply=True,
+        staging_root=tmp_path / "staging", connector=conn,
+        backfill_fn=lambda d, sp: backfill_local_source(d, sp, destination_root=tmp_path / "canonical"))
+
+    assert _cat(report, did) == rs.CATEGORY_RECOVERED
+    from pathlib import Path
+    assert Path(_doc_row(did)["storage_uri"]).exists()

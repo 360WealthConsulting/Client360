@@ -203,10 +203,20 @@ def choose_ref(refs: list[dict], doc_sha256: str | None) -> tuple[dict | None, b
 
 # --- connector adapter (real Graph by default; injectable for offline tests) --------------
 
+def _looks_like_drive_id(value) -> bool:
+    """True if ``value`` is a Graph DRIVE ID rather than a human library name.
+
+    Historical SharePoint source refs stored the drive id directly in ``metadata.library`` (and a
+    ``metadata.site`` that is not a usable composite site id). A Graph drive id is an opaque token
+    that begins with the ``b!`` sentinel and carries no path separator, so it can never collide with
+    a real library display name — making this a safe, unambiguous discriminator."""
+    return isinstance(value, str) and value.startswith("b!") and "/" not in value
+
+
 class RestageConnector:
-    """Thin adapter over the EXISTING hardened SharePoint connector. Resolves a (site, library)
-    to a Graph drive id and downloads an item's content to a staged path. No new auth, no new
-    client — it holds one token acquired via the connector's own MSAL-cache helpers."""
+    """Thin adapter over the EXISTING hardened SharePoint connector. Resolves a source ref's
+    (site, library) to a Graph drive id and downloads an item's content to a staged path. No new
+    auth, no new client — it holds one token acquired via the connector's own MSAL-cache helpers."""
 
     def __init__(self, token: str, *, drives_fn=None, download_fn=None) -> None:
         from app.connectors.microsoft365 import sharepoint_content as spc
@@ -223,13 +233,28 @@ class RestageConnector:
         account = spc._load_connected_account()
         return cls(spc._acquire_token(account))
 
-    def resolve_drive(self, site_id: str, library_name: str) -> str | None:
-        """Drive (document-library) id for a site's library name. Cached per site."""
+    def resolve_drive(self, site_id, library) -> str | None:
+        """Resolve the Graph drive id for a source ref's ``(site, library)``.
+
+        Two shapes exist in the historical data:
+
+        * HISTORICAL refs stored the drive id itself in ``metadata.library`` (a ``b!…`` token). It is
+          used verbatim — enumerating site drives or matching a display name would never succeed, and
+          the download (``GET /drives/{drive}/items/{item}/content``) needs only the drive id.
+        * NEWER refs carry a real library DISPLAY NAME, resolved against the site's drives (cached per
+          site) by matching the drive ``name``.
+
+        Blank/invalid metadata that can be resolved neither way returns ``None`` (the caller fails
+        closed and classifies the document ``source_unavailable`` — never a blind download)."""
+        if _looks_like_drive_id(library):
+            return library                       # historical: the drive id is already in hand
+        if not (site_id and library):
+            return None                          # fail closed: cannot resolve by name without both
         if site_id not in self._drive_cache:
             drives = self._drives_fn(site_id, self._token)
             self._drive_cache[site_id] = {str(d.get("name")): str(d.get("id"))
                                           for d in drives if d.get("id")}
-        return self._drive_cache[site_id].get(library_name)
+        return self._drive_cache[site_id].get(library)
 
     def download(self, drive_id: str, item_id: str, dest: Path) -> tuple[int, str]:
         """Stream item content to ``dest``; returns ``(bytes, sha256_hex)``."""
@@ -311,9 +336,15 @@ def _process(doc: dict, refs: list[dict], *, apply: bool, staging: Path | None,
     source_hash = chosen.get("source_hash")
     base = dict(item_id=item_id, site=site, library=library,
                 source_uri=chosen.get("source_uri"), source_hash=source_hash)
-    if not (site and library and item_id):
+    # ``library`` is the drive source (a ``b!…`` drive id for historical refs, else a display name);
+    # ``item_id`` identifies the file. Both are always required. A ``site`` is required ONLY for the
+    # display-name resolution path — a historical drive-id library needs no (usable) site.
+    if not (library and item_id):
         return DocRecord(doc_id, CATEGORY_SOURCE_UNAVAILABLE,
-                         note="chosen ref missing site/library/item_id", **base)
+                         note="chosen ref missing library/item_id", **base)
+    if not _looks_like_drive_id(library) and not site:
+        return DocRecord(doc_id, CATEGORY_SOURCE_UNAVAILABLE,
+                         note="chosen ref missing site for library-name resolution", **base)
 
     # 3. Preview stops here — it never touches the network or disk.
     if not apply:
