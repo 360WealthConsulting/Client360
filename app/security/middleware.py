@@ -274,6 +274,26 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 denied.headers["x-content-type-options"] = "nosniff"
                 denied.headers["x-frame-options"] = "DENY"
                 return denied
+            # Phase 1F — FAIL CLOSED for portal MUTATIONS: an authenticated client mutation that is neither
+            # feature-gated (portal_gate _RULES → client_can) nor an approved in-service-scoped mutation
+            # (_MUTATION_SELF_PROTECTED) nor an exempt auth/bootstrap path is DENIED, so a newly added
+            # portal mutation can never become usable on `current_portal` authentication alone. This mirrors
+            # the staff-side Phase 1A invariant on the client fork. Reads (GET/HEAD/OPTIONS) are unaffected.
+            if (request.method not in {"GET", "HEAD", "OPTIONS"}
+                    and not portal_gate.mutation_is_covered(request.url.path, request.method)):
+                write_audit_event(action="authorization.uncovered_portal_mutation_denied",
+                                  entity_type="portal_route", entity_id=request.url.path,
+                                  outcome="denied", request_id=request.state.request_id,
+                                  ip_address=request.client.host if request.client else None,
+                                  user_agent=request.headers.get("user-agent"),
+                                  metadata={"portal_account_id": portal_principal.account_id,
+                                            "method": request.method})
+                denied = JSONResponse({"detail": "This action is not available on your account.",
+                                       "request_id": request.state.request_id}, status_code=403)
+                denied.headers["x-request-id"] = request.state.request_id
+                denied.headers["x-content-type-options"] = "nosniff"
+                denied.headers["x-frame-options"] = "DENY"
+                return denied
             response = await call_next(request)
             if response.status_code < 400 and request.method not in {"GET", "HEAD", "OPTIONS"}:
                 write_audit_event(action="portal.route.mutated", entity_type="portal_route", entity_id=request.url.path, request_id=request.state.request_id, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), metadata={"portal_account_id": portal_principal.account_id, "method": request.method, "status_code": response.status_code})

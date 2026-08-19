@@ -53,6 +53,26 @@ _RULES: tuple[tuple[re.Pattern[str], frozenset[str] | None, str], ...] = (
 )
 
 
+# Phase 1F — portal MUTATIONS whose authorization is enforced in the SERVICE LAYER (principal-scoped /
+# ownership check → PermissionError→403/404), not via a portal_gate Core feature. Each was verified to
+# reject cross-client / cross-organization access. They are listed EXPLICITLY so a newly-added portal
+# mutation that is neither feature-gated nor here is fail-closed denied (see :func:`mutation_is_covered`
+# and the middleware). ``methods=None`` means any method. This is a coverage allow-list, NOT a per-client
+# decision — the actual scope check still runs inside the delegated service.
+_MUTATION_SELF_PROTECTED: tuple[tuple[re.Pattern[str], frozenset[str] | None], ...] = (
+    (re.compile(r"^/api/v1/portal/benefits/census/upload$"), frozenset({"POST"})),        # employer_census_upload → org scope (404)
+    (re.compile(r"^/api/v1/portal/consents$"), frozenset({"POST"})),                       # record_consent(principal.account_id)
+    (re.compile(r"^/api/v1/portal/consents/withdraw$"), frozenset({"POST"})),              # withdraw_consent(principal.account_id)
+    (re.compile(r"^/api/v1/portal/appointments/request$"), frozenset({"POST"})),           # request_appointment(principal) → 403
+    (re.compile(r"^/api/v1/portal/tasks/\d+/complete$"), frozenset({"POST"})),             # complete_client_task(principal) → 403
+    (re.compile(r"^/api/v1/portal/tax/intake/\d+/letter/accept$"), frozenset({"POST"})),   # accept_letter(portal_principal) → 403
+    (re.compile(r"^/api/v1/portal/tax/intake/\d+/organizer$"), frozenset({"PUT"})),        # save_organizer(portal_principal) → 403
+    (re.compile(r"^/api/v1/portal/tax/intake/\d+/questionnaire$"), frozenset({"PUT"})),    # save_questionnaire(portal_principal) → 403
+    (re.compile(r"^/api/v1/portal/tax/intake/\d+/documents/sync$"), frozenset({"POST"})),  # portal_intakes(principal) scope → 403
+    (re.compile(r"^/api/v1/portal/tax/returns/\d+/decision$"), frozenset({"POST"})),       # client_decision(portal_principal) → 403
+)
+
+
 def is_exempt(path: str) -> bool:
     return any(rx.match(path) for rx in _EXEMPT)
 
@@ -62,6 +82,25 @@ def feature_for_request(path: str, method: str) -> str | None:
         if rx.match(path) and (methods is None or method in methods):
             return feature
     return None
+
+
+def _is_self_protected_mutation(path: str, method: str) -> bool:
+    return any(rx.match(path) and (methods is None or method in methods)
+               for rx, methods in _MUTATION_SELF_PROTECTED)
+
+
+def mutation_is_covered(path: str, method: str) -> bool:
+    """Fail-closed portal-mutation coverage (Phase 1F). True only when a portal mutation at
+    ``(path, method)`` is protected by an APPROVED authorization mechanism:
+      * an auth/bootstrap exemption (login / logout / invitation / password-reset), or
+      * a mapped Core feature enforced via ``client_can`` (:data:`_RULES`), or
+      * an explicitly-listed in-service scoped mutation (:data:`_MUTATION_SELF_PROTECTED`).
+    Any other authenticated portal mutation is uncovered and the middleware DENIES it, so authentication
+    with ``current_portal`` can never be sufficient on its own. This is a structural coverage check; the
+    per-client feature/scope decision still happens in ``evaluate``/the delegated service."""
+    return (is_exempt(path)
+            or feature_for_request(path, method) is not None
+            or _is_self_protected_mutation(path, method))
 
 
 def evaluate(principal, path: str, method: str) -> tuple[bool, str, str | None]:
