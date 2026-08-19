@@ -87,6 +87,27 @@ def outbox_dispatcher_enabled() -> bool:
     }
 
 
+def notification_email_retry_enabled() -> bool:
+    """Whether the email retry sweep runs as a scheduler job (TaxDome P0-1).
+
+    Default OFF: enabling it schedules a periodic, EMAIL-ONLY redelivery of notification intents left
+    ``pending`` by a transient provider/network failure. Redelivery reuses the dispatch idempotency
+    (append-only attempt sequence + ``WHERE status='pending'``), so a message is never emailed twice.
+    Off by default so runtime behavior is unchanged until email is configured in production.
+    """
+    return os.getenv("NOTIFICATION_EMAIL_RETRY_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def notification_email_retry_interval_seconds() -> int:
+    """Poll cadence for the email retry sweep; minimum 60s to avoid hammering the SMTP relay."""
+    try:
+        return max(60, int(os.getenv("NOTIFICATION_EMAIL_RETRY_INTERVAL_SECONDS", "300")))
+    except (TypeError, ValueError):
+        return 300
+
+
 def outbox_dispatch_interval_seconds() -> int:
     # Poll cadence for the outbox dispatcher; minimum 5s to avoid a hot loop.
     return max(5, _int_env("OUTBOX_DISPATCH_INTERVAL_SECONDS", 30))

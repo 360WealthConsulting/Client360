@@ -54,11 +54,43 @@ def emit_billing_event(event: str, *, bill_to_type: str, bill_to_id: int, invoic
         pass
     if title is None:
         return
+    account_ids = []
     try:
         from app.portal.service import notify
-        for account_id in _subject_account_ids(bill_to_type, bill_to_id):
+        account_ids = _subject_account_ids(bill_to_type, bill_to_id)
+        for account_id in account_ids:
             notify(account_id, notification_type or "billing", title, body=body,
                    entity_type="invoice", entity_id=invoice_id,
                    idempotency_key=f"billing:{event}:{invoice_id}:{account_id}")
     except Exception:  # noqa: BLE001 — notification delivery is best-effort
+        pass
+    _best_effort_invoice_email(event, invoice_id, account_ids)
+
+
+def _best_effort_invoice_email(event: str, invoice_id: int | None, account_ids: list[int]) -> None:
+    """Out-of-band email alert (P0-1) that a new/updated invoice is available — non-sensitive (invoice
+    number + amount + portal link). Best-effort, gated on a configured transport; the in-app path above is
+    untouched. Reuses the F5.4 ledger + F5.5 delivery-attempt pipeline via app.services.portal_email."""
+    if invoice_id is None or not account_ids:
+        return
+    try:
+        from app.db import metadata
+        from app.services import portal_email
+        from app.services.billing import constants as k
+        if not portal_email.email_configured():
+            return
+        invoices = metadata.tables["invoices"]
+        with engine.connect() as c:
+            inv = c.execute(select(invoices.c.number, invoices.c.total_cents)
+                            .where(invoices.c.id == invoice_id)).mappings().first()
+            emails = list(c.execute(select(portal_accounts.c.email).where(
+                portal_accounts.c.id.in_(tuple(account_ids)),
+                portal_accounts.c.status == "active")).scalars().all())
+        if inv is None:
+            return
+        for email in sorted({e for e in emails if e}):
+            portal_email.send_invoice_email(
+                email=email, invoice_id=invoice_id, invoice_number=inv["number"],
+                amount_label=k.money(inv["total_cents"]), event=event)
+    except Exception:  # noqa: BLE001 — email alert is best-effort and out-of-band
         pass

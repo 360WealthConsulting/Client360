@@ -208,16 +208,23 @@ def dispatch_notification(notification_uid: str | None = None, *, notification_i
     return _run(conn, _do)
 
 
-def dispatch_pending_notifications(*, limit: int = 100, registry=None, conn=None) -> dict:
+def dispatch_pending_notifications(*, limit: int = 100, channel: str | None = None,
+                                   registry=None, conn=None) -> dict:
     """Dispatch a bounded batch of pending intents. Dispatch execution only — no retry
-    scheduling, escalation, or batching beyond a single pass over pending intents."""
+    scheduling, escalation, or batching beyond a single pass over pending intents. ``channel`` restricts
+    the sweep to one channel (e.g. ``'email'``) so a caller can retry ONLY its own channel's pending
+    intents without touching other flows' notifications. Redelivery is idempotent (the append-only
+    ``uq_notif_attempt_seq`` + the ``WHERE status='pending'`` conditional prevent duplicates)."""
     registry = registry or providers.default_registry()
     summary = {DELIVERED: 0, FAILED: 0, PROVIDER_UNAVAILABLE: 0, REJECTED: 0}
 
     def _do(c):
         n = ledger._notifications_table()
+        conds = [n.c.status == DISPATCHABLE_STATUS]
+        if channel is not None:
+            conds.append(n.c.channel == channel)
         ids = [r[0] for r in c.execute(
-            select(n.c.id).where(n.c.status == DISPATCHABLE_STATUS).order_by(n.c.id).limit(limit)
+            select(n.c.id).where(*conds).order_by(n.c.id).limit(limit)
         ).all()]
         for nid in ids:
             res = dispatch_notification(notification_id=nid, registry=registry, conn=c)

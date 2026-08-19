@@ -65,7 +65,7 @@ def _classify(channel: str, raw: dict) -> DeliveryResult:
     """Map an underlying provider's honest dict outcome into a structured result."""
     if bool(raw.get("delivered")):
         return DeliveryResult(outcome=DELIVERED, channel=channel, delivered=True,
-                              provider_ref=raw.get("channel") or channel,
+                              provider_ref=raw.get("ref") or raw.get("channel") or channel,
                               description=f"delivered via {channel}")
     reason = raw.get("reason") or FAILURE_NOT_CONFIGURED
     outcome = DISABLED if reason == FAILURE_NOT_CONFIGURED else FAILED
@@ -147,8 +147,27 @@ def build_default_registry() -> NotificationProviderRegistry:
     """
     from app.portal.providers import NOTIFICATION_PROVIDERS as portal_providers
 
+    # The concrete email transport (SMTP) is enabled ONLY when configured (env). Unconfigured email stays
+    # DISABLED — the fail-closed default hook — so delivery is never falsely reported successful. This is
+    # the single place the email channel is upgraded from disabled hook to a real provider.
+    from app.services.notification_email import (
+        EmailNotificationProvider,
+        build_email_transport,
+        email_delivery_ready,
+    )
+    # Fail-closed: the email channel is enabled ONLY when a transport AND a valid public portal URL are
+    # configured, so no path can send email with a localhost/dev/relative link or when unconfigured.
+    email_ready = email_delivery_ready()
+    email_delegate = (EmailNotificationProvider(build_email_transport())
+                      if email_ready else portal_providers.get("email"))
+
     registry = NotificationProviderRegistry()
     for channel in REQUIRED_CHANNELS:
+        if channel == "email":
+            registry.register(ChannelProvider(
+                identifier="email", channel="email",
+                enabled=email_ready, delegate=email_delegate))
+            continue
         registry.register(ChannelProvider(
             identifier=channel, channel=channel,
             enabled=(channel == "in_app"),

@@ -159,6 +159,23 @@ def run_outbox_dispatch() -> None:
         logger.exception("Outbox dispatch failed.")
 
 
+def run_notification_email_retry_sweep() -> None:
+    """Retry EMAIL notification intents left pending by a transient failure (TaxDome P0-1). Idempotent —
+    reuses the dispatch append-only attempt sequence + pending-only conditional, so no email is sent
+    twice. Scoped to channel='email' so it never touches other flows' notification intents. No-op when
+    email is not deliverable or nothing is pending."""
+    try:
+        from app.services.notification_email import email_delivery_ready
+        if not email_delivery_ready():
+            return
+        from app.services.notification_dispatch import dispatch_pending_notifications
+        result = dispatch_pending_notifications(channel="email", limit=200)
+        if any(result.values()):
+            logger.info("Email retry sweep result: %s", result)
+    except Exception:
+        logger.exception("Email retry sweep failed.")
+
+
 def run_automation_tick() -> None:
     """Drive one Automation runner tick (D.22): sweep due schedules, drain runnable runs. No-op
     when idle. Failure-isolated — a job crash never propagates."""
@@ -312,6 +329,19 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_outbox_dispatch, trigger="interval", seconds=outbox_dispatch_interval_seconds(),
             id="outbox-dispatch", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # (P0-1) Email retry sweep — gated OFF by default. When enabled (and email is configured), it retries
+    # ONLY channel='email' intents left pending by a transient failure; idempotent, single-instance.
+    from app.config import (
+        notification_email_retry_enabled,
+        notification_email_retry_interval_seconds,
+    )
+    if notification_email_retry_enabled():
+        _scheduler.add_job(
+            run_notification_email_retry_sweep, trigger="interval",
+            seconds=notification_email_retry_interval_seconds(),
+            id="notification-email-retry", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     # (D.22) Automation runner tick — gated OFF by default. When enabled, it sweeps due automation

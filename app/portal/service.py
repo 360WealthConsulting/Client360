@@ -25,6 +25,36 @@ def _active_grant():
     today = date.today()
     return and_(portal_access_grants.c.effective_date <= today, or_(portal_access_grants.c.inactive_date.is_(None), portal_access_grants.c.inactive_date >= today))
 
+
+def _best_effort_email(send):
+    """Fire a portal email best-effort (P0-1): a delivery problem must NEVER break the originating
+    invitation/reset/messaging workflow, and the in-app path is untouched. Gated on a configured transport
+    so dev/test without email is a clean no-op; in production a misconfigured transport still records an
+    observable delivery attempt (F5.5) rather than silently succeeding."""
+    try:
+        from app.services import portal_email
+        if not portal_email.email_configured():
+            return
+        send(portal_email)
+    except Exception:  # noqa: BLE001 — email delivery is best-effort and out-of-band
+        pass
+
+
+def _thread_client_emails(thread) -> list[str]:
+    """Active client portal-account email(s) that can see this thread (its person, or a household/person
+    grant). Used only to notify the client that a secure message is waiting — never carries content."""
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(portal_accounts.c.email).select_from(
+                portal_accounts.outerjoin(portal_access_grants,
+                                          portal_access_grants.c.portal_account_id == portal_accounts.c.id))
+            .where(portal_accounts.c.status == "active",
+                   or_(portal_accounts.c.person_id == thread["person_id"],
+                       and_(_active_grant(), or_(portal_access_grants.c.person_id == thread["person_id"],
+                                                 portal_access_grants.c.household_id == thread["household_id"]))))
+        ).scalars().all()
+    return sorted({e for e in rows if e})
+
 def invite_portal_account(*, person_id, household_id, email, display_name, access_type, invited_by_user_id, permissions=None, expires_hours=72, organization_id=None):
     normalized = email.strip().lower(); raw = secrets.token_urlsafe(32)
     # Employer portal accounts (organization_id set) keep the HR-contact person on the grant
@@ -36,6 +66,8 @@ def invite_portal_account(*, person_id, household_id, email, display_name, acces
         connection.execute(portal_access_grants.insert().values(portal_account_id=account_id, household_id=household_id, person_id=grant_person_id, organization_id=organization_id, access_type=access_type, permissions=permissions or {"messages": True, "documents": True, "tasks": True}, granted_by_user_id=invited_by_user_id))
         connection.execute(portal_invitations.insert().values(portal_account_id=account_id, token_hash=_hash(raw), invited_by_user_id=invited_by_user_id, expires_at=datetime.now(timezone.utc)+timedelta(hours=expires_hours)))
     write_audit_event(action="portal.invited", entity_type="portal_account", entity_id=account_id, actor_user_id=invited_by_user_id, request_id=f"portal-invite-{uuid.uuid4()}", metadata={"person_id": person_id, "household_id": household_id, "access_type": access_type})
+    # Best-effort out-of-band delivery of the activation link (token in the link only; never audited/logged).
+    _best_effort_email(lambda pe: pe.send_invitation_email(email=email, display_name=display_name, token=raw, expires_hours=expires_hours))
     return account_id, raw
 
 def accept_invitation(token, auth_subject, mfa_verified):
@@ -53,6 +85,8 @@ def request_password_reset(email, expires_minutes=30):
     with engine.begin() as connection:
         account_id = connection.scalar(select(portal_accounts.c.id).where(portal_accounts.c.normalized_email == email.strip().lower(), portal_accounts.c.status == "active"))
         if account_id: connection.execute(portal_auth_tokens.insert().values(portal_account_id=account_id, token_type="password_reset", token_hash=_hash(raw), expires_at=now+timedelta(minutes=expires_minutes)))
+    if account_id:
+        _best_effort_email(lambda pe: pe.send_password_reset_email(email=email.strip(), token=raw, expires_minutes=expires_minutes))
     return raw if account_id else None
 
 def consume_password_reset(token):
@@ -171,6 +205,11 @@ def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachm
     if not internal_note:
         add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure staff message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     write_audit_event(action="portal.internal_note.created" if internal_note else "portal.message.sent", entity_type="portal_message", entity_id=message_id, actor_user_id=user_id, request_id=f"portal-staff-message-{uuid.uuid4()}", metadata={"thread_id": thread_id, "visibility": "internal" if internal_note else "client"})
+    # Out-of-band alert only: tell the client a secure message is waiting and link them into the portal.
+    # NEVER for internal notes, and the email carries no conversation body/attachment content.
+    if not internal_note:
+        for _email in _thread_client_emails(thread):
+            _best_effort_email(lambda pe, e=_email: pe.send_secure_message_email(email=e, message_id=message_id))
     return message_id
 
 def list_messages(principal, thread_id):
