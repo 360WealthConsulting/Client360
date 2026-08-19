@@ -393,6 +393,7 @@ def generate_due_invoices(principal, bill_to_type, bill_to_id, *, as_of=None, re
     _require_scope(principal, bill_to_type, bill_to_id, write=True)
     as_of = as_of or _today()
     created = []
+    advanced_schedule_ids = []       # schedules whose next_run_on/last_period_key were advanced this run
     with engine.connect() as c:
         sched_rows = c.execute(
             select(billing_schedules, service_agreements.c.title, service_agreements.c.service_line_id).select_from(
@@ -416,9 +417,13 @@ def generate_due_invoices(principal, bill_to_type, bill_to_id, *, as_of=None, re
                 last_period_key=period_key, next_run_on=_advance(s["next_run_on"], s["frequency"]),
                 updated_at=_now()))
         created.append(invoice_id)
+        advanced_schedule_ids.append(s["id"])
+    # Audit names the advanced schedule(s) too: advancing a schedule's next_run_on/last_period_key is a
+    # billing-configuration state change, and the per-invoice creates alone don't record which schedules
+    # were consumed. schedule_ids makes that transition attributable without a separate event/schema change.
     _audit("billing.invoices.generated", "billing_subject", bill_to_id, actor_user_id=principal.user_id,
            request_id=request_id, metadata={"bill_to_type": bill_to_type, "count": len(created),
-                                            "invoice_ids": created})
+                                            "invoice_ids": created, "schedule_ids": advanced_schedule_ids})
     return created
 
 
