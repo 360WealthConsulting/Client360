@@ -1437,23 +1437,36 @@ def _driveitem_to_record(drive_id, it):
 
 
 def _connector_session(mod):
-    """Build an authenticated Graph session EXACTLY as the connector's own run() does — no generic auth
-    abstraction, just the three functions this deployment's connector already exposes:
+    """Build an authenticated Graph session using the connector's existing auth path.
 
-        account = latest_account()
-        token   = get_microsoft_access_token(account)
-        session = graph_session(token)
+    The production SharePoint connector acquires its delegated Graph token through
+    ``_load_connected_account`` + ``_acquire_token`` and sends requests with
+    ``_auth_header``. Reuse that exact path while exposing a requests.Session-like
+    object for the delta downloader.
+    """
+    load_account = getattr(mod, "_load_connected_account", None)
+    acquire_token = getattr(mod, "_acquire_token", None)
+    auth_header = getattr(mod, "_auth_header", None)
+    requests_mod = getattr(mod, "requests", None)
 
-    Returns the authenticated ``requests.Session`` (what ``iter_drive_items(session, drive_id)`` needs),
-    or None if the connector does not expose this exact auth path."""
-    latest = getattr(mod, "latest_account", None)
-    get_token = getattr(mod, "get_microsoft_access_token", None)
-    make_session = getattr(mod, "graph_session", None)
-    if not (callable(latest) and callable(get_token) and callable(make_session)):
-        return None
-    account = latest()
-    token = get_token(account)
-    return make_session(token)
+    if not (
+        callable(load_account)
+        and callable(acquire_token)
+        and callable(auth_header)
+        and requests_mod is not None
+        and callable(getattr(requests_mod, "Session", None))
+    ):
+        raise RuntimeError(
+            "SharePoint connector does not expose the expected authenticated "
+            "Graph request path."
+        )
+
+    account = load_account()
+    token = acquire_token(account)
+
+    session = requests_mod.Session()
+    session.headers.update(auth_header(token))
+    return session
 
 
 def _enumerate_metadata(mod, fn, drive_id, *, top, limit, timeout, diag, progress):

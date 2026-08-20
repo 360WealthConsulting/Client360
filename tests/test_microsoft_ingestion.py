@@ -2004,3 +2004,40 @@ def test_delta_download_long_name_uses_bounded_local_filename(tmp_path):
     assert path.read_bytes() == b"abc"
     assert path.suffix == ".pdf"
     assert len(str(path) + ".part") <= _DELTA_MAX_TEMP_PATH
+
+
+def test_connector_session_uses_connector_existing_auth_path():
+    from app.services.microsoft_ingestion import _connector_session
+
+    class FakeSession:
+        def __init__(self):
+            self.headers = {}
+
+    class FakeRequests:
+        Session = FakeSession
+
+    class FakeConnector:
+        requests = FakeRequests
+
+        @staticmethod
+        def _load_connected_account():
+            return {"id": 123}
+
+        @staticmethod
+        def _acquire_token(account):
+            assert account == {"id": 123}
+            return "TEST-TOKEN"
+
+        @staticmethod
+        def _auth_header(token):
+            assert token == "TEST-TOKEN"
+            return {
+                "Authorization": "Bearer TEST-TOKEN",
+                "Accept": "application/json",
+            }
+
+    session = _connector_session(FakeConnector)
+
+    assert isinstance(session, FakeSession)
+    assert session.headers["Authorization"] == "Bearer TEST-TOKEN"
+    assert session.headers["Accept"] == "application/json"
