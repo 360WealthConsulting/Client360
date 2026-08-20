@@ -264,6 +264,22 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
         summary["ignored"] += 1
         return
     uri = _item_uri(item)
+    # H2 — stable SharePoint identity: a Graph item's item_id (source_external_id) is stable, but its
+    # webUrl/URI can drift in FORMAT for the same item. Prefer the existing reference identified by
+    # (source_system, source_external_id); when one exists, adopt its stored source_uri as THIS item's
+    # reference identity so a drifted webUrl reuses/updates that single row instead of inserting a
+    # duplicate source-reference row. Falls back to the item's own uri when no such reference exists.
+    # Canonical-document dedupe (by content hash) is unchanged.
+    item_id = item.get("item_id")
+    if item_id:
+        with db.engine.connect() as conn:
+            prior_uri = conn.execute(
+                select(db.document_sources.c.source_uri)
+                .where(db.document_sources.c.source_system == SOURCE_SYSTEM,
+                       db.document_sources.c.source_external_id == str(item_id))
+                .order_by(db.document_sources.c.id).limit(1)).scalar()
+        if prior_uri:
+            uri = prior_uri
     seen_uris.add(uri)
 
     # Deleted SharePoint item: drop only the SharePoint source reference (canonical + local copy stay).

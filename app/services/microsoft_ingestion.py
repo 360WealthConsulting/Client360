@@ -1097,21 +1097,35 @@ def _bounded_delta_filename(dest_dir, item_id, name):
 
     return prefix + stem + suffix
 
-def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_waits=6, sleep=None):
+def _transient_backoff_seconds(attempt, *, base=1, cap=30):
+    """Exponential backoff (seconds) for a transient download retry, capped. ``attempt`` is 1-based."""
+    return min(cap, base * (2 ** (max(1, attempt) - 1)))
+
+
+def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_waits=6,
+                         max_transient_retries=5, sleep=None):
     """Download ONE changed driveItem's content to a staged file (same-dir temp -> atomic replace).
 
     Robust against the bulk-download failure seen in the baseline:
-      * RESUME: an already-downloaded staged file (right size) is reused — the 1,597 are never re-fetched.
+      * RESUME: an already-downloaded staged file is reused ONLY when Graph declares a size AND the on-disk
+        size matches it exactly. When the size is unknown we never blindly trust an existing staged file.
       * Always uses the AUTHENTICATED /drives/{id}/items/{id}/content endpoint (a fresh 302 redirect per
         request) — NEVER the pre-authorized @microsoft.graph.downloadUrl captured at enumeration, which
         expires ~1h later and caused every later download to fail at once.
       * Token expiry is handled by the injected _ManagedGraphSession (re-auth on 401).
       * 429 throttling honors Retry-After (bounded) instead of blindly hammering.
+      * TRANSIENT failures (HTTP 5xx, connection/read errors, an interrupted stream, or a short/truncated
+        response) are retried with bounded exponential backoff; when the budget is exhausted they raise a
+        NON-permanent _GraphDownloadError so the caller HOLDS the checkpoint (the change is re-delivered).
       * 404/410 => a PERMANENT _GraphDownloadError (genuinely unavailable -> manual review, not a hold).
+      * A short/truncated response is NEVER promoted to the final staged file (byte count verified against
+        the Graph-declared size before the atomic replace).
     Returns the staged local path. Never logs tokens/secrets."""
     import os
     import time
     from pathlib import Path
+
+    import requests
 
     from app.importers.taxdome_drive import sanitize_relative_path
     sleep = sleep or time.sleep
@@ -1121,13 +1135,33 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / _bounded_delta_filename(dest_dir, item_id, name)
     declared = it.get("size")
-    if dest.exists() and (declared is None or dest.stat().st_size == int(declared)):
-        return str(dest)                                  # RESUME: reuse the already-staged file
+    # RESUME (M2): only reuse a staged file when the size is KNOWN and matches exactly. An unknown declared
+    # size means we cannot verify the staged bytes, so we re-download rather than trust a possibly
+    # partial/stale file.
+    if declared is not None and dest.exists() and dest.stat().st_size == int(declared):
+        return str(dest)
     url = f"{GRAPH_BASE_URL}/drives/{drive_id}/items/{item_id}/content"   # fresh, authenticated, never stale
     tmp = dest.with_suffix(dest.suffix + ".part")
-    waits = 0
+
+    def _discard_partial():
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+    throttle_waits = 0                                     # 429 Retry-After budget (unchanged behavior)
+    transient_tries = 0                                    # 5xx / connection / read / short-read budget
     while True:
-        resp = session.get(url, stream=True, timeout=120, allow_redirects=True)
+        try:
+            resp = session.get(url, stream=True, timeout=120, allow_redirects=True)
+        except requests.RequestException as exc:          # connection/read failure -> transient (retry/HOLD)
+            transient_tries += 1
+            if transient_tries > max_transient_retries:
+                raise _GraphDownloadError(f"connection error after {transient_tries} attempt(s): {exc}",
+                                          status=None, graph_code="connectionError") from exc
+            sleep(_transient_backoff_seconds(transient_tries))
+            continue
         status = getattr(resp, "status_code", 0)
         if status == 429:                                 # throttled -> honor Retry-After (bounded)
             retry_after = _retry_after_seconds(resp)
@@ -1135,9 +1169,9 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
                 resp.close()
             except Exception:  # noqa: BLE001
                 pass
-            waits += 1
-            if waits > max_throttle_waits:
-                raise _GraphDownloadError(f"throttled: {waits} Retry-After waits exhausted",
+            throttle_waits += 1
+            if throttle_waits > max_throttle_waits:
+                raise _GraphDownloadError(f"throttled: {throttle_waits} Retry-After waits exhausted",
                                           status=429, graph_code="tooManyRequests")
             sleep(retry_after)
             continue
@@ -1149,7 +1183,20 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
                 pass
             raise _GraphDownloadError(f"item unavailable: HTTP {status} {code} {msg}",
                                       status=status, graph_code=code, permanent=True)
-        if status >= 400:                                 # other error -> transient/systematic (hold)
+        if status >= 500:                                 # transient server error -> bounded retry, else HOLD
+            code, msg = _graph_error(resp)
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+            transient_tries += 1
+            if transient_tries > max_transient_retries:
+                raise _GraphDownloadError(
+                    f"server error HTTP {status} after {transient_tries} attempt(s): {code} {msg}",
+                    status=status, graph_code=code)       # NON-permanent -> checkpoint held
+            sleep(_transient_backoff_seconds(transient_tries))
+            continue
+        if status >= 400:                                 # other 4xx (e.g. 403) -> systematic, NON-permanent
             code, msg = _graph_error(resp)
             try:
                 resp.close()
@@ -1157,12 +1204,34 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
                 pass
             raise _GraphDownloadError(f"download failed: HTTP {status} {code} {msg}",
                                       status=status, graph_code=code)
-        with resp:
-            with open(tmp, "wb") as fh:
-                for chunk in resp.iter_content(chunk_size=1 << 20):
-                    if chunk:
-                        fh.write(chunk)
-        os.replace(str(tmp), str(dest))                   # same directory -> same volume
+        # 2xx: stream to a temp file; a mid-stream failure is transient (bounded retry, else HOLD).
+        written = 0
+        try:
+            with resp:
+                with open(tmp, "wb") as fh:
+                    for chunk in resp.iter_content(chunk_size=1 << 20):
+                        if chunk:
+                            fh.write(chunk)
+                            written += len(chunk)
+        except requests.RequestException as exc:          # interrupted stream -> transient
+            _discard_partial()
+            transient_tries += 1
+            if transient_tries > max_transient_retries:
+                raise _GraphDownloadError(f"stream interrupted after {transient_tries} attempt(s): {exc}",
+                                          status=None, graph_code="streamInterrupted") from exc
+            sleep(_transient_backoff_seconds(transient_tries))
+            continue
+        # Integrity: a short/truncated response must NEVER become the final staged file.
+        if declared is not None and written != int(declared):
+            _discard_partial()
+            transient_tries += 1
+            if transient_tries > max_transient_retries:
+                raise _GraphDownloadError(
+                    f"incomplete download: got {written} of {int(declared)} bytes after "
+                    f"{transient_tries} attempt(s)", status=None, graph_code="incompleteDownload")
+            sleep(_transient_backoff_seconds(transient_tries))
+            continue
+        os.replace(str(tmp), str(dest))                   # same directory -> same volume (atomic)
         return str(dest)
 
 
@@ -1359,10 +1428,21 @@ def run_sharepoint_delta_sync(drive_ids=None, *, session=None, fetch=None, downl
                 _rep.on_ocr(ev.get("status"))            # progress: OCR completed/failed/unsupported/timed_out
                 if progress:
                     progress(ev)
-            counts = _ocr_documents(summary.get("affected_document_ids", []), progress=_ocr_prog)
-            out["ocr_analyzed"] += counts["ocr_analyzed"]
-            out["ocr_failed"] += counts["ocr_failed"]
-            out["ocr_timed_out"] += counts["ocr_timed_out"]
+            # OCR runs on ALREADY-canonical documents, so per the function contract it must never abort the
+            # run or hold the checkpoint. Any unexpected OCR-phase error is captured as an exception and the
+            # drive still reaches its normal checkpoint decision below (which depends ONLY on download/import
+            # outcomes). Download/import failures are handled separately above and DO still hold.
+            try:
+                counts = _ocr_documents(summary.get("affected_document_ids", []), progress=_ocr_prog)
+                out["ocr_analyzed"] += counts["ocr_analyzed"]
+                out["ocr_failed"] += counts["ocr_failed"]
+                out["ocr_timed_out"] += counts["ocr_timed_out"]
+            except Exception as exc:  # noqa: BLE001 — OCR is post-canonical: isolate, never block the checkpoint
+                log.warning("delta OCR phase failed (non-blocking): drive=%s exception=%s: %s",
+                            did, type(exc).__name__, str(exc)[:300])
+                out["exceptions"].append({"drive_id": did, "phase": "ocr",
+                                          "exception_type": type(exc).__name__, "error": str(exc)[:500]})
+                out["status"] = "completed_with_errors"
         # Advance the checkpoint ONLY on a clean traversal + full download+import of every changed item.
         if dl_failures == 0 and import_item_failures == 0 and res["delta_link"]:
             save_canonical_delta_link(did, res["delta_link"])

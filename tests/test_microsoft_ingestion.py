@@ -82,6 +82,47 @@ def test_first_seen_ingested_once(tmp_path):
     assert r["canonical_created"] == 1 and _canonical_count(uri) == 1
 
 
+def test_webUrl_drift_for_same_item_reuses_source_ref_no_duplicate(tmp_path):
+    # H2: the same Graph item (source_external_id) arriving with a drifted webUrl must reuse/update the one
+    # existing source reference, not insert a duplicate document_sources row. Canonical dedupe is unchanged.
+    import hashlib
+
+    from app.services.document_sources import resolve_or_create_canonical
+    content = b"a stable statement body for the webUrl-drift test"
+    sha = hashlib.sha256(content).hexdigest()
+    item_id = "GRAPHITEM_" + uuid.uuid4().hex[:8]
+    uri_old = f"https://contoso.sharepoint.com/OLD/{item_id}"
+    uri_new = f"https://CONTOSO.sharepoint.com/NEW/{item_id}"          # same item, drifted webUrl
+
+    seed = resolve_or_create_canonical(
+        sha256=sha, original_name="stmt.pdf", stored_name=f"sp:{item_id}",
+        storage_provider="Client360 Local", storage_uri="", storage_path="",
+        size_bytes=len(content), source_system="SharePoint", source_uri=uri_old,
+        source_external_id=item_id)
+    doc_id = seed["document_id"]
+    _SEEN_DOCS.add(doc_id)
+
+    staged = tmp_path / "drift.pdf"
+    staged.write_bytes(content)
+    item = {"name": "stmt.pdf", "web_url": uri_new, "item_id": item_id, "site": "Site1",
+            "library": "Docs", "modified_at": "2024-02-02T00:00:00",
+            "local_path": str(staged), "size": len(content)}
+    summary = sharepoint.import_sharepoint_items([item], destination_root=str(tmp_path / "canon"),
+                                                 authoritative=False)
+    _track()
+
+    with engine.connect() as c:
+        refs = c.execute(select(document_sources.c.id)
+                         .where(document_sources.c.source_system == "SharePoint",
+                                document_sources.c.source_external_id == item_id)).all()
+        docs = c.execute(select(func.count()).select_from(documents)
+                         .where(documents.c.sha256 == sha)).scalar()
+    assert len(refs) == 1                                             # ONE ref for the Graph item (no dup)
+    assert _canonical_count(uri_new) == 0                            # no new row keyed on the drifted webUrl
+    assert summary["reused_canonical"] == 1 and summary["canonical_created"] == 0   # dedupe unchanged
+    assert docs == 1                                                 # single canonical document
+
+
 def test_unchanged_skipped_on_next_run(tmp_path):
     uri = f"https://sp/{_A}/a2"
     item = _item(tmp_path, name="a.txt", uri=uri)
@@ -1792,11 +1833,99 @@ def test_delta_download_404_is_permanent(tmp_path):
     assert ei.value.permanent is True and ei.value.status == 404 and ei.value.graph_code == "itemNotFound"
 
 
-def test_delta_download_5xx_is_transient(tmp_path):
-    sess = _FakeSession([_FakeResp(503, json_body={"error": {"code": "serviceNotAvailable", "message": "x"}})])
+def test_delta_download_5xx_retries_then_exhausts_nonpermanent(tmp_path):
+    # A persistent 5xx is retried up to the bounded budget, then raises NON-permanent so the caller HOLDS
+    # the checkpoint (never permanent/manual-review).
+    slept = []
+    err = {"error": {"code": "serviceNotAvailable", "message": "x"}}
+    sess = _FakeSession([_FakeResp(503, json_body=err) for _ in range(3)])
     with pytest.raises(mi._GraphDownloadError) as ei:
-        mi._download_delta_item(sess, "DRV", {"id": "S1", "name": "s.pdf"}, str(tmp_path))
+        mi._download_delta_item(sess, "DRV", {"id": "S1", "name": "s.pdf"}, str(tmp_path),
+                                max_transient_retries=2, sleep=slept.append)
     assert ei.value.permanent is False and ei.value.status == 503
+    assert len(sess.calls) == 3 and len(slept) == 2                 # retried twice, then gave up (held)
+
+
+def test_delta_download_503_then_200_succeeds(tmp_path):
+    from pathlib import Path
+    slept = []
+    body = b"recovered after a 503"
+    sess = _FakeSession([_FakeResp(503, json_body={"error": {"code": "x", "message": "y"}}),
+                         _FakeResp(200, body)])
+    p = mi._download_delta_item(sess, "DRV", {"id": "R5", "name": "r.pdf", "size": len(body)},
+                                str(tmp_path), sleep=slept.append)
+    assert Path(p).read_bytes() == body and len(sess.calls) == 2 and len(slept) == 1
+
+
+def test_delta_download_connection_error_then_success(tmp_path):
+    from pathlib import Path
+
+    import requests
+    body = b"after reconnect"
+    state = {"n": 0}
+
+    def responder(url, kw):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise requests.ConnectionError("connection reset by peer")   # transient network failure
+        return _FakeResp(200, body)
+    slept = []
+    p = mi._download_delta_item(_FakeSession(responder), "DRV",
+                                {"id": "C1", "name": "c.pdf", "size": len(body)}, str(tmp_path),
+                                sleep=slept.append)
+    assert Path(p).read_bytes() == body and state["n"] == 2 and len(slept) == 1   # retried once, then ok
+
+
+def test_delta_download_truncated_response_not_promoted(tmp_path):
+    from pathlib import Path
+    # A 200 whose body is SHORTER than the Graph-declared size must never become the final staged file.
+    sess = _FakeSession([_FakeResp(200, b"short"), _FakeResp(200, b"short")])   # 5 bytes, declares 100
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(sess, "DRV", {"id": "TR", "name": "t.pdf", "size": 100}, str(tmp_path),
+                                max_transient_retries=1, sleep=lambda *_a: None)
+    assert ei.value.permanent is False and ei.value.graph_code == "incompleteDownload"   # held, not manual
+    dest = Path(tmp_path) / "_delta" / "TR__t.pdf"
+    assert not dest.exists()                                              # nothing promoted
+    assert not dest.with_suffix(".pdf.part").exists()                    # and no partial left behind
+
+
+def test_delta_download_410_is_permanent(tmp_path):
+    sess = _FakeSession([_FakeResp(410, json_body={"error": {"code": "itemNotFound", "message": "gone"}})])
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(sess, "DRV", {"id": "G2", "name": "g.pdf"}, str(tmp_path))
+    assert ei.value.permanent is True and ei.value.status == 410       # gone -> manual review, not retried
+
+
+def test_delta_download_matching_staged_size_is_reused(tmp_path):
+    from pathlib import Path
+    dest_dir = Path(tmp_path) / "_delta"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "M1__m.pdf").write_bytes(b"12345")                        # 5 bytes on disk
+    sess = _FakeSession([])                                               # must NOT be called
+    p = mi._download_delta_item(sess, "DRV", {"id": "M1", "name": "m.pdf", "size": 5}, str(tmp_path))
+    assert Path(p).read_bytes() == b"12345" and sess.calls == []          # declared size matches -> reused
+
+
+def test_delta_download_wrong_staged_size_redownloads(tmp_path):
+    from pathlib import Path
+    dest_dir = Path(tmp_path) / "_delta"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "W1__w.pdf").write_bytes(b"OLD")                          # 3 bytes — WRONG vs declared
+    body = b"the correct new bytes"
+    sess = _FakeSession([_FakeResp(200, body)])
+    p = mi._download_delta_item(sess, "DRV", {"id": "W1", "name": "w.pdf", "size": len(body)}, str(tmp_path))
+    assert Path(p).read_bytes() == body and len(sess.calls) == 1          # stale size -> re-downloaded
+
+
+def test_delta_download_missing_declared_size_does_not_blindly_reuse(tmp_path):
+    from pathlib import Path
+    dest_dir = Path(tmp_path) / "_delta"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "N1__n.pdf").write_bytes(b"stale staged content")
+    body = b"freshly downloaded"
+    sess = _FakeSession([_FakeResp(200, body)])
+    p = mi._download_delta_item(sess, "DRV", {"id": "N1", "name": "n.pdf"}, str(tmp_path))   # NO size
+    assert Path(p).read_bytes() == body and len(sess.calls) == 1          # unknown size -> not blindly reused
 
 
 def test_managed_graph_session_reauths_on_401():
@@ -1885,7 +2014,8 @@ def test_delta_sync_resume_reuses_staged_and_recovers(tmp_path, _clean_drive):
     sess = Sess()
 
     def dl(drive_id, it):
-        return mi._download_delta_item(sess, drive_id, it, staging)
+        # inject a no-op sleep so the bounded transient-retry backoff does not slow the test
+        return mi._download_delta_item(sess, drive_id, it, staging, sleep=lambda *_a: None)
     r1 = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
                                       destination_root=str(tmp_path / "c"), ocr=False, report=lambda ln: None)
     _track()
@@ -1902,6 +2032,48 @@ def test_delta_sync_resume_reuses_staged_and_recovers(tmp_path, _clean_drive):
     assert [u for u in sess.hits[n1:] if "/items/a/" in u] == []                # 'a' reused (not re-fetched)
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/a") == 1                # no duplicates on resume
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/b") == 1
+
+
+def test_delta_sync_ocr_exception_is_isolated_and_does_not_block_checkpoint(tmp_path, monkeypatch):
+    # C1: an unexpected OCR-phase exception must NOT hold the checkpoint or abort the run — the drive whose
+    # download+import were clean still advances, the next drive is still processed, and the OCR error is
+    # surfaced (not hidden).
+    from app.db import metadata as _md
+    drv_t = _md.tables["microsoft_drives"]
+    drive_a = "b!OCRisoA" + uuid.uuid4().hex[:8]
+    drive_b = "b!OCRisoB" + uuid.uuid4().hex[:8]
+
+    def _cleanup():
+        with engine.begin() as c:
+            c.execute(drv_t.delete().where(drv_t.c.microsoft_drive_id.in_([drive_a, drive_b])))
+
+    _cleanup()
+    try:
+        pages = {
+            f"{_B}/drives/{drive_a}/root/delta": {"value": [_changed("a1", drive_a)],
+                                                  "@odata.deltaLink": f"{_B}/delta?token=A1"},
+            f"{_B}/drives/{drive_b}/root/delta": {"value": [_changed("b1", drive_b)],
+                                                  "@odata.deltaLink": f"{_B}/delta?token=B1"}}
+
+        def _boom(document_ids, *, progress=None):
+            raise RuntimeError("OCR subsystem exploded")
+        monkeypatch.setattr(mi, "_ocr_documents", _boom)
+
+        res = mi.run_sharepoint_delta_sync(drive_ids=[drive_a, drive_b], fetch=lambda u, t: pages[u],
+                                           download=_dl_stub(tmp_path),
+                                           destination_root=str(tmp_path / "canon"), ocr=True,
+                                           report=lambda ln: None)
+        _track()
+        # OCR blew up for BOTH drives, but neither drive's checkpoint was held by it:
+        assert res["checkpoints_advanced"] == 2
+        assert mi.load_canonical_delta_link(drive_a) == f"{_B}/delta?token=A1"     # 1st drive advanced
+        assert mi.load_canonical_delta_link(drive_b) == f"{_B}/delta?token=B1"     # 2nd drive still processed
+        # the failures are surfaced (not hidden) and the documents still imported:
+        ocr_exc = [e for e in res["exceptions"] if e.get("phase") == "ocr"]
+        assert len(ocr_exc) == 2 and res["status"] == "completed_with_errors"
+        assert res["imported"] == 2
+    finally:
+        _cleanup()
 
 
 # --- Graph 'root:/...' path normalization (import-blocking bug) + security guard stays intact -----------
