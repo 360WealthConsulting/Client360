@@ -1947,3 +1947,60 @@ def test_path_guard_still_rejects_traversal_behind_and_without_prefix():
     for folder in ("../../secret", "C:/Windows/System32", "a/../../b"):
         with _pytest.raises(ValueError):
             sanitize_relative_path(_rel_path({"site": "S", "library": "D", "folder_path": folder}, "x.pdf"))
+
+
+def test_bounded_filename_keeps_delta_temp_path_under_limit(tmp_path):
+    from app.services.microsoft_ingestion import (
+        _DELTA_MAX_TEMP_PATH,
+        _bounded_delta_filename,
+    )
+
+    dest_dir = tmp_path / "_delta"
+    name = ("very-long-sharepoint-document-name-" * 20) + ".pdf"
+
+    result = _bounded_delta_filename(dest_dir, "item-123", name)
+
+    assert result.startswith("item-123__")
+    assert result.endswith(".pdf")
+    assert len(str(dest_dir / (result + ".part"))) <= _DELTA_MAX_TEMP_PATH
+
+
+def test_delta_download_long_name_uses_bounded_local_filename(tmp_path):
+    from pathlib import Path
+
+    from app.services.microsoft_ingestion import (
+        _DELTA_MAX_TEMP_PATH,
+        _download_delta_item,
+    )
+
+    class Response:
+        status_code = 200
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def iter_content(self, chunk_size):
+            yield b"abc"
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return Response()
+
+    item = {
+        "id": "item-456",
+        "name": ("extremely-long-sharepoint-file-name-" * 20) + ".pdf",
+        "size": 3,
+    }
+
+    path = Path(
+        _download_delta_item(Session(), "drive-1", item, tmp_path)
+    )
+
+    assert path.exists()
+    assert path.read_bytes() == b"abc"
+    assert path.suffix == ".pdf"
+    assert len(str(path) + ".part") <= _DELTA_MAX_TEMP_PATH

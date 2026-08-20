@@ -1067,6 +1067,36 @@ def _delta_deletion_record(drive_id, it):
             "site": pr.get("siteId"), "library": pr.get("driveId") or drive_id, "deleted": True}
 
 
+_DELTA_MAX_TEMP_PATH = 240
+
+
+def _bounded_delta_filename(dest_dir, item_id, name):
+    """Return a deterministic staged filename whose .part path stays bounded on Windows.
+
+    The SharePoint/original filename remains unchanged in item metadata; this only
+    bounds the local temporary/staging filename used by the delta downloader.
+    """
+    from pathlib import Path
+
+    dest_dir = Path(dest_dir)
+    item_id = str(item_id)
+    name = str(name)
+    prefix = f"{item_id}__"
+
+    candidate = prefix + name
+    temp_path = dest_dir / (candidate + ".part")
+    if len(str(temp_path)) <= _DELTA_MAX_TEMP_PATH:
+        return candidate
+
+    suffix = Path(name).suffix
+    stem = name[:-len(suffix)] if suffix else name
+
+    fixed_len = len(str(dest_dir / (prefix + suffix + ".part")))
+    available = max(1, _DELTA_MAX_TEMP_PATH - fixed_len)
+    stem = stem[:available]
+
+    return prefix + stem + suffix
+
 def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_waits=6, sleep=None):
     """Download ONE changed driveItem's content to a staged file (same-dir temp -> atomic replace).
 
@@ -1089,7 +1119,7 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
     name = sanitize_relative_path(it.get("name") or item_id).name
     dest_dir = Path(staging_dir) / "_delta"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{item_id}__{name}"
+    dest = dest_dir / _bounded_delta_filename(dest_dir, item_id, name)
     declared = it.get("size")
     if dest.exists() and (declared is None or dest.stat().st_size == int(declared)):
         return str(dest)                                  # RESUME: reuse the already-staged file
