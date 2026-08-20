@@ -31,7 +31,7 @@ import os
 from collections import namedtuple
 from datetime import UTC, date, datetime
 from functools import cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, and_, create_engine, select
@@ -136,6 +136,50 @@ def _rel_path(item: dict, filename: str) -> str:
     return "/".join(p for p in parts if p)
 
 
+# --- local canonical-path length bounding (Windows MAX_PATH) ------------------
+# A SharePoint canonical file lands at <destination>/<site>/<library>/<folder…>/<filename>. On Windows the
+# composite siteId, the b!… driveId, and a deep client-folder hierarchy routinely push that absolute path
+# (and the ".sync-*.part" temp _copy_verified writes beside it) past the legacy MAX_PATH (260), producing
+# [WinError 3]. These bound ONLY the local filesystem representation; the original SharePoint identifiers
+# are preserved on the source reference (source_path + metadata), tags, and documents.original_name.
+_CANONICAL_MAX_PATH = 240          # conservative: ≥20 chars under 260, and under the ~248 dir-create limit
+_CANONICAL_TEMP_RESERVE = 24       # headroom for _copy_verified's ".sync-XXXXXXXX.part" (~19) temp sibling
+_BOUNDED_DIR = "_bounded"          # fixed short bucket for bounded paths (kept outside the SP hierarchy)
+
+
+def _bounded_canonical_relpath(destination, safe_rel, *, max_path=_CANONICAL_MAX_PATH):
+    """Bound ONLY the LOCAL canonical path (and its ``.sync-*.part`` temp sibling) under a conservative
+    Windows MAX_PATH ceiling. Returns a destination-relative :class:`PurePosixPath`.
+
+    The original SharePoint filename/folder/site/library/webUrl are preserved elsewhere (the source
+    reference's ``source_path`` + ``metadata``, ``tags``, and ``documents.original_name``); this changes
+    only where the bytes physically land. If the natural path (and its temp sibling) already fit, it is
+    returned UNCHANGED so short paths keep their human hierarchy. Otherwise it becomes a deterministic,
+    collision-resistant ``_bounded/<sha16>__<truncated-stem><ext>`` derived from the FULL original relative
+    path — the same original always maps to the same local path, two different originals never collide, and
+    the file extension is preserved. Canonical dedupe (content sha256) is unaffected.
+    """
+    import hashlib
+
+    destination = Path(destination)
+    natural = destination / Path(*safe_rel.parts)
+    temp_len = len(str(natural.parent)) + 1 + _CANONICAL_TEMP_RESERVE      # ".sync-*.part" sits in the parent
+    if len(str(natural)) <= max_path and temp_len <= max_path:
+        return PurePosixPath(*safe_rel.parts)              # already safe -> unchanged
+
+    digest = hashlib.sha256(safe_rel.as_posix().encode("utf-8")).hexdigest()[:32]   # 128-bit identifier
+    stem, ext = os.path.splitext(safe_rel.parts[-1])
+    prefix = destination / _BOUNDED_DIR
+    prefix_len = len(str(prefix))
+    fixed = prefix_len + 1 + len(digest) + len("__") + len(ext)           # full path minus the stem
+    avail = max_path - fixed
+    if avail < 1 or (prefix_len + 1 + _CANONICAL_TEMP_RESERVE) > max_path:
+        raise ValueError(
+            f"canonical destination root too long to bound a SharePoint path under max_path={max_path}: "
+            f"{destination!r}. Configure a shorter CLIENT360_SHAREPOINT_DOCUMENT_ROOT.")
+    return PurePosixPath(_BOUNDED_DIR, f"{digest}__{stem[:avail]}{ext}")
+
+
 # --- import ------------------------------------------------------------------
 
 def _new_summary(dry_run: bool) -> dict:
@@ -192,10 +236,11 @@ def backfill_local_source(document_id, staged_path, *, destination_root=None) ->
         if row["sha256"] and _content_sha256(staged) != row["sha256"]:
             return False                                   # safety: staged file must be this document
         safe_rel = sanitize_relative_path(row["original_name"] or staged.name)
-        dest_abs = destination / Path(*safe_rel.parts)
+        local_rel = _bounded_canonical_relpath(destination, safe_rel)     # bound only the on-disk path
+        dest_abs = destination / Path(*local_rel.parts)
         _copy_verified(staged, dest_abs)
         conn.execute(db.documents.update().where(db.documents.c.id == document_id)
-                     .values(storage_uri=str(dest_abs), storage_path=str(safe_rel)))
+                     .values(storage_uri=str(dest_abs), storage_path=str(local_rel)))
     return True
 
 
@@ -322,6 +367,9 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
     sha = _content_sha256(staged)
     size = staged.stat().st_size
     safe_rel = sanitize_relative_path(_rel_path(item, filename))
+    # Bound ONLY the local on-disk path (Windows MAX_PATH); safe_rel stays the human SharePoint path for
+    # category inference and the source reference's source_path/provenance.
+    local_rel = _bounded_canonical_relpath(destination, safe_rel)
 
     with db.engine.begin() as conn:
         # Never duplicate: a content hash already in the corpus is reused (no second local copy).
@@ -330,9 +378,9 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
                                             db.documents.c.status != "deleted")
             .order_by(db.documents.c.id).limit(1)).scalar()
         if existing_doc is None:
-            dest_abs = (destination / Path(*safe_rel.parts))
+            dest_abs = (destination / Path(*local_rel.parts))
             _copy_verified(staged, dest_abs)               # canonical local copy + verify
-            storage_uri, storage_path = str(dest_abs), str(safe_rel)
+            storage_uri, storage_path = str(dest_abs), str(local_rel)
             summary["bytes_copied"] += size
         else:
             storage_uri, storage_path = "", ""             # reuse ignores storage_* (keeps existing copy)
@@ -342,10 +390,10 @@ def _import_one(db, destination, item, dry_run, seen_uris, summary, resolve_or_c
             ex = conn.execute(select(db.documents.c.storage_uri, db.documents.c.storage_path)
                               .where(db.documents.c.id == existing_doc)).mappings().first()
             if not _has_resolvable_file(ex):
-                dest_abs = (destination / Path(*safe_rel.parts))
+                dest_abs = (destination / Path(*local_rel.parts))
                 _copy_verified(staged, dest_abs)
                 conn.execute(db.documents.update().where(db.documents.c.id == existing_doc)
-                             .values(storage_uri=str(dest_abs), storage_path=str(safe_rel)))
+                             .values(storage_uri=str(dest_abs), storage_path=str(local_rel)))
                 summary["bytes_copied"] += size
                 summary["storage_backfilled"] = summary.get("storage_backfilled", 0) + 1
 
