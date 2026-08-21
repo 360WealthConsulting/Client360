@@ -21,6 +21,19 @@ from app.services.timeline import add_timeline_event
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 
+# System/cache libraries that surface as drives from /me/drives and /sites/{id}/drives but are NOT user
+# content (e.g. OneDrive's internal PersonalCacheLibrary). They must never be discovered or baselined as
+# normal document libraries. Matched by drive display NAME, case-insensitively. Intentionally minimal —
+# ONLY PersonalCacheLibrary; add names deliberately, never broadly.
+SYSTEM_LIBRARY_NAMES = frozenset({"personalcachelibrary"})
+
+
+def is_system_library(name: str | None) -> bool:
+    """True if a drive's display name is a known system/cache library that must not be ingested as a normal
+    content library (case-insensitive). Used at BOTH discovery (write) and drive-selection (read) so such a
+    library is neither stored as a content drive nor selected for a canonical baseline."""
+    return (name or "").strip().lower() in SYSTEM_LIBRARY_NAMES
+
 
 def normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
@@ -229,7 +242,12 @@ def discover_drives(access_token: str) -> list[dict[str, Any]]:
             for drive in site_drives
         )
 
-    return list({str(drive["id"]): drive for drive in discovered}.values())
+    # Write-side filter: never store a known system/cache library (e.g. PersonalCacheLibrary) as a content
+    # drive. Legitimate document libraries (default or secondary) are unaffected.
+    return [
+        drive for drive in {str(drive["id"]): drive for drive in discovered}.values()
+        if not is_system_library(drive.get("name"))
+    ]
 
 
 def store_microsoft_document(*, drive, item, person_id, match_method):

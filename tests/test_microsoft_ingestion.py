@@ -82,6 +82,42 @@ def test_first_seen_ingested_once(tmp_path):
     assert r["canonical_created"] == 1 and _canonical_count(uri) == 1
 
 
+def test_discovered_drive_ids_ignores_persisted_personal_cache_library():
+    # An already-persisted PersonalCacheLibrary row must NOT be selected for a canonical baseline, and the
+    # row itself is neither deleted nor mutated (read-side filter only).
+    drv_t = metadata.tables["microsoft_drives"]
+    content_id = "b!CONTENT" + uuid.uuid4().hex[:8]
+    cache_id = "b!CACHE" + uuid.uuid4().hex[:8]
+    with engine.begin() as c:
+        c.execute(drv_t.insert().values(microsoft_drive_id=content_id, name="Documents",
+                                        source_type="onedrive"))
+        c.execute(drv_t.insert().values(microsoft_drive_id=cache_id, name="PersonalCacheLibrary",
+                                        source_type="onedrive"))
+    try:
+        ids = mi._discovered_drive_ids()
+        assert content_id in ids                                 # normal library still selected
+        assert cache_id not in ids                               # system library excluded
+        with engine.connect() as c:                              # existing row untouched (still present)
+            assert c.execute(select(drv_t.c.name)
+                             .where(drv_t.c.microsoft_drive_id == cache_id)).scalar() == "PersonalCacheLibrary"
+    finally:
+        with engine.begin() as c:
+            c.execute(drv_t.delete().where(drv_t.c.microsoft_drive_id.in_([content_id, cache_id])))
+
+
+def test_discovered_drive_ids_normal_content_only_unchanged():
+    drv_t = metadata.tables["microsoft_drives"]
+    did = "b!ONLY" + uuid.uuid4().hex[:8]
+    with engine.begin() as c:
+        c.execute(drv_t.insert().values(microsoft_drive_id=did, name="Shared Documents",
+                                        source_type="sharepoint"))
+    try:
+        assert did in mi._discovered_drive_ids()                 # content-only selection unchanged
+    finally:
+        with engine.begin() as c:
+            c.execute(drv_t.delete().where(drv_t.c.microsoft_drive_id == did))
+
+
 def test_webUrl_drift_for_same_item_reuses_source_ref_no_duplicate(tmp_path):
     # H2: the same Graph item (source_external_id) arriving with a drifted webUrl must reuse/update the one
     # existing source reference, not insert a duplicate document_sources row. Canonical dedupe is unchanged.

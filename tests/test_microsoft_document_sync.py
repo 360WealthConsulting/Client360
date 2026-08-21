@@ -125,3 +125,51 @@ def test_deleted_drive_item_is_marked_without_publishing():
     assert result["deleted_items"] == 1
     assert stored[0]["item"]["deleted"]
     assert published == []
+
+
+# --- system/cache library exclusion (PersonalCacheLibrary only) ---------------------------
+
+def test_is_system_library_matches_personal_cache_case_insensitively():
+    from app.jobs.microsoft_document_sync import is_system_library
+    assert is_system_library("PersonalCacheLibrary")
+    assert is_system_library("personalcachelibrary")
+    assert is_system_library("  PERSONALCACHELIBRARY  ")
+
+
+def test_is_system_library_allows_content_libraries():
+    from app.jobs.microsoft_document_sync import is_system_library
+    # Legitimate libraries (and empty/None) are NOT treated as system libraries.
+    for name in ("Documents", "Shared Documents", "Client Files", "Archive 2023", None, ""):
+        assert not is_system_library(name)
+
+
+def _stub_scope_empty(monkeypatch):
+    """Force an empty SharePoint site scope so discover_drives only enumerates /me/drives (no DB/policy)."""
+    import types
+
+    from app.services import policy
+    monkeypatch.setattr(policy, "evaluate", lambda *a, **k: types.SimpleNamespace(decision=""))
+
+
+def test_discover_drives_excludes_personal_cache_library(monkeypatch):
+    import app.jobs.microsoft_document_sync as mds
+    _stub_scope_empty(monkeypatch)
+    me_drives = [
+        {"id": "d-docs", "name": "Documents", "driveType": "business"},
+        {"id": "d-cache", "name": "PersonalCacheLibrary", "driveType": "business"},
+    ]
+    monkeypatch.setattr(mds, "_graph_pages", lambda *a, **k: (me_drives, None))
+    out = mds.discover_drives("token")
+    assert {d["name"] for d in out} == {"Documents"}         # cache library excluded from discovery
+
+
+def test_discover_drives_retains_multiple_content_libraries(monkeypatch):
+    import app.jobs.microsoft_document_sync as mds
+    _stub_scope_empty(monkeypatch)
+    me_drives = [
+        {"id": "d-docs", "name": "Documents", "driveType": "business"},
+        {"id": "d-client", "name": "Client Files", "driveType": "business"},
+    ]
+    monkeypatch.setattr(mds, "_graph_pages", lambda *a, **k: (me_drives, None))
+    out = mds.discover_drives("token")
+    assert {d["name"] for d in out} == {"Documents", "Client Files"}   # legit secondary retained

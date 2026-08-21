@@ -407,13 +407,19 @@ def _cross_volume_safe_moves():
 
 def _discovered_drive_ids():
     """Drive ids the platform has already discovered (populated by the existing microsoft_document_sync
-    job) — the existing configuration source for which drives to stage. No new setting invented."""
+    job) — the existing configuration source for which drives to stage. No new setting invented.
+
+    Read-side filter: a known system/cache library (e.g. an already-persisted PersonalCacheLibrary row) is
+    NOT selected for a canonical baseline. The existing row is never deleted or mutated — it is simply not
+    returned here."""
     from app.db import metadata
+    from app.jobs.microsoft_document_sync import is_system_library
     t = metadata.tables.get("microsoft_drives")
     if t is None:
         return []
     with engine.connect() as conn:
-        return [d for d in conn.execute(select(t.c.microsoft_drive_id)).scalars() if d]
+        rows = conn.execute(select(t.c.microsoft_drive_id, t.c.name)).all()
+    return [d for d, name in rows if d and not is_system_library(name)]
 
 
 def _connector_values(*, root, drive_id, dry_run, limit=None, top=None, progress=None):
