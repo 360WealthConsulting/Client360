@@ -1575,6 +1575,69 @@ def test_delta_sync_initial_seeds_checkpoint_and_imports(tmp_path, _clean_drive)
     assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/i1") == 1
 
 
+def test_delta_sync_no_ocr_imports_and_advances_with_zero_ocr_calls(tmp_path, _clean_drive, monkeypatch):
+    # ocr=False completes download+import and advances the checkpoint WITHOUT the inline OCR phase.
+    calls = {"n": 0}
+
+    def _counting_ocr(document_ids, *, progress=None):
+        calls["n"] += 1
+        return {"ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "ocr_other": 0}
+    monkeypatch.setattr(mi, "_ocr_documents", _counting_ocr)
+
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("n1", _DRIVE_DELTA), _changed("n2", _DRIVE_DELTA)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u],
+                                       download=_dl_stub(tmp_path), ocr=False,
+                                       destination_root=str(tmp_path / "canon"), report=lambda ln: None)
+    _track()
+
+    assert res["status"] == "completed" and res["imported"] == 2          # imported successfully
+    assert res["checkpoints_advanced"] == 1                               # checkpoint advanced
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) == f"{_B}/delta?token=D1"
+    assert calls["n"] == 0                                                # ZERO OCR calls when ocr=False
+    assert res["ocr_analyzed"] == 0
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/n1") == 1         # docs are canonical (OCR backlog)
+
+
+def test_delta_sync_default_still_runs_ocr(tmp_path, _clean_drive, monkeypatch):
+    # Default (no flag) is unchanged: the inline OCR phase IS invoked.
+    calls = {"n": 0}
+
+    def _counting_ocr(document_ids, *, progress=None):
+        calls["n"] += 1
+        return {"ocr_analyzed": 0, "ocr_failed": 0, "ocr_timed_out": 0, "ocr_other": 0}
+    monkeypatch.setattr(mi, "_ocr_documents", _counting_ocr)
+
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_changed("d1", _DRIVE_DELTA)], "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+    mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u],
+                                 download=_dl_stub(tmp_path),      # ocr defaults to True
+                                 destination_root=str(tmp_path / "canon"), report=lambda ln: None)
+    _track()
+    assert calls["n"] == 1                                                # inline OCR still runs by default
+
+
+def test_delta_sync_cli_no_ocr_flag_controls_ocr(monkeypatch):
+    # The --no-ocr CLI flag maps to run_sharepoint_delta_sync(ocr=False); default maps to ocr=True.
+    import importlib
+    cli = importlib.import_module("scripts.run_sharepoint_sync")
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        return {"status": "completed", "drives": [], "exceptions": [], "changed": 0, "deleted": 0,
+                "imported": 0, "download_failures": 0, "permanent_failures": 0, "ocr_analyzed": 0,
+                "ocr_failed": 0, "ocr_timed_out": 0, "checkpoints_advanced": 0}
+    monkeypatch.setattr(mi, "run_sharepoint_delta_sync", _fake)
+
+    assert cli.main(["--delta-sync", "--drive-id", "X", "--no-ocr"]) == 0
+    assert captured["ocr"] is False
+    assert cli.main(["--delta-sync", "--drive-id", "X"]) == 0             # default unchanged
+    assert captured["ocr"] is True
+
+
 def test_delta_sync_subsequent_processes_only_changes_and_deletions(tmp_path, _clean_drive):
     seed = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
         "value": [_changed("keep", _DRIVE_DELTA)], "@odata.deltaLink": f"{_B}/delta?token=D1"}}

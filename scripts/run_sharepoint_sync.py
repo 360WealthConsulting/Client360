@@ -54,6 +54,11 @@ def main(argv=None):
                     help="delta-checkpointed recurring sync: resume from the persisted @odata.deltaLink "
                          "(or initial /root/delta), download+import only new/changed, apply deletions, "
                          "advance the checkpoint only on success. Use for future incremental syncs.")
+    ap.add_argument("--no-ocr", action="store_true",
+                    help="with --delta-sync: complete download+import and advance the checkpoint WITHOUT "
+                         "the inline OCR phase (checkpoint advancement is unchanged — clean traversal/"
+                         "download/import only). Process the OCR backlog separately and resumably via "
+                         "'python -m app.jobs.ocr_runner --mode incremental'. Default runs OCR inline.")
     args = ap.parse_args(argv)
 
     def _progress(ev):
@@ -124,7 +129,7 @@ def main(argv=None):
     if args.delta_sync:
         from app.services.microsoft_ingestion import run_sharepoint_delta_sync
         res = run_sharepoint_delta_sync(drive_ids=args.drive_id, timeout=args.timeout or 120,
-                                        progress=_progress)
+                                        ocr=not args.no_ocr, progress=_progress)
         print("SharePoint delta sync:", res["status"])
         for k in ("changed", "deleted", "imported", "download_failures", "permanent_failures",
                   "ocr_analyzed", "ocr_failed", "ocr_timed_out", "checkpoints_advanced"):
