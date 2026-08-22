@@ -1108,8 +1108,105 @@ def _transient_backoff_seconds(attempt, *, base=1, cap=30):
     return min(cap, base * (2 ** (max(1, attempt) - 1)))
 
 
+# Bounded per-request timeouts for the delta content download. A single float is only a per-recv INACTIVITY
+# timeout, so a fully idle/stalled socket read can block indefinitely — the ~4h production hang was a silent
+# SSL read with no forward bound. An explicit (connect, read) TUPLE makes urllib3 arm a read-inactivity
+# deadline on every recv (the header read in getresponse AND each streamed chunk), so an inactive socket
+# raises ReadTimeout promptly and enters the existing transient-retry/backoff path.
+_DOWNLOAD_CONNECT_TIMEOUT = 30                              # seconds to establish TCP + TLS
+_DOWNLOAD_READ_TIMEOUT = 120                                # max seconds of socket INACTIVITY per recv
+_DOWNLOAD_TIMEOUT = (_DOWNLOAD_CONNECT_TIMEOUT, _DOWNLOAD_READ_TIMEOUT)
+# Cooperative, SAME-THREAD total-elapsed backstop for the STREAMING (body) phase only — checked between
+# chunks, never via a background/daemon thread, so the calling thread always stays the sole owner of the
+# .part/destination file (no staging race). Generous, to bound a slow-trickle body without killing a
+# legitimate large download that keeps making steady progress.
+_DOWNLOAD_MAX_STREAM_SECONDS = 1800
+# Design B — response-HEADER acquisition bound. A per-recv read timeout cannot bound a slow-drip/idle header
+# read (getresponse is one uninterruptible blocking call; any dribbled byte resets the inactivity timer). So
+# the blocking session.get up to headers runs in a bounded DAEMON worker with a TOTAL wall-clock deadline;
+# the worker performs ONLY session.get and NEVER touches the .part/destination file, DB, or checkpoints.
+_DOWNLOAD_HEADER_DEADLINE = 120            # total wall-clock seconds allowed to obtain response headers
+_MAX_STUCK_HEADER_WORKERS = 4              # hard cap on OUTSTANDING header workers (invariant: live workers
+#                                           named "sp-delta-header" is always <= this; bounds any leak)
+
+
+class _HeaderTimeout(Exception):
+    """Bounded header acquisition exceeded its wall-clock deadline (or the header-worker pool is saturated).
+    A slow-drip/idle response-HEADER read cannot be bounded by a per-recv read timeout, so this total
+    deadline is what terminates it. Always treated as a TRANSIENT (non-permanent) download failure."""
+
+
+_HEADER_SEMAPHORE = None
+
+
+def _header_semaphore():
+    """Process-wide BoundedSemaphore capping how many header-acquisition workers can be outstanding at once
+    (a stuck worker holds its slot). This is the hard bound that prevents an unbounded thread leak across a
+    large baseline. Lazily created."""
+    global _HEADER_SEMAPHORE
+    if _HEADER_SEMAPHORE is None:
+        import threading
+        _HEADER_SEMAPHORE = threading.BoundedSemaphore(_MAX_STUCK_HEADER_WORKERS)
+    return _HEADER_SEMAPHORE
+
+
+def _acquire_response(session, url, *, deadline, timeout, semaphore):
+    """Obtain the HTTP response (headers only) in a bounded DAEMON worker that performs ONLY ``session.get``.
+
+    Strict ownership: the worker never iterates the body, never opens/writes the ``.part`` file, never
+    touches the destination or database — the calling (main) thread remains the sole owner of all staged-file
+    and persistence work. Returns the response, or raises :class:`_HeaderTimeout` when headers do not arrive
+    within ``deadline`` (the TOTAL wall-clock bound a per-recv read timeout cannot provide) or when the
+    bounded worker pool is saturated. A worker's own connect/read error propagates unchanged (the caller
+    handles it as transient).
+
+    Lifecycle / no leak: a slot is held for the worker's whole lifetime and released only when it finishes,
+    so at most ``_MAX_STUCK_HEADER_WORKERS`` workers can ever be outstanding. On deadline the main thread
+    abandons the worker and hands off ownership so the worker closes the response when it finally returns
+    (connection cleanup only — never a file). Workers are daemon threads, so a permanently stuck worker never
+    blocks process exit."""
+    import threading
+
+    if not semaphore.acquire(blocking=False):
+        raise _HeaderTimeout(f"header-worker pool saturated ({_MAX_STUCK_HEADER_WORKERS} outstanding)")
+
+    state = {"resp": None, "exc": None, "owner": "worker"}   # 'worker' until handed to 'main'/'abandoned'
+    lock = threading.Lock()
+    done = threading.Event()
+
+    def _work():
+        resp = exc = None
+        try:
+            resp = session.get(url, stream=True, timeout=timeout, allow_redirects=True)
+        except BaseException as e:  # noqa: BLE001 — capture; main re-raises or we clean up
+            exc = e
+        with lock:
+            state["resp"], state["exc"] = resp, exc
+            abandoned = state["owner"] == "abandoned"
+            if not abandoned:
+                state["owner"] = "main"
+        done.set()
+        semaphore.release()
+        if abandoned and resp is not None:              # main already gave up -> release the connection here
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    threading.Thread(target=_work, name="sp-delta-header", daemon=True).start()
+    if not done.wait(timeout=deadline):
+        with lock:
+            if state["owner"] == "worker":              # still running -> abandon; the worker closes the resp
+                state["owner"] = "abandoned"
+                raise _HeaderTimeout(f"no response headers within {deadline}s")
+            # else: the worker finished within the race window -> fall through and consume its result
+    if state["exc"] is not None:
+        raise state["exc"]
+    return state["resp"]
+
+
 def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_waits=6,
-                         max_transient_retries=5, sleep=None):
+                         max_transient_retries=5, sleep=None, header_deadline=None, header_semaphore=None):
     """Download ONE changed driveItem's content to a staged file (same-dir temp -> atomic replace).
 
     Robust against the bulk-download failure seen in the baseline:
@@ -1120,9 +1217,14 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
         expires ~1h later and caused every later download to fail at once.
       * Token expiry is handled by the injected _ManagedGraphSession (re-auth on 401).
       * 429 throttling honors Retry-After (bounded) instead of blindly hammering.
-      * TRANSIENT failures (HTTP 5xx, connection/read errors, an interrupted stream, or a short/truncated
-        response) are retried with bounded exponential backoff; when the budget is exhausted they raise a
-        NON-permanent _GraphDownloadError so the caller HOLDS the checkpoint (the change is re-delivered).
+      * BOUNDED I/O: response-HEADER acquisition runs in a bounded daemon worker with a TOTAL wall-clock
+        deadline (_DOWNLOAD_HEADER_DEADLINE) — this is what bounds a slow-drip/idle header read that a
+        per-recv read timeout cannot. The worker performs ONLY session.get; this thread owns all file/DB
+        work. The (connect, read) tuple (_DOWNLOAD_TIMEOUT) stays as socket-level defense in depth, plus a
+        cooperative same-thread total-elapsed backstop over the streamed body (no thread owns the file).
+      * TRANSIENT failures (HTTP 5xx, connect/read timeouts, connection errors, an interrupted stream, or a
+        short/truncated response) are retried with bounded exponential backoff; when the budget is exhausted
+        they raise a NON-permanent _GraphDownloadError so the caller HOLDS the checkpoint (change re-delivered).
       * 404/410 => a PERMANENT _GraphDownloadError (genuinely unavailable -> manual review, not a hold).
       * A short/truncated response is NEVER promoted to the final staged file (byte count verified against
         the Graph-declared size before the atomic replace).
@@ -1135,6 +1237,8 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
 
     from app.importers.taxdome_drive import sanitize_relative_path
     sleep = sleep or time.sleep
+    header_deadline = header_deadline or _DOWNLOAD_HEADER_DEADLINE
+    header_semaphore = header_semaphore or _header_semaphore()
     item_id = str(it.get("id"))
     name = sanitize_relative_path(it.get("name") or item_id).name
     dest_dir = Path(staging_dir) / "_delta"
@@ -1160,8 +1264,20 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
     transient_tries = 0                                    # 5xx / connection / read / short-read budget
     while True:
         try:
-            resp = session.get(url, stream=True, timeout=120, allow_redirects=True)
-        except requests.RequestException as exc:          # connection/read failure -> transient (retry/HOLD)
+            # Header acquisition runs in a bounded worker with a TOTAL wall-clock deadline (Design B); the
+            # (connect, read) tuple stays as socket-level defense in depth. The worker only performs
+            # session.get — this thread owns every subsequent .part/destination/DB operation.
+            resp = _acquire_response(session, url, deadline=header_deadline,
+                                     timeout=_DOWNLOAD_TIMEOUT, semaphore=header_semaphore)
+        except _HeaderTimeout as exc:                     # total header wall-clock deadline -> transient (HOLD)
+            transient_tries += 1
+            if transient_tries > max_transient_retries:
+                raise _GraphDownloadError(
+                    f"header acquisition exceeded {header_deadline}s after {transient_tries} attempt(s): {exc}",
+                    status=None, graph_code="headerTimeout") from exc
+            sleep(_transient_backoff_seconds(transient_tries))
+            continue
+        except requests.RequestException as exc:          # worker connect/read timeout or conn error -> transient
             transient_tries += 1
             if transient_tries > max_transient_retries:
                 raise _GraphDownloadError(f"connection error after {transient_tries} attempt(s): {exc}",
@@ -1212,14 +1328,20 @@ def _download_delta_item(session, drive_id, it, staging_dir, *, max_throttle_wai
                                       status=status, graph_code=code)
         # 2xx: stream to a temp file; a mid-stream failure is transient (bounded retry, else HOLD).
         written = 0
+        stream_deadline = time.monotonic() + _DOWNLOAD_MAX_STREAM_SECONDS
         try:
             with resp:
                 with open(tmp, "wb") as fh:
                     for chunk in resp.iter_content(chunk_size=1 << 20):
+                        # Cooperative, same-thread total-elapsed backstop for a slow-trickle body: checked
+                        # between chunks (no daemon thread), so this thread stays the sole file owner.
+                        if time.monotonic() > stream_deadline:
+                            raise requests.exceptions.ReadTimeout(
+                                f"download body exceeded {_DOWNLOAD_MAX_STREAM_SECONDS}s total budget")
                         if chunk:
                             fh.write(chunk)
                             written += len(chunk)
-        except requests.RequestException as exc:          # interrupted stream -> transient
+        except requests.RequestException as exc:          # interrupted/timed-out stream -> transient
             _discard_partial()
             transient_tries += 1
             if transient_tries > max_transient_retries:

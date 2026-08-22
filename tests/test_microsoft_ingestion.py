@@ -2027,6 +2027,394 @@ def test_delta_download_missing_declared_size_does_not_blindly_reuse(tmp_path):
     assert Path(p).read_bytes() == body and len(sess.calls) == 1          # unknown size -> not blindly reused
 
 
+# --- bounded download timeout (fix for the multi-hour silent SSL read) --------------------
+
+def test_delta_download_passes_connect_read_timeout_tuple(tmp_path):
+    from pathlib import Path
+    captured = {}
+    body = b"ok body"
+
+    def responder(url, kw):
+        captured.update(kw)
+        return _FakeResp(200, body)
+    p = mi._download_delta_item(_FakeSession(responder), "DRV",
+                                {"id": "T1", "name": "t.pdf", "size": len(body)}, str(tmp_path))
+    assert Path(p).read_bytes() == body
+    assert captured.get("timeout") == mi._DOWNLOAD_TIMEOUT == (30, 120)   # explicit (connect, read) tuple
+    assert captured.get("stream") is True
+
+
+def test_delta_download_read_timeout_retries_then_nonpermanent(tmp_path):
+    import requests
+    slept = []
+    calls = {"n": 0}
+
+    def responder(url, kw):
+        calls["n"] += 1
+        raise requests.exceptions.ReadTimeout("stalled socket read")
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(_FakeSession(responder), "DRV", {"id": "R1", "name": "r.pdf", "size": 5},
+                                str(tmp_path), max_transient_retries=2, sleep=slept.append)
+    assert ei.value.permanent is False                                    # held, not manual-review
+    assert calls["n"] == 3 and len(slept) == 2                            # initial + 2 retries, then give up
+
+
+def test_delta_download_connect_timeout_retries_then_nonpermanent(tmp_path):
+    import requests
+    slept = []
+    calls = {"n": 0}
+
+    def responder(url, kw):
+        calls["n"] += 1
+        raise requests.exceptions.ConnectTimeout("connect stalled")
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(_FakeSession(responder), "DRV", {"id": "C1", "name": "c.pdf", "size": 5},
+                                str(tmp_path), max_transient_retries=1, sleep=slept.append)
+    assert ei.value.permanent is False and calls["n"] == 2 and len(slept) == 1
+
+
+def test_delta_download_removes_part_after_stream_timeout(tmp_path):
+    from pathlib import Path
+
+    import requests
+
+    class _StreamFailResp:                                                # 200, then stalls mid-body
+        status_code = 200
+        headers: dict = {}
+
+        def iter_content(self, chunk_size=1):
+            yield b"partial"
+            raise requests.exceptions.ReadTimeout("stalled mid-stream")
+
+        def close(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def responder(url, kw):
+        return _StreamFailResp()
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(_FakeSession(responder), "DRV", {"id": "P1", "name": "p.pdf", "size": 100},
+                                str(tmp_path), max_transient_retries=1, sleep=lambda *_a: None)
+    assert ei.value.permanent is False and ei.value.graph_code == "streamInterrupted"
+    assert not (Path(tmp_path) / "_delta" / "P1__p.pdf.part").exists()    # .part cleaned after failure
+    assert not (Path(tmp_path) / "_delta" / "P1__p.pdf").exists()         # nothing promoted
+
+
+def test_delta_download_cooperative_body_deadline_fires(tmp_path, monkeypatch):
+    from pathlib import Path
+    monkeypatch.setattr(mi, "_DOWNLOAD_MAX_STREAM_SECONDS", -1)           # deadline already passed
+    body = b"x" * 4096
+
+    def responder(url, kw):
+        return _FakeResp(200, body)
+    with pytest.raises(mi._GraphDownloadError) as ei:
+        mi._download_delta_item(_FakeSession(responder), "DRV", {"id": "B1", "name": "b.pdf", "size": len(body)},
+                                str(tmp_path), max_transient_retries=1, sleep=lambda *_a: None)
+    assert ei.value.permanent is False and ei.value.graph_code == "streamInterrupted"
+    assert not (Path(tmp_path) / "_delta" / "B1__b.pdf.part").exists()    # cooperative abort still cleans .part
+
+
+def test_delta_download_recovers_after_timeout_single_dest(tmp_path):
+    from pathlib import Path
+
+    import requests
+    body = b"final good bytes"
+    calls = {"n": 0}
+
+    def responder(url, kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.exceptions.ReadTimeout("first attempt stalls")
+        return _FakeResp(200, body)
+    slept = []
+    p = mi._download_delta_item(_FakeSession(responder), "DRV", {"id": "S1", "name": "s.pdf", "size": len(body)},
+                               str(tmp_path), sleep=slept.append)
+    assert Path(p).read_bytes() == body and calls["n"] == 2 and len(slept) == 1
+    files = sorted(f.name for f in (Path(tmp_path) / "_delta").iterdir())
+    assert files == ["S1__s.pdf"]                                        # exactly one valid dest, no leftover .part
+
+
+def test_delta_sync_exhausted_download_timeout_holds_checkpoint(tmp_path, _clean_drive):
+    import requests
+    ok_body = b"body-ok"
+
+    def _it(iid, size):
+        return {"id": iid, "name": f"{iid}.pdf", "size": size,
+                "webUrl": f"https://sp/{_DRIVE_DELTA}/{iid}", "lastModifiedDateTime": "2024-01-01T00:00:00"}
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_it("ok", len(ok_body)), _it("stall", 10)],
+        "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+
+    class Sess:
+        def get(self, url, **kw):
+            item = url.rsplit("/items/", 1)[1].split("/")[0]
+            if item == "stall":
+                raise requests.exceptions.ReadTimeout("stalled read")
+            return _FakeResp(200, ok_body)
+
+    def dl(drive_id, it):
+        return mi._download_delta_item(Sess(), drive_id, it, str(tmp_path / "stage"),
+                                       max_transient_retries=1, sleep=lambda *_a: None)
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                       ocr=False, destination_root=str(tmp_path / "canon"),
+                                       report=lambda ln: None)
+    _track()
+    assert res["download_failures"] == 1 and res["permanent_failures"] == 0
+    assert res["checkpoints_advanced"] == 0                               # transient timeout -> HELD
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None
+    dl_exc = [e for e in res["exceptions"] if e.get("phase") == "download"]
+    assert len(dl_exc) == 1 and dl_exc[0].get("item_id") == "stall"
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/ok") == 1         # the healthy item still imported
+
+
+# --- Design B: bounded header-acquisition worker terminates slow-drip/idle header stalls ------------
+
+class _StallServer:
+    """Local TCP server that never completes an HTTP response, modelling a stalled response-HEADER read.
+    mode='idle' sends nothing; mode='drip' dribbles non-terminating header bytes so a per-recv read timeout
+    keeps resetting and never fires."""
+
+    def __init__(self, mode):
+        import socket
+        import threading
+        self.mode = mode
+        self._srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._srv.bind(("127.0.0.1", 0))
+        self._srv.listen(8)
+        self.port = self._srv.getsockname()[1]
+        self._stop = threading.Event()
+        self._conns = []
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    @property
+    def base_url(self):
+        return f"http://127.0.0.1:{self.port}"
+
+    def _serve(self):
+        import threading
+        self._srv.settimeout(0.1)
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._srv.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                break
+            self._conns.append(conn)
+            threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+
+    def _handle(self, conn):
+        import time
+        try:
+            conn.settimeout(0.5)
+            try:
+                conn.recv(65536)                       # consume the request line/headers
+            except OSError:
+                pass
+            while not self._stop.is_set():
+                if self.mode == "drip":
+                    try:
+                        conn.sendall(b"X")             # a non-terminating header byte; never a CRLF
+                    except OSError:
+                        break
+                time.sleep(0.02)
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def close(self):
+        self._stop.set()
+        try:
+            self._srv.close()
+        except OSError:
+            pass
+        for c in self._conns:
+            try:
+                c.close()
+            except OSError:
+                pass
+
+
+def test_header_deadline_terminates_idle_header_response(tmp_path, monkeypatch):
+    import threading
+    import time
+    from pathlib import Path
+
+    import requests
+    srv = _StallServer("idle")
+    monkeypatch.setattr(mi, "GRAPH_BASE_URL", srv.base_url)
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(mi._GraphDownloadError) as ei:
+            mi._download_delta_item(requests.Session(), "DRV", {"id": "IDLE1", "name": "i.pdf", "size": 5},
+                                    str(tmp_path), max_transient_retries=1, sleep=lambda *_a: None,
+                                    header_deadline=0.3, header_semaphore=threading.BoundedSemaphore(3))
+        assert ei.value.permanent is False and ei.value.graph_code == "headerTimeout"
+        assert time.monotonic() - t0 < 5                    # bounded, not an indefinite block
+        # the worker owns NO files: nothing was staged
+        assert not (Path(tmp_path) / "_delta" / "IDLE1__i.pdf.part").exists()
+        assert not (Path(tmp_path) / "_delta" / "IDLE1__i.pdf").exists()
+    finally:
+        srv.close()
+
+
+def test_header_deadline_terminates_slow_drip_header(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    import requests
+    srv = _StallServer("drip")
+    monkeypatch.setattr(mi, "GRAPH_BASE_URL", srv.base_url)
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(mi._GraphDownloadError) as ei:
+            mi._download_delta_item(requests.Session(), "DRV", {"id": "DRIP1", "name": "d.pdf", "size": 5},
+                                    str(tmp_path), max_transient_retries=1, sleep=lambda *_a: None,
+                                    header_deadline=0.3, header_semaphore=threading.BoundedSemaphore(3))
+        assert ei.value.permanent is False and ei.value.graph_code == "headerTimeout"
+        assert time.monotonic() - t0 < 5                    # terminates at the header deadline despite drip
+    finally:
+        srv.close()
+
+
+def test_slow_drip_defeats_old_read_timeout_but_new_header_deadline_terminates(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    import requests
+    srv = _StallServer("drip")
+    try:
+        # OLD behaviour: a plain streamed GET with only a (connect, read) timeout. The drip keeps resetting
+        # the per-recv read timer, so getresponse does NOT return within the window.
+        url = f"{srv.base_url}/drives/DRV/items/OLD1/content"
+        result = {}
+
+        def _old():
+            try:
+                requests.get(url, stream=True, timeout=(1, 1))
+                result["returned"] = True
+            except BaseException as e:  # noqa: BLE001
+                result["exc"] = type(e).__name__
+        th = threading.Thread(target=_old, daemon=True)
+        th.start()
+        th.join(timeout=2.5)                                # >> the 1s read timeout
+        assert th.is_alive()                               # STILL blocked -> read timeout defeated by drip
+
+        # NEW behaviour: the bounded header deadline terminates the same stall promptly.
+        monkeypatch.setattr(mi, "GRAPH_BASE_URL", srv.base_url)
+        t0 = time.monotonic()
+        with pytest.raises(mi._GraphDownloadError) as ei:
+            mi._download_delta_item(requests.Session(), "DRV", {"id": "NEW1", "name": "n.pdf", "size": 5},
+                                    str(tmp_path), max_transient_retries=0, sleep=lambda *_a: None,
+                                    header_deadline=0.3, header_semaphore=threading.BoundedSemaphore(3))
+        assert ei.value.graph_code == "headerTimeout" and time.monotonic() - t0 < 3
+    finally:
+        srv.close()                                        # releases the still-blocked old thread
+
+
+def test_header_timeout_retry_then_success_single_dest(tmp_path):
+    import threading
+    import time
+    from pathlib import Path
+    body = b"final good body"
+
+    class _SlowFirst:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, **kw):
+            self.calls += 1
+            if self.calls == 1:
+                time.sleep(0.4)                            # first attempt exceeds the header deadline
+            return _FakeResp(200, body)
+    sess = _SlowFirst()
+    p = mi._download_delta_item(sess, "DRV", {"id": "S1", "name": "s.pdf", "size": len(body)},
+                               str(tmp_path), max_transient_retries=2, sleep=lambda *_a: None,
+                               header_deadline=0.1, header_semaphore=threading.BoundedSemaphore(3))
+    assert Path(p).read_bytes() == body and sess.calls >= 2
+    files = sorted(f.name for f in (Path(tmp_path) / "_delta").iterdir())
+    assert files == ["S1__s.pdf"]                          # exactly one destination, no leftover .part
+
+
+def test_delta_sync_header_timeout_holds_checkpoint(tmp_path, _clean_drive):
+    import threading
+    import time
+    ok_body = b"body-ok"
+
+    def _it(iid, size):
+        return {"id": iid, "name": f"{iid}.pdf", "size": size,
+                "webUrl": f"https://sp/{_DRIVE_DELTA}/{iid}", "lastModifiedDateTime": "2024-01-01T00:00:00"}
+    pages = {f"{_B}/drives/{_DRIVE_DELTA}/root/delta": {
+        "value": [_it("ok", len(ok_body)), _it("stall", 10)], "@odata.deltaLink": f"{_B}/delta?token=D1"}}
+
+    class Sess:
+        def get(self, url, **kw):
+            item = url.rsplit("/items/", 1)[1].split("/")[0]
+            if item == "stall":
+                time.sleep(0.4)                            # exceeds the header deadline every attempt
+            return _FakeResp(200, ok_body if item == "ok" else b"x" * 10)
+    sem = threading.BoundedSemaphore(3)
+
+    def dl(drive_id, it):
+        return mi._download_delta_item(Sess(), drive_id, it, str(tmp_path / "stage"),
+                                       max_transient_retries=1, sleep=lambda *_a: None,
+                                       header_deadline=0.1, header_semaphore=sem)
+    res = mi.run_sharepoint_delta_sync(drive_ids=[_DRIVE_DELTA], fetch=lambda u, t: pages[u], download=dl,
+                                       ocr=False, destination_root=str(tmp_path / "canon"),
+                                       report=lambda ln: None)
+    _track()
+    assert res["download_failures"] == 1 and res["permanent_failures"] == 0
+    assert res["checkpoints_advanced"] == 0                # header timeout -> transient -> HELD
+    assert mi.load_canonical_delta_link(_DRIVE_DELTA) is None
+    dl_exc = [e for e in res["exceptions"] if e.get("phase") == "download"]
+    assert len(dl_exc) == 1 and dl_exc[0].get("item_id") == "stall"
+    assert _canonical_count(f"https://sp/{_DRIVE_DELTA}/ok") == 1   # the healthy item still imported
+
+
+def test_header_workers_bounded_after_repeated_deadlines(tmp_path):
+    import threading
+    import time
+    release = threading.Event()
+    started = {"n": 0}
+    start_lock = threading.Lock()
+
+    class _Blocking:
+        def get(self, url, **kw):
+            with start_lock:
+                started["n"] += 1                          # a worker actually started (slot acquired)
+            release.wait()                                 # then blocks until teardown
+            return _FakeResp(200, b"x")
+    cap = mi._MAX_STUCK_HEADER_WORKERS                     # the real invariant bound (4)
+    sem = threading.BoundedSemaphore(cap)
+    name = "sp-delta-header"
+    base = sum(1 for t in threading.enumerate() if t.name == name)
+    max_live = 0
+    try:
+        for i in range(12):                               # 12 attempts >> cap
+            with pytest.raises(mi._GraphDownloadError):
+                mi._download_delta_item(_Blocking(), "DRV", {"id": f"X{i}", "name": "x.pdf", "size": 5},
+                                        str(tmp_path), max_transient_retries=0, sleep=lambda *_a: None,
+                                        header_deadline=0.05, header_semaphore=sem)
+            live = sum(1 for t in threading.enumerate() if t.name == name) - base
+            max_live = max(max_live, live)
+        # Deterministic proof: a get() runs ONLY when a slot is acquired, so exactly `cap` workers ever
+        # started and the other 8 attempts saturated without spawning a thread.
+        assert started["n"] == cap                        # outstanding reached the cap, never exceeded it
+        assert max_live <= cap                            # invariant: outstanding <= _MAX_STUCK_HEADER_WORKERS
+        print(f"max observed sp-delta-header workers: started={started['n']}, live_delta<={max_live} (cap {cap})")
+    finally:
+        release.set()
+        time.sleep(0.2)                                    # let the unblocked daemon workers exit
+
+
 def test_managed_graph_session_reauths_on_401():
     import types
     state = {"builds": 0}
