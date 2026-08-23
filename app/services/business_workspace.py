@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app.db import (
     documents,
     engine,
+    household_relationships,
     households,
     people,
     relationship_entities,
@@ -32,6 +33,28 @@ def _display_name(entity_name, full_name, first, last):
     if combined:
         return combined
     return (entity_name or "").strip() or "(unnamed)"
+
+
+def _person_household_ids(connection, person_ids):
+    """Households the given people belong to, from the canonical membership model.
+
+    Household membership is written two ways by the canonical services (``app.services.households``
+    and ``household_derivation`` both set ``people.household_id`` AND insert a
+    ``household_relationships`` member row), so both are read here — a related person contributes
+    household context regardless of which representation exists on the row. Set-based and pure read:
+    no per-person query, no ``ensure_*`` side effect, nothing written.
+    """
+    ids = [p for p in person_ids if p]
+    if not ids:
+        return set()
+    found = set(connection.scalars(
+        select(household_relationships.c.household_id).where(
+            household_relationships.c.person_id.in_(ids),
+            household_relationships.c.household_id.isnot(None))))
+    found |= set(connection.scalars(
+        select(people.c.household_id).where(
+            people.c.id.in_(ids), people.c.household_id.isnot(None))))
+    return found
 
 
 def get_business_workspace(business_id: int) -> dict | None:
@@ -84,6 +107,16 @@ def get_business_workspace(business_id: int) -> dict | None:
                 "evidence_source": r["evidence_source"],
                 "is_owner": r["relationship_code"] in ("owns", "owner")})
 
+        # Related household CONTEXT — NOT ownership. A person-backed owner entity carries
+        # person_id with household_id NULL (only a household-backed entity sets household_id), so
+        # reading the entity row alone can never surface the owner's household; that is why a
+        # business owned by a person showed "No related households". Read through the canonical
+        # owner/person to their existing household membership instead. This confers no household
+        # ownership, creates no household->business edge, and writes nothing; the set dedupes
+        # households shared by several owners.
+        related_household_ids |= _person_household_ids(
+            c, {o["person_id"] for o in owners if o["person_id"]})
+
         docs = c.execute(
             select(documents.c.id, documents.c.original_name, documents.c.household_id,
                    documents.c.person_id, documents.c.created_at)
@@ -100,7 +133,8 @@ def get_business_workspace(business_id: int) -> dict | None:
         households_out = []
         if related_household_ids:
             for hid, hname in c.execute(select(households.c.id, households.c.name)
-                                        .where(households.c.id.in_(related_household_ids))):
+                                        .where(households.c.id.in_(related_household_ids))
+                                        .order_by(households.c.name, households.c.id)):
                 households_out.append({"household_id": hid, "name": hname,
                                        "workspace_url": f"/client/household/{hid}"})
 
