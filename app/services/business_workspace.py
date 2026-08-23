@@ -13,6 +13,7 @@ from app.db import (
     documents,
     engine,
     households,
+    people,
     relationship_entities,
     relationship_ownership,
     relationship_types,
@@ -20,6 +21,17 @@ from app.db import (
 )
 
 _ENTITY_KINDS = ("business", "trust", "estate", "organization")
+
+
+def _display_name(entity_name, full_name, first, last):
+    """Prefer the canonical person name; fall back to first+last when full_name/entity name is
+    blank or a placeholder (e.g. 'Person 7783'). Never mutates stored names."""
+    if full_name and full_name.strip():
+        return full_name.strip()
+    combined = f"{(first or '').strip()} {(last or '').strip()}".strip()
+    if combined:
+        return combined
+    return (entity_name or "").strip() or "(unnamed)"
 
 
 def get_business_workspace(business_id: int) -> dict | None:
@@ -40,12 +52,14 @@ def get_business_workspace(business_id: int) -> dict | None:
                    relationship_types.c.name.label("relationship_label"),
                    fe.c.entity_type.label("owner_entity_type"), fe.c.name.label("owner_name"),
                    fe.c.person_id, fe.c.household_id,
+                   people.c.full_name, people.c.first_name, people.c.last_name,
                    relationship_ownership.c.ownership_percentage,
                    relationship_ownership.c.ownership_type, relationship_ownership.c.is_direct,
                    relationship_ownership.c.evidence_source)
             .select_from(relationships
                 .join(relationship_types, relationship_types.c.id == relationships.c.relationship_type_id)
                 .join(fe, fe.c.id == relationships.c.from_entity_id)
+                .outerjoin(people, people.c.id == fe.c.person_id)
                 .outerjoin(relationship_ownership,
                            relationship_ownership.c.relationship_id == relationships.c.id))
             .where(relationships.c.to_entity_id == business_id,
@@ -63,7 +77,8 @@ def get_business_workspace(business_id: int) -> dict | None:
             owners.append({
                 "relationship_id": r["relationship_id"], "code": r["relationship_code"],
                 "role": r["relationship_label"], "entity_type": r["owner_entity_type"],
-                "name": r["owner_name"], "person_id": r["person_id"], "household_id": r["household_id"],
+                "name": _display_name(r["owner_name"], r["full_name"], r["first_name"], r["last_name"]),
+                "person_id": r["person_id"], "household_id": r["household_id"],
                 "workspace_url": nav, "ownership_percentage": r["ownership_percentage"],
                 "ownership_type": r["ownership_type"], "is_direct": r["is_direct"],
                 "evidence_source": r["evidence_source"],
