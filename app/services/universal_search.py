@@ -90,7 +90,9 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
                           people.c.primary_phone, people.c.household_id, people.c.active).where(or_(*conds))
             if not firm_wide:
                 stmt = stmt.where(_person_in_scope(people.c.id))
-            if active_only:
+            # Inactive people (e.g. a deactivated company-as-person row) are noise in normal search;
+            # only surface them when the caller explicitly asks to include archived/inactive records.
+            if active_only or not include_archived:
                 stmt = stmt.where(people.c.active.is_(True))
             for r in conn.execute(stmt.limit(limit)).mappings():
                 rows.append({"kind": "person", "id": r["id"], "name": r["full_name"],
@@ -129,8 +131,10 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
                     continue
                 if want is not None and r["entity_type"] not in want:
                     continue
-                url = (f"/client/household/{r['household_id']}" if r["household_id"]
-                       else (f"/client/{r['person_id']}" if r["person_id"] else None))
+                # A business/trust/estate opens its own entity workspace; the linked person/household
+                # (if any) is reachable from there. This avoids a dead result when the entity has no
+                # person_id/household_id, and keeps navigation to related people one hop away.
+                url = f"/business/{r['id']}"
                 rows.append({"kind": r["entity_type"], "id": r["id"], "name": r["name"],
                              "entity_type": r["entity_type"], "household_id": r["household_id"],
                              "subtitle": r["entity_type"].title(),

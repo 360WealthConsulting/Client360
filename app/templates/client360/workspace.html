@@ -240,6 +240,12 @@
     </tbody></table></div></article>
 
 {% elif active_tab == "relationships" %}
+  <h2 class="section-title">Associated businesses</h2>
+  {% if sec.businesses %}
+  <article class="card">
+    {% for b in sec.businesses %}<div class="detail-row"><span><a href="/business/{{ b.business_id }}">{{ b.business_name }}</a></span><strong class="subtle">{{ (b.relationship_code or "owns")|capitalize }}</strong></div>{% endfor %}
+  </article>
+  {% else %}{% call ui.empty("No associated businesses", "No businesses are linked to this client yet.") %}{% endcall %}{% endif %}
   <h2 class="section-title">Relationship graph (read-only)</h2>
   {% for cat, items in (sec.graph.categories or {}).items() %}
     <article class="card"><span class="detail-label">{{ cat|capitalize }}</span>

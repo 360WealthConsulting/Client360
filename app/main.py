@@ -27,6 +27,7 @@ from app.routes.automation import router as automation_router
 from app.routes.automation_orchestration import router as automation_orchestration_router
 from app.routes.benefits import router as benefits_router
 from app.routes.billing import router as billing_router
+from app.routes.business import router as business_router
 from app.routes.business_continuity import router as business_continuity_router
 from app.routes.business_development import router as business_development_router
 from app.routes.business_owner import router as business_owner_router
@@ -246,6 +247,7 @@ app.include_router(workspace_router)
 app.include_router(client360_router)
 app.include_router(client_access_router)
 app.include_router(billing_router)
+app.include_router(business_router)
 app.include_router(ai_assist_router)
 app.include_router(vault_router)
 app.include_router(auth_router)

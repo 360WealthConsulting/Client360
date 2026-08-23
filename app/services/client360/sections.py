@@ -672,11 +672,31 @@ def relationships(principal, ctx):
     """Household members + the read-only relationship graph (beneficiaries/trustees/businesses/
     employers/dependents/advisors) + assigned advisors."""
     from app.security.object_security import resolve_assignments
+    from app.services.organization_service import (
+        list_household_business_ownership,
+        list_person_business_ownership,
+    )
     from app.services.relationships import build_relationship_graph, get_person_households
     pid = _pid(ctx)
+    hid = _hid(ctx)
     graph = build_relationship_graph(pid) if pid else {"categories": {}, "relationships": []}
     households = get_person_households(pid) if pid else ctx.get("member_households") or []
-    return {"graph": graph, "households": households,
+    # Associated businesses via the ownership graph — a person shows businesses it owns; a household
+    # shows businesses owned by the household entity or by any of its members (pure reads).
+    businesses, seen = [], set()
+
+    def _add(rows):
+        for b in rows:
+            if b["business_id"] not in seen:
+                seen.add(b["business_id"])
+                businesses.append(b)
+    if pid:
+        _add(list_person_business_ownership(pid))
+    if hid:
+        _add(list_household_business_ownership(hid))
+        for mid in (ctx.get("member_ids") or []):
+            _add(list_person_business_ownership(mid))
+    return {"graph": graph, "households": households, "businesses": businesses,
             "assigned": resolve_assignments(ctx["entity_type"], ctx["entity_id"])}
 
 

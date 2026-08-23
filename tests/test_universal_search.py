@@ -94,9 +94,11 @@ def test_household_search(data):
     assert hits and hits[0]["workspace_url"] == f"/client/household/{data['hids'][0]}"
 
 
-def test_business_search_resolves_to_household(data):
+def test_business_search_opens_business_workspace(data):
+    # A business result opens its own entity workspace (owners/household reachable from there),
+    # rather than silently redirecting to a linked household.
     hits = _find(universal_search(_firm(), f"White Rentals LLC {_TAG}{data['tag']}"), "business")
-    assert hits and hits[0]["workspace_url"] == f"/client/household/{data['hids'][0]}"
+    assert hits and hits[0]["workspace_url"] == f"/business/{hits[0]['id']}"
 
 
 def test_document_search(data):

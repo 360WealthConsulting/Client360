@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ ws.name }} · Business | 360Plus{% endblock %}
+{% block crumb %}{{ ws.name }}{% endblock %}
+{% block content %}
+<nav class="c360-backnav" aria-label="Breadcrumb"><a href="/search">← Search</a></nav>
+
+<header class="c360-header">
+  <h1>{{ ws.name }}</h1>
+  <p class="muted">{{ ws.entity_type|capitalize }}{% if not ws.active %} · <span class="pill">inactive</span>{% endif %}</p>
+</header>
+
+<section class="card">
+  <h2 class="section-title">Owners &amp; principals</h2>
+  {% if ws.owners %}
+  <table><thead><tr><th>Name</th><th>Role</th><th>Ownership</th><th>Evidence</th></tr></thead><tbody>
+    {% for o in ws.owners %}
+    <tr>
+      <td>{% if o.workspace_url %}<a href="{{ o.workspace_url }}">{{ o.name }}</a>{% else %}{{ o.name }}{% endif %}</td>
+      <td>{{ o.role }}</td>
+      <td>{{ (o.ownership_percentage ~ "%") if o.ownership_percentage is not none else "—" }}</td>
+      <td>{{ o.evidence_source or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}{% call ui.empty("No owners recorded", "No ownership relationships are recorded for this business yet.") %}{% endcall %}{% endif %}
+</section>
+
+{% if ws.associated_people %}
+<section class="card">
+  <h2 class="section-title">Associated people</h2>
+  <ul>{% for a in ws.associated_people %}
+    <li>{% if a.workspace_url %}<a href="{{ a.workspace_url }}">{{ a.name }}</a>{% else %}{{ a.name }}{% endif %} — {{ a.role }}</li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2 class="section-title">Related household(s)</h2>
+  {% if ws.related_households %}
+  <ul>{% for h in ws.related_households %}
+    <li><a href="{{ h.workspace_url }}">{{ h.name }}</a></li>
+  {% endfor %}</ul>
+  {% else %}{% call ui.empty("No related households") %}{% endcall %}{% endif %}
+</section>
+
+<section class="card">
+  <h2 class="section-title">Documents ({{ ws.document_count }})</h2>
+  {% if ws.documents %}
+  <table><thead><tr><th>Name</th><th></th></tr></thead><tbody>
+    {% for d in ws.documents %}
+    <tr><td>{{ d.name }}</td><td><a href="{{ d.download_url }}">Download</a></td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}{% call ui.empty("No documents", "No documents are assigned to this business.") %}{% endcall %}{% endif %}
+</section>
+
+{% if ws.provenance %}
+<section class="card"><h2 class="section-title">Provenance</h2>
+  <p class="muted">Relationship evidence: {{ ws.provenance|join(", ") }}</p></section>
+{% endif %}
+{% endblock %}

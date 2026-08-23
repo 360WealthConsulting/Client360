@@ -10,7 +10,7 @@
 
 meta:
   migration_head: payroll01                 # `alembic heads` / `alembic current`
-  route_count: 1162                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py
+  route_count: 1163                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py  # +1 business entity workspace (/business/{id})
   production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"
