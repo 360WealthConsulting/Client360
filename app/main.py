@@ -12,6 +12,7 @@ from app.routes.activities import router as activities_router
 from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.activity_timeline import router as activity_timeline_router
 from app.routes.admin import router as admin_router
+from app.routes.admin_business_resolution import router as admin_business_resolution_router
 from app.routes.admin_context_review import router as admin_context_review_router
 from app.routes.admin_entity_proposals import router as admin_entity_proposals_router
 from app.routes.admin_high_confirm import router as admin_high_confirm_router
@@ -261,6 +262,7 @@ app.include_router(admin_entity_proposals_router)
 app.include_router(admin_review_queue_router)
 app.include_router(admin_review_inbox_router)
 app.include_router(admin_context_review_router)
+app.include_router(admin_business_resolution_router)
 app.include_router(admin_ingestion_router)
 app.include_router(session_router)
 app.include_router(work_router)

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Business Ownership Resolution | Admin | 360Plus{% endblock %}
+{% block crumb %}Admin · Relationships · Business Ownership Resolution{% endblock %}
+{% block content %}
+
+<header class="c360-header">
+  <h1>Business ownership resolution</h1>
+  <p class="muted">Derived from structured evidence (read-only preview). Only <strong>SAFE_OWNERSHIP</strong>
+    candidates can be applied, one business at a time. Ownership percentages are never inferred.</p>
+</header>
+
+{% if notice %}<div class="card" style="margin-bottom:12px"><strong>{{ notice }}</strong></div>{% endif %}
+
+<section class="card">
+  <h2 class="section-title">Buckets</h2>
+  <table><thead><tr><th>Bucket</th><th>Businesses</th></tr></thead><tbody>
+    {% for b in ("SAFE_OWNERSHIP", "SAFE_ASSOCIATION_ONLY", "PERSON_IDENTITY_REVIEW",
+                 "DUPLICATE_BUSINESS_REVIEW", "AMBIGUOUS", "UNRESOLVED") %}
+    <tr><td>{{ b }}</td><td>{{ summary[b] }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  <p class="subtle" style="margin-top:8px">
+    {{ summary.businesses_evaluated }} evaluated ·
+    {{ summary.explicit_owner_matches }} explicit-ownership titles ·
+    {{ summary.officer_management_associations }} officer/management (association only) ·
+    {{ summary.person_reconciliations_required }} person reconciliations required ·
+    {{ summary.apply_eligible }} apply-eligible
+  </p>
+</section>
+
+<section class="card">
+  <h2 class="section-title">SAFE_OWNERSHIP candidates ({{ candidates|length }})</h2>
+  {% if candidates %}
+  {% for c in candidates %}
+  <div class="card" style="padding:10px 12px; margin-bottom:10px; background:var(--bg, #fafafa)">
+    <div class="detail-row">
+      <span><strong>#{{ c.business_id }}</strong> ·
+        <a href="{{ c.workspace_url }}">{{ c.business_name }}</a></span>
+      <span class="subtle">{{ c.bucket }} ·
+        {% if c.applied_state == "applied" %}{{ ui.badge("applied", "ok") }}
+        {% elif c.applied_state == "partial" %}{{ ui.badge("partially applied") }}
+        {% else %}{{ ui.badge("not applied") }}{% endif %}</span>
+    </div>
+
+    <table style="margin-top:6px"><thead>
+      <tr><th>Proposed owner (canonical)</th><th>Title</th><th>Evidence company</th><th>Identity</th><th>State</th></tr>
+    </thead><tbody>
+      {% for o in c.owners %}
+      <tr>
+        <td><a href="/client/{{ o.canonical_person_id }}">{{ o.name }}</a>
+          <span class="subtle">#{{ o.canonical_person_id }}</span></td>
+        <td>{{ o.job_title or "—" }}</td>
+        <td>{{ o.company_name or "—" }}</td>
+        <td>{{ o.identity_status }}{% if o.requires_reconciliation %}
+          <span class="subtle">(reconciled from stale #{{ o.stale_person_id }})</span>{% endif %}</td>
+        <td>{{ "already applied" if o.already_applied else "pending" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody></table>
+
+    {% for r in c.reconciliations %}
+    <div class="subtle" style="margin:4px 0">Reconciliation: stale #{{ r.stale_person_id }}
+      ({{ r.stale_name }}) → canonical #{{ r.canonical_person_id }} ({{ r.canonical_name }})
+      [{{ r.reason }}] — ownership is written to the canonical person only; the stale record is not
+      modified.</div>
+    {% endfor %}
+
+    {% for h in c.household_associations %}
+    <div class="subtle" style="margin:4px 0">Household:
+      <a href="/client/household/{{ h.household_id }}">{{ h.household_name }}</a>
+      (#{{ h.household_id }}, document co-ownership {{ h.doc_coownership_count }})</div>
+    {% endfor %}
+
+    {% for n in c.notes %}<div class="subtle" style="margin:4px 0">Note: {{ n }}</div>{% endfor %}
+
+    <form method="post" action="/admin/business-resolution/{{ c.business_id }}/apply"
+          style="margin-top:8px">
+      <input type="hidden" name="confirm" value="yes">
+      <button class="btn{% if c.applied_state == 'applied' %} sm secondary{% endif %}" type="submit">
+        {% if c.applied_state == "applied" %}Re-apply (idempotent){% else %}Apply ownership{% endif %}
+      </button>
+      <span class="subtle" style="margin-left:8px">evidence_source: {{ evidence_source }}</span>
+    </form>
+  </div>
+  {% endfor %}
+  {% else %}
+  {% call ui.empty("No SAFE_OWNERSHIP candidates",
+                   "No business currently has explicit ownership evidence with a resolved person identity.") %}{% endcall %}
+  {% endif %}
+</section>
+
+{% endblock %}

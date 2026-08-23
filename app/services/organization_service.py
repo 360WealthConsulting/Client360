@@ -334,12 +334,18 @@ def record_ownership(*, principal, owned_organization_id, owner_person_id=None,
                                     owner_organization_id=owner_organization_id)
         if owner_id == owned_organization_id:
             raise OrganizationError("An entity cannot own itself")
+        # The uq_relationship_edge collision must roll back to a SAVEPOINT, not to the whole
+        # transaction: on PostgreSQL an unhandled IntegrityError aborts the enclosing transaction, so
+        # the recovery SELECT below (and the ownership-detail upsert after it) would fail with
+        # InFailedSqlTransaction. begin_nested() confines the failed INSERT and keeps this call
+        # genuinely idempotent when the edge already exists.
         try:
-            rel_id = c.execute(relationships.insert().values(
-                from_entity_id=owner_id, to_entity_id=owned_organization_id,
-                relationship_type_id=type_id, effective_date=effective_date,
-                inactive_date=inactive_date, notes=notes, source="benefits",
-                created_by=str(principal.user_id)).returning(relationships.c.id)).scalar_one()
+            with c.begin_nested():
+                rel_id = c.execute(relationships.insert().values(
+                    from_entity_id=owner_id, to_entity_id=owned_organization_id,
+                    relationship_type_id=type_id, effective_date=effective_date,
+                    inactive_date=inactive_date, notes=notes, source="benefits",
+                    created_by=str(principal.user_id)).returning(relationships.c.id)).scalar_one()
         except IntegrityError:
             rel_id = c.scalar(select(relationships.c.id).where(
                 relationships.c.from_entity_id == owner_id,
