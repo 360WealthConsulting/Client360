@@ -90,12 +90,12 @@ def test_discovered_drive_ids_ignores_persisted_personal_cache_library():
     cache_id = "b!CACHE" + uuid.uuid4().hex[:8]
     with engine.begin() as c:
         c.execute(drv_t.insert().values(microsoft_drive_id=content_id, name="Documents",
-                                        source_type="onedrive"))
+                                        source_type="sharepoint"))                 # legit SharePoint library
         c.execute(drv_t.insert().values(microsoft_drive_id=cache_id, name="PersonalCacheLibrary",
                                         source_type="onedrive"))
     try:
         ids = mi._discovered_drive_ids()
-        assert content_id in ids                                 # normal library still selected
+        assert content_id in ids                                 # SharePoint library still selected
         assert cache_id not in ids                               # system library excluded
         with engine.connect() as c:                              # existing row untouched (still present)
             assert c.execute(select(drv_t.c.name)
@@ -116,6 +116,31 @@ def test_discovered_drive_ids_normal_content_only_unchanged():
     finally:
         with engine.begin() as c:
             c.execute(drv_t.delete().where(drv_t.c.microsoft_drive_id == did))
+
+
+def test_discovered_drive_ids_excludes_personal_onedrive():
+    # Read-side: only intended company SharePoint drives are auto-selected; personal OneDrive
+    # (source_type='onedrive') and system libraries are never selected — even if already persisted.
+    drv_t = metadata.tables["microsoft_drives"]
+    sp = "b!SP" + uuid.uuid4().hex[:8]          # company SharePoint 360Data/Documents
+    od = "b!OD" + uuid.uuid4().hex[:8]          # personal OneDrive Documents (like Drive #2)
+    cache = "b!CACHE" + uuid.uuid4().hex[:8]    # PersonalCacheLibrary
+    with engine.begin() as c:
+        c.execute(drv_t.insert().values(microsoft_drive_id=sp, name="Documents", source_type="sharepoint"))
+        c.execute(drv_t.insert().values(microsoft_drive_id=od, name="Documents", source_type="onedrive"))
+        c.execute(drv_t.insert().values(microsoft_drive_id=cache, name="PersonalCacheLibrary",
+                                        source_type="onedrive"))
+    try:
+        ids = mi._discovered_drive_ids()
+        assert sp in ids                        # 1. SharePoint 360Data/Documents remains selectable
+        assert od not in ids                    # 2 & 4. onedrive Documents / persisted OneDrive row excluded
+        assert cache not in ids                 # 3. PersonalCacheLibrary remains excluded
+        with engine.connect() as c:             # persisted rows untouched (still present)
+            assert c.execute(select(drv_t.c.source_type)
+                             .where(drv_t.c.microsoft_drive_id == od)).scalar() == "onedrive"
+    finally:
+        with engine.begin() as c:
+            c.execute(drv_t.delete().where(drv_t.c.microsoft_drive_id.in_([sp, od, cache])))
 
 
 def test_webUrl_drift_for_same_item_reuses_source_ref_no_duplicate(tmp_path):

@@ -242,11 +242,13 @@ def discover_drives(access_token: str) -> list[dict[str, Any]]:
             for drive in site_drives
         )
 
-    # Write-side filter: never store a known system/cache library (e.g. PersonalCacheLibrary) as a content
-    # drive. Legitimate document libraries (default or secondary) are unaffected.
+    # Write-side filter: the intended Client360 canonical source is company SharePoint site libraries
+    # (source_type='sharepoint'), NOT the connected user's personal OneDrive (/me/drives,
+    # source_type='onedrive'), which was never meant to be ingested. Also drop known system/cache libraries
+    # (e.g. PersonalCacheLibrary). Legitimate SharePoint document libraries (default or secondary) are kept.
     return [
         drive for drive in {str(drive["id"]): drive for drive in discovered}.values()
-        if not is_system_library(drive.get("name"))
+        if drive.get("source_type") != "onedrive" and not is_system_library(drive.get("name"))
     ]
 
 

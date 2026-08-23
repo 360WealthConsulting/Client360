@@ -143,33 +143,48 @@ def test_is_system_library_allows_content_libraries():
         assert not is_system_library(name)
 
 
-def _stub_scope_empty(monkeypatch):
-    """Force an empty SharePoint site scope so discover_drives only enumerates /me/drives (no DB/policy)."""
+def _stub_scope_site(monkeypatch, site_id="SITE1"):
+    """Point the SharePoint scope at one site id so discover_drives enumerates /sites/{id}/drives."""
     import types
 
     from app.services import policy
-    monkeypatch.setattr(policy, "evaluate", lambda *a, **k: types.SimpleNamespace(decision=""))
+    monkeypatch.setattr(policy, "evaluate", lambda *a, **k: types.SimpleNamespace(decision=site_id))
 
 
-def test_discover_drives_excludes_personal_cache_library(monkeypatch):
+def _stub_graph(monkeypatch, me_drives, site_drives, site_id="SITE1"):
     import app.jobs.microsoft_document_sync as mds
-    _stub_scope_empty(monkeypatch)
-    me_drives = [
-        {"id": "d-docs", "name": "Documents", "driveType": "business"},
-        {"id": "d-cache", "name": "PersonalCacheLibrary", "driveType": "business"},
-    ]
-    monkeypatch.setattr(mds, "_graph_pages", lambda *a, **k: (me_drives, None))
-    out = mds.discover_drives("token")
-    assert {d["name"] for d in out} == {"Documents"}         # cache library excluded from discovery
+
+    def pages(url, access_token, params=None):
+        if "/me/drives" in url:
+            return (me_drives, None)
+        if f"/sites/{site_id}/drives" in url:
+            return (site_drives, None)
+        return ([], None)
+    monkeypatch.setattr(mds, "_graph_pages", pages)
 
 
-def test_discover_drives_retains_multiple_content_libraries(monkeypatch):
+def test_discover_drives_excludes_personal_onedrive_and_cache(monkeypatch):
+    # Personal OneDrive (/me/drives -> source_type='onedrive') and PersonalCacheLibrary are NOT admitted;
+    # only the company SharePoint site library is.
     import app.jobs.microsoft_document_sync as mds
-    _stub_scope_empty(monkeypatch)
-    me_drives = [
-        {"id": "d-docs", "name": "Documents", "driveType": "business"},
-        {"id": "d-client", "name": "Client Files", "driveType": "business"},
-    ]
-    monkeypatch.setattr(mds, "_graph_pages", lambda *a, **k: (me_drives, None))
+    _stub_scope_site(monkeypatch)
+    _stub_graph(monkeypatch,
+                me_drives=[{"id": "od-docs", "name": "Documents"},
+                           {"id": "od-cache", "name": "PersonalCacheLibrary"}],
+                site_drives=[{"id": "sp-docs", "name": "Documents"}])   # 360Data/Shared Documents
     out = mds.discover_drives("token")
-    assert {d["name"] for d in out} == {"Documents", "Client Files"}   # legit secondary retained
+    assert {d["id"] for d in out} == {"sp-docs"}              # only the SharePoint site drive admitted
+    assert all(d["source_type"] == "sharepoint" for d in out)
+
+
+def test_discover_drives_retains_sharepoint_site_libraries(monkeypatch):
+    # Multiple company SharePoint site libraries are retained; personal OneDrive is excluded.
+    import app.jobs.microsoft_document_sync as mds
+    _stub_scope_site(monkeypatch)
+    _stub_graph(monkeypatch,
+                me_drives=[{"id": "od-docs", "name": "Documents"}],
+                site_drives=[{"id": "sp-1", "name": "Shared Documents"},
+                             {"id": "sp-2", "name": "Archive"}])
+    out = mds.discover_drives("token")
+    assert {d["id"] for d in out} == {"sp-1", "sp-2"}         # both SharePoint site libraries retained
+    assert "od-docs" not in {d["id"] for d in out}            # personal OneDrive excluded

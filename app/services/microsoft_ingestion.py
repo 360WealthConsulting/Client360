@@ -409,17 +409,19 @@ def _discovered_drive_ids():
     """Drive ids the platform has already discovered (populated by the existing microsoft_document_sync
     job) — the existing configuration source for which drives to stage. No new setting invented.
 
-    Read-side filter: a known system/cache library (e.g. an already-persisted PersonalCacheLibrary row) is
-    NOT selected for a canonical baseline. The existing row is never deleted or mutated — it is simply not
-    returned here."""
+    Read-side filter: automatic canonical delta selection admits ONLY intended company SharePoint drives.
+    A persisted personal-OneDrive row (source_type='onedrive', e.g. the mistakenly-discovered personal
+    OneDrive) or a known system/cache library (e.g. PersonalCacheLibrary) is NOT selected. The existing rows
+    are never deleted or mutated — they are simply not returned here."""
     from app.db import metadata
     from app.jobs.microsoft_document_sync import is_system_library
     t = metadata.tables.get("microsoft_drives")
     if t is None:
         return []
     with engine.connect() as conn:
-        rows = conn.execute(select(t.c.microsoft_drive_id, t.c.name)).all()
-    return [d for d, name in rows if d and not is_system_library(name)]
+        rows = conn.execute(select(t.c.microsoft_drive_id, t.c.name, t.c.source_type)).all()
+    return [d for d, name, source_type in rows
+            if d and source_type != "onedrive" and not is_system_library(name)]
 
 
 def _connector_values(*, root, drive_id, dry_run, limit=None, top=None, progress=None):
