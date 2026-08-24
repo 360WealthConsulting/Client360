@@ -42,6 +42,7 @@ from app.services.document_naming import (
     extract_year,
     has_ambiguous_year,
     is_generic_filename,
+    is_ordinal_duplicate_suffix,
     mentions_instructions,
     residual_qualifier,
     resolve_document_type,
@@ -212,13 +213,26 @@ def build_preview(*, limit=None, examples=50) -> dict:
             foreign_person = (detect_foreign_person_token(
                 original, owner_name=owner_name, known_first_names=first_names)
                 if owner_type == "person" and type_code != "unknown" else None)
+            # An ORDINAL duplicate marker is self-disambiguating filename evidence, so it belongs in
+            # the base candidate unconditionally. Reserving it for collision resolution assumed the
+            # other copy is always a trusted same-owner row with an identical base candidate --
+            # production #151 showed that premise is false (the sibling may be deleted, archived,
+            # untyped, differently qualified, or filed under a duplicate person record, and often
+            # there is no sibling in the trusted set at all). The unnumbered "Copy" stays
+            # collision-only: it says a duplicate exists but not which one this is.
+            dup = duplicate_suffix(original)
+            ordinal_dup = is_ordinal_duplicate_suffix(dup)
+            if ordinal_dup:
+                qualifier = " ".join(x for x in (qualifier, dup) if x)
             base_candidate = canonical_display_name(year=year, type_code=type_code,
                                                     entity=owner_name, qualifier=qualifier)
 
             rows_out.append({
                 "document_id": row["id"], "current_filename": original,
                 "base_candidate": base_candidate, "proposed_display_name": base_candidate,
-                "dup_suffix": duplicate_suffix(original),
+                # already folded into the base when ordinal; only the unnumbered marker is held
+                # back for collision rescue, so it can never be appended twice
+                "dup_suffix": None if ordinal_dup else dup,
                 "owner": owner_name, "owner_type": owner_type, "owner_id": owner_id,
                 "document_type": type_code, "type_label": type_label(type_code),
                 "type_source": type_source, "confidence": confidence, "year": year,

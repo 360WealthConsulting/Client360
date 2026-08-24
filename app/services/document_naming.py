@@ -247,6 +247,16 @@ def duplicate_suffix(filename: str | None) -> str | None:
     return f"({number})" if number else "Copy"
 
 
+def is_ordinal_duplicate_suffix(suffix: str | None) -> bool:
+    """True for a NUMBERED duplicate marker such as ``(2)`` or ``(3)``.
+
+    An ordinal says WHICH copy this is, so it is self-disambiguating filename evidence and is kept
+    unconditionally. A bare ``Copy`` carries no ordinal, distinguishes nothing on its own, and is
+    therefore preserved only when it actually resolves a collision.
+    """
+    return bool(suffix) and re.fullmatch(r"\(\d{1,3}\)", suffix) is not None
+
+
 def mentions_instructions(filename: str | None) -> bool:
     """The filename says "instructions" — an instructions packet is NOT the form it describes."""
     return bool(_INSTRUCTIONS_RE.search(strip_extension(filename)))

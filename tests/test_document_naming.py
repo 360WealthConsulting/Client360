@@ -91,11 +91,12 @@ def _business(c, tag, name):
     ).returning(relationship_entities.c.id)).scalar_one()
 
 
-def _doc(c, name, *, person_id=None, household_id=None, organization_id=None, category=None):
+def _doc(c, name, *, person_id=None, household_id=None, organization_id=None, category=None,
+         status="active", archived=False):
     u = uuid.uuid4().hex
     return c.execute(insert(documents).values(
         original_name=name, stored_name=f"s-{u}", storage_path=f"/x/{u}",
-        size_bytes=1, sha256=u.ljust(64, "0")[:64], status="active", archived=False,
+        size_bytes=1, sha256=u.ljust(64, "0")[:64], status=status, archived=archived,
         category=category, person_id=person_id, household_id=household_id,
         organization_id=organization_id).returning(documents.c.id)).scalar_one()
 
@@ -709,14 +710,15 @@ def test_duplicate_suffix_is_preserved_only_when_it_prevents_a_collision():
     assert str(second) not in s_row["proposed_display_name"]   # never a document id
 
 
-def test_duplicate_suffix_is_not_a_routine_qualifier():
-    """With no collision the marker stays filler — it should not clutter every name."""
+def test_ordinal_duplicate_suffix_is_kept_alongside_a_real_qualifier():
+    """An ordinal marker is self-disambiguating evidence and is kept even with no visible sibling;
+    it is appended AFTER the meaningful payer detail, never in place of it."""
     tag = _tag()
     with engine.begin() as c:
         pid = _person(c, tag, "Ann", "Rovner")
         did = _doc(c, "1099K 2024 PayPal (2).pdf", person_id=pid)
     row = _by_id(build_preview(), did)
-    assert row["proposed_display_name"] == f"2024 - 1099-K - Ann Rovner{tag} - PayPal"
+    assert row["proposed_display_name"] == f"2024 - 1099-K - Ann Rovner{tag} - PayPal (2)"
 
 
 # --------------------------------------------------------------------- (3) 1098-T
@@ -937,14 +939,15 @@ def test_suffixes_are_never_invented_where_none_existed():
         assert str(row["document_id"]) not in row["proposed_display_name"]
 
 
-def test_a_lone_duplicate_suffix_is_still_not_a_routine_qualifier():
-    """With nothing to collide against, "(2)" stays filler."""
+def test_a_lone_ordinal_duplicate_keeps_its_suffix():
+    """Superseded by production #151: the sibling is frequently absent from the trusted population,
+    so "no visible collision" is not evidence that the document is not a copy."""
     tag = _tag()
     with engine.begin() as c:
         pid = _person(c, tag, "Adam", "Davis")
         did = _doc(c, "2025 W2 (2).pdf", person_id=pid)
     row = _by_id(build_preview(), did)
-    assert row["proposed_display_name"] == f"2025 - W-2 - Adam Davis{tag}"
+    assert row["proposed_display_name"] == f"2025 - W-2 - Adam Davis{tag} - (2)"
 
 
 def test_duplicate_suffix_of_a_different_owner_does_not_interact():
@@ -1050,3 +1053,78 @@ def test_collision_resolution_is_read_only_and_deterministic():
     before = snapshot()
     assert _by_id(build_preview(), did) == _by_id(build_preview(), did)
     assert snapshot() == before
+
+
+# ===================================================================== #151 production group shapes
+# The d09460b fix preserved "(2)" only when ANOTHER TRUSTED document for the SAME owner_id produced
+# an IDENTICAL base candidate. Production #151 satisfies none of those three conditions, so the
+# suffix was still dropped. Each shape below reproduces the real defect; the two-document fixture
+# that already passed is the only shape the earlier tests covered.
+
+def _dup_row(setup):
+    """Build a scenario, return the preview row for the (2) document."""
+    tag = _tag()
+    with engine.begin() as c:
+        did = setup(c, tag)
+    return _by_id(build_preview(), did), tag
+
+
+def test_151_lone_duplicate_with_no_sibling_keeps_its_suffix():
+    """The commonest production shape: the other copy is not in the trusted population at all."""
+    def setup(c, tag):
+        pid = _person(c, tag, "Adam", "Davis")
+        return _doc(c, "2025 W2 (2).pdf", person_id=pid)
+    row, tag = _dup_row(setup)
+    assert row["proposed_display_name"] == f"2025 - W-2 - Adam Davis{tag} - (2)"
+
+
+def test_151_sibling_under_a_duplicate_person_record_keeps_its_suffix():
+    """Two person rows for the same human render the same owner name but differ by owner_id, so the
+    documents never grouped — yet they display identically."""
+    def setup(c, tag):
+        one = _person(c, tag, "Adam", "Davis")
+        two = _person(c, tag, "Adam", "Davis")
+        did = _doc(c, "2025 W2 (2).pdf", person_id=one)
+        _doc(c, "2025 W2.pdf", person_id=two)
+        return did
+    row, tag = _dup_row(setup)
+    assert row["proposed_display_name"].endswith("- (2)")
+
+
+def test_151_sibling_outside_the_trusted_population_keeps_its_suffix():
+    def setup(c, tag):
+        pid = _person(c, tag, "Adam", "Davis")
+        did = _doc(c, "2025 W2 (2).pdf", person_id=pid)
+        _doc(c, "2025 W2.pdf", person_id=pid, status="deleted")
+        return did
+    row, tag = _dup_row(setup)
+    assert row["proposed_display_name"].endswith("- (2)")
+
+
+def test_151_sibling_with_no_candidate_keeps_its_suffix():
+    def setup(c, tag):
+        pid = _person(c, tag, "Adam", "Davis")
+        did = _doc(c, "2025 W2 (2).pdf", person_id=pid)
+        _doc(c, "doc.pdf", person_id=pid)                # SKIP, contributes no base candidate
+        return did
+    row, tag = _dup_row(setup)
+    assert row["proposed_display_name"].endswith("- (2)")
+
+
+def test_151_sibling_with_a_different_base_candidate_keeps_its_suffix():
+    def setup(c, tag):
+        pid = _person(c, tag, "Adam", "Davis")
+        did = _doc(c, "2025 W2 (2).pdf", person_id=pid)
+        _doc(c, "2025 W2 Acme.pdf", person_id=pid)       # qualifier -> different base
+        return did
+    row, tag = _dup_row(setup)
+    assert row["proposed_display_name"].endswith("- (2)")
+
+
+def test_unnumbered_copy_marker_is_still_only_kept_on_collision():
+    """"Copy" carries no ordinal, so it disambiguates nothing on its own — it stays collision-only."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Adam", "Davis")
+        lone = _doc(c, "2025 W2 - Copy.pdf", person_id=pid)
+    assert _by_id(build_preview(), lone)["proposed_display_name"] == f"2025 - W-2 - Adam Davis{tag}"
