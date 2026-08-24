@@ -35,7 +35,10 @@ from app.db import (
 )
 from app.services.document_naming import (
     canonical_display_name,
+    detect_form_families,
+    detect_version_markers,
     extract_year,
+    has_ambiguous_year,
     is_generic_filename,
     residual_qualifier,
     resolve_document_type,
@@ -143,8 +146,14 @@ def build_preview(*, limit=None, examples=50) -> dict:
             original = row["original_name"] or ""
             stem = strip_extension(original)
             year = extract_year(original)
-            type_code, confidence, type_source = resolve_document_type(row["category"], original)
-            qualifier = residual_qualifier(original, year=year, type_code=type_code, entity=owner_name)
+            match = resolve_document_type(row["category"], original)
+            type_code, confidence, type_source = match.code, match.confidence, match.source
+            qualifier = residual_qualifier(original, year=year, type_code=type_code,
+                                           entity=owner_name, matched_text=match.matched_text)
+            # Signals that must stop a candidate from being called safe, independent of type quality.
+            version_markers = detect_version_markers(original)
+            multi_form = len(detect_form_families(original)) > 1
+            ambiguous_year = has_ambiguous_year(original)
             candidate = canonical_display_name(year=year, type_code=type_code, entity=owner_name,
                                                qualifier=qualifier)
 
@@ -176,6 +185,16 @@ def build_preview(*, limit=None, examples=50) -> dict:
             elif collision:
                 bucket = "REVIEW"
                 reasons.append("candidate name collides with another document for the same owner")
+            elif multi_form:
+                bucket = "REVIEW"
+                reasons.append("filename names more than one materially different form")
+            elif version_markers:
+                bucket = "REVIEW"
+                reasons.append(
+                    f"amendment/version semantics not representable: {', '.join(version_markers[:3])}")
+            elif ambiguous_year:
+                bucket = "REVIEW"
+                reasons.append("more than one distinct year in the filename")
             elif type_code == "unknown":
                 bucket = "REVIEW"
                 reasons.append("document type unresolved; candidate relies on filename detail only")
@@ -202,7 +221,9 @@ def build_preview(*, limit=None, examples=50) -> dict:
                 "owner_id": owner_id, "document_type": type_code, "type_label": type_label(type_code),
                 "type_source": type_source, "confidence": confidence, "year": year,
                 "qualifier": qualifier, "source_system": _source_system(row),
-                "collision": collision, "bucket": bucket, "reason": "; ".join(reasons),
+                "collision": collision, "version_markers": version_markers,
+                "multi_form": multi_form, "ambiguous_year": ambiguous_year,
+                "bucket": bucket, "reason": "; ".join(reasons),
             })
 
     def sample(bucket, n):

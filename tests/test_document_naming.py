@@ -22,7 +22,10 @@ from app.db import (
 )
 from app.services.document_naming import (
     canonical_display_name,
+    detect_form_families,
+    detect_version_markers,
     extract_year,
+    has_ambiguous_year,
     is_generic_filename,
     residual_qualifier,
     resolve_document_type,
@@ -119,8 +122,8 @@ def test_extract_year_rejects_years_embedded_in_hashes_and_export_ids():
 @pytest.mark.parametrize("filename,expected", [
     ("Pullen W-2 2024.pdf", "W-2"),
     ("norman w2 2024.pdf", "W-2"),
-    ("1099-DIV Schwab 2024.pdf", "1099"),
-    ("1099 R 2023.pdf", "1099"),
+    ("1099-DIV Schwab 2024.pdf", "1099-DIV"),
+    ("1099 R 2023.pdf", "1099-R"),
     ("Form 1040 2024.pdf", "1040"),
     ("Pullen Homes 1120S 2024.pdf", "1120S"),
     ("partnership 1065 2024.pdf", "1065"),
@@ -138,25 +141,25 @@ def test_extract_year_rejects_years_embedded_in_hashes_and_export_ids():
     ("insurance policy declarations.pdf", "insurance_policy"),
 ])
 def test_document_types_resolve_from_filename(filename, expected):
-    code, conf, source = resolve_document_type(None, filename)
-    assert code == expected, f"{filename} -> {code}"
-    assert conf > 0 and source in ("filename_pattern", "classifier")
+    match = resolve_document_type(None, filename)
+    assert match.code == expected, f"{filename} -> {match.code}"
+    assert match.confidence > 0 and match.source in ("filename_pattern", "classifier")
 
 
 def test_unknown_type_for_an_unrecognizable_filename():
-    assert resolve_document_type(None, "misc paperwork.pdf") == ("unknown", 0.0, "none")
+    assert resolve_document_type(None, "misc paperwork.pdf") == ("unknown", 0.0, "none", None)
 
 
 def test_specific_category_wins_over_filename_and_vague_category_does_not():
     assert resolve_document_type("W-2", "scan001.pdf")[:2] == ("W-2", 0.95)
     # "tax" is a domain, not a document type — must fall through to the filename
-    assert resolve_document_type("tax", "Form 1040 2024.pdf")[0] == "1040"
-    assert resolve_document_type("tax", "misc.pdf")[0] == "unknown"
+    assert resolve_document_type("tax", "Form 1040 2024.pdf").code == "1040"
+    assert resolve_document_type("tax", "misc.pdf").code == "unknown"
 
 
 def test_form_numbers_do_not_match_inside_longer_digit_runs():
-    assert resolve_document_type(None, "acct 11205 summary.pdf")[0] != "1120S"
-    assert resolve_document_type(None, "ext 9415 memo.pdf")[0] != "941"
+    assert resolve_document_type(None, "acct 11205 summary.pdf").code != "1120S"
+    assert resolve_document_type(None, "ext 9415 memo.pdf").code != "941"
 
 
 # --------------------------------------------------------------------- composition
@@ -191,6 +194,20 @@ def test_qualifier_keeps_detail_not_carried_by_year_type_owner():
     q = residual_qualifier("Norman Pullen W-2 2024 Acme Corp.pdf", year=2024, type_code="W-2",
                            entity="Norman Pullen")
     assert q == "Acme Corp"
+
+
+def test_qualifier_strips_the_matched_form_reference_as_a_unit():
+    """Production debris: 8879S -> "S", 1099INT -> "INT", 1099-R -> "R". The matched span must go
+    whole, not be guessed at variant-by-variant."""
+    for name, code, matched in (("2021 8879S.pdf", "8879", "8879s"),
+                                ("Tax_1099INT_2024_Goldman Sachs.PDF", "1099-INT", "1099int"),
+                                ("Rovner 2023 1099-R.jpg", "1099-R", "1099-r")):
+        q = residual_qualifier(name, year=extract_year(name), type_code=code,
+                               entity="Rovner", matched_text=matched)
+        assert q is None or ("S" != q and "INT" != q and "R" != q), f"{name} -> {q!r}"
+    # the payer survives, the form reference does not
+    assert residual_qualifier("Tax_1099INT_2024_Goldman Sachs.PDF", year=2024, type_code="1099-INT",
+                              entity="Ann Rovner", matched_text="1099int") == "Goldman Sachs"
 
 
 def test_qualifier_strips_separator_free_type_variants():
@@ -345,3 +362,296 @@ def test_preview_is_deterministic_across_runs():
     first = _by_id(build_preview(), did)
     second = _by_id(build_preview(), did)
     assert first == second
+
+
+# ===================================================================== refinement pass regressions
+# Shapes taken from the production preview at cee6583, with synthetic owner names and ids.
+
+@pytest.mark.parametrize("filename,expected", [
+    ("1099R_2024_Fidelity.pdf", "1099-R"),
+    ("1099K_2024_PayPal.pdf", "1099-K"),
+    ("Tax_1099INT_2024_Goldman Sachs.PDF", "1099-INT"),
+    ("1099DIV 2024 Vanguard.pdf", "1099-DIV"),
+    ("1099NEC_2024.pdf", "1099-NEC"),
+    ("1099-SA 2024 HSA Bank.pdf", "1099-SA"),
+    ("2025-01-27_1099-K_Upwork.pdf", "1099-K"),
+    ("Fidelity 1099-R 2025.pdf", "1099-R"),
+])
+def test_1099_subtypes_are_preserved_not_flattened(filename, expected):
+    assert resolve_document_type(None, filename).code == expected
+
+
+def test_generic_1099_stays_generic_when_no_subtype_is_stated():
+    assert resolve_document_type(None, "1099 2024 statement.pdf").code == "1099"
+    assert resolve_document_type(None, "1099-MISC 2024.pdf").code == "1099"
+
+
+@pytest.mark.parametrize("filename,expected", [
+    ("2024 Schedule C.pdf", "schedule_c"),
+    ("Income Expense Worksheet 2024.pdf", "schedule_c"),
+    ("DL Front.jpg", "drivers_license"),
+    ("DL_Back.jpg", "drivers_license"),
+    ("Drivers License 2024.pdf", "drivers_license"),
+    ("Signature Documents 2024.pdf", "signature_documents"),
+    ("2024 Year End Tax Package.pdf", "year_end_tax_package"),
+    ("Mortgage Interest Statement 2024.pdf", "mortgage_interest"),
+])
+def test_new_deterministic_common_types(filename, expected):
+    assert resolve_document_type(None, filename).code == expected
+
+
+def test_bare_dl_token_is_not_a_drivers_license():
+    """"DL" alone is initials or an abbreviation far more often than a licence."""
+    assert resolve_document_type(None, "DL Holdings statement 2024.pdf").code != "drivers_license"
+
+
+def test_8879s_is_stripped_whole_leaving_no_stray_s():
+    m = resolve_document_type(None, "2021 8879S.pdf")
+    assert m.code == "8879"
+    q = residual_qualifier("2021 8879S.pdf", year=2021, type_code="8879",
+                           entity="Ann Rovner", matched_text=m.matched_text)
+    assert q is None
+
+
+def test_w2_workflow_noise_does_not_survive_as_a_qualifier():
+    """Adam - W2_USETHISONE_2024-04-02.pdf previously produced "USETHISONE 04 02"."""
+    name = "Adam - W2_USETHISONE_2024-04-02.pdf"
+    m = resolve_document_type(None, name)
+    q = residual_qualifier(name, year=2024, type_code=m.code, entity="Adam Davis",
+                           matched_text=m.matched_text)
+    assert q is None or "04" not in q                       # the date fragment is gone
+    assert detect_version_markers(name)                     # USETHISONE forces REVIEW
+
+
+def test_whole_dates_are_stripped_not_left_as_fragments():
+    name = "2025-01-27_1099-K_Upwork.pdf"
+    m = resolve_document_type(None, name)
+    q = residual_qualifier(name, year=2025, type_code=m.code, entity="Ann Rovner",
+                           matched_text=m.matched_text)
+    assert q == "Upwork"                                    # not "01 27 K"
+
+
+def test_filler_words_are_dropped_but_employer_initials_are_kept():
+    name = "NMR W2 for 2023.pdf"
+    m = resolve_document_type(None, name)
+    q = residual_qualifier(name, year=2023, type_code=m.code, entity="Ann Rovner",
+                           matched_text=m.matched_text)
+    assert q == "NMR"                                       # "for" dropped, employer kept
+
+
+@pytest.mark.parametrize("name,owner,expected", [
+    ("1099K_2024_PayPal.pdf", "Ann Rovner", "PayPal"),
+    ("Fidelity 1099-R 2025.pdf", "Ann Rovner", "Fidelity"),
+    ("1099DIV 2024 Vanguard.pdf", "Ann Rovner", "Vanguard"),
+    ("W-2 2024 Acme Manufacturing.pdf", "Ann Rovner", "Acme Manufacturing"),
+])
+def test_meaningful_payer_custodian_employer_text_is_preserved(name, owner, expected):
+    m = resolve_document_type(None, name)
+    q = residual_qualifier(name, year=extract_year(name), type_code=m.code, entity=owner,
+                           matched_text=m.matched_text)
+    assert q == expected
+
+
+@pytest.mark.parametrize("name", [
+    "1040 2024 amended.pdf", "1040 2024 CORRECTED.pdf", "W2 2024 revised.pdf",
+    "1099NEC_2024_V1.pdf", "1040 2024 draft.pdf", "W2 USETHISONE 2024.pdf",
+])
+def test_version_and_amendment_markers_are_detected(name):
+    assert detect_version_markers(name), name
+
+
+def test_multiple_form_families_are_detected():
+    assert len(detect_form_families("Pullen 1040 K-1 8879 2024.pdf")) > 1
+    assert len(detect_form_families("1099R and 1099K 2024.pdf")) == 1   # same family, not multi-form
+    assert len(detect_form_families("W2 2024.pdf")) == 1
+    # a coarse descriptor is not a second form
+    assert len(detect_form_families("2024 Tax Return 1040.pdf")) == 1
+
+
+def test_ambiguous_year_detection():
+    assert has_ambiguous_year("2019 organizer 2020.pdf")
+    assert not has_ambiguous_year("W2 2024.pdf")
+    assert not has_ambiguous_year("2024 1040 2024.pdf")     # same year twice is not ambiguous
+
+
+# --------------------------------------------------------------------- bucket effects
+def test_multi_form_filename_goes_to_review_not_safe():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1040 K-1 8879 2024.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "REVIEW"
+    assert row["multi_form"] is True
+    assert "more than one materially different form" in row["reason"]
+
+
+def test_amended_filename_goes_to_review_not_safe():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1040 2024 amended.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "REVIEW"
+    assert row["version_markers"]
+
+
+def test_ambiguous_year_goes_to_review_not_safe():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "2019 organizer 2020.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "REVIEW"
+    assert row["ambiguous_year"] is True
+
+
+def test_distinct_1099_subtypes_for_one_owner_do_not_collide():
+    """Flattening every 1099 to "1099" made a person's 1099-R and 1099-K collide. They must not."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        d_r = _doc(c, "1099R 2024.pdf", person_id=pid)
+        d_k = _doc(c, "1099K 2024.pdf", person_id=pid)
+    rep = build_preview()
+    r_row, k_row = _by_id(rep, d_r), _by_id(rep, d_k)
+    assert r_row["proposed_display_name"] != k_row["proposed_display_name"]
+    assert not r_row["collision"] and not k_row["collision"]
+    assert r_row["bucket"] == "SAFE" and k_row["bucket"] == "SAFE"
+
+
+def test_same_subtype_twice_for_one_owner_still_collides_to_review():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        first = _doc(c, "1099R 2024.pdf", person_id=pid)
+        second = _doc(c, "1099-R 2024.pdf", person_id=pid)
+    rep = build_preview()
+    assert "REVIEW" in {_by_id(rep, first)["bucket"], _by_id(rep, second)["bucket"]}
+    assert rep["collisions"] >= 1
+
+
+def test_safe_payer_document_survives_the_stricter_rules():
+    """The refinement must not make everything REVIEW — a clean payer document is still SAFE."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1099K_2024_PayPal.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "SAFE"
+    assert row["proposed_display_name"] == f"2024 - 1099-K - Ann Rovner{tag} - PayPal"
+
+
+def test_camera_scan_image_is_not_classified_by_guesswork():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "IMG_4821.jpg", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "SKIP"
+    assert row["document_type"] == "unknown"
+
+
+def test_refined_preview_still_writes_nothing_and_is_deterministic():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1099INT 2024 Goldman Sachs.pdf", person_id=pid)
+
+    def snapshot():
+        with engine.connect() as c:
+            rows = sorted(c.execute(
+                select(documents.c.id, documents.c.original_name, documents.c.storage_path,
+                       documents.c.sha256, documents.c.category).where(documents.c.id == did)).all())
+            return rows, c.scalar(select(func.count()).select_from(documents))
+
+    before = snapshot()
+    first = _by_id(build_preview(), did)
+    second = _by_id(build_preview(), did)
+    assert first == second
+    assert snapshot() == before
+
+
+# ===================================================================== amended returns (1040-X)
+@pytest.mark.parametrize("filename", ["1040X 2024.pdf", "1040-X 2024.pdf", "1040 X 2024.pdf",
+                                      "2024 1040x Smith.pdf", "Form 1040-X 2024.pdf"])
+def test_amended_1040x_is_its_own_type_never_plain_1040(filename):
+    m = resolve_document_type(None, filename)
+    assert m.code == "1040-X", f"{filename} -> {m.code}"
+    assert type_label(m.code) == "Form 1040-X"
+
+
+def test_ordinary_1040_is_unaffected():
+    for name in ("1040 2024.pdf", "Form 1040 2024.pdf", "2024 1040 Smith.pdf"):
+        assert resolve_document_type(None, name).code == "1040"
+        assert type_label("1040") == "Form 1040"
+
+
+def test_other_amended_federal_returns_that_actually_exist():
+    """1065-X and 1120-X are real amended forms whose base forms this classifier already knows.
+    1041 and 1120-S have no -X form (amended by checkbox), so they must NOT be invented."""
+    assert resolve_document_type(None, "1065X 2024.pdf").code == "1065-X"
+    assert resolve_document_type(None, "1120-X 2024.pdf").code == "1120-X"
+    assert resolve_document_type(None, "1041 2024.pdf").code == "1041"
+    assert resolve_document_type(None, "1120S 2024.pdf").code == "1120S"
+
+
+def test_1040x_leaves_no_stray_x_in_the_qualifier():
+    for name in ("1040X 2024.pdf", "1040-X 2024.pdf", "1040 X 2024.pdf"):
+        m = resolve_document_type(None, name)
+        q = residual_qualifier(name, year=2024, type_code=m.code, entity="Ann Rovner",
+                               matched_text=m.matched_text)
+        assert q is None, f"{name} -> {q!r}"
+
+
+def test_clean_1040x_filename_is_safe_and_names_the_amended_form():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "2024 1040X.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "SAFE"
+    assert row["proposed_display_name"] == f"2024 - Form 1040-X - Ann Rovner{tag}"
+
+
+def test_amended_and_original_1040_do_not_collide_semantically():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        original = _doc(c, "1040 2024.pdf", person_id=pid)
+        amended = _doc(c, "1040X 2024.pdf", person_id=pid)
+    rep = build_preview()
+    o_row, a_row = _by_id(rep, original), _by_id(rep, amended)
+    assert o_row["proposed_display_name"] != a_row["proposed_display_name"]
+    assert "Form 1040-X" in a_row["proposed_display_name"]
+    assert "Form 1040-X" not in o_row["proposed_display_name"]
+    assert not o_row["collision"] and not a_row["collision"]
+    assert o_row["bucket"] == "SAFE" and a_row["bucket"] == "SAFE"
+
+
+def test_word_amendment_markers_still_force_review_alongside_1040x():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1040X 2024 superseded.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["document_type"] == "1040-X"
+    assert row["bucket"] == "REVIEW" and row["version_markers"]
+
+
+def test_1040x_preview_stays_deterministic_and_read_only():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1040-X 2024.pdf", person_id=pid)
+
+    def snapshot():
+        with engine.connect() as c:
+            rows = sorted(c.execute(
+                select(documents.c.id, documents.c.original_name, documents.c.storage_path,
+                       documents.c.sha256, documents.c.category).where(documents.c.id == did)).all())
+            return rows, c.scalar(select(func.count()).select_from(documents))
+
+    before = snapshot()
+    assert _by_id(build_preview(), did) == _by_id(build_preview(), did)
+    assert snapshot() == before

@@ -3,20 +3,24 @@
 Composes ``YEAR - DOCUMENT TYPE - OWNER`` (plus a preserved filename qualifier when the original name
 carries detail the first three parts do not) from fields Client360 already has: ``original_name``,
 ``category``, and the person/household/organization owner. No database access, no OCR, no source-file
-access, no I/O of any kind — every function here is a pure transformation of its arguments, so the
-result is reproducible and unit-testable without a database.
+access, no I/O of any kind — every function here is a pure transformation of its arguments.
 
-Nothing in this module renames anything. It computes a *candidate* display name; deciding whether that
-candidate is an improvement is the preview's job (see ``document_normalization_preview``).
+Nothing here renames anything. It computes a *candidate* display name; deciding whether that candidate
+is an improvement is the preview's job (see ``document_normalization_preview``).
 
-Design constraint from the real production census: only 2% of trusted filenames are generic, so the
-existing names are mostly INFORMATIVE. This module is therefore deliberately conservative — it
-preserves a residual qualifier rather than discarding detail, and it reports when the original name is
-richer than the candidate so the caller can leave it alone.
+Design constraint from the production census: only 2% of trusted filenames are generic, so existing
+names are mostly INFORMATIVE. This module preserves a residual qualifier rather than discarding
+detail, and it reports the signals (version markers, multiple forms, ambiguous years) that must stop a
+candidate from being treated as safe.
+
+Type recognition returns the TEXT IT MATCHED so the qualifier pass can remove the form reference as a
+complete semantic unit. Guessing spelling variants instead is what left debris like ``8879S``,
+``1099INT`` and a stray ``R`` in earlier candidates.
 """
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 from app.services.document_classification import classify_document
 
@@ -24,8 +28,14 @@ from app.services.document_classification import classify_document
 DISPLAY_LABELS = {
     "1040": "Form 1040", "1041": "Form 1041", "1065": "Form 1065",
     "1120": "Form 1120", "1120S": "Form 1120S", "8879": "Form 8879",
-    "W-2": "W-2", "1099": "1099", "1095-A": "Form 1095-A", "1095-C": "Form 1095-C",
-    "K-1": "K-1", "941": "Form 941",
+    # Amended returns are DIFFERENT documents from the originals and must never display as them.
+    "1040-X": "Form 1040-X", "1065-X": "Form 1065-X", "1120-X": "Form 1120-X",
+    "W-2": "W-2", "941": "Form 941", "K-1": "K-1",
+    "1095-A": "Form 1095-A", "1095-C": "Form 1095-C",
+    # 1099 subtypes are distinct documents, not flavours of one — a 1099-R and a 1099-K for the same
+    # person in the same year are different filings and must not collapse to one name.
+    "1099": "1099", "1099-R": "1099-R", "1099-K": "1099-K", "1099-INT": "1099-INT",
+    "1099-DIV": "1099-DIV", "1099-NEC": "1099-NEC", "1099-SA": "1099-SA",
     "brokerage_statement": "Brokerage Statement", "bank_statement": "Bank Statement",
     "irs_notice": "IRS Notice", "state_notice": "State Notice",
     "drivers_license": "Driver's License", "passport": "Passport",
@@ -35,15 +45,24 @@ DISPLAY_LABELS = {
     "financial_statement": "Financial Statement",
     "payroll_summary": "Payroll Summary", "tax_return": "Tax Return",
     "tax_documents": "Tax Documents",
+    "schedule_c": "Schedule C", "signature_documents": "Signature Documents",
+    "year_end_tax_package": "Year End Tax Package",
+    "mortgage_interest": "Mortgage Interest Statement",
 }
 
-# Filename-only patterns, ordered most-specific first. These run BEFORE the shared classifier for the
-# forms the production census showed are common and that the shared rules either miss (941, 1095-C,
-# 8879-S, payroll, "tax docs") or would classify too coarsely. Each is anchored on a token boundary so
-# "1120S" never matches inside "11205" and "941" never matches inside a phone number or a zip+4.
 _TOKEN = r"(?<![0-9A-Za-z])"
 _END = r"(?![0-9A-Za-z])"
+
+# Ordered most-specific first. Every pattern is token-bounded so "1120S" never matches inside "11205".
+# 1099 subtypes precede generic 1099; 8879-S precedes 8879.
 _FILENAME_RULES: list[tuple[str, list[str], float]] = [
+    # -X amended variants FIRST: "1040X" must never fall through to the plain 1040 rule. Limited to
+    # the base forms this classifier already recognises that have a real -X amended form (1040-X,
+    # 1065-X, 1120-X). 1041 and 1120-S are deliberately absent -- they are amended by checking a box
+    # on the original form, so there is no -X suffix to match and inventing one would be a guess.
+    ("1040-X", [rf"{_TOKEN}1040[-\s_]?x{_END}"], 0.93),
+    ("1065-X", [rf"{_TOKEN}1065[-\s_]?x{_END}"], 0.93),
+    ("1120-X", [rf"{_TOKEN}1120[-\s_]?x{_END}"], 0.93),
     ("8879", [rf"{_TOKEN}8879[-\s_]?s{_END}", rf"{_TOKEN}8879{_END}"], 0.93),
     ("1120S", [rf"{_TOKEN}1120[-\s_]?s{_END}"], 0.93),
     ("1120", [rf"{_TOKEN}1120{_END}"], 0.92),
@@ -53,21 +72,38 @@ _FILENAME_RULES: list[tuple[str, list[str], float]] = [
     ("941", [rf"{_TOKEN}941{_END}", r"quarterly\s+federal\s+tax\s+return"], 0.9),
     ("1095-C", [rf"{_TOKEN}1095[-\s_]?c{_END}"], 0.92),
     ("1095-A", [rf"{_TOKEN}1095[-\s_]?a{_END}"], 0.92),
+    ("1099-INT", [rf"{_TOKEN}1099[-\s_]?int{_END}"], 0.93),
+    ("1099-DIV", [rf"{_TOKEN}1099[-\s_]?div{_END}"], 0.93),
+    ("1099-NEC", [rf"{_TOKEN}1099[-\s_]?nec{_END}"], 0.93),
+    ("1099-SA", [rf"{_TOKEN}1099[-\s_]?sa{_END}"], 0.93),
+    ("1099-R", [rf"{_TOKEN}1099[-\s_]?r{_END}"], 0.93),
+    ("1099-K", [rf"{_TOKEN}1099[-\s_]?k{_END}"], 0.93),
+    ("1099", [rf"{_TOKEN}1099(?:[-\s_]?(?:b|misc|g|s))?{_END}"], 0.9),
     ("K-1", [rf"{_TOKEN}k[-\s_]?1{_END}", r"schedule\s*k[-\s_]?1"], 0.9),
     ("W-2", [rf"{_TOKEN}w[-\s_]?2{_END}", r"wage\s+and\s+tax\s+statement"], 0.9),
-    ("1099", [rf"{_TOKEN}1099(?:[-\s_]?(?:int|div|b|misc|nec|r|g|k|s))?{_END}"], 0.9),
+    ("schedule_c", [r"schedule\s*c(?![a-z])", rf"{_TOKEN}sch\s*c(?![a-z])",
+                    r"income\s*(?:and\s*|&\s*)?expense\s*worksheet"], 0.9),
+    # "DL" alone is too weak (initials, abbreviations); require the front/back qualifier or the phrase.
+    ("drivers_license", [r"driver'?s?\s*licen[sc]e", rf"{_TOKEN}dl[\s\-_]*(?:front|back){_END}"], 0.9),
+    ("year_end_tax_package", [r"year[\s\-_]*end\s*tax\s*package"], 0.9),
+    ("signature_documents", [rf"signature\s*doc(?:ument)?s?{_END}"], 0.88),
+    ("mortgage_interest", [r"mortgage\s*interest(?:\s*statement)?"], 0.88),
     ("organizer", [r"organizer"], 0.9),
     ("payroll_summary", [r"payroll\s*(?:summary|report|register|journal)?", r"\bpay\s*roll\b"], 0.85),
     ("tax_return", [r"tax\s*return", r"\breturn\s*copy\b", r"\bfiled\s*return\b"], 0.8),
     ("tax_documents", [r"tax\s*docs?\b", r"tax\s*documents?\b", r"tax\s*source\s*docs?"], 0.75),
 ]
 
-#: ``documents.category`` values specific enough to BE the document type. Vague buckets such as
-#: "tax", "general", "client", "misc" are intentionally absent — they say a domain, not a document.
+#: ``documents.category`` values specific enough to BE the document type.
 _CATEGORY_TO_TYPE = {
-    "w2": "W-2", "w-2": "W-2", "1099": "1099", "1040": "1040", "1120s": "1120S",
+    "w2": "W-2", "w-2": "W-2", "1040": "1040", "1120s": "1120S",
     "1120": "1120", "1065": "1065", "1041": "1041", "8879": "8879", "k1": "K-1", "k-1": "K-1",
     "941": "941", "1095c": "1095-C", "1095-c": "1095-C", "1095a": "1095-A", "1095-a": "1095-A",
+    "1040x": "1040-X", "1040-x": "1040-X", "1065x": "1065-X", "1065-x": "1065-X",
+    "1120x": "1120-X", "1120-x": "1120-X",
+    "1099": "1099", "1099r": "1099-R", "1099-r": "1099-R", "1099k": "1099-K", "1099-k": "1099-K",
+    "1099int": "1099-INT", "1099-int": "1099-INT", "1099div": "1099-DIV", "1099-div": "1099-DIV",
+    "1099nec": "1099-NEC", "1099-nec": "1099-NEC", "1099sa": "1099-SA", "1099-sa": "1099-SA",
     "organizer": "organizer", "tax_organizer": "organizer",
     "payroll": "payroll_summary", "payroll_summary": "payroll_summary",
     "tax_return": "tax_return", "tax_documents": "tax_documents",
@@ -76,15 +112,50 @@ _CATEGORY_TO_TYPE = {
     "bank_statement": "bank_statement", "trust_document": "trust_document",
     "estate_document": "estate_document", "financial_statement": "financial_statement",
     "benefits_enrollment": "benefits_enrollment", "benefits_census": "benefits_enrollment",
+    "schedule_c": "schedule_c", "drivers_license": "drivers_license",
+    "mortgage_interest": "mortgage_interest",
 }
 #: Categories that exist but are too broad to name a document by.
 VAGUE_CATEGORIES = frozenset({"tax", "general", "client", "misc", "other", "document", "documents",
                               "uncategorized", "portal_request", "upload"})
 
+# Version / amendment / workflow-selection semantics. Their presence changes WHICH document this is,
+# so a candidate that cannot represent them must not be called safe.
+_VERSION_MARKERS = (
+    r"amend(?:ed|ment)?", r"revis(?:ed|ion)", r"correct(?:ed|ion)", r"supersed(?:e|ed)",
+    r"reissued?", r"voided?", r"draft", r"duplicate", r"dupe",
+    r"use\s*th[ie]s\s*one", r"usethisone", r"do\s*not\s*use", r"donotuse",
+    r"v\d{1,2}", r"ver\d{0,2}", r"version\s*\d{0,2}", r"rev\d{1,2}",
+)
+_VERSION_RE = re.compile(rf"{_TOKEN}(?:{'|'.join(_VERSION_MARKERS)}){_END}", re.I)
+
+#: Filename filler that carries no document meaning. Dropped from the qualifier, never REVIEW-forcing.
+_NOISE_TOKENS = frozenset({
+    "tax", "taxes", "doc", "docs", "document", "documents", "scan", "scanned", "scans",
+    "copy", "file", "files", "final", "for", "the", "and", "of", "a", "an", "misc", "new",
+    "image", "img", "pdf", "jpg", "jpeg", "png", "upload", "uploaded", "client", "attachment",
+})
+
+#: Families used for the "more than one materially different form" check. Coarse descriptors such as
+#: tax_return / tax_documents are deliberately excluded — they describe a bundle, not a second form.
+_FORM_FAMILY = {
+    "1040": "1040", "1041": "1041", "1065": "1065", "1120": "1120", "1120S": "1120",
+    "1040-X": "1040", "1065-X": "1065", "1120-X": "1120",
+    "8879": "8879", "941": "941", "1095-A": "1095", "1095-C": "1095", "K-1": "K-1", "W-2": "W-2",
+    "1099": "1099", "1099-R": "1099", "1099-K": "1099", "1099-INT": "1099",
+    "1099-DIV": "1099", "1099-NEC": "1099", "1099-SA": "1099",
+    "schedule_c": "schedule_c", "organizer": "organizer",
+}
+
 _ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _YEAR_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 _YEAR_TOKEN_RE = re.compile(r"(?:19|20)\d{2}")
 _YEAR_AFFIX_RE = re.compile(r"[A-Za-z]{1,3}(?:19|20)\d{2}|(?:19|20)\d{2}[A-Za-z]{1,6}")
+# Full dates in a filename: 2024-04-02, 04-02-2024, 20240402. Stripped whole so "04 02" never survives.
+_DATE_RE = re.compile(
+    r"(?<!\d)(?:(?:19|20)\d{2}[-_./](?:0?[1-9]|1[0-2])[-_./](?:0?[1-9]|[12]\d|3[01])"
+    r"|(?:0?[1-9]|1[0-2])[-_./](?:0?[1-9]|[12]\d|3[01])[-_./](?:19|20)\d{2}"
+    r"|(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))(?!\d)")
 _EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,6}$")
 _GENERIC_RE = re.compile(
     r"^(doc|document|scan|scanned|image|img|file|untitled|new|copy|attachment|d|x|temp|tmp)"
@@ -93,6 +164,16 @@ _CAMERA_RE = re.compile(r"^(img|dsc|photo|scan|screenshot)[ _\-]?\d{2,}$", re.I)
 
 MAX_NAME_LEN = 150
 CURRENT_YEAR_CEILING = 2100
+
+
+class TypeMatch(NamedTuple):
+    """Resolved document type plus the exact filename text that produced it (``None`` when the type
+    came from ``category`` or the shared classifier, which report no span)."""
+
+    code: str
+    confidence: float
+    source: str
+    matched_text: str | None = None
 
 
 def strip_extension(filename: str | None) -> str:
@@ -117,48 +198,72 @@ def is_generic_filename(filename: str | None) -> bool:
     return bool(_GENERIC_RE.match(stem) or _CAMERA_RE.match(stem) or len(stem.strip()) <= 3)
 
 
-def extract_year(filename: str | None) -> int | None:
-    """Document year from the ORIGINAL FILENAME ONLY (effective_date is empty in production).
-
-    Takes the LAST plausible 4-digit year in the name: exports commonly lead with a client or job
-    number and trail with the tax year (``12345 Pullen 1040 2024.pdf``). Rejects anything outside
-    1900..2100 and any run of digits longer than four, so an account number cannot masquerade as a year.
-    """
+def extract_years(filename: str | None) -> list[int]:
+    """Every plausible year in the filename, in order. A 4-digit run inside a longer alphanumeric
+    token is a hash fragment, not a year — ``c4aa9e2000`` is not the year 2000."""
     found = []
     for token in re.split(r"[^0-9A-Za-z]+", strip_extension(filename)):
         if not token:
             continue
-        # A year is only credible as its own token ("2024"), or with a short alphabetic affix
-        # ("FY2024", "2024Taxes"). Inside a longer alphanumeric run it is almost always part of a
-        # hash or export id -- "c4aa9e2000" is not the year 2000.
         if not (_YEAR_TOKEN_RE.fullmatch(token) or _YEAR_AFFIX_RE.fullmatch(token)):
             continue
         for y in _YEAR_RE.findall(token):
             if 1900 <= int(y) <= CURRENT_YEAR_CEILING:
                 found.append(int(y))
-    return found[-1] if found else None
+    return found
 
 
-def resolve_document_type(category: str | None, filename: str | None) -> tuple[str, float, str]:
-    """``(type_code, confidence, source)`` from existing category, then filename patterns, then the
-    shared classifier. ``("unknown", 0.0, "none")`` when nothing matches."""
+def extract_year(filename: str | None) -> int | None:
+    """The document year. Takes the LAST plausible year: exports commonly lead with a client or job
+    number and trail with the tax year."""
+    years = extract_years(filename)
+    return years[-1] if years else None
+
+
+def has_ambiguous_year(filename: str | None) -> bool:
+    """More than one DISTINCT year in the filename — which one names the document is a judgement call."""
+    return len(set(extract_years(filename))) > 1
+
+
+def detect_version_markers(filename: str | None) -> list[str]:
+    """Amendment / revision / workflow-selection markers present in the filename."""
+    return [m.group(0) for m in _VERSION_RE.finditer(strip_extension(filename))]
+
+
+def detect_form_families(filename: str | None) -> set[str]:
+    """Distinct SPECIFIC form families mentioned. Two or more means the filename names more than one
+    materially different document (e.g. "1040 and K-1 and 8879")."""
+    stem = strip_extension(filename).lower()
+    families = set()
+    for type_code, patterns, _ in _FILENAME_RULES:
+        family = _FORM_FAMILY.get(type_code)
+        if not family:
+            continue
+        if any(re.search(p, stem) for p in patterns):
+            families.add(family)
+    return families
+
+
+def resolve_document_type(category: str | None, filename: str | None) -> TypeMatch:
+    """Type from existing category, then filename patterns, then the shared classifier."""
     cat = (category or "").strip().lower().replace(" ", "_")
     if cat and cat not in VAGUE_CATEGORIES:
         mapped = _CATEGORY_TO_TYPE.get(cat) or _CATEGORY_TO_TYPE.get(cat.replace("_", ""))
         if mapped:
-            return mapped, 0.95, "category"
+            return TypeMatch(mapped, 0.95, "category", None)
 
     stem = strip_extension(filename).lower()
     for type_code, patterns, conf in _FILENAME_RULES:
         for pat in patterns:
-            if re.search(pat, stem):
-                return type_code, conf, "filename_pattern"
+            hit = re.search(pat, stem)
+            if hit:
+                return TypeMatch(type_code, conf, "filename_pattern", hit.group(0))
 
     # Shared deterministic classifier, filename only — never OCR, never the source file.
     doc_type, conf = classify_document(filename, None)
     if doc_type != "unknown":
-        return doc_type, conf, "classifier"
-    return "unknown", 0.0, "none"
+        return TypeMatch(doc_type, conf, "classifier", None)
+    return TypeMatch("unknown", 0.0, "none", None)
 
 
 def type_label(type_code: str | None) -> str | None:
@@ -168,36 +273,47 @@ def type_label(type_code: str | None) -> str | None:
 
 
 def residual_qualifier(filename: str | None, *, year: int | None, type_code: str | None,
-                       entity: str | None) -> str | None:
+                       entity: str | None, matched_text: str | None = None) -> str | None:
     """Detail in the original filename that YEAR - TYPE - OWNER does not already carry.
 
-    Only 2% of production filenames are generic, so the originals usually hold real information —
-    an employer, a custodian, a quarter, a spouse's copy. Everything already represented by the
-    year, the type label, or the owner name is removed; whatever survives and still looks meaningful
-    is returned so the caller can append it instead of discarding it.
+    Removes, in order: the exact text the type matcher matched (as a complete unit), other spellings
+    of the type, whole dates, years, the owner's name tokens, and pure filler. Whatever survives is
+    real provenance — an employer, payer, custodian, spouse or account reference — and is returned so
+    the caller can append it rather than throw it away.
     """
-    stem = sanitize(strip_extension(filename))
-    if not stem:
+    residue = sanitize(strip_extension(filename))
+    if not residue:
         return None
-    residue = stem
-    if year:
-        residue = re.sub(rf"(?<!\d){year}(?!\d)", " ", residue)
-    # Strip every way the type may be spelled in a filename: the label ("W-2"), the code, the code
-    # with separators removed ("w2", "1095c", "k1"), and the underscore form ("payroll summary").
-    # Without the separator-free variants a name like "w2 2024 copy.pdf" keeps "w2" as a bogus
-    # qualifier and two otherwise identical documents stop colliding.
+
+    # 1. The matched form reference, removed whole. This is what stops "8879S" -> "S",
+    #    "1099INT" -> "INT" and "1099-R" -> "R".
+    if matched_text:
+        residue = re.sub(re.escape(matched_text), " ", residue, flags=re.I)
+
+    # 2. Other spellings of the same type: label, code, and separator-free forms.
     variants = set()
-    for token in filter(None, [type_label(type_code), type_code,
-                               (type_code or "").replace("_", " ")]):
+    for token in filter(None, [type_label(type_code), type_code, (type_code or "").replace("_", " ")]):
         variants.add(token)
         variants.add(re.sub(r"[^0-9A-Za-z]", "", token))
     for token in sorted(filter(None, variants), key=len, reverse=True):
         residue = re.sub(rf"{_TOKEN}{re.escape(token)}{_END}", " ", residue, flags=re.I)
+
+    # 3. Whole dates before bare years, so "2024-04-02" cannot leave "04 02" behind.
+    residue = _DATE_RE.sub(" ", residue)
+    for y in set(extract_years(filename)):
+        residue = re.sub(rf"(?<!\d){y}(?!\d)", " ", residue)
+    if year:
+        residue = re.sub(rf"(?<!\d){year}(?!\d)", " ", residue)
+
+    # 4. The owner's own name adds nothing the OWNER segment does not already say.
     for word in re.split(r"[\s_\-]+", entity or ""):
         if len(word) > 2:
             residue = re.sub(rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])", " ", residue, flags=re.I)
-    residue = re.sub(r"[\s_\-]+", " ", residue).strip(" -_,.")
-    # Drop residue that is only punctuation, a bare number (job/client export ids), or a stray letter.
+
+    # 5. Filler words ("Tax_", "for", "copy") — dropped, but never anything unrecognised.
+    kept = [w for w in re.split(r"[\s_\-]+", residue) if w and w.lower().strip(".,") not in _NOISE_TOKENS]
+    residue = re.sub(r"[\s_\-]+", " ", " ".join(kept)).strip(" -_,.")
+
     if len(residue) < 3 or re.fullmatch(r"[\d\W_]+", residue) or _GENERIC_RE.match(residue):
         return None
     return sanitize(residue)
@@ -205,8 +321,8 @@ def residual_qualifier(filename: str | None, *, year: int | None, type_code: str
 
 def canonical_display_name(*, year, type_code, entity, qualifier=None) -> str | None:
     """``YEAR - TYPE - OWNER[ - QUALIFIER]``. Segments with no value are omitted, never padded with
-    placeholders. Returns ``None`` when neither a type nor a qualifier is known — a bare
-    ``2024 - Norman Pullen`` says nothing useful about the document. Never contains a document id."""
+    placeholders. Returns ``None`` when neither a type nor a qualifier is known. Never contains a
+    document id."""
     label = type_label(type_code)
     entity = sanitize(entity)
     qualifier = sanitize(qualifier) if qualifier else None
@@ -214,7 +330,7 @@ def canonical_display_name(*, year, type_code, entity, qualifier=None) -> str | 
         return None
     parts = [str(year) if year else None, label, entity or None, qualifier]
     name = " - ".join(p for p in parts if p)
-    if len(name) > MAX_NAME_LEN:        # trim the tail (qualifier) first; the head must survive
+    if len(name) > MAX_NAME_LEN:
         head = " - ".join(p for p in [str(year) if year else None, label, entity or None] if p)
         name = head[:MAX_NAME_LEN].rstrip(" -") if len(head) > MAX_NAME_LEN else head
     return name or None
