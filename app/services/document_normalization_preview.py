@@ -35,11 +35,14 @@ from app.db import (
 )
 from app.services.document_naming import (
     canonical_display_name,
+    detect_foreign_person_token,
     detect_form_families,
     detect_version_markers,
+    duplicate_suffix,
     extract_year,
     has_ambiguous_year,
     is_generic_filename,
+    mentions_instructions,
     residual_qualifier,
     resolve_document_type,
     strip_extension,
@@ -77,6 +80,15 @@ def _owner_names(conn, doc_rows):
         orgs = dict(conn.execute(select(relationship_entities.c.id, relationship_entities.c.name)
                                  .where(relationship_entities.c.id.in_(oids))).all())
     return persons, homes, orgs
+
+
+def _known_first_names(conn):
+    """Lowercase first names that Client360 already knows belong to people. Used only to recognise a
+    person name in a filename — it is what stops custodians such as "Fidelity" being read as people.
+    One set-based read; no name dictionary, no external data."""
+    return {n.strip().lower() for (n,) in conn.execute(
+        select(people.c.first_name).where(people.c.first_name.isnot(None)).distinct())
+        if n and n.strip()}
 
 
 def _owner_of(row, persons, homes, orgs):
@@ -140,6 +152,7 @@ def build_preview(*, limit=None, examples=50) -> dict:
     with engine.connect() as conn:
         doc_rows = conn.execute(stmt).mappings().all()
         persons, homes, orgs = _owner_names(conn, doc_rows)
+        first_names = _known_first_names(conn)
 
         for row in doc_rows:
             owner_type, owner_id, owner_name, inconsistent = _owner_of(row, persons, homes, orgs)
@@ -154,6 +167,13 @@ def build_preview(*, limit=None, examples=50) -> dict:
             version_markers = detect_version_markers(original)
             multi_form = len(detect_form_families(original)) > 1
             ambiguous_year = has_ambiguous_year(original)
+            instructions = mentions_instructions(original)
+            # Conservative possible-wrong-owner signal: person-owned documents only, leading token
+            # only, and only when that token is a first name Client360 already knows. Never
+            # reassigns ownership — it only asks a human to look.
+            foreign_person = (detect_foreign_person_token(
+                original, owner_name=owner_name, known_first_names=first_names)
+                if owner_type == "person" else None)
             candidate = canonical_display_name(year=year, type_code=type_code, entity=owner_name,
                                                qualifier=qualifier)
 
@@ -161,6 +181,19 @@ def build_preview(*, limit=None, examples=50) -> dict:
             if candidate:
                 key = (owner_type, owner_id)
                 collision = candidate in seen_names[key]
+                if collision:
+                    # The filesystem duplicate marker is normally filler, but when its absence is
+                    # what makes two documents identical it is the only distinguishing detail the
+                    # filename has -- keep it rather than fall back to a document id.
+                    dup = duplicate_suffix(original)
+                    if dup:
+                        with_dup = canonical_display_name(year=year, type_code=type_code,
+                                                          entity=owner_name,
+                                                          qualifier=" ".join(
+                                                              x for x in (qualifier, dup) if x))
+                        if with_dup and with_dup not in seen_names[key]:
+                            candidate, qualifier = with_dup, " ".join(
+                                x for x in (qualifier, dup) if x)
                 seen_names[key].add(candidate)
             if collision:
                 collisions += 1
@@ -195,6 +228,14 @@ def build_preview(*, limit=None, examples=50) -> dict:
             elif ambiguous_year:
                 bucket = "REVIEW"
                 reasons.append("more than one distinct year in the filename")
+            elif instructions:
+                bucket = "REVIEW"
+                reasons.append("filename says 'instructions' — an instructions packet is not the form")
+            elif foreign_person:
+                bucket = "REVIEW"
+                reasons.append(
+                    f"filename leads with a person name that is not the owner ('{foreign_person}') "
+                    f"— possible wrong owner")
             elif type_code == "unknown":
                 bucket = "REVIEW"
                 reasons.append("document type unresolved; candidate relies on filename detail only")
@@ -223,6 +264,7 @@ def build_preview(*, limit=None, examples=50) -> dict:
                 "qualifier": qualifier, "source_system": _source_system(row),
                 "collision": collision, "version_markers": version_markers,
                 "multi_form": multi_form, "ambiguous_year": ambiguous_year,
+                "instructions": instructions, "foreign_person": foreign_person,
                 "bucket": bucket, "reason": "; ".join(reasons),
             })
 

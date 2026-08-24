@@ -24,9 +24,12 @@ from app.services.document_naming import (
     canonical_display_name,
     detect_form_families,
     detect_version_markers,
+    duplicate_suffix,
     extract_year,
     has_ambiguous_year,
     is_generic_filename,
+    is_scanner_filename,
+    mentions_instructions,
     residual_qualifier,
     resolve_document_type,
     sanitize,
@@ -644,6 +647,218 @@ def test_1040x_preview_stays_deterministic_and_read_only():
     with engine.begin() as c:
         pid = _person(c, tag, "Ann", "Rovner")
         did = _doc(c, "1040-X 2024.pdf", person_id=pid)
+
+    def snapshot():
+        with engine.connect() as c:
+            rows = sorted(c.execute(
+                select(documents.c.id, documents.c.original_name, documents.c.storage_path,
+                       documents.c.sha256, documents.c.category).where(documents.c.id == did)).all())
+            return rows, c.scalar(select(func.count()).select_from(documents))
+
+    before = snapshot()
+    assert _by_id(build_preview(), did) == _by_id(build_preview(), did)
+    assert snapshot() == before
+
+
+# ===================================================================== systemic refinement (76ba8ab evidence)
+
+# --------------------------------------------------------------------- (1) DL front/back preserved
+def test_dl_front_and_back_do_not_normalize_to_the_same_candidate():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Sarah", "Jones")
+        front = _doc(c, "DL Front.jpg", person_id=pid)
+        back = _doc(c, "DL Back.jpg", person_id=pid)
+    rep = build_preview()
+    f_row, b_row = _by_id(rep, front), _by_id(rep, back)
+    assert f_row["document_type"] == b_row["document_type"] == "drivers_license"
+    assert f_row["proposed_display_name"] != b_row["proposed_display_name"]
+    assert "Front" in f_row["proposed_display_name"] and "Back" in b_row["proposed_display_name"]
+    assert not f_row["collision"] and not b_row["collision"]
+
+
+def test_drivers_license_phrase_also_keeps_front_back():
+    m = resolve_document_type(None, "Drivers License Front.pdf")
+    assert m.code == "drivers_license"
+    q = residual_qualifier("Drivers License Front.pdf", year=None, type_code=m.code,
+                           entity="Sarah Jones", matched_text=m.matched_text)
+    assert q == "Front"
+
+
+# --------------------------------------------------------------------- (2) duplicate suffix on collision
+def test_duplicate_suffix_detection():
+    assert duplicate_suffix("W2 2024 (2).pdf") == "(2)"
+    assert duplicate_suffix("W2 2024 - Copy.pdf") == "Copy"
+    assert duplicate_suffix("W2 2024 copy (3).pdf") == "(3)"
+    assert duplicate_suffix("W2 2024.pdf") is None
+
+
+def test_duplicate_suffix_is_preserved_only_when_it_prevents_a_collision():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        first = _doc(c, "W2 2024.pdf", person_id=pid)
+        second = _doc(c, "W2 2024 (2).pdf", person_id=pid)
+    rep = build_preview()
+    f_row, s_row = _by_id(rep, first), _by_id(rep, second)
+    assert f_row["proposed_display_name"] != s_row["proposed_display_name"]
+    assert s_row["proposed_display_name"].endswith("(2)")
+    assert "(2)" not in f_row["proposed_display_name"]      # not added where it is not needed
+    assert str(second) not in s_row["proposed_display_name"]   # never a document id
+
+
+def test_duplicate_suffix_is_not_a_routine_qualifier():
+    """With no collision the marker stays filler — it should not clutter every name."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1099K 2024 PayPal (2).pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["proposed_display_name"] == f"2024 - 1099-K - Ann Rovner{tag} - PayPal"
+
+
+# --------------------------------------------------------------------- (3) 1098-T
+@pytest.mark.parametrize("filename", ["1098-T 2024.pdf", "1098T_2024.pdf", "Form 1098 T 2024.pdf"])
+def test_1098t_is_recognized(filename):
+    assert resolve_document_type(None, filename).code == "1098-T"
+    assert type_label("1098-T") == "Form 1098-T"
+
+
+def test_1098t_keeps_the_school_name_as_a_qualifier():
+    name = "1098-T 2024 State University.pdf"
+    m = resolve_document_type(None, name)
+    q = residual_qualifier(name, year=2024, type_code=m.code, entity="Ann Rovner",
+                           matched_text=m.matched_text)
+    assert q == "State University"
+
+
+# --------------------------------------------------------------------- (4) scanner filenames
+@pytest.mark.parametrize("filename", [
+    "scan_Mar-05-2022_22-36-35.pdf", "Scan_2022-03-05_14-02-11.pdf",
+    "Adobe Scan Mar 5 2022.pdf", "IMG_20220305_143011.jpg",
+])
+def test_scanner_timestamp_filenames_are_generic_and_yield_no_year(filename):
+    assert is_scanner_filename(filename)
+    assert is_generic_filename(filename)
+    assert extract_year(filename) is None                   # a scan stamp is not the document year
+    assert residual_qualifier(filename, year=None, type_code="unknown",
+                              entity="Ann Rovner", matched_text=None) is None
+
+
+def test_a_real_document_with_a_scan_prefix_is_not_treated_as_a_scanner_export():
+    assert not is_scanner_filename("Scan 2024 W2 Acme.pdf")
+    assert extract_year("Scan 2024 W2 Acme.pdf") == 2024
+    assert not is_scanner_filename("scanned tax return 2024.pdf")
+
+
+def test_scanner_filename_is_skipped_not_named():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "scan_Mar-05-2022_22-36-35.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "SKIP"
+    assert row["year"] is None and row["proposed_display_name"] is None
+
+
+# --------------------------------------------------------------------- (5) Schedule C worksheet phrase
+def test_income_expense_worksheet_phrase_is_removed_from_the_qualifier():
+    for name in ("Schedule C Income Expense Worksheet 2024.pdf",
+                 "Income Expense Worksheet 2024.pdf",
+                 "Sch C Income and Expense Worksheet 2024.pdf"):
+        m = resolve_document_type(None, name)
+        assert m.code == "schedule_c", name
+        q = residual_qualifier(name, year=2024, type_code=m.code, entity="Ann Rovner",
+                               matched_text=m.matched_text)
+        assert q is None, f"{name} -> {q!r}"
+
+
+# --------------------------------------------------------------------- (6) instructions packets
+def test_instructions_detection():
+    assert mentions_instructions("1040 Instructions 2024.pdf")
+    assert mentions_instructions("2024 Form 1120S instruction.pdf")
+    assert not mentions_instructions("1040 2024.pdf")
+
+
+def test_instructions_packet_never_silently_becomes_the_form():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1040 Instructions 2024.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "REVIEW"
+    assert row["instructions"] is True
+    assert "instructions" in row["reason"].lower()
+    assert "Instructions" in row["proposed_display_name"]   # visible, not silently dropped
+
+
+def test_an_ordinary_form_is_not_flagged_as_instructions():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1040 2024.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["instructions"] is False and row["bucket"] == "SAFE"
+
+
+# --------------------------------------------------------------------- (7) possible wrong owner
+@pytest.mark.parametrize("filename,other", [
+    ("Megan Dl Front.jpg", "Megan"),
+    ("Jody_1095C_2023.pdf", "Jody"),
+    ("Ron 2021 W2.pdf", "Ron"),
+    ("Nikki TNC 2025 W2.pdf", "Nikki"),
+])
+def test_filename_leading_with_another_persons_name_goes_to_review(filename, other):
+    tag = _tag()
+    with engine.begin() as c:
+        owner = _person(c, tag, "Sarah", "Jones")
+        _person(c, tag, other, "Someoneelse")               # the name Client360 already knows
+        did = _doc(c, filename, person_id=owner)
+    row = _by_id(build_preview(), did)
+    assert row["bucket"] == "REVIEW", row["reason"]
+    assert row["foreign_person"] == other
+    assert "possible wrong owner" in row["reason"]
+    assert row["owner_id"] == owner                         # ownership is NEVER reassigned
+
+
+def test_custodian_and_employer_names_are_not_treated_as_people():
+    """"Fidelity" leads the filename but is not a person Client360 knows — it must stay SAFE."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "Fidelity 1099-R 2025.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["foreign_person"] is None
+    assert row["bucket"] == "SAFE"
+    assert row["proposed_display_name"].endswith("Fidelity")
+
+
+def test_the_owners_own_name_in_the_filename_is_not_a_wrong_owner_signal():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "Ann 2024 W2.pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["foreign_person"] is None
+
+
+def test_business_owned_documents_do_not_raise_the_wrong_owner_signal():
+    """The signal is person-owned only — a business document naming a principal is expected."""
+    tag = _tag()
+    with engine.begin() as c:
+        _person(c, tag, "Ron", "Someoneelse")
+        bid = _business(c, tag, "Acme Holdings")
+        did = _doc(c, "Ron 2021 W2.pdf", organization_id=bid)
+    row = _by_id(build_preview(), did)
+    assert row["foreign_person"] is None
+
+
+# --------------------------------------------------------------------- still read-only
+def test_refinement_preview_remains_read_only_and_deterministic():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        did = _doc(c, "1098-T 2024 State University.pdf", person_id=pid)
 
     def snapshot():
         with engine.connect() as c:

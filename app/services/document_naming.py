@@ -31,7 +31,7 @@ DISPLAY_LABELS = {
     # Amended returns are DIFFERENT documents from the originals and must never display as them.
     "1040-X": "Form 1040-X", "1065-X": "Form 1065-X", "1120-X": "Form 1120-X",
     "W-2": "W-2", "941": "Form 941", "K-1": "K-1",
-    "1095-A": "Form 1095-A", "1095-C": "Form 1095-C",
+    "1095-A": "Form 1095-A", "1095-C": "Form 1095-C", "1098-T": "Form 1098-T",
     # 1099 subtypes are distinct documents, not flavours of one — a 1099-R and a 1099-K for the same
     # person in the same year are different filings and must not collapse to one name.
     "1099": "1099", "1099-R": "1099-R", "1099-K": "1099-K", "1099-INT": "1099-INT",
@@ -72,6 +72,7 @@ _FILENAME_RULES: list[tuple[str, list[str], float]] = [
     ("941", [rf"{_TOKEN}941{_END}", r"quarterly\s+federal\s+tax\s+return"], 0.9),
     ("1095-C", [rf"{_TOKEN}1095[-\s_]?c{_END}"], 0.92),
     ("1095-A", [rf"{_TOKEN}1095[-\s_]?a{_END}"], 0.92),
+    ("1098-T", [rf"{_TOKEN}1098[-\s_]?t{_END}"], 0.92),
     ("1099-INT", [rf"{_TOKEN}1099[-\s_]?int{_END}"], 0.93),
     ("1099-DIV", [rf"{_TOKEN}1099[-\s_]?div{_END}"], 0.93),
     ("1099-NEC", [rf"{_TOKEN}1099[-\s_]?nec{_END}"], 0.93),
@@ -84,7 +85,10 @@ _FILENAME_RULES: list[tuple[str, list[str], float]] = [
     ("schedule_c", [r"schedule\s*c(?![a-z])", rf"{_TOKEN}sch\s*c(?![a-z])",
                     r"income\s*(?:and\s*|&\s*)?expense\s*worksheet"], 0.9),
     # "DL" alone is too weak (initials, abbreviations); require the front/back qualifier or the phrase.
-    ("drivers_license", [r"driver'?s?\s*licen[sc]e", rf"{_TOKEN}dl[\s\-_]*(?:front|back){_END}"], 0.9),
+    # "DL" is matched by LOOKAHEAD so front/back is required but NOT consumed -- consuming it made
+    # "DL Front" and "DL Back" normalise to the same candidate and collide.
+    ("drivers_license", [r"driver'?s?\s*licen[sc]e",
+                         rf"{_TOKEN}dl(?=[\s\-_]*(?:front|back){_END})"], 0.9),
     ("year_end_tax_package", [r"year[\s\-_]*end\s*tax\s*package"], 0.9),
     ("signature_documents", [rf"signature\s*doc(?:ument)?s?{_END}"], 0.88),
     ("mortgage_interest", [r"mortgage\s*interest(?:\s*statement)?"], 0.88),
@@ -99,6 +103,7 @@ _CATEGORY_TO_TYPE = {
     "w2": "W-2", "w-2": "W-2", "1040": "1040", "1120s": "1120S",
     "1120": "1120", "1065": "1065", "1041": "1041", "8879": "8879", "k1": "K-1", "k-1": "K-1",
     "941": "941", "1095c": "1095-C", "1095-c": "1095-C", "1095a": "1095-A", "1095-a": "1095-A",
+    "1098t": "1098-T", "1098-t": "1098-T",
     "1040x": "1040-X", "1040-x": "1040-X", "1065x": "1065-X", "1065-x": "1065-X",
     "1120x": "1120-X", "1120-x": "1120-X",
     "1099": "1099", "1099r": "1099-R", "1099-r": "1099-R", "1099k": "1099-K", "1099-k": "1099-K",
@@ -146,6 +151,28 @@ _FORM_FAMILY = {
     "1099-DIV": "1099", "1099-NEC": "1099", "1099-SA": "1099",
     "schedule_c": "schedule_c", "organizer": "organizer",
 }
+
+#: type code -> every pattern for that type. The qualifier pass strips ALL of them, not only the one
+#: that matched, so "Schedule C Income Expense Worksheet" does not keep the worksheet phrase.
+_PATTERNS_BY_TYPE: dict[str, list[str]] = {}
+for _code, _pats, _c in _FILENAME_RULES:
+    _PATTERNS_BY_TYPE.setdefault(_code, []).extend(_pats)
+
+# Scanner/camera exports: a prefix followed by nothing but a date-time stamp. The timestamp is when
+# the page was scanned, NOT the document year, and it is not a meaningful qualifier.
+_SCANNER_PREFIX = re.compile(
+    # NOT \b: an underscore is a word character, so "scan_Mar-05..." would not match a \b boundary.
+    r"^(?:adobe\s*scan|camscanner|scan(?:ned)?|img|image|photo|doc(?:ument)?|capture)(?![A-Za-z0-9])",
+    re.I)
+_MONTH_WORD = re.compile(
+    r"(?i)(?<![a-z])(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?![a-z])")
+_DATETIME_ONLY = re.compile(r"^[\d\s_\-.:()]*$")
+
+#: A filesystem duplicate marker: "(2)", "copy 2", "- Copy". Preserved only when dropping it would
+#: make two documents collide; never used as a routine qualifier.
+_DUP_SUFFIX = re.compile(r"(?:\(\s*(\d{1,3})\s*\)|(?:-\s*)?copy(?:\s*\(?\s*(\d{1,3})\s*\)?)?)\s*$",
+                         re.I)
+_INSTRUCTIONS_RE = re.compile(r"(?i)(?<![a-z])instruction(?:s)?(?![a-z])")
 
 _ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _YEAR_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
@@ -195,12 +222,68 @@ def sanitize(part: str | None) -> str:
 def is_generic_filename(filename: str | None) -> bool:
     """True when the filename carries no information (scan/camera/export artifact or too short)."""
     stem = strip_extension(filename)
-    return bool(_GENERIC_RE.match(stem) or _CAMERA_RE.match(stem) or len(stem.strip()) <= 3)
+    return bool(_GENERIC_RE.match(stem) or _CAMERA_RE.match(stem) or len(stem.strip()) <= 3
+                or is_scanner_filename(filename))
+
+
+def is_scanner_filename(filename: str | None) -> bool:
+    """True for scanner/camera exports whose whole name is a prefix plus a date-time stamp, e.g.
+    ``scan_Mar-05-2022_22-36-35.pdf``. The stamp records when the page was scanned, so it is neither
+    document-year evidence nor a meaningful qualifier."""
+    stem = strip_extension(filename).strip()
+    if not _SCANNER_PREFIX.match(stem):
+        return False
+    rest = _SCANNER_PREFIX.sub("", stem, count=1)
+    rest = _MONTH_WORD.sub(" ", rest)
+    return bool(rest.strip(" _-.:")) and _DATETIME_ONLY.fullmatch(rest) is not None
+
+
+def duplicate_suffix(filename: str | None) -> str | None:
+    """The filesystem duplicate marker at the end of a filename, normalised: ``(2)``, ``Copy``."""
+    m = _DUP_SUFFIX.search(strip_extension(filename).strip())
+    if not m:
+        return None
+    number = m.group(1) or m.group(2)
+    return f"({number})" if number else "Copy"
+
+
+def mentions_instructions(filename: str | None) -> bool:
+    """The filename says "instructions" — an instructions packet is NOT the form it describes."""
+    return bool(_INSTRUCTIONS_RE.search(strip_extension(filename)))
+
+
+def detect_foreign_person_token(filename: str | None, *, owner_name: str | None,
+                                known_first_names) -> str | None:
+    """The leading filename token when it is a first name Client360 KNOWS belongs to a person and is
+    not part of the owner's name — e.g. ``Ron 2021 W2.pdf`` filed under someone else.
+
+    Deliberately conservative: only the LEADING token is considered, and it must appear in the set of
+    first names already present in ``people``. That is what keeps custodians and employers such as
+    "Fidelity" or "Vanguard" from being mistaken for people — no name dictionary, no guessing. The
+    caller supplies the set; this function stays pure.
+    """
+    stem = strip_extension(filename).strip()
+    tokens = [x for x in re.split(r"[\s_\-]+", stem) if x]
+    if not tokens:
+        return None
+    lead = tokens[0].strip(".,()")
+    if not lead.isalpha() or not (2 <= len(lead) <= 15):
+        return None
+    low = lead.lower()
+    if low in _NOISE_TOKENS or low not in known_first_names:
+        return None
+    owner_tokens = {w.lower() for w in re.split(r"[\s_\-]+", owner_name or "") if w}
+    if low in owner_tokens or any(low in w or w in low for w in owner_tokens if len(w) > 2):
+        return None
+    return lead
 
 
 def extract_years(filename: str | None) -> list[int]:
     """Every plausible year in the filename, in order. A 4-digit run inside a longer alphanumeric
-    token is a hash fragment, not a year — ``c4aa9e2000`` is not the year 2000."""
+    token is a hash fragment, not a year — ``c4aa9e2000`` is not the year 2000. A scanner timestamp
+    is not a year either."""
+    if is_scanner_filename(filename):
+        return []
     found = []
     for token in re.split(r"[^0-9A-Za-z]+", strip_extension(filename)):
         if not token:
@@ -281,14 +364,26 @@ def residual_qualifier(filename: str | None, *, year: int | None, type_code: str
     real provenance — an employer, payer, custodian, spouse or account reference — and is returned so
     the caller can append it rather than throw it away.
     """
+    # A scanner export is a timestamp, not provenance — it never yields a qualifier.
+    if is_scanner_filename(filename):
+        return None
     residue = sanitize(strip_extension(filename))
     if not residue:
         return None
+    # A trailing "(2)" / "- Copy" is filler by default. The preview re-attaches it via
+    # duplicate_suffix() ONLY when its absence would make two documents collide.
+    residue = _DUP_SUFFIX.sub(" ", residue)
 
     # 1. The matched form reference, removed whole. This is what stops "8879S" -> "S",
     #    "1099INT" -> "INT" and "1099-R" -> "R".
     if matched_text:
         residue = re.sub(re.escape(matched_text), " ", residue, flags=re.I)
+
+    # 1b. Every OTHER pattern for the same type. A type can be reached by any of its patterns, so
+    #     "Schedule C Income Expense Worksheet" matches on "schedule c" and would otherwise keep the
+    #     worksheet phrase as a qualifier.
+    for pattern in _PATTERNS_BY_TYPE.get(type_code or "", []):
+        residue = re.sub(pattern, " ", residue, flags=re.I)
 
     # 2. Other spellings of the same type: label, code, and separator-free forms.
     variants = set()
