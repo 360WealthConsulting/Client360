@@ -20,6 +20,7 @@ import time
 from datetime import UTC, datetime
 
 from app.security.authorization import accessible_person_ids, record_in_scope
+from app.services.person_names import person_row_display_name
 
 # Household section capabilities (reuse the D.40 domain read capabilities; None → page-level client.read).
 HOUSEHOLD_SECTIONS = (
@@ -132,11 +133,11 @@ def _context(principal, household_id, page):
         "household_id": household_id, "household_name": row.get("name"),
         "household_row": dict(row), "portfolio": portfolio,
         "roster": roster, "members": scoped, "member_ids": member_ids,
-        "suppressed_members": [{"id": m["id"], "name": m.get("full_name")} for m in suppressed],
+        "suppressed_members": [{"id": m["id"], "name": person_row_display_name(m)} for m in suppressed],
         "primary": primary, "page": page,
         "public": {
             "household_id": household_id, "household_name": row.get("name"),
-            "primary_member": ({"id": primary["id"], "name": primary.get("full_name")}
+            "primary_member": ({"id": primary["id"], "name": person_row_display_name(primary)}
                                if primary else None),
             "member_count": len(roster), "active_client_count": len(scoped),
             "member_ids": member_ids,
@@ -175,7 +176,7 @@ def _members(principal, ctx):
         pid = m["id"]
         in_scope = m.get("in_scope", False)
         entry = {
-            "person_id": pid, "name": m.get("full_name"),
+            "person_id": pid, "name": person_row_display_name(m),
             "relationship": m.get("relationship_type"), "is_primary": bool(m.get("is_primary")),
             "in_scope": in_scope, "deep_link": f"/client/{pid}",
             "email": m.get("primary_email") if in_scope else None,
@@ -215,7 +216,7 @@ def _financial(principal, ctx):
     members = []
     for m in ctx["members"]:
         aum = float(_safe(lambda pid=m["id"]: _person_aum(pid), 0) or 0)
-        members.append({"person_id": m["id"], "name": m.get("full_name"), "aum": aum,
+        members.append({"person_id": m["id"], "name": person_row_display_name(m), "aum": aum,
                         "contribution_pct": round(aum / household_aum * 100, 1) if household_aum else None})
     return {
         "household_aum": household_aum, "household_cash": float(hp.get("cash") or 0),
@@ -662,7 +663,7 @@ def _relationships(principal, ctx):
     _add_node(hkey, {"type": "household", "id": ctx["household_id"], "name": ctx["household_name"]})
     for m in ctx["members"]:
         mkey = f"person:{m['id']}"
-        _add_node(mkey, {"type": "person", "id": m["id"], "name": m.get("full_name"),
+        _add_node(mkey, {"type": "person", "id": m["id"], "name": person_row_display_name(m),
                          "is_primary": bool(m.get("is_primary"))})
         _add_edge(hkey, mkey, "household_member", m.get("relationship_type") or "member")
         graph = _safe(lambda p=m["id"]: build_relationship_graph(p), {"relationships": []})
@@ -783,7 +784,7 @@ def _person_aum(pid):
 def _name(ctx, pid):
     for m in ctx["roster"]:
         if m["id"] == pid:
-            return m.get("full_name")
+            return person_row_display_name(m)
     return None
 
 

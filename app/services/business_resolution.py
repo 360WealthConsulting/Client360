@@ -35,6 +35,7 @@ from app.db import (
     relationship_entities,
     source_contacts,
 )
+from app.services.person_names import person_display_name
 
 _WEALTHBOX = "wealthbox"
 # Explicit CURRENT-ownership tokens only. "founder" is NOT here — founding a company does not prove
@@ -56,10 +57,8 @@ def _norm(value: str | None) -> str:
 
 
 def _display_name(full_name, first, last) -> str:
-    if full_name and full_name.strip():
-        return full_name.strip()
-    combined = f"{(first or '').strip()} {(last or '').strip()}".strip()
-    return combined or "(unnamed)"
+    """Thin alias for the canonical helper — one name resolution, not a second implementation."""
+    return person_display_name(full_name, first, last)
 
 
 def _classify_role(job_title: str | None, business_name: str | None) -> str:

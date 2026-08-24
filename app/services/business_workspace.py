@@ -20,19 +20,16 @@ from app.db import (
     relationship_types,
     relationships,
 )
+from app.services.person_names import person_display_name
 
 _ENTITY_KINDS = ("business", "trust", "estate", "organization")
 
 
 def _display_name(entity_name, full_name, first, last):
-    """Prefer the canonical person name; fall back to first+last when full_name/entity name is
-    blank or a placeholder (e.g. 'Person 7783'). Never mutates stored names."""
-    if full_name and full_name.strip():
-        return full_name.strip()
-    combined = f"{(first or '').strip()} {(last or '').strip()}".strip()
-    if combined:
-        return combined
-    return (entity_name or "").strip() or "(unnamed)"
+    """Prefer the canonical person name; fall back to first+last, then to the entity's own name
+    (which may be a placeholder such as 'Person 7783'). Never mutates stored names. Delegates to the
+    canonical helper so there is one name resolution across the app."""
+    return person_display_name(full_name, first, last, fallback=entity_name)
 
 
 def _person_household_ids(connection, person_ids):

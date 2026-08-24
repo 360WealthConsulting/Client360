@@ -112,13 +112,18 @@ def _household_members(household_id):
     with engine.connect() as conn:
         rows = conn.execute(
             select(
-                people.c.id, people.c.full_name, people.c.primary_email,
+                people.c.id, people.c.full_name, people.c.first_name, people.c.last_name,
+                people.c.primary_email,
                 household_relationships.c.relationship_type,
                 household_relationships.c.is_primary,
             )
             .select_from(household_relationships.join(people, people.c.id == household_relationships.c.person_id))
             .where(household_relationships.c.household_id == household_id)
-            .order_by(household_relationships.c.is_primary.desc(), people.c.full_name)
+            # first_name/last_name are selected because full_name is not populated for every person;
+            # they are the canonical fallback (see app.services.person_names) and they also give the
+            # roster a deterministic order when full_name is NULL for several members.
+            .order_by(household_relationships.c.is_primary.desc(), people.c.full_name,
+                      people.c.last_name, people.c.first_name, people.c.id)
         ).mappings().all()
     return [dict(r) for r in rows]
 

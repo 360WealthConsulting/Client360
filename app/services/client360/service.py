@@ -11,6 +11,7 @@ import time
 from datetime import UTC, datetime
 
 from app.security.authorization import record_in_scope
+from app.services.person_names import person_row_display_name
 
 from . import snapshot as snapshot_mod
 from .registry import SECTIONS, visible_quick_actions, visible_sections
@@ -32,7 +33,8 @@ def _members(household_id):
     from app.db import engine, household_relationships, people
     with engine.connect() as c:
         rows = c.execute(
-            select(people.c.id, people.c.full_name, household_relationships.c.relationship_type,
+            select(people.c.id, people.c.full_name, people.c.first_name, people.c.last_name,
+                   household_relationships.c.relationship_type,
                    household_relationships.c.is_primary)
             .select_from(household_relationships.join(people,
                          people.c.id == household_relationships.c.person_id))
@@ -129,7 +131,11 @@ def get_workspace(principal, *, person_id=None, household_id=None, page=1, secti
     return {
         "entity_type": entity_type, "entity_id": entity_id, "subject": subject,
         "household_id": household_id, "household_name": ctx["household_name"],
-        "display_name": subject.get("full_name") or subject.get("name") or f"{entity_type} {entity_id}",
+        # full_name is not populated for every person; resolve through the canonical helper so a
+        # person with only first_name/last_name renders their name instead of "person <id>".
+        # A household subject has no first/last, so it falls through to households.name.
+        "display_name": person_row_display_name(
+            subject, fallback=subject.get("name") or f"{entity_type} {entity_id}"),
         "snapshot": snapshot_mod.build(principal, ctx),
         "sections": built,
         "section_keys": [s.key for s in visible_sections(principal)],
