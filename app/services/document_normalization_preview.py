@@ -22,7 +22,7 @@ bucketing is deliberately conservative: when in doubt a row lands in REVIEW or U
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 
 from sqlalchemy import select
 
@@ -130,13 +130,48 @@ def _original_already_clear(original_stem, candidate, *, year, type_code, entity
     return has_year and has_type and has_owner
 
 
+def _resolve_collisions(rows):
+    """Order-independent collision resolution over the FULL result set.
+
+    The previous single pass decided a collision against the names already seen, so whichever
+    document happened to be processed first kept the bare name and the other was flagged. When the
+    file carrying "(2)" sorted first it lost its suffix entirely -- the production defect
+    (``2025 W2 (2).pdf`` -> ``2025 - W-2 - ADAM DAVIS``).
+
+    Two passes instead. First count the base candidates per owner; any document in a contested group
+    that has a real duplicate suffix in its OWN filename keeps that suffix. Then recount the final
+    names: whatever is still shared stays flagged. Suffixes are never invented, and a document id is
+    never used to force uniqueness -- documents that cannot be told apart from filename evidence
+    remain collisions and are reviewed by a human.
+    """
+    def key(row, name):
+        return (row["owner_type"], row["owner_id"], name)
+
+    base_counts = Counter(key(r, r["base_candidate"]) for r in rows if r["base_candidate"])
+    for r in rows:
+        base = r["base_candidate"]
+        r["proposed_display_name"] = base
+        if not base or base_counts[key(r, base)] < 2 or not r["dup_suffix"]:
+            continue
+        qualifier = " ".join(x for x in (r["qualifier"], r["dup_suffix"]) if x)
+        with_dup = canonical_display_name(year=r["year"], type_code=r["document_type"],
+                                          entity=r["owner"], qualifier=qualifier)
+        if with_dup:
+            r["proposed_display_name"], r["qualifier"] = with_dup, qualifier
+
+    final_counts = Counter(key(r, r["proposed_display_name"]) for r in rows
+                           if r["proposed_display_name"])
+    for r in rows:
+        name = r["proposed_display_name"]
+        r["collision"] = bool(name) and final_counts[key(r, name)] > 1
+    return sum(1 for r in rows if r["collision"])
+
+
 def build_preview(*, limit=None, examples=50) -> dict:
     """Compute the read-only preview over the trusted population. Writes nothing."""
     rows_out = []
     counts = Counter()
     by_owner_type, by_doc_type, by_source = Counter(), Counter(), Counter()
-    seen_names = defaultdict(set)          # (owner_type, owner_id) -> candidate names already used
-    collisions = 0
 
     stmt = (select(documents.c.id, documents.c.original_name, documents.c.category,
                    documents.c.person_id, documents.c.household_id, documents.c.organization_id,
@@ -171,102 +206,105 @@ def build_preview(*, limit=None, examples=50) -> dict:
             # Conservative possible-wrong-owner signal: person-owned documents only, leading token
             # only, and only when that token is a first name Client360 already knows. Never
             # reassigns ownership — it only asks a human to look.
+            # A recognised document TYPE is required as corroboration. Without it the leading token
+            # is just the first word of an unknown filename -- "Johnson & Wales 2024.jpeg" is a
+            # school, not a person called Johnson.
             foreign_person = (detect_foreign_person_token(
                 original, owner_name=owner_name, known_first_names=first_names)
-                if owner_type == "person" else None)
-            candidate = canonical_display_name(year=year, type_code=type_code, entity=owner_name,
-                                               qualifier=qualifier)
+                if owner_type == "person" and type_code != "unknown" else None)
+            base_candidate = canonical_display_name(year=year, type_code=type_code,
+                                                    entity=owner_name, qualifier=qualifier)
 
-            collision = False
-            if candidate:
-                key = (owner_type, owner_id)
-                collision = candidate in seen_names[key]
-                if collision:
-                    # The filesystem duplicate marker is normally filler, but when its absence is
-                    # what makes two documents identical it is the only distinguishing detail the
-                    # filename has -- keep it rather than fall back to a document id.
-                    dup = duplicate_suffix(original)
-                    if dup:
-                        with_dup = canonical_display_name(year=year, type_code=type_code,
-                                                          entity=owner_name,
-                                                          qualifier=" ".join(
-                                                              x for x in (qualifier, dup) if x))
-                        if with_dup and with_dup not in seen_names[key]:
-                            candidate, qualifier = with_dup, " ".join(
-                                x for x in (qualifier, dup) if x)
-                seen_names[key].add(candidate)
-            if collision:
-                collisions += 1
-
-            reasons = []
-            if inconsistent:
-                bucket = "SKIP"
-                reasons.append("more than one owner column populated")
-            elif not owner_name:
-                bucket = "SKIP"
-                reasons.append("owner could not be resolved to a name")
-            elif type_code == "unknown" and is_generic_filename(original):
-                bucket = "SKIP"
-                reasons.append("generic filename and no resolvable document type")
-            elif not candidate:
-                bucket = "SKIP"
-                reasons.append("no document type and no meaningful filename detail")
-            elif _original_already_clear(stem, candidate, year=year, type_code=type_code,
-                                         entity=owner_name):
-                bucket = "UNCHANGED"
-                reasons.append("existing filename already states the year, type and owner")
-            elif collision:
-                bucket = "REVIEW"
-                reasons.append("candidate name collides with another document for the same owner")
-            elif multi_form:
-                bucket = "REVIEW"
-                reasons.append("filename names more than one materially different form")
-            elif version_markers:
-                bucket = "REVIEW"
-                reasons.append(
-                    f"amendment/version semantics not representable: {', '.join(version_markers[:3])}")
-            elif ambiguous_year:
-                bucket = "REVIEW"
-                reasons.append("more than one distinct year in the filename")
-            elif instructions:
-                bucket = "REVIEW"
-                reasons.append("filename says 'instructions' — an instructions packet is not the form")
-            elif foreign_person:
-                bucket = "REVIEW"
-                reasons.append(
-                    f"filename leads with a person name that is not the owner ('{foreign_person}') "
-                    f"— possible wrong owner")
-            elif type_code == "unknown":
-                bucket = "REVIEW"
-                reasons.append("document type unresolved; candidate relies on filename detail only")
-            elif confidence < SAFE_CONFIDENCE:
-                bucket = "REVIEW"
-                reasons.append(f"type confidence {confidence:.2f} below {SAFE_CONFIDENCE}")
-            elif type_code in _COARSE_TYPES and qualifier:
-                bucket = "REVIEW"
-                reasons.append("type is coarse and the filename carries extra detail")
-            elif qualifier and not year:
-                bucket = "REVIEW"
-                reasons.append("no year in filename and the original carries detail worth keeping")
-            else:
-                bucket = "SAFE"
-                reasons.append(f"type from {type_source} (confidence {confidence:.2f}); owner resolved")
-
-            counts[bucket] += 1
-            by_owner_type[owner_type or "(unresolved)"] += 1
-            by_doc_type[type_code] += 1
-            by_source[_source_system(row)] += 1
             rows_out.append({
                 "document_id": row["id"], "current_filename": original,
-                "proposed_display_name": candidate, "owner": owner_name, "owner_type": owner_type,
-                "owner_id": owner_id, "document_type": type_code, "type_label": type_label(type_code),
+                "base_candidate": base_candidate, "proposed_display_name": base_candidate,
+                "dup_suffix": duplicate_suffix(original),
+                "owner": owner_name, "owner_type": owner_type, "owner_id": owner_id,
+                "document_type": type_code, "type_label": type_label(type_code),
                 "type_source": type_source, "confidence": confidence, "year": year,
                 "qualifier": qualifier, "source_system": _source_system(row),
-                "collision": collision, "version_markers": version_markers,
+                "collision": False, "version_markers": version_markers,
                 "multi_form": multi_form, "ambiguous_year": ambiguous_year,
                 "instructions": instructions, "foreign_person": foreign_person,
-                "bucket": bucket, "reason": "; ".join(reasons),
+                "inconsistent_owner": inconsistent, "stem": stem,
+                "bucket": None, "reason": "",
             })
+
+    # Second pass: collisions are a property of the whole set, not of processing order.
+    collisions = _resolve_collisions(rows_out)
+
+    for r in rows_out:
+        (owner_name, type_code, year, stem, candidate, collision) = (
+            r["owner"], r["document_type"], r["year"], r["stem"],
+            r["proposed_display_name"], r["collision"])
+        original, inconsistent = r["current_filename"], r["inconsistent_owner"]
+        confidence, type_source, qualifier = r["confidence"], r["type_source"], r["qualifier"]
+        multi_form, version_markers = r["multi_form"], r["version_markers"]
+        ambiguous_year, instructions = r["ambiguous_year"], r["instructions"]
+        foreign_person = r["foreign_person"]
+        reasons = []
+        if inconsistent:
+            bucket = "SKIP"
+            reasons.append("more than one owner column populated")
+        elif not owner_name:
+            bucket = "SKIP"
+            reasons.append("owner could not be resolved to a name")
+        elif type_code == "unknown" and is_generic_filename(original):
+            bucket = "SKIP"
+            reasons.append("generic filename and no resolvable document type")
+        elif not candidate:
+            bucket = "SKIP"
+            reasons.append("no document type and no meaningful filename detail")
+        elif _original_already_clear(stem, candidate, year=year, type_code=type_code,
+                                     entity=owner_name):
+            bucket = "UNCHANGED"
+            reasons.append("existing filename already states the year, type and owner")
+        elif collision:
+            bucket = "REVIEW"
+            reasons.append("candidate name collides with another document for the same owner")
+        elif multi_form:
+            bucket = "REVIEW"
+            reasons.append("filename names more than one materially different form")
+        elif version_markers:
+            bucket = "REVIEW"
+            reasons.append(
+                f"amendment/version semantics not representable: {', '.join(version_markers[:3])}")
+        elif ambiguous_year:
+            bucket = "REVIEW"
+            reasons.append("more than one distinct year in the filename")
+        elif instructions:
+            bucket = "REVIEW"
+            reasons.append("filename says 'instructions' — an instructions packet is not the form")
+        elif foreign_person:
+            bucket = "REVIEW"
+            reasons.append(
+                f"filename leads with a person name that is not the owner ('{foreign_person}') "
+                f"— possible wrong owner")
+        elif type_code == "unknown":
+            bucket = "REVIEW"
+            reasons.append("document type unresolved; candidate relies on filename detail only")
+        elif confidence < SAFE_CONFIDENCE:
+            bucket = "REVIEW"
+            reasons.append(f"type confidence {confidence:.2f} below {SAFE_CONFIDENCE}")
+        elif type_code in _COARSE_TYPES and qualifier:
+            bucket = "REVIEW"
+            reasons.append("type is coarse and the filename carries extra detail")
+        elif qualifier and not year:
+            bucket = "REVIEW"
+            reasons.append("no year in filename and the original carries detail worth keeping")
+        else:
+            bucket = "SAFE"
+            reasons.append(f"type from {type_source} (confidence {confidence:.2f}); owner resolved")
+
+        r["bucket"], r["reason"] = bucket, "; ".join(reasons)
+        counts[bucket] += 1
+        by_owner_type[r["owner_type"] or "(unresolved)"] += 1
+        by_doc_type[type_code] += 1
+        by_source[r["source_system"]] += 1
+
+    for r in rows_out:                       # internal working keys are not part of the report
+        for internal in ("base_candidate", "dup_suffix", "stem", "inconsistent_owner"):
+            r.pop(internal, None)
 
     def sample(bucket, n):
         return [r for r in rows_out if r["bucket"] == bucket][:n]

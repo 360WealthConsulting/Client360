@@ -22,6 +22,7 @@ from app.db import (
 )
 from app.services.document_naming import (
     canonical_display_name,
+    detect_foreign_person_token,
     detect_form_families,
     detect_version_markers,
     duplicate_suffix,
@@ -256,11 +257,12 @@ def test_collision_within_the_same_owner_goes_to_review():
     tag = _tag()
     with engine.begin() as c:
         pid = _person(c, tag, "Norman", "Pullen")
+        # neither filename carries a duplicate suffix, so nothing can tell them apart
         first = _doc(c, "w2 2024.pdf", person_id=pid)
-        second = _doc(c, "w2 2024 copy.pdf", person_id=pid)
+        second = _doc(c, "2024 w2.pdf", person_id=pid)
     rep = build_preview()
     buckets = {_by_id(rep, first)["bucket"], _by_id(rep, second)["bucket"]}
-    assert "REVIEW" in buckets
+    assert buckets == {"REVIEW"}                            # BOTH flagged, not just the later one
     assert rep["collisions"] >= 1
     assert any(r["collision"] for r in (_by_id(rep, first), _by_id(rep, second)))
 
@@ -865,6 +867,184 @@ def test_refinement_preview_remains_read_only_and_deterministic():
             rows = sorted(c.execute(
                 select(documents.c.id, documents.c.original_name, documents.c.storage_path,
                        documents.c.sha256, documents.c.category).where(documents.c.id == did)).all())
+            return rows, c.scalar(select(func.count()).select_from(documents))
+
+    before = snapshot()
+    assert _by_id(build_preview(), did) == _by_id(build_preview(), did)
+    assert snapshot() == before
+
+
+# ===================================================================== production defects (50d1952)
+
+# --------------------------------------------------------------------- (1) duplicate-suffix collisions
+def test_production_2025_w2_duplicate_keeps_its_suffix_regardless_of_order():
+    """`2025 W2 (2).pdf` lost its "(2)" whenever it happened to be processed first. Collision
+    resolution must depend on the SET, not on processing order."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Adam", "Davis")
+        dup = _doc(c, "2025 W2 (2).pdf", person_id=pid)     # created FIRST -> lower document id
+        plain = _doc(c, "2025 W2.pdf", person_id=pid)
+    rep = build_preview()
+    d_row, p_row = _by_id(rep, dup), _by_id(rep, plain)
+    assert d_row["proposed_display_name"].endswith("(2)")
+    assert not p_row["proposed_display_name"].endswith("(2)")
+    assert d_row["proposed_display_name"] != p_row["proposed_display_name"]
+    assert not d_row["collision"] and not p_row["collision"]
+    for row in (d_row, p_row):
+        assert str(row["document_id"]) not in row["proposed_display_name"]
+
+
+def test_production_1099r_duplicate_without_a_year_keeps_its_suffix():
+    """`1099-R (2).pdf` -> `1099-R - Akquira Hamilton Edwards` dropped the suffix."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Akquira", "Hamilton Edwards")
+        dup = _doc(c, "1099-R (2).pdf", person_id=pid)
+        plain = _doc(c, "1099-R.pdf", person_id=pid)
+    rep = build_preview()
+    d_row, p_row = _by_id(rep, dup), _by_id(rep, plain)
+    assert d_row["proposed_display_name"] == f"1099-R - Akquira Hamilton Edwards{tag} - (2)"
+    assert p_row["proposed_display_name"] == f"1099-R - Akquira Hamilton Edwards{tag}"
+    assert not d_row["collision"] and not p_row["collision"]
+
+
+def test_three_way_duplicate_group_is_fully_disambiguated():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Adam", "Davis")
+        ids = [_doc(c, n, person_id=pid) for n in ("2025 W2.pdf", "2025 W2 (2).pdf", "2025 W2 (3).pdf")]
+    rep = build_preview()
+    names = [_by_id(rep, i)["proposed_display_name"] for i in ids]
+    assert len(set(names)) == 3
+    assert not any(_by_id(rep, i)["collision"] for i in ids)
+
+
+def test_suffixes_are_never_invented_where_none_existed():
+    """Two indistinguishable filenames stay REVIEW rather than being given fabricated uniqueness."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Adam", "Davis")
+        a = _doc(c, "2025 W2.pdf", person_id=pid)
+        b = _doc(c, "W2 2025.pdf", person_id=pid)
+    rep = build_preview()
+    a_row, b_row = _by_id(rep, a), _by_id(rep, b)
+    assert a_row["proposed_display_name"] == b_row["proposed_display_name"]
+    assert a_row["collision"] and b_row["collision"]
+    assert a_row["bucket"] == b_row["bucket"] == "REVIEW"
+    for row in (a_row, b_row):
+        assert "(2)" not in row["proposed_display_name"]
+        assert str(row["document_id"]) not in row["proposed_display_name"]
+
+
+def test_a_lone_duplicate_suffix_is_still_not_a_routine_qualifier():
+    """With nothing to collide against, "(2)" stays filler."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Adam", "Davis")
+        did = _doc(c, "2025 W2 (2).pdf", person_id=pid)
+    row = _by_id(build_preview(), did)
+    assert row["proposed_display_name"] == f"2025 - W-2 - Adam Davis{tag}"
+
+
+def test_duplicate_suffix_of_a_different_owner_does_not_interact():
+    tag = _tag()
+    with engine.begin() as c:
+        one = _person(c, tag, "Adam", "Davis")
+        two = _person(c, tag, "Beth", "Calder")
+        a = _doc(c, "2025 W2.pdf", person_id=one)
+        b = _doc(c, "2025 W2.pdf", person_id=two)
+    rep = build_preview()
+    assert not _by_id(rep, a)["collision"] and not _by_id(rep, b)["collision"]
+
+
+# --------------------------------------------------------------------- (2) wrong-owner needs type context
+def test_johnson_and_wales_is_not_a_possible_wrong_owner():
+    """Production false positive: an untyped image whose first word happens to be a first name."""
+    tag = _tag()
+    with engine.begin() as c:
+        owner = _person(c, tag, "Abigail", "Dargis")
+        _person(c, tag, "Johnson", "Someoneelse")           # "Johnson" IS a known first name
+        did = _doc(c, "Johnson & Wales 2024.jpeg", person_id=owner)
+    row = _by_id(build_preview(), did)
+    assert row["document_type"] == "unknown"
+    assert row["foreign_person"] is None
+    assert "possible wrong owner" not in row["reason"]
+
+
+def test_untyped_filename_leading_with_a_known_first_name_is_not_flagged():
+    tag = _tag()
+    with engine.begin() as c:
+        owner = _person(c, tag, "Abigail", "Dargis")
+        _person(c, tag, "Morgan", "Someoneelse")
+        did = _doc(c, "Morgan property paperwork.pdf", person_id=owner)
+    row = _by_id(build_preview(), did)
+    assert row["document_type"] == "unknown" and row["foreign_person"] is None
+
+
+def test_organization_name_joined_by_ampersand_is_never_a_person():
+    assert detect_foreign_person_token("Johnson & Wales 1098-T 2024.pdf",
+                                       owner_name="Abigail Dargis",
+                                       known_first_names={"johnson"}) is None
+    assert detect_foreign_person_token("Baker and Sons 1099-NEC 2024.pdf",
+                                       owner_name="Abigail Dargis",
+                                       known_first_names={"baker"}) is None
+
+
+@pytest.mark.parametrize("filename,other", [
+    ("Megan Dl Front.jpg", "Megan"),
+    ("Megan Dl back.jpg", "Megan"),
+    ("Jody_1095C_2023.pdf", "Jody"),
+    ("Ron 2021 W2.pdf", "Ron"),
+    ("Nikki TNC 2025 W2.pdf", "Nikki"),
+])
+def test_all_known_wrong_owner_shapes_still_review(filename, other):
+    """Every production positive must survive the tightening — each has a recognised type."""
+    tag = _tag()
+    with engine.begin() as c:
+        owner = _person(c, tag, "Abigail", "Dargis")
+        _person(c, tag, other, "Someoneelse")
+        did = _doc(c, filename, person_id=owner)
+    row = _by_id(build_preview(), did)
+    assert row["document_type"] != "unknown", f"{filename} lost its type"
+    assert row["foreign_person"] == other
+    assert row["bucket"] == "REVIEW" and "possible wrong owner" in row["reason"]
+    assert row["owner_id"] == owner                         # never reassigned
+
+
+# --------------------------------------------------------------------- 50d1952 behaviour preserved
+def test_previous_refinements_are_unchanged():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Ann", "Rovner")
+        scan = _doc(c, "scan_Mar-05-2022_22-36-35.pdf", person_id=pid)
+        front = _doc(c, "DL Front.jpg", person_id=pid)
+        back = _doc(c, "DL Back.jpg", person_id=pid)
+        t1098 = _doc(c, "1098-T 2024 State University.pdf", person_id=pid)
+        schedc = _doc(c, "Schedule C Income Expense Worksheet 2024.pdf", person_id=pid)
+        instr = _doc(c, "1040 Instructions 2024.pdf", person_id=pid)
+    rep = build_preview()
+    assert _by_id(rep, scan)["bucket"] == "SKIP"                       # scanner stays SKIP
+    f_name, b_name = (_by_id(rep, front)["proposed_display_name"],
+                      _by_id(rep, back)["proposed_display_name"])
+    assert "Front" in f_name and "Back" in b_name and f_name != b_name  # DL preserved
+    assert _by_id(rep, t1098)["document_type"] == "1098-T"              # 1098-T recognised
+    assert _by_id(rep, schedc)["qualifier"] is None                     # Schedule C cleanup
+    assert _by_id(rep, instr)["bucket"] == "REVIEW"                     # Instructions protection
+
+
+def test_collision_resolution_is_read_only_and_deterministic():
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag, "Adam", "Davis")
+        did = _doc(c, "2025 W2 (2).pdf", person_id=pid)
+        _doc(c, "2025 W2.pdf", person_id=pid)
+
+    def snapshot():
+        with engine.connect() as c:
+            rows = sorted(c.execute(
+                select(documents.c.id, documents.c.original_name, documents.c.storage_path,
+                       documents.c.sha256, documents.c.category)).all())
             return rows, c.scalar(select(func.count()).select_from(documents))
 
     before = snapshot()

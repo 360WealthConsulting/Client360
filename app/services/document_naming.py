@@ -269,6 +269,10 @@ def detect_foreign_person_token(filename: str | None, *, owner_name: str | None,
     lead = tokens[0].strip(".,()")
     if not lead.isalpha() or not (2 <= len(lead) <= 15):
         return None
+    # "Johnson & Wales" is an institution, not a person called Johnson. A leading token joined by
+    # "&"/"and" is part of a compound organisation name.
+    if len(tokens) > 1 and tokens[1].strip(".,").lower() in ("&", "and", "+"):
+        return None
     low = lead.lower()
     if low in _NOISE_TOKENS or low not in known_first_names:
         return None
