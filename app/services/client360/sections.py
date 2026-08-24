@@ -232,13 +232,17 @@ def enrich_documents(rows):
     household compositions). Duplicate detection is by SHA-256 over the given set. OCR/AI and true
     multi-source references are surfaced honestly as pending — never fabricated."""
     from collections import Counter
+
+    from app.services.document_naming import document_display_name
     sha_counts = Counter(r.get("sha256") for r in rows if r.get("sha256"))
     docs = []
     for r in rows:
         tags = r.get("tags") or {}
         sha = r.get("sha256")
         docs.append({
-            "id": r["id"], "name": r.get("original_name") or f"Document {r['id']}",
+            # Canonical display_name when set, else the original filename (document_naming).
+            "id": r["id"], "name": document_display_name(r) or f"Document {r['id']}",
+            "original_name": r.get("original_name"),
             "document_type": tags.get("document_type") or r.get("subcategory"),
             "category": r.get("category") or tags.get("category"),
             "tax_year": tags.get("tax_year") or tags.get("year"),

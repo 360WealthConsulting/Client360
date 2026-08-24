@@ -19,7 +19,7 @@
 <div class="table-wrap"><table class="data">
   <thead><tr><th>Document</th><th>Classification</th><th>Status</th><th>Version</th><th></th></tr></thead>
   <tbody>{% for d in result.rows %}
-    <tr><td><strong>{{ d.original_name }}</strong></td><td>{{ (d.classification or "—")|capitalize }}</td>
+    <tr><td><strong>{{ d.display or d.original_name }}</strong></td><td>{{ (d.classification or "—")|capitalize }}</td>
       <td>{{ ui.badge(d.status|capitalize, 'good' if d.status == 'approved' else '') }}</td>
       <td>v{{ d.current_version }}</td><td><a class="rowlink" href="/document-library/{{ d.id }}">Open →</a></td></tr>
   {% endfor %}</tbody>

@@ -12,6 +12,7 @@ from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services import employee_admin as ea
 from app.services.compliance.rule_catalog import RuleCatalog
+from app.services.document_naming import document_display_name as _doc_display_name
 from app.services.identity import (
     add_team_membership,
     assign_record,
@@ -136,7 +137,8 @@ def _documents_detail(conn, doc_ids):
     if not doc_ids:
         return []
     rows = conn.execute(
-        select(documents.c.id, documents.c.original_name, documents.c.category, documents.c.subcategory,
+        select(documents.c.id, documents.c.original_name, documents.c.display_name,
+               documents.c.category, documents.c.subcategory,
                documents.c.tags, documents.c.storage_path, documents.c.person_id,
                documents.c.household_id, documents.c.organization_id)
         .where(documents.c.id.in_(list(doc_ids))).order_by(documents.c.id)).mappings().all()
@@ -145,7 +147,7 @@ def _documents_detail(conn, doc_ids):
         tags = r["tags"] or {}
         owner = _owner_detail(conn, r)
         out.append({
-            "id": r["id"], "name": r["original_name"],
+            "id": r["id"], "name": _doc_display_name(r), "original_name": r["original_name"],
             "source_folder": tags.get("taxdome_folder"), "source_path": r["storage_path"],
             "doc_type": r["category"], "doc_subtype": r["subcategory"],
             "year": tags.get("tax_year") or tags.get("year"),

@@ -32,6 +32,7 @@ from app.security.authorization import (
     organization_in_scope,
     record_in_scope,
 )
+from app.services.document_naming import document_display_name
 from app.services.timeline import add_timeline_event
 
 CLASSIFICATIONS = frozenset({"client", "compliance", "tax", "insurance", "benefits", "retirement",
@@ -191,6 +192,10 @@ def list_documents(principal, *, classification=None, status=None, folder_id=Non
         rows = [dict(r) for r in c.execute(
             select(documents).where(where).order_by(documents.c.id.desc())
             .limit(page_size).offset((page - 1) * page_size)).mappings()]
+    # Presentation name for the library list: display_name when set, else the original filename.
+    # original_name stays on every row -- the detail view shows it as provenance.
+    for r in rows:
+        r["display"] = document_display_name(r)
     return {"rows": rows, "total": total, "page": page, "page_size": page_size,
             "pages": (total + page_size - 1) // page_size if total else 0}
 

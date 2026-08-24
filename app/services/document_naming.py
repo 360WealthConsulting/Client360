@@ -203,6 +203,22 @@ class TypeMatch(NamedTuple):
     matched_text: str | None = None
 
 
+def document_display_name(row) -> str:
+    """What staff should SEE for a document: the canonical ``display_name`` when it is set, otherwise
+    the original filename.
+
+    The fallback is the normal case, not an error — most documents never receive a display_name, and
+    a blank one behaves exactly like an absent one. This never hides ``original_name``: provenance and
+    detail views read that column directly, and the physical file is always located by
+    ``storage_path`` / ``storage_uri``, never by either name.
+    """
+    if row is None:
+        return ""
+    get = row.get if hasattr(row, "get") else (lambda k, d=None: getattr(row, k, d))
+    display = (get("display_name") or "").strip()
+    return display or (get("original_name") or "").strip()
+
+
 def strip_extension(filename: str | None) -> str:
     return _EXT_RE.sub("", (filename or "").strip())
 

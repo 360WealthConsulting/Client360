@@ -20,6 +20,7 @@ from app.db import (
     relationship_types,
     relationships,
 )
+from app.services.document_naming import document_display_name
 from app.services.person_names import person_display_name
 
 _ENTITY_KINDS = ("business", "trust", "estate", "organization")
@@ -115,8 +116,8 @@ def get_business_workspace(business_id: int) -> dict | None:
             c, {o["person_id"] for o in owners if o["person_id"]})
 
         docs = c.execute(
-            select(documents.c.id, documents.c.original_name, documents.c.household_id,
-                   documents.c.person_id, documents.c.created_at)
+            select(documents.c.id, documents.c.original_name, documents.c.display_name,
+                   documents.c.household_id, documents.c.person_id, documents.c.created_at)
             .where(documents.c.organization_id == business_id, documents.c.status != "deleted")
             .order_by(documents.c.created_at.desc()).limit(200)
         ).mappings().all()
@@ -141,7 +142,8 @@ def get_business_workspace(business_id: int) -> dict | None:
             "owners": [o for o in owners if o["is_owner"]],
             "associated_people": [o for o in owners if not o["is_owner"] and o["person_id"]],
             "related_households": households_out,
-            "documents": [{"id": d["id"], "name": d["original_name"],
+            "documents": [{"id": d["id"], "name": document_display_name(d),
+                           "original_name": d["original_name"],
                            "download_url": f"/documents/{d['id']}/download"} for d in docs],
             "document_count": doc_total,
             "provenance": sorted({o["evidence_source"] for o in owners if o["evidence_source"]}),
