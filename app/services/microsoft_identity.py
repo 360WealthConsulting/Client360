@@ -19,15 +19,25 @@ from app.connectors.microsoft365.config import get_microsoft365_config
 from app.db import engine, microsoft_accounts
 from app.security.token_crypto import decrypt, encrypt
 
-# Least-privilege, read-only Graph resource scopes (H10 scope reduction). MSAL
-# adds the reserved offline_access/openid/profile scopes automatically.
-GRAPH_READ_SCOPES = [
+# Least-privilege delegated Graph resource scopes (H10 scope reduction). MSAL adds the reserved
+# offline_access/openid/profile scopes automatically.
+#
+# Every scope here is read-only EXCEPT Mail.Send, which lets a signed-in staff user email one existing
+# Client360 document from their OWN mailbox (app.services.communications.mail_send). Mail.Send grants
+# send-as-self only: it cannot read, modify or delete mail, and it is not Mail.ReadWrite,
+# Mail.Send.Shared, or an application permission. Adding it changes the consented scope set, so every
+# connected account must reconnect once before sending works.
+GRAPH_DELEGATED_SCOPES = [
     "User.Read",
     "Mail.Read",
+    "Mail.Send",
     "Calendars.Read",
     "Files.Read.All",
     "Sites.Read.All",
 ]
+
+#: Back-compat alias — the set is no longer read-only, but the old name is still imported elsewhere.
+GRAPH_READ_SCOPES = GRAPH_DELEGATED_SCOPES
 
 RECONNECT_MESSAGE = "Microsoft 365 must be reconnected before syncing."
 
@@ -76,7 +86,7 @@ def get_microsoft_access_token(account) -> str:
     accounts = client.get_accounts()
     if not accounts:
         raise RuntimeError(RECONNECT_MESSAGE)
-    result = client.acquire_token_silent(GRAPH_READ_SCOPES, account=accounts[0])
+    result = client.acquire_token_silent(GRAPH_DELEGATED_SCOPES, account=accounts[0])
     if not result or "access_token" not in result:
         raise RuntimeError(RECONNECT_MESSAGE)
     if cache.has_state_changed:

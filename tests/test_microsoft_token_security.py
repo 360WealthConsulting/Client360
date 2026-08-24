@@ -33,10 +33,20 @@ def test_missing_key_fails_closed(monkeypatch):
 
 # --- WP1.4 scope reduction --------------------------------------------------
 
-def test_delegated_scopes_are_read_only():
+def test_delegated_scopes_are_least_privilege():
+    """H10 scope reduction, narrowed rather than relaxed.
+
+    The set was entirely read-only until Client360 gained the ability to email ONE existing document
+    from the signed-in staff user's own mailbox. ``Mail.Send`` is the single approved exception: it
+    grants send-as-self only. Everything the original guard forbade is still forbidden — no Write
+    scope of any kind, no Mail.Send.Shared, no application permission, no ``.default``.
+    """
     from app.routes.microsoft365_oauth import DELEGATED_SCOPES
-    # No write / send scopes; offline_access is added by MSAL (reserved, cannot be listed).
-    assert not any(s for s in DELEGATED_SCOPES if "Write" in s or "Send" in s)
+    assert not any("Write" in s for s in DELEGATED_SCOPES)
+    assert [s for s in DELEGATED_SCOPES if "Send" in s] == ["Mail.Send"]   # exactly one, exactly this
+    for forbidden in ("Mail.Send.Shared", "Mail.ReadWrite", ".default", "Directory."):
+        assert not any(forbidden in s for s in DELEGATED_SCOPES)
+    # offline_access is added by MSAL (reserved, cannot be listed).
     assert "offline_access" not in DELEGATED_SCOPES
     assert "Mail.Read" in DELEGATED_SCOPES and "User.Read" in DELEGATED_SCOPES
 

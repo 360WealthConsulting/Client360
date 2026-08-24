@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Email document | 360Plus{% endblock %}
+{% block crumb %}Documents · Email document{% endblock %}
+{% block content %}
+
+<header class="c360-header">
+  <h1>Email document</h1>
+  <p class="muted">Sends from your own Microsoft 365 mailbox and saves to your Sent Items.</p>
+</header>
+
+{% if sent %}
+<section class="card">
+  <h2 class="section-title">Sent</h2>
+  <p>Sent to <strong>{{ sent.recipient }}</strong> from <strong>{{ sent.from_mailbox }}</strong>.</p>
+  <p class="subtle">Attachment: {{ sent.attachment_filename }}</p>
+</section>
+{% else %}
+
+{% if error %}<div class="card" style="margin-bottom:12px"><strong>{{ error }}</strong></div>{% endif %}
+
+<section class="card">
+  <h2 class="section-title">Attachment</h2>
+  <div class="detail-row"><span><strong>{{ attachment_filename }}</strong></span>
+    <span class="subtle">{{ "{:,}".format(size_bytes or 0) }} bytes</span></div>
+  <p class="subtle">Original filename: {{ original_name }}</p>
+  {% if too_large %}
+  {% call ui.empty("Too large to email",
+                   "This file is 3 MB or larger. Download it and attach it in Outlook instead.") %}{% endcall %}
+  {% endif %}
+</section>
+
+{% if not too_large %}
+<section class="card">
+  <form method="post" action="/documents/{{ document_id }}/email" class="stack">
+    <div class="field"><label for="to">To</label>
+      <input class="input" id="to" name="to" type="email" required
+             value="{{ to or prefill_to or '' }}"></div>
+    <div class="field"><label for="subject">Subject</label>
+      <input class="input" id="subject" name="subject" value="{{ subject or '' }}"></div>
+    <div class="field"><label for="body">Message</label>
+      <textarea class="input" id="body" name="body" rows="6">{{ body or '' }}</textarea></div>
+    <button class="btn" type="submit">Send email</button>
+  </form>
+</section>
+{% endif %}
+{% endif %}
+
+{% endblock %}

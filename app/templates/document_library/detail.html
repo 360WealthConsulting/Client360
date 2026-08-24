@@ -19,6 +19,7 @@
 {% if can_edit or can_approve or can_archive %}
 <section class="stack" style="margin-bottom:20px"><h2 class="section-title">Lifecycle</h2>
   <div class="card" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+    <a class="btn secondary" href="/documents/{{ d.id }}/email">Email document</a>
     {% if can_approve %}<form method="post" action="/document-library/{{ d.id }}/approve"><button class="btn secondary" type="submit">Approve</button></form>{% endif %}
     {% if can_archive %}<form method="post" action="/document-library/{{ d.id }}/archive"><button class="btn secondary" type="submit">Archive</button></form>{% endif %}
     {% if can_version %}<form method="post" action="/document-library/{{ d.id }}/versions"><input type="hidden" name="bump" value="minor"><button class="btn secondary" type="submit">New version</button></form>{% endif %}
