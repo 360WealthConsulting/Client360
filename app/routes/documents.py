@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db import engine, people
+from app.services.document_naming import document_delivery_filename
 from app.services.documents import (
     archive_document,
     get_document,
@@ -145,10 +146,13 @@ def download_document(document_id: int, request: Request, inline: bool = False):
     # path). Non-viewable types always download.
     disposition = "inline" if (inline and _is_inline_viewable(
         document["content_type"], document["original_name"])) else "attachment"
+    # Deliver under the canonical display name when the document has one, else the original filename
+    # (document_naming.document_delivery_filename). Label only: the bytes, the path resolved above,
+    # the media type and the authorization already enforced on this route are all unchanged.
     return FileResponse(
         path=path,
         media_type=document["content_type"] or "application/octet-stream",
-        filename=document["original_name"],
+        filename=document_delivery_filename(document),
         content_disposition_type=disposition,
     )
 

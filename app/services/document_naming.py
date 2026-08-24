@@ -219,6 +219,46 @@ def document_display_name(row) -> str:
     return display or (get("original_name") or "").strip()
 
 
+_UNSAFE_FILENAME = re.compile(r"[\x00-\x1f\x7f<>:\"/\\|?*]")
+
+
+def document_delivery_filename(row) -> str:
+    """The filename a document is DELIVERED under (download, and any future mail attachment).
+
+    ``display_name`` when set, otherwise ``original_name`` — the same precedence the UI uses — with
+    the original file's extension preserved. The extension is taken from ``original_name`` and
+    appended only when the delivered base does not already end with it, so it is never duplicated and
+    a display name that happens to end in a dotted word is not mistaken for a different file type.
+
+    This changes the label on the response, nothing else: the bytes served, ``storage_path`` /
+    ``storage_uri`` used to locate them, ``sha256``, ``stored_name`` and ``original_name`` are all
+    untouched, and the caller's authorization is unaffected.
+
+    Hardened for header and path safety: control characters (including CR/LF), path separators and
+    quoting characters are stripped, only the basename survives, and traversal segments cannot leak —
+    so the delivered name can neither inject a response header nor describe a filesystem location.
+    """
+    if row is None:
+        return ""
+    get = row.get if hasattr(row, "get") else (lambda k, d=None: getattr(row, k, d))
+    original = (get("original_name") or "").strip()
+    base = (get("display_name") or "").strip() or original
+    if not base:
+        return ""
+
+    # Basename only — a delivered name must never describe a path.
+    base = re.split(r"[\\/]", base)[-1]
+    base = _UNSAFE_FILENAME.sub(" ", base)
+    base = re.sub(r"\s+", " ", base).strip().strip(".").strip()
+    if not base or set(base) <= {"."}:
+        base = _UNSAFE_FILENAME.sub(" ", re.split(r"[\\/]", original)[-1]).strip() or "document"
+
+    ext = extension_of(original)
+    if ext and not base.lower().endswith(ext.lower()):
+        base = f"{base}{ext}"
+    return base
+
+
 def strip_extension(filename: str | None) -> str:
     return _EXT_RE.sub("", (filename or "").strip())
 

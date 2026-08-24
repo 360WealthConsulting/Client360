@@ -22,6 +22,7 @@ from app.portal import vault_documents as portal_vault
 from app.services.vault.service import CATEGORIES as VAULT_CATEGORIES
 from app.services.vault.storage import VaultStorageError
 from app.portal.financial import financial_summary
+from app.services.document_naming import document_delivery_filename
 from app.services.documents import save_person_document
 from app.services.exception_engine import ExceptionNotFoundError
 from app.services import insurance_portal
@@ -239,7 +240,8 @@ def api_portal_document_download(document_id: int, principal: PortalPrincipal = 
     # applies. Out-of-scope never discloses existence.
     with engine.connect() as connection:
         row = connection.execute(select(documents.c.person_id, documents.c.storage_path,
-            documents.c.original_name, documents.c.content_type, documents.c.archived).where(
+            documents.c.original_name, documents.c.display_name,
+            documents.c.content_type, documents.c.archived).where(
             documents.c.id == document_id)).mappings().one_or_none()
     if not row or row["archived"]:
         raise HTTPException(404, "Document not found")
@@ -255,8 +257,9 @@ def api_portal_document_download(document_id: int, principal: PortalPrincipal = 
         raise HTTPException(404, "Document not found")
     from app.portal import stats as _stats
     _stats.note("downloads")
+    # Same delivered-name rule as the staff download; scope enforcement above is unchanged.
     return FileResponse(str(path), media_type=row["content_type"] or "application/octet-stream",
-                        filename=row["original_name"])
+                        filename=document_delivery_filename(row))
 
 
 # --- Browser (HTML) client surfaces over the EXISTING portal services --------
