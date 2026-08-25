@@ -114,6 +114,14 @@
   <h2>Add to 360Plus</h2>
   {% if not can_import %}
   <p class="subtle">Importing requires the documents.edit capability.</p>
+  {# No selectable destination exists: creating a client needs client.write, and nothing matched.
+     A submit button here could only ever fail, so none is rendered. A control that is both checked
+     and disabled is what caused that failure -- it paints as selected and the browser omits it,
+     so the server saw no choice at all. #}
+  {% elif not matches.matches and not can_create_person %}
+  <p class="subtle">No existing client matched this message, and creating a new prospect requires
+     the client.write capability. Ask someone with that capability to create the client, then
+     import the attachments from their workspace.</p>
   {% else %}
   {# Posts OUTSIDE /microsoft365 on purpose: every POST under that prefix demands
      communication.write, which none of the document-capable roles hold. See app/routes/lead_import.py.
@@ -134,12 +142,17 @@
     </label>
     {% endfor %}
     {% endif %}
+    {# Rendered as a CONTROL only when it can actually be submitted. Never checked-and-disabled. #}
+    {% if can_create_person %}
     <label style="display:block">
       <input type="radio" name="person_choice" value="create_new"
-             {% if not matches.matches %}checked{% endif %}
-             {% if not can_create_person %}disabled{% endif %}>
-      Create new prospect{% if not can_create_person %} (requires client.write){% endif %}
+             {% if not matches.matches %}checked{% endif %}>
+      Create new prospect
     </label>
+    {% else %}
+    <p class="subtle">Creating a new prospect requires the client.write capability — choose an
+       existing client above.</p>
+    {% endif %}
 
     <h3>Reviewed details</h3>
     <div class="row" style="gap:8px; flex-wrap:wrap">

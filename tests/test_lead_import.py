@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import uuid
 from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
 
 import pytest
 from sqlalchemy import delete, func, insert, select
@@ -517,3 +518,169 @@ def test_the_real_gmail_nested_shape_prefills_safely_end_to_end(monkeypatch):
     assert 'value="5405620123"' not in html          # never the forwarder's number as a form value
     assert f"/client/{decoy}" not in html            # and therefore no false existing-person match
     assert "ctbvmi01" in html                        # provenance remains visible
+
+
+# --------------------------------------------------------------------------------------------
+# BROWSER-SEMANTICS regression for the Add to 360Plus form.
+#
+# Production reported {"detail":"Choose an existing client or create a new prospect."} while the
+# "Create new prospect" radio was visibly selected. The radio was rendered checked AND disabled: it
+# paints as selected, but a disabled control is not a successful control, so the browser omitted
+# person_choice entirely and the handler saw no choice.
+#
+# The suite missed it because every earlier test called the service with keyword arguments or
+# hand-built a payload that already satisfied the backend. These tests instead parse the ACTUAL
+# rendered HTML and submit exactly what a browser would.
+
+class _FormHarvest(HTMLParser):
+    """Collects the successful controls of the POST form, per HTML submission rules."""
+
+    def __init__(self):
+        super().__init__()
+        self.in_form = False
+        self.action = None
+        self.fields = []        # what a browser would send
+        self.controls = []      # (type, name, value, checked, disabled) for every control
+        self.has_submit = False
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "form" and (a.get("method") or "").lower() == "post":
+            self.in_form, self.action = True, a.get("action")
+            return
+        if not self.in_form or tag not in ("input", "button", "select", "textarea"):
+            return
+        itype = (a.get("type") or "text").lower()
+        name, value = a.get("name"), a.get("value", "")
+        checked, disabled = "checked" in a, "disabled" in a
+        self.controls.append((itype, name, value, checked, disabled))
+        if itype in ("submit",) or tag == "button":
+            self.has_submit = self.has_submit or not disabled
+            return
+        if not name or disabled:
+            return
+        if itype in ("radio", "checkbox"):
+            if checked:
+                self.fields.append((name, value))
+            return
+        self.fields.append((name, value))
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.in_form = False
+
+
+def _harvest(html):
+    h = _FormHarvest()
+    h.feed(html)
+    return h
+
+
+def _render_review(monkeypatch, caps, *, with_existing=False):
+    """Render the real mail-detail page for a principal with `caps`.
+
+    The candidate's address is made unique per test. Hermetic on purpose: the first version of these
+    tests used the fixture's hard-coded address, and a person left behind by an earlier test matched
+    it, so a "no existing match" case silently rendered WITH a match.
+    """
+    from tests._portal_util import render
+    from tests.test_forwarded_email_candidate import REAL_FORWARD
+    from tests.test_microsoft_message_detail import _mailboxes as _mb
+    from tests.test_microsoft_message_detail import _message, _open, _stub
+    from tests.test_microsoft_message_detail import _tag as _t
+    tag = _t(); f = _mb(tag)
+    # Case A genuinely creates a prospect through the real POST path. Its tag comes from the
+    # message-detail module, whose cleanup this file does not run, so register it here too --
+    # otherwise that prospect survives and makes the next "no existing match" case find one.
+    _TAGS.append(tag)
+    candidate_email = f"tillmanbowling.{tag}@gmail.com".casefold()
+    body = REAL_FORWARD.replace("tillmanbowling@gmail.com", candidate_email)
+    if with_existing:
+        _existing(_tag(), first="Tillman", last="Bowling", email=candidate_email)
+    msg = _message(tag, body=body, subject="Fw: Tax liability")
+    msg["from"] = {"emailAddress": {"name": "Curry, Lauren",
+                                    "address": "lauren@360wealthconsulting.com"}}
+    _stub(monkeypatch, by_token={f"token-a-{tag}": msg})
+    principal = Principal(_user(tag), f["a_email"], "Staff", frozenset(caps))
+    return tag, principal, render(_open(principal, f"AAMk{tag}"))
+
+
+def _post_harvested(monkeypatch, tag, principal, fields):
+    """POST exactly what the browser would send, to the real route."""
+    import asyncio
+    from urllib.parse import urlencode
+
+    import app.routes.lead_import as lr
+    from tests._portal_util import fake_request
+    monkeypatch.setattr(lr, "get_microsoft_access_token",
+                        lambda a: (a["token_cache_encrypted"] or "").replace("cache-", "token-"))
+    req = fake_request(f"/lead-import/AAMk{tag}", method="POST")
+    body = urlencode(fields).encode()
+
+    async def _body():
+        return body
+    req.body = _body
+    return asyncio.new_event_loop().run_until_complete(
+        lr.lead_import(req, message_id=f"AAMk{tag}", principal=principal))
+
+
+_IMPORT_CAPS = {"communication.read", "client.read", "documents.view", "documents.edit",
+                "record.read_all", "record.write_all"}
+
+
+def test_a_with_client_write_and_no_match_the_browser_sends_create_new(monkeypatch):
+    tag, p, html = _render_review(monkeypatch, _IMPORT_CAPS | {"client.write"})
+    h = _harvest(html)
+    radios = [c for c in h.controls if c[0] == "radio"]
+    assert ("radio", "person_choice", "create_new", True, False) in radios   # checked, ENABLED
+    assert dict(h.fields).get("person_choice") == "create_new"
+    assert h.has_submit
+    resp = _post_harvested(monkeypatch, tag, p, h.fields)
+    # reaches the real path -- not the misleading 400
+    assert resp.status_code != 400
+    assert b"Choose an existing client" not in getattr(resp, "body", b"")
+
+
+def test_b_without_client_write_and_no_match_offers_nothing_submittable(monkeypatch):
+    tag, p, html = _render_review(monkeypatch, _IMPORT_CAPS)
+    h = _harvest(html)
+    assert not any(c[1] == "person_choice" for c in h.controls)   # no radio at all
+    assert not h.has_submit                                        # nothing to press
+    assert "the client.write capability" in html          # wording wraps across lines
+    assert "No existing client matched this message" in html
+    # the browser cannot construct the production payload any more
+    assert "person_choice" not in dict(h.fields)
+
+
+def test_b_the_production_payload_is_no_longer_reachable(monkeypatch):
+    """The old failure came from submitting a form whose only choice was checked+disabled."""
+    _, _, html = _render_review(monkeypatch, _IMPORT_CAPS)
+    h = _harvest(html)
+    assert h.fields == [], "no form should be submittable at all in this state"
+
+
+def test_c_without_client_write_an_existing_match_is_still_selectable(monkeypatch):
+    tag, p, html = _render_review(monkeypatch, _IMPORT_CAPS, with_existing=True)
+    h = _harvest(html)
+    choice = dict(h.fields).get("person_choice")
+    assert choice and choice.startswith("existing:")
+    assert h.has_submit
+    assert not any(c[2] == "create_new" for c in h.controls)      # create is not offered
+    assert "requires the client.write capability" in html
+    resp = _post_harvested(monkeypatch, tag, p, h.fields)
+    # lacking client.write must NOT block attaching to an authorised existing client
+    assert resp.status_code == 303
+    assert f"/client/{choice.split(':', 1)[1]}" in resp.headers["location"]
+
+
+@pytest.mark.parametrize("caps,existing", [
+    (_IMPORT_CAPS | {"client.write"}, False),
+    (_IMPORT_CAPS, False),
+    (_IMPORT_CAPS | {"client.write"}, True),
+    (_IMPORT_CAPS, True),
+])
+def test_d_no_control_is_ever_both_checked_and_disabled(monkeypatch, caps, existing):
+    """The defect class, not just the instance."""
+    _, _, html = _render_review(monkeypatch, caps, with_existing=existing)
+    for itype, name, value, checked, disabled in _harvest(html).controls:
+        assert not (checked and disabled), (itype, name, value)
