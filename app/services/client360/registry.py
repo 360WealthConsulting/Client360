@@ -86,8 +86,13 @@ def _pref(base, person_id, household_id):
 QUICK_ACTIONS = (
     QuickAction("schedule_meeting", "Schedule Meeting", "scheduling.view",
                 lambda p, h: _pref("/scheduling", p, h)),
+    # The workspace's OWN Documents tab, which since the workspace-upload work carries an
+    # owner-aware upload form. It used to deep-link to /document-library, which sent staff out of
+    # the client and made them re-establish the owner the workspace already knew.
     QuickAction("upload_document", "Upload Document", "documents.view",
-                lambda p, h: _pref("/document-library", p, h)),
+                lambda p, h: (f"/client/{p}?tab=documents" if p
+                              else (f"/client/household/{h}?tab=documents" if h
+                                    else "/document-library"))),
     QuickAction("add_note", "Add Note", "client.read",
                 lambda p, h: (f"/people/{p}/notes" if p else "/people")),
     QuickAction("create_task", "Create Task", "work.read",

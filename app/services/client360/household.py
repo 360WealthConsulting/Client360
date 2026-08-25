@@ -757,7 +757,11 @@ def _quick_actions(principal, ctx):
     prim = ctx["primary"]["id"] if ctx["primary"] else None
     actions = [
         ("schedule_meeting", "Schedule Household Meeting", "scheduling.view", f"/scheduling?household_id={hid}"),
-        ("upload_document", "Upload Household Document", "documents.view", f"/document-library?household_id={hid}"),
+        # The household's OWN Documents tab, which carries an owner-aware upload form. It used to
+        # deep-link to /document-library, sending staff out of the household to re-establish the
+        # owner the workspace already knew. Mirrors the person quick action in registry.py.
+        ("upload_document", "Upload Household Document", "documents.view",
+         f"/client/household/{hid}?tab=documents"),
         ("create_task", "Create Task", "work.read", f"/operations/items?household_id={hid}"),
         ("start_tax", "Start Tax Work", "tax.read", f"/tax/intake?household_id={hid}"),
         ("create_opportunity", "Create Opportunity", "opportunity.view", f"/opportunities?household_id={hid}"),
