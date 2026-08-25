@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ subject }} | Mail | 360Plus{% endblock %}
+{% block crumb %}<a href="/microsoft365/mail">Mail</a> / Message{% endblock %}
+{% block content %}
+{{ ui.page_head(subject, eyebrow="Microsoft 365", desc="Preview only — nothing is created from this screen.") }}
+
+<p class="subtle">
+  <a href="/microsoft365/mail">Back to Mail</a> ·
+  <a href="{{ web_link }}" target="_blank" rel="noopener noreferrer">Open in Outlook</a>
+</p>
+
+<article class="card">
+  <span class="detail-label">Received</span>
+  <p>{{ received or "—" }}</p>
+  <span class="detail-label">Forwarded by</span>
+  <p>{{ candidate.forwarder_name or "Unknown sender" }}{% if candidate.forwarder_email %}
+     &lt;{{ candidate.forwarder_email }}&gt;{% endif %}</p>
+  {% if to %}<span class="detail-label">To</span><p>{{ to | join(", ") }}</p>{% endif %}
+  {% if cc %}<span class="detail-label">Cc</span><p>{{ cc | join(", ") }}</p>{% endif %}
+</article>
+
+<article class="card">
+  <h2>Detected prospect candidate</h2>
+  {# The forwarder is NEVER offered as the prospect. Blank fields stay blank. #}
+  <table class="data">
+    <tbody>
+      <tr><th>Name</th><td>{{ candidate.candidate_name or "—" }}</td></tr>
+      <tr><th>Email</th><td>{{ candidate.candidate_email or "—" }}</td></tr>
+      <tr><th>Phone</th><td>{{ candidate.candidate_phone or "—" }}</td></tr>
+      <tr><th>Source</th><td>{{ candidate.candidate_source or "not detected" }}</td></tr>
+      <tr><th>Confidence</th><td>{{ candidate.confidence }}</td></tr>
+      <tr><th>Forwarded message</th><td>{{ "yes" if candidate.is_forwarded else "no" }}</td></tr>
+    </tbody>
+  </table>
+  {% if candidate.original_subject or candidate.original_sent %}
+  <p class="subtle">Original: {{ candidate.original_subject or "(no subject)" }}
+     {% if candidate.original_sent %}— sent {{ candidate.original_sent }}{% endif %}</p>
+  {% endif %}
+  <p><strong>Staff confirmation required.</strong> These fields are detected from message text and
+     must be reviewed before anything is created in 360Plus.</p>
+  {% for w in candidate.warnings %}<p class="subtle">{{ w }}</p>{% endfor %}
+</article>
+
+<article class="card">
+  <h2>Existing matches</h2>
+  {% if matches.matches %}
+  <p class="subtle">Matched on {{ matches.strategy }}.
+     {% if matches.outcome == "multiple" %}More than one record matched — a person must be chosen
+     explicitly.{% endif %}</p>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Type</th></tr></thead>
+      <tbody>
+      {% for m in matches.matches %}
+        <tr>
+          <td><a class="rowlink" href="{{ m.workspace_url }}">{{ m.display_name }}</a></td>
+          <td>{{ m.email or "" }}</td>
+          <td>{{ m.phone or "" }}</td>
+          <td>{{ m.contact_type or "" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {% call ui.empty("No existing match", "No person matched the detected details.") %}{% endcall %}
+  {% endif %}
+</article>
+
+<article class="card">
+  <h2>Attachments</h2>
+  {% if attachments %}
+  {# Metadata only. No bytes are fetched and there is no import control on this page. #}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Inline</th></tr></thead>
+      <tbody>
+      {% for a in attachments %}
+        <tr>
+          <td>{{ a.name }}</td>
+          <td>{{ a.content_type or "—" }}</td>
+          <td>{{ a.size }}</td>
+          <td>{{ "yes" if a.is_inline else "no" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if has_item_attachment %}
+  <p class="subtle">This message carries an attached email. The attached original may be the
+     authoritative source for the prospect's identity; reading it is not performed yet.</p>
+  {% endif %}
+  {% else %}
+  {% call ui.empty("No attachments") %}{% endcall %}
+  {% endif %}
+</article>
+
+<article class="card">
+  <h2>Message</h2>
+  <p>{{ body_text or "(no preview available)" }}</p>
+  <p class="subtle">Conversation {{ conversation_id or "—" }} · {{ internet_message_id or "—" }}</p>
+</article>
+
+{# Deliberately inert: no form, no POST, no mutation exists yet. #}
+<p class="subtle"><button class="btn" type="button" disabled>Add to 360Plus — coming next</button></p>
+{% endblock %}

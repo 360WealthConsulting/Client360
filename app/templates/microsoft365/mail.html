@@ -11,8 +11,9 @@
       <span class="badge {{ 'good' if m.is_read else 'info' }}">{{ 'Read' if m.is_read else 'Unread' }}{% if m.has_attachments %} · attachments{% endif %}</span>
       <span class="id-mono">{{ m.received }}</span>
     </div>
-    <h3 style="margin:10px 0 4px; font-size:16px"><a class="rowlink" href="{{ m.web_link }}" target="_blank" rel="noopener noreferrer">{{ m.subject }}</a></h3>
-    <div class="subtle"><b>{{ m.sender_name }}</b> &lt;{{ m.sender_address }}&gt;</div>
+    <h3 style="margin:10px 0 4px; font-size:16px"><a class="rowlink" href="{{ m.detail_url }}">{{ m.subject }}</a></h3>
+    <div class="subtle"><b>{{ m.sender_name }}</b> &lt;{{ m.sender_address }}&gt;
+      · <a href="{{ m.web_link }}" target="_blank" rel="noopener noreferrer">Open in Outlook</a></div>
     {% if m.preview %}<div class="subtle" style="margin-top:6px">{{ m.preview }}</div>{% endif %}
   </div>
 {% else %}
