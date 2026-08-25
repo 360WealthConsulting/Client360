@@ -260,10 +260,29 @@ def client_threads(principal, scope=None):
     with engine.connect() as connection:
         return connection.execute(select(portal_threads).where(or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))).order_by(portal_threads.c.updated_at.desc()).limit(20)).mappings().all()
 
-def client_documents(principal, scope=None):
-    scope = scope or portal_scope(principal.account_id)
-    with engine.connect() as connection:
-        return connection.execute(select(documents).where(documents.c.person_id.in_(scope["person_ids"]), documents.c.archived.is_(False)).order_by(documents.c.created_at.desc()).limit(20)).mappings().all()
+def client_documents(principal):
+    """Client-visible VAULT documents for this portal account. Never canonical staff documents.
+
+    This used to read the canonical ``documents`` table filtered only by person scope and
+    ``archived is False``. That table has no client-publication flag, so every staff work product
+    owned by a reachable person -- prepared workpapers, ingested Drake/TaxDome/SharePoint files,
+    anything attached by lead import -- was listed to the client, together with every column:
+    storage paths, checksums, staff user ids and internal review state. It also filtered only
+    ``archived``, not ``status``, so soft-deleted documents stayed visible after staff removed them.
+
+    The Vault is the store that actually models client publication, and
+    ``portal.vault_documents.portal_documents`` already applies all of it: the ``documents`` grant
+    permission, ``client_visible``, link-based ownership, and an explicit client projection. This
+    delegates rather than reimplementing any of it.
+
+    No ``scope`` parameter: the dashboard resolves a permission-LESS scope for its other panels, and
+    accepting it here is how the ``documents`` grant came to be bypassed. The vault call re-resolves
+    scope with ``permission="documents"`` so the grant is always enforced.
+    """
+    # Local import: vault_documents imports portal_scope from this module.
+    from app.portal import vault_documents as portal_vault
+
+    return portal_vault.portal_documents(principal)
 
 def client_action_needed(principal, scope=None, *, include_resolved=False):
     """Client-safe "action needed" items (client-visible tax exceptions) within the
@@ -338,7 +357,7 @@ def dashboard(principal):
     requests = client_document_requests(principal, scope)
     notifications = client_notifications(principal)
     threads = client_threads(principal, scope)
-    docs = client_documents(principal, scope)
+    docs = client_documents(principal)      # re-resolves scope under the documents grant
     with engine.connect() as connection:
         meetings = connection.execute(select(timeline_events).where(or_(timeline_events.c.person_id.in_(scope["person_ids"]), timeline_events.c.household_id.in_(scope["shared_household_ids"])), timeline_events.c.event_type == "calendar_event", timeline_events.c.event_time >= now).order_by(timeline_events.c.event_time).limit(20)).mappings().all()
     tasks = client_tasks(principal, scope)
