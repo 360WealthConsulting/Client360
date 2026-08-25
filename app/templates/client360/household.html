@@ -167,7 +167,10 @@
         <td><span class="subtle"{% if d.ocr_engine %} title="Captured by {{ d.ocr_engine }}"{% endif %}>{{ d.ocr_label }}{% if d.ocr_completed_at %} · {{ d.ocr_completed_at.strftime("%b %d, %Y") }}{% endif %}</span>{% if d.searchable_text %}<br><span class="subtle" title="This document's text can be found in search">🔍 Searchable</span>{% endif %}</td>
         <td>{{ d.version_count }}</td>
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
-        <td><a href="{{ d.download_url }}">Open</a>{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
+        {# Email opens the EXISTING compose route for this CANONICAL document. Vault rows are
+           excluded: their id belongs to vault_documents, so it would address an unrelated canonical
+           document. Same communications.send gate the route itself enforces. #}
+        <td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
       </tr>
     {% else %}<tr><td colspan="9">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>

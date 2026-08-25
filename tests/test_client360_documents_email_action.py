@@ -159,15 +159,17 @@ def test_capability_matches_the_route_requirement():
 
 
 # --------------------------------------------------------------------- no unintended changes
-def test_household_documents_tab_is_unchanged():
-    """This change is scoped to the client Documents tab; the household template must not gain it."""
-    tpl = open("app/templates/client360/household.html").read()
-    assert "/email" not in tpl
-
-
-def test_business_workspace_documents_are_unchanged():
-    tpl = open("app/templates/business/workspace.html").read()
-    assert "/email" not in tpl
+def test_household_and_business_use_the_identical_gate():
+    """Superseded scope guard. These two surfaces originally had no Email action (this change was
+    scoped to the person tab); they gained it in a later bounded task and must use the SAME
+    canonical-plus-capability gate, so the rule cannot diverge per surface."""
+    gate = 'd.source_kind == "canonical" and principal and principal.can("communications.send")'
+    for path in ("app/templates/client360/workspace.html",
+                 "app/templates/client360/household.html",
+                 "app/templates/business/workspace.html"):
+        tpl = open(path).read()
+        assert gate in tpl, path
+        assert '/documents/{{ d.id }}/email' in tpl, path
 
 
 def test_household_and_business_documents_still_render_normally():

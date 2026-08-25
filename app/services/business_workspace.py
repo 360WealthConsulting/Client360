@@ -142,8 +142,11 @@ def get_business_workspace(business_id: int) -> dict | None:
             "owners": [o for o in owners if o["is_owner"]],
             "associated_people": [o for o in owners if not o["is_owner"] and o["person_id"]],
             "related_households": households_out,
+            # source_kind is stated rather than assumed: these rows come only from
+            # documents.organization_id, so they are canonical today, and saying so keeps the
+            # template's canonical-only Email gate correct if a Vault merge is ever added here.
             "documents": [{"id": d["id"], "name": document_display_name(d),
-                           "original_name": d["original_name"],
+                           "original_name": d["original_name"], "source_kind": "canonical",
                            "download_url": f"/documents/{d['id']}/download"} for d in docs],
             "document_count": doc_total,
             "provenance": sorted({o["evidence_source"] for o in owners if o["evidence_source"]}),

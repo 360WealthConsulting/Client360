@@ -49,7 +49,9 @@
   {% if ws.documents %}
   <table><thead><tr><th>Name</th><th></th></tr></thead><tbody>
     {% for d in ws.documents %}
-    <tr><td>{{ d.name }}</td><td><a href="{{ d.download_url }}">Download</a></td></tr>
+    {# Email reuses the EXISTING /documents/{id}/email compose route; canonical rows only, and only
+       for a principal holding the same communications.send capability the route enforces. #}
+    <tr><td>{{ d.name }}</td><td><a href="{{ d.download_url }}">Download</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}</td></tr>
     {% endfor %}
   </tbody></table>
   {% else %}{% call ui.empty("No documents", "No documents are assigned to this business.") %}{% endcall %}{% endif %}
