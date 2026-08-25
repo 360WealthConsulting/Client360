@@ -408,6 +408,51 @@ def _signature_name(body: str, *, forwarder_name=None, email=None) -> str | None
     return qualifying[0][1] if len(qualifying) == 1 else None
 
 
+def _quoted_header_identities(text: str, starts: list[int]) -> list[tuple[str | None, str | None]]:
+    """(display name, email) from every RECOGNISED quoted header block after the prospect's own.
+
+    Only parsed ``From:`` lines of corroborated header blocks -- never free text. A quoted header is
+    structured metadata a mail client wrote, so a display name found there is an assertion about who
+    sent that message, not a guess about a line that happens to look like a name.
+    """
+    out = []
+    for i, block_start in enumerate(starts[1:], start=1):
+        block_end = starts[i + 1] if i + 1 < len(starts) else len(text)
+        value = _first(_FROM_LINE, text[block_start:block_end])
+        if value:
+            out.append(_split_address(value))
+    return out
+
+
+def _corroborated_name(text, starts, *, email, forwarder_name):
+    """A fuller display name for the SAME address, taken from a later quoted header block.
+
+    Real threads routinely carry the prospect's own earlier message further down, and that quoted
+    header often spells out the name their current client abbreviates. The production case: the
+    forwarded header reads ``ctbvmi01 <tillmanbowling@gmail.com>`` and the body is signed only
+    "- Tillman", while the quoted header below reads
+    ``Tillman Bowling <tillmanbowling@gmail.com>``.
+
+    The address is the key, and it must match EXACTLY. It was already established from the
+    recognised original ``From:`` header, so a later header bearing the same address is another
+    statement about the same person -- whereas a different address is a different person, and quoted
+    prose is not a statement about anyone. The name still has to clear the human-name predicate and
+    the forwarder-identity gate; nothing here is derived from the local part of the address.
+    """
+    if not email:
+        return None
+    target = email.strip().casefold()
+    for qname, qemail in _quoted_header_identities(text, starts):
+        if not qname or not qemail or qemail.strip().casefold() != target:
+            continue
+        if not looks_like_human_name(qname, email=email):
+            continue
+        if same_identity(qname, forwarder_name):
+            continue
+        return qname
+    return None
+
+
 def _apply_forwarder_gate(result: dict, forwarder_phones: set[str]) -> None:
     """Last line of defence: the candidate may never resolve to the KNOWN forwarder.
 
@@ -564,7 +609,17 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
         if signature:
             result["candidate_name"] = signature
             result["candidate_source"] = "original_signature"
-        elif name:
+        else:
+            # Last resort, and only for the SAME address: a later quoted header for this exact
+            # candidate may spell out the name their current signature abbreviates. Gated on
+            # heuristics_unsafe with everything else, so a contaminated or ambiguous thread still
+            # fails closed exactly as it did before.
+            corroborated = _corroborated_name(text, _header_block_starts(text), email=email,
+                                              forwarder_name=forwarder_name)
+            if corroborated:
+                result["candidate_name"] = corroborated
+                result["candidate_source"] = "quoted_header_same_email"
+        if not result["candidate_name"] and name:
             result["warnings"].append(
                 f"The original sender is shown as \u201c{name}\u201d, which does not look like a "
                 "person's name, and no name was found in their message. Enter it manually.")

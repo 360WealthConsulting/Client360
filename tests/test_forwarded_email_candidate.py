@@ -614,3 +614,131 @@ def test_a_weak_rule_outside_the_region_does_not_make_it_ambiguous():
     r = _real()
     assert r["candidate_name"] == "Tillman Bowling"
     assert not any("could not be determined" in w for w in r["warnings"])
+
+
+# --------------------------------------------------------------------------------------------
+# Same-email corroboration from a later quoted HEADER.
+#
+# The real message, per the production diagnostic: region 168-1013, bounded, not contaminated, not
+# ambiguous. The forwarded header reads "ctbvmi01 <tillmanbowling@gmail.com>" and the body is signed
+# only "- Tillman" -- one token, correctly refused. Further down, inside the already-recognised
+# quoted thread, his own earlier message carries a proper header:
+# "From: Tillman Bowling <tillmanbowling@gmail.com>". Same address, spelled out.
+#
+# The address is the corroboration key. It was established from the recognised original From header,
+# so a later recognised header bearing the SAME address is another statement about the same person.
+# A different address is a different person; quoted prose is a statement about nobody.
+
+_Q_PRE = ("<p>Meeting tomorrow</p><p>Lauren Curry<br>Office: 540.562.0123<br>"
+          "lauren@360wealthconsulting.com</p><p>------------------------</p>")
+_Q_HDR = ("<p>From: ctbvmi01 &lt;tillmanbowling@gmail.com&gt;<br>"
+          "Sent: Monday, August 24, 2026 8:07 PM<br>"
+          "To: Lauren Curry &lt;lauren@360wealthconsulting.com&gt;<br>"
+          "Subject: Re: Tax liability</p>")
+#: One token. Rejected on its own, and that must not change.
+_Q_BODY = "<p>Sold a rental and worried about the hit.</p><p>- Tillman</p>"
+_Q_LAUREN_SIG = "<p>Lauren Curry<br>Office: 540.562.0123</p>"
+
+
+def _quoted_block(from_value):
+    return (f"<p>From: {from_value}<br>Sent: Monday, August 24, 2026 3:12 PM<br>"
+            f"To: Lauren Curry<br>Subject: Tax liability</p>"
+            f"<p>Earlier message.</p>{_Q_LAUREN_SIG}")
+
+
+def _corrob(tail, body=_Q_BODY):
+    return extract_candidate(body=f"<html><body>{_Q_PRE}{_Q_HDR}{body}{tail}</body></html>",
+                             subject="Fw: Tax liability", **EXCHANGE)
+
+
+def test_1_real_shape_corroborates_the_name_from_the_same_email_header():
+    r = _corrob(_quoted_block("Tillman Bowling &lt;tillmanbowling@gmail.com&gt;"))
+    assert r["candidate_name"] == "Tillman Bowling"
+    assert r["candidate_email"] == "tillmanbowling@gmail.com"
+    assert r["candidate_phone"] is None
+    assert r["raw_from_name"] == "ctbvmi01"
+    assert r["requires_confirmation"] is True
+    # accurate provenance -- NOT original_signature, the name did not come from his signature
+    assert r["candidate_source"] == "quoted_header_same_email"
+
+
+def test_2_a_different_email_never_corroborates():
+    r = _corrob(_quoted_block("Mike Agree &lt;different@example.com&gt;"))
+    assert r["candidate_name"] is None
+    assert r["candidate_name"] != "Mike Agree"
+
+
+@pytest.mark.parametrize("forwarder_form", [
+    "Lauren Curry", "Curry, Lauren", "Lauren Curry RFC", "CURRY, LAUREN", "Lauren M Curry",
+])
+def test_3_the_forwarder_never_corroborates_even_on_the_candidate_email(forwarder_form):
+    """A quoted header claiming the candidate's address under the forwarder's name is still
+    refused -- same_identity outranks the address match."""
+    r = _corrob(_quoted_block(f"{forwarder_form} &lt;tillmanbowling@gmail.com&gt;"))
+    assert r["candidate_name"] is None, forwarder_form
+
+
+def test_4_arbitrary_quoted_prose_cannot_supply_a_name():
+    """The name appears in the thread, but not in any recognised From header."""
+    tail = ("<blockquote><p>I spoke to Tillman Bowling about this last week.</p>"
+            + _Q_LAUREN_SIG + "</blockquote>")
+    r = _corrob(tail)
+    assert r["candidate_name"] is None
+    assert "Tillman Bowling" in tail          # it really is present in the message
+
+
+def test_5_a_one_token_signature_alone_still_yields_no_name():
+    tail = "<blockquote><p>Earlier.</p>" + _Q_LAUREN_SIG + "</blockquote>"
+    r = _corrob(tail)
+    assert r["candidate_name"] is None
+    assert r["candidate_email"] == "tillmanbowling@gmail.com"
+
+
+def test_6_corroboration_never_brings_a_phone_with_it():
+    r = _corrob(_quoted_block("Tillman Bowling &lt;tillmanbowling@gmail.com&gt;"))
+    assert r["candidate_phone"] is None
+    assert r["candidate_name"] != "Lauren Curry"
+    assert r["candidate_email"] != "lauren@360wealthconsulting.com"
+
+
+def test_6b_the_corroborated_candidate_produces_no_false_phone_match():
+    """The Mike-Agree-style match must stay gone: no phone means nothing to match on."""
+    from app.services.prospect_matching import find_matches
+    r = _corrob(_quoted_block("Tillman Bowling &lt;tillmanbowling@gmail.com&gt;"))
+    assert r["candidate_phone"] is None
+    assert find_matches(phone=r["candidate_phone"])["outcome"] == "none"
+
+
+def test_7_a_valid_original_display_name_still_wins_without_corroboration():
+    """Normal forwards are untouched: the header name is used directly, and the quoted header for
+    the same address is never consulted."""
+    hdr = _Q_HDR.replace("ctbvmi01", "Jane Prospect")
+    body = f"<html><body>{_Q_PRE}{hdr}{_Q_BODY}" \
+           f"{_quoted_block('Tillman Bowling &lt;tillmanbowling@gmail.com&gt;')}</body></html>"
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **EXCHANGE)
+    assert r["candidate_name"] == "Jane Prospect"
+    assert r["candidate_source"] == "forwarded_header"
+
+
+def test_a_body_signature_still_outranks_a_quoted_header():
+    """His own sign-off is the better evidence when it exists; corroboration is a last resort.
+
+    Asserted on the SOURCE rather than the string: both paths can yield the same name, and what
+    matters is which one supplied it. (A middle initial such as "Tillman J Bowling" would not
+    qualify -- the human-name predicate requires two-letter tokens -- so a plain sign-off is used.)
+    """
+    r = _corrob(_quoted_block("Tillman Bowling &lt;tillmanbowling@gmail.com&gt;"),
+                body="<p>Sold a rental.</p><p>Thanks,<br>Tillman Bowling</p>")
+    assert r["candidate_name"] == "Tillman Bowling"
+    assert r["candidate_source"] == "original_signature"
+
+
+def test_corroboration_does_not_run_when_the_region_is_ambiguous():
+    """Fail-closed from 91b31bf is unchanged: an ambiguous region yields no name at all."""
+    body = ("<html><body><p>fyi</p>"
+            "<p>From: ctbvmi01 &lt;tillmanbowling@gmail.com&gt;<br>Sent: Mon<br>"
+            "To: L<br>Subject: Re: Tax</p><p>Sold a rental.</p><hr>"
+            "<p>Lauren Curry<br>Office: 540.562.0123</p></body></html>")
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **EXCHANGE)
+    assert r["candidate_name"] is None
+    assert any("could not be determined" in w for w in r["warnings"])
