@@ -762,7 +762,8 @@ def _quick_actions(principal, ctx):
         # owner the workspace already knew. Mirrors the person quick action in registry.py.
         ("upload_document", "Upload Household Document", "documents.view",
          f"/client/household/{hid}?tab=documents"),
-        ("create_task", "Create Task", "work.read", f"/operations/items?household_id={hid}"),
+        # the staff HTML task page, not the /operations/items JSON API
+        ("create_task", "Create Task", "work.read", f"/operations/task-list?household_id={hid}"),
         ("start_tax", "Start Tax Work", "tax.read", f"/tax/intake?household_id={hid}"),
         ("create_opportunity", "Create Opportunity", "opportunity.view", f"/opportunities?household_id={hid}"),
         ("start_insurance_case", "Start Insurance Case", "insurance.read", f"/insurance?household_id={hid}"),

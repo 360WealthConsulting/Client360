@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}{{ heading }} | Operations{% endblock %}
+{% block crumb %}<a href="/operations">Operations</a> / Tasks{% endblock %}
+{% block content %}
+{{ ui.page_head(heading, eyebrow="Operational tasks") }}
+
+{% if client_filter %}
+<p class="subtle" style="margin:-6px 0 14px">
+  Filtered to one client · <a class="rowlink" href="/operations/task-list">Clear client filter</a>
+</p>
+{% endif %}
+
+{% if can_manage %}
+{# Reuses the EXISTING POST /operations/items creation route, with the client carried through as
+   hidden fields so staff never re-select the record the workspace already knew. #}
+<section class="card" style="margin-bottom:14px">
+  <form method="post" action="/operations/items" class="row" style="gap:8px; align-items:flex-end; flex-wrap:wrap">
+    <div class="field" style="flex:1 1 260px"><label for="new-task-title">New task</label>
+      <input class="input" id="new-task-title" name="title" required placeholder="What needs doing?"></div>
+    <div class="field"><label for="new-task-due">Due</label>
+      <input class="input" id="new-task-due" name="due_date" type="date"></div>
+    {% if person_id %}<input type="hidden" name="person_id" value="{{ person_id }}">{% endif %}
+    {% if household_id %}<input type="hidden" name="household_id" value="{{ household_id }}">{% endif %}
+    <button class="btn" type="submit">Create task</button>
+  </form>
+</section>
+{% endif %}
+
+<article class="card"><div class="table-wrap"><table class="data">
+  <thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th></tr></thead><tbody>
+  {% for t in result.rows %}
+    <tr>
+      <td><a href="/operations/items/{{ t.id }}">{{ t.title }}</a></td>
+      <td>{{ ui.badge(t.status|replace("_"," ")|capitalize, 'good' if t.status in ['active','completed'] else '') }}</td>
+      <td>{{ t.priority }}</td>
+      <td class="subtle">{{ t.due_date or "—" }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">{% call ui.empty("No tasks", "No operational tasks match this view.") %}{% endcall %}</td></tr>
+  {% endfor %}
+  </tbody></table></div>
+  {% if result.pages and result.pages > 1 %}
+  <p class="subtle" style="margin-top:10px">Page {{ result.page }} of {{ result.pages }} · {{ result.total }} tasks</p>
+  {% endif %}
+</article>
+{% endblock %}

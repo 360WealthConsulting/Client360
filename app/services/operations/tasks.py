@@ -62,7 +62,7 @@ def _load_scoped(c, principal, task_id: int, *, write=False) -> dict:
 # --- reads -------------------------------------------------------------------
 
 def list_tasks(principal, *, status=None, project_id=None, assigned_user_id=None, search=None,
-               open_only=False, page=1, page_size=50) -> dict:
+               open_only=False, person_id=None, household_id=None, page=1, page_size=50) -> dict:
     page = max(1, int(page or 1))
     page_size = min(200, max(1, int(page_size or 50)))
     with engine.connect() as c:
@@ -80,6 +80,15 @@ def list_tasks(principal, *, status=None, project_id=None, assigned_user_id=None
             conds.append(tasks_t.c.title.ilike(f"%{search.strip()}%"))
         if open_only:
             conds.append(tasks_t.c.status.notin_(_CLOSED))
+        # Client narrowing. These AND into the SAME conds list as scope_clause above, so a client
+        # filter can only ever narrow within the principal's scope: an id the caller cannot see
+        # yields zero rows rather than falling back to the firm-wide list, and the result never
+        # confirms that an inaccessible client exists. Supplying both requires BOTH to match --
+        # deliberately the conservative reading, never a silent OR and never discarding one.
+        if person_id:
+            conds.append(tasks_t.c.person_id == person_id)
+        if household_id:
+            conds.append(tasks_t.c.household_id == household_id)
         where = and_(*conds) if conds else None
         base = select(func.count()).select_from(tasks_t)
         total = c.scalar(base.where(where) if where is not None else base)

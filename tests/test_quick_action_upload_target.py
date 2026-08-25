@@ -86,7 +86,8 @@ def test_every_other_quick_action_is_unchanged():
     expected = {
         "schedule_meeting": "/scheduling?person_id=7783",
         "add_note": "/people/7783/notes",
-        "create_task": "/operations/items?person_id=7783",
+        # repointed from /operations/items (the JSON API) to the staff HTML page in a later task
+        "create_task": "/operations/task-list?person_id=7783",
         "start_tax_return": "/tax/intake?person_id=7783",
         "create_opportunity": "/opportunities?person_id=7783",
         "start_insurance_case": "/insurance?person_id=7783",

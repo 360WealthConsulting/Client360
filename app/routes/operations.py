@@ -98,11 +98,22 @@ def capacity_view(request: Request, department: str | None = None,
 
 @router.get("/items")
 def list_items(request: Request, status: str | None = None, project_id: int | None = None,
+               person_id: int | None = None, household_id: int | None = None,
                open_only: int = 0, page: int = 1,
                principal: Principal = Depends(require_capability("operations.view"))):
+    """Task list, optionally narrowed to one client.
+
+    ``person_id`` / ``household_id`` are the parameters the Client360 quick actions already emit and
+    this route previously discarded, so "Create Task" from a workspace landed on the firm-wide list.
+    They narrow within the caller's record scope -- never broaden it -- and the applied filter is
+    echoed back so a caller can render and clear it.
+    """
     result = opstasks.list_tasks(principal, status=status, project_id=project_id,
+                                 person_id=person_id, household_id=household_id,
                                  open_only=bool(open_only), page=page)
-    return JSONResponse({"total": result["total"], "page": result["page"], "tasks": [
+    return JSONResponse({"total": result["total"], "page": result["page"],
+                         "filters": {"person_id": person_id, "household_id": household_id},
+                         "tasks": [
         {"id": t["id"], "title": t["title"], "status": t["status"], "priority": t["priority"],
          "project_id": t["project_id"], "assigned_user_id": t["assigned_user_id"]}
         for t in result["rows"]]})
@@ -274,6 +285,64 @@ async def create_task(request: Request,
     except common.OperationsError as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(url=f"/operations/items/{t['id']}", status_code=303)
+
+
+def _client_scope_label(principal, person_id, household_id):
+    """(label, in_scope) for the active client filter.
+
+    The name is resolved ONLY when the caller already has record scope on that client, so an id
+    typed into the query string can never reveal an inaccessible person's or household's name. Out
+    of scope returns a neutral label; the task list itself is narrowed by scope_clause and comes
+    back empty rather than falling back to the firm-wide list.
+    """
+    from sqlalchemy import select as _select
+
+    from app.db import engine as _engine
+    from app.db import households as _households
+    from app.db import people as _people
+    from app.security.authorization import record_in_scope
+    from app.services.person_names import person_display_name
+    if not person_id and not household_id:
+        return None, True
+    if person_id and not record_in_scope(principal, "person", person_id):
+        return "Tasks for the selected client", False
+    if household_id and not record_in_scope(principal, "household", household_id):
+        return "Tasks for the selected client", False
+    with _engine.connect() as c:
+        if person_id:
+            row = c.execute(_select(_people.c.full_name, _people.c.first_name, _people.c.last_name)
+                            .where(_people.c.id == person_id)).mappings().first()
+            if row is None:
+                return "Tasks for the selected client", False
+            return f"Tasks for {person_display_name(row['full_name'], row['first_name'], row['last_name'])}", True
+        name = c.scalar(_select(_households.c.name).where(_households.c.id == household_id))
+    if name is None:
+        return "Tasks for the selected client", False
+    return f"Tasks for {name}", True
+
+
+# NOTE the path: NOT /operations/tasks. The middleware rule ``/tasks(?:/|$)`` is unanchored, so
+# /operations/tasks would silently pull in the task.read capability on top of this route's
+# operations.view -- the exact collision this module's docstring warns about. /operations/task-list
+# matches no rule, so authorization stays route-level and unchanged.
+@router.get("/task-list", response_class=HTMLResponse)
+def task_list_page(request: Request, person_id: int | None = None,
+                   household_id: int | None = None, status: str | None = None,
+                   project_id: int | None = None, open_only: int = 0, page: int = 1,
+                   principal: Principal = Depends(require_capability("operations.view"))):
+    """The staff-facing task list the Client360 quick actions land on, scoped to the client they
+    came from. Same filtering as the /operations/items JSON API, which is unchanged."""
+    result = opstasks.list_tasks(principal, status=status, project_id=project_id,
+                                 person_id=person_id, household_id=household_id,
+                                 open_only=bool(open_only), page=page)
+    label, in_scope = _client_scope_label(principal, person_id, household_id)
+    return templates.TemplateResponse(request=request, name="operations/task_list.html", context={
+        "principal": principal, "result": result, "heading": label or "Tasks",
+        "client_filter": bool(person_id or household_id), "client_in_scope": in_scope,
+        "person_id": person_id, "household_id": household_id,
+        "filters": {"status": status or "", "project_id": project_id or "",
+                    "open_only": int(bool(open_only))},
+        "can_manage": principal.can("operations.manage")})
 
 
 @router.post("/items/{task_id}/status")

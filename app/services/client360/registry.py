@@ -95,8 +95,10 @@ QUICK_ACTIONS = (
                                     else "/document-library"))),
     QuickAction("add_note", "Add Note", "client.read",
                 lambda p, h: (f"/people/{p}/notes" if p else "/people")),
+    # /operations/task-list is the staff HTML page; /operations/items is the JSON API and used to
+    # be where this landed, so "Create Task" showed staff a raw JSON payload.
     QuickAction("create_task", "Create Task", "work.read",
-                lambda p, h: _pref("/operations/items", p, h)),
+                lambda p, h: _pref("/operations/task-list", p, h)),
     QuickAction("start_tax_return", "Start Tax Return", "tax.read",
                 lambda p, h: _pref("/tax/intake", p, h)),
     QuickAction("create_opportunity", "Create Opportunity", "opportunity.view",
