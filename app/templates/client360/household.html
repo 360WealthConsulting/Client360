@@ -180,7 +180,7 @@
         {# Email opens the EXISTING compose route for this CANONICAL document. Vault rows are
            excluded: their id belongs to vault_documents, so it would address an unrelated canonical
            document. Same communications.send gate the route itself enforces. #}
-        <td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
+        <td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form method="post" action="/client/household/{{ ws.household_id }}/documents/{{ d.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}{% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}</td>
       </tr>
     {% else %}<tr><td colspan="9">{% call ui.empty("No documents") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>

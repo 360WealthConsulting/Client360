@@ -353,6 +353,7 @@
              address an unrelated canonical document. Gated by the same communications.send
              capability the route itself requires — the action is absent, never shown-then-403. #}
           {% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}
+          {% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form method="post" action="/client/{{ ws.entity_id }}/documents/{{ d.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}
           {% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}
           {% if d.source_path %} · <span class="subtle" title="{{ d.source_path }}">Source</span>{% endif %}
         </td>
