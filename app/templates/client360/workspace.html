@@ -314,6 +314,16 @@
   <h2 class="section-title">Documents</h2>
   <p class="subtle">One record per document; provider copies attach as sources — never duplicated. Text
     capture and document details run automatically after a document arrives.</p>
+{% if principal and principal.can("documents.edit") %}
+  <form method="post" action="/client/{{ ws.entity_id }}/documents/upload" enctype="multipart/form-data"
+        class="row" style="gap:8px; align-items:flex-end; margin-bottom:10px; flex-wrap:wrap">
+    <div class="field"><label for="doc-up-file">Upload document</label>
+      <input class="input" id="doc-up-file" name="file" type="file" required></div>
+    <div class="field"><label for="doc-up-category">Category (optional)</label>
+      <input class="input" id="doc-up-category" name="category" placeholder="e.g. tax"></div>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+{% endif %}
   <article class="card"><div class="table-wrap"><table class="data">
     <thead><tr><th>Document</th><th>Type · Year</th><th>Owner</th><th>Source</th><th>Review</th>
       <th>Text</th><th>Ver</th><th>Modified</th><th>Actions</th></tr></thead><tbody>

@@ -46,6 +46,16 @@
 
 <section class="card">
   <h2 class="section-title">Documents ({{ ws.document_count }})</h2>
+{% if principal and principal.can("documents.edit") %}
+  <form method="post" action="/business/{{ ws.id }}/documents/upload" enctype="multipart/form-data"
+        class="row" style="gap:8px; align-items:flex-end; margin-bottom:10px; flex-wrap:wrap">
+    <div class="field"><label for="biz-doc-up-file">Upload document</label>
+      <input class="input" id="biz-doc-up-file" name="file" type="file" required></div>
+    <div class="field"><label for="biz-doc-up-category">Category (optional)</label>
+      <input class="input" id="biz-doc-up-category" name="category" placeholder="e.g. tax"></div>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+{% endif %}
   {% if ws.documents %}
   <table><thead><tr><th>Name</th><th></th></tr></thead><tbody>
     {% for d in ws.documents %}

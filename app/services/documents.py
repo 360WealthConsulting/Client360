@@ -19,10 +19,40 @@ from app.services.vault.storage import (
 DOCUMENT_ROOT = Path("documents")
 
 
+#: The owner column a workspace upload anchors to. Exactly one is ever set.
+OWNER_COLUMNS = {"person": "person_id", "household": "household_id", "organization": "organization_id"}
+
+
 def _person_directory(person_id: int) -> Path:
     directory = DOCUMENT_ROOT / str(person_id)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+def _owner_directory(owner_type: str, owner_id: int) -> Path:
+    """Storage directory for an owner. Person keeps its historical ``documents/<person_id>`` layout
+    untouched; household and organization uploads get their own subtree. The path is derived from the
+    owner id alone — never from anything in the request."""
+    if owner_type == "person":
+        return _person_directory(owner_id)
+    directory = DOCUMENT_ROOT / owner_type / str(owner_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _assert_owner_exists(owner_type: str, owner_id: int) -> None:
+    from app.db import households, relationship_entities
+    table, column = {"person": (people, people.c.id),
+                     "household": (households, households.c.id),
+                     "organization": (relationship_entities,
+                                      relationship_entities.c.id)}[owner_type]
+    with engine.connect() as connection:
+        if connection.scalar(select(column).where(column == owner_id)) is None:
+            raise DocumentOwnerNotFound(f"{owner_type} {owner_id} does not exist")
+
+
+class DocumentOwnerNotFound(LookupError):
+    """The person/household/organization a document was being uploaded to does not exist."""
 
 
 def _safe_suffix(filename: str) -> str:
@@ -44,16 +74,47 @@ def save_person_document(
     uploaded_by: str | None = None,
     verify_content: bool = False,
 ) -> int:
-    """Store an uploaded stream as a person document.
+    """Store an uploaded stream as a PERSON document. Unchanged signature and behaviour; the storage
+    core now lives in :func:`save_workspace_document`, which this delegates to so there is exactly
+    one uploader rather than one per owner kind."""
+    return save_workspace_document(
+        owner_type="person", owner_id=person_id, original_name=original_name, source=source,
+        content_type=content_type, category=category, description=description,
+        uploaded_by=uploaded_by, verify_content=verify_content, validate_owner=False)
 
-    ``verify_content`` (opt-in for UNTRUSTED client uploads) applies the same controls as the vault
-    client-upload path — extension allow-list, streamed size cap, and leading-byte/extension content
-    validation — by calling the single vault validation implementation. Trusted internal callers
-    leave it off, so their behavior is unchanged. Filename safety (only a short, sanitized suffix is
-    ever used, appended to a random name) and SHA-256 already apply on every path."""
+
+def save_workspace_document(
+    *,
+    owner_type: str,
+    owner_id: int,
+    original_name: str,
+    source: BinaryIO,
+    content_type: str | None = None,
+    category: str | None = None,
+    description: str | None = None,
+    uploaded_by: str | None = None,
+    verify_content: bool = False,
+    validate_owner: bool = True,
+) -> int:
+    """Store an uploaded stream as a canonical document owned by ONE person, household or
+    organization.
+
+    The single canonical uploader — streaming write, SHA-256, and (with ``verify_content``) the same
+    extension allow-list, size cap and leading-byte content check the vault client-upload path uses,
+    via the one vault validation implementation. Exactly one owner column is ever populated; the
+    other two stay NULL, so an upload never implies a second owner or touches the relationship graph.
+
+    Filename safety: the stored name is a random hex plus a short sanitised suffix, and the directory
+    is derived from the owner id, so nothing in the request can influence where bytes land or escape
+    the document root. ``original_name`` is preserved verbatim as provenance.
+    """
+    if owner_type not in OWNER_COLUMNS:
+        raise ValueError(f"unknown owner_type {owner_type!r}")
+    if validate_owner:
+        _assert_owner_exists(owner_type, owner_id)
     ext = validate_extension(original_name) if verify_content else None
     stored_name = f"{uuid.uuid4().hex}{_safe_suffix(original_name)}"
-    destination = _person_directory(person_id) / stored_name
+    destination = _owner_directory(owner_type, owner_id) / stored_name
 
     digest = hashlib.sha256()
     size_bytes = 0
@@ -81,7 +142,7 @@ def save_person_document(
             document_id = connection.execute(
                 insert(documents)
                 .values(
-                    person_id=person_id,
+                    **{OWNER_COLUMNS[owner_type]: owner_id},
                     original_name=original_name,
                     stored_name=stored_name,
                     storage_path=str(destination),

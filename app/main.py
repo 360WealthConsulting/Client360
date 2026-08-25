@@ -49,6 +49,7 @@ from app.routes.dev_auth import router as dev_auth_router
 from app.routes.document_email import router as document_email_router
 from app.routes.document_intelligence import router as document_intelligence_router
 from app.routes.document_library import router as document_library_router
+from app.routes.document_upload import router as document_upload_router
 from app.routes.documents import router as documents_router
 from app.routes.engagement import router as engagement_router
 from app.routes.enterprise_risk import router as enterprise_risk_router
@@ -282,6 +283,7 @@ app.include_router(compliance_intelligence_router)
 app.include_router(executive_intelligence_router)
 app.include_router(practice_management_router)
 app.include_router(document_email_router)
+app.include_router(document_upload_router)
 app.include_router(document_intelligence_router)
 app.include_router(automation_orchestration_router)
 app.include_router(data_governance_router)
