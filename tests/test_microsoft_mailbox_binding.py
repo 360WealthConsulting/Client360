@@ -44,19 +44,28 @@ def _tag():
 
 
 def _accounts(tag):
-    """Two connected mailboxes. B is deliberately the most recently updated row, which is exactly
-    what the old ``ORDER BY updated_at DESC`` would have handed to everyone."""
+    """Two connected mailboxes, in PRODUCTION SHAPE.
+
+    B is deliberately the most recently updated row -- exactly what the old
+    ``ORDER BY updated_at DESC`` would have handed to everyone. And, as the OAuth callback actually
+    writes since 5af14ac, the plaintext token columns are NULL and the refresh token lives in
+    ``token_cache_encrypted``; ``expires_at`` is stale because nothing refreshes it after connect.
+    These fixtures used to populate ``access_token``, which is why the suite stayed green while
+    /microsoft365/mail was redirecting every user straight back into OAuth.
+    """
     now = datetime.now(UTC)
     with engine.begin() as c:
         a_id = c.execute(insert(microsoft_accounts).values(
             tenant_id=tag, user_id=f"entra-a-{tag}", email=f"alice.{tag}@firm.test",
-            display_name="Alice", access_token=f"token-a-{tag}",
-            expires_at=now + timedelta(hours=1), updated_at=now - timedelta(hours=2),
+            display_name="Alice", access_token=None, refresh_token=None,
+            token_cache_encrypted=f"cache-a-{tag}",
+            expires_at=now - timedelta(days=3), updated_at=now - timedelta(hours=2),
         ).returning(microsoft_accounts.c.id)).scalar_one()
         b_id = c.execute(insert(microsoft_accounts).values(
             tenant_id=tag, user_id=f"entra-b-{tag}", email=f"bob.{tag}@firm.test",
-            display_name="Bob", access_token=f"token-b-{tag}",
-            expires_at=now + timedelta(hours=1), updated_at=now,
+            display_name="Bob", access_token=None, refresh_token=None,
+            token_cache_encrypted=f"cache-b-{tag}",
+            expires_at=now - timedelta(days=3), updated_at=now,
         ).returning(microsoft_accounts.c.id)).scalar_one()
     return {"a_id": a_id, "b_id": b_id,
             "a_email": f"alice.{tag}@firm.test", "b_email": f"bob.{tag}@firm.test"}
@@ -85,7 +94,7 @@ def test_resolver_treats_underscores_as_literals_not_wildcards():
     with engine.begin() as c:
         c.execute(insert(microsoft_accounts).values(
             tenant_id=tag, user_id=f"entra-lit-{tag}", email=f"abc.{tag}@firm.test",
-            access_token="t", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+            token_cache_encrypted="cache-lit"))
     assert account_for_principal(_principal(f"a_c.{tag}@firm.test")) is None
 
 
@@ -110,10 +119,19 @@ def test_account_by_id_returns_only_that_account():
 
 # --------------------------------------------------------------- GET /microsoft365/mail
 def _mail_page(monkeypatch, principal, *, subjects_by_token):
-    """Render the route with Graph stubbed. The stub keys its payload by BEARER TOKEN, so the
-    assertion is literally 'which mailbox's credential was used'."""
+    """Render the route with Graph AND the canonical token provider stubbed.
+
+    The provider mints the bearer from the account's ENCRYPTED CACHE, never from the plaintext
+    column, so the assertion below is still literally 'which mailbox's credential was used' -- and a
+    route that went back to reading ``access_token`` would get None and fail here.
+    """
     import app.routes.microsoft365_mail as mod
     seen = {}
+
+    def _provider(account):
+        return (account["token_cache_encrypted"] or "").replace("cache-", "token-")
+
+    monkeypatch.setattr(mod, "get_microsoft_access_token", _provider)
 
     class _Resp:
         status_code = 200

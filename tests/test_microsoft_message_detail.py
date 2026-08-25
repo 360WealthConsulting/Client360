@@ -50,12 +50,22 @@ def _tag():
 
 
 def _mailboxes(tag):
+    """PRODUCTION-SHAPED rows: no plaintext token, an encrypted MSAL cache, and a STALE expires_at.
+
+    This is exactly what the OAuth callback writes (5af14ac) -- access_token and refresh_token NULL,
+    the refresh token living inside token_cache_encrypted -- and exactly the shape the old fixtures
+    did not have. Populating access_token was why the suite stayed green while /microsoft365/mail was
+    dead in production for six weeks. expires_at is deliberately in the past because
+    persist_token_cache never refreshes it.
+    """
     now = datetime.now(UTC)
     with engine.begin() as c:
         for who, delta in (("a", timedelta(hours=2)), ("b", timedelta(0))):
             c.execute(insert(microsoft_accounts).values(
                 tenant_id=tag, user_id=f"entra-{who}-{tag}", email=f"{who}.{tag}@firm.test",
-                access_token=f"token-{who}-{tag}", expires_at=now + timedelta(hours=1),
+                access_token=None, refresh_token=None,
+                token_cache_encrypted=f"cache-{who}-{tag}",
+                expires_at=now - timedelta(days=3),
                 updated_at=now - delta))
     return {"a_email": f"a.{tag}@firm.test", "b_email": f"b.{tag}@firm.test"}
 
@@ -89,10 +99,31 @@ def _message(tag, *, body=None, attachments_flag=False, subject="FW: Tax liabili
     }
 
 
-def _stub(monkeypatch, *, by_token, attachments_by_token=None):
-    """Graph stub. Records every call so tests can assert URLs, params and tokens."""
+def _stub(monkeypatch, *, by_token, attachments_by_token=None, token_error=False):
+    """Graph stub + canonical token provider stub.
+
+    The provider is stubbed (not the legacy column) because the legacy column is NULL in production.
+    It mints a token from the account's ENCRYPTED CACHE, so a route that read the plaintext column
+    instead would get None and fail these tests immediately.
+    """
     import app.routes.microsoft365_mail as mod
-    calls = []
+
+    class _Calls(list):
+        """A list of Graph calls that also carries which accounts the token provider was asked for."""
+        provider_calls: list
+
+    calls = _Calls()
+    provider_calls = []
+
+    def _token(account):
+        provider_calls.append(account["id"])
+        if token_error:
+            from app.services.microsoft_identity import RECONNECT_MESSAGE
+            raise RuntimeError(RECONNECT_MESSAGE)
+        # cache-a-<tag> -> token-a-<tag>: derived from the encrypted cache, never from access_token.
+        return (account["token_cache_encrypted"] or "").replace("cache-", "token-")
+
+    monkeypatch.setattr(mod, "get_microsoft_access_token", _token)
 
     def _get(url, headers=None, params=None, timeout=None):
         token = (headers or {}).get("Authorization", "").removeprefix("Bearer ")
@@ -106,6 +137,7 @@ def _stub(monkeypatch, *, by_token, attachments_by_token=None):
         return _Resp(200, entry)
 
     monkeypatch.setattr(mod.requests, "get", _get)
+    calls.provider_calls = provider_calls
     return calls
 
 
@@ -295,3 +327,130 @@ def test_previewing_writes_nothing_to_the_database(monkeypatch):
     _open(_principal(f["a_email"]), f"AAMk{tag}")
     _open(_principal(f["a_email"]), f"AAMk{tag}")
     assert _counts() == before
+
+
+# ------------------------------------------------------------------ canonical token provider
+# Regression for the production blocker at 184353a: /microsoft365/mail redirected to
+# /microsoft365/connect on EVERY visit, which silently completed OAuth and landed on
+# /microsoft365/profile. The route was reading microsoft_accounts.access_token, a column the OAuth
+# callback has deliberately written as NULL since 5af14ac. The suite missed it because its fixtures
+# populated that column; the fixtures above now match production instead.
+
+def _list_stub(monkeypatch, *, messages_by_token=None, token_error=False):
+    import app.routes.microsoft365_mail as mod
+    calls = []
+
+    def _token(account):
+        if token_error:
+            from app.services.microsoft_identity import RECONNECT_MESSAGE
+            raise RuntimeError(RECONNECT_MESSAGE)
+        return (account["token_cache_encrypted"] or "").replace("cache-", "token-")
+
+    def _get(url, headers=None, params=None, timeout=None):
+        token = (headers or {}).get("Authorization", "").removeprefix("Bearer ")
+        calls.append({"url": url, "token": token})
+        return _Resp(200, {"value": (messages_by_token or {}).get(token, [])})
+
+    monkeypatch.setattr(mod, "get_microsoft_access_token", _token)
+    monkeypatch.setattr(mod.requests, "get", _get)
+    return calls
+
+
+def _open_list(principal):
+    import app.routes.microsoft365_mail as mod
+    return mod.microsoft365_mail(
+        fake_request("/microsoft365/mail", state_principal=principal), principal=principal)
+
+
+def test_mail_list_renders_for_a_production_shaped_connected_account(monkeypatch):
+    """access_token NULL, refresh_token NULL, encrypted cache present, expires_at long past."""
+    tag = _tag(); f = _mailboxes(tag)
+    with engine.connect() as c:
+        row = c.execute(select(microsoft_accounts).where(
+            microsoft_accounts.c.email == f["a_email"])).mappings().one()
+    assert row["access_token"] is None and row["refresh_token"] is None
+    assert row["token_cache_encrypted"]
+    assert row["expires_at"] < datetime.now(UTC)
+
+    calls = _list_stub(monkeypatch, messages_by_token={f"token-a-{tag}": [
+        {"id": "m1", "subject": "PRODUCTION-SHAPE-OK",
+         "from": {"emailAddress": {"name": "S", "address": "s@x.test"}},
+         "receivedDateTime": "2026-08-25T10:00:00Z", "bodyPreview": "", "isRead": True,
+         "hasAttachments": False, "webLink": "https://outlook.test/x"}]})
+    html = render(_open_list(_principal(f["a_email"])))
+    assert "PRODUCTION-SHAPE-OK" in html
+    assert calls and calls[0]["token"] == f"token-a-{tag}"
+
+
+def test_message_detail_renders_under_the_same_production_row_shape(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    _stub(monkeypatch, by_token={f"token-a-{tag}": _message(tag)})
+    html = render(_open(_principal(f["a_email"]), f"AAMk{tag}"))
+    assert "Tax liability" in html
+
+
+def test_the_token_comes_from_the_canonical_provider(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _stub(monkeypatch, by_token={f"token-a-{tag}": _message(tag)})
+    _open(_principal(f["a_email"]), f"AAMk{tag}")
+    # the provider was consulted, and the bearer it minted from the ENCRYPTED CACHE was used
+    assert calls.provider_calls
+    assert calls[0]["token"] == f"token-a-{tag}"
+
+
+def test_a_connected_principal_is_never_redirected_to_connect(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    _list_stub(monkeypatch)
+    assert _open_list(_principal(f["a_email"])).status_code != 303
+    _stub(monkeypatch, by_token={f"token-a-{tag}": _message(tag)})
+    assert _open(_principal(f["a_email"]), f"AAMk{tag}").status_code != 303
+
+
+def test_provider_failure_redirects_to_connect_without_calling_graph(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _list_stub(monkeypatch, token_error=True)
+    resp = _open_list(_principal(f["a_email"]))
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/microsoft365/connect"
+    assert calls == []
+
+    detail_calls = _stub(monkeypatch, by_token={}, token_error=True)
+    resp = _open(_principal(f["a_email"]), f"AAMk{tag}")
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/microsoft365/connect"
+    assert detail_calls == []
+
+
+def test_a_stale_expires_at_does_not_gate_mail(monkeypatch):
+    """expires_at is stamped once at connect and persist_token_cache never updates it, so it must
+    not decide whether mail works."""
+    tag = _tag(); f = _mailboxes(tag)
+    with engine.begin() as c:
+        c.execute(microsoft_accounts.update()
+                  .where(microsoft_accounts.c.email == f["a_email"])
+                  .values(expires_at=datetime(2020, 1, 1, tzinfo=UTC)))
+    _stub(monkeypatch, by_token={f"token-a-{tag}": _message(tag)})
+    assert "Tax liability" in render(_open(_principal(f["a_email"]), f"AAMk{tag}"))
+
+
+# ------------------------------------------------------------------ source guard
+def test_the_mail_route_never_reads_the_legacy_token_columns():
+    """Parsed from the AST, not grepped, so the docstring that EXPLAINS the legacy columns cannot
+    satisfy or break the guard."""
+    import ast
+    import inspect
+
+    import app.routes.microsoft365_mail as mod
+    tree = ast.parse(inspect.getsource(mod))
+    banned = {"access_token", "refresh_token", "expires_at"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+            assert node.slice.value not in banned, f"legacy column read: {node.slice.value}"
+        if isinstance(node, ast.Attribute):
+            assert node.attr not in banned, f"legacy column attribute: {node.attr}"
+    # the module has no reason to touch the table at all any more
+    assert "microsoft_accounts" not in {
+        n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module
+    }
+    src = inspect.getsource(mod)
+    assert "microsoft_accounts.c.access_token" not in src

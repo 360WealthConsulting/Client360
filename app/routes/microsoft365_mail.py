@@ -10,7 +10,6 @@ The detail route is PREVIEW ONLY. It reads one message plus its attachment METAD
 the message may be about; it creates nothing, imports nothing, downloads no attachment bytes, and
 exposes no mutation.
 """
-from datetime import datetime, timezone
 from urllib.parse import quote
 
 import requests
@@ -21,7 +20,10 @@ from fastapi.templating import Jinja2Templates
 from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.forwarded_email import extract_candidate
-from app.services.microsoft_identity import account_for_principal
+from app.services.microsoft_identity import (
+    account_for_principal,
+    get_microsoft_access_token,
+)
 from app.services.prospect_matching import match_for_candidate
 from app.templating import render_error
 
@@ -41,21 +43,34 @@ ATTACHMENT_SELECT = "id,name,contentType,size,isInline"
 
 
 def _bearer(principal):
-    """(token, redirect) for the principal's OWN mailbox. Exactly the list route's rules.
+    """(token, account, redirect) for the principal's OWN mailbox.
 
-    Returns ``(None, RedirectResponse)`` for every not-connected case -- no account bound to this
-    principal, an expired token, or no token at all -- so a caller can never proceed without one.
+    The token comes from the canonical provider, ``get_microsoft_access_token``, which decrypts the
+    stored MSAL cache and refreshes silently. That is the same path the sync jobs and the document
+    send already use.
+
+    This route used to read ``account["access_token"]`` and ``account["expires_at"]`` directly.
+    Both are legacy: since the token-security work (5af14ac) the OAuth callback deliberately writes
+    ``access_token=None`` / ``refresh_token=None`` and keeps the refresh token inside
+    ``token_cache_encrypted``, so the plaintext column is ALWAYS NULL in production and this page
+    redirected to /microsoft365/connect for every user on every visit -- silently completing OAuth
+    and landing on /microsoft365/profile. ``expires_at`` was the same class of mistake in waiting: it
+    is stamped once at interactive connect and ``persist_token_cache`` never updates it, so it goes
+    stale an hour later and never recovers. Token validity is the provider's business, not this
+    route's; neither column is read here any more.
+
+    Returns ``(None, None, RedirectResponse)`` when no account is bound to this principal or the
+    provider cannot produce a token, so a caller can never proceed without one.
     """
     account = account_for_principal(principal)
     if account is None:
-        return None, RedirectResponse(url="/microsoft365/connect", status_code=303)
-    expires_at = account["expires_at"]
-    if expires_at is not None and expires_at <= datetime.now(timezone.utc):
-        return None, RedirectResponse(url="/microsoft365/connect", status_code=303)
-    token = account["access_token"]
-    if not token:
-        return None, RedirectResponse(url="/microsoft365/connect", status_code=303)
-    return token, None
+        return None, None, RedirectResponse(url="/microsoft365/connect", status_code=303)
+    try:
+        return get_microsoft_access_token(account), account, None
+    except RuntimeError:
+        # The established reconnect condition (RECONNECT_MESSAGE): no cache, no MSAL account, or a
+        # silent refresh that failed. Same not-connected behaviour as before.
+        return None, None, RedirectResponse(url="/microsoft365/connect", status_code=303)
 
 
 @router.get("/mail")
@@ -65,11 +80,9 @@ def microsoft365_mail(request: Request,
     # path; stating it here is what gives the route the principal it needs to pick the mailbox.
     # No connected account for THIS user -> the existing not-connected behaviour. Never another
     # user's mailbox, and never the most recently connected one.
-    access_token, redirect = _bearer(principal)
+    access_token, account, redirect = _bearer(principal)
     if redirect is not None:
         return redirect
-
-    account = account_for_principal(principal)
 
     response = requests.get(
         GRAPH_MESSAGES_URL,
@@ -170,7 +183,7 @@ def microsoft365_mail_detail(
     Performs no writes of any kind: no person, opportunity, task, document, communication row or
     timeline event, and no attachment bytes.
     """
-    access_token, redirect = _bearer(principal)
+    access_token, _account, redirect = _bearer(principal)
     if redirect is not None:
         return redirect
 
