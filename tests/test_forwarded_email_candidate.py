@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.forwarded_email import extract_candidate, html_to_text
+from app.services.forwarded_email import (
+    extract_candidate,
+    html_to_text,
+    same_identity,
+)
 
 LAUREN = {"graph_from_name": "Lauren Ross", "graph_from_email": "lauren@360wealth.test"}
 
@@ -266,3 +270,177 @@ def test_the_forwarders_name_in_the_prospect_region_is_refused():
     body = PRODUCTION_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>",
                                       "<p>Thanks,<br>Lauren Curry</p>")
     assert extract_candidate(body=body, subject="Fw: x", **CURRY)["candidate_name"] is None
+
+
+# --------------------------------------------------------------------------------------------
+# THE REAL PRODUCTION SHAPE: an Outlook forward wrapping a GMAIL reply.
+#
+# cc0e19d passed its tests and still failed here, because its fixture quoted the older thread in
+# Outlook's From:/Sent:/Subject: form. The prospect is on gmail.com, so his client quoted Lauren
+# with "On ... wrote:" inside a <blockquote> -- no header block at all. The region therefore ran to
+# the bottom of the message and her quoted signature supplied both the name and the phone.
+#
+# Exchange also reports the forwarder's display name "Last, First", which is what walked past the
+# old exact-string guard: "Curry, Lauren" != "Lauren Curry".
+
+REAL_FORWARD = """<html><body>
+<p>Meeting tomorrow - referral from Tate</p>
+<p>Lauren Curry<br>Office: 540.562.0123<br>lauren@360wealthconsulting.com<br>
+1017 2nd Street SW<br>Roanoke, VA 24016</p>
+<p>--------------------------------</p>
+<p>From: ctbvmi01 &lt;tillmanbowling@gmail.com&gt;<br>
+Sent: Monday, August 24, 2026 8:07 PM<br>
+To: Lauren Curry &lt;lauren@360wealthconsulting.com&gt;<br>
+Subject: Re: Tax liability</p>
+<p>Lauren, thanks for getting back to me. Sold a rental and I'm worried about the hit.</p>
+<p>Thanks,<br>Tillman Bowling</p>
+<blockquote>
+<p>On Mon, Aug 24, 2026 at 3:12 PM Lauren Curry &lt;lauren@360wealthconsulting.com&gt; wrote:</p>
+<p>Happy to help.</p>
+<p>Lauren Curry<br>Wealth Advisor<br>Office: 540.562.0123<br>
+lauren@360wealthconsulting.com</p>
+</blockquote></body></html>"""
+
+#: Exchange "Last, First" display name -- the form that defeated the previous guard.
+EXCHANGE = {"graph_from_name": "Curry, Lauren",
+            "graph_from_email": "lauren@360wealthconsulting.com"}
+
+
+def _real(**over):
+    kw = {"body": REAL_FORWARD, "subject": "Fw: Tax liability", **EXCHANGE}
+    kw.update(over)
+    return extract_candidate(**kw)
+
+
+def test_real_shape_produces_the_prospect_not_the_forwarder():
+    r = _real()
+    assert r["raw_from_name"] == "ctbvmi01"
+    assert r["candidate_email"] == "tillmanbowling@gmail.com"
+    assert r["candidate_name"] == "Tillman Bowling"
+    assert r["candidate_phone"] is None
+    assert r["candidate_source"] == "original_signature"
+    assert r["requires_confirmation"] is True
+
+
+def test_exchange_last_first_display_name_cannot_become_the_candidate():
+    """The exact bypass: "Curry, Lauren" vs a signature reading "Lauren Curry"."""
+    r = _real()
+    assert not same_identity(r["candidate_name"], "Lauren Curry")
+    assert r["candidate_name"] != "Lauren Curry"
+
+
+@pytest.mark.parametrize("variant", [
+    "Curry, Lauren", "Lauren Curry", "Lauren Curry RFC", "CURRY, LAUREN",
+    "Curry,Lauren", "Lauren  Curry", "Lauren M Curry",
+])
+def test_forwarder_identity_variants_all_fail_the_gate(variant):
+    """Punctuation, order, case, spacing and credential variants are one identity."""
+    body = REAL_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>",
+                                f"<p>Thanks,<br>{variant}</p>")
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **EXCHANGE)
+    assert r["candidate_name"] is None, variant
+
+
+def test_a_job_title_cannot_become_the_candidate_name():
+    """"Wealth Advisor" is two capitalised words and satisfies a bare name predicate."""
+    body = REAL_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>",
+                                "<p>Regards,</p><p>Wealth Advisor</p><p>Senior Partner</p>")
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **EXCHANGE)
+    assert r["candidate_name"] in (None, "Wealth Advisor")
+    # the ambiguity rule must not let a SECOND title win over the first line after the sign-off
+    assert r["candidate_name"] != "Senior Partner"
+
+
+def test_ambiguous_capitalised_lines_without_a_signoff_yield_no_name():
+    body = REAL_FORWARD.replace(
+        "<p>Thanks,<br>Tillman Bowling</p>",
+        "<p>Blue Ridge Partners</p><p>Roanoke Virginia</p>")
+    assert extract_candidate(body=body, subject="Fw: x", **EXCHANGE)["candidate_name"] is None
+
+
+def test_the_forwarders_office_phone_never_reaches_the_candidate():
+    assert "540.562.0123" in REAL_FORWARD
+    assert _real()["candidate_phone"] is None
+
+
+def test_the_nested_quoted_email_cannot_become_the_candidate_email():
+    r = _real()
+    assert r["candidate_email"] != "lauren@360wealthconsulting.com"
+
+
+def test_no_candidate_field_resolves_to_the_forwarder():
+    r = _real()
+    assert not same_identity(r["candidate_name"], r["forwarder_name"])
+    assert r["candidate_email"] != r["forwarder_email"]
+    assert r["candidate_phone"] != "5405620123"
+
+
+def test_the_prospects_own_phone_is_still_read_in_the_real_shape():
+    body = REAL_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>",
+                                "<p>Call me at 540-555-1212</p><p>Thanks,<br>Tillman Bowling</p>")
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **EXCHANGE)
+    assert r["candidate_phone"] == "5405551212"
+    assert r["candidate_name"] == "Tillman Bowling"
+
+
+# ------------------------------------------------------------------ structural boundaries
+def _region_text(body):
+    from app.services.forwarded_email import original_message_region
+    text = html_to_text(body)
+    start, end = original_message_region(text)
+    return text[start:end if end is not None else len(text)]
+
+
+HEADERS = ("<p>From: ctbvmi01 &lt;tillmanbowling@gmail.com&gt;<br>Sent: Mon<br>"
+           "To: Lauren<br>Subject: Re: Tax liability</p>"
+           "<p>My message.</p><p>Thanks,<br>Tillman Bowling</p>")
+NESTED_SIG = "<p>Lauren Curry<br>Office: 540.562.0123</p>"
+
+
+@pytest.mark.parametrize("label,body", [
+    ("gmail attribution",
+     f"<p>fyi</p>{HEADERS}<p>On Mon, Aug 24 Lauren Curry &lt;lauren@x.test&gt; wrote:</p>{NESTED_SIG}"),
+    ("blockquote, no attribution text",
+     f"<p>fyi</p>{HEADERS}<blockquote>{NESTED_SIG}</blockquote>"),
+    ("outlook divRplyFwdMsg",
+     f'<p>fyi</p>{HEADERS}<div id="divRplyFwdMsg">{NESTED_SIG}</div>'),
+    ("outlook border-top div",
+     f'<p>fyi</p>{HEADERS}<div style="border-top:1px solid #ccc">{NESTED_SIG}</div>'),
+    ("outlook hr separator",
+     f"<p>fyi</p>{HEADERS}<hr>{NESTED_SIG}"),
+    ("outlook nested header block",
+     f"<p>fyi</p>{HEADERS}<p>From: Lauren Curry &lt;lauren@x.test&gt;<br>Sent: Mon<br>"
+     f"To: x<br>Subject: Tax liability</p>{NESTED_SIG}"),
+    ("plain separator line",
+     f"<p>fyi</p>{HEADERS}<p>______________________________</p>{NESTED_SIG}"),
+])
+def test_every_quote_structure_excludes_the_nested_signature(label, body):
+    region = _region_text(body)
+    assert "Tillman Bowling" in region, label          # the prospect's own sign-off is kept
+    assert "540.562.0123" not in region, label         # the nested signature is not
+    r = extract_candidate(body=body, subject="Fw: x",
+                          graph_from_name="Curry, Lauren", graph_from_email="lauren@x.test")
+    assert r["candidate_name"] == "Tillman Bowling", label
+    assert r["candidate_phone"] is None, label
+
+
+def test_an_unbounded_contaminated_region_fails_closed():
+    """No recognisable end AND the forwarder's details inside it -> no name, no phone."""
+    # One header block, and NO recognisable end at all: no separator, no blockquote, no
+    # attribution line. The forwarder's own address then appears in the free text below.
+    body = ("<p>fyi</p>"
+            "<p>From: ctbvmi01 &lt;tillmanbowling@gmail.com&gt;<br>Sent: Mon<br>To: L<br>"
+            "Subject: Re: Tax</p>"
+            "<p>some text</p><p>Lauren Curry</p><p>Office: 540.562.0123</p>"
+            "<p>lauren@360wealthconsulting.com</p>")
+    r = extract_candidate(body=body, subject="Fw: x", **EXCHANGE)
+    assert r["candidate_phone"] is None
+    assert r["candidate_name"] is None
+    assert any("could not be determined" in w for w in r["warnings"])
+
+
+def test_the_internal_sentinel_never_leaks_into_output():
+    from app.services.forwarded_email import QUOTE_SENTINEL
+    r = _real()
+    for value in r.values():
+        assert QUOTE_SENTINEL not in str(value)

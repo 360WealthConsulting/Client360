@@ -201,3 +201,24 @@ def test_a_prospect_supplied_phone_still_matches_normally():
     candidate = extract_candidate(body=body, subject="Fw: Tax liability", **CURRY)
     assert candidate["candidate_phone"] == "5405551212"
     assert pid in {m["person_id"] for m in match_for_candidate(candidate)["matches"]}
+
+
+def test_the_real_gmail_nested_shape_produces_no_false_phone_match():
+    """The production failure end to end: an Outlook forward wrapping a GMAIL reply.
+
+    An unrelated client holds the forwarder's office number. Before the boundary fix the parser read
+    that number out of her quoted signature and offered this person as a match. Nothing about the
+    person is special-cased -- the match disappears because candidate_phone is empty.
+    """
+    from app.services.forwarded_email import extract_candidate
+    from tests.test_forwarded_email_candidate import EXCHANGE, REAL_FORWARD
+    tag = _tag()
+    unrelated = _person(tag, first="Mike", last="Agree", phone="540-562-0123")
+    assert find_matches(phone="5405620123")["matches"][0]["person_id"] == unrelated
+
+    candidate = extract_candidate(body=REAL_FORWARD, subject="Fw: Tax liability", **EXCHANGE)
+    assert candidate["candidate_phone"] is None
+    assert candidate["candidate_name"] == "Tillman Bowling"
+    result = match_for_candidate(candidate)
+    assert unrelated not in {m["person_id"] for m in result["matches"]}
+    assert result["strategy"] != "phone"

@@ -53,24 +53,52 @@ _TAG = re.compile(r"<[^>]+>")
 _DROP_ELEMENTS = re.compile(r"<(script|style)\b.*?</\1>", re.I | re.S)
 _BREAKS = re.compile(r"<\s*(br|/p|/div|/tr|/li|/h[1-6])\s*/?\s*>", re.I)
 
+#: Marks where a mail client wrapped a QUOTED thread. A private-use codepoint, so nothing in a real
+#: message can forge it. It exists only inside the flattened text this module parses and is never
+#: rendered -- the page shows Graph's own bodyPreview, not this.
+QUOTE_SENTINEL = "quoted"
+
+#: Structural quote containers, in the markup the major clients actually emit. Recognising the
+#: CONTAINER matters more than recognising its text: clients disagree about attribution wording but
+#: all of them wrap the quoted thread in something. Flattening used to discard these outright, which
+#: is how the prospect's region ran on into the forwarder's quoted signature.
+_QUOTE_CONTAINERS = (
+    re.compile(r"<\s*blockquote\b[^>]*>", re.I),                      # Gmail, Apple Mail, generic
+    re.compile(r'<\s*div\b[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>', re.I),
+    re.compile(r'<\s*div\b[^>]*id="?divRplyFwdMsg"?[^>]*>', re.I),    # Outlook / OWA
+    re.compile(r'<\s*div\b[^>]*style="[^"]*border-top[^"]*"[^>]*>', re.I),   # Outlook desktop
+    re.compile(r"<\s*hr\b[^>]*>", re.I),                              # Outlook separator rule
+)
+
 
 def html_to_text(body: str | None) -> str:
-    """Flatten an HTML mail body to line-oriented text.
+    """Flatten an HTML mail body to line-oriented text, PRESERVING quote boundaries.
 
-    Deliberately small and dependency-free: drop script/style, turn block ends into newlines, strip
-    the remaining tags, unescape entities, and collapse runs of blank lines. Outlook's quoted header
-    block survives this intact, which is all the parser needs. This is not a general HTML renderer
-    and is never used to display anything -- only to read.
+    Deliberately small and dependency-free: drop script/style, mark quoted containers with
+    :data:`QUOTE_SENTINEL`, turn block ends into newlines, strip the remaining tags, unescape
+    entities, collapse blank runs. This is not a general HTML renderer and is never used to display
+    anything -- only to read.
     """
     if not body:
         return ""
     text = _DROP_ELEMENTS.sub(" ", body)
+    # Before the tags are stripped: a quote container becomes a sentinel LINE, so the structural
+    # boundary survives into the flattened text even when the client's attribution wording does not.
+    for pattern in _QUOTE_CONTAINERS:
+        text = pattern.sub(f"\n{QUOTE_SENTINEL}\n", text)
     text = _BREAKS.sub("\n", text)
     text = _TAG.sub("", text)
     text = _html.unescape(text)
-    text = text.replace(" ", " ").replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\xa0", " ").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def strip_sentinels(value: str | None) -> str | None:
+    """Remove the internal marker from anything that could reach a caller."""
+    if value is None:
+        return None
+    return " ".join(value.replace(QUOTE_SENTINEL, " ").split()) or None
 
 
 def _split_address(value: str | None) -> tuple[str | None, str | None]:
@@ -120,21 +148,47 @@ def _header_block_starts(text: str) -> list[int]:
     return sorted(starts)
 
 
-def original_message_region(text: str) -> tuple[int, int] | None:
+#: Attribution lines that open a quoted thread WITHOUT any From:/Sent:/Subject: block. Gmail and
+#: Apple Mail use this form, which is why the production message -- an Outlook forward wrapping a
+#: GMAIL reply -- had no second header block for the old code to find.
+_QUOTE_ATTRIBUTION = re.compile(
+    r"^\s*(?:On\b.{0,300}?\bwrote\s*:|Le\b.{0,300}?\ba \u00e9crit\s*:|"
+    r"Am\b.{0,300}?\bschrieb\s*:)\s*$", re.I | re.M)
+#: A rule of dashes/underscores on its own line -- Outlook's plain-text separator.
+_SEPARATOR_LINE = re.compile(r"^\s*[-_=]{4,}\s*$", re.M)
+_SENTINEL_LINE = re.compile(re.escape(QUOTE_SENTINEL))
+
+
+def _quote_boundaries(text: str) -> list[int]:
+    """Indexes where a quoted thread begins, from structure or attribution rather than headers.
+
+    These only ever END the candidate region; they never start it, because none of them tells us who
+    the original sender was.
+    """
+    out = [m.start() for m in _SENTINEL_LINE.finditer(text)]
+    out += [m.start() for m in _QUOTE_ATTRIBUTION.finditer(text)]
+    out += [m.start() for m in _SEPARATOR_LINE.finditer(text)]
+    return sorted(out)
+
+
+def original_message_region(text: str) -> tuple[int, int | None] | None:
     """(start, end) of the ORIGINAL message -- the prospect's own content -- or None.
 
     Everything BEFORE ``start`` is the forwarder's preamble and signature; everything from ``end``
-    onwards is the older thread the prospect quoted. Candidate identity and contact details are read
-    only from between the two, which is the whole correction: in production the forwarder's office
-    number sat in her signature quoted BELOW the prospect's reply, and a scan that ran to the end of
-    the message picked it up as the prospect's phone.
+    onwards is the older thread the prospect quoted.
+
+    ``end`` is the EARLIEST trustworthy nested-quote boundary after the prospect's own header: the
+    next header block, a structural quote container, or an attribution line. ``end`` is ``None``
+    when no boundary can be established -- which the caller treats as a reason for caution, NOT as
+    licence to read to the bottom of the message. Defaulting to end-of-text is exactly what let the
+    forwarder's quoted signature supply the candidate's name and phone.
     """
     starts = _header_block_starts(text)
     if not starts:
         return None
     start = starts[0]
-    end = next((s for s in starts if s > start), len(text))
-    return start, end
+    candidates = [s for s in starts if s > start] + [b for b in _quote_boundaries(text) if b > start]
+    return start, (min(candidates) if candidates else None)
 
 
 def _body_after_headers(region: str) -> str:
@@ -220,6 +274,43 @@ _SIG_MAX_TOKENS = 4
 _SIG_MAX_CHARS = 60
 
 
+def identity_tokens(value: str | None) -> frozenset[str]:
+    """Order- and punctuation-insensitive tokens of a person name.
+
+    ``"Curry, Lauren"`` and ``"Lauren Curry"`` reduce to the same set, which is the point: the old
+    guard compared raw strings and an Exchange "Last, First" display name walked straight past it.
+    """
+    cleaned = re.sub(r"[^A-Za-z\s]", " ", value or "")
+    return frozenset(t.casefold() for t in cleaned.split() if len(t) >= 2)
+
+
+def same_identity(a: str | None, b: str | None) -> bool:
+    """Whether two name strings denote the same person, generically.
+
+    Equal token sets, or one a subset of the other so a credential/middle-name variant
+    (``"Lauren Curry RFC"``) cannot slip past. The subset rule needs at least two tokens on the
+    smaller side, so a shared first name alone never collapses two different people.
+    """
+    ta, tb = identity_tokens(a), identity_tokens(b)
+    if not ta or not tb:
+        return False
+    if ta == tb:
+        return True
+    return min(len(ta), len(tb)) >= 2 and (ta <= tb or tb <= ta)
+
+
+def _phones_in(text: str) -> set[str]:
+    """Every normalised phone number in a chunk of text."""
+    return {re.sub(r"[^\d]", "", p) for p in _PHONE.findall(text or "")
+            if len(re.sub(r"[^\d]", "", p)) in (10, 11)}
+
+
+#: Sign-off words that immediately precede a name. The strongest evidence a line IS a name.
+_SIGNOFF = re.compile(
+    r"^\s*(thanks|thank you|many thanks|thanks again|regards|best|best regards|kind regards|"
+    r"warm regards|sincerely|cheers|warmly|respectfully|talk soon)\s*[,.!]?\s*$", re.I)
+
+
 def _signature_name(body: str, *, forwarder_name=None, email=None) -> str | None:
     """A human name from the prospect's OWN sign-off, or None.
 
@@ -227,10 +318,13 @@ def _signature_name(body: str, *, forwarder_name=None, email=None) -> str | None
     sign-off sits. Every candidate must additionally clear ``looks_like_human_name``, so a machine
     handle cannot arrive by this route either. The forwarder's own name is refused outright.
     """
-    forwarder = " ".join((forwarder_name or "").split()).casefold()
-    found = None
-    for raw in (body or "").splitlines():
-        line = " ".join(raw.split()).strip(" ,;:-")
+    qualifying = []          # (index, line) for every line that could be a name
+    signoff_at = None
+    lines = [" ".join(r.split()).strip(" ,;:-") for r in (body or "").splitlines()]
+    for i, line in enumerate(lines):
+        if _SIGNOFF.match(line or ""):
+            signoff_at = i
+            continue
         if not line or len(line) > _SIG_MAX_CHARS:
             continue
         tokens = line.split()
@@ -240,10 +334,55 @@ def _signature_name(body: str, *, forwarder_name=None, email=None) -> str | None
             continue
         if not looks_like_human_name(line, email=email):
             continue
-        if line.casefold() == forwarder:
+        if same_identity(line, forwarder_name):
             continue
-        found = line
-    return found
+        qualifying.append((i, line))
+
+    if not qualifying:
+        return None
+    # Strongest evidence: the first qualifying line AFTER a sign-off ("Thanks," / "Regards,").
+    # Taking the LAST qualifying line instead is what let a job title on the line beneath the name
+    # win -- "Wealth Advisor" is two capitalised words and looks exactly like a name to a predicate.
+    if signoff_at is not None:
+        after = [line for i, line in qualifying if i > signoff_at]
+        if after:
+            return after[0]
+    # No sign-off anchor: accept a name only when the body offers exactly ONE candidate. Several
+    # capitalised two-word lines with nothing to choose between them is ambiguity, and a wrong
+    # identity is worse than an empty field.
+    return qualifying[0][1] if len(qualifying) == 1 else None
+
+
+def _apply_forwarder_gate(result: dict, forwarder_phones: set[str]) -> None:
+    """Last line of defence: the candidate may never resolve to the KNOWN forwarder.
+
+    Deliberately independent of region parsing. If a future mail format defeats boundary detection
+    the way Gmail's attribution line defeated the previous version, this still holds -- so the
+    failure mode becomes an empty field rather than a colleague filed as a prospect.
+
+    Generic by construction: it compares the candidate against whatever Graph reported as the
+    sender of THIS message, and against the phone numbers in THIS message's forwarder region. No
+    name, address or number is hard-coded.
+    """
+    if result["candidate_name"] and same_identity(result["candidate_name"],
+                                                  result["forwarder_name"]):
+        result["candidate_name"] = None
+        result["warnings"].append(
+            "The detected name matched the person who forwarded the message, so it was discarded. "
+            "Enter the prospect's name manually.")
+
+    cand_email = (result["candidate_email"] or "").strip().casefold()
+    fwd_email = (result["forwarder_email"] or "").strip().casefold()
+    if cand_email and fwd_email and cand_email == fwd_email:
+        result["candidate_email"] = None
+        result["warnings"].append(
+            "The detected email address is the forwarder's own, so it was discarded.")
+
+    if result["candidate_phone"] and result["candidate_phone"] in forwarder_phones:
+        result["candidate_phone"] = None
+        result["warnings"].append(
+            "The detected phone number appears in the forwarder's own signature, so it was "
+            "discarded. It is not the prospect's number.")
 
 
 def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: str | None = None,
@@ -302,8 +441,14 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
     # the prospect quoted underneath -- typically containing the forwarder's own signature -- is
     # excluded too.
     start, end = bounds
-    region = text[start:end]
+    forwarder_region = text[:start]
+    # No trustworthy end means the "region" may run straight into a quoted thread. Read the headers
+    # from it (those are anchored at the top and safe) but treat the free text with suspicion.
+    region = text[start:end] if end is not None else text[start:]
     body = _body_after_headers(region)
+    #: Phones the FORWARDER is answerable for. Independent of boundary detection, so it still holds
+    #: if a future client format defeats the region logic entirely.
+    forwarder_phones = _phones_in(forwarder_region)
     from_value = _first(_FROM_LINE, region)
     result["original_sent"] = _first(_SENT_LINE, region)
     result["original_to"] = _first(_TO_LINE, region)
@@ -328,12 +473,24 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
     result["candidate_source"] = "forwarded_header"
     result["confidence"] = "heuristic"
 
+    # Fail closed: an unbounded region that still mentions the forwarder is contaminated. The header
+    # fields stay (they precede any quote); heuristic name and phone are abandoned rather than
+    # guessed out of somebody else's signature.
+    contaminated = end is None and bool(
+        (forwarder_email and forwarder_email in body.casefold())
+        or (forwarder_phones and forwarder_phones & _phones_in(body)))
+    if contaminated:
+        result["warnings"].append(
+            "The end of the original message could not be determined and the forwarder's own "
+            "details appear inside it, so no name or phone was taken from the body. Enter them "
+            "manually.")
+
     # Name, in order of trust: the original From display name when it is actually a name, otherwise
     # the prospect's own sign-off. A handle like "ctbvmi01" fails the first and is never substituted
     # by the email local part -- if the sign-off yields nothing, the field stays empty for staff.
     if looks_like_human_name(name, email=email):
         result["candidate_name"] = name
-    else:
+    elif not contaminated:
         signature = _signature_name(body, forwarder_name=forwarder_name, email=email)
         if signature:
             result["candidate_name"] = signature
@@ -345,9 +502,11 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
 
     # Phone comes ONLY from the prospect's own body. Scanning further picked up the forwarder's
     # office number out of her quoted signature and produced a false existing-client match.
-    result["candidate_phone"] = _phone_in(body)
+    result["candidate_phone"] = None if contaminated else _phone_in(body)
     if result["candidate_phone"] and result["candidate_source"] == "forwarded_header":
         result["candidate_source"] = "forwarded_header+signature"
+
+    _apply_forwarder_gate(result, forwarder_phones)
 
     result["warnings"].append(
         "Detected from the forwarded message text. Every field is a suggestion and must be "

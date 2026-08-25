@@ -487,3 +487,33 @@ def test_no_vault_or_sharepoint_write():
     src = inspect.getsource(prospect_import)
     for bad in ("vault_documents", "sharepoint", "onedrive", "/drives/"):
         assert bad not in src.lower()
+
+
+def test_the_real_gmail_nested_shape_prefills_safely_end_to_end(monkeypatch):
+    """The production page, rebuilt: Outlook forward wrapping a Gmail reply, Exchange display name.
+
+    Asserts the reviewed form offers the PROSPECT and never the forwarder -- and that the unrelated
+    client holding the forwarder's office number is not offered as a match.
+    """
+    from tests._portal_util import render
+    from tests.test_forwarded_email_candidate import REAL_FORWARD
+    from tests.test_microsoft_message_detail import _mailboxes as _mb
+    from tests.test_microsoft_message_detail import _message, _open, _stub
+    from tests.test_microsoft_message_detail import _tag as _t
+    tag = _t(); f = _mb(tag)
+    decoy = _existing(_tag(), first="Mike", last="Agree", phone="540-562-0123")
+
+    msg = _message(tag, body=REAL_FORWARD, subject="Fw: Tax liability")
+    msg["from"] = {"emailAddress": {"name": "Curry, Lauren",
+                                    "address": "lauren@360wealthconsulting.com"}}
+    _stub(monkeypatch, by_token={f"token-a-{tag}": msg})
+    staff = Principal(1, f["a_email"], "Staff", frozenset(_CAP))
+    html = render(_open(staff, f"AAMk{tag}"))
+
+    assert 'name="first_name" value="Tillman"' in html
+    assert 'name="last_name" value="Bowling"' in html
+    assert 'value="tillmanbowling@gmail.com"' in html
+    assert 'name="phone" value=""' in html
+    assert 'value="5405620123"' not in html          # never the forwarder's number as a form value
+    assert f"/client/{decoy}" not in html            # and therefore no false existing-person match
+    assert "ctbvmi01" in html                        # provenance remains visible
