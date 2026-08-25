@@ -7,11 +7,15 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import (
     engine,
-    microsoft_accounts,
     microsoft_unmatched_messages,
     people,
 )
-from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
+from app.services.microsoft_identity import (
+    account_by_id,
+    connected_accounts,
+    get_microsoft_access_token,
+    record_sync_health,
+)
 from app.services.timeline import add_timeline_event
 
 GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages"
@@ -30,7 +34,24 @@ def _parse_graph_datetime(value: str | None) -> datetime:
     )
 
 
-def sync_recent_mail(top: int = 50) -> dict[str, Any]:
+def sync_recent_mail(top: int = 50, *, account_id: int | None = None) -> dict[str, Any]:
+    """Ingest recent mail from the connected Microsoft account(s).
+
+    This is a BACKGROUND job with no authenticated principal -- the scheduler
+    (``jobs.scheduler.run_microsoft_mail_sync``), the automation dispatcher
+    (``m365_mail_sync``) and the module's ``__main__`` all call it unattended -- so it cannot bind to
+    a principal the way the mail ROUTE now does. It used to resolve its mailbox with
+    ``ORDER BY updated_at DESC LIMIT 1``, meaning whichever account happened to reconnect last was
+    the only one ever synced and the others silently went stale.
+
+    Account selection is now explicit in both directions: pass ``account_id`` to sync exactly one
+    named mailbox, or omit it to enumerate EVERY connected account in a deterministic order. Neither
+    path picks an account by recency.
+
+    A per-account failure is recorded on that account's sync health and does not abort the run, so
+    one expired connection cannot starve every other mailbox. If every account fails the first error
+    is re-raised, preserving the "sync failed" signal the scheduler logs today.
+    """
     # (D.32) Sync ELIGIBILITY (behavior) is decided by the centralized Runtime Policy Engine
     # (microsoft365.sync_eligibility), which consumes the runtime engine — behavior-preserving: with no
     # runtime feature ``microsoft365.sync`` defined, the legacy default (enabled) is used, so sync runs
@@ -38,13 +59,20 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
     from app.services.policy import evaluate as policy_evaluate
     if not policy_evaluate("microsoft365.sync_eligibility").decision:
         return {"skipped": True, "reason": "runtime_disabled"}
-    with engine.connect() as connection:
-        account = connection.execute(
-            select(microsoft_accounts)
-            .order_by(microsoft_accounts.c.updated_at.desc())
-            .limit(1)
-        ).mappings().one_or_none()
 
+    if account_id is not None:
+        named = account_by_id(account_id)
+        # A named mailbox that does not exist fails closed. It never degrades to "some other account".
+        accounts = [named] if named is not None else []
+    else:
+        accounts = connected_accounts()
+
+    if not accounts:
+        raise RuntimeError(
+            "No Microsoft 365 account is connected."
+        )
+
+    with engine.connect() as connection:
         person_rows = connection.execute(
             select(
                 people.c.id,
@@ -52,17 +80,6 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
                 people.c.normalized_email,
             )
         ).mappings().all()
-
-    if account is None:
-        raise RuntimeError(
-            "No Microsoft 365 account is connected."
-        )
-
-    try:
-        access_token = get_microsoft_access_token(account)
-    except Exception as exc:
-        record_sync_health(account["id"], "error", exc)
-        raise
 
     person_by_email: dict[str, int] = {}
 
@@ -76,6 +93,45 @@ def sync_recent_mail(top: int = 50) -> dict[str, Any]:
             if normalized:
                 person_by_email[normalized] = person["id"]
 
+    totals = {"messages_reviewed": 0, "matched_messages": 0,
+              "unmatched_messages": 0, "published_events": 0}
+    first_error: Exception | None = None
+    succeeded = 0
+
+    for account in accounts:
+        try:
+            result = _sync_one_account(account, top, person_by_email)
+        except Exception as exc:            # one mailbox must not starve the rest
+            if first_error is None:
+                first_error = exc
+            continue
+        succeeded += 1
+        for key in totals:
+            totals[key] += result[key]
+
+    if succeeded == 0 and first_error is not None:
+        raise first_error
+
+    return {**totals, "accounts_synced": succeeded, "accounts_total": len(accounts)}
+
+
+def _sync_one_account(account, top: int, person_by_email: dict[str, int]) -> dict[str, int]:
+    """Ingest one mailbox. Records sync health on that account, ok or error."""
+    try:
+        access_token = get_microsoft_access_token(account)
+    except Exception as exc:
+        record_sync_health(account["id"], "error", exc)
+        raise
+
+    try:
+        return _ingest_messages(account, access_token, top, person_by_email)
+    except Exception as exc:
+        record_sync_health(account["id"], "error", exc)
+        raise
+
+
+def _ingest_messages(account, access_token: str, top: int,
+                     person_by_email: dict[str, int]) -> dict[str, int]:
     response = requests.get(
         GRAPH_MESSAGES_URL,
         headers={

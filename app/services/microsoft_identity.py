@@ -14,6 +14,7 @@ bare, non-refreshable access token.
 from datetime import datetime, timezone
 
 import msal
+from sqlalchemy import func, select
 
 from app.connectors.microsoft365.config import get_microsoft365_config
 from app.db import engine, microsoft_accounts
@@ -66,6 +67,75 @@ def persist_token_cache(account_id, token_cache):
             .values(token_cache_encrypted=serialize_cache(token_cache),
                     updated_at=datetime.now(timezone.utc))
         )
+
+
+# --- account resolution -------------------------------------------------------------------------
+#
+# ONE place decides which connected mailbox a caller acts on. Before this, three surfaces each ran
+# their own ``ORDER BY updated_at DESC LIMIT 1``, which returns whichever account connected most
+# recently -- so with two connected mailboxes a staff user could be shown a colleague's inbox. A
+# mailbox read must be bound to the authenticated principal, and a background job must enumerate
+# the accounts it intends to sync rather than silently picking one.
+#
+# ``microsoft_accounts`` carries no foreign key to ``users`` (``person_id`` points at ``people`` and
+# ``user_id`` is the Microsoft/Entra object id, not a Client360 user id), so the account email is the
+# only binding available. That is the precedent ``communications.mail_send`` already set.
+
+
+def account_for_principal(principal, *, conn=None):
+    """The connected Microsoft account owned by ``principal``, or ``None``.
+
+    Case-insensitive on the account email, matching the existing send path. It compares with
+    ``lower(email) = lower(principal.email)`` rather than ``ILIKE``: an address is a literal here,
+    and ``ILIKE`` would treat ``_`` and ``%`` in a local part as wildcards -- ``a_b@x.com`` could
+    match ``axb@x.com``. Never falls back to another account: no match returns ``None`` and the
+    caller applies its own not-connected behaviour.
+    """
+    email = (getattr(principal, "email", "") or "").strip().lower()
+    if not email:
+        return None
+    stmt = select(microsoft_accounts).where(func.lower(microsoft_accounts.c.email) == email)
+
+    def _do(c):
+        row = c.execute(stmt).mappings().first()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return _do(conn)
+    with engine.connect() as c:
+        return _do(c)
+
+
+def connected_accounts(*, conn=None):
+    """EVERY connected Microsoft account, oldest id first.
+
+    For background multi-account synchronisation, which has no authenticated principal. The order is
+    deterministic and the enumeration explicit -- a job processes the accounts it was given, it never
+    picks one by recency.
+    """
+    stmt = select(microsoft_accounts).order_by(microsoft_accounts.c.id)
+
+    def _do(c):
+        return [dict(r) for r in c.execute(stmt).mappings()]
+
+    if conn is not None:
+        return _do(conn)
+    with engine.connect() as c:
+        return _do(c)
+
+
+def account_by_id(account_id, *, conn=None):
+    """One connected account by its primary key, or ``None``. Used when a caller names the mailbox."""
+    stmt = select(microsoft_accounts).where(microsoft_accounts.c.id == account_id)
+
+    def _do(c):
+        row = c.execute(stmt).mappings().first()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return _do(conn)
+    with engine.connect() as c:
+        return _do(c)
 
 
 def get_microsoft_access_token(account) -> str:

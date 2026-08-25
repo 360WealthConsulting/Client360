@@ -1,28 +1,36 @@
+"""The signed-in staff user's Outlook inbox.
+
+The mailbox shown belongs to the AUTHENTICATED PRINCIPAL. This route used to read whichever
+``microsoft_accounts`` row had been updated most recently, so with two connected mailboxes a user
+holding ``communication.read`` could be shown a colleague's inbox. Account selection now goes
+through the one canonical resolver (``microsoft_identity.account_for_principal``); there is no
+fallback to another account.
+"""
 from datetime import datetime, timezone
 
 import requests
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
 
-from app.db import engine, microsoft_accounts
+from app.security.dependencies import require_capability
+from app.security.models import Principal
+from app.services.microsoft_identity import account_for_principal
 from app.templating import render_error
-
 
 router = APIRouter(prefix="/microsoft365")
 templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/mail")
-def microsoft365_mail(request: Request):
-    with engine.connect() as connection:
-        account = connection.execute(
-            select(microsoft_accounts)
-            .order_by(microsoft_accounts.c.updated_at.desc())
-            .limit(1)
-        ).mappings().one_or_none()
+def microsoft365_mail(request: Request,
+                      principal: Principal = Depends(require_capability("communication.read"))):
+    # communication.read is the capability the middleware rule (^/microsoft) already applies to this
+    # path; stating it here is what gives the route the principal it needs to pick the mailbox.
+    account = account_for_principal(principal)
 
+    # No connected account for THIS user -> the existing not-connected behaviour. Never another
+    # user's mailbox, and never the most recently connected one.
     if account is None:
         return RedirectResponse(url="/microsoft365/connect", status_code=303)
 

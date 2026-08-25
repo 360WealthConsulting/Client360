@@ -24,11 +24,11 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from app.db import documents, engine, microsoft_accounts
+from app.db import documents, engine
 from app.security.audit import write_audit_event
 from app.security.middleware import _document_in_scope
 from app.services.document_naming import document_delivery_filename
-from app.services.microsoft_identity import get_microsoft_access_token
+from app.services.microsoft_identity import account_for_principal, get_microsoft_access_token
 
 GRAPH_SENDMAIL_URL = "https://graph.microsoft.com/v1.0/me/sendMail"
 
@@ -101,16 +101,16 @@ def _staff_microsoft_account(principal):
 
     Matching on the principal's own address is what keeps delegated send honest: without it a staff
     user could send from whichever mailbox happened to be connected last. No match means no send.
+
+    Delegates to ``microsoft_identity.account_for_principal`` -- the one resolver the mail READ
+    surface now uses too -- so send and read can never drift onto different mailboxes. Same
+    case-insensitive rule as before; the resolver compares ``lower(email)`` instead of ``ILIKE`` so
+    an underscore in a local part is a literal rather than a wildcard.
     """
-    email = (getattr(principal, "email", "") or "").strip().lower()
-    if not email:
+    account = account_for_principal(principal)
+    if account is None:
         raise MailSendError(_NOT_CONNECTED)
-    with engine.connect() as conn:
-        row = conn.execute(select(microsoft_accounts).where(
-            microsoft_accounts.c.email.ilike(email))).mappings().first()
-    if row is None:
-        raise MailSendError(_NOT_CONNECTED)
-    return dict(row)
+    return account
 
 
 def _post_to_graph(token: str, payload: dict) -> object:
