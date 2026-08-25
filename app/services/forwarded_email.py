@@ -67,8 +67,14 @@ _QUOTE_CONTAINERS = (
     re.compile(r'<\s*div\b[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>', re.I),
     re.compile(r'<\s*div\b[^>]*id="?divRplyFwdMsg"?[^>]*>', re.I),    # Outlook / OWA
     re.compile(r'<\s*div\b[^>]*style="[^"]*border-top[^"]*"[^>]*>', re.I),   # Outlook desktop
-    re.compile(r"<\s*hr\b[^>]*>", re.I),                              # Outlook separator rule
 )
+
+#: A horizontal rule is PRESENTATION, not evidence of quoting. Outlook does draw one above a
+#: forwarded header, but people also put one above their own signature -- and treating the two
+#: alike cut the prospect's region off 17 characters before his own name. It gets a separate,
+#: WEAKER marker that only counts as a boundary when quoted content actually follows it.
+RULE_SENTINEL = "\ue001rule\ue001"
+_RULE_CONTAINERS = (re.compile(r"<\s*hr\b[^>]*>", re.I),)
 
 
 def html_to_text(body: str | None) -> str:
@@ -86,6 +92,8 @@ def html_to_text(body: str | None) -> str:
     # boundary survives into the flattened text even when the client's attribution wording does not.
     for pattern in _QUOTE_CONTAINERS:
         text = pattern.sub(f"\n{QUOTE_SENTINEL}\n", text)
+    for pattern in _RULE_CONTAINERS:
+        text = pattern.sub(f"\n{RULE_SENTINEL}\n", text)
     text = _BREAKS.sub("\n", text)
     text = _TAG.sub("", text)
     text = _html.unescape(text)
@@ -98,7 +106,8 @@ def strip_sentinels(value: str | None) -> str | None:
     """Remove the internal marker from anything that could reach a caller."""
     if value is None:
         return None
-    return " ".join(value.replace(QUOTE_SENTINEL, " ").split()) or None
+    return " ".join(value.replace(QUOTE_SENTINEL, " ")
+                    .replace(RULE_SENTINEL, " ").split()) or None
 
 
 def _split_address(value: str | None) -> tuple[str | None, str | None]:
@@ -157,6 +166,43 @@ _QUOTE_ATTRIBUTION = re.compile(
 #: A rule of dashes/underscores on its own line -- Outlook's plain-text separator.
 _SEPARATOR_LINE = re.compile(r"^\s*[-_=]{4,}\s*$", re.M)
 _SENTINEL_LINE = re.compile(re.escape(QUOTE_SENTINEL))
+_RULE_LINE = re.compile(re.escape(RULE_SENTINEL))
+
+
+def _quoted_content_follows(text: str, pos: int) -> bool:
+    """Whether QUOTED content begins immediately after a presentation marker at ``pos``.
+
+    "Immediately" is the whole point. Looking merely *somewhere* ahead would re-break the case this
+    exists for: a rule above the prospect's signature is followed a line later by his name and then,
+    a little further on, by the real quoted thread -- so any lookahead wide enough to be useful
+    would find the quote and cut his name off anyway. The next non-blank content itself has to be
+    the quote.
+    """
+    after = text[pos:]
+    newline = after.find("\n")
+    rest = after[newline + 1:] if newline != -1 else ""
+    head = rest.lstrip(" \t\n")[:600]
+    if head.startswith(QUOTE_SENTINEL) or head.startswith(RULE_SENTINEL):
+        return True
+    if _QUOTE_ATTRIBUTION.match(head):
+        return True
+    if _FROM_LINE.match(head):
+        return bool(_SENT_LINE.search(head) and _SUBJECT_LINE.search(head))
+    return False
+
+
+def _uncorroborated_weak_markers(text: str, after: int) -> list[int]:
+    """Presentation rules after ``after`` that were NOT accepted as boundaries.
+
+    Each one is a place the prospect's message might have ended. Individually harmless; but if the
+    parser never finds a trustworthy boundary afterwards either, it genuinely cannot say where his
+    message stops, and anything below could belong to somebody else.
+    """
+    out = []
+    for pattern in (_RULE_LINE, _SEPARATOR_LINE):
+        out += [m.start() for m in pattern.finditer(text)
+                if m.start() > after and not _quoted_content_follows(text, m.start())]
+    return sorted(out)
 
 
 def _quote_boundaries(text: str) -> list[int]:
@@ -164,10 +210,16 @@ def _quote_boundaries(text: str) -> list[int]:
 
     These only ever END the candidate region; they never start it, because none of them tells us who
     the original sender was.
+
+    STRONG boundaries stand alone: a quote container is markup a client emits *because* the content
+    is quoted. WEAK ones -- a horizontal rule, a row of dashes or underscores -- are presentation a
+    sender may use anywhere, including above their own signature, so they only count when quoted
+    content genuinely follows.
     """
     out = [m.start() for m in _SENTINEL_LINE.finditer(text)]
     out += [m.start() for m in _QUOTE_ATTRIBUTION.finditer(text)]
-    out += [m.start() for m in _SEPARATOR_LINE.finditer(text)]
+    for pattern in (_RULE_LINE, _SEPARATOR_LINE):
+        out += [m.start() for m in pattern.finditer(text) if _quoted_content_follows(text, m.start())]
     return sorted(out)
 
 
@@ -202,7 +254,10 @@ def _body_after_headers(region: str) -> str:
         m = pattern.search(region)
         if m and (last is None or m.end() > last):
             last = m.end()
-    return region[last:] if last is not None else region
+    body = region[last:] if last is not None else region
+    # The markers are boundary metadata, not content. Blank the lines rather than delete them so
+    # line positions -- which the sign-off rule depends on -- are preserved.
+    return body.replace(QUOTE_SENTINEL, "").replace(RULE_SENTINEL, "")
 
 
 def _first(pattern, text):
@@ -485,12 +540,26 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
             "details appear inside it, so no name or phone was taken from the body. Enter them "
             "manually.")
 
+    # AMBIGUOUS: a presentation rule sits inside the region that MIGHT have ended the message, and
+    # no trustworthy boundary was ever found after it. Whatever follows that rule cannot be
+    # attributed to the prospect -- and unlike the contaminated case there is no forwarder detail to
+    # notice, so nothing else would catch it. Quoted content below such a rule was the one shape
+    # that could still hand over somebody else's phone number.
+    ambiguous = end is None and bool(_uncorroborated_weak_markers(text, start))
+    if ambiguous and not contaminated:
+        result["warnings"].append(
+            "Quoted-message boundaries could not be determined -- the message contains a divider "
+            "with no recognisable quote after it -- so no name or phone was taken from the body. "
+            "Enter them manually.")
+    # Heuristics read free text; the header fields above do not, and are unaffected.
+    heuristics_unsafe = contaminated or ambiguous
+
     # Name, in order of trust: the original From display name when it is actually a name, otherwise
     # the prospect's own sign-off. A handle like "ctbvmi01" fails the first and is never substituted
     # by the email local part -- if the sign-off yields nothing, the field stays empty for staff.
     if looks_like_human_name(name, email=email):
         result["candidate_name"] = name
-    elif not contaminated:
+    elif not heuristics_unsafe:
         signature = _signature_name(body, forwarder_name=forwarder_name, email=email)
         if signature:
             result["candidate_name"] = signature
@@ -502,7 +571,7 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
 
     # Phone comes ONLY from the prospect's own body. Scanning further picked up the forwarder's
     # office number out of her quoted signature and produced a false existing-client match.
-    result["candidate_phone"] = None if contaminated else _phone_in(body)
+    result["candidate_phone"] = None if heuristics_unsafe else _phone_in(body)
     if result["candidate_phone"] and result["candidate_source"] == "forwarded_header":
         result["candidate_source"] = "forwarded_header+signature"
 
