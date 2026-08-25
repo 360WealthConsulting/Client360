@@ -1,9 +1,18 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
+{% set filtered = client_filter|default(false) %}
 {% block title %}Tasks | 360Plus{% endblock %}
 {% block crumb %}Tasks{% endblock %}
 {% block content %}
+{# Unfiltered, this is the firm-wide list exactly as before. Filtered, the heading names the client
+   -- but only when record scope allowed the name to be resolved. #}
+{% if filtered %}
+{{ ui.page_head(heading or "Tasks for the selected client", eyebrow="Work",
+                desc="Tasks for this client only.") }}
+<p class="subtle"><a href="/tasks">Clear client filter</a></p>
+{% else %}
 {{ ui.page_head("Global tasks", eyebrow="Work", desc="Open tasks across all households.") }}
+{% endif %}
 {% if tasks %}
 <div class="table-wrap">
   <table class="data">
@@ -22,6 +31,8 @@
     </tbody>
   </table>
 </div>
+{% elif filtered %}
+{% call ui.empty("No tasks", "This client has no tasks.") %}{% endcall %}
 {% else %}
 {% call ui.empty("No tasks", "Open tasks across households will appear here.") %}{% endcall %}
 {% endif %}

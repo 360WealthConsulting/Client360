@@ -15,10 +15,12 @@ from app.db import engine, household_relationships, households, operational_task
 from app.security.models import Principal
 from app.services.operations import tasks as opstasks
 
-# work.read gates the create_task quick action in both the registry and household.py
+# task.read gates the create_task quick action in both the registry and household.py (it was
+# work.read until the quick actions were repointed at the canonical /tasks dashboard); work.read
+# is retained because other quick actions and surfaces still use it.
 _CAP = {"operations.view", "operations.manage", "client.read", "documents.view",
-        "work.read", "scheduling.view", "tax.read", "opportunity.view", "insurance.read",
-        "communications.read"}
+        "work.read", "task.read", "scheduling.view", "tax.read", "opportunity.view",
+        "insurance.read", "communications.read"}
 FIRM = Principal(1, "firm@t", "Firm", frozenset(_CAP | {"record.read_all"}))
 #: no record.read_all -> scope_clause restricts to assigned records only
 LIMITED = Principal(2, "limited@t", "Limited", frozenset(_CAP))
@@ -389,18 +391,24 @@ def test_page_route_is_registered_and_capability_gated():
 
 
 # --------------------------------------------------------------------- quick actions repointed
-def test_person_quick_action_now_targets_the_html_page():
+# SUPERSEDED, kept as a regression: these two originally asserted /operations/task-list, because
+# that is where this work first sent "Create Task". Production then proved the store was wrong --
+# /operations/task-list reads `operational_tasks` (firm work, ADR-025) while a client's real tasks
+# live in `tasks`, so the page correctly showed "No tasks" for a client who plainly had one. The
+# quick actions now target the canonical /tasks dashboard. The Operations page and its filtering
+# are deliberately NOT removed (see the tests above) -- they remain valid firm-work functionality.
+def test_person_quick_action_targets_the_canonical_task_dashboard():
     from app.services.client360.registry import visible_quick_actions
     action = next(a for a in visible_quick_actions(FIRM, 7783, None) if a["key"] == "create_task")
-    assert action["href"] == "/operations/task-list?person_id=7783"
+    assert action["href"] == "/tasks?person_id=7783"
     assert action["label"] == "Create Task"
 
 
-def test_household_quick_action_now_targets_the_html_page():
+def test_household_quick_action_targets_the_canonical_task_dashboard():
     from app.services.client360.household import _quick_actions
     action = next(a for a in _quick_actions(FIRM, {"household_id": 215, "primary": None})
                   if a["key"] == "create_task")
-    assert action["href"] == "/operations/task-list?household_id=215"
+    assert action["href"] == "/tasks?household_id=215"
 
 
 def test_all_other_quick_actions_are_unchanged():

@@ -15,8 +15,10 @@ from app.db import documents, engine, household_relationships, households, peopl
 from app.security.models import Principal
 from app.services.client360.registry import QUICK_ACTIONS, visible_quick_actions
 
+# task.read joins this set because create_task moved off work.read when it was repointed at the
+# canonical /tasks dashboard; without it the action is correctly suppressed and absent below.
 FULL = Principal(1, "staff@t", "Staff", frozenset({
-    "client.read", "documents.view", "record.read_all", "work.read", "tax.read",
+    "client.read", "documents.view", "record.read_all", "work.read", "task.read", "tax.read",
     "scheduling.view", "opportunity.view", "insurance.read", "communications.read"}))
 
 _TAGS: list[str] = []
@@ -86,8 +88,10 @@ def test_every_other_quick_action_is_unchanged():
     expected = {
         "schedule_meeting": "/scheduling?person_id=7783",
         "add_note": "/people/7783/notes",
-        # repointed from /operations/items (the JSON API) to the staff HTML page in a later task
-        "create_task": "/operations/task-list?person_id=7783",
+        # SUPERSEDED TWICE: /operations/items -> /operations/task-list -> /tasks. Both Operations
+        # targets read `operational_tasks` (firm work, ADR-025); a client's tasks live in `tasks`,
+        # which is what the canonical /tasks dashboard reads.
+        "create_task": "/tasks?person_id=7783",
         "start_tax_return": "/tax/intake?person_id=7783",
         "create_opportunity": "/opportunities?person_id=7783",
         "start_insurance_case": "/insurance?person_id=7783",

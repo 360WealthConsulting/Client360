@@ -123,6 +123,31 @@ FIRM_WIDE_COLLECTION = re.compile(
     r"relationships/search(?:/|$)|api/relationships/search(?:/|$)|"
     r"relationship-entities(?:/|$))"
 )
+#: Firm-wide collections that STOP being firm-wide once narrowed to a single client by query
+#: parameter. Only ``/tasks`` qualifies today. The firm-wide gate exists so a principal without
+#: ``record.read_all`` cannot page through every client's rows; a request pinned to one
+#: person/household is not that request. The narrowed rows are exactly the rows the same principal
+#: already reads on /client/{id}?tab=tasks, so this discloses nothing new -- and the route itself
+#: re-checks record scope, returning zero rows (never the firm-wide list) for an id out of scope.
+#: Without this, every role holding task.read (Senior Tax, Tax Staff, Accounting, Payroll, Client
+#: Service, Reviewer, Read Only -- none of which hold record.read_all) would be denied the very
+#: page the "Create Task" quick action sends them to.
+CLIENT_NARROWABLE_COLLECTION = re.compile(r"^/tasks/?$")
+
+
+def _firm_wide_collection_denied(request, principal, broad_scope) -> bool:
+    """Whether this request is a firm-wide collection read the principal may not perform.
+
+    ``FIRM_WIDE_COLLECTION`` is left exactly as it was; the client-narrowing exemption is applied
+    on top of it so every existing pattern assertion keeps holding.
+    """
+    path = request.url.path
+    if not FIRM_WIDE_COLLECTION.match(path):
+        return False
+    if CLIENT_NARROWABLE_COLLECTION.match(path) and (
+            request.query_params.get("person_id") or request.query_params.get("household_id")):
+        return False
+    return not principal.can(broad_scope)
 
 
 def _secure_headers(response, request):
@@ -352,7 +377,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             if request.method in {"GET", "HEAD", "OPTIONS"}
             else "record.write_all"
         )
-        if FIRM_WIDE_COLLECTION.match(request.url.path) and not principal.can(broad_scope):
+        if _firm_wide_collection_denied(request, principal, broad_scope):
             return _denied(
                 request,
                 principal,

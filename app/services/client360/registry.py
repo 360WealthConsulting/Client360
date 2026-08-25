@@ -95,10 +95,14 @@ QUICK_ACTIONS = (
                                     else "/document-library"))),
     QuickAction("add_note", "Add Note", "client.read",
                 lambda p, h: (f"/people/{p}/notes" if p else "/people")),
-    # /operations/task-list is the staff HTML page; /operations/items is the JSON API and used to
-    # be where this landed, so "Create Task" showed staff a raw JSON payload.
-    QuickAction("create_task", "Create Task", "work.read",
-                lambda p, h: _pref("/operations/task-list", p, h)),
+    # /tasks -- the canonical staff dashboard over the authoritative client `tasks` table
+    # (ADR-025). This used to point into Operations (/operations/items, then
+    # /operations/task-list), which reads `operational_tasks` -- a DIFFERENT store that cannot hold
+    # a client task, so the client's real tasks were never there and anything created was invisible
+    # on /client/{id}?tab=tasks. Gated on task.read to match the capability /tasks actually
+    # requires; it was work.read, which does not gate /tasks at all.
+    QuickAction("create_task", "Create Task", "task.read",
+                lambda p, h: _pref("/tasks", p, h)),
     QuickAction("start_tax_return", "Start Tax Return", "tax.read",
                 lambda p, h: _pref("/tax/intake", p, h)),
     QuickAction("create_opportunity", "Create Opportunity", "opportunity.view",
