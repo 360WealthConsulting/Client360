@@ -8,6 +8,14 @@
 <header class="c360-header">
   <h1>{{ ws.name }}</h1>
   <p class="muted">{{ ws.entity_type|capitalize }}{% if not ws.active %} · <span class="pill">inactive</span>{% endif %}</p>
+  {# The Payroll Hub already exists for this same organization id; without this link it was only
+     reachable by typing the URL. Gated on payroll.read -- the capability the route itself enforces --
+     so the link is absent rather than shown-then-403. #}
+  {% if principal and principal.can("payroll.read") %}
+  <p class="row" style="gap:8px; margin-top:6px">
+    <a class="btn sm secondary" href="/business/{{ ws.id }}/payroll">Payroll</a>
+  </p>
+  {% endif %}
 </header>
 
 <section class="card">
@@ -61,7 +69,7 @@
     {% for d in ws.documents %}
     {# Email reuses the EXISTING /documents/{id}/email compose route; canonical rows only, and only
        for a principal holding the same communications.send capability the route enforces. #}
-    <tr><td>{{ d.name }}</td><td><a href="{{ d.download_url }}">Download</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form method="post" action="/business/{{ ws.id }}/documents/{{ d.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}</td></tr>
+    <tr><td><a href="{{ d.download_url }}">{{ d.name }}</a></td><td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form method="post" action="/business/{{ ws.id }}/documents/{{ d.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}</td></tr>
     {% endfor %}
   </tbody></table>
   {% else %}{% call ui.empty("No documents", "No documents are assigned to this business.") %}{% endcall %}{% endif %}

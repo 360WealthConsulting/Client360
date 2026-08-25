@@ -179,7 +179,9 @@ def test_business_canonical_document_shows_email_for_a_sender():
         did = _doc(c, f"1120S {tag}.pdf", organization_id=bid,
                    display_name="2024 - Form 1120S - Steinman Holdings")
     html = _render_business(SENDER, bid)
-    assert _actions_cell(html, did) == "Download · Email"          # existing layout preserved
+    # The business action label was "Download" when this test was written; a later bounded task
+    # renamed it to "Open" so all three workspaces read alike. The Email action is unchanged.
+    assert _actions_cell(html, did) == "Open · Email"
     assert f'<a href="/documents/{did}/email">Email</a>' in html
 
 
@@ -198,8 +200,8 @@ def test_business_without_communications_send_has_no_email():
         did = _doc(c, f"doc {tag}.pdf", organization_id=bid)
     html = _render_business(NO_SEND, bid)
     assert f"/documents/{did}/email" not in html
-    assert _actions_cell(html, did) == "Download"                  # Download preserved
-    assert f'<a href="/documents/{did}/download">Download</a>' in html
+    assert _actions_cell(html, did) == "Open"                      # the download action remains
+    assert f'<a href="/documents/{did}/download">Open</a>' in html
 
 
 def test_business_document_ordering_and_count_are_unchanged():
