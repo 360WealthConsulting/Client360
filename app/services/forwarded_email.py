@@ -91,17 +91,64 @@ def _split_address(value: str | None) -> tuple[str | None, str | None]:
     return raw.strip('"') or None, None
 
 
-def _forward_block_start(text: str) -> int | None:
-    """Index where the quoted forward begins, or None if no recognisable block exists."""
-    starts = [m.start() for p in _FORWARD_MARKERS if (m := p.search(text))]
+def _header_block_starts(text: str) -> list[int]:
+    """Every index where a quoted header block begins, in order.
+
+    ALL of them, not just the first: a forwarded reply carries the prospect's message followed by the
+    earlier thread quoted underneath, and each quoted level starts its own header block. Knowing
+    where the SECOND one begins is what stops the parser reading the forwarder's quoted signature as
+    if it were the prospect's.
+    """
+    markers = [m.start() for p in _FORWARD_MARKERS for m in p.finditer(text)]
+    starts = set(markers)
     # A "From:" line corroborated by Sent/Date AND Subject nearby is the Outlook inline shape,
     # which often carries no separator line at all.
     for m in _FROM_LINE.finditer(text):
         window = text[m.start():m.start() + 600]
-        if _SENT_LINE.search(window) and _SUBJECT_LINE.search(window):
-            starts.append(m.start())
-            break
-    return min(starts) if starts else None
+        if not (_SENT_LINE.search(window) and _SUBJECT_LINE.search(window)):
+            continue
+        # A separator and the From: line directly beneath it are ONE block, not two. Detected by the
+        # gap between them being blank rather than by a distance guess, so a genuinely nested block
+        # after a very short reply is still recognised as its own block.
+        prev = max((k for k in markers if k <= m.start()), default=None)
+        if prev is not None:
+            line_end = text.find("\n", prev)
+            gap = text[line_end + 1:m.start()] if line_end != -1 else text[prev:m.start()]
+            if not gap.strip():
+                continue
+        starts.add(m.start())
+    return sorted(starts)
+
+
+def original_message_region(text: str) -> tuple[int, int] | None:
+    """(start, end) of the ORIGINAL message -- the prospect's own content -- or None.
+
+    Everything BEFORE ``start`` is the forwarder's preamble and signature; everything from ``end``
+    onwards is the older thread the prospect quoted. Candidate identity and contact details are read
+    only from between the two, which is the whole correction: in production the forwarder's office
+    number sat in her signature quoted BELOW the prospect's reply, and a scan that ran to the end of
+    the message picked it up as the prospect's phone.
+    """
+    starts = _header_block_starts(text)
+    if not starts:
+        return None
+    start = starts[0]
+    end = next((s for s in starts if s > start), len(text))
+    return start, end
+
+
+def _body_after_headers(region: str) -> str:
+    """The prospect's own words: the region with its From/Sent/To/Subject block removed.
+
+    Cut after the Subject line (the last header the corroboration requires), so a recipient name on
+    the ``To:`` line can never be mistaken for the prospect's signature.
+    """
+    last = None
+    for pattern in (_SUBJECT_LINE, _TO_LINE, _SENT_LINE, _FROM_LINE):
+        m = pattern.search(region)
+        if m and (last is None or m.end() > last):
+            last = m.end()
+    return region[last:] if last is not None else region
 
 
 def _first(pattern, text):
@@ -166,6 +213,39 @@ def split_human_name(value: str | None) -> tuple[str | None, str | None]:
     return tokens[0], " ".join(tokens[1:])
 
 
+#: A signature name line: 2-4 Capitalised alphabetic tokens and nothing else. Much stricter than
+#: looks_like_human_name on its own, because ordinary prose would otherwise qualify -- "Thanks for
+#: your help" is four alphabetic tokens, but its lowercase words disqualify it here.
+_SIG_MAX_TOKENS = 4
+_SIG_MAX_CHARS = 60
+
+
+def _signature_name(body: str, *, forwarder_name=None, email=None) -> str | None:
+    """A human name from the prospect's OWN sign-off, or None.
+
+    Scans the prospect's body only, and takes the LAST qualifying line because that is where a
+    sign-off sits. Every candidate must additionally clear ``looks_like_human_name``, so a machine
+    handle cannot arrive by this route either. The forwarder's own name is refused outright.
+    """
+    forwarder = " ".join((forwarder_name or "").split()).casefold()
+    found = None
+    for raw in (body or "").splitlines():
+        line = " ".join(raw.split()).strip(" ,;:-")
+        if not line or len(line) > _SIG_MAX_CHARS:
+            continue
+        tokens = line.split()
+        if not 2 <= len(tokens) <= _SIG_MAX_TOKENS:
+            continue
+        if not all(t[:1].isupper() for t in tokens):
+            continue
+        if not looks_like_human_name(line, email=email):
+            continue
+        if line.casefold() == forwarder:
+            continue
+        found = line
+    return found
+
+
 def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: str | None = None,
                       graph_from_name: str | None = None,
                       graph_from_email: str | None = None) -> dict:
@@ -187,6 +267,9 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
         "candidate_email": None,
         "candidate_phone": None,
         "candidate_source": None,
+        #: The original From display name exactly as it appeared -- provenance for the UI. It is
+        #: NOT the candidate name: a machine handle lands here and nowhere else.
+        "raw_from_name": None,
         "confidence": "none",
         # Unconditional: nothing this module produces may be written without a human saying so.
         "requires_confirmation": True,
@@ -196,9 +279,9 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
         "warnings": [],
     }
 
-    start = _forward_block_start(text)
+    bounds = original_message_region(text)
     subject_says_forward = bool(_SUBJECT_FORWARD.match(subject or ""))
-    result["is_forwarded"] = bool(start is not None or subject_says_forward)
+    result["is_forwarded"] = bool(bounds is not None or subject_says_forward)
 
     if not result["is_forwarded"]:
         # Direct mail. The sender may well BE the prospect, but proving that is a separate decision
@@ -208,19 +291,26 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
             "direct-sender attribution is not performed here.")
         return result
 
-    if start is None:
+    if bounds is None:
         result["warnings"].append(
             "The subject looks forwarded but no original 'From:' block could be read. "
             "Enter the prospect's details manually — the sender above is the forwarder.")
         return result
 
-    block = text[start:start + 1200]
-    from_value = _first(_FROM_LINE, block)
-    result["original_sent"] = _first(_SENT_LINE, block)
-    result["original_to"] = _first(_TO_LINE, block)
-    result["original_subject"] = _first(_SUBJECT_LINE, block)
+    # Region A (before start) is the FORWARDER's preamble and signature and is never read for
+    # candidate fields. Region B ends where the next quoted header block begins, so the older thread
+    # the prospect quoted underneath -- typically containing the forwarder's own signature -- is
+    # excluded too.
+    start, end = bounds
+    region = text[start:end]
+    body = _body_after_headers(region)
+    from_value = _first(_FROM_LINE, region)
+    result["original_sent"] = _first(_SENT_LINE, region)
+    result["original_to"] = _first(_TO_LINE, region)
+    result["original_subject"] = _first(_SUBJECT_LINE, region)
 
     name, email = _split_address(from_value)
+    result["raw_from_name"] = name          # provenance: shown, never written
     if email and forwarder_email and email == forwarder_email:
         # The quoted block names the forwarder — a reply chain rather than a third-party forward.
         result["warnings"].append(
@@ -234,13 +324,29 @@ def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: s
             "Enter the prospect's details manually.")
         return result
 
-    result["candidate_name"] = name
     result["candidate_email"] = email
     result["candidate_source"] = "forwarded_header"
     result["confidence"] = "heuristic"
-    # The signature normally sits BELOW the quoted header, so look there for a phone number.
-    result["candidate_phone"] = _phone_in(text[start:])
-    if result["candidate_phone"]:
+
+    # Name, in order of trust: the original From display name when it is actually a name, otherwise
+    # the prospect's own sign-off. A handle like "ctbvmi01" fails the first and is never substituted
+    # by the email local part -- if the sign-off yields nothing, the field stays empty for staff.
+    if looks_like_human_name(name, email=email):
+        result["candidate_name"] = name
+    else:
+        signature = _signature_name(body, forwarder_name=forwarder_name, email=email)
+        if signature:
+            result["candidate_name"] = signature
+            result["candidate_source"] = "original_signature"
+        elif name:
+            result["warnings"].append(
+                f"The original sender is shown as \u201c{name}\u201d, which does not look like a "
+                "person's name, and no name was found in their message. Enter it manually.")
+
+    # Phone comes ONLY from the prospect's own body. Scanning further picked up the forwarder's
+    # office number out of her quoted signature and produced a false existing-client match.
+    result["candidate_phone"] = _phone_in(body)
+    if result["candidate_phone"] and result["candidate_source"] == "forwarded_header":
         result["candidate_source"] = "forwarded_header+signature"
 
     result["warnings"].append(

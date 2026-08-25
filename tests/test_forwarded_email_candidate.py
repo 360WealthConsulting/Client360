@@ -161,3 +161,108 @@ def test_extraction_never_raises_on_odd_input():
     for body in (None, "", "<<<", "&amp;", "From:", "From: <>"):
         r = extract_candidate(body=body, subject=None, **LAUREN)
         assert r["requires_confirmation"] is True
+
+
+# --------------------------------------------------------------------------------------------
+# Region boundary: candidate fields come ONLY from the prospect's own message.
+#
+# Production shape that exposed this. The subject is "Fw:" but the quoted message is a REPLY, so
+# the prospect's words sit between Lauren's forwarding preamble above and the older thread quoted
+# below -- and that older thread carries Lauren's signature, including her office number. Scanning
+# to the end of the message read her phone as the prospect's and produced a false client match.
+
+PRODUCTION_FORWARD = """<html><body>
+<p>Meeting tomorrow - referral from Tate</p>
+<p>Lauren Curry<br>Office: 540.562.0123<br>lauren@360wealthconsulting.com<br>
+1017 2nd Street SW<br>Roanoke, VA 24016</p>
+<p>--------------------------------</p>
+<p>From: ctbvmi01 &lt;tillmanbowling@gmail.com&gt;<br>
+Sent: Monday, August 24, 2026 8:07 PM<br>
+To: Lauren Curry &lt;lauren@360wealthconsulting.com&gt;<br>
+Subject: Re: Tax liability</p>
+<p>Lauren, thanks for getting back to me. Sold a rental and I'm worried about the hit.</p>
+<p>Thanks,<br>Tillman Bowling</p>
+<p>From: Lauren Curry &lt;lauren@360wealthconsulting.com&gt;<br>
+Sent: Monday, August 24, 2026 3:12 PM<br>
+To: ctbvmi01<br>
+Subject: Tax liability</p>
+<p>Happy to help. Here is my info.</p>
+<p>Lauren Curry<br>Office: 540.562.0123<br>lauren@360wealthconsulting.com</p>
+</body></html>"""
+
+CURRY = {"graph_from_name": "Lauren Curry",
+         "graph_from_email": "lauren@360wealthconsulting.com"}
+
+
+def _production():
+    return extract_candidate(body=PRODUCTION_FORWARD, subject="Fw: Tax liability", **CURRY)
+
+
+def test_production_shape_reads_the_prospect_not_the_forwarder():
+    r = _production()
+    assert r["forwarder_email"] == "lauren@360wealthconsulting.com"
+    assert r["candidate_email"] == "tillmanbowling@gmail.com"
+    assert r["candidate_name"] == "Tillman Bowling"
+    assert r["candidate_source"] == "original_signature"
+
+
+def test_the_forwarders_office_number_is_never_the_candidate_phone():
+    """Lauren's 540.562.0123 appears twice -- above the boundary and in the quoted thread below."""
+    assert "540.562.0123" in PRODUCTION_FORWARD
+    assert _production()["candidate_phone"] is None
+
+
+def test_the_machine_handle_stays_provenance_only():
+    r = _production()
+    assert r["raw_from_name"] == "ctbvmi01"
+    assert r["candidate_name"] != "ctbvmi01"
+
+
+def test_the_prospects_own_number_is_still_read():
+    body = PRODUCTION_FORWARD.replace(
+        "<p>Thanks,<br>Tillman Bowling</p>",
+        "<p>Call me at 540-555-1212</p><p>Thanks,<br>Tillman Bowling</p>")
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **CURRY)
+    assert r["candidate_phone"] == "5405551212"
+    assert r["candidate_name"] == "Tillman Bowling"
+
+
+def test_nothing_is_read_from_the_forwarder_region():
+    """Region A holds Lauren's name, email, phone and address. None may surface as the candidate."""
+    r = _production()
+    for field in ("candidate_name", "candidate_email", "candidate_phone"):
+        assert r[field] != "Lauren Curry"
+        assert r[field] != "lauren@360wealthconsulting.com"
+        assert r[field] != "5405620123"
+
+
+def test_region_stops_at_the_next_quoted_header_block():
+    from app.services.forwarded_email import html_to_text, original_message_region
+    text = html_to_text(PRODUCTION_FORWARD)
+    start, end = original_message_region(text)
+    region = text[start:end]
+    assert "tillmanbowling@gmail.com" in region          # the prospect's own header
+    assert "Tillman Bowling" in region                   # his sign-off
+    assert "Office: 540.562.0123" not in region          # the quoted thread below is excluded
+    assert "1017 2nd Street SW" not in text[start:]      # the preamble above is excluded
+
+
+def test_a_name_is_never_invented_when_the_signature_has_none():
+    body = PRODUCTION_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>", "<p>Thanks</p>")
+    r = extract_candidate(body=body, subject="Fw: Tax liability", **CURRY)
+    assert r["candidate_name"] is None
+    assert r["candidate_email"] == "tillmanbowling@gmail.com"    # email still read
+    assert any("does not look like" in w for w in r["warnings"])
+
+
+def test_prose_is_not_mistaken_for_a_signature_name():
+    """Lowercase sentence words must not qualify, even though they are alphabetic tokens."""
+    body = PRODUCTION_FORWARD.replace(
+        "<p>Thanks,<br>Tillman Bowling</p>", "<p>thanks for your help</p>")
+    assert extract_candidate(body=body, subject="Fw: x", **CURRY)["candidate_name"] is None
+
+
+def test_the_forwarders_name_in_the_prospect_region_is_refused():
+    body = PRODUCTION_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>",
+                                      "<p>Thanks,<br>Lauren Curry</p>")
+    assert extract_candidate(body=body, subject="Fw: x", **CURRY)["candidate_name"] is None

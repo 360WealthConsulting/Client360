@@ -165,3 +165,39 @@ def test_matching_writes_nothing():
     find_matches(email=f"nobody.{tag}@example.com")
     with engine.connect() as c:
         assert c.scalar(select(func.count()).select_from(people)) == before
+
+
+# --------------------------------------------------------------- forwarder-phone false match
+def test_the_forwarders_phone_no_longer_produces_a_false_match():
+    """Regression for the production false positive.
+
+    An unrelated client happens to hold the FORWARDER's office number. Before the region fix the
+    parser read that number out of the forwarder's quoted signature, so matching returned this
+    person for a prospect who had never supplied a phone at all. No person id or name is
+    special-cased here -- the match disappears because candidate_phone is now empty.
+    """
+    from app.services.forwarded_email import extract_candidate
+    from tests.test_forwarded_email_candidate import CURRY, PRODUCTION_FORWARD
+    tag = _tag()
+    unrelated = _person(tag, first="Mike", last="Agree", phone="540-562-0123")
+
+    # the forwarder's number really is on that record, and really is in the message text
+    assert find_matches(phone="5405620123")["matches"][0]["person_id"] == unrelated
+    assert "540.562.0123" in PRODUCTION_FORWARD
+
+    candidate = extract_candidate(body=PRODUCTION_FORWARD, subject="Fw: Tax liability", **CURRY)
+    assert candidate["candidate_phone"] is None
+    result = match_for_candidate(candidate)
+    assert unrelated not in {m["person_id"] for m in result["matches"]}
+
+
+def test_a_prospect_supplied_phone_still_matches_normally():
+    from app.services.forwarded_email import extract_candidate
+    from tests.test_forwarded_email_candidate import CURRY, PRODUCTION_FORWARD
+    tag = _tag()
+    pid = _person(tag, first="Tillman", last="Bowling", phone="540-555-1212")
+    body = PRODUCTION_FORWARD.replace("<p>Thanks,<br>Tillman Bowling</p>",
+                                      "<p>Call me at 540-555-1212</p>")
+    candidate = extract_candidate(body=body, subject="Fw: Tax liability", **CURRY)
+    assert candidate["candidate_phone"] == "5405551212"
+    assert pid in {m["person_id"] for m in match_for_candidate(candidate)["matches"]}

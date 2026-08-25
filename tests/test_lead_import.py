@@ -177,6 +177,29 @@ def test_value_equal_to_the_email_local_part_is_rejected():
     assert looks_like_human_name("Tillman Bowling", email="tillmanbowling@gmail.com") is True
 
 
+def test_the_reviewed_form_prefills_the_real_name_from_the_production_shape(monkeypatch):
+    """End to end on the production body: the form offers the prospect's real name, his email, and
+    a BLANK phone -- the forwarder's office number never reaches it."""
+    from tests._portal_util import render
+    from tests.test_forwarded_email_candidate import PRODUCTION_FORWARD
+    from tests.test_microsoft_message_detail import _mailboxes as _mb
+    from tests.test_microsoft_message_detail import _message, _open, _stub
+    from tests.test_microsoft_message_detail import _tag as _t
+    tag = _t(); f = _mb(tag)
+    msg = _message(tag, body=PRODUCTION_FORWARD, subject="Fw: Tax liability")
+    msg["from"] = {"emailAddress": {"name": "Lauren Curry",
+                                    "address": "lauren@360wealthconsulting.com"}}
+    _stub(monkeypatch, by_token={f"token-a-{tag}": msg})
+    staff = Principal(1, f["a_email"], "Staff", frozenset(_CAP))
+    html = render(_open(staff, f"AAMk{tag}"))
+    assert 'name="first_name" value="Tillman"' in html
+    assert 'name="last_name" value="Bowling"' in html
+    assert 'value="tillmanbowling@gmail.com"' in html
+    assert 'name="phone" value=""' in html            # NOT Lauren's 5405620123
+    assert "5405620123" not in html
+    assert "ctbvmi01" in html                          # provenance only
+
+
 def test_the_preview_does_not_prefill_a_machine_name(monkeypatch):
     from tests._portal_util import render
     from tests.test_microsoft_message_detail import _mailboxes as _mb

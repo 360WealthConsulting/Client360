@@ -29,6 +29,8 @@
       <tr><th>Email</th><td>{{ candidate.candidate_email or "—" }}</td></tr>
       <tr><th>Phone</th><td>{{ candidate.candidate_phone or "—" }}</td></tr>
       <tr><th>Source</th><td>{{ candidate.candidate_source or "not detected" }}</td></tr>
+      {# Provenance only. A machine handle lands here and never in the name fields below. #}
+      <tr><th>Original "From" name</th><td>{{ candidate.raw_from_name or "—" }}</td></tr>
       <tr><th>Confidence</th><td>{{ candidate.confidence }}</td></tr>
       <tr><th>Forwarded message</th><td>{{ "yes" if candidate.is_forwarded else "no" }}</td></tr>
     </tbody>
@@ -39,9 +41,11 @@
   {% endif %}
   <p><strong>Staff confirmation required.</strong> These fields are detected from message text and
      must be reviewed before anything is created in 360Plus.</p>
-  {% if candidate.candidate_name and not name_prefilled %}
-  <p class="subtle">The detected name <b>{{ candidate.candidate_name }}</b> does not look like a
-     person's name, so it has not been used to fill the form below. Enter the real name there.</p>
+  {% if candidate.raw_from_name and candidate.raw_from_name != candidate.candidate_name %}
+  <p class="subtle">The original sender is shown as <b>{{ candidate.raw_from_name }}</b>, which does
+     not look like a person's name.
+     {% if candidate.candidate_name %}The name below was read from their own message instead.
+     {% else %}No name was found in their message — enter it below.{% endif %}</p>
   {% endif %}
   {% for w in candidate.warnings %}<p class="subtle">{{ w }}</p>{% endfor %}
 </article>
