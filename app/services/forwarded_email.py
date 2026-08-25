@@ -119,6 +119,53 @@ def _phone_in(text: str) -> str | None:
     return digits
 
 
+#: One name token: starts with a letter, then letters/apostrophes/hyphens/dots. No digits anywhere.
+_NAME_TOKEN = re.compile(r"^[A-Za-z][A-Za-z'\u2019.\-]+$")
+_NAME_MAX = 80
+
+
+def looks_like_human_name(value: str | None, *, email: str | None = None) -> bool:
+    """Whether a detected string is safe to PREFILL as a person's name.
+
+    Deliberately strict, because the cost is asymmetric: refusing a real name makes staff type it,
+    while accepting a machine identifier writes it into the client record. The production case that
+    motivated this is ``ctbvmi01`` -- a mailbox/user handle the parser lifted out of a signature.
+
+    Requires at least two whitespace-separated tokens, each starting with a letter and at least two
+    letters long, with no digits and no ``@`` anywhere; rejects a value identical to the candidate
+    email's local part. ``Jane Prospect`` passes; ``ctbvmi01``, ``tillmanbowling`` and
+    ``jane.prospect`` do not.
+    """
+    v = " ".join((value or "").split())
+    if not v or len(v) > _NAME_MAX:
+        return False
+    if "@" in v or any(ch.isdigit() for ch in v):
+        return False
+    tokens = v.split()
+    if len(tokens) < 2:
+        return False
+    for t in tokens:
+        if not _NAME_TOKEN.match(t) or len(t.strip("'\u2019.-")) < 2:
+            return False
+    if email and "@" in email:
+        # The local part dressed up as a name is provenance, not an identity.
+        if v.casefold() == email.split("@", 1)[0].strip().casefold():
+            return False
+    return True
+
+
+def split_human_name(value: str | None) -> tuple[str | None, str | None]:
+    """(first, last) for a value that already passed :func:`looks_like_human_name`.
+
+    Everything after the first token is the surname, so double-barrelled and multi-word family names
+    survive intact rather than being silently truncated.
+    """
+    tokens = " ".join((value or "").split()).split()
+    if len(tokens) < 2:
+        return None, None
+    return tokens[0], " ".join(tokens[1:])
+
+
 def extract_candidate(*, body: str | None, body_is_html: bool = True, subject: str | None = None,
                       graph_from_name: str | None = None,
                       graph_from_email: str | None = None) -> dict:

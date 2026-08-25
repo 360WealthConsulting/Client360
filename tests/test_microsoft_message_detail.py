@@ -298,15 +298,28 @@ def test_h_item_attachment_is_flagged_but_not_parsed(monkeypatch):
     assert "Original message.eml" in html
 
 
-def test_the_page_offers_no_mutation(monkeypatch):
+def test_the_page_offers_no_mutation_without_documents_edit(monkeypatch):
+    """SUPERSEDED IN PART: this originally asserted the page had no POST at all, when the only
+    control was an inert "coming next" button. The reviewed import now exists, so the assertion
+    that still matters is that it is CAPABILITY-GATED -- a principal without documents.edit is
+    offered no mutation, and the GET preview itself still writes nothing."""
     tag = _tag(); f = _mailboxes(tag)
     _stub(monkeypatch, by_token={f"token-a-{tag}": _message(tag)})
-    html = render(_open(_principal(f["a_email"]), f"AAMk{tag}"))
-    # The only <form> on the page is the site-wide GET search in base.html; the preview itself
-    # posts nothing anywhere.
+    no_import = _principal(f["a_email"], caps=_CAP - {"documents.edit"})
+    html = render(_open(no_import, f"AAMk{tag}"))
     assert 'method="post"' not in html.lower()
-    assert "coming next" in html
-    assert "disabled" in html
+    assert "requires the documents.edit capability" in html
+
+
+def test_the_import_form_posts_outside_the_microsoft_prefix(monkeypatch):
+    """The mutation deliberately does not live under /microsoft365 -- every POST there demands
+    communication.write, which no document-capable profile holds (see app/routes/lead_import.py)."""
+    tag = _tag(); f = _mailboxes(tag)
+    _stub(monkeypatch, by_token={f"token-a-{tag}": _message(tag)})
+    importer = _principal(f["a_email"], caps=_CAP | {"documents.edit", "client.write"})
+    html = render(_open(importer, f"AAMk{tag}"))
+    assert f'action="/lead-import/AAMk{tag}"' in html
+    assert 'action="/microsoft365' not in html.lower().replace('action="/microsoft365/mail"', "")
 
 
 # ------------------------------------------------------------------ read-only guarantee

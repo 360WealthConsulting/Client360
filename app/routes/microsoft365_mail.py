@@ -20,7 +20,11 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.forwarded_email import extract_candidate
+from app.services.forwarded_email import (
+    extract_candidate,
+    looks_like_human_name,
+    split_human_name,
+)
 from app.services.microsoft_identity import (
     account_for_principal,
     get_microsoft_access_token,
@@ -297,10 +301,28 @@ def microsoft365_mail_detail(
                        or candidate["candidate_name"])
                else match_for_candidate(candidate))
 
+    # Name PREFILL is gated on a conservative human-name check. The production case this exists for
+    # is a detected name of "ctbvmi01" -- a mailbox handle, not a person. The raw detected value is
+    # still shown as provenance; it just never lands in the name fields.
+    name_ok = looks_like_human_name(candidate["candidate_name"],
+                                    email=candidate["candidate_email"])
+    prefill_first, prefill_last = (split_human_name(candidate["candidate_name"])
+                                   if name_ok else (None, None))
+
     return templates.TemplateResponse(
         request=request,
         name="microsoft365/mail_detail.html",
         context={
+            "message_id": message_id,
+            "import_url": f"/lead-import/{quote(message_id, safe='')}",
+            "prefill": {"first_name": prefill_first or "", "last_name": prefill_last or "",
+                        "email": candidate["candidate_email"] or "",
+                        "phone": candidate["candidate_phone"] or ""},
+            "name_prefilled": bool(name_ok),
+            "can_import": principal.can("documents.edit"),
+            "can_create_person": principal.can("client.write"),
+            "importable_attachments": [a for a in attachments
+                                       if not a["is_inline"] and not a["is_item_attachment"]],
             "subject": message.get("subject") or "(No subject)",
             "received": message.get("receivedDateTime") or "",
             "body_text": (message.get("bodyPreview") or "").strip(),

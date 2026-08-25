@@ -69,6 +69,7 @@ from app.routes.integration import router as integration_router
 from app.routes.integration_hub import router as integration_hub_router
 from app.routes.knowledge import router as knowledge_router
 from app.routes.knowledge_management import router as knowledge_management_router
+from app.routes.lead_import import router as lead_import_router
 from app.routes.linkage_review import router as linkage_review_router
 from app.routes.matches import router as matches_router
 from app.routes.microsoft365 import router as microsoft365_router
@@ -231,6 +232,7 @@ app.include_router(people_router)
 app.include_router(person_edit_router)
 app.include_router(notes_router)
 app.include_router(tasks_router)
+app.include_router(lead_import_router)
 app.include_router(task_dashboard_router)
 app.include_router(activities_router)
 app.include_router(activity_dashboard_router)
