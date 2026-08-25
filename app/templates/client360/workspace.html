@@ -338,6 +338,11 @@
         <td class="subtle">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
         <td>
           <a href="{{ d.download_url }}">Open</a>
+          {# Email opens the EXISTING compose workflow (routes/document_email.py) for this canonical
+             document. Vault rows are excluded: their id belongs to vault_documents, so it would
+             address an unrelated canonical document. Gated by the same communications.send
+             capability the route itself requires — the action is absent, never shown-then-403. #}
+          {% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}
           {% if d.is_duplicate %} · <a href="{{ base }}?tab=documents&dup={{ d.sha256 }}">Compare</a>{% endif %}
           {% if d.source_path %} · <span class="subtle" title="{{ d.source_path }}">Source</span>{% endif %}
         </td>
