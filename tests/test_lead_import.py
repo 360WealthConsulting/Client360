@@ -553,7 +553,7 @@ class _FormHarvest(HTMLParser):
         itype = (a.get("type") or "text").lower()
         name, value = a.get("name"), a.get("value", "")
         checked, disabled = "checked" in a, "disabled" in a
-        self.controls.append((itype, name, value, checked, disabled))
+        self.controls.append((itype, name, value, checked, disabled, "required" in a))
         if itype in ("submit",) or tag == "button":
             self.has_submit = self.has_submit or not disabled
             return
@@ -632,7 +632,8 @@ def test_a_with_client_write_and_no_match_the_browser_sends_create_new(monkeypat
     tag, p, html = _render_review(monkeypatch, _IMPORT_CAPS | {"client.write"})
     h = _harvest(html)
     radios = [c for c in h.controls if c[0] == "radio"]
-    assert ("radio", "person_choice", "create_new", True, False) in radios   # checked, ENABLED
+    # checked, ENABLED, and required
+    assert ("radio", "person_choice", "create_new", True, False, True) in radios
     assert dict(h.fields).get("person_choice") == "create_new"
     assert h.has_submit
     resp = _post_harvested(monkeypatch, tag, p, h.fields)
@@ -682,5 +683,118 @@ def test_c_without_client_write_an_existing_match_is_still_selectable(monkeypatc
 def test_d_no_control_is_ever_both_checked_and_disabled(monkeypatch, caps, existing):
     """The defect class, not just the instance."""
     _, _, html = _render_review(monkeypatch, caps, with_existing=existing)
-    for itype, name, value, checked, disabled in _harvest(html).controls:
+    for itype, name, value, checked, disabled, _required in _harvest(html).controls:
         assert not (checked and disabled), (itype, name, value)
+
+
+# --------------------------------------------------------------------------------------------
+# Explicit choice with MULTIPLE matches.
+#
+# b9897ac fixed a choice that could not be submitted. This is the other way to reach the same
+# message: with several matches nothing is preselected -- deliberately, because auto-picking one of
+# several same-surname records is the duplicate-client hazard the reviewed flow exists to prevent --
+# so pressing submit without clicking sent no person_choice and produced a raw JSON 400.
+#
+# `required` stops that round-trip in the browser. It is a convenience, never the enforcement:
+# test G posts straight past it and the service still refuses.
+
+def _radios(html):
+    return [c for c in _harvest(html).controls if c[1] == "person_choice"]
+
+
+def _after_click(html, value):
+    """The payload a browser sends once the staff member clicks one radio."""
+    h = _harvest(html)
+    fields = [(n, v) for n, v in h.fields if n != "person_choice"]
+    return [("person_choice", value)] + fields
+
+
+def _render_multi(monkeypatch, caps):
+    """Two people sharing the candidate address -> matches.outcome == 'multiple'."""
+    from tests._portal_util import render
+    from tests.test_forwarded_email_candidate import REAL_FORWARD
+    from tests.test_microsoft_message_detail import _mailboxes as _mb
+    from tests.test_microsoft_message_detail import _message, _open, _stub
+    from tests.test_microsoft_message_detail import _tag as _t
+    tag = _t(); f = _mb(tag)
+    _TAGS.append(tag)
+    email = f"tillmanbowling.{tag}@gmail.com".casefold()
+    t2 = _tag()
+    a = _existing(t2, first="Tillman", last="Bowling", email=email)
+    b = _existing(t2, first="Tillmann", last="Bowling", email=email)
+    msg = _message(tag, body=REAL_FORWARD.replace("tillmanbowling@gmail.com", email),
+                   subject="Fw: Tax liability")
+    msg["from"] = {"emailAddress": {"name": "Curry, Lauren",
+                                    "address": "lauren@360wealthconsulting.com"}}
+    _stub(monkeypatch, by_token={f"token-a-{tag}": msg})
+    principal = Principal(_user(tag), f["a_email"], "Staff", frozenset(caps))
+    return tag, principal, render(_open(principal, f"AAMk{tag}")), (a, b)
+
+
+def test_multi_a_nothing_preselected_but_every_radio_is_required(monkeypatch):
+    _, _, html, (a, b) = _render_multi(monkeypatch, _IMPORT_CAPS | {"client.write"})
+    radios = _radios(html)
+    values = {c[2] for c in radios}
+    assert values == {f"existing:{a}", f"existing:{b}", "create_new"}
+    for _itype, _name, value, checked, disabled, required in radios:
+        assert not disabled, value
+        assert required, f"{value} must carry required"
+        assert not checked, f"{value} must not be preselected when several matched"
+    # browser semantics: nothing submitted until staff choose
+    assert "person_choice" not in dict(_harvest(html).fields)
+    assert "choose an existing client or select Create new prospect" in html
+
+
+def test_multi_b_selecting_create_new_sends_create_new(monkeypatch):
+    tag, p, html, _ = _render_multi(monkeypatch, _IMPORT_CAPS | {"client.write"})
+    fields = _after_click(html, "create_new")
+    assert dict(fields)["person_choice"] == "create_new"
+    resp = _post_harvested(monkeypatch, tag, p, fields)
+    body = getattr(resp, "body", b"")
+    # The create branch is genuinely entered -- it is no longer the "no choice made" refusal.
+    assert b"Choose an existing client or create a new prospect." not in body
+    # And here it is correctly refused further in, by the in-transaction duplicate guard: those
+    # matches exist precisely BECAUSE someone already holds this address.
+    assert b"already exists" in body
+
+
+def test_multi_c_selecting_an_existing_match_sends_that_id(monkeypatch):
+    tag, p, html, (a, _b) = _render_multi(monkeypatch, _IMPORT_CAPS | {"client.write"})
+    fields = _after_click(html, f"existing:{a}")
+    assert dict(fields)["person_choice"] == f"existing:{a}"
+    resp = _post_harvested(monkeypatch, tag, p, fields)
+    assert resp.status_code == 303
+    assert f"/client/{a}" in resp.headers["location"]
+
+
+def test_multi_d_one_exact_match_stays_preselected_and_required(monkeypatch):
+    _, _, html = _render_review(monkeypatch, _IMPORT_CAPS | {"client.write"}, with_existing=True)
+    existing = [c for c in _radios(html) if c[2].startswith("existing:")]
+    assert len(existing) == 1
+    assert existing[0][3] is True          # checked
+    assert existing[0][5] is True          # required
+
+
+def test_multi_e_no_match_keeps_create_new_preselected_and_required(monkeypatch):
+    _, _, html = _render_review(monkeypatch, _IMPORT_CAPS | {"client.write"})
+    create = [c for c in _radios(html) if c[2] == "create_new"]
+    assert len(create) == 1
+    assert create[0][3] is True            # checked
+    assert create[0][5] is True            # required
+
+
+def test_multi_f_no_match_and_no_client_write_still_renders_no_usable_form(monkeypatch):
+    """The b9897ac fix is untouched by adding required."""
+    _, _, html = _render_review(monkeypatch, _IMPORT_CAPS)
+    assert _radios(html) == []
+    assert not _harvest(html).has_submit
+
+
+def test_multi_g_the_server_still_refuses_a_post_with_no_choice(monkeypatch):
+    """`required` is browser convenience. Bypass it and the service still fails closed."""
+    tag, p, html, _ = _render_multi(monkeypatch, _IMPORT_CAPS | {"client.write"})
+    no_choice = [(n, v) for n, v in _harvest(html).fields if n != "person_choice"]
+    assert "person_choice" not in dict(no_choice)
+    resp = _post_harvested(monkeypatch, tag, p, no_choice)
+    assert resp.status_code == 400
+    assert b"Choose an existing client or create a new prospect." in resp.body

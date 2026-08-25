@@ -131,11 +131,17 @@
     {% if matches.matches %}
     <p class="subtle">
       {% if matches.outcome == "multiple" %}More than one record matched on {{ matches.strategy }} —
-      choose one.{% else %}Matched on {{ matches.strategy }}.{% endif %}
+      choose an existing client or select Create new prospect.{% else %}Matched on
+      {{ matches.strategy }}.{% endif %}
     </p>
+    {# `required` is a convenience only: it stops the browser submitting an unmade choice and
+       losing the reviewed form to a raw 400. It is NEVER the enforcement -- the service still
+       refuses a request carrying no valid person_choice. Several matches stay deliberately
+       unselected; auto-picking one of them is the duplicate-client hazard this flow exists to
+       avoid. #}
     {% for m in matches.matches %}
     <label style="display:block">
-      <input type="radio" name="person_choice" value="existing:{{ m.person_id }}"
+      <input type="radio" name="person_choice" value="existing:{{ m.person_id }}" required
              {% if matches.outcome == "one" %}checked{% endif %}>
       Use existing person — {{ m.display_name }}{% if m.email %} &lt;{{ m.email }}&gt;{% endif %}
       {% if m.contact_type %} ({{ m.contact_type }}){% endif %}
@@ -145,7 +151,7 @@
     {# Rendered as a CONTROL only when it can actually be submitted. Never checked-and-disabled. #}
     {% if can_create_person %}
     <label style="display:block">
-      <input type="radio" name="person_choice" value="create_new"
+      <input type="radio" name="person_choice" value="create_new" required
              {% if not matches.matches %}checked{% endif %}>
       Create new prospect
     </label>
