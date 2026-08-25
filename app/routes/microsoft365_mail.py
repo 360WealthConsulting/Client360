@@ -10,6 +10,7 @@ The detail route is PREVIEW ONLY. It reads one message plus its attachment METAD
 the message may be about; it creates nothing, imports nothing, downloads no attachment bytes, and
 exposes no mutation.
 """
+import re
 from urllib.parse import quote
 
 import requests
@@ -40,6 +41,39 @@ MESSAGE_SELECT = (
 #: Attachment METADATA only. contentBytes is deliberately absent -- no attachment content is
 #: fetched anywhere in this commit.
 ATTACHMENT_SELECT = "id,name,contentType,size,isInline"
+
+#: One page of the mail list. Unchanged from the original route.
+PAGE_SIZE = 25
+LIST_SELECT = ("id,subject,from,receivedDateTime,"
+               "bodyPreview,isRead,hasAttachments,webLink")
+
+#: Characters that would let a typed query escape the quoted $search expression, or split the
+#: request line. Replaced with a space rather than dropped, so "a\"b" searches for two words
+#: instead of silently becoming one.
+_SEARCH_UNSAFE = re.compile(r'["\\\r\n]')
+#: A search box, not a query language. Long enough for a subject line.
+_SEARCH_MAX = 200
+
+
+def _clean_skip(raw) -> int:
+    """A non-negative page offset. Malformed input is 0, never an error and never negative.
+
+    Declared as a string on the route on purpose: ``skip: int`` would make ``?skip=abc`` a 422
+    instead of simply showing the first page.
+    """
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _search_term(value: str) -> str:
+    """The user's words, safe to interpolate into ``$search="..."``.
+
+    Quotes, backslashes and CR/LF are neutralised so nothing typed here can close the literal, add
+    another KQL clause, or split the HTTP request.
+    """
+    return _SEARCH_UNSAFE.sub(" ", value or "").strip()[:_SEARCH_MAX].strip()
 
 
 def _bearer(principal):
@@ -74,8 +108,20 @@ def _bearer(principal):
 
 
 @router.get("/mail")
-def microsoft365_mail(request: Request,
+def microsoft365_mail(request: Request, q: str = "", skip: str = "0",
                       principal: Principal = Depends(require_capability("communication.read"))):
+    """The signed-in user's mailbox: newest 25, a page at a time, or a mailbox-wide search.
+
+    A forwarded lead that arrived earlier in the day is unreachable on a fixed newest-25 list, so
+    the page gains two ways past it. Both read the same mailbox-wide ``/me/messages`` collection on
+    the same principal-bound bearer.
+
+    Search is deliberately FIRST PAGE ONLY. Graph documents ``$search`` on message collections as
+    incompatible with ``$filter``/``$orderby``, capped at 250 results, and paged by
+    ``@odata.nextLink`` -- ``$skip`` is not supported alongside it. Rather than invent a workaround
+    or round-trip an opaque nextLink, a search returns one page and the template shows no paging
+    controls for it, so the UI never offers a Next that cannot work.
+    """
     # communication.read is the capability the middleware rule (^/microsoft) already applies to this
     # path; stating it here is what gives the route the principal it needs to pick the mailbox.
     # No connected account for THIS user -> the existing not-connected behaviour. Never another
@@ -84,20 +130,26 @@ def microsoft365_mail(request: Request,
     if redirect is not None:
         return redirect
 
+    query = _search_term(q)
+    offset = _clean_skip(skip)
+
+    params = {"$top": str(PAGE_SIZE), "$select": LIST_SELECT}
+    if query:
+        # $search only. Sending $orderby or $filter with it is a Graph 400.
+        params["$search"] = f'"{query}"'
+    else:
+        params["$orderby"] = "receivedDateTime desc"
+        # Omitted at offset 0 so an unfiltered first page is byte-identical to the original request.
+        if offset:
+            params["$skip"] = str(offset)
+
     response = requests.get(
         GRAPH_MESSAGES_URL,
         headers={
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
         },
-        params={
-            "$top": "25",
-            "$select": (
-                "id,subject,from,receivedDateTime,"
-                "bodyPreview,isRead,hasAttachments,webLink"
-            ),
-            "$orderby": "receivedDateTime desc",
-        },
+        params=params,
         timeout=30,
     )
 
@@ -127,10 +179,23 @@ def microsoft365_mail(request: Request,
             "has_attachments": bool(message.get("hasAttachments")),
         })
 
+    searching = bool(query)
     return templates.TemplateResponse(
         request=request,
         name="microsoft365/mail.html",
-        context={"messages": messages, "account_email": account["email"] or ""},
+        context={
+            "messages": messages,
+            "account_email": account["email"] or "",
+            "query": query,
+            "searching": searching,
+            # No paging controls while searching -- see the docstring; Graph cannot page a $search
+            # with $skip, so offering Next would be a button that 400s.
+            "skip": offset,
+            "prev_skip": max(0, offset - PAGE_SIZE) if offset else None,
+            "has_prev": (not searching) and offset > 0,
+            "has_next": (not searching) and len(messages) == PAGE_SIZE,
+            "next_skip": offset + PAGE_SIZE,
+        },
     )
 
 

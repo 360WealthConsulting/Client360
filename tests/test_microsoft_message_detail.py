@@ -454,3 +454,214 @@ def test_the_mail_route_never_reads_the_legacy_token_columns():
     }
     src = inspect.getsource(mod)
     assert "microsoft_accounts.c.access_token" not in src
+
+
+# ------------------------------------------------------------------ mail discovery: search + paging
+# The forwarded lead that prompted this: "Fw: Tax liability", received mid-morning, invisible
+# because a fixed newest-25 list had no way to reach message 26 and no way to search for it.
+
+def _msg(i, *, subject=None, mid=None):
+    return {"id": mid or f"id-{i}", "subject": subject or f"Message {i}",
+            "from": {"emailAddress": {"name": "S", "address": "s@x.test"}},
+            "receivedDateTime": "2026-08-25T10:00:00Z", "bodyPreview": "", "isRead": True,
+            "hasAttachments": False, "webLink": "https://outlook.test/x"}
+
+
+def _param_stub(monkeypatch, *, pages=None, default=None):
+    """Records the exact Graph params. ``pages`` maps a $skip value (or "search") to a payload."""
+    import app.routes.microsoft365_mail as mod
+    calls = []
+
+    monkeypatch.setattr(mod, "get_microsoft_access_token",
+                        lambda a: (a["token_cache_encrypted"] or "").replace("cache-", "token-"))
+
+    def _get(url, headers=None, params=None, timeout=None):
+        calls.append({"url": url, "params": dict(params or {}),
+                      "token": (headers or {}).get("Authorization", "").removeprefix("Bearer ")})
+        if params and "$search" in params:
+            key = "search"
+        else:
+            key = int((params or {}).get("$skip", 0))
+        return _Resp(200, {"value": (pages or {}).get(key, default or [])})
+
+    monkeypatch.setattr(mod.requests, "get", _get)
+    return calls
+
+
+def _list(principal, **kw):
+    import app.routes.microsoft365_mail as mod
+    return mod.microsoft365_mail(
+        fake_request("/microsoft365/mail", state_principal=principal), principal=principal, **kw)
+
+
+# --- A. default request unchanged ---------------------------------------------------------------
+def test_a_default_params(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, default=[_msg(1)])
+    _list(_principal(f["a_email"]))
+    assert calls[0]["params"] == {
+        "$top": "25",
+        "$select": "id,subject,from,receivedDateTime,bodyPreview,isRead,hasAttachments,webLink",
+        "$orderby": "receivedDateTime desc",
+    }
+    assert "$skip" not in calls[0]["params"]      # omitted at offset 0
+
+
+# --- B/C/D/E. paging ----------------------------------------------------------------------------
+def test_b_skip_requests_the_second_window(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={0: [_msg(i) for i in range(25)],
+                                            25: [_msg(99, subject="Fw: Tax liability")]})
+    html = render(_list(_principal(f["a_email"]), skip="25"))
+    assert calls[0]["params"]["$skip"] == "25"
+    assert calls[0]["params"]["$orderby"] == "receivedDateTime desc"
+    assert "Fw: Tax liability" in html
+
+
+@pytest.mark.parametrize("raw", ["-5", "abc", "", " ", "1e3", "-1"])
+def test_c_malformed_or_negative_skip_becomes_zero(monkeypatch, raw):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, default=[_msg(1)])
+    resp = _list(_principal(f["a_email"]), skip=raw)
+    assert resp.status_code == 200                       # never a 422
+    assert "$skip" not in calls[0]["params"]
+
+
+def test_d_previous_never_goes_below_zero(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    _param_stub(monkeypatch, pages={10: [_msg(1)]})
+    html = render(_list(_principal(f["a_email"]), skip="10"))
+    assert 'href="/microsoft365/mail?skip=0"' in html
+    assert "skip=-" not in html
+
+
+def test_e_next_appears_only_on_a_full_page(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    _param_stub(monkeypatch, pages={0: [_msg(i) for i in range(25)]})
+    assert "Next" in render(_list(_principal(f["a_email"])))
+
+    _param_stub(monkeypatch, pages={0: [_msg(i) for i in range(24)]})
+    assert "Next" not in render(_list(_principal(f["a_email"])))
+
+
+def test_first_page_shows_no_previous(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    _param_stub(monkeypatch, pages={0: [_msg(i) for i in range(25)]})
+    assert "Previous" not in render(_list(_principal(f["a_email"])))
+
+
+# --- F/G/H/I/J. search --------------------------------------------------------------------------
+def test_f_search_sends_search_and_never_orderby_or_filter(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={"search": [_msg(1, subject="Fw: Tax liability")]})
+    html = render(_list(_principal(f["a_email"]), q="Tax liability"))
+    p = calls[0]["params"]
+    assert p["$search"] == '"Tax liability"'
+    assert p["$top"] == "25"
+    assert "$orderby" not in p and "$filter" not in p and "$skip" not in p
+    assert "Fw: Tax liability" in html
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ('a"b', '"a b"'),
+    ('x" OR subject:"y', '"x  OR subject: y"'),
+    ('back\\slash', '"back slash"'),
+    ("line1\r\nline2", '"line1  line2"'),
+    ("  padded  ", '"padded"'),
+])
+def test_g_quotes_and_control_characters_cannot_break_the_expression(monkeypatch, raw, expected):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={"search": []})
+    _list(_principal(f["a_email"]), q=raw)
+    got = calls[0]["params"]["$search"]
+    assert got == expected
+    assert got.count('"') == 2 and got.startswith('"') and got.endswith('"')
+
+
+def test_search_term_is_length_capped(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={"search": []})
+    _list(_principal(f["a_email"]), q="z" * 500)
+    assert len(calls[0]["params"]["$search"]) == 202          # 200 chars + two quotes
+
+
+@pytest.mark.parametrize("blank", ["", "   ", '"', '  "  '])
+def test_h_empty_or_whitespace_query_behaves_as_unfiltered(monkeypatch, blank):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, default=[_msg(1)])
+    html = render(_list(_principal(f["a_email"]), q=blank))
+    assert "$search" not in calls[0]["params"]
+    assert calls[0]["params"]["$orderby"] == "receivedDateTime desc"
+    assert "Clear search" not in html
+
+
+def test_i_zero_result_search_says_so_and_does_not_fall_back(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={"search": [], 0: [_msg(1, subject="NEWEST-25-ROW")]})
+    html = render(_list(_principal(f["a_email"]), q="nothing matches this"))
+    assert "No messages matched" in html
+    assert "NEWEST-25-ROW" not in html
+    assert len(calls) == 1                                   # no second, unfiltered request
+    assert "Clear search" in html
+
+
+def test_search_shows_no_paging_controls(monkeypatch):
+    """Graph cannot page a $search with $skip, so the UI must not offer Next/Previous."""
+    tag = _tag(); f = _mailboxes(tag)
+    _param_stub(monkeypatch, pages={"search": [_msg(i) for i in range(25)]})
+    html = render(_list(_principal(f["a_email"]), q="anything"))
+    assert "Next" not in html and "Previous" not in html
+
+
+def test_j_search_results_link_by_opaque_message_id(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    _param_stub(monkeypatch, pages={"search": [_msg(1, mid="AA/Mk+id==")]})
+    html = render(_list(_principal(f["a_email"]), q="Tax"))
+    assert 'href="/microsoft365/mail/AA%2FMk%2Bid%3D%3D"' in html
+
+
+# --- K/L/M/N/O. identity, token shape, read-only -------------------------------------------------
+def test_k_search_uses_each_principals_own_bearer(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={"search": []})
+    _list(_principal(f["a_email"]), q="Tax")
+    _list(_principal(f["b_email"], uid=2), q="Tax")
+    assert [c["token"] for c in calls] == [f"token-a-{tag}", f"token-b-{tag}"]
+
+
+def test_n_provider_failure_redirects_before_any_graph_request(monkeypatch):
+    """Search and paging must fail closed the same way the plain list does."""
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _list_stub(monkeypatch, token_error=True)
+    for kw in ({"q": "Tax"}, {"skip": "25"}, {}):
+        resp = _list(_principal(f["a_email"]), **kw)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/microsoft365/connect"
+    assert calls == []
+
+
+def test_o_search_and_paging_are_graph_gets_only(monkeypatch):
+    tag = _tag(); f = _mailboxes(tag)
+    calls = _param_stub(monkeypatch, pages={"search": [_msg(1)], 25: [_msg(2)]})
+    _list(_principal(f["a_email"]), q="Tax")
+    _list(_principal(f["a_email"]), skip="25")
+    assert all(c["url"] == "https://graph.microsoft.com/v1.0/me/messages" for c in calls)
+    for c in calls:
+        assert "contentBytes" not in str(c["params"])
+
+
+def test_discovery_paths_write_nothing(monkeypatch):
+    from app.db import audit_events, timeline_events
+    tag = _tag(); f = _mailboxes(tag)
+    _param_stub(monkeypatch, pages={"search": [_msg(1)], 0: [_msg(2)], 25: [_msg(3)]})
+
+    def _counts():
+        with engine.connect() as c:
+            return {t.name: c.scalar(select(func.count()).select_from(t))
+                    for t in (people, timeline_events, audit_events, microsoft_accounts)}
+
+    before = _counts()
+    _list(_principal(f["a_email"]))
+    _list(_principal(f["a_email"]), q="Tax")
+    _list(_principal(f["a_email"]), skip="25")
+    assert _counts() == before

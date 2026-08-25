@@ -4,6 +4,19 @@
 {% block crumb %}Outlook Mail{% endblock %}
 {% block content %}
 {{ ui.page_head("Outlook mail", eyebrow="Microsoft 365", desc=("Latest messages for " ~ (account_email or ""))) }}
+
+{# GET form: the query lives in the URL so a search is linkable and refreshable. #}
+<form method="get" action="/microsoft365/mail" class="row" style="gap:8px; margin-bottom:12px">
+  <input type="search" name="q" value="{{ query or '' }}" placeholder="Search mail"
+         aria-label="Search mail" style="flex:1 1 260px">
+  <button class="btn" type="submit">Search</button>
+</form>
+
+{% if searching %}
+<p class="subtle">Showing results for <b>{{ query }}</b> ·
+  <a href="/microsoft365/mail">Clear search</a></p>
+{% endif %}
+
 <div class="stack">
 {% for m in messages %}
   <div class="card">
@@ -17,7 +30,22 @@
     {% if m.preview %}<div class="subtle" style="margin-top:6px">{{ m.preview }}</div>{% endif %}
   </div>
 {% else %}
+  {# A search that matched nothing says so. It never falls back to the newest 25. #}
+  {% if searching %}
+  {% call ui.empty("No messages matched", "No messages matched this search. Try a different term, or clear the search.") %}{% endcall %}
+  {% else %}
   {% call ui.empty("No messages", "No Outlook messages were returned.") %}{% endcall %}
+  {% endif %}
 {% endfor %}
 </div>
+
+{# Paging is for normal browsing only. Graph cannot page a $search with $skip, so a search shows no
+   Previous/Next rather than a control that would fail. #}
+{% if has_prev or has_next %}
+<p class="row" style="justify-content:space-between; margin-top:12px">
+  <span>{% if has_prev %}<a href="/microsoft365/mail?skip={{ prev_skip }}">← Previous</a>{% endif %}</span>
+  <span class="subtle">Messages {{ skip + 1 }}–{{ skip + messages|length }}</span>
+  <span>{% if has_next %}<a href="/microsoft365/mail?skip={{ next_skip }}">Next →</a>{% endif %}</span>
+</p>
+{% endif %}
 {% endblock %}
