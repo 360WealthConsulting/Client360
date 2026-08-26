@@ -68,10 +68,14 @@ def portal_auth_start(request: Request, invitation: str | None = None):
     import secrets
 
     from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
+    from app.security.origin import CanonicalOriginError, external_url
 
     try:
         provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
-    except ValueError:
+        # Built from the configured canonical origin, never the inbound Host header: the IdP matches
+        # this string exactly and the token exchange must repeat it byte for byte.
+        redirect_uri = external_url(request, "portal_auth_callback")
+    except (ValueError, CanonicalOriginError):
         return RedirectResponse("/portal/login?error=unavailable", 303)
 
     state = secrets.token_urlsafe(32)
@@ -86,8 +90,7 @@ def portal_auth_start(request: Request, invitation: str | None = None):
         request.session["portal_oidc_invitation"] = invitation
     try:
         url = provider.authorization_url(
-            state=state, nonce=nonce,
-            redirect_uri=str(request.url_for("portal_auth_callback")),
+            state=state, nonce=nonce, redirect_uri=redirect_uri,
             code_challenge=challenge)
     except Exception:
         return RedirectResponse("/portal/login?error=unavailable", 303)
@@ -104,6 +107,7 @@ def portal_auth_callback(request: Request, code: str | None = None, state: str |
 
     from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
     from app.portal.service import sign_in_with_subject
+    from app.security.origin import external_url
 
     expected_state = request.session.pop("portal_oidc_state", "")
     nonce = request.session.pop("portal_oidc_nonce", "")
@@ -115,8 +119,9 @@ def portal_auth_callback(request: Request, code: str | None = None, state: str |
         return RedirectResponse("/portal/login?error=failed", 303)      # CSRF / replay / no flow open
     try:
         provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
+        # Identical construction to /portal/auth/start — the IdP rejects the exchange otherwise.
         identity = provider.exchange_code(
-            code=code, redirect_uri=str(request.url_for("portal_auth_callback")),
+            code=code, redirect_uri=external_url(request, "portal_auth_callback"),
             code_verifier=verifier, expected_nonce=nonce)
         if invitation:
             account_id = accept_invitation(invitation, identity.subject, identity.mfa_verified)

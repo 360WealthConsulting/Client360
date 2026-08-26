@@ -12,6 +12,13 @@ docs/RELEASE_0.9.9_DEPLOYMENT_RUNBOOK.md for the authoritative list):
   MICROSOFT_TOKEN_KEY     Fernet key encrypting Microsoft OAuth token caches.
                           REQUIRED for Microsoft 365 sync; must be backed up
                           separately from the database.
+  PUBLIC_BASE_URL         Canonical external origin of this deployment, e.g.
+                          "https://app.example.com" — scheme + host (+ port)
+                          only, no path/query/fragment/credentials. Used to build
+                          OAuth redirect URIs instead of the inbound Host header,
+                          which nothing validates. REQUIRED in production for the
+                          client-portal sign-in flow, which fails closed without
+                          it. See app/security/origin.py.
 
 Client-portal external identity (Microsoft Entra External ID, a SEPARATE external
 tenant from the staff workforce tenant — see docs/CLIENT_PORTAL_IDENTITY_AND_SCOPE.md).
@@ -223,6 +230,17 @@ def runtime_worker_ttl_seconds() -> int:
     return max(30, _int_env("RUNTIME_WORKER_TTL_SECONDS", 120))
 
 
+def is_production_now() -> bool:
+    """Environment read at call time (not import), so tests exercise both postures."""
+    return os.getenv("CLIENT360_ENVIRONMENT", "development").strip().lower() == "production"
+
+
+def canonical_origin_status() -> tuple[bool, str | None]:
+    """``(configured_and_valid, error)`` for PUBLIC_BASE_URL. Never raises."""
+    from app.security.origin import canonical_origin_status as _status
+    return _status()
+
+
 _PORTAL_OIDC_REQUIRED = ("PORTAL_OIDC_ISSUER", "PORTAL_OIDC_CLIENT_ID", "PORTAL_OIDC_CLIENT_SECRET")
 
 
@@ -272,6 +290,14 @@ def configuration_warnings() -> list[str]:
             "MICROSOFT_TOKEN_KEY is not set; Microsoft 365 sync and token "
             "decryption are disabled. Set it and back it up separately from the DB."
         )
+    ok, origin_error = canonical_origin_status()
+    if origin_error:
+        warnings.append(f"PUBLIC_BASE_URL is invalid and will be refused: {origin_error}")
+    elif not ok and is_production_now():
+        warnings.append(
+            "PUBLIC_BASE_URL is not set. Client-portal sign-in fails closed in production rather "
+            "than build an OAuth redirect URI from the unvalidated Host header. Set it to the "
+            "canonical external origin before enabling the portal.")
     warnings.extend(_portal_identity_warnings())
     # No DATABASE_URL warning here: there is no built-in default. app/db.py and
     # app/database/schema.py both raise at import if it is unset, so the process
