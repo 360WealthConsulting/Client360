@@ -12,6 +12,28 @@ docs/RELEASE_0.9.9_DEPLOYMENT_RUNBOOK.md for the authoritative list):
   MICROSOFT_TOKEN_KEY     Fernet key encrypting Microsoft OAuth token caches.
                           REQUIRED for Microsoft 365 sync; must be backed up
                           separately from the database.
+
+Client-portal external identity (Microsoft Entra External ID, a SEPARATE external
+tenant from the staff workforce tenant — see docs/CLIENT_PORTAL_IDENTITY_AND_SCOPE.md).
+All are unset by default; the portal has no production identity provider until they are
+set, and `portal.production_ready()` stays False. NON-SECRET unless marked SECRET:
+
+  PORTAL_OIDC_ISSUER      Issuer URL of the external tenant. Used for OIDC
+                          discovery and as the required `iss` claim value.
+  PORTAL_OIDC_CLIENT_ID   Application (client) ID of the portal app registration.
+  PORTAL_OIDC_CLIENT_SECRET  SECRET. Client secret for the authorization-code
+                          exchange. Never logged and never rendered.
+  PORTAL_OIDC_AUDIENCE    Required `aud` claim value. Defaults to the client ID.
+  PORTAL_OIDC_SCOPES      Space-separated scopes. Default "openid profile email".
+                          Do NOT add Microsoft Graph scopes: the portal keeps no
+                          access or refresh tokens.
+  PORTAL_OIDC_MFA_AMR_VALUES  Comma-separated `amr` claim values the EXTERNAL
+                          tenant emits for a completed MFA challenge.
+  PORTAL_OIDC_MFA_ACR_VALUES  Comma-separated `acr` claim values, same purpose.
+                          MFA evidence is FAIL-CLOSED: with neither set, no token
+                          can prove MFA and every portal sign-in is refused. The
+                          correct values must come from the real tenant's user-flow
+                          configuration; they are deliberately not guessed here.
 """
 import logging
 import os
@@ -201,6 +223,37 @@ def runtime_worker_ttl_seconds() -> int:
     return max(30, _int_env("RUNTIME_WORKER_TTL_SECONDS", 120))
 
 
+_PORTAL_OIDC_REQUIRED = ("PORTAL_OIDC_ISSUER", "PORTAL_OIDC_CLIENT_ID", "PORTAL_OIDC_CLIENT_SECRET")
+
+
+def _portal_identity_warnings() -> list[str]:
+    """Warn about a half-configured portal identity provider. Names only — never values.
+
+    Fully unset is a normal state (the portal simply has no production IdP), so it is silent.
+    A partial set is a deployment mistake, and a complete set with no MFA claim values means
+    the fail-closed MFA check will refuse every sign-in — both are worth saying out loud.
+    """
+    present = [k for k in _PORTAL_OIDC_REQUIRED if os.getenv(k, "").strip()]
+    if not present:
+        return []
+    warnings: list[str] = []
+    missing = [k for k in _PORTAL_OIDC_REQUIRED if k not in present]
+    if missing:
+        warnings.append(
+            "Portal external identity is partially configured; missing "
+            f"{', '.join(missing)}. The portal will have NO production identity provider "
+            "and portal.production_ready() stays False until all are set."
+        )
+    elif not (os.getenv("PORTAL_OIDC_MFA_AMR_VALUES", "").strip()
+              or os.getenv("PORTAL_OIDC_MFA_ACR_VALUES", "").strip()):
+        warnings.append(
+            "Portal external identity is configured but neither PORTAL_OIDC_MFA_AMR_VALUES "
+            "nor PORTAL_OIDC_MFA_ACR_VALUES is set. MFA evidence is fail-closed, so EVERY "
+            "portal sign-in will be refused. Set the values the external tenant actually emits."
+        )
+    return warnings
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 
@@ -219,6 +272,7 @@ def configuration_warnings() -> list[str]:
             "MICROSOFT_TOKEN_KEY is not set; Microsoft 365 sync and token "
             "decryption are disabled. Set it and back it up separately from the DB."
         )
+    warnings.extend(_portal_identity_warnings())
     # No DATABASE_URL warning here: there is no built-in default. app/db.py and
     # app/database/schema.py both raise at import if it is unset, so the process
     # cannot reach startup validation without one. The warning this replaces

@@ -270,7 +270,7 @@ def _issued_invoice_org(staff, org_id):
 
 # --- Security: feature enforcement ------------------------------------------
 
-def test_feature_enforcement_billing_and_invoice_view(portal_master_on):
+def test_feature_enforcement_billing_and_invoice_view(portal_master_on, production_identity_provider):
     # The firm-wide portal gates now close the client fork; this test is about the per-client
     # Core feature entitlement, so the surface gates are switched on (see tests/conftest.py).
     _, principal, _, hid = seed_portal_account(seed_staff_user())

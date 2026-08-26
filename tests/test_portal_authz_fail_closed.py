@@ -29,7 +29,7 @@ from app.services.features import portal_gate
 
 # The firm-wide portal surface gates now genuinely close their surfaces; these behavioural tests
 # exercise the surfaces themselves, so they switch the gates on (see tests/conftest.py).
-pytestmark = pytest.mark.usefixtures("portal_master_on")
+pytestmark = pytest.mark.usefixtures("portal_master_on", "production_identity_provider")
 
 
 # --- runtime behaviour (real middleware via direct ASGI dispatch) ------------

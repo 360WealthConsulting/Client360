@@ -30,6 +30,8 @@ from tests._portal_util import sample_upload, seed_portal_account, seed_staff_us
 SIGNOFF = "portal.production_signed_off"
 MASTER = {"portal.enabled", SIGNOFF}          # both halves of production_ready()
 
+pytestmark = pytest.mark.usefixtures("production_identity_provider")
+
 ALL_GATES = {
     "portal.enabled",
     SIGNOFF,

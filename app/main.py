@@ -160,6 +160,10 @@ async def lifespan(app: FastAPI):
     try:
         from app.portal.identity_local import register_local_provider_if_permitted
         register_local_provider_if_permitted()
+        # The REAL external identity provider, registered only when the deployment is configured for
+        # it. Never fails startup: without it the portal simply cannot be production-ready.
+        from app.portal.identity_microsoft import register_microsoft_provider_if_configured
+        register_microsoft_provider_if_configured()
     except Exception:
         logging.getLogger("client360.portal").exception(
             "portal local identity provider registration skipped")

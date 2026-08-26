@@ -47,8 +47,90 @@ class ConsentAction(BaseModel): consent_type: str; version: str = "v1"; accepted
 class ConsentWithdraw(BaseModel): consent_type: str
 class AppointmentRequest(BaseModel): person_id: int; household_id: int; preferred_window: str | None = None; reason: str | None = None
 
+def _production_provider_key():
+    """The provider key used for real external sign-in."""
+    from app.portal.identity_microsoft import MICROSOFT_PROVIDER_KEY
+    return MICROSOFT_PROVIDER_KEY
+
+
 @router.get("/portal/login", response_class=HTMLResponse)
 def portal_login(request: Request): return templates.TemplateResponse(request=request, name="portal/login.html", context={})
+
+@router.get("/portal/auth/start")
+def portal_auth_start(request: Request, invitation: str | None = None):
+    """Begin external sign-in: mint state/nonce/PKCE server-side and redirect to the IdP.
+
+    ``state``, ``nonce`` and the PKCE verifier are held in the browser session and never given to the
+    client as parameters, so a callback cannot be replayed into a different session. An optional
+    ``invitation`` token is carried in the session (not the redirect) for first-time activation."""
+    import base64
+    import hashlib
+    import secrets
+
+    from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
+
+    try:
+        provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
+    except ValueError:
+        return RedirectResponse("/portal/login?error=unavailable", 303)
+
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode("ascii")).digest()).decode("ascii").rstrip("=")
+    request.session["portal_oidc_state"] = state
+    request.session["portal_oidc_nonce"] = nonce
+    request.session["portal_oidc_verifier"] = verifier
+    if invitation:
+        request.session["portal_oidc_invitation"] = invitation
+    try:
+        url = provider.authorization_url(
+            state=state, nonce=nonce,
+            redirect_uri=str(request.url_for("portal_auth_callback")),
+            code_challenge=challenge)
+    except Exception:
+        return RedirectResponse("/portal/login?error=unavailable", 303)
+    return RedirectResponse(url, 303)
+
+
+@router.get("/portal/auth/callback", name="portal_auth_callback")
+def portal_auth_callback(request: Request, code: str | None = None, state: str | None = None):
+    """Validate the callback, bind the immutable subject and establish a portal session.
+
+    Every failure returns the SAME generic redirect: the reason (bad state, bad token, missing MFA,
+    unknown subject, revoked account) is never disclosed to the browser. No token material is logged."""
+    import secrets as _secrets
+
+    from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
+    from app.portal.service import sign_in_with_subject
+
+    expected_state = request.session.pop("portal_oidc_state", "")
+    nonce = request.session.pop("portal_oidc_nonce", "")
+    verifier = request.session.pop("portal_oidc_verifier", "")
+    invitation = request.session.pop("portal_oidc_invitation", None)
+
+    if not code or not state or not expected_state \
+            or not _secrets.compare_digest(state, expected_state):
+        return RedirectResponse("/portal/login?error=failed", 303)      # CSRF / replay / no flow open
+    try:
+        provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
+        identity = provider.exchange_code(
+            code=code, redirect_uri=str(request.url_for("portal_auth_callback")),
+            code_verifier=verifier, expected_nonce=nonce)
+        if invitation:
+            account_id = accept_invitation(invitation, identity.subject, identity.mfa_verified)
+        else:
+            account_id = sign_in_with_subject(identity.subject, identity.mfa_verified)
+        token = create_portal_session(
+            account_id, device_fingerprint=request.headers.get("user-agent", "portal"),
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"))
+    except Exception:
+        return RedirectResponse("/portal/login?error=failed", 303)
+    request.session["portal_session_token"] = token                     # fresh session id post-auth
+    return RedirectResponse("/portal", 303)
+
 
 @router.post("/api/v1/portal/auth/invitations/accept")
 def invitation_accept(payload: InvitationAcceptance, request: Request):

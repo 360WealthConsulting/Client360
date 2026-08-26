@@ -37,7 +37,7 @@ from tests._portal_util import seed_portal_account, seed_staff_user
 
 # The firm-wide portal surface gates now genuinely close their surfaces; these tests exercise the
 # surfaces themselves, so they switch the gates on (see tests/conftest.py).
-pytestmark = pytest.mark.usefixtures("portal_messaging_on")
+pytestmark = pytest.mark.usefixtures("portal_messaging_on", "production_identity_provider")
 
 
 STAFF = frozenset({"client.read", "client.write", "record.read_all", "record.write_all"})

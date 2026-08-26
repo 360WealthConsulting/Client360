@@ -14,14 +14,57 @@ How external principals are identified, linked, and scoped. See
   records the `auth_subject`). No path infers a link from a matching email address.
 
 ## Identity providers
-- `PORTAL_IDENTITY_PROVIDERS` is a registry of `PortalIdentityProvider` implementations. Activation calls
-  `verify_activation(assertion) -> PortalIdentityResult(subject, mfa_verified, email)`.
-- Production integrates a real IdP. For local/test/CI, `app/portal/identity_local.py` provides a
-  deterministic `LocalTestIdentityProvider` (assertion `local:<subject>[:mfa]`) that:
-  - registers **only when NOT production-signed-off**, so it can never verify a real external activation in
-    production;
-  - echoes the subject, marks MFA verified only when the `:mfa` marker is present, and returns no email
-    (never auto-links).
+`PORTAL_IDENTITY_PROVIDERS` is a registry of `PortalIdentityProvider` implementations, populated **only in
+the FastAPI lifespan** (`app/main.py`) — registration is startup-only, with no hot reload. Each provider
+declares two capability flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `supports_redirect_flow` | Implements `authorization_url()` + `exchange_code()` (browser authorization-code flow) |
+| `production_capable` | May authenticate a **real** external client |
+
+`verify_activation(assertion)` remains the posted-assertion path used by the synthetic provider.
+`production_capable()` on the registry returns the keys eligible for production, and is what
+`portal.gate.production_ready()` consults.
+
+### Microsoft Entra External ID (production)
+`app/portal/identity_microsoft.py` — `key="microsoft"`, redirect-capable, production-capable. It runs in a
+**separate external tenant**, never the staff workforce tenant, so client identities and staff identities
+are administratively distinct. (This is Entra External ID, *not* the deprecated Azure AD B2C.)
+
+- **Authorization code + PKCE.** `/portal/auth/start` mints `state`, `nonce`, and a PKCE verifier, holds all
+  three **server-side** in the session, and sends only the S256 `code_challenge` to the IdP.
+  `/portal/auth/callback` compares `state` with `secrets.compare_digest` and **consumes** it, so a callback
+  cannot be replayed. Both routes are pre-session, so they are listed in `PUBLIC_EXACT` and exempted in
+  `portal_gate`.
+- **ID-token validation.** Issuer, audience, signature (JWKS from OIDC discovery), and expiry are all
+  checked, plus `nonce` equality against the server-held value.
+- **Immutable subject binding.** The account key is `microsoft:<oid or sub>` — `oid` preferred. **Email is
+  never the identity key** and never a fallback; a renamed or re-addressed client keeps the same account,
+  and control of a mailbox does not confer access. `sign_in_with_subject()` resolves an *active* account by
+  `auth_subject` alone.
+- **MFA is fail-closed.** `_mfa_verified()` accepts a token only when its `amr`/`acr` claims match values
+  configured for the tenant. With no configured values it returns **False**, so a misconfigured deployment
+  refuses every sign-in rather than admitting an unverified one. The workforce tenant's AMR interpretation
+  is deliberately **not** reused — the external tenant's real user-flow values must be established against
+  the tenant and verified under control.
+- **No token retention.** Access and refresh tokens are never stored; the portal wants identity, not Graph.
+  Authorization codes, tokens, client secrets, and invitation tokens are never logged.
+- **Uniform errors.** Every failure returns the same `"Sign-in could not be completed."` and redirects to
+  `/portal/login?error=failed`, so nothing distinguishes an unknown subject from a failed MFA or a bad
+  token. Redirect targets are fixed in code — there is no caller-supplied `next`/`return_to`.
+
+Configuration keys (`PORTAL_OIDC_*`) are declared in `app/config.py`; `PORTAL_OIDC_CLIENT_SECRET` is the
+only secret. Nothing is registered until they are set, and startup warns on a partial configuration or on a
+complete one with no MFA claim values.
+
+### Local test provider (test only)
+`app/portal/identity_local.py` provides a deterministic `LocalTestIdentityProvider` (assertion
+`local:<subject>[:mfa]`) that is **never** `production_capable`. It:
+- registers **only when NOT production-signed-off**, so it can never verify a real external activation in
+  production;
+- echoes the subject, marks MFA verified only when the `:mfa` marker is present, and returns no email
+  (never auto-links).
 
 ## Scope resolver (dedicated, grant-based, fail-closed)
 `portal_scope(account_id, *, permission=None)` is the dedicated external scope resolver. It:

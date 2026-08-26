@@ -52,10 +52,27 @@ def portal_enabled() -> bool:
     return gate("portal.enabled")
 
 
+def production_identity_provider_available() -> bool:
+    """Whether a PRODUCTION-capable external identity provider is registered.
+
+    The deterministic local/test provider is excluded by construction (``production_capable`` is False
+    on it), so a synthetic provider can never satisfy this."""
+    try:
+        from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
+        return bool(PORTAL_IDENTITY_PROVIDERS.production_capable())
+    except Exception:
+        return False
+
+
 def production_ready() -> bool:
-    """External production access is permitted ONLY when the portal is enabled AND compliance has signed
-    off. Blocked by default — local/test implementation proceeds behind the disabled gate."""
-    return portal_enabled() and gate("portal.production_signed_off")
+    """External production access is permitted ONLY when the portal is enabled, compliance has signed
+    off, AND a real external identity provider is registered.
+
+    The third condition exists because the first two could previously report "production ready" with no
+    way for any client to authenticate — sign-off implied usable external access that did not exist.
+    The synthetic local provider never satisfies it. Blocked by default."""
+    return (portal_enabled() and gate("portal.production_signed_off")
+            and production_identity_provider_available())
 
 
 def gate_status() -> dict:

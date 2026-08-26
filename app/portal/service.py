@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 import hashlib, secrets, uuid
 from sqlalchemy import and_, func, or_, select
 
@@ -63,6 +63,35 @@ def consume_password_reset(token):
         if not row: raise ValueError("Reset token is invalid or expired")
         connection.execute(portal_auth_tokens.update().where(portal_auth_tokens.c.id == row["id"]).values(used_at=now))
     return row["portal_account_id"]
+
+def sign_in_with_subject(auth_subject, mfa_verified):
+    """Resolve an ACTIVE portal account by its immutable bound IdP subject. Returns the account id.
+
+    Repeat sign-in had no path at all: ``auth_subject`` was written by ``accept_invitation`` and never
+    read, and invitations are single-use — so a client who logged out could never return. This closes
+    that, and it resolves ONLY by the immutable subject. It deliberately does not fall back to matching
+    email the way the staff path does (``app/security/service.py``): for an external client that would
+    be an account-takeover primitive. A replaced IdP subject therefore needs a deliberate,
+    staff-mediated re-invitation, never a silent rebind."""
+    if not auth_subject:
+        raise ValueError("Sign-in could not be completed.")
+    if not mfa_verified:
+        raise ValueError("MFA verification is required")
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        account = connection.execute(select(portal_accounts).where(
+            portal_accounts.c.auth_subject == auth_subject,
+            portal_accounts.c.status == "active")).mappings().one_or_none()
+        if not account:
+            # Generic: never disclose whether the subject is unknown, revoked or merely inactive.
+            raise ValueError("Sign-in could not be completed.")
+        connection.execute(portal_accounts.update().where(portal_accounts.c.id == account["id"])
+                           .values(last_login_at=now, updated_at=now))
+    write_audit_event(action="portal.signed_in", entity_type="portal_account",
+                      entity_id=account["id"], request_id=f"portal-signin-{uuid.uuid4()}",
+                      metadata={"mfa_verified": True})
+    return account["id"]
+
 
 def create_portal_session(account_id, *, device_fingerprint, device_name=None, ip_address=None, user_agent=None, hours=8):
     raw = secrets.token_urlsafe(32); fingerprint = _hash(device_fingerprint); now = datetime.now(timezone.utc)

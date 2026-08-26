@@ -124,7 +124,7 @@ def test_local_idp_gate_does_not_make_production_ready_true(gates):
     assert production_ready() is False, "still needs sign-off"
 
 
-def test_production_ready_still_requires_both_master_conditions(gates):
+def test_production_ready_still_requires_both_master_conditions(gates, production_identity_provider):
     from app.portal.gate import production_ready
     gates(**{"portal.enabled": True, SIGNOFF: True, LOCAL_IDP: False})
     assert production_ready() is True

@@ -9,9 +9,38 @@ class PortalIdentityResult:
     email: Optional[str] = None
 
 class PortalIdentityProvider(ABC):
+    """A portal identity provider.
+
+    ``verify_activation`` is the original one-shot contract: the caller hands over a single opaque
+    assertion string and gets an identity back. It suits the deterministic LOCAL/test provider, which has
+    no browser leg.
+
+    A real OIDC provider cannot be expressed that way — an authorization-code flow needs a redirect, a
+    server-held ``state``/``nonce``, and a code exchange bound to that browser session. Providers that
+    support it set ``supports_redirect_flow = True`` and implement
+    :meth:`authorization_url` / :meth:`exchange_code`; the portal auth routes use those instead of
+    ``verify_activation``. Keeping both means the synthetic provider and its production guards are
+    unchanged."""
+
     key: str
+    #: True only for providers implementing the browser authorization-code flow below.
+    supports_redirect_flow: bool = False
+    #: True for providers acceptable as the PRODUCTION external IdP. The local/test provider is not.
+    production_capable: bool = False
+
     @abstractmethod
     def verify_activation(self, assertion: str) -> PortalIdentityResult: ...
+
+    def authorization_url(self, *, state: str, nonce: str, redirect_uri: str,
+                          code_challenge: str) -> str:
+        """The IdP URL to redirect the browser to. Redirect-flow providers override this."""
+        raise NotImplementedError(f"{self.key} does not support the browser authorization-code flow")
+
+    def exchange_code(self, *, code: str, redirect_uri: str, code_verifier: str,
+                      expected_nonce: str) -> PortalIdentityResult:
+        """Exchange the authorization code and return a verified identity. Raises ``ValueError`` on any
+        validation failure — never a provider-specific exception, and never containing token material."""
+        raise NotImplementedError(f"{self.key} does not support the browser authorization-code flow")
 
 class ProviderRegistry:
     """Canonical registry for pluggable portal service providers.
@@ -28,6 +57,18 @@ class ProviderRegistry:
     def get(self, key):
         if key not in self._providers: raise ValueError(f"{self._label} '{key}' is not configured")
         return self._providers[key]
+
+    def keys(self):
+        """Registered provider keys. Read-only view for diagnostics and invariants."""
+        return tuple(sorted(self._providers))
+
+    def production_capable(self):
+        """Registered providers acceptable as the PRODUCTION external IdP.
+
+        The deterministic local/test provider is deliberately excluded, so production readiness can
+        never be satisfied by the synthetic provider."""
+        return tuple(sorted(k for k, p in self._providers.items()
+                            if getattr(p, "production_capable", False)))
 
 # Backwards-compatible alias for the former per-domain registry class.
 PortalIdentityProviderRegistry = ProviderRegistry

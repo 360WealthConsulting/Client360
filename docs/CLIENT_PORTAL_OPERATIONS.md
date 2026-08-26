@@ -20,9 +20,21 @@ Configured through the governed Runtime Engine (no environment fallback), read v
 | `portal.production_signed_off` | OFF | compliance sign-off (blocks external production access) |
 | `portal.local_identity_provider_enabled` | OFF | **controlled synthetic test only** — keeps the deterministic local IdP registered after sign-off |
 
-`production_ready()` returns true only when `portal.enabled` AND `portal.production_signed_off` are both on
-— so external production access is blocked until compliance records a decision (see
-[`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md)).
+`production_ready()` requires **three** conditions, all of them:
+
+1. `portal.enabled` is on;
+2. `portal.production_signed_off` is on — so external production access is blocked until compliance
+   records a decision (see [`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md));
+3. a **production-capable identity provider is registered** —
+   `PORTAL_IDENTITY_PROVIDERS.production_capable()` is non-empty.
+
+Condition 3 closes a deadlock that the first two created on their own: the local test provider deregisters
+at sign-off, so flipping sign-off used to leave the portal with *zero* providers and no way in. It is a
+structural check, not a configuration one — the local provider can never satisfy it, because
+`production_capable` is False by construction. Registering the Microsoft provider requires the
+`PORTAL_OIDC_*` keys (`app/config.py`); without them nothing registers and `production_ready()` stays
+False regardless of the flags. See
+[`CLIENT_PORTAL_IDENTITY_AND_SCOPE.md`](CLIENT_PORTAL_IDENTITY_AND_SCOPE.md) for the provider itself.
 
 ## How the gates are governed
 `gate()` evaluates **every** entry in `GATES` through the runtime feature-flag evaluator
@@ -82,10 +94,11 @@ This gate authorizes the local provider independently of sign-off:
 | **ON** | **OFF** | **not registered** — production protection intact |
 | ON | ON | registered — governed synthetic-test window only |
 
-It does **not** affect `production_ready()`, opens no portal surface, and grants no staff capability.
-It is **not** a substitute for the real external identity provider: that remains an open compliance
-requirement (see `CLIENT_PORTAL_COMPLIANCE_GATE.md`), and this flag **must be returned to OFF before any
-real client is onboarded**.
+It does **not** satisfy `production_ready()` — the local provider is not `production_capable`, so this flag
+cannot substitute for the real external identity provider no matter how it is set. It opens no portal
+surface and grants no staff capability. The real IdP remains an open compliance requirement (see
+`CLIENT_PORTAL_COMPLIANCE_GATE.md`), and this flag **must be returned to OFF before any real client is
+onboarded**.
 
 Registration happens once, in the application startup lifespan. Changing this flag on a running process
 has no effect until Client360 is restarted.

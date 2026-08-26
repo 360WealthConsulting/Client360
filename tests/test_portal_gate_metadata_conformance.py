@@ -134,7 +134,7 @@ def test_production_signoff_is_governed_end_to_end(operator, restore_flags):
     assert gate(SIGNOFF) is False, "sign-off did not revert"
 
 
-def test_production_ready_follows_the_governed_signoff(operator, restore_flags):
+def test_production_ready_follows_the_governed_signoff(operator, restore_flags, production_identity_provider):
     """The whole point: production_ready() can now actually be driven."""
     RUNTIME_CACHE.invalidate()
     assert production_ready() is False

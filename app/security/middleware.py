@@ -31,7 +31,9 @@ def _is_cross_site(origin, referer, base_url):
 
 PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
-    "/api/v1/portal/auth/password-reset/consume", "/api/portal/login"})
+    "/api/v1/portal/auth/password-reset/consume", "/api/portal/login",
+    # External IdP sign-in: reached BEFORE a portal session exists.
+    "/portal/auth/start", "/portal/auth/callback"})
 RULES = (
     # Approval / review decisions use dedicated segregation-of-duty capabilities
     # (work.approve, tax.review). These carve-outs must precede the generic

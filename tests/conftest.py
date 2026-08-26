@@ -217,3 +217,28 @@ def portal_gates(portal_gate_state):
         portal_gate_state.update(enabled)
         return portal_gate_state
     return _apply
+
+
+# --- production identity provider --------------------------------------------
+# ``production_ready()`` now additionally requires a PRODUCTION-capable external identity provider to be
+# registered, so sign-off can no longer imply usable external access when nobody could authenticate.
+# Tests that assert the master gate opens must therefore register one. The synthetic local provider is
+# deliberately NOT production-capable and can never satisfy this.
+@pytest.fixture
+def production_identity_provider():
+    """Register a stub production-capable provider for the duration of one test."""
+    from app.portal.providers import PORTAL_IDENTITY_PROVIDERS, PortalIdentityProvider
+
+    class _StubProductionProvider(PortalIdentityProvider):
+        key = "stub-production"
+        supports_redirect_flow = True
+        production_capable = True
+
+        def verify_activation(self, assertion):                     # pragma: no cover - unused
+            raise ValueError("redirect flow only")
+
+    saved = dict(PORTAL_IDENTITY_PROVIDERS._providers)
+    PORTAL_IDENTITY_PROVIDERS.register(_StubProductionProvider())
+    yield
+    PORTAL_IDENTITY_PROVIDERS._providers.clear()
+    PORTAL_IDENTITY_PROVIDERS._providers.update(saved)
