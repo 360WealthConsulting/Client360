@@ -438,6 +438,25 @@ def portal_profile_submit(
 
 
 PAGE_NAMES = {"": "dashboard", "messages": "messages", "documents": "documents", "requests": "requests", "tasks": "tasks", "notifications": "notifications", "settings": "settings"}
+
+
+@router.get("/portal", response_class=HTMLResponse)
+def portal_home(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    """The authenticated client landing page.
+
+    ``/portal/`` already rendered the dashboard -- ``PAGE_NAMES[""]`` -- but the bare ``/portal``
+    matched no route, because the catch-all pattern requires the trailing slash. This is that one
+    missing URL and nothing more.
+
+    It delegates to :func:`portal_page` rather than repeating its body, so the landing page cannot
+    drift from the page the catch-all serves: same dashboard read model, same template, same
+    context. Authentication, portal scope and the feature gate are unchanged -- ``current_portal``
+    supplies the PortalPrincipal the middleware already resolved, and the middleware applies
+    ``portal_gate`` to every ``/portal`` path before the route runs.
+    """
+    return portal_page("", request, principal)
+
+
 @router.get("/portal/{page:path}", response_class=HTMLResponse)
 def portal_page(page: str, request: Request, principal: PortalPrincipal = Depends(current_portal)):
     if page not in PAGE_NAMES: raise HTTPException(404, "Portal page not found")
