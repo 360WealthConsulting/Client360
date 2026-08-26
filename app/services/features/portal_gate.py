@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 
 from app.portal.gate import gate as runtime_gate
+from app.portal.gate import production_ready
 from app.services.features.service import client_can, portal_access_state
 
 # Reachable regardless of feature/portal state (login page, logout, invitation/reset auth endpoints).
@@ -141,17 +142,21 @@ def mutation_is_covered(path: str, method: str) -> bool:
 
 
 def evaluate(principal, path: str, method: str) -> tuple[bool, str, str | None]:
-    """(allowed, reason, feature). Exempt auth/security paths always pass. Otherwise the master portal
-    gate is enforced for every client route, then the mapped Core feature (if any). A generic client
-    route with no specific mapping still requires the master gate (portal_access)."""
+    """(allowed, reason, feature). Exempt auth/security paths always pass. Otherwise external access
+    requires ``production_ready()`` (portal enabled AND compliance signed off), then the client's
+    lifecycle/portal_access state, then the firm-wide surface gate, then the mapped Core feature. A
+    generic client route with no specific mapping still requires the master gate (portal_access)."""
     if is_exempt(path):
         return (True, "exempt", None)
-    # FIRM-WIDE master kill switch. Evaluated before anything client-specific so that turning the portal
-    # off closes every non-exempt client surface at once, regardless of grants, entitlements or the
-    # per-surface gates below. Fails closed: gate() returns the production-safe default (False) whenever
-    # the runtime cannot be resolved.
-    if not runtime_gate("portal.enabled"):
-        return (False, "portal_disabled", "portal_access")
+    # FIRM-WIDE master gate for EXTERNAL client access: the portal must be switched on AND compliance
+    # must have signed off. ``production_ready()`` is the single definition of that condition
+    # (``portal.enabled AND portal.production_signed_off``, app/portal/gate.py) — it is called here rather
+    # than re-spelled, so the compliance gate cannot drift between the governance report and the request
+    # path. Evaluated before anything client-specific, so neither a grant, an entitlement, nor an enabled
+    # child gate can serve external client data while either condition is unmet. Fails closed: gate()
+    # returns the production-safe default (False) whenever the runtime cannot be resolved.
+    if not production_ready():
+        return (False, "portal_not_production_ready", "portal_access")
     open_, reason = portal_access_state(principal)
     if not open_:
         return (False, reason, "portal_access")

@@ -27,8 +27,12 @@ from app.portal.service import portal_scope
 from app.services.features import portal_gate
 from tests._portal_util import sample_upload, seed_portal_account, seed_staff_user
 
+SIGNOFF = "portal.production_signed_off"
+MASTER = {"portal.enabled", SIGNOFF}          # both halves of production_ready()
+
 ALL_GATES = {
     "portal.enabled",
+    SIGNOFF,
     "portal.household_enabled",
     "portal.documents.download_enabled",
     "portal.documents.upload_enabled",
@@ -69,11 +73,11 @@ def client(staff_user_id=None):
 
 def test_master_gate_off_closes_every_non_exempt_surface(client, portal_gates):
     """portal.enabled=False blocks everything, regardless of the child flags."""
-    portal_gates(ALL_GATES - {"portal.enabled"})          # every child ON, master OFF
+    portal_gates(ALL_GATES - {"portal.enabled"})          # every child + signoff ON, portal OFF
     for _gate, path, method in SURFACES + [(None, "/portal", "GET"), (None, "/portal/documents", "GET")]:
         allowed, reason, _f = portal_gate.evaluate(client["principal"], path, method)
         assert allowed is False, f"{method} {path} reachable with portal.enabled=False"
-        assert reason == "portal_disabled"
+        assert reason == "portal_not_production_ready"
 
 
 def test_master_gate_off_still_permits_auth_bootstrap_paths(client, portal_gates):
@@ -88,7 +92,7 @@ def test_master_gate_fails_closed_when_runtime_unresolvable(client, monkeypatch)
     """gate() returns the production-safe default on any runtime failure -> portal closed."""
     monkeypatch.setattr(portal_gate, "runtime_gate", lambda name: False)
     allowed, reason, _f = portal_gate.evaluate(client["principal"], "/portal/documents", "GET")
-    assert allowed is False and reason == "portal_disabled"
+    assert allowed is False and reason == "portal_not_production_ready"
 
 
 # --- child gates -------------------------------------------------------------
@@ -111,7 +115,7 @@ def test_surface_opens_when_its_own_gate_is_on(client, portal_gates, gate_name, 
 
 def test_one_child_gate_does_not_open_another_surface(client, portal_gates):
     """Enabling messaging must not open documents, and vice versa."""
-    portal_gates({"portal.enabled", "portal.messaging_enabled"})
+    portal_gates(MASTER | {"portal.messaging_enabled"})
     ok_msg, _r, _f = portal_gate.evaluate(client["principal"], "/portal/messages", "GET")
     assert ok_msg is True
     for path, method in [("/api/v1/portal/documents/7/download", "GET"), ("/portal/upload", "POST"),
@@ -127,7 +131,7 @@ def test_v0_and_v1_apis_are_gated_identically(client, portal_gates):
     for v0, v1, method in pairs:
         assert portal_gate.runtime_gate_for_request(v0, method) == \
                portal_gate.runtime_gate_for_request(v1, method), f"{v0} vs {v1}"
-    portal_gates({"portal.enabled"})
+    portal_gates(MASTER)
     for v0, v1, method in pairs:
         a0, _r0, _f0 = portal_gate.evaluate(client["principal"], v0, method)
         a1, _r1, _f1 = portal_gate.evaluate(client["principal"], v1, method)
@@ -281,11 +285,11 @@ def test_every_governed_gate_has_an_enforcement_consumer():
 # portal test a weaker assertion than it appears, and would hide exactly the class of defect this whole
 # change exists to prevent.
 
-CHILD_GATES = ALL_GATES - {"portal.enabled"}
+CHILD_GATES = ALL_GATES - MASTER
 
 
 def test_portal_master_on_enables_no_child_feature(portal_master_on):
-    assert portal_master_on == {"portal.enabled"}
+    assert portal_master_on == MASTER          # both halves of production_ready(), no child feature
     from app.services.features import portal_gate as pg
     assert pg.runtime_gate("portal.enabled") is True
     for child in CHILD_GATES:
@@ -303,7 +307,7 @@ def test_portal_master_on_enables_no_child_feature(portal_master_on):
 ])
 def test_each_child_fixture_enables_only_its_own_gate(request, fixture_name, expected_child):
     state = request.getfixturevalue(fixture_name)
-    assert state == {"portal.enabled", expected_child}, f"{fixture_name} enabled {state}"
+    assert state == MASTER | {expected_child}, f"{fixture_name} enabled {state}"
     from app.services.features import portal_gate as pg
     for other in CHILD_GATES - {expected_child}:
         assert pg.runtime_gate(other) is False, f"{fixture_name} leaked {other}"
@@ -328,22 +332,136 @@ def test_download_fixture_does_not_enable_messaging_or_upload(portal_documents_d
 def test_fixtures_compose_without_widening(portal_messaging_on, portal_documents_upload_on):
     """Two fixtures together enable exactly those two child gates — not a third."""
     from app.services.features import portal_gate as pg
-    assert portal_documents_upload_on == {"portal.enabled", "portal.messaging_enabled",
-                                          "portal.documents.upload_enabled"}
+    assert portal_documents_upload_on == MASTER | {"portal.messaging_enabled",
+                                                   "portal.documents.upload_enabled"}
     for closed in ("portal.documents.download_enabled", "portal.forms_enabled",
                    "portal.household_enabled", "portal.appointments_enabled",
                    "portal.financial_summary_enabled"):
         assert pg.runtime_gate(closed) is False, f"composition leaked {closed}"
 
 
-def test_no_fixture_ever_enables_production_signoff(portal_master_on, portal_forms_on):
-    """production_signed_off must stay off or the local identity provider stops registering."""
-    from app.portal.gate import gate as real_gate
-    assert "portal.production_signed_off" not in portal_forms_on
-    assert real_gate("portal.production_signed_off") is False
+def test_fixtures_simulate_signoff_without_touching_real_metadata(portal_forms_on):
+    """Fixtures simulate sign-off in-process only; the governed runtime value must stay False."""
+    from app.services.runtime import consumption
+    assert SIGNOFF in portal_forms_on                       # simulated for this test
+    assert consumption.config_value(SIGNOFF, default=None) is False   # real metadata untouched
 
 
 def test_requesting_no_fixture_leaves_every_gate_at_its_real_value():
     """A test that asks for nothing gets the real, production-safe values."""
     from app.portal.gate import gate_status
     assert all(v is False for k, v in gate_status().items() if k != "portal.mfa_required")
+
+
+# --- production sign-off: the four-state master matrix -----------------------
+# External client access requires BOTH portal.enabled and portal.production_signed_off. Three of the four
+# states must serve nothing; only the fourth hands control to the child gates.
+
+MASTER_STATES = [
+    (False, False, False),
+    (False, True, False),
+    (True, False, False),
+    (True, True, True),
+]
+
+PROTECTED = [("/portal", "GET"), ("/portal/documents", "GET"), ("/api/v1/portal/dashboard", "GET"),
+             ("/api/portal/dashboard", "GET"), ("/api/v1/portal/messages", "GET")]
+
+
+@pytest.mark.parametrize("enabled,signed_off,expect_open", MASTER_STATES)
+def test_master_matrix_requires_both_enabled_and_signoff(client, portal_gates,
+                                                         enabled, signed_off, expect_open):
+    state = set()
+    if enabled:
+        state.add("portal.enabled")
+    if signed_off:
+        state.add(SIGNOFF)
+    state |= (ALL_GATES - MASTER)                 # every child ON, so only the master pair decides
+    portal_gates(state)
+    for path, method in PROTECTED:
+        allowed, reason, _f = portal_gate.evaluate(client["principal"], path, method)
+        assert allowed is expect_open, (
+            f"enabled={enabled} signed_off={signed_off}: {method} {path} allowed={allowed}")
+        if not expect_open:
+            assert reason == "portal_not_production_ready"
+
+
+@pytest.mark.parametrize("enabled,signed_off,_expect", MASTER_STATES)
+def test_exempt_paths_reachable_in_every_master_state(client, portal_gates,
+                                                      enabled, signed_off, _expect):
+    state = set()
+    if enabled:
+        state.add("portal.enabled")
+    if signed_off:
+        state.add(SIGNOFF)
+    portal_gates(state)
+    for path, method in EXEMPT:
+        allowed, reason, _f = portal_gate.evaluate(client["principal"], path, method)
+        assert allowed is True and reason == "exempt", f"{method} {path} blocked"
+
+
+def test_no_child_gate_can_bypass_missing_signoff(client, portal_gates):
+    """Every child gate on, sign-off missing -> still nothing is served."""
+    portal_gates(ALL_GATES - {SIGNOFF})
+    for _g, path, method in SURFACES:
+        allowed, reason, _f = portal_gate.evaluate(client["principal"], path, method)
+        assert allowed is False and reason == "portal_not_production_ready", f"{method} {path}"
+
+
+def test_signoff_alone_does_not_open_the_portal(client, portal_gates):
+    portal_gates({SIGNOFF} | (ALL_GATES - MASTER))
+    allowed, reason, _f = portal_gate.evaluate(client["principal"], "/portal/documents", "GET")
+    assert allowed is False and reason == "portal_not_production_ready"
+
+
+def test_child_gates_control_their_surfaces_once_both_master_halves_pass(client, portal_gates):
+    """State D: master open, then each child gate decides its own surface, exactly as before."""
+    portal_gates(MASTER | {"portal.messaging_enabled"})
+    ok, _r, _f = portal_gate.evaluate(client["principal"], "/portal/messages", "GET")
+    assert ok is True
+    for path, method in [("/api/v1/portal/documents/7/download", "GET"), ("/portal/upload", "POST"),
+                         ("/portal/tax-intake", "GET")]:
+        allowed, reason, _f = portal_gate.evaluate(client["principal"], path, method)
+        assert allowed is False and reason.endswith("_disabled"), f"{method} {path} -> {reason}"
+
+
+def test_v0_and_v1_agree_in_every_master_state(client, portal_gates):
+    pairs = [("/api/portal/dashboard", "/api/v1/portal/dashboard", "GET"),
+             ("/api/portal/messages", "/api/v1/portal/messages", "GET")]
+    for enabled, signed_off, _expect in MASTER_STATES:
+        state = set()
+        if enabled:
+            state.add("portal.enabled")
+        if signed_off:
+            state.add(SIGNOFF)
+        state |= (ALL_GATES - MASTER)
+        portal_gates(state)
+        for v0, v1, method in pairs:
+            a0 = portal_gate.evaluate(client["principal"], v0, method)[0]
+            a1 = portal_gate.evaluate(client["principal"], v1, method)[0]
+            assert a0 == a1, f"v0/v1 divergence on {method} {v0} at enabled={enabled}/{signed_off}"
+
+
+def test_production_ready_is_an_enforcement_dependency():
+    """The finding this change closes: evaluate() must consult production_ready(), not re-spell it."""
+    import inspect
+
+    source = inspect.getsource(portal_gate.evaluate)
+    assert "production_ready()" in source
+    assert 'runtime_gate("portal.enabled")' not in source, "master condition was duplicated"
+
+
+def test_master_gate_denial_returns_no_client_data(client, portal_gates):
+    """A blocked request yields only (False, reason, 'portal_access') — never a payload."""
+    portal_gates(ALL_GATES - {SIGNOFF})
+    allowed, reason, feature = portal_gate.evaluate(client["principal"], "/api/v1/portal/documents", "GET")
+    assert (allowed, feature) == (False, "portal_access")
+    assert reason == "portal_not_production_ready"
+
+
+def test_staff_admin_portal_routes_are_unaffected_by_signoff(client, portal_gates):
+    portal_gates(set())
+    for path in ("/admin/client-portal", "/admin/client-portal/accounts",
+                 "/admin/client-portal/diagnostics", "/microsoft365/mail", "/tasks"):
+        assert portal_gate.runtime_gate_for_request(path, "GET") is None
+        assert not any(rx.match(path) for rx, _m, _f in portal_gate._RULES), path

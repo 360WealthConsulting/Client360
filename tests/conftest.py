@@ -124,9 +124,15 @@ def _verify_schema(name: str) -> None:
 # ``portal_messaging_on`` and ``portal_documents_upload_on`` together enables precisely those two child
 # gates and nothing else. Requesting none leaves every gate at its real, production-safe value.
 #
-# Nothing here writes runtime metadata, and ``portal.production_signed_off`` is never enabled — the local
-# identity provider must keep registering.
+# Nothing here writes runtime metadata: every value is an in-process monkeypatch for the duration of one
+# test. ``portal.production_signed_off`` is simulated by ``portal_master_on`` because external access now
+# requires it, but the real runtime value stays False, so the local identity provider keeps registering
+# and production stays closed.
 _PORTAL_GATE_CONSUMERS = (
+    # The DEFINITION module is patched first: ``production_ready()`` lives there and reads the
+    # module-global ``gate``, so the central master gate observes the fixture rather than the real
+    # runtime. Consumers that bound ``gate`` by value are patched after it.
+    "app.portal.gate",
     "app.portal.vault_documents",
     "app.portal.service",
     "app.portal.appointments",
@@ -134,7 +140,10 @@ _PORTAL_GATE_CONSUMERS = (
     "app.services.features.portal_gate",
 )
 
-PORTAL_MASTER_GATE = "portal.enabled"
+# External client access requires BOTH halves of ``production_ready()``. A behavioural test that intends
+# to reach a protected surface must simulate both, so the master fixture supplies the pair — never a
+# global default, and never for a test that does not ask for it.
+PORTAL_MASTER_GATES = frozenset({"portal.enabled", "portal.production_signed_off"})
 
 
 @pytest.fixture
@@ -164,8 +173,11 @@ def portal_gate_state(monkeypatch):
 
 @pytest.fixture
 def portal_master_on(portal_gate_state):
-    """``portal.enabled`` ONLY — no child feature is enabled."""
-    portal_gate_state.add(PORTAL_MASTER_GATE)
+    """``portal.enabled`` + ``portal.production_signed_off`` ONLY — no child feature is enabled.
+
+    Both are required because ``portal_gate.evaluate`` calls ``production_ready()``; enabling only
+    ``portal.enabled`` leaves every non-exempt surface closed."""
+    portal_gate_state.update(PORTAL_MASTER_GATES)
     return portal_gate_state
 
 
