@@ -9,7 +9,7 @@
 # Verified against the repository state after Phase D.12 (release/0.13.0).
 
 meta:
-  migration_head: docdisp01                 # `alembic heads` / `alembic current`
+  migration_head: 9483fa25e622              # `alembic heads` / `alembic current`
   route_count: 1177                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py  # +1 business entity workspace (/business/{id}); +2 admin business-ownership resolution review/apply
   production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:

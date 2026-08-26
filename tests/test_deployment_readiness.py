@@ -91,7 +91,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "docdisp01"   # documents.display_name
+    assert migrate.target_head() == "9483fa25e622"   # portal runtime gates
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():
