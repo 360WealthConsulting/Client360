@@ -240,7 +240,34 @@ def production_dashboard(principal):
     reviewers={str(uid):sum(r.reviewer_user_id==uid and r.status=="pending" for r in review_rows) for uid in {r.reviewer_user_id for r in review_rows if r.reviewer_user_id}}
     return {"items":[dict(r) for r in rows],"metrics":metrics,"by_status":by_status,"by_preparer":preparers,"by_reviewer":reviewers,"review_bottlenecks":{"manager":by_status["manager_review"],"partner":by_status["partner_review"]},"filing":{s:sum(r["filing_status"]==s for r in rows) for s in FILING_TRANSITIONS}}
 
+def _portal_approval_view(row) -> dict:
+    """One client decision as the client sees it — never ``decision_notes`` or the account id."""
+    return {"approval_type": row["approval_type"], "status": row["status"],
+            "requested_at": row["requested_at"], "decided_at": row["decided_at"]}
+
+
+def _portal_return_view(detail) -> dict:
+    """PORTAL-ONLY projection of the staff return detail.
+
+    ``portal_returns`` returned ``return_detail`` verbatim: the whole engagement-return context plus
+    raw ``tax_return_lifecycle_events``, ``tax_return_reviews`` (internal reviewer state and notes),
+    ``tax_client_approvals`` including ``decision_notes``, and ``tax_filing_events``. The staff
+    ``return_detail`` is deliberately UNCHANGED — this narrows only the portal boundary."""
+    ret = detail["return"] or {}
+    return {
+        "return_id": ret.get("id"),                 # required by the client decision route
+        # No tax_year: the staff ``_context`` does not join tax_years, so the value would always be
+        # null. Serving a meaningless field is worse than omitting it, and widening the shared staff
+        # query is out of scope for this remediation.
+        "return": {"return_type": ret.get("return_type"), "status": ret.get("status"),
+                   "filing_status": ret.get("filing_status")},
+        "client_approvals": [_portal_approval_view(a) for a in (detail["client_approvals"] or [])],
+    }
+
+
 def portal_returns(principal, scope=None):
-    scope=scope or portal_scope(principal.account_id)
+    # Scope MUST be resolved under the tasks grant — the permission this module's client decision path
+    # already requires via ``require_scope(..., permission="tasks")``.
+    scope=scope or portal_scope(principal.account_id, permission="tasks")
     with engine.connect() as c: ids=list(c.scalars(select(tax_engagement_returns.c.id).join(tax_engagements).where(or_(tax_engagements.c.person_id.in_(scope["person_ids"]),tax_engagements.c.household_id.in_(scope["shared_household_ids"])))))
-    return [return_detail(i) for i in ids]
+    return [_portal_return_view(return_detail(i)) for i in ids]

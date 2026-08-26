@@ -62,15 +62,19 @@ PROJECTION_REGISTRY_MAP = {
     "meeting": ("appointments.upcoming", {"event_type", "title", "summary", "event_time"}),
 }
 
-#: Known-open leaks owned by TASK 2. Task 2 reduces this to empty.
-REMAINING_TASK_2_FINDINGS = {
-    "client_tasks: raw workflow_steps rows including definition_snapshot",
-    "portal_intakes: internal engagement_id/person_id/household_id/workflow_id",
-    "portal_returns: reuses staff return_detail (lifecycle events, reviews, approvals, filings)",
-    "client_tasks: portal_scope without permission",
-    "client_action_needed: portal_scope without permission",
-    "portal_intakes: portal_scope without permission",
-    "portal_returns: portal_scope without permission",
+#: Portal read-surface findings that are still OPEN. Task 1 fixed the messaging/requests/notifications/
+#: meetings/profile surfaces; task 2A fixed every task and tax finding. What remains is a different
+#: class — billing and engagement lack an independent per-client feature decision at the SERVICE
+#: boundary, so they are not eligible for the "base scope + explicit feature authorization"
+#: classification that payroll qualifies for. Resolving them needs an authorization-model decision, not
+#: a projection change, so they are deliberately left for task 2B rather than papered over.
+#:
+#: Compliance criterion #3 cannot close while this set is non-empty.
+REMAINING_VISIBILITY_FINDINGS = {
+    "billing: no client_can feature check at the service boundary (middleware-only, bypassable)",
+    "billing: client_invoices returns raw invoices rows",
+    "billing: client_invoice_detail reuses the staff invoice_detail structure",
+    "engagement: portal_engagement has no per-client client_can decision (runtime gate only)",
 }
 
 
@@ -286,21 +290,32 @@ def test_document_requests_require_the_documents_grant(env):
 
 # --- task-2 inventory guard ------------------------------------------------------
 
-def test_task_2_findings_are_still_recorded_and_not_silently_forgotten():
-    """Task 1 does NOT make every portal read surface clean. This pins what remains.
+def test_remaining_findings_are_recorded_and_not_silently_forgotten():
+    """The portal is NOT fully clean. This pins exactly what is still open.
 
-    When task 2 lands, remove the entries it fixes; the set must reach empty before compliance
-    criterion #3 can be considered for closure."""
-    assert REMAINING_TASK_2_FINDINGS, (
-        "the task-2 inventory is empty — if those surfaces are genuinely remediated, criterion #3 can "
-        "be re-evaluated; do not empty this set without doing the work")
-    assert len(REMAINING_TASK_2_FINDINGS) == 7
+    Criterion #3 may only be considered for closure when this set is empty. Do not empty it without
+    doing the work — the guards below prove the task-1 and task-2A entries really were fixed."""
+    assert len(REMAINING_VISIBILITY_FINDINGS) == 4
+    assert all("billing" in f or "engagement" in f for f in REMAINING_VISIBILITY_FINDINGS), (
+        "a task/tax finding reappeared in the inventory")
 
 
-def test_task_2_surfaces_still_resolve_scope_without_a_permission():
-    """Documents the exact remaining caller omissions so task 2 has an executable target."""
+def test_no_task_or_tax_finding_remains_in_the_inventory():
+    """Task 2A closed every task/tax finding; none may be re-added without new evidence."""
+    for term in ("client_tasks", "portal_intakes", "portal_returns", "client_action"):
+        assert not any(term in f for f in REMAINING_VISIBILITY_FINDINGS), \
+            f"{term} is back in the open-findings inventory"
+
+
+def test_every_task_and_tax_caller_now_passes_a_permission():
+    """The executable proof that task 2A's caller omissions are closed."""
     import inspect
-    src = inspect.getsource(psvc.client_tasks)
-    assert "permission=" not in src, (
-        "client_tasks now passes a permission — task 2 has started; update "
-        "REMAINING_TASK_2_FINDINGS accordingly")
+
+    from app.services import tax_intake, tax_return_lifecycle
+    for label, fn in (("client_tasks", psvc.client_tasks),
+                      ("client_action_needed", psvc.client_action_needed),
+                      ("client_action_detail", psvc.client_action_detail),
+                      ("portal_intakes", tax_intake.portal_intakes),
+                      ("portal_returns", tax_return_lifecycle.portal_returns)):
+        src = inspect.getsource(fn)
+        assert 'permission="tasks"' in src, f"{label} still resolves scope without permission='tasks'"

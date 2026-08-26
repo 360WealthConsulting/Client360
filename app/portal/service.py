@@ -232,11 +232,31 @@ def approve_request_upload(request_id, *, approved_by_user_id, approved=True):
     write_audit_event(action=f"portal.document.{status}", entity_type="portal_document_request", entity_id=request_id, actor_user_id=approved_by_user_id, request_id=f"portal-document-{uuid.uuid4()}")
     return status
 
+def _client_task_view(row) -> dict:
+    """A client-facing workflow step. Never the step's internal wiring.
+
+    This returned whole ``workflow_steps`` rows, including ``definition_snapshot`` — the full internal
+    workflow definition (assignment config, audience rules, step wiring) — plus the assignee, template
+    and automation/retry internals."""
+    return {
+        "id": row["id"],                       # required by complete_client_task and the task routes
+        "name": row["name"],
+        "workflow_name": row["workflow_name"],
+        "status": row["status"],
+        "due_date": row["due_date"],
+        "completed_at": row["completed_at"],
+    }
+
+
 def client_tasks(principal, scope=None):
-    scope = scope or portal_scope(principal.account_id)
+    # Scope MUST be resolved under the tasks grant — the permission the tax mutation paths already
+    # require (``require_scope(..., permission="tasks")``).
+    scope = scope or portal_scope(principal.account_id, permission="tasks")
     with engine.connect() as connection:
         rows = connection.execute(select(workflow_steps, workflow_instances.c.name.label("workflow_name")).join(workflow_instances).where(or_(workflow_instances.c.person_id.in_(scope["person_ids"]), workflow_instances.c.household_id.in_(scope["shared_household_ids"])), workflow_steps.c.status.in_(("active", "pending")))).mappings().all()
-    return [r for r in rows if r["waiting_on"] == "client" or (r["definition_snapshot"] or {}).get("assignment_config", {}).get("audience") == "client"]
+    # ``waiting_on``/``definition_snapshot`` decide client-facing-ness HERE; neither is projected out.
+    client_facing = [r for r in rows if r["waiting_on"] == "client" or (r["definition_snapshot"] or {}).get("assignment_config", {}).get("audience") == "client"]
+    return [_client_task_view(r) for r in client_facing]
 
 def complete_client_task(principal, step_id):
     allowed = next((r for r in client_tasks(principal) if r["id"] == step_id), None)
@@ -371,14 +391,14 @@ def client_action_needed(principal, scope=None, *, include_resolved=False):
     """Client-safe "action needed" items (client-visible tax exceptions) within the
     portal account's scope. Projection + allowlist live in the canonical Exception
     Engine; this only bridges portal scope to it."""
-    scope = scope or portal_scope(principal.account_id)
+    scope = scope or portal_scope(principal.account_id, permission="tasks")
     from app.services.exception_engine import client_action_items
     return client_action_items(scope, include_resolved=include_resolved)
 
 def client_action_detail(principal, exception_id):
     """One client-visible exception by id, portal-scoped. Raises
     ExceptionNotFoundError for anything out-of-scope / not client-visible."""
-    scope = portal_scope(principal.account_id)
+    scope = portal_scope(principal.account_id, permission="tasks")
     from app.services.exception_engine import client_action_item
     return client_action_item(scope, exception_id)
 

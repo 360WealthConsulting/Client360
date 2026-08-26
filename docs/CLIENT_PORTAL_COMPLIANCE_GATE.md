@@ -77,6 +77,28 @@ four further callers resolving scope without a permission. The open set is pinne
 read-surface inventory passes. Note also that `validate_portal()` being clean proves the registry is
 self-consistent — it does **not** prove response reachability; the disclosure tests carry that claim.
 
+### Visibility remediation, task 2A (criterion #3)
+Task 2A closed every task and tax finding: `client_tasks` no longer returns raw `workflow_steps`
+(including `definition_snapshot`, the internal workflow definition), and `portal_intakes` /
+`portal_returns` now use portal-only projections instead of the staff intake/return detail structures.
+The staff services are unchanged — a regression test asserts staff `return_detail` still carries the
+internal reviewer note and id that the portal projection omits. Five callers (`client_tasks`,
+`client_action_needed`, `client_action_detail`, `portal_intakes`, `portal_returns`) now resolve scope
+with `permission="tasks"`, the permission the tax mutation paths already required.
+
+**Still open (task 2B), and the reason criterion #3 cannot close:** billing and engagement have no
+independent per-client feature decision at the service boundary. Billing is gated only by middleware —
+bypassable by calling `client_invoices` directly — and additionally returns raw `invoices` rows and
+reuses the staff invoice detail. Engagement has only a firm-wide runtime flag, no `client_can` at all.
+Resolving these needs an authorization-model decision (no `billing`, `payroll` or `timeline` grant
+permission exists), not a projection change. Payroll, by contrast, already qualifies as base
+relationship scope **plus** an explicit entity-scoped `client_can(FEATURE_KEY, organization_id=...)` on
+its only portal read path.
+
+The open set is pinned in `tests/test_portal_visibility_isolation.py::REMAINING_VISIBILITY_FINDINGS`.
+
+**Criterion #3 therefore remains `[ ]`.**
+
 **No pre-condition below is closed by this test.** Each one is either about the production IdP, a human
 or legal review, or a surface that stayed gated OFF for the duration of the test. The acceptance criteria
 are recorded verbatim and are not reinterpreted to fit the evidence obtained.
@@ -112,8 +134,12 @@ are recorded verbatim and are not reinterpreted to fit the evidence obtained.
       valid — the scope **resolver** was verified default-deny and behaved correctly. A separate,
       caller-level omission was discovered afterwards during the criterion-#3 audit: some callers invoked
       `portal_scope` without a `permission`, so the resolver was never asked to enforce the grant.
-      `client_threads` and `client_document_requests` are fixed and regression-covered in task 1; four
-      further callers are listed for task 2. This does not invalidate the recorded resolver evidence.
+      `client_threads` and `client_document_requests` were fixed in task 1; `client_tasks`,
+      `client_action_needed`, `client_action_detail`, `portal_intakes` and `portal_returns` in task 2A.
+      All are regression-covered. The billing and engagement surfaces remain a separate
+      authorization-model question, not evidence that the resolver itself failed. The original
+      production test did not exercise these later-discovered caller omissions, and the recorded
+      resolver evidence stands.
       *Remains:* production verification with more than one identity. The test used a single self grant
       with `portal.household_enabled` OFF, so no cross-client or household-expansion case was exercised in
       production. Automated coverage exists (cross-household isolation, forged ids, per-permission

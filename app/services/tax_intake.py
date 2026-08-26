@@ -216,13 +216,46 @@ def staff_dashboard(principal):
         overdue=sum(bool(m["due_date"] and m["due_date"]<date.today()) for m in detail["missing"]); items.append({**row,"intake":detail,"overdue_items":overdue})
     return {"items":items,"metrics":{"returns":len(items),"client_ready":sum(i["intake"]["client_readiness"]==100 for i in items),"preparer_ready":sum(i["intake"]["preparer_ready"] for i in items),"missing_documents":sum(len(i["intake"]["missing"]) for i in items),"overdue_items":sum(i["overdue_items"] for i in items)}}
 
+def _portal_missing_view(item) -> dict:
+    """One outstanding intake item as the client sees it."""
+    return {"item_type": item["item_type"], "title": item["title"],
+            "description": item["description"], "due_date": item["due_date"]}
+
+
+def _portal_intake_view(detail) -> dict:
+    """PORTAL-ONLY projection of the staff intake detail.
+
+    ``portal_intakes`` returned the staff structure verbatim, exposing ``engagement_id``,
+    ``person_id``, ``household_id`` and ``workflow_id`` from the context plus the raw questionnaire
+    answers, checklist rows, staff ``gates`` and ``preparer_ready``. The staff services
+    (``intake_detail`` / ``_bulk_intake_details``) are deliberately UNCHANGED — this narrows only the
+    portal boundary."""
+    ctx = detail["context"] or {}
+    letter, organizer, questionnaire = detail["letter"], detail["organizer"], detail["questionnaire"]
+    return {
+        # return_id stays INSIDE context, matching the existing service output shape consumers use.
+        "context": {"return_id": ctx.get("return_id"), "return_type": ctx.get("return_type"),
+                    "year": ctx.get("year")},
+        "letter": {"status": letter["status"]} if letter else None,
+        "organizer": ({"status": organizer["status"],
+                       "progress_percent": organizer["progress_percent"]} if organizer else None),
+        "questionnaire": ({"status": questionnaire["status"],
+                           "progress_percent": questionnaire["progress_percent"]}
+                          if questionnaire else None),
+        "missing": [_portal_missing_view(m) for m in (detail["missing"] or [])],
+        "client_readiness": detail["client_readiness"],
+    }
+
+
 def portal_intakes(principal, scope=None):
     from app.portal.service import portal_scope
-    scope=scope or portal_scope(principal.account_id)
+    # Scope MUST be resolved under the tasks grant — the same permission this module's mutation paths
+    # already require via ``require_scope(..., permission="tasks")``.
+    scope=scope or portal_scope(principal.account_id, permission="tasks")
     with engine.connect() as c:
         ids=list(c.scalars(select(tax_engagement_returns.c.id).join(tax_engagements).where(or_(tax_engagements.c.person_id.in_(scope["person_ids"]),tax_engagements.c.household_id.in_(scope["shared_household_ids"])))))
     details=_bulk_intake_details(ids)
-    return [details[i] for i in ids if i in details and details[i]["organizer"] is not None]
+    return [_portal_intake_view(details[i]) for i in ids if i in details and details[i]["organizer"] is not None]
 
 def _has_intake(return_id):
     with engine.connect() as c: return bool(c.scalar(select(tax_organizers.c.id).where(tax_organizers.c.tax_engagement_return_id==return_id)))
