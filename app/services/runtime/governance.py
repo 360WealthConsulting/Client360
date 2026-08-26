@@ -32,6 +32,30 @@ AUTHORITATIVE_DEFINITIONS = {
 # Per-instance behaviors whose key space is unbounded — their prefixes are legitimate (not orphans).
 _INSTANCE_PREFIXES = ("automation.job.", "reporting.module.")
 
+# Client Portal gates are governed OUTSIDE runtime_behaviors, by design: they are enforced directly by
+# app/portal/gate.py and app/services/features/portal_gate.py, several are deliberately kill switches
+# rather than behaviors, and they have their own validator (app/portal/governance.py::validate_portal).
+# The orphan rule below would otherwise report every ENABLED portal gate as an unused definition.
+#
+# This is an EXPLICIT allow-list, not a "portal." prefix: a portal code that is not listed here is still
+# reported as an orphan, so a newly added portal gate cannot slip through unnoticed. It must equal
+# app.portal.gate.GATES exactly — tests/test_runtime_governance_portal_exemption.py enforces that, so
+# adding a gate forces a deliberate governance decision here. Listed literally (no import from
+# app.portal) to keep the runtime layer free of a dependency on the portal layer.
+_PORTAL_GATE_DEFINITIONS = frozenset({
+    "portal.enabled",
+    "portal.household_enabled",
+    "portal.documents.download_enabled",
+    "portal.documents.upload_enabled",
+    "portal.messaging_enabled",
+    "portal.appointments_enabled",
+    "portal.financial_summary_enabled",
+    "portal.forms_enabled",
+    "portal.mfa_required",
+    "portal.production_signed_off",
+    "portal.local_identity_provider_enabled",
+})
+
 
 def _authoritative_behaviors():
     with engine.connect() as c:
@@ -83,6 +107,8 @@ def validate() -> dict:
         for code, flag in flags.items():
             if code in referenced or any(code.startswith(p) for p in _INSTANCE_PREFIXES):
                 continue
+            if code in _PORTAL_GATE_DEFINITIONS:
+                continue                      # governed by the portal validator, not runtime_behaviors
             if flag["status"] == "active" and flag["enabled"] and _looks_runtime(code):
                 findings.append({"type": "unused_definition", "definition": code})
 

@@ -24,6 +24,49 @@ Configured through the governed Runtime Engine (no environment fallback), read v
 — so external production access is blocked until compliance records a decision (see
 [`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md)).
 
+## How the gates are governed
+`gate()` evaluates **every** entry in `GATES` through the runtime feature-flag evaluator
+(`consumption.feature_enabled`). Until migration `b5d82e04c917`, `portal.production_signed_off` and
+`portal.mfa_required` existed only as `configuration_items`, so `feature_defined` was false for both and
+`gate()` silently returned the hard-coded default — neither gate was actually governed. Both are now
+seeded as feature flags at their existing effective values (sign-off disabled/rollout 0, MFA
+enabled/rollout 100).
+
+**Feature-flag metadata is authoritative for gate evaluation.** The historical `configuration_items` rows
+for those two codes remain in place for compatibility and history, but they are no longer consulted by
+`gate()`.
+
+The governed write path for every portal gate — including sign-off and MFA — is therefore:
+
+```
+features.set_flag_status(principal, flag_id, "active")     # sets enabled
+features.update_flag_rollout(principal, flag_id, 100)      # clears rollout_zero
+runtime_engine.refresh(principal, actor_user_id=...)       # trigger defaults to "manual"
+```
+
+A gate is ON only when `status='active'` AND `enabled` AND `rollout_percentage >= 100`. Valid runtime
+generation triggers are `manual`, `scheduled`, `startup`, `metadata_change`, `emergency` — a custom
+trigger string violates `ck_runtime_generation_trigger`. No configuration-item write is required.
+
+### Follow-up: `portal.mfa_required` vs. actual MFA enforcement
+`portal.mfa_required` is now genuinely governed metadata, but **toggling it does not currently control MFA
+enforcement**. The enforcement that protects the portal today is separate and unconditional:
+`accept_invitation` rejects activation unless `mfa_verified` is true, and sign-in checks the
+`portal_accounts.mfa_required` **column**. Neither reads the gate.
+
+Do not assume this flag switches MFA on or off. Reconciling the gate with the unconditional checks is a
+separate bounded architecture task; until it is done the unconditional checks are the control, and they
+must not be weakened.
+
+### Runtime governance
+Portal gates are intentionally governed outside `runtime_behaviors` — they are enforced directly by
+`app/portal/gate.py` and `app/services/features/portal_gate.py`, and validated by
+`app/portal/governance.py::validate_portal`. `app/services/runtime/governance.py` therefore carries an
+**explicit allow-list** (`_PORTAL_GATE_DEFINITIONS`) so an enabled portal gate is not reported as an
+orphan definition. It is a literal list of the current gate codes, never a `portal.` prefix: an unlisted
+portal code is still reported, and a test requires the list to equal `app.portal.gate.GATES` exactly, so
+adding a gate forces a deliberate governance decision.
+
 ## Local test identity provider (`portal.local_identity_provider_enabled`)
 Default **OFF**. The deterministic local provider normally registers only while the portal is *not*
 production-signed-off. Because it is the only portal identity provider that exists, recording sign-off

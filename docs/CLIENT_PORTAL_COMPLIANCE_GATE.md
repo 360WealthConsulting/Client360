@@ -11,7 +11,10 @@ the disabled runtime gate; production external access is blocked by default.
 
 ## The gate
 - Runtime gate: `portal.production_signed_off` (default **OFF**, evaluated via the governed Runtime Engine,
-  no environment fallback — `app/portal/gate.py`).
+  no environment fallback — `app/portal/gate.py`). Since migration `b5d82e04c917` it is seeded as a runtime
+  **feature flag** and is genuinely governed; before that it existed only as a configuration item, so
+  `gate()` always returned the hard-coded default and the sign-off decision could not take effect.
+  `portal.mfa_required` was corrected the same way. It remains **OFF**, and this artifact remains BLOCKED.
 - Code gate: `production_ready()` returns true only when `portal.enabled` **AND**
   `portal.production_signed_off` are both on. All external financial/document/messaging/appointment gates
   are independently OFF by default as well.
