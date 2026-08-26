@@ -27,6 +27,11 @@ from starlette.responses import JSONResponse
 from app.security.middleware import AuthenticationMiddleware
 from app.services.features import portal_gate
 
+# The firm-wide portal surface gates now genuinely close their surfaces; these behavioural tests
+# exercise the surfaces themselves, so they switch the gates on (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("portal_master_on")
+
+
 # --- runtime behaviour (real middleware via direct ASGI dispatch) ------------
 
 def _build_app():
@@ -100,7 +105,8 @@ def test_authentication_alone_is_insufficient(monkeypatch):
     assert _status(monkeypatch, "POST", "/api/v1/portal/synthetic/danger", authenticated=True) == 403
 
 
-def test_feature_mapped_mutation_reaches_service(monkeypatch):
+def test_feature_mapped_mutation_reaches_service(monkeypatch, portal_messaging_on):
+    # POST /api/v1/portal/messages is messaging-gated; open only that child gate.
     assert _status(monkeypatch, "POST", "/api/v1/portal/messages") == 200            # covered → call_next
 
 

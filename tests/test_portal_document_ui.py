@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 
+import pytest
 from sqlalchemy import select
 from starlette.datastructures import UploadFile
 
@@ -27,6 +28,10 @@ from tests._portal_util import (
     seed_portal_account,
     seed_staff_user,
 )
+
+# The firm-wide portal surface gates now genuinely close their surfaces; these behavioural tests
+# exercise the surfaces themselves, so they switch the gates on (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("portal_documents_upload_on")
 
 
 def _upload(principal, *, display_name, category="general", request_id=None,

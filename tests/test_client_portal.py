@@ -19,6 +19,11 @@ from app.portal.service import (accept_invitation, approve_request_upload, clien
 from app.portal.signatures import apply_signature_event, create_signature_request, registry
 from app.security.service import create_session, resolve_principal
 
+# The firm-wide portal surface gates now genuinely close their surfaces; these behavioural tests
+# exercise the surfaces themselves, so they switch the gates on (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("portal_household_on")
+
+
 def _seed_household(label="Portal"):
     suffix = uuid.uuid4().hex[:10]
     with engine.begin() as connection:

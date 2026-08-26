@@ -42,6 +42,11 @@ from app.portal.service import (
 from app.security.models import Principal
 from app.services.vault import service as vault
 
+# The firm-wide portal surface gates now genuinely close their surfaces; these behavioural tests
+# exercise the surfaces themselves, so they switch the gates on (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("portal_documents_upload_on", "portal_documents_download_on")
+
+
 STAFF_CAPS = frozenset({"vault.view", "vault.upload", "vault.download", "vault.manage",
                         "vault.access.all", "record.read_all"})
 

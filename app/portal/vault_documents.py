@@ -26,6 +26,7 @@ from app.db import (
     vault_document_versions,
     vault_documents,
 )
+from app.portal.gate import gate
 from app.portal.service import portal_scope
 from app.security.audit import write_audit_event
 from app.services.vault import service as vault
@@ -95,7 +96,13 @@ def _reachable_document(conn, principal, document_id, scope):
 
 def download_document(principal, document_id, *, request_id="portal", ip_address=None):
     """Authorize + return (path, filename, mime) for an approved client-visible doc (or the client's
-    own pending upload). Raises PermissionError otherwise. Audits the download."""
+    own pending upload). Raises PermissionError otherwise. Audits the download.
+
+    The firm-wide ``portal.documents.download_enabled`` gate is enforced here as well as at the request
+    layer (``portal_gate``), so a non-HTTP caller cannot bypass the kill switch. It is checked BEFORE the
+    document is resolved, so a disabled gate leaks neither existence nor storage key."""
+    if not gate("portal.documents.download_enabled"):
+        raise PermissionError("Document download is not available.")
     scope = portal_scope(principal.account_id, permission="documents")
     with engine.connect() as conn:
         doc = _reachable_document(conn, principal, document_id, scope)
@@ -117,7 +124,13 @@ def upload_document(principal, *, source, original_filename, display_name, categ
     """Client uploads a document. It is stored as a PENDING vault document (status='uploaded',
     client_visible, uploaded_by_portal_account_id set) linked to the account's person — it becomes
     official only when an employee approves it. If ``request_id`` is given, the matching portal
-    document request is marked fulfilled."""
+    document request is marked fulfilled.
+
+    The firm-wide ``portal.documents.upload_enabled`` gate is enforced here as well as at the request
+    layer, before any scope resolution or byte is written, so a disabled gate creates no document row,
+    no storage object and no partial upload state."""
+    if not gate("portal.documents.upload_enabled"):
+        raise PermissionError("Document upload is not available.")
     if category not in vault.CATEGORIES:
         category = "general"
     person_id = principal.person_id

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 
+from app.portal.gate import gate as runtime_gate
 from app.services.features.service import client_can, portal_access_state
 
 # Reachable regardless of feature/portal state (login page, logout, invitation/reset auth endpoints).
@@ -50,6 +51,33 @@ _RULES: tuple[tuple[re.Pattern[str], frozenset[str] | None, str], ...] = (
     (re.compile(r"^/portal/notifications"), None, "portal_notifications"),
     (re.compile(r"^/portal/billing/invoices/\d+"), None, "invoice_view"),
     (re.compile(r"^/portal/billing"), None, "billing"),
+)
+
+
+# FIRM-WIDE runtime gates (``app/portal/gate.py``, governed by the Runtime Engine) → the portal surfaces
+# they govern. This layer is distinct from :data:`_RULES` above: ``_RULES`` asks "may THIS client use the
+# feature?" (per-client entitlement via ``client_can``), whereas these ask "is the surface switched on for
+# the firm at all?". Both must pass. The runtime gate is evaluated FIRST so a firm-wide kill switch cannot
+# be bypassed by a per-client entitlement. Ordered most-specific first; ``methods=None`` means any method.
+#
+# The gate → surface mapping is the one documented in docs/CLIENT_PORTAL_OPERATIONS.md.
+_RUNTIME_GATE_RULES: tuple[tuple[re.Pattern[str], frozenset[str] | None, str], ...] = (
+    # documents — download must precede the generic vault paths
+    (re.compile(r"^/api/(v1/)?portal/documents/\d+/download"), None, "portal.documents.download_enabled"),
+    (re.compile(r"^/api/portal/documents$"), frozenset({"POST"}), "portal.documents.upload_enabled"),
+    (re.compile(r"^/api/(v1/)?portal/requests/\d+/upload"), None, "portal.documents.upload_enabled"),
+    (re.compile(r"^/portal/upload"), None, "portal.documents.upload_enabled"),
+    # secure messaging — the WHOLE surface (list, read, send, reply, receipts). The codebase already
+    # treats messaging as one surface: every messaging path maps to the single ``secure_messaging``
+    # feature in _RULES, with no read/write split to mirror.
+    (re.compile(r"^/api/(v1/)?portal/messages"), None, "portal.messaging_enabled"),
+    (re.compile(r"^/portal/messages"), None, "portal.messaging_enabled"),
+    # forms — client-facing structured submissions (tax intake organizer/questionnaire/letter, and the
+    # tax-return decision). Ordinary HTML POSTs that merely happen to be forms (login, logout, profile)
+    # are deliberately NOT here.
+    (re.compile(r"^/api/v1/portal/tax/"), None, "portal.forms_enabled"),
+    (re.compile(r"^/portal/tax-intake"), None, "portal.forms_enabled"),
+    (re.compile(r"^/portal/tax-returns"), None, "portal.forms_enabled"),
 )
 
 
@@ -84,6 +112,15 @@ def feature_for_request(path: str, method: str) -> str | None:
     return None
 
 
+def runtime_gate_for_request(path: str, method: str) -> str | None:
+    """The firm-wide runtime gate governing ``(path, method)``, or None when the surface has no
+    surface-specific gate (the master ``portal.enabled`` gate still applies to every non-exempt path)."""
+    for rx, methods, gate_name in _RUNTIME_GATE_RULES:
+        if rx.match(path) and (methods is None or method in methods):
+            return gate_name
+    return None
+
+
 def _is_self_protected_mutation(path: str, method: str) -> bool:
     return any(rx.match(path) and (methods is None or method in methods)
                for rx, methods in _MUTATION_SELF_PROTECTED)
@@ -109,9 +146,20 @@ def evaluate(principal, path: str, method: str) -> tuple[bool, str, str | None]:
     route with no specific mapping still requires the master gate (portal_access)."""
     if is_exempt(path):
         return (True, "exempt", None)
+    # FIRM-WIDE master kill switch. Evaluated before anything client-specific so that turning the portal
+    # off closes every non-exempt client surface at once, regardless of grants, entitlements or the
+    # per-surface gates below. Fails closed: gate() returns the production-safe default (False) whenever
+    # the runtime cannot be resolved.
+    if not runtime_gate("portal.enabled"):
+        return (False, "portal_disabled", "portal_access")
     open_, reason = portal_access_state(principal)
     if not open_:
         return (False, reason, "portal_access")
+    # FIRM-WIDE per-surface gate, before the per-client entitlement: a surface switched off for the firm
+    # is unreachable even for a client whose grant and Core feature would otherwise allow it.
+    gate_name = runtime_gate_for_request(path, method)
+    if gate_name is not None and not runtime_gate(gate_name):
+        return (False, f"{gate_name}_disabled", feature_for_request(path, method))
     feature = feature_for_request(path, method)
     if feature is None:
         return (True, "portal_access", None)          # master gate already passed

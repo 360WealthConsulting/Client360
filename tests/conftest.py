@@ -111,3 +111,92 @@ def _verify_schema(name: str) -> None:
             "`scripts/test.sh reset` starts from a clean schema.",
             stacklevel=2,
         )
+
+
+
+# --- portal feature gates ----------------------------------------------------
+# The firm-wide portal gates (``app/portal/gate.py``) default OFF and genuinely close their surfaces.
+# Behavioural tests therefore switch ON the MINIMUM set they need: ``portal.enabled`` plus only the child
+# gate for the surface under test, exactly as docs/CLIENT_PORTAL_OPERATIONS.md describes ("tests
+# monkeypatch individual gates on").
+#
+# Fixtures COMPOSE: each one adds to a single shared set that one patch reads, so requesting
+# ``portal_messaging_on`` and ``portal_documents_upload_on`` together enables precisely those two child
+# gates and nothing else. Requesting none leaves every gate at its real, production-safe value.
+#
+# Nothing here writes runtime metadata, and ``portal.production_signed_off`` is never enabled — the local
+# identity provider must keep registering.
+_PORTAL_GATE_CONSUMERS = (
+    "app.portal.vault_documents",
+    "app.portal.service",
+    "app.portal.appointments",
+    "app.portal.financial",
+    "app.services.features.portal_gate",
+)
+
+PORTAL_MASTER_GATE = "portal.enabled"
+
+
+@pytest.fixture
+def portal_gate_state(monkeypatch):
+    """The shared, initially EMPTY set of enabled portal gates, wired into every consumer module.
+
+    Modules bind ``gate`` by value (``from app.portal.gate import gate``), so each consumer is patched
+    rather than only the definition. Any gate not in the set keeps its real value."""
+    import importlib
+
+    from app.portal import gate as gate_module
+
+    real = gate_module.gate
+    enabled: set[str] = set()
+
+    def fake_gate(name):
+        return True if name in enabled else real(name)
+
+    for dotted in _PORTAL_GATE_CONSUMERS:
+        module = importlib.import_module(dotted)
+        if hasattr(module, "gate"):
+            monkeypatch.setattr(module, "gate", fake_gate)
+        if hasattr(module, "runtime_gate"):
+            monkeypatch.setattr(module, "runtime_gate", fake_gate)
+    return enabled
+
+
+@pytest.fixture
+def portal_master_on(portal_gate_state):
+    """``portal.enabled`` ONLY — no child feature is enabled."""
+    portal_gate_state.add(PORTAL_MASTER_GATE)
+    return portal_gate_state
+
+
+def _child(name):
+    """Build a fixture enabling the master gate plus exactly one child gate."""
+
+    @pytest.fixture
+    def _fixture(portal_master_on):
+        portal_master_on.add(name)
+        return portal_master_on
+
+    _fixture.__doc__ = f"``portal.enabled`` + ``{name}`` only."
+    return _fixture
+
+
+portal_household_on = _child("portal.household_enabled")
+portal_documents_download_on = _child("portal.documents.download_enabled")
+portal_documents_upload_on = _child("portal.documents.upload_enabled")
+portal_messaging_on = _child("portal.messaging_enabled")
+portal_appointments_on = _child("portal.appointments_enabled")
+portal_financial_on = _child("portal.financial_summary_enabled")
+portal_forms_on = _child("portal.forms_enabled")
+
+
+@pytest.fixture
+def portal_gates(portal_gate_state):
+    """Set an EXACT gate set: ``portal_gates({"portal.enabled", ...})``.
+
+    Used by the dedicated enforcement matrix to prove that one gate does not open another surface."""
+    def _apply(enabled):
+        portal_gate_state.clear()
+        portal_gate_state.update(enabled)
+        return portal_gate_state
+    return _apply

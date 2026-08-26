@@ -428,7 +428,10 @@ def test_kill_switch_firm_wide_disables_all_clients():
 
 # === Decision #3: centralized per-route enforcement, no bypass ==============
 
-def test_portal_gate_enforces_every_core_feature_on_direct_request():
+def test_portal_gate_enforces_every_core_feature_on_direct_request(
+        portal_messaging_on, portal_documents_download_on, portal_documents_upload_on):
+    # This case walks the messaging/download/upload surfaces, so exactly those three child gates
+    # are opened; the assertion under test is the PER-CLIENT Core feature override, not the gates.
     _, principal, _, hid = seed_portal_account(seed_staff_user())
     staff = _staff()
     cases = [

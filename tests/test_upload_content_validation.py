@@ -13,6 +13,11 @@ from app.services.vault import service as vault
 from app.services.vault.storage import VaultStorageError, content_matches_extension
 from tests._portal_util import sample_upload, seed_portal_account, seed_staff_user
 
+# The firm-wide portal surface gates now genuinely close their surfaces; these tests exercise the
+# surfaces themselves, so they switch the gates on (see tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("portal_documents_upload_on")
+
+
 STAFF_CAPS = frozenset({"vault.view", "vault.upload", "vault.download", "vault.manage",
                         "vault.access.all", "record.read_all"})
 

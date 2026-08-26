@@ -8,6 +8,7 @@ from app.db import (documents, document_versions, engine, people, portal_access_
     portal_invitations, portal_message_attachments, portal_message_receipts,
     portal_messages, portal_notifications, portal_sessions, portal_thread_participants,
     portal_threads, timeline_events, workflow_instances, workflow_steps)
+from app.portal.gate import gate
 from app.portal.providers import NOTIFICATION_PROVIDERS
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
@@ -102,7 +103,12 @@ def portal_scope(account_id, *, permission=None):
         if permission is not None:
             grants = [g for g in grants if (g["permissions"] or {}).get(permission)]
         household_ids = {r["household_id"] for r in grants}; person_ids = {r["person_id"] for r in grants if r["person_id"]}
-        shared_household_ids = {r["household_id"] for r in grants if r["access_type"] in {"joint", "trusted", "delegated"}}
+        # Household EXPANSION (a joint/trusted/delegated grant reaching the other members of the
+        # household) is governed firm-wide by ``portal.household_enabled``. When the gate is off the
+        # account keeps its own household_ids — so self/person grants continue to work exactly as before
+        # — but no OTHER member of the household becomes reachable.
+        shared_household_ids = ({r["household_id"] for r in grants if r["access_type"] in {"joint", "trusted", "delegated"}}
+                                if gate("portal.household_enabled") else set())
         if shared_household_ids: person_ids |= set(connection.scalars(select(people.c.id).where(people.c.household_id.in_(shared_household_ids))))
         organization_ids = {r["organization_id"] for r in grants if r["organization_id"]}
     return {"household_ids": household_ids, "shared_household_ids": shared_household_ids, "person_ids": person_ids, "organization_ids": organization_ids, "grants": grants}
