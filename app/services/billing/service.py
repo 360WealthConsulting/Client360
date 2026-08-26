@@ -485,7 +485,55 @@ def client_can_access(principal, bill_to_type, bill_to_id) -> bool:
     return (bill_to_type, bill_to_id) in client_billing_subjects(principal)
 
 
+# --- explicit client projections ---------------------------------------------
+# Client billing reads used to serve whole database rows: ``client_invoices`` returned
+# ``{**dict(row), ...}`` over the full ``invoices`` row (bill_to ids, agreement/schedule ids,
+# period_key, pdf_document_id, the ``metadata`` blob and three staff user ids), and
+# ``client_invoice_detail`` returned the STAFF ``invoice_detail`` unchanged — raw line items and raw
+# ``payments`` rows including ``external_ref``, ``metadata`` and ``recorded_by_user_id``. Each helper
+# below returns a FIXED key set; the staff services are untouched.
+
+def _client_invoice_view(row, *, balance, paid) -> dict:
+    return {
+        "id": row["id"],                        # required by the invoice detail route
+        "number": row["number"],
+        "status": row["status"],
+        "currency": row["currency"],
+        "subtotal_cents": row["subtotal_cents"],
+        "credit_cents": row["credit_cents"],
+        "total_cents": row["total_cents"],
+        "issue_date": row["issue_date"],
+        "due_date": row["due_date"],
+        "balance_cents": balance,
+        "paid_cents": paid,
+        "effective_status": effective_status(row),
+    }
+
+
+def _client_line_item_view(row) -> dict:
+    return {"description": row["description"], "quantity": row["quantity"],
+            "unit_amount_cents": row["unit_amount_cents"], "amount_cents": row["amount_cents"],
+            "kind": row["kind"]}
+
+
+def _client_payment_view(row) -> dict:
+    """Never ``external_ref`` (the processor reference), ``metadata`` or ``recorded_by_user_id``."""
+    return {"amount_cents": row["amount_cents"], "currency": row["currency"],
+            "method": row["method"], "status": row["status"], "received_on": row["received_on"]}
+
+
+def _client_agreement_view(row) -> dict:
+    return {"id": row["id"], "title": row["title"], "status": row["status"],
+            "default_amount_cents": row["default_amount_cents"], "currency": row["currency"],
+            "start_date": row["start_date"], "end_date": row["end_date"]}
+
+
 def client_invoices(principal) -> list[dict]:
+    # Core feature enforced HERE, not only by the middleware rule on /portal/billing: calling this
+    # service directly must not bypass the per-client feature decision.
+    from app.services.features.service import client_can
+    if not client_can(principal, "billing"):
+        return []
     subjects = client_billing_subjects(principal)
     if not subjects:
         return []
@@ -499,23 +547,37 @@ def client_invoices(principal) -> list[dict]:
     out = []
     for r in rows:
         balance, paid = invoice_balance(r["id"])
-        out.append({**dict(r), "balance_cents": balance, "paid_cents": paid,
-                    "effective_status": effective_status(r)})
+        out.append(_client_invoice_view(r, balance=balance, paid=paid))
     return out
 
 
 def client_invoice_detail(principal, invoice_id) -> dict | None:
+    # The more specific middleware rule maps /portal/billing/invoices/{id} to invoice_view; the same
+    # feature is enforced here so a direct call cannot bypass it.
+    from app.services.features.service import client_can
+    if not client_can(principal, "invoice_view"):
+        return None
     inv = load_invoice(invoice_id)
     if inv is None or inv["status"] in ("draft", "void"):
         return None                                              # drafts/voids never disclosed to clients
     if not client_can_access(principal, inv["bill_to_type"], inv["bill_to_id"]):
         return None                                             # scope denial hides existence
-    return invoice_detail(invoice_id)
+    staff = invoice_detail(invoice_id)                           # staff structure, never returned as-is
+    if staff is None:
+        return None
+    balance, paid = invoice_balance(invoice_id)
+    view = _client_invoice_view(inv, balance=balance, paid=paid)
+    view["line_items"] = [_client_line_item_view(l) for l in staff["line_items"]]
+    view["payments"] = [_client_payment_view(p) for p in staff["payments"]]
+    return view
 
 
 def client_agreements(principal) -> list[dict]:
+    from app.services.features.service import client_can
+    if not client_can(principal, "billing"):
+        return []
     subjects = client_billing_subjects(principal)
     out = []
     for t, i in subjects:
-        out.extend(a for a in list_agreements(t, i) if a["status"] == "active")
+        out.extend(_client_agreement_view(a) for a in list_agreements(t, i) if a["status"] == "active")
     return out

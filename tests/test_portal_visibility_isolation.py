@@ -71,9 +71,6 @@ PROJECTION_REGISTRY_MAP = {
 #:
 #: Compliance criterion #3 cannot close while this set is non-empty.
 REMAINING_VISIBILITY_FINDINGS = {
-    "billing: no client_can feature check at the service boundary (middleware-only, bypassable)",
-    "billing: client_invoices returns raw invoices rows",
-    "billing: client_invoice_detail reuses the staff invoice_detail structure",
     "engagement: portal_engagement has no per-client client_can decision (runtime gate only)",
 }
 
@@ -295,14 +292,14 @@ def test_remaining_findings_are_recorded_and_not_silently_forgotten():
 
     Criterion #3 may only be considered for closure when this set is empty. Do not empty it without
     doing the work — the guards below prove the task-1 and task-2A entries really were fixed."""
-    assert len(REMAINING_VISIBILITY_FINDINGS) == 4
-    assert all("billing" in f or "engagement" in f for f in REMAINING_VISIBILITY_FINDINGS), (
-        "a task/tax finding reappeared in the inventory")
+    assert len(REMAINING_VISIBILITY_FINDINGS) == 1
+    assert all("engagement" in f for f in REMAINING_VISIBILITY_FINDINGS), (
+        "a task/tax or billing finding reappeared in the inventory")
 
 
 def test_no_task_or_tax_finding_remains_in_the_inventory():
     """Task 2A closed every task/tax finding; none may be re-added without new evidence."""
-    for term in ("client_tasks", "portal_intakes", "portal_returns", "client_action"):
+    for term in ("client_tasks", "portal_intakes", "portal_returns", "client_action", "billing"):
         assert not any(term in f for f in REMAINING_VISIBILITY_FINDINGS), \
             f"{term} is back in the open-findings inventory"
 

@@ -99,6 +99,27 @@ The open set is pinned in `tests/test_portal_visibility_isolation.py::REMAINING_
 
 **Criterion #3 therefore remains `[ ]`.**
 
+### Visibility remediation, task 2B1 — billing (criterion #3)
+Billing was authorized only by the middleware rules in `portal_gate._RULES`; calling `client_invoices`
+or `client_invoice_detail` directly bypassed the per-client feature decision entirely. It also served raw
+rows — the whole `invoices` row from the list, and the staff `invoice_detail` structure (raw line items
+and raw `payments` rows carrying the processor reference, metadata and the recording staff id) from the
+detail.
+
+Each client billing read now enforces its Core feature at the service boundary — `billing` for the
+invoice list, agreements and payment history; `invoice_view` for invoice detail, matching the more
+specific route rule — and every response is an explicit fixed-key projection. Middleware remains
+defence-in-depth. The staff `invoice_detail` is unchanged, proved by a test asserting it still carries
+the internal note, bill-to identifiers and processor reference the portal must never show.
+
+**Engagement is now the sole remaining criterion-#3 finding:** `portal_engagement` has no per-client
+`client_can` decision, only the firm-wide `portal.timeline.enabled` runtime flag, and no Core feature in
+the catalog semantically represents client timeline/engagement. Adding one is a catalog decision that has
+not been taken, so the surface is deliberately left unremediated rather than mapped onto an unrelated
+feature.
+
+**Criterion #3 therefore remains `[ ]`.**
+
 **No pre-condition below is closed by this test.** Each one is either about the production IdP, a human
 or legal review, or a surface that stayed gated OFF for the duration of the test. The acceptance criteria
 are recorded verbatim and are not reinterpreted to fit the evidence obtained.

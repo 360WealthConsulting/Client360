@@ -247,9 +247,15 @@ def portal_billing(request: Request, principal: PortalPrincipal = Depends(curren
 
 
 def _client_payment_history(principal):
+    """Client payment history. The Core ``billing`` feature is enforced here as well as by the
+    middleware, and every row is projected — ``payment_history`` returns raw ``payments`` rows
+    including ``external_ref`` (the processor reference), ``metadata`` and ``recorded_by_user_id``."""
+    from app.services.features.service import client_can
+    if not client_can(principal, "billing"):
+        return []
     out = []
     for t, i in b.client_billing_subjects(principal):
-        out.extend(b.payment_history(t, i))
+        out.extend(b._client_payment_view(p) for p in b.payment_history(t, i))
     out.sort(key=lambda p: p["received_on"] or __import__("datetime").date.min, reverse=True)
     return out[:50]
 
