@@ -316,3 +316,92 @@ def test_every_task_and_tax_caller_now_passes_a_permission():
                       ("portal_returns", tax_return_lifecycle.portal_returns)):
         src = inspect.getsource(fn)
         assert 'permission="tasks"' in src, f"{label} still resolves scope without permission='tasks'"
+
+
+# --- registry review outcomes (compliance criterion #3 human review) ----------
+# Two questions were raised during the named registry review and resolved by decision:
+#   Q1 financial_summary() serves an aggregate ``total_value`` that was undeclared.
+#   Q2 ``household.members`` was declared CONDITIONAL with no implemented surface.
+# These tests pin both outcomes so neither can silently regress.
+
+#: The financial-summary aggregate, mapped to its registry concept. Written by hand — the expected
+#: classification is NOT read back out of the registry, so a reclassification fails here.
+FINANCIAL_AGGREGATE_FIELD = "total_value"
+FINANCIAL_AGGREGATE_REGISTRY_KEY = "financial.total_value"
+
+#: Firm-computed holistic wealth constructs. ``financial.total_value`` must never be read as licence
+#: to expose any of these — they belong to the PROHIBITED ``internal.net_worth`` concept.
+HOLISTIC_WEALTH_FIELDS = {
+    "net_worth", "networth", "planning_net_worth", "liabilities", "total_liabilities",
+    "outside_asset_estimate", "outside_assets", "estimated_net_worth", "holistic_net_worth",
+}
+
+
+def test_financial_total_value_is_declared_conditional_on_the_financial_permission():
+    entry = visibility.field(FINANCIAL_AGGREGATE_REGISTRY_KEY)
+    assert entry is not None, "financial_summary serves total_value; it must be declared"
+    assert entry.external_visibility == "conditional"
+    assert entry.required_permission == "financial"
+    assert entry.masking_rule == visibility.MASK_NONE
+    assert visibility.is_externally_visible(FINANCIAL_AGGREGATE_REGISTRY_KEY)
+
+
+def test_internal_net_worth_remains_prohibited_and_unreachable():
+    """The new aggregate entry must not have softened the holistic-wealth prohibition."""
+    entry = visibility.field("internal.net_worth")
+    assert entry is not None
+    assert entry.external_visibility == "prohibited"
+    assert not visibility.is_externally_visible("internal.net_worth")
+
+
+def test_financial_summary_serves_the_aggregate_but_no_holistic_wealth_field():
+    """The semantic separation, asserted on the real response shape.
+
+    ``total_value`` is a sum over accounts the client is ALREADY permitted to see individually. A future
+    change must not reinterpret it as permission to add liabilities, outside-asset estimates or a
+    firm-computed net worth."""
+    import inspect
+
+    from app.portal import financial as portal_financial
+
+    src = inspect.getsource(portal_financial.financial_summary)
+    assert f'"{FINANCIAL_AGGREGATE_FIELD}"' in src, "financial_summary no longer returns total_value"
+    for banned in HOLISTIC_WEALTH_FIELDS:
+        assert f'"{banned}"' not in src, (
+            f"financial_summary exposes {banned!r} — that is the PROHIBITED internal.net_worth concept, "
+            f"not the permitted-account aggregate")
+
+
+def test_no_registry_entry_declares_a_holistic_wealth_field_externally():
+    for f in visibility.REGISTRY:
+        if f.external_visibility in visibility.EXTERNAL_STATES:
+            leaf = f.key.rsplit(".", 1)[-1]
+            assert leaf not in HOLISTIC_WEALTH_FIELDS, \
+                f"{f.key} externally declares a holistic wealth concept"
+
+
+def test_household_members_is_not_declared_while_no_surface_exists():
+    """Q2: the registry must not promise external visibility for an unimplemented surface."""
+    assert visibility.field("household.members") is None, (
+        "household.members is declared again — it may only return alongside an implemented route, an "
+        "explicit projection, portal.household_enabled handling, an authorization decision and "
+        "disclosure tests")
+
+
+def test_a_household_members_surface_would_require_a_deliberate_registry_decision():
+    """Paired guard: if such a surface appears, force the registry/authorization decision.
+
+    Deliberately narrow — it keys on a client-facing household-MEMBERS read, not on household routes in
+    general (staff household pages are unaffected)."""
+    from app.routes import portal as portal_routes
+
+    portal_paths = {getattr(r, "path", "") for r in portal_routes.router.routes}
+    members_surfaces = {p for p in portal_paths
+                        if p.startswith(("/portal/household", "/api/portal/household",
+                                         "/api/v1/portal/household"))}
+    page_names = getattr(portal_routes, "PAGE_NAMES", {})
+    if members_surfaces or "household" in page_names:
+        assert visibility.field("household.members") is not None, (
+            f"a client household-members surface exists ({sorted(members_surfaces) or 'PAGE_NAMES'}) but "
+            f"household.members is undeclared — declare it with an explicit permission and projection, "
+            f"and re-run the registry review")

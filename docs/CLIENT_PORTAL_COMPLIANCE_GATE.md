@@ -144,7 +144,37 @@ unclassified caller, a missing permission, or a caller in both classes.
 `REMAINING_VISIBILITY_FINDINGS` is now **empty**, and the assertion that it stays empty is retained so a
 future finding cannot vanish silently.
 
-**No pre-condition below is closed by this test.** Each one is either about the production IdP, a human
+### Visibility registry review — COMPLETED, APPROVED
+| Field | Value |
+| --- | --- |
+| Reviewer | **Michael Shelton** |
+| Date | 2026-08-26 |
+| Scope | All 36 Client Portal visibility registry entries — data classification only |
+| Result | **APPROVED** (36 approve, 0 question, 0 reject) |
+
+This is a **scoped review of visibility classifications**. It is explicitly **not** external identity
+provider approval, not overall portal compliance approval, not production authorization, and not
+regulatory certification. The overall Decision remains BLOCKED.
+
+Two questions were raised during the review and resolved by decision:
+
+1. **`financial.total_value`** — `financial_summary()` externally serves an aggregate `total_value` that
+   was undeclared. It is now declared CONDITIONAL on the `financial` permission, unmasked. It is the sum
+   of the accounts the client is **already individually permitted** to see: no liabilities, no inferred
+   outside holdings, no illiquid estimates, no firm-computed model. It is a distinct concept from
+   `internal.net_worth`, which remains **PROHIBITED** and unreachable.
+2. **`household.members`** — removed. There is no implemented client household-members surface (no
+   route, no page, no projection) and no settled authorization contract, so the entry promised external
+   visibility for something that does not exist. Re-adding it requires an implemented route, an explicit
+   projection, `portal.household_enabled` handling, an authorization decision, disclosure tests and a
+   fresh registry review. A paired guard fails if such a surface appears while the entry is absent.
+
+Technical evidence at review time: `REMAINING_VISIBILITY_FINDINGS == set()`; complete read-surface
+inventory clean; explicit projections on every reviewed surface; projection/registry conformance clean;
+recursive disclosure suite clean; dashboard aggregate clean; scope architecture guard clean;
+`validate_portal()` clean; runtime governance clean.
+
+**No other pre-condition below is closed by this review.** Each one is either about the production IdP, a human
 or legal review, or a surface that stayed gated OFF for the duration of the test. The acceptance criteria
 are recorded verbatim and are not reinterpreted to fit the evidence obtained.
 
@@ -161,9 +191,12 @@ are recorded verbatim and are not reinterpreted to fit the evidence obtained.
       `portal.mfa_required` is ON — but the criterion names the production IdP, which does not exist yet.
       Note also the recorded follow-up in `CLIENT_PORTAL_OPERATIONS.md`: the `portal.mfa_required` gate
       does not currently drive the unconditional MFA checks.
-- [ ] Visibility registry reviewed; no `internal_only` / `prohibited` field is externally reachable;
+- [x] Visibility registry reviewed; no `internal_only` / `prohibited` field is externally reachable;
       governance report clean.
-      *Remains:* the reviewer's registry walkthrough, and confirmation that no `internal_only` /
+      **CLOSED** — reviewed and approved by Michael Shelton (see the review record above); all 36 entries
+      approved, both review questions resolved, and the reachability claim is carried by the explicit
+      projections and recursive disclosure suite rather than by the validators alone.
+      *Superseded remains-note:* the reviewer's registry walkthrough, and confirmation that no `internal_only` /
       `prohibited` field is externally reachable. The governance reports are clean
       (`validate_portal()` and runtime `validate()` both report zero findings), but the controlled test
       ended at session revocation and exercised no document or field-level read, so reachability was not

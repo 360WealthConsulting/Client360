@@ -72,6 +72,13 @@ REGISTRY = (
        freshness=True),
     _f("financial.custodian", "portfolio", "portal.financial", CONDITIONAL, "financial", "account",
        freshness=True),
+    # The AGGREGATE of the financial accounts this client is already individually permitted to see —
+    # a plain sum of ``financial.current_value`` over the in-scope, ``financial``-permitted accounts.
+    # It is deliberately NOT ``internal.net_worth``: no liabilities, no inferred outside holdings, no
+    # privately-held/illiquid estimates, and no firm-computed holistic wealth model. That construct
+    # stays PROHIBITED below, and this entry must never be read as licence to expose it.
+    _f("financial.total_value", "portfolio", "portal.financial", CONDITIONAL, "financial", "account",
+       freshness=True, link="/portal/financial"),
     _f("tax.return_status", "tax", "tax_return_lifecycle.portal_returns", CONDITIONAL, "tasks", "person",
        owner="tax_return_lifecycle", link="/portal/requests"),
     _f("insurance.policy_summary", "insurance", "insurance_portal", CONDITIONAL, "insurance", "person",
@@ -86,8 +93,11 @@ REGISTRY = (
     # meeting in the authoritative scheduling service. Owner is the portal messaging layer.
     _f("appointments.request", "scheduling", "portal.appointments", CONDITIONAL, "messages", "person",
        owner="portal.service", link="/portal/appointments"),
-    _f("household.members", "households", "portal.service", CONDITIONAL, None, "household",
-       link="/portal/household"),
+    # NOTE: ``household.members`` was removed during the compliance review — there is no implemented
+    # client household-members surface (no route, no page, no projection) and no settled grant/feature
+    # authorization contract, so declaring it promised external visibility for something that does not
+    # exist. Re-adding it requires an implemented route, an explicit projection, portal.household_enabled
+    # handling, an authorization decision, disclosure tests and a fresh registry review.
     _f("preferences.notification_channels", "portal", "portal.service", VISIBLE, None, "person",
        owner="portal.service"),
     _f("consents.status", "portal", "portal.consent", VISIBLE, None, "person", owner="portal.consent"),
