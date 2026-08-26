@@ -475,7 +475,10 @@ def portal_page(page: str, request: Request, principal: PortalPrincipal = Depend
 @router.get("/api/v1/portal/dashboard")
 def api_dashboard(principal: PortalPrincipal = Depends(current_portal)): return dashboard(principal)
 @router.get("/api/v1/portal/profile")
-def api_profile(principal: PortalPrincipal = Depends(current_portal)): return principal.__dict__
+def api_profile(principal: PortalPrincipal = Depends(current_portal)):
+    """Client profile — the SAME projection v0 serves. This returned ``principal.__dict__``, which
+    exposed the internal ``account_id`` and ``person_id`` and diverged from v0's deliberate contract."""
+    return portal_profile.get_profile(principal)
 @router.get("/api/v1/portal/messages")
 def api_threads(principal: PortalPrincipal = Depends(current_portal)): return {"threads": client_threads(principal)}
 @router.post("/api/v1/portal/messages", status_code=201)

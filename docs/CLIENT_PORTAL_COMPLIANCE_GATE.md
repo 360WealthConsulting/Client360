@@ -56,6 +56,27 @@ returns an identical generic 404, and HTTP-level regression coverage exists
 This is **remediation plus automated proof, not the production verification** pre-condition #6 requires.
 Criterion #6 therefore remains `[ ]`.
 
+### Visibility remediation, task 1 of 2 (criterion #3)
+The design audit for pre-condition #3 found that several portal read surfaces returned whole database
+rows, so internal fields reached external clients. Task 1 remediated six of them: conversation listing,
+thread messages, document requests, notifications, dashboard meetings, and the v1 profile endpoint (which
+returned `principal.__dict__`). Each now returns an explicit fixed-key projection, covered by exact-key
+tests, a hand-written projection→registry mapping, and recursive HTTP-level disclosure tests.
+
+Two caller-level permission omissions were fixed at the same time: `client_threads` and
+`client_document_requests` resolved scope without a `permission`, so a grant with `messages: False` or
+`documents: False` still listed that data. Both now pass the grant permission and have negative
+regression tests.
+
+**Task 2 remains outstanding** — `client_tasks` (raw `workflow_steps` including `definition_snapshot`),
+`portal_intakes` and `portal_returns` (internal identifiers and reuse of the staff return detail), plus
+four further callers resolving scope without a permission. The open set is pinned in
+`tests/test_portal_visibility_isolation.py::REMAINING_TASK_2_FINDINGS`.
+
+**Criterion #3 therefore remains `[ ]`.** It cannot be considered until task 2 lands and the whole portal
+read-surface inventory passes. Note also that `validate_portal()` being clean proves the registry is
+self-consistent — it does **not** prove response reachability; the disclosure tests carry that claim.
+
 **No pre-condition below is closed by this test.** Each one is either about the production IdP, a human
 or legal review, or a surface that stayed gated OFF for the duration of the test. The acceptance criteria
 are recorded verbatim and are not reinterpreted to fit the evidence obtained.
@@ -87,6 +108,12 @@ are recorded verbatim and are not reinterpreted to fit the evidence obtained.
       *Remains:* everything. This is a legal review; the controlled test produced no consent records.
 - [ ] Scope resolver verified default-deny; household access does not grant every member; out-of-scope
       returns 404 without disclosure.
+      *Note (added after the production verification):* the production run of this criterion remains
+      valid — the scope **resolver** was verified default-deny and behaved correctly. A separate,
+      caller-level omission was discovered afterwards during the criterion-#3 audit: some callers invoked
+      `portal_scope` without a `permission`, so the resolver was never asked to enforce the grant.
+      `client_threads` and `client_document_requests` are fixed and regression-covered in task 1; four
+      further callers are listed for task 2. This does not invalidate the recorded resolver evidence.
       *Remains:* production verification with more than one identity. The test used a single self grant
       with `portal.household_enabled` OFF, so no cross-client or household-expansion case was exercised in
       production. Automated coverage exists (cross-household isolation, forged ids, per-permission

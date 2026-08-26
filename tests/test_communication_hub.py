@@ -225,9 +225,13 @@ def test_s4_client_cannot_read_internal_notes():
     staff = _staff()
     tid = _thread(principal, pid, hid)
     staff_send_message(thread_id=tid, user_id=staff.user_id, body="INTERNAL ONLY", internal_note=True)
-    bodies = [m["body"] for m in list_messages(principal, tid)]      # the client-facing API
+    client_messages = list_messages(principal, tid)                 # the client-facing API
+    bodies = [m["body"] for m in client_messages]
     assert "INTERNAL ONLY" not in bodies
-    assert all(m["visibility"] == "client" for m in list_messages(principal, tid))
+    # The client projection no longer carries the internal ``visibility`` flag, so assert the property
+    # itself: only the client-visible message is returned, and no internal field rides along.
+    assert len(client_messages) == 1
+    assert all("visibility" not in m and "sender_user_id" not in m for m in client_messages)
 
 
 def test_s5_client_cannot_see_internal_only_linked_document():

@@ -240,7 +240,10 @@ def test_secure_messaging_thread_and_reply(env):
     send_message(principal, thread_id, "A follow-up message.")
     messages = list_messages(principal, thread_id)
     assert len(messages) >= 2
-    assert all(m["visibility"] == "client" for m in messages)     # no internal notes leak
+    # The client projection no longer exposes the internal ``visibility`` flag; assert the property
+    # instead — a safe sender label, and no internal staff identity.
+    assert all(m["sender_type"] == "client" for m in messages)
+    assert all("visibility" not in m and "sender_user_id" not in m for m in messages)
 
 
 # --- audit -------------------------------------------------------------------

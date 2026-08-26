@@ -184,7 +184,8 @@ def list_messages(principal, thread_id):
     with engine.connect() as connection:
         allowed = connection.scalar(select(portal_threads.c.id).where(portal_threads.c.id == thread_id, or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))))
         if not allowed: raise PermissionError("Thread is outside portal access scope")
-        return connection.execute(select(portal_messages).where(portal_messages.c.thread_id == thread_id, portal_messages.c.visibility == "client").order_by(portal_messages.c.sent_at)).mappings().all()
+        rows = connection.execute(select(portal_messages).where(portal_messages.c.thread_id == thread_id, portal_messages.c.visibility == "client").order_by(portal_messages.c.sent_at)).mappings().all()
+    return [_client_message_view(r) for r in rows]
 
 def mark_read(principal, message_id):
     with engine.begin() as connection:
@@ -252,19 +253,95 @@ def notify(account_id, notification_type, title, body=None, *, channel="in_app",
         result = provider.deliver(recipient=account_id, title=title, body=body, metadata={"entity_type": entity_type, "entity_id": entity_id})
         return connection.execute(portal_notifications.insert().values(portal_account_id=account_id, channel=channel, notification_type=notification_type, title=title, body=body, status="delivered" if result["delivered"] else "disabled", entity_type=entity_type, entity_id=entity_id, idempotency_key=idempotency_key, delivery_metadata=result).returning(portal_notifications.c.id)).scalar_one()
 
+# --- explicit client projections ---------------------------------------------
+# Every portal read surface below returns a FIXED key set. These used to return whole database rows
+# (``select(table)`` -> ``.mappings().all()``), which served internal staff assignment ids, workflow
+# identifiers, transport metadata and unbounded JSON blobs to external clients, and meant any future
+# column appeared in a portal response automatically. Each helper is paired with an exact-key test and a
+# visibility-registry mapping, so adding a field is a deliberate, reviewed act.
+
+def _client_thread_view(row) -> dict:
+    """Client-facing conversation summary. Excludes assignment/work-queue state and staff identity."""
+    lsm, clr = row["last_staff_message_at"], row["client_last_read_at"]
+    return {
+        "id": row["id"],                       # required by the reply/detail routes
+        "subject": row["subject"],
+        "topic": row["topic"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "client_last_read_at": clr,
+        "unread": lsm is not None and (clr is None or lsm > clr),
+    }
+
+
+def _client_message_view(row) -> dict:
+    """One client-visible message. Sender is a SAFE LABEL — never a staff user id."""
+    return {
+        "id": row["id"],
+        "thread_id": row["thread_id"],
+        "sender_type": "client" if row["sender_portal_account_id"] is not None else "staff",
+        "body": row["body"],
+        "sent_at": row["sent_at"],
+    }
+
+
+def _client_request_view(row) -> dict:
+    """What a client needs to understand and fulfil a document request — no workflow internals."""
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "description": row["description"],
+        "due_date": row["due_date"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "uploaded_at": row["uploaded_at"],
+    }
+
+
+def _client_notification_view(row) -> dict:
+    """Presentation fields only — no delivery metadata, idempotency key or raw entity reference."""
+    return {
+        "id": row["id"],
+        "notification_type": row["notification_type"],
+        "title": row["title"],
+        "body": row["body"],
+        "channel": row["channel"],
+        "created_at": row["created_at"],
+        "read_at": row["read_at"],
+    }
+
+
+def _client_meeting_view(row) -> dict:
+    """A calendar event as the client sees it — never event_metadata/external_id/source."""
+    return {
+        "event_type": row["event_type"],
+        "title": row["title"],
+        "summary": row["summary"],
+        "event_time": row["event_time"],
+    }
+
+
 def client_document_requests(principal, scope=None):
-    scope = scope or portal_scope(principal.account_id)
+    # Scope MUST be resolved under the documents grant: without ``permission`` every active grant
+    # contributed, so an account whose grant sets ``documents: False`` still listed its requests.
+    scope = scope or portal_scope(principal.account_id, permission="documents")
     with engine.connect() as connection:
-        return connection.execute(select(portal_document_requests).where(portal_document_requests.c.person_id.in_(scope["person_ids"]), portal_document_requests.c.status.in_(("open", "uploaded"))).order_by(portal_document_requests.c.due_date)).mappings().all()
+        rows = connection.execute(select(portal_document_requests).where(portal_document_requests.c.person_id.in_(scope["person_ids"]), portal_document_requests.c.status.in_(("open", "uploaded"))).order_by(portal_document_requests.c.due_date)).mappings().all()
+    return [_client_request_view(r) for r in rows]
 
 def client_notifications(principal):
     with engine.connect() as connection:
-        return connection.execute(select(portal_notifications).where(portal_notifications.c.portal_account_id == principal.account_id).order_by(portal_notifications.c.created_at.desc()).limit(20)).mappings().all()
+        rows = connection.execute(select(portal_notifications).where(portal_notifications.c.portal_account_id == principal.account_id).order_by(portal_notifications.c.created_at.desc()).limit(20)).mappings().all()
+    return [_client_notification_view(r) for r in rows]
 
 def client_threads(principal, scope=None):
-    scope = scope or portal_scope(principal.account_id)
+    # Scope MUST be resolved under the messages grant (the H7 rule ``list_messages`` already follows):
+    # without ``permission`` an account whose grant sets ``messages: False`` still listed its threads.
+    scope = scope or portal_scope(principal.account_id, permission="messages")
     with engine.connect() as connection:
-        return connection.execute(select(portal_threads).where(or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))).order_by(portal_threads.c.updated_at.desc()).limit(20)).mappings().all()
+        rows = connection.execute(select(portal_threads).where(or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"]))).order_by(portal_threads.c.updated_at.desc()).limit(20)).mappings().all()
+    return [_client_thread_view(r) for r in rows]
 
 def client_documents(principal):
     """Client-visible VAULT documents for this portal account. Never canonical staff documents.
@@ -365,7 +442,7 @@ def dashboard(principal):
     threads = client_threads(principal, scope)
     docs = client_documents(principal)      # re-resolves scope under the documents grant
     with engine.connect() as connection:
-        meetings = connection.execute(select(timeline_events).where(or_(timeline_events.c.person_id.in_(scope["person_ids"]), timeline_events.c.household_id.in_(scope["shared_household_ids"])), timeline_events.c.event_type == "calendar_event", timeline_events.c.event_time >= now).order_by(timeline_events.c.event_time).limit(20)).mappings().all()
+        meetings = [_client_meeting_view(m) for m in connection.execute(select(timeline_events).where(or_(timeline_events.c.person_id.in_(scope["person_ids"]), timeline_events.c.household_id.in_(scope["shared_household_ids"])), timeline_events.c.event_type == "calendar_event", timeline_events.c.event_time >= now).order_by(timeline_events.c.event_time).limit(20)).mappings().all()]
     tasks = client_tasks(principal, scope)
     from app.services.tax_intake import portal_intakes
     from app.services.tax_return_lifecycle import portal_returns

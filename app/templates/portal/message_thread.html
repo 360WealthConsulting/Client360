@@ -21,9 +21,9 @@
 
 <div class="portal-card">
 {% for m in messages %}
-  <div class="msg {{ 'from-client' if m.sender_portal_account_id else 'from-staff' }}">
+  <div class="msg {{ 'from-client' if m.sender_type == "client" else 'from-staff' }}">
     <div class="msg-body">{{ m.body }}</div>
-    <span class="msg-meta">{{ 'You' if m.sender_portal_account_id else 'Your advisor' }} · {{ m.sent_at.strftime('%b %d, %Y %I:%M %p') if m.sent_at else '' }}</span>
+    <span class="msg-meta">{{ 'You' if m.sender_type == "client" else 'Your advisor' }} · {{ m.sent_at.strftime('%b %d, %Y %I:%M %p') if m.sent_at else '' }}</span>
   </div>
 {% else %}
   <p class="meta">No messages in this conversation yet.</p>
