@@ -127,16 +127,42 @@ def engagement_summary(principal, *, person_id=None, household_id=None):
     }
 
 
+def _portal_interaction_view(interaction) -> dict:
+    """PORTAL-ONLY projection of one interaction.
+
+    ``Interaction.to_dict()`` is the INTERNAL model serialization and is shared with staff surfaces: it
+    carries ``source_system``, the internal ``visibility`` flag, ``related_person_id`` /
+    ``related_household_id`` / ``related_business_id``, ``participants``, ``lifecycle``,
+    ``retention_class`` and the raw ``interaction_id``. None of that belongs in a client response, and
+    ``to_dict()`` is deliberately left unchanged for its staff callers."""
+    return {
+        "interaction_type": interaction.interaction_type,
+        "timestamp": interaction.timestamp.isoformat() if interaction.timestamp else None,
+        "subject": interaction.subject,
+        "preview": interaction.preview,
+        "direction": interaction.direction,
+        "unread": interaction.unread,
+        "action_required": interaction.action_required,
+        "deep_link": interaction.deep_link,
+    }
+
+
 def portal_engagement(principal):
     """The external client engagement surface — recent interactions for a portal account, composed from the
     D.43 portal scoped reads. Gated by ``portal.timeline.enabled`` (opt-in). Only externally-visible
     interaction types are produced (the adapters guarantee this)."""
     if not gate.enabled() or not gate.gate("portal.timeline.enabled"):
         return {"enabled": False, "rows": [], "unread": 0, "action_required": 0}
-    from app.portal.service import portal_scope
+    from app.portal.service import portal_base_scope
     try:
-        scope = portal_scope(principal.account_id)
+        scope = portal_base_scope(principal.account_id)
     except Exception:
+        return {"enabled": True, "rows": [], "unread": 0, "action_required": 0}
+    # PER-CLIENT authorization, enforced here and not only by the middleware rule: calling this service
+    # directly must not bypass the feature decision. The runtime gate above stays a firm-wide kill
+    # switch; this is the client-level one. Nothing is queried before this returns.
+    from app.services.features.service import client_can
+    if not client_can(principal, "client_timeline"):
         return {"enabled": True, "rows": [], "unread": 0, "action_required": 0}
     interactions = []
     interactions += portal_message_interactions(principal, scope)
@@ -154,7 +180,7 @@ def portal_engagement(principal):
     ordered = _sorted(interactions)
     return {
         "enabled": True,
-        "rows": [i.to_dict() for i in ordered[:50]],
+        "rows": [_portal_interaction_view(i) for i in ordered[:50]],
         "unread": sum(1 for i in interactions if i.unread),
         "action_required": sum(1 for i in interactions if i.action_required),
     }

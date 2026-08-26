@@ -201,11 +201,15 @@ def test_portal_timeline_gate_off_by_default():
 def test_portal_engagement_gate_and_shape(monkeypatch):
     class _PP:
         account_id = 999
+        person_id = None          # engagement now resolves a client_can subject from the principal
     # Off by default.
     assert portal_engagement(_PP())["enabled"] is False
-    # On → composes (empty for an account with no data) and never raises.
+    # On → composes (empty for an account with no data) and never raises. The per-client
+    # ``client_timeline`` decision is exercised in tests/test_portal_engagement_visibility.py; here it is
+    # allowed so this test keeps proving the COMPOSITION path.
     monkeypatch.setattr(gate, "gate", lambda name: True)
-    monkeypatch.setattr("app.portal.service.portal_scope",
+    monkeypatch.setattr("app.services.features.service.client_can", lambda *a, **k: True)
+    monkeypatch.setattr("app.portal.service.portal_base_scope",
                         lambda account_id, **k: {"person_ids": set(), "shared_household_ids": set()})
     out = portal_engagement(_PP())
     assert out["enabled"] is True and isinstance(out["rows"], list)

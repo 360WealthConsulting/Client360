@@ -13,7 +13,7 @@ from app.portal.providers import SignatureProvider, SignatureResult
 from app.portal.service import (accept_invitation, approve_request_upload, client_tasks,
     complete_client_task, confirm_request_upload, create_document_request,
     create_portal_session, create_thread, dashboard, invite_portal_account,
-    list_messages, mark_read, notify, portal_scope, request_password_reset,
+    list_messages, mark_read, notify, portal_base_scope, request_password_reset,
     consume_password_reset, resolve_portal_session, revoke_portal_session,
     send_message, staff_send_message)
 from app.portal.signatures import apply_signature_event, create_signature_request, registry
@@ -60,20 +60,20 @@ def test_invitation_mfa_session_device_reset_and_revocation():
 def test_household_joint_and_delegated_scope_isolated_from_other_households():
     household_id, person_ids, user_id, suffix = _seed_household()
     account_id = _activate(person_ids[0], household_id, user_id, suffix, "delegated", {"messages": True, "documents": True, "tasks": True})
-    _, principal = _principal(account_id); scope = portal_scope(account_id)
+    _, principal = _principal(account_id); scope = portal_base_scope(account_id)
     assert set(person_ids) <= scope["person_ids"] and household_id in scope["household_ids"]
     other_household, other_people, _, _ = _seed_household("Other")
     with pytest.raises(PermissionError): create_thread(principal, household_id=other_household, person_id=other_people[0], subject="Forbidden", body="No access")
     self_account = _activate(person_ids[0], household_id, user_id, f"{suffix}-self", "self", {"messages": True, "documents": True, "tasks": True})
     _, self_principal = _principal(self_account)
-    assert person_ids[1] not in portal_scope(self_account)["person_ids"]
+    assert person_ids[1] not in portal_base_scope(self_account)["person_ids"]
     with pytest.raises(PermissionError): create_thread(self_principal, household_id=household_id, person_id=person_ids[1], subject="Joint private", body="Must remain isolated")
 
 def test_joint_and_trusted_contacts_receive_explicit_shared_household_scope():
     household_id, person_ids, user_id, suffix = _seed_household()
     for access_type in ("joint", "trusted"):
         account_id = _activate(person_ids[0], household_id, user_id, f"{suffix}-{access_type}", access_type, {"messages": True, "documents": True, "tasks": False})
-        scope = portal_scope(account_id)
+        scope = portal_base_scope(account_id)
         assert set(person_ids) <= scope["person_ids"]
         assert household_id in scope["shared_household_ids"]
 

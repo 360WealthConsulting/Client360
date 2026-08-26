@@ -70,9 +70,7 @@ PROJECTION_REGISTRY_MAP = {
 #: a projection change, so they are deliberately left for task 2B rather than papered over.
 #:
 #: Compliance criterion #3 cannot close while this set is non-empty.
-REMAINING_VISIBILITY_FINDINGS = {
-    "engagement: portal_engagement has no per-client client_can decision (runtime gate only)",
-}
+REMAINING_VISIBILITY_FINDINGS: set[str] = set()
 
 
 @pytest.fixture
@@ -292,14 +290,16 @@ def test_remaining_findings_are_recorded_and_not_silently_forgotten():
 
     Criterion #3 may only be considered for closure when this set is empty. Do not empty it without
     doing the work — the guards below prove the task-1 and task-2A entries really were fixed."""
-    assert len(REMAINING_VISIBILITY_FINDINGS) == 1
-    assert all("engagement" in f for f in REMAINING_VISIBILITY_FINDINGS), (
-        "a task/tax or billing finding reappeared in the inventory")
+    assert REMAINING_VISIBILITY_FINDINGS == set(), (
+        f"portal read surfaces still have known visibility findings: "
+        f"{sorted(REMAINING_VISIBILITY_FINDINGS)} — compliance criterion #3 cannot close while this set "
+        f"is non-empty")
 
 
 def test_no_task_or_tax_finding_remains_in_the_inventory():
     """Task 2A closed every task/tax finding; none may be re-added without new evidence."""
-    for term in ("client_tasks", "portal_intakes", "portal_returns", "client_action", "billing"):
+    for term in ("client_tasks", "portal_intakes", "portal_returns", "client_action",
+                 "billing", "engagement"):
         assert not any(term in f for f in REMAINING_VISIBILITY_FINDINGS), \
             f"{term} is back in the open-findings inventory"
 

@@ -26,7 +26,7 @@ from app.portal.service import (
     accept_invitation,
     create_portal_session,
     invite_portal_account,
-    portal_scope,
+    portal_base_scope,
     resolve_portal_session,
 )
 
@@ -209,7 +209,7 @@ def test_self_grant_does_not_reach_other_household():
     acct = _account(hid, pids[0], suffix, access_type="self",
                     permissions={"messages": True, "documents": True})
     other_hid, other_pids, _ = _seed_household("Other")
-    scope = portal_scope(acct)
+    scope = portal_base_scope(acct)
     assert hid in scope["household_ids"]
     assert other_hid not in scope["household_ids"]
     assert not (set(other_pids) & scope["person_ids"])   # never reaches another household's members

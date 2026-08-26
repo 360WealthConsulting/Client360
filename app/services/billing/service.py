@@ -465,8 +465,9 @@ def billing_active_signal(bill_to_type, bill_to_id, *, as_of=None) -> dict:
 def client_billing_subjects(principal) -> set[tuple[str, int]]:
     """The (type, id) subjects a portal client may see billing for — their persons, households, and
     ORGANIZATIONS (per-organization: only orgs the client is associated with, so ABC≠XYZ)."""
-    from app.portal.service import portal_scope
-    scope = portal_scope(principal.account_id)
+    from app.portal.service import portal_base_scope
+    # Relationship subjects only; each billing service enforces its own Core feature.
+    scope = portal_base_scope(principal.account_id)
     subjects: set[tuple[str, int]] = set()
     subjects.update(("person", pid) for pid in scope["person_ids"])
     subjects.update(("household", hid) for hid in scope["household_ids"])

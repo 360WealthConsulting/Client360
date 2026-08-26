@@ -90,14 +90,36 @@ def revoke_portal_session(raw):
     if raw:
         with engine.begin() as connection: connection.execute(portal_sessions.update().where(portal_sessions.c.session_hash == _hash(raw)).values(revoked_at=datetime.now(timezone.utc)))
 
-def portal_scope(account_id, *, permission=None):
-    """Resolve the portal account's reachable person/household ids.
+def portal_base_scope(account_id):
+    """RELATIONSHIP/IDENTITY scope only — every active grant contributes, no permission filter.
 
-    When ``permission`` is supplied, only grants that explicitly allow that
-    permission contribute to the reachable set (default-deny). This makes the
-    permission correlate to the specific grant covering a record rather than
-    passing if *any* grant on the account has the permission, and it lets the
-    secure-messaging paths enforce ``messages`` consistently (H7)."""
+    Use this ONLY where an independent authorization layer decides access afterwards: the dashboard
+    identity bootstrap (each panel re-resolves under its own permission), the staff entitlement preview,
+    ``client_can``'s own relationship resolution, and the payroll/billing/engagement surfaces that follow
+    it with an explicit entity-scoped ``client_can``. Every other caller wants
+    :func:`portal_scope`, which requires a permission.
+
+    ``tests/test_portal_scope_architecture.py`` pins the exhaustive list of callers allowed to use this."""
+    return _resolve_scope(account_id, permission=None)
+
+
+def portal_scope(account_id, *, permission: str):
+    """Resolve the portal account's reachable person/household ids under ONE grant permission.
+
+    ``permission`` is REQUIRED and has no default. It previously defaulted to ``None``, and six callers
+    silently omitted it — so the resolver was never asked to enforce the grant and a client whose grant
+    set ``messages: False`` still listed threads. Only grants that explicitly allow ``permission``
+    contribute (default-deny), so the permission correlates to the specific grant covering a record
+    rather than passing if *any* grant on the account has it (H7).
+
+    For identity-only resolution use :func:`portal_base_scope`, which names that intent explicitly."""
+    if not permission:
+        raise ValueError("portal_scope requires an explicit permission; use portal_base_scope() for "
+                         "identity-only relationship scope")
+    return _resolve_scope(account_id, permission=permission)
+
+
+def _resolve_scope(account_id, *, permission):
     with engine.connect() as connection:
         grants = connection.execute(select(portal_access_grants).where(portal_access_grants.c.portal_account_id == account_id, _active_grant())).mappings().all()
         if permission is not None:
@@ -453,7 +475,8 @@ def notify_employer(account_id, *, title, body, entity_type=None, entity_id=None
                   entity_type=entity_type, entity_id=entity_id, idempotency_key=idempotency_key)
 
 def dashboard(principal):
-    scope = portal_scope(principal.account_id); now = datetime.now(timezone.utc)
+    # Identity bootstrap: each panel below re-resolves under its own grant permission.
+    scope = portal_base_scope(principal.account_id); now = datetime.now(timezone.utc)
     # Narrow endpoints (/documents, /requests, /tasks, /notifications, /messages)
     # reuse the single-purpose function they need instead of computing the whole
     # dashboard (RC8/RC9). Output is unchanged.

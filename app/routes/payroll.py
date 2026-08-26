@@ -164,9 +164,10 @@ def portal_payroll(organization_id: int, request: Request,
     """Read-only client view. Authenticated by the standard portal dependency (401 without a portal
     session); then gated by portal scope (404 if the business is not the client's) and the per-client
     Payroll feature (403). NOT gated by staff capabilities. Shows only client-safe headline numbers."""
-    from app.portal.service import portal_scope
+    from app.portal.service import portal_base_scope
     from app.services.features.service import client_can
-    scope = portal_scope(principal.account_id)
+    # Relationship scope only; the entity-scoped client_can below is the authorization.
+    scope = portal_base_scope(principal.account_id)
     if organization_id not in set(scope.get("organization_ids", [])):
         raise HTTPException(404, "Not found")
     if not client_can(principal, pay.FEATURE_KEY, organization_id=organization_id):

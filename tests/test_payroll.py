@@ -314,7 +314,7 @@ def test_portal_route_blocks_out_of_scope_business(monkeypatch):
     org = _business()
     # A signed-in portal client whose scope does NOT include this org -> 404 (never reveals payroll).
     principal = types.SimpleNamespace(account_id=999)
-    monkeypatch.setattr("app.portal.service.portal_scope", lambda account_id, **k: {"organization_ids": []})
+    monkeypatch.setattr("app.portal.service.portal_base_scope", lambda account_id, **k: {"organization_ids": []})
     with pytest.raises(HTTPException) as ei:
         routes.portal_payroll(org, fake_request(f"/portal/business/{org}/payroll"), principal=principal)
     assert ei.value.status_code == 404
@@ -329,7 +329,7 @@ def test_portal_route_blocks_disabled_feature(monkeypatch):
     org = _business()
     # In-scope client, but the Payroll feature is not enabled for the business -> 403.
     principal = types.SimpleNamespace(account_id=42)
-    monkeypatch.setattr("app.portal.service.portal_scope",
+    monkeypatch.setattr("app.portal.service.portal_base_scope",
                         lambda account_id, **k: {"organization_ids": [org]})
     monkeypatch.setattr("app.services.features.service.client_can", lambda *a, **k: False)
     with pytest.raises(HTTPException) as ei:

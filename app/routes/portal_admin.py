@@ -24,7 +24,7 @@ from app.db import (
 from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import visibility
-from app.portal.service import invite_portal_account, portal_scope, staff_send_message
+from app.portal.service import invite_portal_account, portal_base_scope, staff_send_message
 from app.security.audit import write_audit_event
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
@@ -143,7 +143,8 @@ def portal_admin_preview(account_id: int, principal: Principal = Depends(require
         raise HTTPException(404, "Portal account not found")
     if not record_in_scope(principal, "person", acct["person_id"]):
         raise HTTPException(403, "Person is outside your record scope")
-    scope = portal_scope(account_id)
+    # Staff entitlement preview must report the WHOLE grant scope, not one permission's slice.
+    scope = portal_base_scope(account_id)
     granted = set()
     for g in scope["grants"]:
         for perm, on in (g["permissions"] or {}).items():

@@ -407,8 +407,10 @@ def client_can(principal, feature_key: str, *, organization_id: int | None = Non
     if feat.product == "business":
         if organization_id is None:
             return False                                 # fail-closed: business needs explicit org context
-        from app.portal.service import portal_scope
-        org_ids = portal_scope(principal.account_id).get("organization_ids") or set()
+        from app.portal.service import portal_base_scope
+        # Relationship resolution INSIDE the feature decision — requiring a permission here would be
+        # circular.
+        org_ids = portal_base_scope(principal.account_id).get("organization_ids") or set()
         if organization_id not in org_ids:
             return False                                 # not one of this client's organizations
         return effective_access("organization", organization_id, feature_key, actor="client").allowed

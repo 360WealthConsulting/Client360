@@ -23,7 +23,7 @@ from sqlalchemy import func, insert, select
 
 from app.db import engine, people, portal_access_grants, vault_documents
 from app.portal import vault_documents as pv
-from app.portal.service import portal_scope
+from app.portal.service import portal_base_scope
 from app.services.features import portal_gate
 from tests._portal_util import sample_upload, seed_portal_account, seed_staff_user
 
@@ -221,7 +221,7 @@ def test_household_gate_off_blocks_expansion_to_other_members(client, portal_gat
     _joint_grant(client["account_id"], client["household_id"])
 
     portal_gates(ALL_GATES - {"portal.household_enabled"})
-    scope_off = portal_scope(client["account_id"])
+    scope_off = portal_base_scope(client["account_id"])
     assert scope_off["shared_household_ids"] == set()
     assert spouse not in scope_off["person_ids"], "household expansion leaked with the gate off"
     # self/person grants keep working
@@ -229,7 +229,7 @@ def test_household_gate_off_blocks_expansion_to_other_members(client, portal_gat
     assert client["household_id"] in scope_off["household_ids"]
 
     portal_gates(ALL_GATES)
-    scope_on = portal_scope(client["account_id"])
+    scope_on = portal_base_scope(client["account_id"])
     assert spouse in scope_on["person_ids"], "household expansion did not work with the gate on"
 
 
@@ -238,7 +238,7 @@ def test_household_gate_never_crosses_into_another_household(client, portal_gate
     other = seed_portal_account(seed_staff_user())
     _joint_grant(client["account_id"], client["household_id"])
     portal_gates(ALL_GATES)
-    scope = portal_scope(client["account_id"])
+    scope = portal_base_scope(client["account_id"])
     assert other[3] not in scope["household_ids"]
     assert other[2] not in scope["person_ids"], "client A reached client B's person"
 

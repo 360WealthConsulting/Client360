@@ -69,6 +69,10 @@ _FEATURE_LIST: tuple[Feature, ...] = (
     _feat("profile_editing", "core", "Profile Editing", _CORE),
     _feat("client_requests", "core", "Client Requests", _CORE),
     _feat("portal_notifications", "core", "Portal Notifications", _CORE),
+    # Client engagement/interaction timeline. Core and firm-ENABLED so existing portal clients keep
+    # the surface they have today; the firm-wide ``portal.timeline.enabled`` runtime gate remains a
+    # separate kill switch, and this adds the missing PER-CLIENT decision.
+    _feat("client_timeline", "core", "Client Timeline", _CORE),
     _feat("email_notifications", "core", "Email Notifications", _CORE),
     # Billing & Invoicing (MVP): the billing area + invoice viewing are Core (default enabled). Online
     # payments and autopay front unbuilt processor integrations, so they default firm-DISABLED and must

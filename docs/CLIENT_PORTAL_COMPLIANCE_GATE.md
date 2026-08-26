@@ -120,6 +120,30 @@ feature.
 
 **Criterion #3 therefore remains `[ ]`.**
 
+### Visibility remediation, final task — engagement + scope architecture (criterion #3)
+`portal_engagement` had no per-client authorization at all: only the firm-wide
+`portal.timeline.enabled` runtime flag, and no `portal_gate` rule mapped its paths, so not even
+middleware `client_can` covered it. Its rows were `Interaction.to_dict()`, the internal model
+serialization shared with staff surfaces.
+
+A new Core feature `client_timeline` (firm-**enabled**, so existing portal clients keep the surface
+exactly as today) supplies the missing per-client decision. It is enforced inside `portal_engagement`
+before anything is queried, mapped in `portal_gate._RULES` for `/portal/engagement` and
+`/api/{v1/}portal/engagement`, and the rows are now an explicit projection. The runtime flag remains a
+separate firm-wide kill switch. `Interaction.to_dict()` is unchanged for its staff callers.
+
+The scope contract was then split. `portal_scope(account_id, *, permission)` now **requires** a
+permission — no default, no `None` — and `portal_base_scope(account_id)` names identity-only resolution
+explicitly. Exactly six callers use the base helper, each because an independent authorization layer
+decides access afterwards: the dashboard identity bootstrap, the staff entitlement preview, `client_can`'s
+own relationship resolution (where requiring a permission would be circular), and the payroll, billing and
+engagement surfaces that each follow it with an explicit `client_can`. An AST-based guard
+(`tests/test_portal_scope_architecture.py`) classifies every call site exactly once and fails on an
+unclassified caller, a missing permission, or a caller in both classes.
+
+`REMAINING_VISIBILITY_FINDINGS` is now **empty**, and the assertion that it stays empty is retained so a
+future finding cannot vanish silently.
+
 **No pre-condition below is closed by this test.** Each one is either about the production IdP, a human
 or legal review, or a surface that stayed gated OFF for the duration of the test. The acceptance criteria
 are recorded verbatim and are not reinterpreted to fit the evidence obtained.
@@ -160,7 +184,9 @@ are recorded verbatim and are not reinterpreted to fit the evidence obtained.
       All are regression-covered. The billing and engagement surfaces remain a separate
       authorization-model question, not evidence that the resolver itself failed. The original
       production test did not exercise these later-discovered caller omissions, and the recorded
-      resolver evidence stands.
+      resolver evidence stands. The base-scope/feature-scope split now makes a silent permission
+      omission impossible: `portal_scope` requires an explicit permission and identity-only resolution
+      must name itself, with an AST guard over every call site.
       *Remains:* production verification with more than one identity. The test used a single self grant
       with `portal.household_enabled` OFF, so no cross-client or household-expansion case was exercised in
       production. Automated coverage exists (cross-household isolation, forged ids, per-permission

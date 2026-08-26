@@ -52,6 +52,8 @@ _RULES: tuple[tuple[re.Pattern[str], frozenset[str] | None, str], ...] = (
     (re.compile(r"^/portal/notifications"), None, "portal_notifications"),
     (re.compile(r"^/portal/billing/invoices/\d+"), None, "invoice_view"),
     (re.compile(r"^/portal/billing"), None, "billing"),
+    (re.compile(r"^/api/(v1/)?portal/engagement"), None, "client_timeline"),
+    (re.compile(r"^/portal/engagement"), None, "client_timeline"),
 )
 
 
