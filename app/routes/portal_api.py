@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app.portal import profile as portal_profile
 from app.portal import vault_documents as portal_vault
+from app.portal.gate import gate as portal_runtime_gate
 from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
 from app.portal.service import (
     PortalPrincipal,
@@ -131,13 +132,19 @@ async def api_upload_document(
 @router.get("/documents/{document_id}/download")
 def api_download_document(request: Request, document_id: int,
                           principal: PortalPrincipal = Depends(current_portal)):
+    if not portal_runtime_gate("portal.documents.download_enabled"):
+        # Feature unavailable — deliberately distinct from resource inaccessibility, and the same
+        # answer the middleware gives before this route runs.
+        raise HTTPException(403, "This feature is not available on your account.")
     try:
         path, filename, mime = portal_vault.download_document(
             principal, document_id, request_id=_rid(request), ip_address=_ip(request))
     except PermissionError as exc:
-        raise HTTPException(403, str(exc)) from exc
+        # One generic 404 for every resource-level denial. Previously this returned 403 with the
+        # service's message, which distinguished scope denial from gate denial and diverged from v1.
+        raise HTTPException(404, "Document not found") from exc
     if not path.exists():
-        raise HTTPException(404, "File unavailable.")
+        raise HTTPException(404, "Document not found")
     return FileResponse(path=str(path), media_type=mime or "application/octet-stream", filename=filename)
 
 

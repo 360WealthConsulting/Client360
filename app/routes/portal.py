@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.db import documents, engine, portal_document_requests, portal_notifications, portal_sessions, portal_threads
+from app.db import engine, portal_document_requests, portal_notifications, portal_sessions, portal_threads
 from app.portal.service import (PortalPrincipal, accept_invitation, client_action_detail,
     client_action_needed, client_document_requests,
     client_documents, client_notifications, client_tasks, client_threads, complete_client_task,
@@ -22,7 +22,7 @@ from app.portal import vault_documents as portal_vault
 from app.services.vault.service import CATEGORIES as VAULT_CATEGORIES
 from app.services.vault.storage import VaultStorageError
 from app.portal.financial import financial_summary
-from app.services.document_naming import document_delivery_filename
+from app.portal.gate import gate as portal_runtime_gate
 from app.services.documents import save_person_document
 from app.services.exception_engine import ExceptionNotFoundError
 from app.services import insurance_portal
@@ -233,33 +233,42 @@ def api_portal_appointment_request(payload: AppointmentRequest, principal: Porta
     return {"thread_id": thread_id, "status": "requested"}
 
 @router.get("/api/v1/portal/documents/{document_id}/download")
-def api_portal_document_download(document_id: int, principal: PortalPrincipal = Depends(current_portal)):
-    # The document_download feature is enforced centrally by the auth middleware (see
-    # app/services/features/portal_gate.py) before this route runs, so a client with the feature disabled
-    # is denied 403 even by direct URL/API call. Then the existing per-person documents-grant scope check
-    # applies. Out-of-scope never discloses existence.
-    with engine.connect() as connection:
-        row = connection.execute(select(documents.c.person_id, documents.c.storage_path,
-            documents.c.original_name, documents.c.display_name,
-            documents.c.content_type, documents.c.archived).where(
-            documents.c.id == document_id)).mappings().one_or_none()
-    if not row or row["archived"]:
-        raise HTTPException(404, "Document not found")
-    try:
-        require_scope(principal, person_id=row["person_id"], permission="documents")
-    except PermissionError as exc:
-        raise HTTPException(404, "Document not found") from exc  # scope denial does not reveal existence
-    from pathlib import Path
+def api_portal_document_download(request: Request, document_id: int,
+                                 principal: PortalPrincipal = Depends(current_portal)):
+    """Deliver a client-visible VAULT document. Never a canonical staff document.
 
+    This route previously read the canonical ``documents`` table and authorized on
+    ``documents.person_id`` + ``require_scope`` alone. That table has no ``client_visible`` column, so a
+    client with a documents grant could download ANY non-archived canonical document filed against their
+    own person — internal notes included — because person scope was the only barrier. It also bypassed
+    the ``portal.document.downloaded`` audit event.
+
+    Authorization now belongs entirely to ``portal_vault.download_document``, the single authoritative
+    policy: vault-backed row, ``client_visible`` true, ``vault_document_links`` intersecting the
+    documents-permission scope, downloadable status (or the client's own pending upload), and the audit
+    event on success. There is NO fallback to the canonical table — a vault miss fails closed.
+
+    Denial contract: every resource-level failure — unknown id, out-of-scope, canonical-only,
+    not client-visible, unapproved status, missing file — returns an identical generic 404, so a client
+    cannot distinguish "does not exist" from "exists but is not yours". The surface gate stays 403
+    (feature unavailable), which is a different fact from resource inaccessibility.
+    """
     from fastapi.responses import FileResponse
-    path = Path(row["storage_path"])
+
+    if not portal_runtime_gate("portal.documents.download_enabled"):
+        # Feature unavailable is NOT a resource-existence answer; the middleware returns the same 403
+        # before this route runs. Kept here so a direct call cannot bypass the surface gate.
+        raise HTTPException(403, "This feature is not available on your account.")
+    try:
+        path, filename, mime = portal_vault.download_document(
+            principal, document_id,
+            request_id=getattr(request.state, "request_id", "portal"),
+            ip_address=request.client.host if request.client else None)
+    except PermissionError as exc:
+        raise HTTPException(404, "Document not found") from exc
     if not path.is_file():
         raise HTTPException(404, "Document not found")
-    from app.portal import stats as _stats
-    _stats.note("downloads")
-    # Same delivered-name rule as the staff download; scope enforcement above is unchanged.
-    return FileResponse(str(path), media_type=row["content_type"] or "application/octet-stream",
-                        filename=document_delivery_filename(row))
+    return FileResponse(str(path), media_type=mime or "application/octet-stream", filename=filename)
 
 
 # --- Browser (HTML) client surfaces over the EXISTING portal services --------

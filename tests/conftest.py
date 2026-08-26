@@ -138,6 +138,9 @@ _PORTAL_GATE_CONSUMERS = (
     "app.portal.appointments",
     "app.portal.financial",
     "app.services.features.portal_gate",
+    # Route modules that bind the gate directly for the surface-gate (403) vs resource (404) split.
+    "app.routes.portal",
+    "app.routes.portal_api",
 )
 
 # External client access requires BOTH halves of ``production_ready()``. A behavioural test that intends
@@ -168,6 +171,8 @@ def portal_gate_state(monkeypatch):
             monkeypatch.setattr(module, "gate", fake_gate)
         if hasattr(module, "runtime_gate"):
             monkeypatch.setattr(module, "runtime_gate", fake_gate)
+        if hasattr(module, "portal_runtime_gate"):
+            monkeypatch.setattr(module, "portal_runtime_gate", fake_gate)
     return enabled
 
 

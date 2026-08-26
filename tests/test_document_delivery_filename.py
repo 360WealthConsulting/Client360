@@ -197,12 +197,23 @@ def test_download_route_authorization_dependencies_are_unchanged():
     assert route.dependant.dependencies == []
 
 
-def test_portal_download_uses_the_same_helper():
-    """The portal serves canonical documents rows to clients; it must deliver the same name."""
+def test_portal_download_does_not_serve_canonical_documents():
+    """The portal must NOT serve canonical ``documents`` rows to clients.
+
+    This assertion is inverted from its original form. It previously required the portal download route
+    to read ``documents.c.display_name`` and call ``document_delivery_filename(row)`` — encoding the
+    assumption that "the portal serves canonical documents rows to clients". That assumption was the
+    security defect: the canonical table has no ``client_visible`` column, so person scope was the only
+    barrier and any internal document filed against the client's own person was downloadable.
+
+    Client delivery now goes through ``portal_vault.download_document``, which owns the whole policy
+    (vault-backed, client_visible, link scope, downloadable status, audit) and returns the vault's own
+    ``original_filename``. Route-level behaviour is covered by
+    tests/test_portal_download_route_isolation.py; this stays a structural guard against regression."""
     import inspect
 
     from app.routes import portal
     src = inspect.getsource(portal.api_portal_document_download)
-    assert "document_delivery_filename(row)" in src
-    assert "documents.c.display_name" in src
-    assert "require_scope(" in src                               # scope check still present
+    assert "portal_vault.download_document" in src
+    assert "documents.c." not in src
+    assert "document_delivery_filename" not in src

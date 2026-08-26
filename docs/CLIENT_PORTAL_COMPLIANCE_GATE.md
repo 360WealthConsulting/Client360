@@ -41,6 +41,21 @@ sign-off flag, the invitation/MFA/session lifecycle, and a clean rollback to the
 4. **Regulatory/compliance authorization for real-client access** — *not* granted. That is this artifact's
    decision, and it remains BLOCKED.
 
+### Defect found and remediated during the item-#6 design audit
+Designing the production verification for pre-condition #6 uncovered a security defect in
+`GET /api/v1/portal/documents/{document_id}/download`: it read the canonical staff `documents` table and
+authorized on `documents.person_id` + `require_scope` alone. That table has no `client_visible` column,
+so a client holding a documents grant could download any non-archived canonical document filed against
+their **own** person — internal work product included — and the download was not audited. The `88305f5`
+isolation fix had corrected document *listing* but not this route, and no test exercised the route.
+
+Both download versions now delegate to the single authoritative vault policy, every resource-level denial
+returns an identical generic 404, and HTTP-level regression coverage exists
+(`tests/test_portal_download_route_isolation.py`, which fails against the pre-fix code).
+
+This is **remediation plus automated proof, not the production verification** pre-condition #6 requires.
+Criterion #6 therefore remains `[ ]`.
+
 **No pre-condition below is closed by this test.** Each one is either about the production IdP, a human
 or legal review, or a surface that stayed gated OFF for the duration of the test. The acceptance criteria
 are recorded verbatim and are not reinterpreted to fit the evidence obtained.
