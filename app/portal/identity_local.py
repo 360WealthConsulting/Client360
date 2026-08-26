@@ -39,16 +39,32 @@ class LocalTestIdentityProvider(PortalIdentityProvider):
 
 
 def register_local_provider_if_permitted():
-    """Register the local provider ONLY when the portal is not production-signed-off. In production
-    (``portal.production_signed_off`` true) this is a no-op, so no offline provider is ever available to
-    verify a real external activation. Idempotent."""
+    """Register the deterministic local provider when the deployment is entitled to one.
+
+    Two independent conditions, evaluated through the governed runtime engine (never env vars):
+
+    * ``portal.production_signed_off`` is FALSE — the long-standing local/dev/CI behaviour: the portal is
+      not claiming production status, so an offline provider is appropriate and activation works offline.
+    * ``portal.local_identity_provider_enabled`` is TRUE — an EXPLICIT, separately governed authorization
+      to keep the local provider during a controlled synthetic test that runs *after* sign-off. Default
+      False. This exists only because sign-off otherwise removes the sole provider, making even a
+      synthetic test impossible; it is NOT a substitute for the real external IdP that
+      docs/CLIENT_PORTAL_COMPLIANCE_GATE.md requires before any real client is onboarded, and it must be
+      returned to False before real-client onboarding.
+
+    Sign-off alone therefore still removes the provider (the production protection is intact), and
+    ``portal.enabled`` never registers anything. Fails closed on an unresolvable runtime only for the
+    explicit test gate; the sign-off half keeps its documented default (not signed off → register), so
+    local and CI behaviour is unchanged. Idempotent — the registry is keyed by provider ``.key``."""
     try:
         from app.portal.gate import gate
-        if gate("portal.production_signed_off"):
-            return False
+        signed_off = gate("portal.production_signed_off")
+        test_provider_authorized = gate("portal.local_identity_provider_enabled")
     except Exception:
-        # Fail closed toward NOT registering only if we cannot even evaluate; but the default gate is
-        # False (not signed off), so absent runtime we DO register for local/test usability.
-        pass
+        # Absent a resolvable runtime, fall back to the documented defaults: not signed off (so the
+        # local provider registers for local/test usability) and the test gate OFF.
+        signed_off, test_provider_authorized = False, False
+    if signed_off and not test_provider_authorized:
+        return False
     PORTAL_IDENTITY_PROVIDERS.register(LocalTestIdentityProvider())
     return True

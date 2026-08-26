@@ -20,7 +20,10 @@ the disabled runtime gate; production external access is blocked by default.
 
 ## Pre-conditions for sign-off (to be verified by the reviewer)
 - [ ] A real external identity provider is integrated and registered (the deterministic local provider is
-      non-production only).
+      non-production only). **STILL OPEN.** `portal.local_identity_provider_enabled` (default OFF) may keep
+      the deterministic local provider registered for a *controlled synthetic test* after sign-off; it is
+      explicitly NOT a real external IdP, does not satisfy this item, and must be returned to OFF before
+      any real client is onboarded.
 - [ ] MFA enforcement confirmed (`portal.mfa_required` ON) end-to-end with the production IdP.
 - [ ] Visibility registry reviewed; no `internal_only` / `prohibited` field is externally reachable;
       governance report clean.

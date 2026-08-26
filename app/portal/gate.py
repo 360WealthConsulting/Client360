@@ -21,6 +21,12 @@ GATES = {
     "portal.forms_enabled": False,
     "portal.mfa_required": True,
     "portal.production_signed_off": False,   # the compliance sign-off gate — blocked by default
+    # CONTROLLED SYNTHETIC TESTING ONLY. Lets the deterministic LOCAL identity provider register even
+    # after production sign-off, so an authorized synthetic test can sign in without a real IdP. It does
+    # NOT affect production_ready(), does not open any portal surface, and is NOT a substitute for the
+    # real external identity provider that CLIENT_PORTAL_COMPLIANCE_GATE.md still requires before any
+    # real client is onboarded. Must be returned to False before real-client onboarding.
+    "portal.local_identity_provider_enabled": False,
 }
 
 

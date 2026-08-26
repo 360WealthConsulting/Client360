@@ -206,6 +206,8 @@ def test_runtime_gate_status_matches_the_production_safe_defaults():
         "portal.forms_enabled": False,
         "portal.mfa_required": True,
         "portal.production_signed_off": False,
+        # controlled-synthetic-test gate (migration a7c31f9b4e02) — must stay OFF in production
+        "portal.local_identity_provider_enabled": False,
     }
     assert status == GATES, "seeded runtime values must equal the hard-coded production-safe defaults"
 

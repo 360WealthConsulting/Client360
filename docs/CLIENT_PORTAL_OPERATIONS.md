@@ -18,10 +18,34 @@ Configured through the governed Runtime Engine (no environment fallback), read v
 | `portal.forms_enabled` | OFF | forms/signatures |
 | `portal.mfa_required` | **ON** | require MFA for sign-in |
 | `portal.production_signed_off` | OFF | compliance sign-off (blocks external production access) |
+| `portal.local_identity_provider_enabled` | OFF | **controlled synthetic test only** — keeps the deterministic local IdP registered after sign-off |
 
 `production_ready()` returns true only when `portal.enabled` AND `portal.production_signed_off` are both on
 — so external production access is blocked until compliance records a decision (see
 [`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md)).
+
+## Local test identity provider (`portal.local_identity_provider_enabled`)
+Default **OFF**. The deterministic local provider normally registers only while the portal is *not*
+production-signed-off. Because it is the only portal identity provider that exists, recording sign-off
+would otherwise leave none registered and make even a synthetic production test impossible (both auth
+surfaces resolve a provider and return 400 without one).
+
+This gate authorizes the local provider independently of sign-off:
+
+| `production_signed_off` | `local_identity_provider_enabled` | local provider |
+| --- | --- | --- |
+| OFF | OFF | registered (existing local/dev/CI behaviour) |
+| OFF | ON | registered |
+| **ON** | **OFF** | **not registered** — production protection intact |
+| ON | ON | registered — governed synthetic-test window only |
+
+It does **not** affect `production_ready()`, opens no portal surface, and grants no staff capability.
+It is **not** a substitute for the real external identity provider: that remains an open compliance
+requirement (see `CLIENT_PORTAL_COMPLIANCE_GATE.md`), and this flag **must be returned to OFF before any
+real client is onboarded**.
+
+Registration happens once, in the application startup lifespan. Changing this flag on a running process
+has no effect until Client360 is restarted.
 
 ## Enabling for local/test
 Locally the gates stay off but implementation proceeds behind them: the deterministic local identity
