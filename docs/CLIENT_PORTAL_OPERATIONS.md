@@ -90,6 +90,69 @@ real client is onboarded**.
 Registration happens once, in the application startup lifespan. Changing this flag on a running process
 has no effect until Client360 is restarted.
 
+## Controlled synthetic production activation test — COMPLETED
+A controlled, single-identity activation test was executed in production against deployed SHA
+`bbbd3bc5d4cea115b0b6de5baa1c01ccc6dada4d` (Alembic `b5d82e04c917`, route count 1177, `/health` and
+`/readiness` 200). Its purpose was to validate the **technical** activation path end to end — nothing
+more. It is **not** evidence of production identity-provider readiness and **not** a compliance
+authorization; see [`CLIENT_PORTAL_COMPLIANCE_GATE.md`](CLIENT_PORTAL_COMPLIANCE_GATE.md), which remains
+BLOCKED with every pre-condition still open.
+
+**Result: PASS** on each step exercised —
+
+| Step | Result |
+| --- | --- |
+| Local synthetic IdP verification | PASS |
+| MFA verification | PASS |
+| Invitation acceptance | PASS |
+| Portal account activation | PASS |
+| Authentication-subject linkage | PASS |
+| Portal session creation | PASS |
+| Portal session resolution | PASS |
+| Portal session revocation | PASS |
+| Runtime gate rollback | PASS |
+| Synthetic person inactivation | PASS |
+| Synthetic grant inactivation | PASS |
+
+The test ran with a single self grant carrying `documents` only; `portal.household_enabled` and every
+other child gate stayed OFF throughout. No real client record was involved and no outbound email, SMS or
+Microsoft Graph call occurred.
+
+### Retained synthetic artifacts (intentional)
+These records are **deliberately retained as audit and test history** and are not to be deleted. No
+existing retention policy requires their removal.
+
+| Artifact | Id | State |
+| --- | --- | --- |
+| Synthetic person | 7847 | inactive |
+| Synthetic household | 243 | retained |
+| Portal account | 1 | retained |
+| Self grant | 1 | inactive |
+| Accepted invitation | 6 | accepted, retained |
+| Revoked portal session | 1 | revoked, retained |
+
+Invitation records retained: 6. Session records retained: 1. **Usable invitations: 0. Unrevoked
+sessions: 0.**
+
+### Final safe state (post-test, verified)
+| Gate | Value |
+| --- | --- |
+| `portal.enabled` | False |
+| `portal.household_enabled` | False |
+| `portal.documents.download_enabled` | False |
+| `portal.documents.upload_enabled` | False |
+| `portal.messaging_enabled` | False |
+| `portal.appointments_enabled` | False |
+| `portal.financial_summary_enabled` | False |
+| `portal.forms_enabled` | False |
+| `portal.production_signed_off` | False |
+| `portal.local_identity_provider_enabled` | False |
+| `portal.mfa_required` | **True** |
+| `production_ready()` | **False** |
+
+The production portal is closed, the local test identity provider flag is back OFF, there are zero usable
+invitations and zero unrevoked sessions. **External portal access remains NOT authorized.**
+
 ## Enabling for local/test
 Locally the gates stay off but implementation proceeds behind them: the deterministic local identity
 provider auto-registers at startup (only when not production-signed-off) so activation works offline, and
