@@ -85,54 +85,150 @@ class InviteTarget:
 
 #: Shortest term worth searching. Matches universal_search's own floor.
 MIN_TERM = 2
-#: Per-term ceiling used while intersecting. Higher than the returned limit so combining
-#: "Michael" + "Shelton" is not starved by one common term filling its own page first.
+#: Per-term ceiling used while combining. Higher than the returned limit so one common term
+#: cannot crowd out the candidates a more selective term found.
 _TERM_LIMIT = 200
+#: The identifying fields staff can type, in the order they appear on the form.
+_FIELDS = ("first_name", "last_name", "email", "phone")
+
+#: Secondary ordering weight per (field, quality). Only used to break ties INSIDE a tier — the
+#: tier in :func:`_tier` is what implements the required precedence.
+_WEIGHTS = {
+    ("email", "exact"): 100, ("phone", "exact"): 80,
+    ("last_name", "exact"): 34, ("first_name", "exact"): 30,
+    ("email", "partial"): 12, ("phone", "partial"): 10,
+    ("last_name", "partial"): 5, ("first_name", "partial"): 4,
+    ("query", "partial"): 3,
+}
+
+
+def _norm_email(value):
+    return (value or "").strip().lower()
+
+
+def _email_is_exact(entered, row) -> bool:
+    entered = _norm_email(entered)
+    return bool(entered) and entered in {_norm_email(row["primary_email"]),
+                                         _norm_email(row["normalized_email"])}
+
+
+def _phone_is_exact(entered, row) -> bool:
+    """Exact against the stored digits, tolerating punctuation and a leading US country code —
+    the same normalisation the query itself goes through."""
+    from app.services.universal_search import _phone_query_variants
+    stored = (row["normalized_phone"] or "").strip()
+    return bool(stored) and stored in set(_phone_query_variants(entered or ""))
+
+
+def _name_is_exact(entered, stored) -> bool:
+    return bool((entered or "").strip()) and \
+        (entered or "").strip().lower() == (stored or "").strip().lower()
+
+
+def _match_profile(row, terms, matched_by_field) -> dict:
+    """How this person matched each ENTERED field: "exact", "partial", or None.
+
+    "partial" means the canonical search matched the term but the stored value is not equal to it
+    — a substring of an email, part of a phone, a name that differs in case or completeness."""
+    profile = {}
+    for field in _FIELDS:
+        entered = terms.get(field)
+        if not entered or row["id"] not in matched_by_field.get(field, ()):
+            profile[field] = None
+            continue
+        if field == "email":
+            exact = _email_is_exact(entered, row)
+        elif field == "phone":
+            exact = _phone_is_exact(entered, row)
+        else:
+            exact = _name_is_exact(entered, row[field])
+        profile[field] = "exact" if exact else "partial"
+    # A combined single-term query has no field identity; it only ever counts as a weak match.
+    profile["query"] = ("partial" if terms.get("query")
+                        and row["id"] in matched_by_field.get("query", ()) else None)
+    return profile
+
+
+def _tier(profile) -> int:
+    """Match strength, lowest first. This is the required precedence, expressed directly."""
+    exact = {f for f, q in profile.items() if q == "exact"}
+    partial = {f for f, q in profile.items() if q == "partial"}
+    matched = exact | partial
+    if "email" in exact:
+        return 1
+    if "phone" in exact:
+        return 2
+    if "first_name" in exact and "last_name" in exact:
+        return 3
+    if "last_name" in exact and len(matched) > 1:
+        return 4
+    if "first_name" in exact and len(matched) > 1:
+        return 5
+    if "email" in partial:
+        return 6
+    if "phone" in partial:
+        return 7
+    return 8                                    # first-name-only / last-name-only
+
+
+def _sort_key(row, profile):
+    matched = [f for f, q in profile.items() if q]
+    weight = sum(_WEIGHTS.get((f, profile[f]), 0) for f in matched)
+    # Within a tier, more matching fields wins, then the heavier match, then a stable name order.
+    return (_tier(profile), -len(matched), -weight,
+            (row["last_name"] or "").lower(), (row["first_name"] or "").lower(), row["id"])
 
 
 def search_people(principal, query: str | None = None, *, first_name: str | None = None,
                   last_name: str | None = None, email: str | None = None,
                   phone: str | None = None, limit: int = 20) -> list[dict]:
-    """People this principal may service, matching EVERY supplied term.
+    """People this principal may service, matching ANY supplied identifier, best match first.
 
-    Each term is run through the existing principal-scoped ``universal_search`` (which applies
-    ``accessible_person_ids`` and the phone-query normalisation), and the per-term id sets are
-    INTERSECTED. So "Michael" + "Shelton" narrows to people matching both, and adding a partial
-    phone narrows further — without a second person-search implementation and without widening
-    what staff can see: an intersection can only ever be smaller than each scoped set.
+    The four fields are alternate ways to FIND someone, not four filters that must all hold. A
+    client whose stored email is out of date must still be findable by name and phone, so the
+    per-field result sets are UNIONED and then RANKED by match strength (see :func:`_tier`).
+    An earlier version intersected them, which meant one stale value — a changed email — hid the
+    person completely.
 
-    ``query`` remains supported as a single combined term. Results are enriched with the fields
-    needed to tell two people with the same name apart, because a name alone is not safe to pick
-    from."""
+    Every term is still run through the existing principal-scoped ``universal_search`` (which
+    applies ``accessible_person_ids`` and the phone-query normalisation), so a union of scoped sets
+    is itself scoped: nothing here can surface a person the principal may not service.
+
+    Returning a candidate is NOT selecting one. The caller must still click a specific result
+    before any person id is established; nothing is auto-selected on a partial match."""
     from app.services.universal_search import universal_search
 
-    terms = [t.strip() for t in (query, first_name, last_name, email, phone) if t and t.strip()]
-    terms = [t for t in terms if len(t) >= MIN_TERM]
+    terms = {"query": query, "first_name": first_name, "last_name": last_name,
+             "email": email, "phone": phone}
+    terms = {k: v.strip() for k, v in terms.items()
+             if v and v.strip() and len(v.strip()) >= MIN_TERM}
     if not terms:
         return []
 
-    person_ids: set[int] | None = None
-    for term in terms:
+    matched_by_field: dict[str, set[int]] = {}
+    candidates: set[int] = set()
+    for field, term in terms.items():
         found = universal_search(principal, term, types=["person"], limit=_TERM_LIMIT)
-        matched = {r["id"] for r in found.get("results", []) if r.get("kind") == "person"}
-        person_ids = matched if person_ids is None else (person_ids & matched)
-        if not person_ids:
-            return []                      # one term excludes everyone — stop early
-    person_ids = sorted(person_ids)[:limit]
-    if not person_ids:
+        ids = {r["id"] for r in found.get("results", []) if r.get("kind") == "person"}
+        matched_by_field[field] = ids
+        candidates |= ids                       # UNION: any identifier is enough to be a candidate
+    if not candidates:
         return []
 
     with engine.connect() as connection:
         rows = connection.execute(
             select(people.c.id, people.c.first_name, people.c.last_name, people.c.full_name,
-                   people.c.primary_email, people.c.primary_phone, people.c.city, people.c.state,
+                   people.c.primary_email, people.c.normalized_email, people.c.primary_phone,
+                   people.c.normalized_phone, people.c.city, people.c.state,
                    people.c.household_id, households.c.name.label("household_name"))
             .select_from(people.outerjoin(households, households.c.id == people.c.household_id))
-            .where(people.c.id.in_(person_ids))
-            .order_by(people.c.last_name, people.c.first_name, people.c.id)
+            .where(people.c.id.in_(candidates))
         ).mappings().all()
 
+    ranked = sorted(rows, key=lambda r: _sort_key(r, _match_profile(r, terms, matched_by_field)))
     return [{
+        # Always the CANONICAL stored values, never what staff typed: staff must be able to see
+        # that the record's email or phone differs from the one they entered.
         "person_id": r["id"],
         "first_name": r["first_name"] or "",
         "last_name": r["last_name"] or "",
@@ -142,7 +238,7 @@ def search_people(principal, query: str | None = None, *, first_name: str | None
         "location": ", ".join(p for p in (r["city"], r["state"]) if p),
         "household_name": r["household_name"] or "",
         "has_household": r["household_id"] is not None,
-    } for r in rows]
+    } for r in ranked[:limit]]
 
 
 # --- resolution -----------------------------------------------------------------------

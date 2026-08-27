@@ -745,6 +745,11 @@ def _names(principal, **kw):
     return sorted(r["full_name"] for r in invite_targets.search_people(principal, **kw))
 
 
+def _names_ranked(principal, **kw):
+    """Result order as returned — best match first."""
+    return [r["full_name"] for r in invite_targets.search_people(principal, **kw)]
+
+
 @pytest.mark.parametrize("field", ["first_name", "last_name", "email", "phone"])
 def test_each_human_field_is_a_typeable_input(field):
     """Nothing on the invite form is readonly: all four fields accept typing and drive search."""
@@ -781,11 +786,16 @@ def test_last_name_only_search():
     assert f'{fam["first"]} {fam["other_last"]}' not in found
 
 
-def test_first_plus_last_name_narrows_to_one_person():
+def test_first_plus_last_name_ranks_the_exact_person_first():
+    """Both names exact is the strongest name match, so that person leads — but the people who
+    match only one of the two names remain visible as candidates."""
     sfx = uuid.uuid4().hex[:8]
     fam = _family(sfx)
-    assert _names(_principal(_staff_user()), first_name=fam["first"],
-                  last_name=fam["last"]) == [f'{fam["first"]} {fam["last"]}']
+    found = _names_ranked(_principal(_staff_user()),
+                          first_name=fam["first"], last_name=fam["last"])
+    assert found[0] == f'{fam["first"]} {fam["last"]}'
+    assert f'{fam["other_first"]} {fam["last"]}' in found        # same last name
+    assert f'{fam["first"]} {fam["other_last"]}' in found        # same first name
 
 
 def test_email_search_and_partial_email_search():
@@ -805,16 +815,21 @@ def test_phone_search_in_every_supported_form(style):
     assert _names(_principal(_staff_user()), phone=typed) == [f'{fam["first"]} {fam["last"]}']
 
 
-def test_fields_combine_to_narrow_rather_than_widen():
-    """Every filled field must AND, never OR: an intersection can only ever shrink the result."""
+def test_fields_combine_by_union_and_rank_the_strongest_match_first():
+    """The four fields are alternate ways to FIND someone, not four mandatory filters. A field
+    that matches nobody must not erase the candidates the other fields found."""
     sfx = uuid.uuid4().hex[:8]
     fam = _family(sfx)
     principal = _principal(_staff_user())
-    assert _names(principal, first_name=fam["first"],
-                  phone=fam["mjones_phone_digits"]) == [f'{fam["first"]} {fam["other_last"]}']
-    # Contradictory terms select nobody rather than everybody.
-    assert _names(principal, first_name=fam["first"], last_name=fam["other_last"],
-                  phone=fam["michael_phone_digits"]) == []
+    # An exact phone outranks a shared first name.
+    ranked = _names_ranked(principal, first_name=fam["first"],
+                           phone=fam["mjones_phone_digits"])
+    assert ranked[0] == f'{fam["first"]} {fam["other_last"]}'
+    # A term matching nobody does not empty the result.
+    still = _names_ranked(principal, first_name=fam["first"], last_name=fam["other_last"],
+                          phone=fam["michael_phone_digits"])
+    assert f'{fam["first"]} {fam["other_last"]}' in still
+    assert f'{fam["first"]} {fam["last"]}' in still
 
 
 def test_a_single_character_term_is_ignored_rather_than_matching_everyone():
@@ -958,3 +973,158 @@ def test_the_redesign_did_not_touch_the_security_invariants():
     assert "_remember_activation_url" in handler
     assert "record_in_scope" in inspect.getsource(invite_targets.resolve_invite_target)
     assert invite_targets.PERMITTED_ACCESS_TYPES == {"self", "joint"}
+
+
+# --- ANY entered identifier is enough to find a client -----------------------------------------
+#
+# The production defect: staff typed a correct name and phone but a NEW email, and the page said
+# "No clients found." The four fields were intersected, so one stale stored value hid the person
+# entirely. They are alternate ways to find someone; the sets are now unioned and ranked.
+
+def _stale_email_person(sfx):
+    """A canonical record where 3 of 4 entered values will match and the email differs."""
+    hid = _household(f"Shelton Household {sfx}")
+    digits = _unique_phone_digits()
+    with engine.begin() as c:
+        pid = c.execute(people.insert().values(
+            first_name=f"Michael{sfx}", last_name=f"Shelton{sfx}",
+            full_name=f"Michael{sfx} Shelton{sfx}",
+            primary_email=f"oldemail-{sfx}@example.com",
+            normalized_email=f"oldemail-{sfx}@example.com",
+            primary_phone=_punctuate(digits, "parens"), normalized_phone=digits,
+            active=True, household_id=hid).returning(people.c.id)).scalar_one()
+    return {"id": pid, "first": f"Michael{sfx}", "last": f"Shelton{sfx}",
+            "email": f"oldemail-{sfx}@example.com", "digits": digits,
+            "phone": _punctuate(digits, "parens"), "household": f"Shelton Household {sfx}"}
+
+
+def test_the_production_case_three_of_four_match_and_the_email_differs():
+    """The exact reported scenario: name and phone right, email new. Must be found, and first."""
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    ranked = _names_ranked(_principal(_staff_user()),
+                           first_name=who["first"], last_name=who["last"],
+                           email="michael@360wealthconsulting.com", phone=who["digits"])
+    assert ranked, "no clients found — the non-matching email erased the other three matches"
+    assert ranked[0] == f'{who["first"]} {who["last"]}'
+
+
+@pytest.mark.parametrize("field", ["first", "last", "email", "phone"])
+def test_any_single_matching_identifier_surfaces_the_client(field):
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    kw = {"first_name": {"first_name": who["first"]}, "last": {"last_name": who["last"]},
+          "email": {"email": who["email"]}, "phone": {"phone": who["digits"]}}[
+        {"first": "first_name", "last": "last", "email": "email", "phone": "phone"}[field]]
+    assert f'{who["first"]} {who["last"]}' in _names_ranked(_principal(_staff_user()), **kw)
+
+
+def test_a_wrong_email_alongside_a_right_phone_still_finds_the_client():
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    ranked = _names_ranked(_principal(_staff_user()),
+                           email="definitely-not-theirs@example.com", phone=who["digits"])
+    assert ranked[0] == f'{who["first"]} {who["last"]}'
+
+
+def test_a_wrong_phone_alongside_a_right_email_still_finds_the_client():
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    ranked = _names_ranked(_principal(_staff_user()), email=who["email"], phone="9995551234")
+    assert ranked[0] == f'{who["first"]} {who["last"]}'
+
+
+@pytest.mark.parametrize("style", ["bare", "dashes", "parens", "spaces", "dots",
+                                   "cc_spaces", "cc_dashes"])
+def test_phone_formats_still_work_alongside_a_non_matching_email(style):
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    ranked = _names_ranked(_principal(_staff_user()), email="wrong@example.com",
+                           phone=_punctuate(who["digits"], style))
+    assert ranked[0] == f'{who["first"]} {who["last"]}'
+
+
+def test_an_exact_email_outranks_every_other_kind_of_match():
+    """Ranking tier 1: the strongest identifier wins even against several weaker ones."""
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    ranked = _names_ranked(_principal(_staff_user()),
+                           first_name=fam["first"],           # matches two people
+                           email=fam["sarah_email"])          # exact, matches one
+    assert ranked[0] == f'{fam["other_first"]} {fam["last"]}'
+
+
+def test_a_person_matching_more_fields_ranks_above_one_matching_fewer():
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    ranked = _names_ranked(_principal(_staff_user()),
+                           first_name=fam["first"], last_name=fam["last"])
+    assert ranked[0] == f'{fam["first"]} {fam["last"]}'        # both names
+    assert ranked.index(f'{fam["first"]} {fam["last"]}') < ranked.index(
+        f'{fam["first"]} {fam["other_last"]}')                # only the first name
+
+
+def test_the_documented_ranking_tiers_are_implemented_in_order():
+    from app.portal.invite_targets import _tier
+    exact = lambda **kw: {**{f: None for f in ("first_name", "last_name", "email", "phone")}, **kw}
+    assert _tier(exact(email="exact")) == 1
+    assert _tier(exact(phone="exact")) == 2
+    assert _tier(exact(first_name="exact", last_name="exact")) == 3
+    assert _tier(exact(last_name="exact", first_name="partial")) == 4
+    assert _tier(exact(first_name="exact", phone="partial")) == 5
+    assert _tier(exact(email="partial")) == 6
+    assert _tier(exact(phone="partial")) == 7
+    assert _tier(exact(last_name="partial")) == 8
+    assert _tier(exact(first_name="partial")) == 8
+
+
+def test_candidates_show_canonical_stored_values_not_what_staff_typed():
+    """Staff must be able to SEE that the stored email differs from the one they entered."""
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    row = invite_targets.search_people(
+        _principal(_staff_user()), first_name=who["first"], last_name=who["last"],
+        email="michael@360wealthconsulting.com", phone=who["digits"])[0]
+    assert row["email"] == who["email"], "the typed email was echoed instead of the stored one"
+    assert row["phone"] == who["phone"] and row["household_name"] == who["household"]
+    assert row["full_name"] == f'{who["first"]} {who["last"]}'
+
+
+def test_a_union_result_never_leaves_scope():
+    """A union of principal-scoped sets is still principal-scoped."""
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    unscoped = _principal(_staff_user(), caps=("client.read", "client.write"))
+    assert invite_targets.search_people(
+        unscoped, first_name=who["first"], last_name=who["last"],
+        email=who["email"], phone=who["digits"]) == []
+
+
+def test_no_result_row_carries_a_household_id():
+    sfx = uuid.uuid4().hex[:8]
+    who = _stale_email_person(sfx)
+    row = invite_targets.search_people(_principal(_staff_user()), phone=who["digits"])[0]
+    assert "household_id" not in row, "an internal id reached the browser"
+    assert set(row) == {"person_id", "first_name", "last_name", "full_name", "email", "phone",
+                        "location", "household_name", "has_household"}
+
+
+def test_returning_a_candidate_is_not_selecting_one():
+    """A fuzzy/partial match must never auto-select: only an explicit click sets person_id."""
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    assert 'button.addEventListener("click", function () { select(person); });' in js
+    # select() is CALLED from that click handler and nowhere else — not from render() or search().
+    assert js.count("select(person);") == 1, "select() is invoked outside the click handler"
+    assert js.count("function select(person)") == 1
+    assert "results.length === 1" not in js and "rows.length === 1" not in js, (
+        "a single candidate is being auto-selected")
+
+
+def test_common_first_names_produce_candidates_without_selecting_any():
+    """Several people share a first name: all are offered, none is chosen for the staff member."""
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    ranked = _names_ranked(_principal(_staff_user()), first_name=fam["first"])
+    assert len(ranked) >= 2, "the ambiguous case should offer every candidate"
+    assert f'{fam["first"]} {fam["last"]}' in ranked
+    assert f'{fam["first"]} {fam["other_last"]}' in ranked
