@@ -1067,8 +1067,10 @@ def test_a_person_matching_more_fields_ranks_above_one_matching_fewer():
 def test_the_documented_ranking_tiers_are_implemented_in_order():
     from app.portal.invite_targets import _tier
     exact = lambda **kw: {**{f: None for f in ("first_name", "last_name", "email", "phone")}, **kw}
-    assert _tier(exact(email="exact")) == 1
-    assert _tier(exact(phone="exact")) == 2
+    # Phone before email: for client identity discovery a phone number is more discriminating,
+    # and a stale stored email is exactly what made the production case fail.
+    assert _tier(exact(phone="exact")) == 1
+    assert _tier(exact(email="exact")) == 2
     assert _tier(exact(first_name="exact", last_name="exact")) == 3
     assert _tier(exact(last_name="exact", first_name="partial")) == 4
     assert _tier(exact(first_name="exact", phone="partial")) == 5
@@ -1128,3 +1130,156 @@ def test_common_first_names_produce_candidates_without_selecting_any():
     assert len(ranked) >= 2, "the ambiguous case should offer every candidate"
     assert f'{fam["first"]} {fam["last"]}' in ranked
     assert f'{fam["first"]} {fam["other_last"]}' in ranked
+
+
+# --- strong identifiers must survive a broad, TRUNCATED weak-name search -----------------------
+#
+# The production failure: staff typed michael / shelton / a new email / the right phone and got a
+# page of Alex Shelton, Bryan Shelton, Charles Shelton... with the real Michael Shelton missing.
+#
+# It was not only a sorting problem. ``universal_search`` applies its LIMIT with no ORDER BY, so a
+# term matching more rows than the limit returns an ARBITRARY slice. With 251 Sheltons the target
+# was never retrieved, and ranking cannot reorder a row that was never fetched. Strong identifiers
+# now have their own precise, scoped lookups that cannot be truncated.
+
+_CROWD = 250          # comfortably above invite_targets._TERM_LIMIT
+
+
+def _crowded_dataset(sfx, *, target_phone_digits, target_normalized_phone):
+    """>250 people sharing the surname AND >250 sharing the first name, with the target inserted
+    LAST so it sits at the end of any unordered scan."""
+    hid = _household(f"Crowd HH {sfx}")
+    first, last = f"Michael{sfx}", f"Shelton{sfx}"
+
+    def add(f, l, mail, digits, phone=None):
+        with engine.begin() as c:
+            return c.execute(people.insert().values(
+                first_name=f, last_name=l, full_name=f"{f} {l}", primary_email=mail,
+                normalized_email=mail, primary_phone=phone, normalized_phone=digits,
+                active=True, household_id=hid).returning(people.c.id)).scalar_one()
+
+    for i in range(_CROWD):
+        add(f"Weak{i:03d}", last, f"w{i}-{sfx}@example.com", f"20{i:08d}")
+        add(first, f"Other{i:03d}{sfx}", f"m{i}-{sfx}@example.com", f"30{i:08d}")
+    target = add(first, last, f"oldemail-{sfx}@example.com", target_normalized_phone,
+                 _punctuate(target_phone_digits, "parens"))
+    return {"target": target, "first": first, "last": last, "hid": hid,
+            "email": f"oldemail-{sfx}@example.com", "digits": target_phone_digits}
+
+
+def test_the_target_is_not_even_retrieved_by_a_broad_truncated_name_search():
+    """Proves the root cause is retrieval, not ordering: the broad term does not contain it."""
+    from app.services.universal_search import universal_search
+    from app.portal.invite_targets import _TERM_LIMIT
+
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=d)
+    principal = _principal(_staff_user())
+    ids = {r["id"] for r in universal_search(principal, data["last"], types=["person"],
+                                             limit=_TERM_LIMIT).get("results", [])}
+    assert len(ids) == _TERM_LIMIT, "the crowd did not exceed the broad-search limit"
+    assert data["target"] not in ids, (
+        "the fixture no longer reproduces truncation; the target must fall outside the slice")
+
+
+def test_the_production_failure_shape_target_is_first_despite_a_crowded_surname():
+    """>250 Sheltons, >250 Michaels, entered email deliberately wrong, phone correct."""
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=d)
+    found = invite_targets.search_people(
+        _principal(_staff_user()), first_name=data["first"], last_name=data["last"],
+        email="michael@360wealthconsulting.com", phone=d)
+    assert found, "no clients found"
+    assert found[0]["person_id"] == data["target"], "the target is not the first result"
+    weak = [r for r in found if r["first_name"].startswith("Weak")]
+    positions = [found.index(r) for r in weak]
+    assert all(pos > 0 for pos in positions), "a surname-only candidate outranked the target"
+
+
+def test_an_exact_first_and_last_wins_even_when_the_phone_does_not_match():
+    """The real production data shape: normalized_phone is NULL on legacy imports, so the phone
+    cannot match and discovery falls back to names — which is exactly where truncation bit."""
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=None)
+    found = invite_targets.search_people(
+        _principal(_staff_user()), first_name=data["first"], last_name=data["last"],
+        email="michael@360wealthconsulting.com", phone=d)
+    assert found and found[0]["person_id"] == data["target"]
+    assert found[0]["first_name"] == data["first"] and found[0]["last_name"] == data["last"]
+
+
+def test_exact_first_and_last_outranks_every_surname_only_candidate():
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=None)
+    found = invite_targets.search_people(
+        _principal(_staff_user()), first_name=data["first"], last_name=data["last"])
+    assert found[0]["person_id"] == data["target"]
+
+
+def test_an_exact_phone_alone_returns_the_target_out_of_a_crowded_table():
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=d)
+    principal = _principal(_staff_user())
+    for typed in (d, _punctuate(d, "dashes"), _punctuate(d, "cc_spaces")):
+        found = invite_targets.search_people(principal, phone=typed)
+        assert found and found[0]["person_id"] == data["target"], f"{typed!r} lost the target"
+
+
+def test_an_exact_email_cannot_be_crowded_out_by_a_common_surname():
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=None)
+    found = invite_targets.search_people(
+        _principal(_staff_user()), last_name=data["last"], email=data["email"])
+    assert found[0]["person_id"] == data["target"]
+
+
+def test_exact_phone_now_outranks_exact_email():
+    """For client identity discovery a phone number is the more discriminating identifier."""
+    from app.portal.invite_targets import _tier
+    blank = {f: None for f in ("first_name", "last_name", "email", "phone")}
+    assert _tier({**blank, "phone": "exact"}) == 1
+    assert _tier({**blank, "email": "exact"}) == 2
+    assert _tier({**blank, "first_name": "exact", "last_name": "exact"}) == 3
+
+
+def test_a_strong_match_out_of_scope_is_still_never_returned():
+    """The precise lookups reuse accessible_person_ids — they cannot widen visibility."""
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=d)
+    unscoped = _principal(_staff_user(), caps=("client.read", "client.write"))
+    assert invite_targets.search_people(
+        unscoped, first_name=data["first"], last_name=data["last"],
+        email=data["email"], phone=d) == []
+
+
+def test_the_strong_lookups_reuse_the_canonical_authorization_primitive():
+    import inspect
+
+    from app.portal.invite_targets import _strong_matches
+    src = inspect.getsource(_strong_matches)
+    assert "accessible_person_ids" in src, "authorization was reimplemented instead of reused"
+    assert "people.c.active.is_(True)" in src, "inactive people could be surfaced"
+
+
+def test_the_candidate_list_stays_bounded_under_a_crowded_surname():
+    sfx = uuid.uuid4().hex[:8]
+    d = _unique_phone_digits()
+    data = _crowded_dataset(sfx, target_phone_digits=d, target_normalized_phone=d)
+    found = invite_targets.search_people(_principal(_staff_user()), last_name=data["last"])
+    assert 0 < len(found) <= 20, f"unbounded candidate list: {len(found)}"
+    for row in found:
+        assert "household_id" not in row, "an internal id reached the browser"
+
+
+def test_a_crowded_search_still_selects_nothing_automatically():
+    """Hundreds of candidates, one strong match — and still no auto-selection."""
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    assert js.count("select(person);") == 1
+    assert "rows.length === 1" not in js and "results.length === 1" not in js

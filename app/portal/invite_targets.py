@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from app.db import engine, household_relationships, households, people
 
@@ -85,16 +85,22 @@ class InviteTarget:
 
 #: Shortest term worth searching. Matches universal_search's own floor.
 MIN_TERM = 2
-#: Per-term ceiling used while combining. Higher than the returned limit so one common term
-#: cannot crowd out the candidates a more selective term found.
+#: Ceiling on the BROAD per-term search. This bound exists to keep a common surname from pulling
+#: the whole table into memory — it is emphatically NOT how strong identifiers are found, because
+#: ``universal_search`` applies its limit with no ORDER BY and therefore returns an ARBITRARY slice
+#: when a term matches more rows than this. Strong identifiers get their own precise lookups (see
+#: :func:`_strong_matches`) so raising or lowering this number can never lose them.
 _TERM_LIMIT = 200
+#: Safety ceiling on each precise lookup. An exact phone/email/first+last match returns a handful of
+#: rows, so this is never reached in practice; it just bounds a pathological duplicate set.
+_STRONG_LIMIT = 50
 #: The identifying fields staff can type, in the order they appear on the form.
 _FIELDS = ("first_name", "last_name", "email", "phone")
 
 #: Secondary ordering weight per (field, quality). Only used to break ties INSIDE a tier — the
 #: tier in :func:`_tier` is what implements the required precedence.
 _WEIGHTS = {
-    ("email", "exact"): 100, ("phone", "exact"): 80,
+    ("phone", "exact"): 100, ("email", "exact"): 90,
     ("last_name", "exact"): 34, ("first_name", "exact"): 30,
     ("email", "partial"): 12, ("phone", "partial"): 10,
     ("last_name", "partial"): 5, ("first_name", "partial"): 4,
@@ -154,9 +160,9 @@ def _tier(profile) -> int:
     exact = {f for f, q in profile.items() if q == "exact"}
     partial = {f for f, q in profile.items() if q == "partial"}
     matched = exact | partial
-    if "email" in exact:
-        return 1
     if "phone" in exact:
+        return 1                                # most discriminating identifier a client has
+    if "email" in exact:
         return 2
     if "first_name" in exact and "last_name" in exact:
         return 3
@@ -177,6 +183,50 @@ def _sort_key(row, profile):
     # Within a tier, more matching fields wins, then the heavier match, then a stable name order.
     return (_tier(profile), -len(matched), -weight,
             (row["last_name"] or "").lower(), (row["first_name"] or "").lower(), row["id"])
+
+
+def _strong_matches(connection, principal, terms) -> dict[str, set[int]]:
+    """Precise lookups for the identifiers that must NEVER be lost to truncation.
+
+    The broad per-term search cannot be trusted to surface a strong match: ``universal_search``
+    applies ``LIMIT`` with no ``ORDER BY``, so when "Shelton" matches 251 people it returns an
+    arbitrary 200 and the one Shelton the staff member actually wants may simply not be among them.
+    Ranking runs after retrieval and cannot recover a row that was never retrieved.
+
+    These queries are exact and therefore tiny, so they cannot be truncated away. Authorization is
+    NOT reimplemented: they apply ``accessible_person_ids`` — the same primitive ``universal_search``
+    itself uses — so nothing here can surface a person the principal may not service."""
+    from app.security.authorization import accessible_person_ids
+
+    accessible = accessible_person_ids(connection, principal)      # None = firm-wide
+    found: dict[str, set[int]] = {}
+
+    def ids_for(*conditions) -> set[int]:
+        stmt = select(people.c.id).where(*conditions, people.c.active.is_(True))
+        if accessible is not None:
+            stmt = stmt.where(people.c.id.in_(set(accessible) or {-1}))
+        return set(connection.scalars(stmt.limit(_STRONG_LIMIT)))
+
+    phone = terms.get("phone")
+    if phone:
+        from app.services.universal_search import _phone_query_variants
+        variants = [v for v in _phone_query_variants(phone) if v]
+        if variants:
+            found["phone"] = ids_for(people.c.normalized_phone.in_(variants))
+
+    email = terms.get("email")
+    if email:
+        wanted = email.strip().lower()
+        found["email"] = ids_for(or_(func.lower(people.c.normalized_email) == wanted,
+                                     func.lower(people.c.primary_email) == wanted))
+
+    first, last = terms.get("first_name"), terms.get("last_name")
+    if first and last:
+        # An exact full-name match is a strong identifier in its own right — it must not depend on
+        # winning an arbitrary slice of everyone who merely shares the surname.
+        found["name"] = ids_for(func.lower(people.c.first_name) == first.strip().lower(),
+                                func.lower(people.c.last_name) == last.strip().lower())
+    return found
 
 
 def search_people(principal, query: str | None = None, *, first_name: str | None = None,
@@ -212,10 +262,19 @@ def search_people(principal, query: str | None = None, *, first_name: str | None
         ids = {r["id"] for r in found.get("results", []) if r.get("kind") == "person"}
         matched_by_field[field] = ids
         candidates |= ids                       # UNION: any identifier is enough to be a candidate
-    if not candidates:
-        return []
 
     with engine.connect() as connection:
+        # Strong identifiers are retrieved precisely and merged in, so a broad surname search that
+        # truncated cannot hide them. This is additive: it can only ever ADD the right person.
+        strong = _strong_matches(connection, principal, terms)
+        for key, ids in strong.items():
+            fields = ("first_name", "last_name") if key == "name" else (key,)
+            for field in fields:
+                matched_by_field[field] = matched_by_field.get(field, set()) | ids
+            candidates |= ids
+        if not candidates:
+            return []
+
         rows = connection.execute(
             select(people.c.id, people.c.first_name, people.c.last_name, people.c.full_name,
                    people.c.primary_email, people.c.normalized_email, people.c.primary_phone,
