@@ -271,3 +271,9 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .portal-activation { display: grid; gap: 8px; }
 .portal-activation p { margin: 0; }
 .portal-activation input { width: 100%; }
+.portal-create-review, .portal-create-confirm { margin-top: 12px; }
+.portal-create-values { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0; }
+.portal-create-values dt { font-weight: 600; }
+.portal-create-values dd { margin: 0; }
+.portal-duplicates { margin: 6px 0 10px 18px; }
+.portal-created p { margin: 4px 0 0; }

@@ -60,9 +60,9 @@ def test_get_portal_is_registered_exactly_once():
     assert sorted(matches[0].methods) == ["GET"]
 
 
-def test_route_count_is_1180():
+def test_route_count_is_1181():
     from app.main import app
-    assert len(app.routes) == 1180  # +2 external IdP portal auth (start + callback)  # +1 staff client-search for the portal invite form (GET /admin/client-portal/client-search)
+    assert len(app.routes) == 1181  # +2 external IdP portal auth (start + callback)  # +1 staff client-search for the portal invite form (GET /admin/client-portal/client-search)  # +1 staff Add New Client creation (POST /admin/client-portal/create-client)
 
 
 def test_no_portal_dashboard_route_was_added():

@@ -27,6 +27,7 @@ from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import invitation_handoff
 from app.portal import invite_targets
+from app.services import person_creation
 from app.portal import visibility
 from app.portal.service import invite_portal_account, portal_base_scope, staff_send_message
 from app.security.audit import write_audit_event
@@ -103,16 +104,26 @@ def _accounts():
             portal_accounts.c.person_id).order_by(portal_accounts.c.created_at.desc())).mappings().all()]
 
 
+def _admin_page(request, principal, **extra):
+    """Render the Client Portal administration page. ``extra`` carries one-shot review state
+    (a duplicate warning and the values staff typed) so a refused creation comes back as normal
+    UI instead of a redirect carrying client details in the URL."""
+    q = request.query_params
+    context = {"accounts": _accounts(), "principal": principal,
+               "invited": q.get("invited"), "error": q.get("error"),
+               # Read once; gone on the next load.
+               "activation": _take_activation_url(request),
+               "access_choices": invite_targets.ACCESS_CHOICES,
+               "rep_notice": invite_targets.AUTHORIZED_REPRESENTATIVE_NOTICE,
+               "create_error": None, "create_review": None, "created": None}
+    context.update(extra)
+    return templates.TemplateResponse(request=request, name="admin/client_portal.html",
+                                      context=context)
+
+
 @router.get("", response_class=HTMLResponse)
 def portal_admin_home(request: Request, principal: Principal = Depends(require_capability("client.read"))):
-    q = request.query_params
-    return templates.TemplateResponse(request=request, name="admin/client_portal.html",
-                                      context={"accounts": _accounts(), "principal": principal,
-                                               "invited": q.get("invited"), "error": q.get("error"),
-                                               # Read once; gone on the next load.
-                                               "activation": _take_activation_url(request),
-                                               "access_choices": invite_targets.ACCESS_CHOICES,
-                                               "rep_notice": invite_targets.AUTHORIZED_REPRESENTATIVE_NOTICE})
+    return _admin_page(request, principal)
 
 
 @router.get("/accounts")
@@ -217,6 +228,51 @@ def portal_admin_invite_form(
                                 "&error=Activation+link+unavailable%3A+check+PUBLIC_BASE_URL",
                                 status_code=303)
     return RedirectResponse(f"/admin/client-portal?invited={quote(name)}", status_code=303)
+
+
+@router.post("/create-client", response_class=HTMLResponse)
+def portal_admin_create_client(
+        request: Request,
+        first_name: str = Form(default=""), last_name: str = Form(default=""),
+        email: str = Form(default=""), phone: str = Form(default=""),
+        acknowledge_duplicate: str = Form(default=""),
+        principal: Principal = Depends(require_capability("client.write"))):
+    """Create a canonical client from the details staff typed into the invite form.
+
+    Every field is OPTIONAL at the boundary so FastAPI can never pre-empt this handler with raw
+    Pydantic JSON; validation, authorization, normalisation and duplicate prevention all happen in
+    :mod:`app.services.person_creation`, never here and never in JavaScript. There is no local
+    ``people`` INSERT — the service owns creation, the household, the record assignment, and the
+    audit/event/timeline provenance.
+
+    Creating a client does NOT create an invitation. The new person becomes the selected target and
+    staff must still choose an access level and press Send portal invitation."""
+    typed = {"first_name": (first_name or "").strip(), "last_name": (last_name or "").strip(),
+             "email": (email or "").strip(), "phone": (phone or "").strip()}
+    try:
+        created = person_creation.create_client(
+            principal, request_id=request.state.request_id,
+            acknowledge_name_duplicate=bool((acknowledge_duplicate or "").strip()),
+            require_email=True,                  # the portal cannot invite without one
+            **typed)
+    except person_creation.PossibleDuplicateWarning as warning:
+        # Not an error: staff must look at the candidates and decide. Re-rendered rather than
+        # redirected so no client detail travels in a URL.
+        return _admin_page(request, principal, create_error=str(warning),
+                           create_review={**typed, "candidates": warning.candidates,
+                                          "needs_acknowledgement": True})
+    except person_creation.PersonCreationError as exc:
+        return _admin_page(request, principal, create_error=str(exc),
+                           create_review={**typed, "candidates": [],
+                                          "needs_acknowledgement": False})
+
+    _audit(request, principal, "portal.admin.client_created", created.person_id,
+           {"via": "portal_admin", "household_created": created.household_created})
+    return _admin_page(request, principal, created={
+        "person_id": created.person_id, "first_name": created.first_name,
+        "last_name": created.last_name, "full_name": created.full_name,
+        "email": created.email, "phone": created.phone,
+        "household_name": created.household_name})
 
 
 @router.post("/accounts/{account_id}/revoke", status_code=200)

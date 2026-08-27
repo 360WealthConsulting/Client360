@@ -21,6 +21,48 @@
   you lose it, revoke the account and invite again.</p>
 </div>
 {% endif %}
+{% if create_error %}<div class="banner warn">{{ create_error }}</div>{% endif %}
+{% if created %}
+<div class="banner good portal-created">
+  <b>Client created: {{ created.full_name }}</b>
+  <p>{{ created.email }}{% if created.phone %} &middot; {{ created.phone }}{% endif %}
+  {% if created.household_name %} &middot; {{ created.household_name }}{% endif %}</p>
+  <p class="subtle">No invitation has been sent. Choose a portal access level below and press
+  <b>Send portal invitation</b> when you are ready.</p>
+</div>
+{% endif %}
+{% if create_review %}
+<div class="card portal-create-review">
+  <h2 class="section-title">Add new client</h2>
+  {% if create_review.candidates %}
+  <p><b>Possible existing clients found. Review them before creating a new client.</b></p>
+  <ul class="portal-duplicates">
+    {% for c in create_review.candidates %}
+    <li>{{ c.full_name }}{% if c.email %} &middot; {{ c.email }}{% endif %}{% if c.phone %} &middot; {{ c.phone }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <dl class="portal-create-values">
+    <dt>First name</dt><dd>{{ create_review.first_name }}</dd>
+    <dt>Last name</dt><dd>{{ create_review.last_name }}</dd>
+    <dt>Email</dt><dd>{{ create_review.email }}</dd>
+    <dt>Phone</dt><dd>{{ create_review.phone or "—" }}</dd>
+  </dl>
+  <form method="post" action="/admin/client-portal/create-client">
+    <input type="hidden" name="first_name" value="{{ create_review.first_name }}">
+    <input type="hidden" name="last_name" value="{{ create_review.last_name }}">
+    <input type="hidden" name="email" value="{{ create_review.email }}">
+    <input type="hidden" name="phone" value="{{ create_review.phone }}">
+    {% if create_review.needs_acknowledgement %}
+    <input type="hidden" name="acknowledge_duplicate" value="1">
+    <button type="submit">Create separate client anyway</button>
+    {% else %}
+    <button type="submit">Create client</button>
+    {% endif %}
+    <a class="btn secondary" href="/admin/client-portal">Cancel</a>
+  </form>
+</div>
+{% endif %}
 <h2 class="section-title">Invite a client</h2>
 <div class="card portal-invite">
   <form id="invite-form" method="post" action="/admin/client-portal/invite-form"
@@ -38,6 +80,10 @@
     <div class="portal-invite-full" id="client-results" aria-live="polite"
          aria-label="Matching clients"></div>
     <p class="portal-invite-full portal-selected" id="selected-client" hidden></p>
+    <div class="portal-invite-full" id="add-client-prompt" hidden>
+      <p class="subtle">Not the client you are looking for?</p>
+      <button type="button" class="btn secondary" id="add-client-button">Add New Client</button>
+    </div>
 
     <div class="portal-invite-full">
       <span>Portal access</span>
@@ -54,6 +100,24 @@
       <button type="submit">Send portal invitation</button>
       <span class="portal-invite-error" id="invite-error" role="alert" hidden></span>
     </div>
+  </form>
+
+  <form method="post" action="/admin/client-portal/create-client" id="add-client-form" hidden
+        class="portal-create-confirm">
+    <h3>Add new client</h3>
+    <dl class="portal-create-values">
+      <dt>First name</dt><dd id="confirm-first"></dd>
+      <dt>Last name</dt><dd id="confirm-last"></dd>
+      <dt>Email</dt><dd id="confirm-email"></dd>
+      <dt>Phone</dt><dd id="confirm-phone"></dd>
+    </dl>
+    <p class="subtle">Creating a client does not send an invitation.</p>
+    <input type="hidden" name="first_name" id="confirm-first-value">
+    <input type="hidden" name="last_name" id="confirm-last-value">
+    <input type="hidden" name="email" id="confirm-email-value">
+    <input type="hidden" name="phone" id="confirm-phone-value">
+    <button type="submit">Create client</button>
+    <button type="button" class="btn secondary" id="add-client-cancel">Cancel</button>
   </form>
 </div>
 <h2 class="section-title">Portal accounts</h2>

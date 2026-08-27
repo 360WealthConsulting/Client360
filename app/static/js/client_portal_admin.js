@@ -6,11 +6,12 @@
    Inline `on*` attributes are blocked the same way, so the activation-link select-on-click is
    bound here too.
 
-   The four human fields — first name, last name, email, phone — ARE the search. Every non-empty
-   one narrows the results (the server intersects them), staff click a match, and the fields are
-   filled in from that client's record. The person id is hidden implementation state: it is never
-   typed, never displayed, and the server re-resolves and re-authorizes it on submit regardless of
-   what the browser sends.
+   The four human fields — first name, last name, email, phone — ARE the search. Any of them can
+   find a client (the server unions and ranks the per-field matches), staff click a match, and the
+   fields are filled in from that client's record. The person id is hidden implementation state: it
+   is never typed, never displayed, and the server re-resolves and re-authorizes it on submit
+   regardless of what the browser sends. When the client does not exist, Add New Client opens a
+   confirmation — creation itself happens only on a second, separate submit, server-side.
 
    Progressive enhancement: with JavaScript blocked the page still renders and the server still
    refuses a submission with no client selected, showing the same message. */
@@ -51,6 +52,10 @@
       selected: document.getElementById("selected-client"),
       error: document.getElementById("invite-error")
     };
+    var addPrompt = document.getElementById("add-client-prompt");
+    var addForm = document.getElementById("add-client-form");
+    var addButton = document.getElementById("add-client-button");
+    var addCancel = document.getElementById("add-client-cancel");
     /* Editing any of these means "I am looking for a different person", so a stale selection must
        not survive. Email is deliberately NOT here: once a client is chosen it is the invitation
        address, which staff are allowed to change without re-picking the client. */
@@ -111,11 +116,22 @@
       }
       chosen = true;
       clear(results);
+      showAddPrompt(false);                     // a client is chosen; creating one makes no sense
       showError("");
     }
 
+    function showAddPrompt(show) {
+      if (addPrompt) { addPrompt.hidden = !show; }
+      if (!show && addForm) { addForm.hidden = true; }
+    }
+
     function render(rows) {
-      if (!rows.length) { message(results, NO_RESULTS); return; }
+      if (!rows.length) {
+        message(results, NO_RESULTS);
+        showAddPrompt(true);                    // nothing found — offer to create the client
+        return;
+      }
+      showAddPrompt(true);                      // matches shown, but none may be the right one
       clear(results);
       rows.forEach(function (person) {
         var button = document.createElement("button");
@@ -186,11 +202,33 @@
           clearSelection();                     // a different person is being looked for
         }
         if (chosen && key === "email") { return; }   // editing the invitation address only
+        showAddPrompt(false);                   // the typed values changed; re-search first
         showError("");
         latest += 1;                            // invalidate anything already in flight
         schedule();
       });
     });
+
+    if (addButton && addForm) {
+      addButton.addEventListener("click", function () {
+        /* Shows a confirmation ONLY. Nothing is created until the staff member submits this
+           second form, and the server validates and de-duplicates it again regardless. */
+        var t = currentTerms();
+        var pairs = [["first", t.first_name], ["last", t.last_name],
+                     ["email", t.email], ["phone", t.phone]];
+        pairs.forEach(function (pair) {
+          var shown = document.getElementById("confirm-" + pair[0]);
+          var value = document.getElementById("confirm-" + pair[0] + "-value");
+          if (shown) { shown.textContent = pair[1] || "—"; }
+          if (value) { value.value = pair[1] || ""; }
+        });
+        addForm.hidden = false;
+        showError("");
+      });
+    }
+    if (addCancel && addForm) {
+      addCancel.addEventListener("click", function () { addForm.hidden = true; });
+    }
 
     form.addEventListener("submit", function (event) {
       if (!(f.personId.value || "").trim()) {

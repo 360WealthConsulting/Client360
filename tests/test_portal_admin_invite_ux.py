@@ -74,16 +74,18 @@ def _principal(uid, caps=("client.read", "client.write", "record.read_all", "rec
 def _render_admin_home():
     """The real rendered staff page, so template wiring is proven rather than assumed."""
     from app.routes.portal_admin import portal_admin_home
-    request = _req()
-    request.url = SimpleNamespace(path="/admin/client-portal")
-    return portal_admin_home(request, principal=_principal(_staff_user())).body.decode("utf-8")
+    return portal_admin_home(_req(), principal=_principal(_staff_user())).body.decode("utf-8")
 
 
 def _req(session=None):
+    """A staff request. ``url`` and ``principal``/``demo_mode`` are what the admin TEMPLATE reads;
+    routes that render the page (not just redirect) need them present."""
     return SimpleNamespace(
-        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}"),
+        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}", principal=None,
+                              demo_mode=False),
         client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "pytest"},
         query_params={}, session={} if session is None else session,
+        url=SimpleNamespace(path="/admin/client-portal"),
         url_for=lambda name: "http://inbound-host.invalid/portal/login")
 
 
@@ -1283,3 +1285,245 @@ def test_a_crowded_search_still_selects_nothing_automatically():
     js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
     assert js.count("select(person);") == 1
     assert "rows.length === 1" not in js and "results.length === 1" not in js
+
+
+# --- Add New Client: the portal-facing workflow ------------------------------------------------
+#
+# Client360 had no staff-facing person creation, so a client who had never appeared in an import
+# could not be invited at all. Creating one is now possible from this screen — but creation is a
+# second, explicit, server-validated step, and it never sends an invitation.
+
+def _create(request=None, *, principal=None, **fields):
+    from app.routes.portal_admin import portal_admin_create_client
+    payload = {"first_name": "", "last_name": "", "email": "", "phone": "",
+               "acknowledge_duplicate": "", **fields}
+    return portal_admin_create_client(request=request or _req(),
+                                      principal=principal or _principal(_staff_user()), **payload)
+
+
+def _body(response):
+    return response.body.decode("utf-8")
+
+
+def test_the_page_offers_add_new_client_without_creating_anything():
+    """The button only reveals a confirmation; creation is a separate POST."""
+    html = _render_admin_home()
+    assert 'id="add-client-button"' in html and "Add New Client" in html
+    assert 'id="add-client-form"' in html and "/admin/client-portal/create-client" in html
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    # The button shows the confirmation panel; it never posts or fetches.
+    handler = js.split('addButton.addEventListener("click"')[1].split("if (addCancel")[0]
+    assert "addForm.hidden = false" in handler, "the button does not reveal the confirmation"
+    assert "fetch(" not in handler and "submit()" not in handler, (
+        "the button performs a request instead of only showing a confirmation")
+
+
+def test_the_add_prompt_is_hidden_once_a_client_is_selected():
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    select_fn = js.split("function select(person)")[1].split("function render")[0]
+    assert "showAddPrompt(false)" in select_fn
+
+
+def test_creating_a_client_requires_client_write():
+    """The route is gated by Depends(require_capability(...)) — which a direct function call
+    bypasses, so assert the gate declaratively. The service enforces it independently too
+    (tests/test_person_creation.py::test_creating_requires_client_write)."""
+    import inspect
+
+    from app.routes import portal_admin
+    from app.services import person_creation
+
+    src = inspect.getsource(portal_admin.portal_admin_create_client)
+    assert 'require_capability("client.write")' in src
+    assert person_creation.REQUIRED_CAPABILITY == "client.write"
+    assert "principal.can(REQUIRED_CAPABILITY)" in inspect.getsource(person_creation.create_client)
+
+
+def test_the_portal_requires_first_last_and_email():
+    sfx = uuid.uuid4().hex[:8]
+    for fields, expected in [
+            ({"last_name": f"NoFirst{sfx}", "email": f"a-{sfx}@example.com"}, "first name"),
+            ({"first_name": "Michael", "email": f"b-{sfx}@example.com"}, "last name"),
+            ({"first_name": "Michael", "last_name": f"NoMail{sfx}"}, "email address is required")]:
+        html = _body(_create(**fields))
+        assert expected in html, f"{fields} did not report {expected!r}"
+    with engine.connect() as c:
+        assert c.execute(select(people.c.id).where(
+            people.c.last_name.in_([f"NoFirst{sfx}", f"NoMail{sfx}"]))).fetchall() == []
+
+
+def test_phone_is_optional_in_the_portal_workflow():
+    sfx = uuid.uuid4().hex[:8]
+    html = _body(_create(first_name="Michael", last_name=f"NoPhone{sfx}",
+                         email=f"np-{sfx}@example.com"))
+    assert "Client created" in html and f"Michael NoPhone{sfx}" in html
+
+
+def test_a_successful_creation_shows_the_client_and_sends_no_invitation():
+    from app.db import portal_accounts
+
+    sfx = uuid.uuid4().hex[:8]
+    phone = _punctuate(_unique_phone_digits(), "parens")
+    html = _body(_create(first_name="Michael", last_name=f"Made{sfx}",
+                         email=f"made-{sfx}@example.com", phone=phone))
+    assert "Client created" in html and f"Michael Made{sfx}" in html
+    assert "No invitation has been sent" in html
+    assert "Send portal invitation" in html                # the next step is still the staff's
+    with engine.connect() as c:
+        pid = c.scalar(select(people.c.id).where(people.c.last_name == f"Made{sfx}"))
+        assert c.execute(select(portal_accounts.c.id)
+                         .where(portal_accounts.c.person_id == pid)).fetchall() == []
+
+
+def test_a_hard_duplicate_is_refused_through_the_portal_with_a_normal_banner():
+    sfx = uuid.uuid4().hex[:8]
+    email = f"taken-{sfx}@example.com"
+    _person(first="Owner", last=f"Taken{sfx}", household_id=_household(), email=email)
+    html = _body(_create(first_name="Michael", last_name=f"Second{sfx}", email=email))
+    assert "already exists" in html
+    assert "Traceback" not in html and '"detail"' not in html and '"loc"' not in html
+    with engine.connect() as c:
+        assert c.execute(select(people.c.id)
+                         .where(people.c.last_name == f"Second{sfx}")).fetchall() == []
+
+
+def test_a_name_collision_shows_the_review_panel_and_creates_nothing():
+    sfx = uuid.uuid4().hex[:8]
+    _person(first="Michael", last=f"Dup{sfx}", household_id=_household(),
+            email=f"first-{sfx}@example.com")
+    html = _body(_create(first_name="Michael", last_name=f"Dup{sfx}",
+                         email=f"second-{sfx}@example.com"))
+    assert "Possible existing clients found" in html
+    assert "Create separate client anyway" in html
+    assert f"Michael Dup{sfx}" in html                     # the candidate is shown for review
+    with engine.connect() as c:
+        assert len(c.execute(select(people.c.id)
+                             .where(people.c.last_name == f"Dup{sfx}")).fetchall()) == 1
+
+
+def test_the_second_acknowledgement_creates_the_separate_client():
+    sfx = uuid.uuid4().hex[:8]
+    _person(first="Michael", last=f"Ack{sfx}", household_id=_household(),
+            email=f"first-{sfx}@example.com")
+    html = _body(_create(first_name="Michael", last_name=f"Ack{sfx}",
+                         email=f"second-{sfx}@example.com", acknowledge_duplicate="1"))
+    assert "Client created" in html
+    with engine.connect() as c:
+        assert len(c.execute(select(people.c.id)
+                             .where(people.c.last_name == f"Ack{sfx}")).fetchall()) == 2
+
+
+def test_the_review_panel_carries_the_values_forward_without_putting_them_in_a_url():
+    sfx = uuid.uuid4().hex[:8]
+    _person(first="Michael", last=f"Carry{sfx}", household_id=_household(),
+            email=f"first-{sfx}@example.com")
+    response = _create(first_name="Michael", last_name=f"Carry{sfx}",
+                       email=f"second-{sfx}@example.com",
+                       phone=_punctuate(_unique_phone_digits(), "parens"))
+    html = _body(response)
+    assert response.status_code == 200, "a redirect would put client details in the URL"
+    for value in ("Michael", f"Carry{sfx}", f"second-{sfx}@example.com"):
+        assert value in html, f"{value} was not carried into the review form"
+    assert 'name="acknowledge_duplicate" value="1"' in html
+
+
+def test_a_contact_less_name_match_warns_through_the_portal_and_can_be_overridden():
+    """Corrected policy: a first+last collision is never a hard block, even when the existing
+    record has no email and no phone."""
+    sfx = uuid.uuid4().hex[:8]
+    with engine.begin() as c:                        # deliberately no email, no phone
+        c.execute(people.insert().values(first_name="Michael", last_name=f"Bare{sfx}",
+                                         full_name=f"Michael Bare{sfx}", active=True,
+                                         household_id=_household()))
+    warned = _body(_create(first_name="Michael", last_name=f"Bare{sfx}",
+                           email=f"new-{sfx}@example.com"))
+    assert "Possible existing clients found" in warned
+    assert "Create separate client anyway" in warned
+    with engine.connect() as c:
+        assert len(c.execute(select(people.c.id)
+                             .where(people.c.last_name == f"Bare{sfx}")).fetchall()) == 1
+
+    created = _body(_create(first_name="Michael", last_name=f"Bare{sfx}",
+                            email=f"new-{sfx}@example.com", acknowledge_duplicate="1"))
+    assert "Client created" in created
+    with engine.connect() as c:
+        assert len(c.execute(select(people.c.id)
+                             .where(people.c.last_name == f"Bare{sfx}")).fetchall()) == 2
+
+
+def test_a_created_client_is_immediately_usable_by_a_creator_without_record_write_all():
+    """The whole point of the record assignment: create, then invite, with client.write only."""
+    from app.portal import invitation_handoff
+    from app.routes.portal_admin import HANDOFF_SESSION_KEY
+
+    sfx = uuid.uuid4().hex[:8]
+    staff = _principal(_staff_user(), caps=("client.read", "client.write"))   # no record.*_all
+    html = _body(_create(principal=staff, first_name="Michael", last_name=f"Flow{sfx}",
+                         email=f"flow-{sfx}@example.com"))
+    assert "Client created" in html
+    with engine.connect() as c:
+        pid = c.scalar(select(people.c.id).where(people.c.last_name == f"Flow{sfx}"))
+
+    # person AND household scope, through the normal policy — no record.*_all anywhere.
+    from app.security.authorization import record_in_scope
+    assert record_in_scope(staff, "person", pid, write=True) is True
+    with engine.connect() as c:
+        hid = c.scalar(select(people.c.household_id).where(people.c.id == pid))
+    assert record_in_scope(staff, "household", hid) is True
+    assert record_in_scope(staff, "household", hid, write=True) is True
+
+    # findable by the same staff member...
+    found = invite_targets.search_people(staff, first_name="Michael", last_name=f"Flow{sfx}")
+    assert found and found[0]["person_id"] == pid
+    # ...and invitable through the UNCHANGED invitation workflow.
+    session: dict = {}
+    resp = portal_admin_invite_form(request=_req(session), person_id=str(pid), email="",
+                                    access_type="self", principal=staff)
+    assert "error=" not in resp.headers["location"], resp.headers["location"]
+    assert invitation_handoff.take(session[HANDOFF_SESSION_KEY])
+
+
+def test_creation_never_exposes_a_person_or_household_id():
+    sfx = uuid.uuid4().hex[:8]
+    html = _body(_create(first_name="Michael", last_name=f"Opaque{sfx}",
+                         email=f"op-{sfx}@example.com"))
+    with engine.connect() as c:
+        pid = c.scalar(select(people.c.id).where(people.c.last_name == f"Opaque{sfx}"))
+        hid = c.scalar(select(people.c.household_id).where(people.c.id == pid))
+    assert "Person ID" not in html and "Household ID" not in html
+    assert f"Opaque{sfx} Household" in html               # the NAME is shown, never the id
+    assert f'>{hid}<' not in html and f'value="{hid}"' not in html
+
+
+def test_the_create_endpoint_has_no_local_people_insert():
+    """Creation belongs to the service; the route must not grow its own SQL."""
+    import inspect
+
+    from app.routes import portal_admin
+    src = inspect.getsource(portal_admin)
+    assert "people.insert()" not in src
+    assert "person_creation.create_client" in src
+
+
+def test_the_create_boundary_cannot_produce_raw_validation_json():
+    import inspect
+
+    from fastapi import params
+
+    from app.routes.portal_admin import portal_admin_create_client
+    form_params = [p for p in inspect.signature(portal_admin_create_client).parameters.values()
+                   if isinstance(p.default, params.Form)]
+    assert form_params and all(not p.default.is_required() for p in form_params)
+
+
+def test_creation_does_not_change_search_ranking_or_the_invitation_contract():
+    import inspect
+
+    from app.routes import portal_admin
+
+    handler = inspect.getsource(portal_admin.portal_admin_invite_form)
+    assert "resolve_invite_target" in handler and "validate_access_type" in handler
+    assert "_remember_activation_url" in handler
+    assert invite_targets.PERMITTED_ACCESS_TYPES == {"self", "joint"}
+    assert invite_targets._tier({"phone": "exact", "email": None,
+                                 "first_name": None, "last_name": None}) == 1
