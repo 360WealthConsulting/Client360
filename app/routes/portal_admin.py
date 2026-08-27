@@ -58,6 +58,11 @@ def _audit(request, principal, action, entity_id=None, metadata=None):
 #: session cookie is signed, not encrypted.
 HANDOFF_SESSION_KEY = "portal_invitation_handoff"
 
+#: Shown when the form is submitted with no client chosen. Identical wording to the client-side
+#: guard, so the message does not change depending on whether JavaScript ran.
+NO_SELECTION_ERROR = "Select a client before sending the invitation."
+DEFAULT_ACCESS = invite_targets.DEFAULT_ACCESS_TYPE
+
 
 def _activation_url(request, raw_token: str) -> str:
     """The client's activation URL, on the CANONICAL external origin.
@@ -116,14 +121,23 @@ def portal_admin_accounts(principal: Principal = Depends(require_capability("cli
 
 
 @router.get("/client-search")
-def portal_admin_client_search(q: str = "",
+def portal_admin_client_search(q: str = "", first_name: str = "", last_name: str = "",
+                               email: str = "", phone: str = "",
                                principal: Principal = Depends(require_capability("client.read"))):
-    """Search EXISTING Client360 people for the invite form, by name / email / phone.
+    """Search EXISTING Client360 people for the invite form.
 
-    Record-scoped through the existing principal-scoped search, so staff can only find people they
-    may service. Returns the human-readable fields needed to tell duplicate names apart; the id is
-    carried only so the next request can name a selection, and is re-validated server-side then."""
-    return {"query": q, "results": invite_targets.search_people(principal, q)}
+    Staff type into the same four human fields the invitation itself uses — first name, last name,
+    email, phone — and every non-empty one narrows the result. Record-scoped through the existing
+    principal-scoped search, so staff can only find people they may service. Returns the
+    human-readable fields needed to tell duplicate names apart; the id is carried only so the next
+    request can name a selection, and is re-validated server-side then.
+
+    Every parameter has a default, so a partially filled form can never produce a 422."""
+    results = invite_targets.search_people(
+        principal, q or None, first_name=first_name or None, last_name=last_name or None,
+        email=email or None, phone=phone or None)
+    return {"query": q, "first_name": first_name, "last_name": last_name, "email": email,
+            "phone": phone, "results": results}
 
 
 @router.post("/invite", status_code=201)
@@ -145,15 +159,27 @@ def portal_admin_invite(payload: PortalInvite, request: Request,
 @router.post("/invite-form")
 def portal_admin_invite_form(
         request: Request,
-        person_id: str = Form(...), email: str = Form(...), access_type: str = Form("self"),
+        person_id: str = Form(default=""), email: str = Form(default=""),
+        access_type: str = Form(default=DEFAULT_ACCESS),
         principal: Principal = Depends(require_capability("client.write"))):
     """Browser form over the SAME scoped/audited invite service as POST /invite. Post/Redirect/Get so a
     refresh never re-invites; a failure redirects with an error banner instead of a raw 403.
+
+    Every parameter is OPTIONAL at the boundary on purpose. With ``Form(...)`` FastAPI validated the
+    body BEFORE this function ran, so a submission missing ``person_id`` never reached the code below
+    — it raised ``RequestValidationError`` and the default handler returned raw Pydantic JSON
+    (``{"detail":[{"type":"missing","loc":["body","person_id"]...``) straight to the browser. Giving
+    every field a default moves that case into the handler, where it becomes an ordinary banner on
+    the admin page. Missing input is a normal staff mistake, not a protocol error.
 
     Staff submit a SELECTED PERSON and an email address — never an internal household or organization
     id. ``person_id`` arrives from the browser and is therefore treated as a claim, not an authority:
     :func:`invite_targets.resolve_invite_target` re-checks write record scope and derives the
     household from the database on every submission, so a tampered field fails closed."""
+    if not (person_id or "").strip():
+        # No selection: the same message the client-side guard shows, for anyone who bypasses it.
+        return RedirectResponse(
+            "/admin/client-portal?error=" + quote(NO_SELECTION_ERROR), status_code=303)
     try:
         target = invite_targets.resolve_invite_target(principal, person_id)
         access = invite_targets.validate_access_type(access_type, target)

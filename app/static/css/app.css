@@ -260,8 +260,10 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
    `default-src 'self'` with no 'unsafe-inline', so a style="..." attribute is blocked
    exactly like an inline <script>. Scoped to the page's own classes. */
 .portal-invite { max-width: 720px; }
-.portal-invite-search { display: block; }
-.portal-invite-search input { width: 100%; }
+.portal-invite-form label { display: block; }
+.portal-invite-form label input { width: 100%; }
+.portal-selected { font-weight: 600; }
+.portal-invite-error { color: var(--crit, #991b1b); margin-left: 10px; }
 .portal-invite-form { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-top: 12px; }
 .portal-invite-full { grid-column: 1 / -1; }
 .portal-access-option { display: block; font-weight: normal; }

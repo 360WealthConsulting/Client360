@@ -74,7 +74,7 @@ def test_the_script_file_exists_and_follows_the_static_convention():
 
 def test_the_replaced_inline_styles_have_real_css_rules():
     css, html = CSS.read_text(), TEMPLATE.read_text()
-    for klass in ("portal-invite", "portal-invite-search", "portal-invite-form",
+    for klass in ("portal-invite", "portal-invite-form",
                   "portal-invite-full", "portal-access-option", "portal-activation"):
         assert f'class="{klass}"' in html or f'{klass}"' in html, f"{klass} unused in the template"
         assert f".{klass}" in css, f"{klass} has no CSS rule, so the layout silently regresses"
@@ -108,16 +108,18 @@ def test_the_script_never_renders_server_supplied_markup_or_error_text():
 
 def test_the_script_keeps_the_two_character_threshold_and_debounce():
     js = SCRIPT.read_text()
-    assert "MIN_QUERY = 2" in js
+    assert "MIN_TERM = 2" in js
     assert "DEBOUNCE_MS" in js and "setTimeout" in js and "clearTimeout" in js
 
 
 # --- behaviour, executed in Node ---------------------------------------------------------
 
 def _harness(fetch_impl: str, *, activation: bool = False) -> str:
-    """A minimal DOM + fetch stub, then the REAL script, then one simulated search."""
+    """A minimal DOM + fetch stub, then the REAL script, then one simulated search.
+
+    Mirrors the four-field invite form: first/last/email/phone are typeable inputs that drive
+    the search, and the person id is hidden state the script fills in on selection."""
     return textwrap.dedent("""
-        const listeners = {};
         function el(id, tag) {
           return {
             id: id, tagName: tag || "div", value: "", textContent: "", className: "",
@@ -128,13 +130,16 @@ def _harness(fetch_impl: str, *, activation: bool = False) -> str:
               this.children = this.children.filter(x => x !== c);
               this.firstChild = this.children[0] || null;
             },
+            focus() { this.focused = true; },
             select() { this.selected = true; }
           };
         }
         const nodes = {};
-        ["client-search","client-results","invite-form","sel-person-id","sel-first","sel-last",
-         "sel-phone","sel-email","sel-household"%%ACTIVATION%%].forEach(id => nodes[id] = el(id));
-        nodes["invite-form"].hidden = true;
+        ["invite-form","client-results","sel-first","sel-last","sel-email","sel-phone",
+         "sel-person-id","sel-household","selected-client","invite-error"%%ACTIVATION%%]
+          .forEach(id => nodes[id] = el(id));
+        nodes["selected-client"].hidden = true;
+        nodes["invite-error"].hidden = true;
         global.document = {
           readyState: "complete",
           getElementById: id => nodes[id] || null,
@@ -151,33 +156,37 @@ def _harness(fetch_impl: str, *, activation: bool = False) -> str:
           return node.children.map(textOf).join(" ");
         }
         const results = nodes["client-results"];
-        nodes["client-search"].value = "%%QUERY%%";
+        const type = (id, value) => { nodes[id].value = value; nodes[id]._on.input(); };
         const done = () => {
           console.log(JSON.stringify({
             text: results.children.map(textOf).join(" | "),
             count: results.children.length,
-            formHidden: nodes["invite-form"].hidden,
             personId: nodes["sel-person-id"].value,
             first: nodes["sel-first"].value,
             last: nodes["sel-last"].value,
             phone: nodes["sel-phone"].value,
             email: nodes["sel-email"].value,
             household: nodes["sel-household"].textContent,
-            search: nodes["client-search"].value,
+            selected: nodes["selected-client"].textContent,
+            selectedHidden: nodes["selected-client"].hidden,
+            error: nodes["invite-error"].textContent,
+            errorHidden: nodes["invite-error"].hidden,
             classes: results.children.map(c => c.className).join(","),
             activationSelected: !!(nodes["activation-link"] || {}).selected
           }));
         };
-        nodes["client-search"]._on.input();
+        type("sel-last", "%%QUERY%%");
         %%AFTER%%
     """).replace("%%FETCH%%", fetch_impl).replace(
         "%%SCRIPT%%", json.dumps(str(SCRIPT))).replace(
         "%%ACTIVATION%%", ',"activation-link"' if activation else "")
 
 
+
+
 def _run_node(body: str, tmp_path, *, query="smith", after="setImmediate(done);") -> dict:
     node = shutil.which("node")
-    if not node:                                          # pragma: no cover - environment dependent
+    if not node:                                          # pragma: no cover
         pytest.skip("node is not installed; structural assertions still cover this file")
     script = tmp_path / "harness.js"
     script.write_text(body.replace("%%QUERY%%", query).replace("%%AFTER%%", after))
@@ -191,7 +200,8 @@ def test_empty_results_render_a_clear_no_results_state(tmp_path):
         global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({results: []}) });
     """), tmp_path)
     assert "No clients found" in out["text"]
-    assert out["count"] == 1 and out["formHidden"] is True
+    assert out["count"] == 1
+    assert out["personId"] == "" and out["selectedHidden"] is True
 
 
 def test_a_failed_request_renders_a_generic_error_without_server_text(tmp_path):
@@ -228,12 +238,12 @@ def test_results_render_duplicate_safe_details_and_selection_populates_the_form(
     """), tmp_path, after="setImmediate(() => { "
                           "document.getElementById('client-results').children[0]._on.click(); "
                           "console.log(JSON.stringify({url: global.__url})); done(); });")
-    assert out["personId"] == 4242
+    assert out["personId"] == 4242, "selection did not establish the hidden person id"
     assert out["first"] == "Chris" and out["last"] == "Dup"
     assert out["phone"] == "555-0001" and out["email"] == "chris.a@example.com"
     assert out["household"] == "Household: Alpha Household"
-    assert out["search"] == "Chris Dup"
-    assert out["formHidden"] is False, "the invite form did not appear after selection"
+    assert "Chris Dup" in out["selected"] and out["selectedHidden"] is False, (
+        "the chosen client is not clearly indicated")
     assert out["count"] == 0, "the result list should clear once a client is chosen"
 
 
@@ -252,17 +262,69 @@ def test_the_search_request_goes_to_the_authenticated_endpoint(tmp_path):
     proc = subprocess.run([node, str(script)], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     call = json.loads(proc.stdout.strip().splitlines()[0])
-    assert call["url"].startswith(SEARCH_URL + "?q=")
+    assert call["url"].startswith(SEARCH_URL + "?last_name="), call["url"]
     assert call["creds"] == "same-origin"
-    assert "o'brien & co" not in call["url"], "the query was not URL-encoded"
+    assert "o'brien & co" not in call["url"], "the term was not URL-encoded"
     assert "%26" in call["url"] or "%27" in call["url"]
 
 
-def test_a_short_query_issues_no_request(tmp_path):
+def test_every_filled_field_is_sent_so_the_server_can_narrow(tmp_path):
+    """All four human fields drive one search — the server intersects them."""
+    node = shutil.which("node")
+    if not node:                                          # pragma: no cover
+        pytest.skip("node is not installed")
+    body = _harness("""
+        global.fetch = (url) => {
+          console.log(JSON.stringify({url: url}));
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({results: []}) });
+        };
+    """)
+    script = tmp_path / "multi.js"
+    script.write_text(body.replace("%%QUERY%%", "Shelton").replace(
+        "%%AFTER%%", "type('sel-first', 'Michael');"
+                     "type('sel-email', 'm@example.com');"
+                     "type('sel-phone', '540-555-1212');"))
+    proc = subprocess.run([node, str(script)], capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stderr
+    last = json.loads(proc.stdout.strip().splitlines()[-1])["url"]
+    for key in ("first_name=", "last_name=", "phone=", "email="):
+        assert key in last, f"{key} was not sent"
+
+
+def test_a_short_term_issues_no_request(tmp_path):
     out = _run_node(_harness("""
-        global.fetch = () => { throw new Error("a 1-character query must not search"); };
+        global.fetch = () => { throw new Error("a 1-character term must not search"); };
     """), tmp_path, query="a")
     assert out["count"] == 0 and out["text"] == ""
+
+
+def test_submitting_with_no_selection_is_blocked_client_side(tmp_path):
+    out = _run_node(_harness("""
+        global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({results: []}) });
+    """), tmp_path, after="document.getElementById('invite-form')._on.submit("
+                          "{preventDefault: () => {}}); setImmediate(done);")
+    assert out["error"] == "Select a client before sending the invitation."
+    assert out["errorHidden"] is False
+
+
+def test_editing_an_identifying_field_clears_a_previous_selection(tmp_path):
+    """Changing first/last/phone after choosing invalidates the selection so the wrong person can
+    never be invited. Editing the EMAIL must not, because it is the invitation address."""
+    fetch = """
+        global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({results: [{
+          person_id: 77, first_name: "Chris", last_name: "Dup", full_name: "Chris Dup",
+          email: "chris@example.com", phone: "555-0001", household_name: "HH"}]}) });
+    """
+    pick = "setImmediate(() => { document.getElementById('client-results').children[0]._on.click(); "
+    cleared = _run_node(_harness(fetch), tmp_path,
+                        after=pick + "type('sel-last', 'Different'); setImmediate(done); });")
+    assert cleared["personId"] == "", "a stale selection survived an identifying edit"
+    assert cleared["selectedHidden"] is True
+
+    kept = _run_node(_harness(fetch), tmp_path,
+                     after=pick + "type('sel-email', 'other@example.com'); setImmediate(done); });")
+    assert kept["personId"] == 77, "editing the invitation email dropped the client selection"
+    assert kept["email"] == "other@example.com"
 
 
 def test_a_stale_slower_response_cannot_overwrite_a_newer_search(tmp_path):
@@ -279,8 +341,7 @@ def test_a_stale_slower_response_cannot_overwrite_a_newer_search(tmp_path):
           return Promise.resolve({ ok: true, json: () => Promise.resolve({results: [
             {person_id: 2, full_name: "FRESH RESULT"}]}) });
         };
-    """), tmp_path, after="document.getElementById('client-search').value = 'smithe';"
-                          "document.getElementById('client-search')._on.input();"
+    """), tmp_path, after="type('sel-last', 'smithe');"
                           "setTimeout(() => setImmediate(() => setImmediate(() => "
                           "setImmediate(() => setImmediate(done)))), 0);")
     assert "FRESH RESULT" in out["text"]

@@ -23,22 +23,22 @@
 {% endif %}
 <h2 class="section-title">Invite a client</h2>
 <div class="card portal-invite">
-  <label class="portal-invite-search">Find the client
-    <input id="client-search" type="search" autocomplete="off"
-           placeholder="Search by first name, last name, email or phone" aria-controls="client-results">
-  </label>
-  <p class="subtle" id="client-search-hint">Type at least two characters. Only clients you can
-  service appear. Not listed? Add them to Client360 first &mdash;
-  <a href="/search">search the client records</a> to check whether they already exist.</p>
-  <div id="client-results" aria-live="polite" aria-label="Matching clients"></div>
-
-  <form id="invite-form" method="post" action="/admin/client-portal/invite-form" hidden
+  <form id="invite-form" method="post" action="/admin/client-portal/invite-form"
         class="portal-invite-form">
+    <p class="subtle portal-invite-full" id="invite-hint">Start typing any of these to find an
+    existing client. Not listed? Add them to Client360 first &mdash;
+    <a href="/search">search the client records</a> to check whether they already exist.</p>
+
+    <label>First name<input name="first_name" id="sel-first" autocomplete="off"></label>
+    <label>Last name<input name="last_name" id="sel-last" autocomplete="off"></label>
+    <label>Email<input name="email" id="sel-email" type="email" autocomplete="off"></label>
+    <label>Phone<input name="phone" id="sel-phone" autocomplete="off"></label>
+
     <input type="hidden" name="person_id" id="sel-person-id">
-    <label>First name<input id="sel-first" readonly></label>
-    <label>Last name<input id="sel-last" readonly></label>
-    <label>Phone<input id="sel-phone" readonly></label>
-    <label>Email<input name="email" id="sel-email" type="email" required></label>
+    <div class="portal-invite-full" id="client-results" aria-live="polite"
+         aria-label="Matching clients"></div>
+    <p class="portal-invite-full portal-selected" id="selected-client" hidden></p>
+
     <div class="portal-invite-full">
       <span>Portal access</span>
       {% for code, label, help in access_choices %}
@@ -50,7 +50,10 @@
       <p class="subtle" id="sel-household"></p>
       <p class="subtle">{{ rep_notice }}</p>
     </div>
-    <div class="portal-invite-full"><button type="submit">Send portal invitation</button></div>
+    <div class="portal-invite-full">
+      <button type="submit">Send portal invitation</button>
+      <span class="portal-invite-error" id="invite-error" role="alert" hidden></span>
+    </div>
   </form>
 </div>
 <h2 class="section-title">Portal accounts</h2>

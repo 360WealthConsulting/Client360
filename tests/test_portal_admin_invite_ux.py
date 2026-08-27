@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
+from urllib.parse import quote
 
 import pytest
 from sqlalchemy import select
@@ -33,6 +34,9 @@ from app.routes.portal_admin import (
 )
 from app.security.models import Principal
 
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = "https://portal.example.com"
 
 
@@ -113,7 +117,8 @@ def test_the_form_does_not_accept_a_person_id_or_household_id_as_typed_fields():
 
 def test_the_page_offers_a_client_search_instead_of_id_fields():
     html = _render_admin_home()
-    assert 'id="client-search"' in html
+    # The four human fields ARE the search now; there is no separate generic box.
+    assert all(f'name="{n}"' in html for n in ("first_name", "last_name", "email", "phone"))
     assert "Person ID" not in html and "Household ID" not in html and "Organization ID" not in html
     # The person id survives only as a hidden selection, re-validated server-side.
     assert 'type="hidden" name="person_id"' in html
@@ -707,3 +712,249 @@ def test_portal_gates_and_identity_binding_are_untouched():
     assert "portal.production_signed_off" in inspect.getsource(gate)
     src = inspect.getsource(service.accept_invitation)
     assert "auth_subject=auth_subject" in src and "mfa_verified" in src
+
+
+# --- the four human fields ARE the search --------------------------------------------------
+
+def _family(sfx):
+    """Three people who overlap on first name, last name and household — so a single field is
+    ambiguous and combining fields is what narrows it.
+
+    EVERY identifying value is suffixed or generated per test. The test database accumulates rows
+    across runs, so a shared "Michael" or a shared 555 number would match every earlier run's
+    people and the result limit, not the code, would decide the assertion."""
+    hid = _household(f"Shelton HH {sfx}")
+    made = {"household_id": hid, "first": f"Michael{sfx}", "other_first": f"Sarah{sfx}",
+            "last": f"Shelton{sfx}", "other_last": f"Jones{sfx}"}
+    for key, first, last in [("michael", made["first"], made["last"]),
+                             ("mjones", made["first"], made["other_last"]),
+                             ("sarah", made["other_first"], made["last"])]:
+        digits = _unique_phone_digits()
+        made[key + "_phone_digits"] = digits
+        made[key + "_email"] = f"{key}-{sfx}@example.com"
+        with engine.begin() as c:
+            made[key] = c.execute(people.insert().values(
+                first_name=first, last_name=last, full_name=f"{first} {last}",
+                primary_email=made[key + "_email"], normalized_email=made[key + "_email"],
+                primary_phone=_punctuate(digits, "parens"), normalized_phone=digits,
+                active=True, household_id=hid).returning(people.c.id)).scalar_one()
+    return made
+
+
+def _names(principal, **kw):
+    return sorted(r["full_name"] for r in invite_targets.search_people(principal, **kw))
+
+
+@pytest.mark.parametrize("field", ["first_name", "last_name", "email", "phone"])
+def test_each_human_field_is_a_typeable_input(field):
+    """Nothing on the invite form is readonly: all four fields accept typing and drive search."""
+    html = _render_admin_home()
+    assert f'name="{field}"' in html, f"{field} is not a form field"
+    marker = f'name="{field}"'
+    tag = html[html.index(marker) - 120: html.index(marker) + 120]
+    assert "readonly" not in tag, f"{field} is readonly and cannot be typed into"
+    assert "disabled" not in tag
+
+
+def test_the_form_no_longer_has_a_separate_generic_search_box():
+    """One search system, not two: the four fields are the search."""
+    html = _render_admin_home()
+    assert 'id="client-search"' not in html and "Find the client" not in html
+
+
+def test_first_name_only_search():
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    found = _names(_principal(_staff_user()), first_name=fam["first"])
+    assert f'{fam["first"]} {fam["last"]}' in found
+    assert f'{fam["first"]} {fam["other_last"]}' in found
+    assert f'{fam["other_first"]} {fam["last"]}' not in found
+
+
+def test_last_name_only_search():
+    sfx = uuid.uuid4().hex[:8]
+    _family(sfx)
+    fam = _family(sfx)
+    found = _names(_principal(_staff_user()), last_name=fam["last"])
+    assert f'{fam["first"]} {fam["last"]}' in found
+    assert f'{fam["other_first"]} {fam["last"]}' in found
+    assert f'{fam["first"]} {fam["other_last"]}' not in found
+
+
+def test_first_plus_last_name_narrows_to_one_person():
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    assert _names(_principal(_staff_user()), first_name=fam["first"],
+                  last_name=fam["last"]) == [f'{fam["first"]} {fam["last"]}']
+
+
+def test_email_search_and_partial_email_search():
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    principal = _principal(_staff_user())
+    assert _names(principal, email=fam["michael_email"]) == [f'{fam["first"]} {fam["last"]}']
+    assert _names(principal, email=f"sarah-{sfx}") == [f'{fam["other_first"]} {fam["last"]}']
+
+
+@pytest.mark.parametrize("style", ["bare", "dashes", "parens", "spaces", "dots",
+                                   "cc_spaces", "cc_dashes"])
+def test_phone_search_in_every_supported_form(style):
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    typed = _punctuate(fam["michael_phone_digits"], style)
+    assert _names(_principal(_staff_user()), phone=typed) == [f'{fam["first"]} {fam["last"]}']
+
+
+def test_fields_combine_to_narrow_rather_than_widen():
+    """Every filled field must AND, never OR: an intersection can only ever shrink the result."""
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    principal = _principal(_staff_user())
+    assert _names(principal, first_name=fam["first"],
+                  phone=fam["mjones_phone_digits"]) == [f'{fam["first"]} {fam["other_last"]}']
+    # Contradictory terms select nobody rather than everybody.
+    assert _names(principal, first_name=fam["first"], last_name=fam["other_last"],
+                  phone=fam["michael_phone_digits"]) == []
+
+
+def test_a_single_character_term_is_ignored_rather_than_matching_everyone():
+    sfx = uuid.uuid4().hex[:8]
+    _family(sfx)
+    assert invite_targets.search_people(_principal(_staff_user()), first_name="M") == []
+
+
+def test_multi_field_search_keeps_the_existing_authorization_scoping():
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    unscoped = _principal(_staff_user(), caps=("client.read", "client.write"))
+    assert invite_targets.search_people(
+        unscoped, first_name=fam["first"], last_name=fam["last"]) == []
+    assert _names(_principal(_staff_user()), first_name=fam["first"], last_name=fam["last"])
+
+
+def test_a_result_carries_everything_needed_to_select_and_populate_the_form():
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    row = invite_targets.search_people(
+        _principal(_staff_user()), first_name=fam["first"], last_name=fam["last"])[0]
+    assert row["person_id"] == fam["michael"]          # hidden state the JS stores
+    assert row["first_name"] == fam["first"] and row["last_name"] == fam["last"]
+    assert row["email"] == fam["michael_email"]
+    assert row["phone"] == _punctuate(fam["michael_phone_digits"], "parens")
+    assert row["household_name"] == f"Shelton HH {sfx}"
+
+
+# --- the form boundary can no longer produce raw 422 JSON ------------------------------------
+
+def test_no_invite_form_field_is_required_at_the_fastapi_boundary():
+    """The root cause: with Form(...) FastAPI validated the body BEFORE the handler ran, so a
+    missing person_id became RequestValidationError → raw Pydantic JSON in the browser. Every
+    field now has a default, so the handler always runs and missing input is a banner."""
+    import inspect
+
+    from fastapi import params
+    for name, prm in inspect.signature(portal_admin_invite_form).parameters.items():
+        if isinstance(prm.default, params.Form):
+            assert not prm.default.is_required(), (
+                f"{name} is a required Form field; a submission without it returns raw 422 JSON")
+
+
+def test_a_submission_with_no_selected_client_returns_the_admin_page_with_a_message():
+    """Server-side, not JavaScript: this is what protects a direct or scripted POST."""
+    from app.routes.portal_admin import NO_SELECTION_ERROR
+    resp = portal_admin_invite_form(request=_req(), person_id="", email="x@example.com",
+                                    access_type="self", principal=_principal(_staff_user()))
+    assert resp.status_code == 303
+    location = resp.headers["location"]
+    assert location.startswith("/admin/client-portal?error=")
+    assert quote(NO_SELECTION_ERROR) in location
+    for leak in ("detail", "loc", "pydantic", "missing", "body"):
+        assert leak not in location.lower(), f"validation internals leaked: {leak}"
+
+
+def test_the_client_side_guard_and_the_server_use_the_same_wording():
+    from app.routes.portal_admin import NO_SELECTION_ERROR
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    assert NO_SELECTION_ERROR in js, "the two guards would tell staff different things"
+
+
+def test_this_route_never_produces_a_validation_error_at_all():
+    """The fix is scoped to this route's boundary, not to global FastAPI behaviour.
+
+    Because no field is required, FastAPI cannot raise RequestValidationError here — the handler
+    always runs and returns the ordinary admin page. Nothing app-wide is changed to achieve that,
+    so every other route keeps FastAPI's default validation behaviour untouched."""
+    import inspect
+
+    from fastapi import params
+
+    from app.routes import portal_admin
+    form_params = [p for p in inspect.signature(portal_admin.portal_admin_invite_form)
+                   .parameters.values() if isinstance(p.default, params.Form)]
+    assert form_params, "the handler no longer takes form fields"
+    assert all(not p.default.is_required() for p in form_params)
+
+
+def test_no_app_wide_validation_handler_ships_with_this_change():
+    """Scope guard: the portal fix must not alter validation behaviour for the whole application."""
+    main = (REPO_ROOT / "app" / "main.py").read_text()
+    assert "RequestValidationError" not in main, (
+        "an app-wide validation handler crept back into the portal change")
+    templating = (REPO_ROOT / "app" / "templating.py").read_text()
+    assert "_ERROR_TEMPLATES = {403, 404, 500}" in templating, "the error-template set was widened"
+    assert not (REPO_ROOT / "app" / "templates" / "errors" / "400.html").exists()
+
+
+# --- selection, invalidation, and the invariants -----------------------------------------------
+
+def test_editing_an_identifying_field_invalidates_a_stale_selection():
+    """first/last/phone identify WHO; changing one must drop the selection. Email is the
+    invitation address and is deliberately exempt once a client is chosen."""
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    assert 'var IDENTIFYING = ["first", "last", "phone"];' in js
+    assert "clearSelection()" in js
+    assert 'if (chosen && key === "email") { return; }' in js
+
+
+def test_the_submit_guard_blocks_an_unselected_submission_client_side():
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    assert 'form.addEventListener("submit"' in js
+    assert "event.preventDefault()" in js
+    assert "f.personId.value" in js
+
+
+def test_the_person_id_remains_hidden_implementation_state():
+    html = _render_admin_home()
+    assert 'type="hidden" name="person_id"' in html
+    assert "Person ID" not in html and "Household ID" not in html
+    assert "person_id" not in html.replace('type="hidden" name="person_id"', "")
+
+
+def test_selecting_a_client_still_produces_a_working_invitation(canonical_origin):
+    """End to end after the redesign: resolve → grant → one-time handoff, all unchanged."""
+    from app.routes.portal_admin import HANDOFF_SESSION_KEY
+    from app.portal import invitation_handoff
+
+    sfx = uuid.uuid4().hex[:8]
+    fam = _family(sfx)
+    session: dict = {}
+    resp = portal_admin_invite_form(
+        request=_req(session), person_id=str(fam["michael"]),
+        email=f"new-address-{sfx}@example.com", access_type="self",
+        principal=_principal(_staff_user()))
+    assert "error=" not in resp.headers["location"]
+    _account_id, grant = _grant_for(fam["michael"])
+    assert grant["access_type"] == "self" and grant["person_id"] == fam["michael"]
+    payload = invitation_handoff.take(session[HANDOFF_SESSION_KEY])
+    assert payload and payload["url"].startswith(f"{CANONICAL}/portal/login?invitation=")
+
+
+def test_the_redesign_did_not_touch_the_security_invariants():
+    import inspect
+
+    from app.routes import portal_admin
+    handler = inspect.getsource(portal_admin.portal_admin_invite_form)
+    assert "resolve_invite_target" in handler and "validate_access_type" in handler
+    assert "_remember_activation_url" in handler
+    assert "record_in_scope" in inspect.getsource(invite_targets.resolve_invite_target)
+    assert invite_targets.PERMITTED_ACCESS_TYPES == {"self", "joint"}

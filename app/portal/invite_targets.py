@@ -83,19 +83,42 @@ class InviteTarget:
 
 # --- search ---------------------------------------------------------------------------
 
-def search_people(principal, query: str, *, limit: int = 20) -> list[dict]:
-    """People this principal may service, matching ``query`` by name, email or phone.
+#: Shortest term worth searching. Matches universal_search's own floor.
+MIN_TERM = 2
+#: Per-term ceiling used while intersecting. Higher than the returned limit so combining
+#: "Michael" + "Shelton" is not starved by one common term filling its own page first.
+_TERM_LIMIT = 200
 
-    Scoping is delegated to the existing ``universal_search`` (which applies
-    ``accessible_person_ids``), so this cannot widen what staff can see. The rows are then enriched
-    with the fields needed to tell two people with the same name apart — email, phone and household
-    — because a name alone is not safe to pick from."""
+
+def search_people(principal, query: str | None = None, *, first_name: str | None = None,
+                  last_name: str | None = None, email: str | None = None,
+                  phone: str | None = None, limit: int = 20) -> list[dict]:
+    """People this principal may service, matching EVERY supplied term.
+
+    Each term is run through the existing principal-scoped ``universal_search`` (which applies
+    ``accessible_person_ids`` and the phone-query normalisation), and the per-term id sets are
+    INTERSECTED. So "Michael" + "Shelton" narrows to people matching both, and adding a partial
+    phone narrows further — without a second person-search implementation and without widening
+    what staff can see: an intersection can only ever be smaller than each scoped set.
+
+    ``query`` remains supported as a single combined term. Results are enriched with the fields
+    needed to tell two people with the same name apart, because a name alone is not safe to pick
+    from."""
     from app.services.universal_search import universal_search
 
-    if len((query or "").strip()) < 2:
+    terms = [t.strip() for t in (query, first_name, last_name, email, phone) if t and t.strip()]
+    terms = [t for t in terms if len(t) >= MIN_TERM]
+    if not terms:
         return []
-    found = universal_search(principal, query, types=["person"], limit=limit)
-    person_ids = [r["id"] for r in found.get("results", []) if r.get("kind") == "person"]
+
+    person_ids: set[int] | None = None
+    for term in terms:
+        found = universal_search(principal, term, types=["person"], limit=_TERM_LIMIT)
+        matched = {r["id"] for r in found.get("results", []) if r.get("kind") == "person"}
+        person_ids = matched if person_ids is None else (person_ids & matched)
+        if not person_ids:
+            return []                      # one term excludes everyone — stop early
+    person_ids = sorted(person_ids)[:limit]
     if not person_ids:
         return []
 
