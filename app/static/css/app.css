@@ -254,3 +254,18 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .err-card .rid { font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:16px; }
 .err-card .brand { display:inline-flex; align-items:center; gap:8px; margin-bottom:18px; }
 .err-card .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:800; font-size:12px; font-family:var(--font-mono); }
+
+/* --- Client Portal administration: invite form ---------------------------
+   These replace inline style attributes on admin/client_portal.html. The site CSP is
+   `default-src 'self'` with no 'unsafe-inline', so a style="..." attribute is blocked
+   exactly like an inline <script>. Scoped to the page's own classes. */
+.portal-invite { max-width: 720px; }
+.portal-invite-search { display: block; }
+.portal-invite-search input { width: 100%; }
+.portal-invite-form { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-top: 12px; }
+.portal-invite-full { grid-column: 1 / -1; }
+.portal-access-option { display: block; font-weight: normal; }
+.client-result { display: block; width: 100%; text-align: left; margin: 4px 0; }
+.portal-activation { display: grid; gap: 8px; }
+.portal-activation p { margin: 0; }
+.portal-activation input { width: 100%; }

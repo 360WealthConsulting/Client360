@@ -113,10 +113,16 @@ def test_the_form_does_not_accept_a_person_id_or_household_id_as_typed_fields():
 
 def test_the_page_offers_a_client_search_instead_of_id_fields():
     html = _render_admin_home()
-    assert 'id="client-search"' in html and "/admin/client-portal/client-search" in html
+    assert 'id="client-search"' in html
     assert "Person ID" not in html and "Household ID" not in html and "Organization ID" not in html
     # The person id survives only as a hidden selection, re-validated server-side.
     assert 'type="hidden" name="person_id"' in html
+    # The search endpoint lives in the external script, not inline: the site CSP is
+    # default-src 'self' with no 'unsafe-inline', so an inline <script> never executes.
+    assert '/static/js/client_portal_admin.js' in html
+    from pathlib import Path
+    js = Path("app/static/js/client_portal_admin.js").read_text()
+    assert "/admin/client-portal/client-search" in js
 
 
 def test_the_page_tells_staff_what_to_do_when_the_client_does_not_exist():

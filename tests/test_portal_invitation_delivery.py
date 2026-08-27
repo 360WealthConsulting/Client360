@@ -360,7 +360,9 @@ def test_the_rendered_link_is_not_a_clickable_staff_navigation_target(canonical_
     _invite(_request(session))
     html = _render_admin_home(session)
     assert 'href="https://portal.example.com/portal/login?invitation=' not in html
-    assert "<input readonly value=" in html
+    assert '<input id="activation-link" readonly value=' in html
+    # Select-on-click is bound in the external script; an inline onclick would be CSP-blocked.
+    assert "onclick=" not in html
 
 
 def test_a_hostile_display_name_cannot_inject_markup_into_the_panel(canonical_origin):

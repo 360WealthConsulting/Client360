@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% block title %}Client Portal Administration | 360Plus{% endblock %}
+{% block head %}<script src="/static/js/client_portal_admin.js" defer></script>{% endblock %}
 {% block crumb %}Client Portal Administration{% endblock %}
 {% block content %}
 {% call ui.page_head("Client Portal administration", eyebrow="Oversight", desc="Invite and govern external client portal access. Previewing an account shows its entitlements — it is never impersonation.") %}
@@ -9,39 +10,39 @@
 {% if invited %}<div class="banner good">Invitation created for <b>{{ invited }}</b>.</div>{% endif %}
 {% if error %}<div class="banner warn">Could not invite: {{ error }}</div>{% endif %}
 {% if activation %}
-<div class="banner warn" style="display:grid; gap:8px">
+<div class="banner warn portal-activation">
   <b>Activation link for {{ activation.display_name }} — shown once, right now</b>
-  <p style="margin:0">This link contains a <b>sensitive, single-use invitation credential</b>. Anyone
+  <p>This link contains a <b>sensitive, single-use invitation credential</b>. Anyone
   who holds it can activate this portal account. Send it to the client through a channel you trust,
   and do not paste it into a ticket, a chat log, or anywhere it will be retained.</p>
-  <input readonly value="{{ activation.url }}" onclick="this.select()" style="width:100%"
+  <input id="activation-link" readonly value="{{ activation.url }}"
          aria-label="Client activation link for {{ activation.display_name }}">
-  <p class="subtle" style="margin:0">It is not stored and will not be shown again — copy it now. If
+  <p class="subtle">It is not stored and will not be shown again — copy it now. If
   you lose it, revoke the account and invite again.</p>
 </div>
 {% endif %}
 <h2 class="section-title">Invite a client</h2>
-<div class="card" style="max-width:720px">
-  <label style="display:block">Find the client
-    <input id="client-search" type="search" autocomplete="off" style="width:100%"
+<div class="card portal-invite">
+  <label class="portal-invite-search">Find the client
+    <input id="client-search" type="search" autocomplete="off"
            placeholder="Search by first name, last name, email or phone" aria-controls="client-results">
   </label>
   <p class="subtle" id="client-search-hint">Type at least two characters. Only clients you can
   service appear. Not listed? Add them to Client360 first &mdash;
   <a href="/search">search the client records</a> to check whether they already exist.</p>
-  <div id="client-results" role="listbox" aria-label="Matching clients"></div>
+  <div id="client-results" aria-live="polite" aria-label="Matching clients"></div>
 
   <form id="invite-form" method="post" action="/admin/client-portal/invite-form" hidden
-        style="display:grid; gap:10px; grid-template-columns:1fr 1fr; margin-top:12px">
+        class="portal-invite-form">
     <input type="hidden" name="person_id" id="sel-person-id">
     <label>First name<input id="sel-first" readonly></label>
     <label>Last name<input id="sel-last" readonly></label>
     <label>Phone<input id="sel-phone" readonly></label>
     <label>Email<input name="email" id="sel-email" type="email" required></label>
-    <div style="grid-column:1 / -1">
+    <div class="portal-invite-full">
       <span>Portal access</span>
       {% for code, label, help in access_choices %}
-      <label style="display:block; font-weight:normal">
+      <label class="portal-access-option">
         <input type="radio" name="access_type" value="{{ code }}"{% if loop.first %} checked{% endif %}>
         <b>{{ label }}</b> &mdash; <span class="subtle">{{ help }}</span>
       </label>
@@ -49,57 +50,9 @@
       <p class="subtle" id="sel-household"></p>
       <p class="subtle">{{ rep_notice }}</p>
     </div>
-    <div style="grid-column:1 / -1"><button type="submit">Send portal invitation</button></div>
+    <div class="portal-invite-full"><button type="submit">Send portal invitation</button></div>
   </form>
 </div>
-<script>
-(function () {
-  var box = document.getElementById('client-search'),
-      results = document.getElementById('client-results'),
-      form = document.getElementById('invite-form'), timer;
-  if (!box) return;
-  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
-  function choose(p) {
-    document.getElementById('sel-person-id').value = p.person_id;
-    document.getElementById('sel-first').value = p.first_name;
-    document.getElementById('sel-last').value = p.last_name;
-    document.getElementById('sel-phone').value = p.phone;
-    document.getElementById('sel-email').value = p.email;
-    document.getElementById('sel-household').textContent =
-      p.household_name ? 'Household: ' + p.household_name : 'No household on record yet.';
-    results.innerHTML = '';
-    box.value = p.full_name;
-    form.hidden = false;
-  }
-  function render(rows) {
-    if (!rows.length) { results.innerHTML = '<p class="subtle">No matching clients.</p>'; return; }
-    results.innerHTML = '';
-    rows.forEach(function (p) {
-      var b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn secondary';
-      b.style.cssText = 'display:block;width:100%;text-align:left;margin:4px 0';
-      b.innerHTML = '<b>' + esc(p.full_name) + '</b><br><span class="subtle">' +
-        [p.email, p.phone, p.household_name, p.location].filter(Boolean).map(esc).join(' &middot; ') +
-        '</span>';
-      b.addEventListener('click', function () { choose(p); });
-      results.appendChild(b);
-    });
-  }
-  box.addEventListener('input', function () {
-    form.hidden = true;
-    document.getElementById('sel-person-id').value = '';
-    clearTimeout(timer);
-    var q = box.value.trim();
-    if (q.length < 2) { results.innerHTML = ''; return; }
-    timer = setTimeout(function () {
-      fetch('/admin/client-portal/client-search?q=' + encodeURIComponent(q), {credentials: 'same-origin'})
-        .then(function (r) { return r.json(); })
-        .then(function (d) { render(d.results || []); })
-        .catch(function () { results.innerHTML = '<p class="subtle">Search is unavailable.</p>'; });
-    }, 200);
-  });
-})();
-</script>
 <h2 class="section-title">Portal accounts</h2>
 <div class="table-wrap">
   <table class="data">
