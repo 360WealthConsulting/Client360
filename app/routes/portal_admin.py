@@ -26,6 +26,7 @@ from app.db import (
 from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import invitation_handoff
+from app.portal import invite_targets
 from app.portal import visibility
 from app.portal.service import invite_portal_account, portal_base_scope, staff_send_message
 from app.security.audit import write_audit_event
@@ -104,12 +105,25 @@ def portal_admin_home(request: Request, principal: Principal = Depends(require_c
                                       context={"accounts": _accounts(), "principal": principal,
                                                "invited": q.get("invited"), "error": q.get("error"),
                                                # Read once; gone on the next load.
-                                               "activation": _take_activation_url(request)})
+                                               "activation": _take_activation_url(request),
+                                               "access_choices": invite_targets.ACCESS_CHOICES,
+                                               "rep_notice": invite_targets.AUTHORIZED_REPRESENTATIVE_NOTICE})
 
 
 @router.get("/accounts")
 def portal_admin_accounts(principal: Principal = Depends(require_capability("client.read"))):
     return {"accounts": _accounts()}
+
+
+@router.get("/client-search")
+def portal_admin_client_search(q: str = "",
+                               principal: Principal = Depends(require_capability("client.read"))):
+    """Search EXISTING Client360 people for the invite form, by name / email / phone.
+
+    Record-scoped through the existing principal-scoped search, so staff can only find people they
+    may service. Returns the human-readable fields needed to tell duplicate names apart; the id is
+    carried only so the next request can name a selection, and is re-validated server-side then."""
+    return {"query": q, "results": invite_targets.search_people(principal, q)}
 
 
 @router.post("/invite", status_code=201)
@@ -131,26 +145,41 @@ def portal_admin_invite(payload: PortalInvite, request: Request,
 @router.post("/invite-form")
 def portal_admin_invite_form(
         request: Request,
-        person_id: int = Form(...), household_id: int = Form(...), email: str = Form(...),
-        display_name: str = Form(...), access_type: str = Form("self"),
-        organization_id: int | None = Form(None),
+        person_id: str = Form(...), email: str = Form(...), access_type: str = Form("self"),
         principal: Principal = Depends(require_capability("client.write"))):
     """Browser form over the SAME scoped/audited invite service as POST /invite. Post/Redirect/Get so a
-    refresh never re-invites; a record-scope failure redirects with an error banner instead of a raw 403."""
-    if not record_in_scope(principal, "person", person_id, write=True):
-        return RedirectResponse("/admin/client-portal?error=Person+is+outside+your+record+scope",
-                                status_code=303)
-    name = display_name.strip()
+    refresh never re-invites; a failure redirects with an error banner instead of a raw 403.
+
+    Staff submit a SELECTED PERSON and an email address — never an internal household or organization
+    id. ``person_id`` arrives from the browser and is therefore treated as a claim, not an authority:
+    :func:`invite_targets.resolve_invite_target` re-checks write record scope and derives the
+    household from the database on every submission, so a tampered field fails closed."""
+    try:
+        target = invite_targets.resolve_invite_target(principal, person_id)
+        access = invite_targets.validate_access_type(access_type, target)
+    except invite_targets.InviteTargetError as exc:
+        return RedirectResponse(f"/admin/client-portal?error={quote(str(exc))}", status_code=303)
+
+    # Display name and household come from the resolved record; only the contact email is staff-set.
+    # portal_accounts.email is a contact/display address, never an identity key — Microsoft sign-in
+    # binds the immutable subject — so it may legitimately differ from people.primary_email.
+    name = target.full_name
+    household_id = target.household_id
+    email = (email or "").strip() or target.email
+    if not email:
+        return RedirectResponse(
+            "/admin/client-portal?error=" + quote("An email address is required to invite a client."),
+            status_code=303)
     try:
         account_id, raw_token = invite_portal_account(
-            person_id=person_id, household_id=household_id, email=email.strip(),
-            display_name=name, access_type=access_type,
-            invited_by_user_id=principal.user_id, organization_id=organization_id)
+            person_id=target.person_id, household_id=household_id, email=email,
+            display_name=name, access_type=access,
+            invited_by_user_id=principal.user_id)
     except Exception as exc:  # noqa: BLE001 — surface a friendly banner, never a stack trace
         return RedirectResponse(f"/admin/client-portal?error={type(exc).__name__}", status_code=303)
     # Metadata deliberately carries person/access only — NEVER the token or the activation URL.
     _audit(request, principal, "portal.admin.invited", account_id,
-           {"person_id": person_id, "access_type": access_type, "via": "form"})
+           {"person_id": target.person_id, "access_type": access, "via": "form"})
     # The invitation is undeliverable without the raw token, and there is no production-capable email
     # channel to send it (see app/portal/invitation_handoff.py). Hand the link to the staff member
     # who created it, exactly once, through a server-side store. It never enters this redirect URL.

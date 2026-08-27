@@ -10,7 +10,7 @@
 
 meta:
   migration_head: b5d82e04c917              # `alembic heads` / `alembic current`
-  route_count: 1179                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py  # +1 business entity workspace (/business/{id}); +2 admin business-ownership resolution review/apply
+  route_count: 1180                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py  # +1 business entity workspace (/business/{id}); +2 admin business-ownership resolution review/apply; +1 staff client-search for the portal invite form
   production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"

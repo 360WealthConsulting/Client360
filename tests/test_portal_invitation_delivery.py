@@ -45,13 +45,18 @@ def _staff_user() -> int:
             .returning(users.c.id)).scalar_one()
 
 
-def _person_household():
+def _person_household(*, name=None):
+    """A person already IN a household. The invite form derives the household server-side now, so
+    a person without one cannot be invited at all."""
     sfx = uuid.uuid4().hex[:8]
+    first, last = (name.split(" ", 1) + [""])[:2] if name else ("Invite", sfx)
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=f"Invite {sfx}", active=True)
-                        .returning(people.c.id)).scalar_one()
         hid = c.execute(households.insert().values(name=f"HH {sfx}").returning(households.c.id)
                         ).scalar_one()
+        pid = c.execute(people.insert().values(
+            full_name=name or f"Invite {sfx}", first_name=first, last_name=last, active=True,
+            household_id=hid, primary_email=f"person-{sfx}@example.com")
+            .returning(people.c.id)).scalar_one()
     return pid, hid
 
 
@@ -64,8 +69,9 @@ def _request(session=None):
 
 
 def _principal(uid):
-    return Principal(uid, "staff@example.com", "Staff", frozenset({"client.write", "client.read",
-                                                                   "record.write_all"}))
+    return Principal(uid, "staff@example.com", "Staff",
+                     frozenset({"client.write", "client.read", "record.read_all",
+                                "record.write_all"}))
 
 
 @pytest.fixture
@@ -75,11 +81,13 @@ def canonical_origin(monkeypatch):
 
 
 def _invite(request, *, name="Jane Client"):
-    pid, hid = _person_household()
+    """Invite through the client-centric form: a selected person and an email. The display name now
+    comes from the client record, so the caller seeds it there."""
+    pid, _hid = _person_household(name=name)
     response = portal_admin_invite_form(
-        request=request, person_id=pid, household_id=hid,
-        email=f"jane-{uuid.uuid4().hex[:6]}@example.com", display_name=name,
-        access_type="self", organization_id=None, principal=_principal(_staff_user()))
+        request=request, person_id=str(pid),
+        email=f"jane-{uuid.uuid4().hex[:6]}@example.com", access_type="self",
+        principal=_principal(_staff_user()))
     return response, pid
 
 

@@ -21,21 +21,85 @@
 </div>
 {% endif %}
 <h2 class="section-title">Invite a client</h2>
-<form method="post" action="/admin/client-portal/invite-form" class="card" style="display:grid; gap:10px; max-width:640px; grid-template-columns:1fr 1fr">
-  <label>Display name<input name="display_name" required></label>
-  <label>Email<input name="email" type="email" required></label>
-  <label>Person ID<input name="person_id" type="number" required></label>
-  <label>Household ID<input name="household_id" type="number" required></label>
-  <label>Access type
-    <select name="access_type">
-      <option value="self">self</option>
-      <option value="joint">joint</option>
-      <option value="delegate">delegate</option>
-    </select>
+<div class="card" style="max-width:720px">
+  <label style="display:block">Find the client
+    <input id="client-search" type="search" autocomplete="off" style="width:100%"
+           placeholder="Search by first name, last name, email or phone" aria-controls="client-results">
   </label>
-  <label>Organization ID (optional)<input name="organization_id" type="number"></label>
-  <div style="grid-column:1 / -1"><button type="submit">Send portal invitation</button></div>
-</form>
+  <p class="subtle" id="client-search-hint">Type at least two characters. Only clients you can
+  service appear. Not listed? Add them to Client360 first &mdash;
+  <a href="/search">search the client records</a> to check whether they already exist.</p>
+  <div id="client-results" role="listbox" aria-label="Matching clients"></div>
+
+  <form id="invite-form" method="post" action="/admin/client-portal/invite-form" hidden
+        style="display:grid; gap:10px; grid-template-columns:1fr 1fr; margin-top:12px">
+    <input type="hidden" name="person_id" id="sel-person-id">
+    <label>First name<input id="sel-first" readonly></label>
+    <label>Last name<input id="sel-last" readonly></label>
+    <label>Phone<input id="sel-phone" readonly></label>
+    <label>Email<input name="email" id="sel-email" type="email" required></label>
+    <div style="grid-column:1 / -1">
+      <span>Portal access</span>
+      {% for code, label, help in access_choices %}
+      <label style="display:block; font-weight:normal">
+        <input type="radio" name="access_type" value="{{ code }}"{% if loop.first %} checked{% endif %}>
+        <b>{{ label }}</b> &mdash; <span class="subtle">{{ help }}</span>
+      </label>
+      {% endfor %}
+      <p class="subtle" id="sel-household"></p>
+      <p class="subtle">{{ rep_notice }}</p>
+    </div>
+    <div style="grid-column:1 / -1"><button type="submit">Send portal invitation</button></div>
+  </form>
+</div>
+<script>
+(function () {
+  var box = document.getElementById('client-search'),
+      results = document.getElementById('client-results'),
+      form = document.getElementById('invite-form'), timer;
+  if (!box) return;
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+  function choose(p) {
+    document.getElementById('sel-person-id').value = p.person_id;
+    document.getElementById('sel-first').value = p.first_name;
+    document.getElementById('sel-last').value = p.last_name;
+    document.getElementById('sel-phone').value = p.phone;
+    document.getElementById('sel-email').value = p.email;
+    document.getElementById('sel-household').textContent =
+      p.household_name ? 'Household: ' + p.household_name : 'No household on record yet.';
+    results.innerHTML = '';
+    box.value = p.full_name;
+    form.hidden = false;
+  }
+  function render(rows) {
+    if (!rows.length) { results.innerHTML = '<p class="subtle">No matching clients.</p>'; return; }
+    results.innerHTML = '';
+    rows.forEach(function (p) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn secondary';
+      b.style.cssText = 'display:block;width:100%;text-align:left;margin:4px 0';
+      b.innerHTML = '<b>' + esc(p.full_name) + '</b><br><span class="subtle">' +
+        [p.email, p.phone, p.household_name, p.location].filter(Boolean).map(esc).join(' &middot; ') +
+        '</span>';
+      b.addEventListener('click', function () { choose(p); });
+      results.appendChild(b);
+    });
+  }
+  box.addEventListener('input', function () {
+    form.hidden = true;
+    document.getElementById('sel-person-id').value = '';
+    clearTimeout(timer);
+    var q = box.value.trim();
+    if (q.length < 2) { results.innerHTML = ''; return; }
+    timer = setTimeout(function () {
+      fetch('/admin/client-portal/client-search?q=' + encodeURIComponent(q), {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) { render(d.results || []); })
+        .catch(function () { results.innerHTML = '<p class="subtle">Search is unavailable.</p>'; });
+    }, 200);
+  });
+})();
+</script>
 <h2 class="section-title">Portal accounts</h2>
 <div class="table-wrap">
   <table class="data">
