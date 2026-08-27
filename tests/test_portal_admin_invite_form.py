@@ -28,9 +28,13 @@ def _person_household():
     return pid, hid
 
 
-def _req():
+def _req(session=None):
+    """A staff request. ``session`` and ``url_for`` are what the one-time activation-link handoff
+    needs (see tests/test_portal_invitation_delivery.py)."""
     return SimpleNamespace(state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}"),
-                           client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "pytest"})
+                           client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "pytest"},
+                           session={} if session is None else session,
+                           url_for=lambda name: "http://testserver/portal/login")
 
 
 def _principal(uid, caps):

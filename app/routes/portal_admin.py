@@ -8,6 +8,8 @@ impersonation: staff can preview an account's entitlements but cannot assume its
 """
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -23,6 +25,7 @@ from app.db import (
 )
 from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
+from app.portal import invitation_handoff
 from app.portal import visibility
 from app.portal.service import invite_portal_account, portal_base_scope, staff_send_message
 from app.security.audit import write_audit_event
@@ -50,6 +53,42 @@ def _audit(request, principal, action, entity_id=None, metadata=None):
                       user_agent=request.headers.get("user-agent"), metadata=metadata)
 
 
+#: Session key holding the OPAQUE handle to a pending activation link. Never the link itself: the
+#: session cookie is signed, not encrypted.
+HANDOFF_SESSION_KEY = "portal_invitation_handoff"
+
+
+def _activation_url(request, raw_token: str) -> str:
+    """The client's activation URL, on the CANONICAL external origin.
+
+    Built from the application's own route name through ``external_url`` — never the inbound Host
+    header. An invitation link derived from an attacker-supplied Host would hand the client's
+    single-use token to whatever origin that header named. The token is URL-encoded so it survives
+    the query string intact."""
+    from app.security.origin import external_url
+    return f"{external_url(request, 'portal_login')}?invitation={quote(raw_token, safe='')}"
+
+
+def _remember_activation_url(request, *, display_name: str, url: str) -> None:
+    """Hold the link server-side for ONE read by this staff member's next page load."""
+    session = getattr(request, "session", None)
+    if session is None:                       # no session middleware (direct service call) — skip
+        return
+    session[HANDOFF_SESSION_KEY] = invitation_handoff.stash(
+        {"display_name": display_name, "url": url})
+
+
+def _take_activation_url(request):
+    """Pop the one-time activation link, if this staff member has just created one.
+
+    Both the handle and the stored payload are removed, so a refresh or any later page load renders
+    nothing at all."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return None
+    return invitation_handoff.take(session.pop(HANDOFF_SESSION_KEY, None))
+
+
 def _accounts():
     with engine.connect() as connection:
         return [dict(r) for r in connection.execute(select(
@@ -63,7 +102,9 @@ def portal_admin_home(request: Request, principal: Principal = Depends(require_c
     q = request.query_params
     return templates.TemplateResponse(request=request, name="admin/client_portal.html",
                                       context={"accounts": _accounts(), "principal": principal,
-                                               "invited": q.get("invited"), "error": q.get("error")})
+                                               "invited": q.get("invited"), "error": q.get("error"),
+                                               # Read once; gone on the next load.
+                                               "activation": _take_activation_url(request)})
 
 
 @router.get("/accounts")
@@ -99,17 +140,28 @@ def portal_admin_invite_form(
     if not record_in_scope(principal, "person", person_id, write=True):
         return RedirectResponse("/admin/client-portal?error=Person+is+outside+your+record+scope",
                                 status_code=303)
+    name = display_name.strip()
     try:
-        account_id, _token = invite_portal_account(
+        account_id, raw_token = invite_portal_account(
             person_id=person_id, household_id=household_id, email=email.strip(),
-            display_name=display_name.strip(), access_type=access_type,
+            display_name=name, access_type=access_type,
             invited_by_user_id=principal.user_id, organization_id=organization_id)
     except Exception as exc:  # noqa: BLE001 — surface a friendly banner, never a stack trace
         return RedirectResponse(f"/admin/client-portal?error={type(exc).__name__}", status_code=303)
+    # Metadata deliberately carries person/access only — NEVER the token or the activation URL.
     _audit(request, principal, "portal.admin.invited", account_id,
            {"person_id": person_id, "access_type": access_type, "via": "form"})
-    # Token is delivered out-of-band; never shown here.
-    return RedirectResponse(f"/admin/client-portal?invited={display_name.strip()}", status_code=303)
+    # The invitation is undeliverable without the raw token, and there is no production-capable email
+    # channel to send it (see app/portal/invitation_handoff.py). Hand the link to the staff member
+    # who created it, exactly once, through a server-side store. It never enters this redirect URL.
+    try:
+        _remember_activation_url(request, display_name=name,
+                                 url=_activation_url(request, raw_token))
+    except Exception:  # noqa: BLE001 — the account IS invited; only the convenience link is lost
+        return RedirectResponse(f"/admin/client-portal?invited={quote(name)}"
+                                "&error=Activation+link+unavailable%3A+check+PUBLIC_BASE_URL",
+                                status_code=303)
+    return RedirectResponse(f"/admin/client-portal?invited={quote(name)}", status_code=303)
 
 
 @router.post("/accounts/{account_id}/revoke", status_code=200)
@@ -240,7 +292,6 @@ def _guard_thread_write(principal, thread_id):
 
 
 def _thread_redirect(thread_id, *, notice=None, error=None):
-    from urllib.parse import quote
     q = ("?notice=" + quote(notice)) if notice else (("?error=" + quote(error)) if error else "")
     return RedirectResponse(f"/admin/client-portal/threads/{thread_id}{q}", status_code=303)
 

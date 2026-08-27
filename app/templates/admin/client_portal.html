@@ -6,8 +6,20 @@
 {% call ui.page_head("Client Portal administration", eyebrow="Oversight", desc="Invite and govern external client portal access. Previewing an account shows its entitlements — it is never impersonation.") %}
   <a class="btn secondary" href="/admin/client-portal/diagnostics">Portal diagnostics</a>
 {% endcall %}
-{% if invited %}<div class="banner good">Invitation created for <b>{{ invited }}</b>. The activation link is delivered out-of-band (never shown here).</div>{% endif %}
+{% if invited %}<div class="banner good">Invitation created for <b>{{ invited }}</b>.</div>{% endif %}
 {% if error %}<div class="banner warn">Could not invite: {{ error }}</div>{% endif %}
+{% if activation %}
+<div class="banner warn" style="display:grid; gap:8px">
+  <b>Activation link for {{ activation.display_name }} — shown once, right now</b>
+  <p style="margin:0">This link contains a <b>sensitive, single-use invitation credential</b>. Anyone
+  who holds it can activate this portal account. Send it to the client through a channel you trust,
+  and do not paste it into a ticket, a chat log, or anywhere it will be retained.</p>
+  <input readonly value="{{ activation.url }}" onclick="this.select()" style="width:100%"
+         aria-label="Client activation link for {{ activation.display_name }}">
+  <p class="subtle" style="margin:0">It is not stored and will not be shown again — copy it now. If
+  you lose it, revoke the account and invite again.</p>
+</div>
+{% endif %}
 <h2 class="section-title">Invite a client</h2>
 <form method="post" action="/admin/client-portal/invite-form" class="card" style="display:grid; gap:10px; max-width:640px; grid-template-columns:1fr 1fr">
   <label>Display name<input name="display_name" required></label>
