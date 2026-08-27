@@ -49,6 +49,49 @@ def _rank(name: str, q: str, kind: str) -> tuple:
     return (exact, _TYPE_ORDER.get(kind, 50), n)
 
 
+#: Characters people type around a phone number. A query made only of these plus digits is
+#: treated as a phone; anything else (an address, a name containing a number) is not, so no new
+#: noise is introduced into name/email search.
+_PHONE_PUNCTUATION = frozenset(" ()-.+")
+#: Below this many digits a "phone" fragment matches almost every number, so it is ignored.
+_MIN_PHONE_DIGITS = 3
+
+
+def _phone_query_digits(query: str) -> str | None:
+    """The digits of ``query`` when it is written like a phone number, else ``None``.
+
+    Reuses ``app.services.people._normalize_phone`` — the SAME function that writes
+    ``people.normalized_phone`` — rather than introducing a second phone model."""
+    from app.services.people import _normalize_phone
+
+    q = (query or "").strip()
+    if not q or any(ch not in _PHONE_PUNCTUATION and not ch.isdigit() for ch in q):
+        return None
+    digits = _normalize_phone(q)
+    return digits if digits and len(digits) >= _MIN_PHONE_DIGITS else None
+
+
+def _phone_query_variants(query: str) -> tuple[str, ...]:
+    """The digit forms of a phone-shaped ``query`` to match against ``normalized_phone``.
+
+    Always includes the query's own normalized digits. When those are exactly 11 digits beginning
+    with "1" — a US number typed with its country code, e.g. "+1 (540) 555-1212" or
+    "1-540-555-1212" — the 10-digit form is added as well, because stored numbers are normalized
+    without a country code.
+
+    SEARCH TOLERANCE ONLY. Nothing here rewrites a person record, touches ``primary_phone``, or
+    changes what the import pipelines store; there is no second persistent normalization scheme.
+    The original 11-digit form is always searched too, so a number genuinely stored with a leading
+    1 is never excluded. An 11-digit query that does not begin with "1" is never truncated — it is
+    a real number, not a country code."""
+    digits = _phone_query_digits(query)
+    if not digits:
+        return ()
+    if len(digits) == 11 and digits.startswith("1"):
+        return (digits, digits[1:])
+    return (digits,)
+
+
 def universal_search(principal, query: str, *, types=None, active_only: bool = False,
                      include_archived: bool = False, limit: int = 50) -> dict:
     q = (query or "").strip()
@@ -86,6 +129,14 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
                      people.c.last_name.ilike(like), people.c.primary_email.ilike(like),
                      people.c.normalized_email.ilike(like), people.c.primary_phone.ilike(like),
                      people.c.normalized_phone.ilike(like)]
+            # A phone typed WITH punctuation must find the same person as bare digits.
+            # ``normalized_phone`` holds digits only, so only the raw query was ever compared
+            # against it: "540-555-1212" and "540 555 1212" matched nothing, while the same
+            # number as "5405551212" matched. Normalising the QUERY the way the column is
+            # written closes that gap, and a US country code typed by the user ("+1 540...") is
+            # tolerated by also trying the 10-digit form. See _phone_query_variants.
+            for phone_digits in _phone_query_variants(q):
+                conds.append(people.c.normalized_phone.ilike(f"%{phone_digits}%"))
             stmt = select(people.c.id, people.c.full_name, people.c.primary_email,
                           people.c.primary_phone, people.c.household_id, people.c.active).where(or_(*conds))
             if not firm_wide:

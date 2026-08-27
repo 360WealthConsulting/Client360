@@ -135,6 +135,52 @@ def test_the_page_tells_staff_what_to_do_when_the_client_does_not_exist():
 
 # --- search: scoped, human-readable, duplicate-safe ------------------------------------
 
+def _unique_phone_digits() -> str:
+    """A 10-digit number unique to one test.
+
+    Deliberately NOT a shared constant: the test database accumulates rows across runs, and a
+    search for a phone every seeded person shares would match more people than the result limit
+    returns — making the assertion depend on how many times the suite had been run."""
+    return "540" + f"{uuid.uuid4().int % 10_000_000:07d}"
+
+
+def _punctuate(digits: str, style: str) -> str:
+    """The same 10-digit number as a person would actually type it, with or without a US
+    country code. The country-code forms are query tolerance only — nothing is stored that way."""
+    a, b, c = digits[:3], digits[3:6], digits[6:]
+    return {
+        "bare": digits, "dashes": f"{a}-{b}-{c}", "parens": f"({a}) {b}-{c}",
+        "spaces": f"{a} {b} {c}", "dots": f"{a}.{b}.{c}",
+        "cc_spaces": f"+1 {a} {b} {c}", "cc_parens": f"+1 ({a}) {b}-{c}",
+        "cc_dashes": f"1-{a}-{b}-{c}", "cc_bare": f"1{digits}", "cc_plus_bare": f"+1{digits}",
+    }[style]
+
+
+def _searchable_person(sfx, *, first=None, phone=None, digits=None):
+    """One person reachable by every supported field. ``normalized_phone`` is written exactly as
+    app.services.people._normalize_phone writes it — digits only."""
+    from app.services.people import _normalize_phone
+    digits = digits or _unique_phone_digits()
+    phone = phone if phone is not None else _punctuate(digits, "parens")
+    # The names are suffixed for the same reason the phone is: a bare "Michael" would match every
+    # person seeded by every earlier run, and the result limit would decide the assertion.
+    first = first or f"Michael{sfx}"
+    hid = _household(f"Shelton Household {sfx}")
+    email = f"michael.shelton-{sfx}@example.com"
+    with engine.begin() as c:
+        pid = c.execute(people.insert().values(
+            first_name=first, last_name=f"Shelton{sfx}", full_name=f"{first} Shelton{sfx}",
+            primary_email=email, normalized_email=email.lower(),
+            primary_phone=phone, normalized_phone=_normalize_phone(phone),
+            active=True, household_id=hid).returning(people.c.id)).scalar_one()
+    return pid, email
+
+
+def _finds(principal, query, sfx):
+    return [r for r in invite_targets.search_people(principal, query)
+            if r["last_name"] == f"Shelton{sfx}"]
+
+
 def test_existing_people_can_be_found_by_name_email_and_phone():
     sfx = uuid.uuid4().hex[:8]
     hid = _household(f"Nguyen Household {sfx}")
@@ -144,6 +190,185 @@ def test_existing_people_can_be_found_by_name_email_and_phone():
     for query in (f"Nguyen{sfx}", f"thanh-{sfx}@example.com", f"555{sfx[:7]}"):
         found = invite_targets.search_people(principal, query)
         assert [r for r in found if r["last_name"] == f"Nguyen{sfx}"], f"not found by {query!r}"
+
+
+# --- one box, every field ---------------------------------------------------------------
+
+def test_a_person_is_found_by_first_name():
+    """Matches people.first_name — not just the full_name column."""
+    sfx = uuid.uuid4().hex[:8]
+    _searchable_person(sfx)
+    assert _finds(_principal(_staff_user()), f"Michael{sfx}", sfx)
+
+
+def test_a_person_is_found_by_last_name():
+    sfx = uuid.uuid4().hex[:8]
+    _searchable_person(sfx)
+    assert _finds(_principal(_staff_user()), f"Shelton{sfx}", sfx)
+
+
+def test_a_person_is_found_by_combined_first_and_last_name():
+    sfx = uuid.uuid4().hex[:8]
+    _searchable_person(sfx)
+    assert _finds(_principal(_staff_user()), f"Michael{sfx} Shelton{sfx}", sfx)
+
+
+def test_a_person_is_found_by_exact_email():
+    sfx = uuid.uuid4().hex[:8]
+    _, email = _searchable_person(sfx)
+    assert _finds(_principal(_staff_user()), email, sfx)
+    assert _finds(_principal(_staff_user()), email.upper(), sfx), "email search must be case-insensitive"
+
+
+def test_a_person_is_found_by_partial_email_and_domain():
+    """The existing architecture is substring (ILIKE %q%), so partial local part and domain work."""
+    sfx = uuid.uuid4().hex[:8]
+    _searchable_person(sfx)
+    principal = _principal(_staff_user())
+    assert _finds(principal, f"michael.shelton-{sfx}", sfx)      # local part only
+    assert _finds(principal, f"shelton-{sfx}@example.com", sfx)  # tail of the address
+
+
+@pytest.mark.parametrize("style", [
+    "bare",          # 5405551212        (already worked)
+    "dashes",        # 540-555-1212      (regression: previously NO match)
+    "parens",        # (540) 555-1212
+    "spaces",        # 540 555 1212      (regression: previously NO match)
+    "dots",          # 540.555.1212
+    "cc_spaces",     # +1 540 555 1212   (US country code — query tolerance)
+    "cc_parens",     # +1 (540) 555-1212
+    "cc_dashes",     # 1-540-555-1212
+    "cc_bare",       # 15405551212
+    "cc_plus_bare",  # +15405551212
+])
+def test_the_same_stored_phone_is_found_however_it_is_punctuated(style):
+    """normalized_phone holds digits only, so the QUERY must be normalised the same way."""
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()
+    _searchable_person(sfx, digits=digits)              # stored as "(540) 555-1212" style
+    typed = _punctuate(digits, style)
+    assert _finds(_principal(_staff_user()), typed, sfx), f"{typed!r} did not match the stored phone"
+
+
+@pytest.mark.parametrize("stored_style", ["parens", "dashes", "dots", "spaces", "bare"])
+def test_a_phone_stored_with_punctuation_is_found_by_bare_digits(stored_style):
+    """The reverse direction: whatever punctuation the RECORD carries, digits find it."""
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()
+    _searchable_person(sfx, digits=digits, phone=_punctuate(digits, stored_style))
+    assert _finds(_principal(_staff_user()), digits, sfx), f"stored as {stored_style}"
+
+
+def test_phone_normalisation_reuses_the_canonical_helper():
+    """Not a parallel phone model: the same function that writes the column reads the query."""
+    import inspect
+
+    from app.services import universal_search as us
+    assert "from app.services.people import _normalize_phone" in inspect.getsource(
+        us._phone_query_digits)
+
+
+@pytest.mark.parametrize("query, expected", [
+    ("540-555-1212", "5405551212"),
+    ("(540) 555-1212", "5405551212"),
+    ("540 555 1212", "5405551212"),
+    ("540.555.1212", "5405551212"),
+    ("5405551212", "5405551212"),
+    ("1234 Main St", None),        # an address is not a phone
+    ("Michael", None),             # a name is not a phone
+    ("Suite 12", None),
+    ("12", None),                  # too few digits to be meaningful
+    ("", None),
+    (None, None),
+])
+def test_only_phone_shaped_queries_are_normalised(query, expected):
+    """The guard that keeps name/email search free of new noise."""
+    from app.services.universal_search import _phone_query_digits
+    assert _phone_query_digits(query) == expected
+
+
+def test_a_numeric_address_query_does_not_surface_unrelated_phone_numbers():
+    """An address that happens to share digits with a phone must not drag that person in."""
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()
+    _searchable_person(sfx, digits=digits)
+    assert _finds(_principal(_staff_user()), f"{digits[-4:]} Main Street", sfx) == []
+
+
+# --- US country code: query tolerance only -----------------------------------------------
+
+def test_a_country_code_query_finds_a_number_stored_without_one():
+    """The everyday case: staff type the number the way the client wrote it, with a +1."""
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()
+    _searchable_person(sfx, digits=digits)                    # stored normalized as 10 digits
+    principal = _principal(_staff_user())
+    for typed in (f"+1 {digits[:3]} {digits[3:6]} {digits[6:]}",
+                  f"+1 ({digits[:3]}) {digits[3:6]}-{digits[6:]}",
+                  f"1-{digits[:3]}-{digits[3:6]}-{digits[6:]}"):
+        assert _finds(principal, typed, sfx), f"{typed!r} did not match the stored 10-digit number"
+
+
+def test_an_eleven_digit_number_stored_with_a_leading_one_is_still_found():
+    """The original digits are searched too, so a genuinely 11-digit stored value is not excluded."""
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()
+    _searchable_person(sfx, digits="1" + digits, phone=f"+1 {digits}")
+    principal = _principal(_staff_user())
+    assert _finds(principal, "1" + digits, sfx), "the 11-digit stored value became unfindable"
+    assert _finds(principal, f"+1 {digits}", sfx)
+
+
+@pytest.mark.parametrize("query, expected", [
+    # 11 digits beginning with 1 → try the country-code-stripped form as well.
+    ("+1 (540) 555-1212", ("15405551212", "5405551212")),
+    ("1-540-555-1212", ("15405551212", "5405551212")),
+    ("15405551212", ("15405551212", "5405551212")),
+    # 11 digits NOT beginning with 1 → a real number; never truncated.
+    ("25405551212", ("25405551212",)),
+    ("98765432109", ("98765432109",)),
+    # Other lengths are left exactly as-is.
+    ("5405551212", ("5405551212",)),
+    ("1234567890123", ("1234567890123",)),
+    ("1540555121", ("1540555121",)),          # 10 digits starting with 1 — not a country code
+    # Not phone-shaped at all.
+    ("1234 Main St", ()),
+    ("Michael", ()),
+    ("", ()),
+    (None, ()),
+])
+def test_only_a_leading_us_country_code_is_stripped(query, expected):
+    from app.services.universal_search import _phone_query_variants
+    assert _phone_query_variants(query) == expected
+
+
+def test_an_eleven_digit_number_not_starting_with_one_is_not_truncated_in_search():
+    """A real 11-digit number must not silently match a different 10-digit one."""
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()                       # 10 digits, starts "540"
+    _searchable_person(sfx, digits=digits)
+    # "2" + the stored number is a DIFFERENT number; truncating it would wrongly match.
+    assert _finds(_principal(_staff_user()), "2" + digits, sfx) == []
+
+
+def test_country_code_tolerance_does_not_touch_stored_data():
+    """Query compatibility only: no persistent second normalization scheme."""
+    import inspect
+
+    from app.services import universal_search as us
+    source = inspect.getsource(us._phone_query_variants)
+    for mutating in ("people.update(", "people.insert(", "normalized_phone=", "primary_phone="):
+        assert mutating not in source, f"{mutating} in a query helper rewrites stored data"
+
+    sfx = uuid.uuid4().hex[:8]
+    digits = _unique_phone_digits()
+    pid, _ = _searchable_person(sfx, digits=digits)
+    _finds(_principal(_staff_user()), f"+1 {digits}", sfx)          # run a country-code search
+    with engine.connect() as c:
+        row = c.execute(select(people.c.primary_phone, people.c.normalized_phone)
+                        .where(people.c.id == pid)).mappings().one()
+    assert row["normalized_phone"] == digits, "the search rewrote normalized_phone"
+    assert row["primary_phone"] == _punctuate(digits, "parens"), "the search rewrote primary_phone"
 
 
 def test_search_results_distinguish_duplicate_names_without_showing_raw_ids():
