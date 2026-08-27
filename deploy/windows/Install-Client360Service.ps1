@@ -69,12 +69,23 @@ $nssm = (Get-Command nssm -ErrorAction SilentlyContinue)
 
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
-function Invoke-Nssm { param([string[]]$Args) & $nssm.Source @Args; if ($LASTEXITCODE -ne 0) { throw "nssm $($Args -join ' ') failed ($LASTEXITCODE)" } }
+# The parameter is deliberately NOT named $Args: that is a PowerShell automatic variable, and
+# shadowing it made an argument-shape bug here far harder to see than it should have been.
+function Invoke-Nssm {
+  param([Parameter(Mandatory = $true)][string[]]$NssmArgs)
+  & $nssm.Source @NssmArgs
+  if ($LASTEXITCODE -ne 0) { throw "nssm $($NssmArgs -join ' ') failed ($LASTEXITCODE)" }
+}
 
 if ($nssm) {
   switch ($Action) {
     'install' {
-      Invoke-Nssm @('install',$ServiceName,$Python) + $uvicornArgs
+      # Build the COMPLETE argument list before invoking. `Invoke-Nssm @(...) + $uvicornArgs` is
+      # parsed in PowerShell *argument* mode, where `+` is just another positional argument — so the
+      # array was never concatenated and the uvicorn arguments, --env-file included, never reached
+      # nssm. (The same `+` in the sc.exe branch below is expression mode, where it does concatenate.)
+      $installArgs = @('install', $ServiceName, $Python) + $uvicornArgs
+      Invoke-Nssm $installArgs
       Invoke-Nssm @('set',$ServiceName,'AppDirectory',$WorkDir)
       Invoke-Nssm @('set',$ServiceName,'AppStdout',"$LogDir\service-stdout.log")
       Invoke-Nssm @('set',$ServiceName,'AppStderr',"$LogDir\service-stderr.log")

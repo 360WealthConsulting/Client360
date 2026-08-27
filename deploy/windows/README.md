@@ -59,6 +59,56 @@ path of the file it actually loaded.
 | `validate_production_env.ps1` | Read-only validator. Exit codes: `0` ok, `2` service/env-path mismatch, `3` env file missing/unreadable, `4` service configuration unreadable (with `-RequireService`). |
 | `client360.env.example` | Placeholder template. Contains no real values. Copy to `C:\Client360\app\.env`. |
 
+## Verifying the installer on the Windows server (safe dry run)
+
+The installer's NSSM invocation cannot be executed on a non-Windows development machine, so verify it
+on the server **before** relying on it. Neither step below touches the real service, NSSM, or the
+environment file.
+
+**Step 1 — parse the script without running it.** Empty output means no syntax/parse errors:
+
+```powershell
+$path = 'C:\Client360\deploy\windows\Install-Client360Service.ps1'
+$tokens = $null; $errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+$errors
+```
+
+**Step 2 — preview the exact nssm argv with a shim.** This puts a fake `nssm` ahead of the real one on
+PATH *for that shell only*, so the install action prints the arguments it would pass and installs
+nothing. The `throw` guard is what makes it safe: if the shim is not the resolved `nssm`, it stops
+before running anything.
+
+```powershell
+$shim = Join-Path $env:TEMP 'nssm-dryrun'
+New-Item -ItemType Directory -Force -Path $shim | Out-Null
+Set-Content -Path (Join-Path $shim 'nssm.cmd') -Value '@echo NSSM-WOULD-RUN: %*' -Encoding Ascii
+$env:PATH = "$shim;$env:PATH"
+if ((Get-Command nssm).Source -ne (Join-Path $shim 'nssm.cmd')) { throw 'Shim not in front of the real nssm - ABORT.' }
+powershell -NoProfile -File C:\Client360\deploy\windows\Install-Client360Service.ps1 -Action install
+```
+
+The first `NSSM-WOULD-RUN:` line must read, in this exact order:
+
+```
+NSSM-WOULD-RUN: install Client360 C:\Client360\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8360 --env-file C:\Client360\app\.env
+```
+
+If `--env-file C:\Client360\app\.env` is missing from that line, the installer is still dropping the
+uvicorn arguments — do not use it. Close the shell afterwards (the PATH edit is process-local), and
+delete the shim:
+
+```powershell
+Remove-Item -Recurse -Force (Join-Path $env:TEMP 'nssm-dryrun')
+```
+
+**Step 3 — confirm the live service separately**, without installing anything:
+
+```powershell
+nssm get Client360 AppParameters
+powershell -File C:\Client360\deploy\windows\validate_production_env.ps1
+```
+
 ## Development vs production
 
 This canonical **absolute** path governs the Windows production server only.
