@@ -53,8 +53,37 @@ def _production_provider_key():
     return MICROSOFT_PROVIDER_KEY
 
 
+def _production_identity_provider_available() -> bool:
+    """Whether the REAL external identity provider is registered and usable for sign-in.
+
+    Deliberately NOT ``production_ready()``: that also requires ``portal.enabled`` and
+    ``portal.production_signed_off``, which govern whether client data may be exposed at all. Whether
+    anyone CAN authenticate and whether the portal is authorized to serve data are separate concerns,
+    and conflating them is what left a fully configured IdP behind a "configuration is required"
+    message. The gates still apply on every authenticated request, and ``/portal/auth/start`` repeats
+    this lookup and fails closed on its own.
+
+    The local/test provider can never satisfy this: it registers under a different key and is
+    ``production_capable = False``, so it is excluded by ``production_capable()``."""
+    return _production_provider_key() in PORTAL_IDENTITY_PROVIDERS.production_capable()
+
+
 @router.get("/portal/login", response_class=HTMLResponse)
-def portal_login(request: Request): return templates.TemplateResponse(request=request, name="portal/login.html", context={})
+def portal_login(request: Request, invitation: str | None = None):
+    """Public sign-in landing page.
+
+    Renders the external sign-in action only when the production provider is actually registered;
+    otherwise it keeps the existing fail-closed configuration message. An optional ``invitation``
+    token is forwarded to ``/portal/auth/start`` unchanged — that route holds it server-side in the
+    browser session and never passes it to the IdP.
+"""
+    auth_start_url = "/portal/auth/start"
+    if invitation:
+        auth_start_url += f"?invitation={quote(invitation, safe='')}"
+    return templates.TemplateResponse(request=request, name="portal/login.html", context={
+        "identity_provider_available": _production_identity_provider_available(),
+        "auth_start_url": auth_start_url,
+    })
 
 @router.get("/portal/auth/start")
 def portal_auth_start(request: Request, invitation: str | None = None):
