@@ -6,17 +6,23 @@ server-held ``state``/``nonce`` to bind to, which is exactly the token-substitut
 the redirect flow prevents. These tests cover the redirect-capable interface, the Entra External ID
 provider, and the two new auth routes.
 
-MFA evidence is deliberately configuration-driven and FAILS CLOSED: the claim values Entra External ID
-emits for a given user flow must be observed in the real tenant, so nothing is guessed here. With no
-configuration, MFA cannot be proven and sign-in is refused.
+MFA evidence is deliberately configuration-driven and FAILS CLOSED. ``PORTAL_OIDC_MFA_MODE`` names the
+enforcement authority explicitly: ``claims`` (the default) proves MFA from the tenant's own observed
+``amr``/``acr`` values and refuses sign-in when none are configured, and ``conditional_access`` delegates
+enforcement to the Entra Conditional Access policy protecting the portal application — the correct mode
+for a tenant whose validated production tokens carry no ``amr``/``acr``/``acrs`` at all. Neither mode is
+inferred, an unknown mode proves nothing, and no other validation is relaxed in either.
 """
 from __future__ import annotations
 
+import jwt
 import pytest
 
 from app.portal.identity_local import LocalTestIdentityProvider
 from app.portal.identity_microsoft import (
     GENERIC_AUTH_ERROR,
+    MFA_MODE_CLAIMS,
+    MFA_MODE_CONDITIONAL_ACCESS,
     MICROSOFT_PROVIDER_KEY,
     MicrosoftExternalIdentityProvider,
     register_microsoft_provider_if_configured,
@@ -27,11 +33,61 @@ ISSUER = "https://contoso.ciamlogin.com/tenant"
 CLIENT_ID = "client-id-under-test"
 
 
+#: The claim set of a REAL validated production Entra External ID token for this deployment. Note what
+#: is absent: no ``amr``, no ``acr``, no ``acrs``. Claim-based MFA evidence cannot exist here, which is
+#: why the Conditional Access policy protecting the portal application is the enforcement authority.
+PRODUCTION_TOKEN_CLAIMS = {
+    "aud": CLIENT_ID,
+    "email": "client@example.com",
+    "exp": 2000003600,
+    "iat": 2000000000,
+    "iss": ISSUER,
+    "name": "A Client",
+    "nbf": 2000000000,
+    "nonce": "N",
+    "oid": "OID-PROD",
+    "preferred_username": "client@example.com",
+    "rh": "0.ARoA-opaque",
+    "sid": "SID-1",
+    "sub": "SUB-PROD",
+    "tid": "TID-1",
+    "uti": "UTI-1",
+    "ver": "2.0",
+}
+
+
 def _provider(**kw):
     kw.setdefault("issuer", ISSUER)
     kw.setdefault("client_id", CLIENT_ID)
     kw.setdefault("client_secret", "not-a-real-secret")
     return MicrosoftExternalIdentityProvider(**kw)
+
+
+def _fake_jwk_client():
+    return lambda uri: type("K", (), {
+        "get_signing_key_from_jwt": lambda self, t: type("S", (), {"key": "k"})()})()
+
+
+def _stub_token(monkeypatch, provider, claims, *, decode_calls=None):
+    """Stand in for discovery/JWKS/decode so a test can drive an exact claim set."""
+    monkeypatch.setattr(provider, "_discovery", lambda: {"jwks_uri": "https://x/jwks"})
+    monkeypatch.setattr("jwt.PyJWKClient", _fake_jwk_client())
+
+    def _decode(*args, **kwargs):
+        if decode_calls is not None:
+            decode_calls.append(kwargs)
+        return dict(claims)
+
+    monkeypatch.setattr("jwt.decode", _decode)
+
+
+def _configured_portal_env(monkeypatch):
+    """A complete PORTAL_OIDC_* set with every MFA key cleared, for warning tests."""
+    monkeypatch.setenv("PORTAL_OIDC_ISSUER", "https://tenant.ciamlogin.com/x/v2.0")
+    monkeypatch.setenv("PORTAL_OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("PORTAL_OIDC_CLIENT_SECRET", "sec")
+    for key in ("PORTAL_OIDC_MFA_MODE", "PORTAL_OIDC_MFA_AMR_VALUES", "PORTAL_OIDC_MFA_ACR_VALUES"):
+        monkeypatch.delenv(key, raising=False)
 
 
 # --- interface separation -------------------------------------------------------
@@ -99,6 +155,7 @@ def test_is_configured_requires_all_three_values(monkeypatch):
 def test_mfa_cannot_be_proven_without_configured_tenant_claim_values():
     """The core guard: an unconfigured deployment must not be able to assert MFA."""
     p = _provider()
+    assert p.mfa_mode == MFA_MODE_CLAIMS, "the default mode must be the fail-closed claims mode"
     assert p.mfa_evidence_configured() is False
     assert p._mfa_verified({"amr": ["mfa", "otp", "hwk"]}) is False, (
         "MFA was inferred from claim values that were never configured — the workforce AMR "
@@ -120,6 +177,133 @@ def test_mfa_accepted_only_for_configured_acr_values():
     assert p._mfa_verified({"acr": "c1"}) is True
     assert p._mfa_verified({"acrs": ["c1"]}) is True
     assert p._mfa_verified({"acr": "c0"}) is False
+
+
+# --- MFA mode: which authority proves MFA ------------------------------------------
+
+def test_mfa_mode_defaults_to_claims_and_conditional_access_is_never_inferred(monkeypatch):
+    """Absent MFA configuration must NOT be read as "Conditional Access must be handling it"."""
+    monkeypatch.delenv("PORTAL_OIDC_MFA_MODE", raising=False)
+    p = _provider()
+    assert p.mfa_mode == MFA_MODE_CLAIMS
+    assert p.mfa_evidence_configured() is False
+    _stub_token(monkeypatch, p, PRODUCTION_TOKEN_CLAIMS)
+    with pytest.raises(ValueError) as exc:
+        p._verify_id_token("token", expected_nonce="N")
+    assert str(exc.value) == GENERIC_AUTH_ERROR
+
+
+def test_mfa_mode_is_read_from_the_environment_and_normalised(monkeypatch):
+    monkeypatch.setenv("PORTAL_OIDC_MFA_MODE", "  Conditional_Access ")
+    assert _provider().mfa_mode == MFA_MODE_CONDITIONAL_ACCESS
+
+
+def test_conditional_access_mode_accepts_the_real_production_token_shape(monkeypatch):
+    """The production defect: a valid token carrying no amr/acr/acrs was being refused.
+
+    Conditional Access is the enforcement authority for this deployment, so the token that survived
+    the whole flow is proof enough — but ONLY because the operator named the mode."""
+    assert not {"amr", "acr", "acrs"} & set(PRODUCTION_TOKEN_CLAIMS), (
+        "the production evidence says these claims are absent; the fixture must reflect that")
+    p = _provider(mfa_mode=MFA_MODE_CONDITIONAL_ACCESS)
+    assert p.mfa_evidence_configured() is True
+    calls = []
+    _stub_token(monkeypatch, p, PRODUCTION_TOKEN_CLAIMS, decode_calls=calls)
+
+    result = p._verify_id_token("token", expected_nonce="N")
+
+    assert isinstance(result, PortalIdentityResult)
+    assert result.subject == f"{MICROSOFT_PROVIDER_KEY}:OID-PROD"
+    assert result.mfa_verified is True
+    assert result.email == "client@example.com"
+    # ...and nothing about the cryptographic validation was relaxed to get there.
+    assert calls, "the ID token was never decoded"
+    kwargs = calls[0]
+    assert kwargs["issuer"] == ISSUER, "issuer validation was dropped"
+    assert kwargs["audience"] == CLIENT_ID, "audience validation was dropped"
+    assert set(kwargs["algorithms"]) == {"RS256", "ES256"}
+    assert {"exp", "iss", "aud", "sub"} <= set(kwargs["options"]["require"])
+
+
+@pytest.mark.parametrize("failure", ["InvalidSignatureError", "InvalidIssuerError",
+                                     "InvalidAudienceError", "ExpiredSignatureError",
+                                     "MissingRequiredClaimError"])
+def test_conditional_access_mode_still_rejects_every_token_validation_failure(monkeypatch, failure):
+    """Delegating MFA does not delegate anything else: the decode layer still gates entry."""
+    p = _provider(mfa_mode=MFA_MODE_CONDITIONAL_ACCESS)
+    monkeypatch.setattr(p, "_discovery", lambda: {"jwks_uri": "https://x/jwks"})
+    monkeypatch.setattr("jwt.PyJWKClient", _fake_jwk_client())
+    error = getattr(jwt.exceptions, failure)
+
+    def boom(*a, **k):
+        raise error("sub")
+
+    monkeypatch.setattr("jwt.decode", boom)
+    with pytest.raises(ValueError) as exc:
+        p._verify_id_token("token", expected_nonce="N")
+    assert str(exc.value) == GENERIC_AUTH_ERROR
+
+
+def test_conditional_access_mode_still_rejects_a_mismatched_nonce(monkeypatch):
+    p = _provider(mfa_mode=MFA_MODE_CONDITIONAL_ACCESS)
+    _stub_token(monkeypatch, p, PRODUCTION_TOKEN_CLAIMS)
+    with pytest.raises(ValueError):
+        p._verify_id_token("token", expected_nonce="EXPECTED-DIFFERENT")
+    with pytest.raises(ValueError):
+        p._verify_id_token("token", expected_nonce="")      # no flow started
+
+
+def test_conditional_access_mode_still_requires_an_immutable_subject(monkeypatch):
+    p = _provider(mfa_mode=MFA_MODE_CONDITIONAL_ACCESS)
+    claims = {k: v for k, v in PRODUCTION_TOKEN_CLAIMS.items() if k not in ("oid", "sub")}
+    _stub_token(monkeypatch, p, claims)
+    with pytest.raises(ValueError) as exc:
+        p._verify_id_token("token", expected_nonce="N")
+    assert str(exc.value) == GENERIC_AUTH_ERROR
+
+
+def test_conditional_access_mode_never_falls_back_to_email_as_the_subject(monkeypatch):
+    """The token still carries email/preferred_username; neither may become the identity key."""
+    p = _provider(mfa_mode=MFA_MODE_CONDITIONAL_ACCESS)
+    _stub_token(monkeypatch, p, PRODUCTION_TOKEN_CLAIMS)
+    subject = p._verify_id_token("token", expected_nonce="N").subject
+    assert "example.com" not in subject and subject.endswith("OID-PROD")
+
+
+@pytest.mark.parametrize("mode", ["conditional-access", "conditionalaccess", "ca", "true", "on", "-"])
+def test_an_unknown_mfa_mode_fails_closed(monkeypatch, mode):
+    """A typo'd or invented mode must prove nothing — not fall back to either real mode."""
+    p = _provider(mfa_mode=mode, mfa_amr_values={"mfa"})
+    assert p.mfa_evidence_configured() is False
+    assert p._mfa_verified({"amr": ["mfa"]}) is False, "an unknown mode accepted claim evidence"
+    assert p._mfa_verified(PRODUCTION_TOKEN_CLAIMS) is False
+    _stub_token(monkeypatch, p, {**PRODUCTION_TOKEN_CLAIMS, "amr": ["mfa"]})
+    with pytest.raises(ValueError) as exc:
+        p._verify_id_token("token", expected_nonce="N")
+    assert str(exc.value) == GENERIC_AUTH_ERROR
+
+
+def test_claims_mode_is_unaffected_by_the_new_mode_switch(monkeypatch):
+    """Explicit claims mode behaves exactly as before, including on the production token shape."""
+    p = _provider(mfa_mode=MFA_MODE_CLAIMS, mfa_amr_values={"mfa"})
+    assert p._mfa_verified({"amr": ["mfa"]}) is True
+    assert p._mfa_verified({"amr": ["pwd"]}) is False
+    _stub_token(monkeypatch, p, PRODUCTION_TOKEN_CLAIMS)
+    with pytest.raises(ValueError):
+        p._verify_id_token("token", expected_nonce="N")     # no amr/acr => unproven => refused
+
+
+def test_a_returned_identity_is_always_mfa_verified_in_either_mode(monkeypatch):
+    """Downstream contract: the provider raises rather than hand back an unverified identity, so
+    ``sign_in_with_subject(..., mfa_verified)`` can never be reached with False from this path."""
+    import inspect
+
+    src = inspect.getsource(MicrosoftExternalIdentityProvider._verify_id_token)
+    assert "mfa_verified=True" in src and "mfa_verified=False" not in src
+    for provider in (_provider(mfa_amr_values={"mfa"}),
+                     _provider(mfa_mode=MFA_MODE_CONDITIONAL_ACCESS)):
+        _stub_token(monkeypatch, provider, {**PRODUCTION_TOKEN_CLAIMS, "amr": ["mfa"]})
+        assert provider._verify_id_token("token", expected_nonce="N").mfa_verified is True
 
 
 # --- immutable subject ------------------------------------------------------------
@@ -379,7 +563,8 @@ def test_sign_in_never_falls_back_to_email_matching():
 def test_unset_portal_identity_config_is_silent(monkeypatch):
     """No production IdP is a normal state, not a misconfiguration."""
     from app.config import _PORTAL_OIDC_REQUIRED, _portal_identity_warnings
-    for key in (*_PORTAL_OIDC_REQUIRED, "PORTAL_OIDC_MFA_AMR_VALUES", "PORTAL_OIDC_MFA_ACR_VALUES"):
+    for key in (*_PORTAL_OIDC_REQUIRED, "PORTAL_OIDC_MFA_MODE", "PORTAL_OIDC_MFA_AMR_VALUES",
+                "PORTAL_OIDC_MFA_ACR_VALUES"):
         monkeypatch.delenv(key, raising=False)
     assert _portal_identity_warnings() == []
 
@@ -394,23 +579,76 @@ def test_partial_portal_identity_config_warns_by_name_only(monkeypatch):
     assert "super-secret-value" not in warnings[0], "a secret value leaked into a startup warning"
 
 
-def test_configured_without_mfa_claim_values_warns_that_signin_is_refused(monkeypatch):
+def test_claims_mode_without_mfa_claim_values_warns_that_signin_is_refused(monkeypatch):
+    """Default (claims) mode with nothing configured refuses every sign-in — say so out loud, and
+    point at the conditional-access alternative rather than leaving the operator to invent one."""
     from app.config import _portal_identity_warnings
-    monkeypatch.setenv("PORTAL_OIDC_ISSUER", "https://tenant.ciamlogin.com/x/v2.0")
-    monkeypatch.setenv("PORTAL_OIDC_CLIENT_ID", "cid")
-    monkeypatch.setenv("PORTAL_OIDC_CLIENT_SECRET", "sec")
-    monkeypatch.delenv("PORTAL_OIDC_MFA_AMR_VALUES", raising=False)
-    monkeypatch.delenv("PORTAL_OIDC_MFA_ACR_VALUES", raising=False)
+    _configured_portal_env(monkeypatch)
     warnings = _portal_identity_warnings()
     assert len(warnings) == 1 and "fail-closed" in warnings[0]
+    assert MFA_MODE_CLAIMS in warnings[0] and MFA_MODE_CONDITIONAL_ACCESS in warnings[0]
     monkeypatch.setenv("PORTAL_OIDC_MFA_AMR_VALUES", "mfa")
     assert _portal_identity_warnings() == []
+
+
+def test_explicit_claims_mode_warns_exactly_like_the_default(monkeypatch):
+    from app.config import _portal_identity_warnings
+    _configured_portal_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_OIDC_MFA_MODE", MFA_MODE_CLAIMS)
+    warnings = _portal_identity_warnings()
+    assert len(warnings) == 1 and "fail-closed" in warnings[0]
+    monkeypatch.setenv("PORTAL_OIDC_MFA_ACR_VALUES", "c1")
+    assert _portal_identity_warnings() == []
+
+
+def test_conditional_access_mode_needs_no_claim_values_and_warns_nothing(monkeypatch):
+    """The distinction that matters: conditional-access mode is COMPLETE without claim values,
+    so it must not inherit the claims-mode "every sign-in will be refused" warning."""
+    from app.config import _portal_identity_warnings
+    _configured_portal_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_OIDC_MFA_MODE", MFA_MODE_CONDITIONAL_ACCESS)
+    assert _portal_identity_warnings() == []
+
+
+def test_conditional_access_mode_warns_that_leftover_claim_values_are_ignored(monkeypatch):
+    from app.config import _portal_identity_warnings
+    _configured_portal_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_OIDC_MFA_MODE", MFA_MODE_CONDITIONAL_ACCESS)
+    monkeypatch.setenv("PORTAL_OIDC_MFA_AMR_VALUES", "mfa")
+    warnings = _portal_identity_warnings()
+    assert len(warnings) == 1 and "IGNORED" in warnings[0]
+    assert "PORTAL_OIDC_MFA_AMR_VALUES" in warnings[0]
+    assert "refused" not in warnings[0], "conditional-access mode does not refuse sign-in"
+
+
+def test_an_unknown_mfa_mode_warns_by_name_without_echoing_the_value(monkeypatch):
+    from app.config import _portal_identity_warnings
+    _configured_portal_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_OIDC_MFA_MODE", "conditional-access")
+    monkeypatch.setenv("PORTAL_OIDC_MFA_AMR_VALUES", "mfa")
+    warnings = _portal_identity_warnings()
+    assert len(warnings) == 1 and "PORTAL_OIDC_MFA_MODE" in warnings[0]
+    assert "refused" in warnings[0], "an unknown mode is fail-closed and must say so"
+    assert "conditional-access" not in warnings[0], "the configured value was echoed back"
+
+
+def test_a_partial_configuration_warning_still_wins_over_the_mfa_mode_warning(monkeypatch):
+    """A missing required key is the more actionable problem; only one warning is emitted."""
+    from app.config import _portal_identity_warnings
+    _configured_portal_env(monkeypatch)
+    monkeypatch.delenv("PORTAL_OIDC_CLIENT_ID", raising=False)
+    monkeypatch.setenv("PORTAL_OIDC_MFA_MODE", "nonsense")
+    warnings = _portal_identity_warnings()
+    assert len(warnings) == 1 and "PORTAL_OIDC_CLIENT_ID" in warnings[0]
 
 
 def test_every_portal_oidc_key_is_documented_in_the_config_module():
     import app.config as config
     for key in ("PORTAL_OIDC_ISSUER", "PORTAL_OIDC_CLIENT_ID", "PORTAL_OIDC_CLIENT_SECRET",
-                "PORTAL_OIDC_AUDIENCE", "PORTAL_OIDC_SCOPES",
+                "PORTAL_OIDC_AUDIENCE", "PORTAL_OIDC_SCOPES", "PORTAL_OIDC_MFA_MODE",
                 "PORTAL_OIDC_MFA_AMR_VALUES", "PORTAL_OIDC_MFA_ACR_VALUES"):
         assert key in (config.__doc__ or ""), f"{key} is read but not declared in app/config.py"
     assert "SECRET" in (config.__doc__ or "")
+    doc = config.__doc__ or ""
+    for mode in (MFA_MODE_CLAIMS, MFA_MODE_CONDITIONAL_ACCESS):
+        assert mode in doc, f"the {mode} MFA mode is supported but not documented"

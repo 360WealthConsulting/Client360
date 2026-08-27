@@ -12,11 +12,24 @@ the tenant's discovery document and JWKS for signature, issuer, audience, expiry
 immutable subject is returned. No Graph token is requested or retained: the portal needs an identity,
 not an API token.
 
-MFA EVIDENCE IS CONFIGURATION-DRIVEN AND FAILS CLOSED. The exact claim Entra External ID emits for a
-given user flow depends on tenant configuration, and this module deliberately does NOT copy the
-workforce ``amr ∩ {mfa, otp, hwk}`` interpretation or guess a default. Until
-``PORTAL_OIDC_MFA_AMR_VALUES`` and/or ``PORTAL_OIDC_MFA_ACR_VALUES`` are configured from the real
-tenant's observed tokens, MFA cannot be proven and authentication is refused.
+MFA EVIDENCE IS CONFIGURATION-DRIVEN AND FAILS CLOSED. Which authority proves MFA is an explicit
+deployment decision, ``PORTAL_OIDC_MFA_MODE``:
+
+* ``claims`` (the default) proves MFA from the tenant's own token claims. The exact claim Entra
+  External ID emits for a given user flow depends on tenant configuration, so this module
+  deliberately does NOT copy the workforce ``amr ∩ {mfa, otp, hwk}`` interpretation or guess a
+  default. Until ``PORTAL_OIDC_MFA_AMR_VALUES`` and/or ``PORTAL_OIDC_MFA_ACR_VALUES`` are configured
+  from the real tenant's observed tokens, MFA cannot be proven and authentication is refused.
+
+* ``conditional_access`` names the Entra Conditional Access policy protecting the portal application
+  as the enforcement authority. Some External ID deployments — including this one — emit no
+  ``amr``/``acr``/``acrs`` at all, so claim evidence cannot exist and ``claims`` mode would refuse
+  every otherwise-valid sign-in. In this mode a token that completed the authorization-code/PKCE flow
+  and passed every check in :meth:`MicrosoftExternalIdentityProvider._verify_id_token` could only have
+  been issued to a session the policy already admitted, so MFA is treated as verified.
+
+The default stays fail-closed and Conditional Access is NEVER inferred from absent claim
+configuration: an operator must name the mode. An unknown mode proves nothing and refuses sign-in.
 """
 from __future__ import annotations
 
@@ -36,6 +49,15 @@ MICROSOFT_PROVIDER_KEY = "microsoft"
 #: Generic client-facing failure. Every validation error maps to this — the specific reason (bad issuer,
 #: bad audience, expired, replayed nonce, missing MFA) is never disclosed to the browser.
 GENERIC_AUTH_ERROR = "Sign-in could not be completed."
+
+#: MFA enforcement authority for this deployment. ``claims`` proves MFA from the tenant's own
+#: ``amr``/``acr`` evidence; ``conditional_access`` delegates enforcement to the Entra Conditional
+#: Access policy fronting the portal application. Anything else is unknown and proves nothing.
+MFA_MODE_CLAIMS = "claims"
+MFA_MODE_CONDITIONAL_ACCESS = "conditional_access"
+MFA_MODES = frozenset({MFA_MODE_CLAIMS, MFA_MODE_CONDITIONAL_ACCESS})
+#: Absent configuration must behave exactly as before: claim evidence, or nothing.
+DEFAULT_MFA_MODE = MFA_MODE_CLAIMS
 
 _DISCOVERY_TIMEOUT = 10
 _TOKEN_TIMEOUT = 15
@@ -58,13 +80,16 @@ class MicrosoftExternalIdentityProvider(PortalIdentityProvider):
     production_capable = True
 
     def __init__(self, *, issuer=None, client_id=None, client_secret=None, audience=None,
-                 scopes=None, mfa_amr_values=None, mfa_acr_values=None):
+                 scopes=None, mfa_mode=None, mfa_amr_values=None, mfa_acr_values=None):
         self.issuer = (issuer or _env("PORTAL_OIDC_ISSUER")).rstrip("/")
         self.client_id = client_id or _env("PORTAL_OIDC_CLIENT_ID")
         self.client_secret = client_secret or _env("PORTAL_OIDC_CLIENT_SECRET")
         self.audience = audience or _env("PORTAL_OIDC_AUDIENCE") or self.client_id
         self.scopes = scopes or (_env("PORTAL_OIDC_SCOPES") or "openid profile email")
-        # No default: an unconfigured deployment must not be able to prove MFA.
+        # Defaults to claim evidence, so an unconfigured deployment cannot prove MFA and
+        # Conditional Access is never assumed from the mere absence of claim values.
+        self.mfa_mode = (mfa_mode or _env("PORTAL_OIDC_MFA_MODE") or DEFAULT_MFA_MODE).lower()
+        # No default: in claims mode an unconfigured deployment must not be able to prove MFA.
         self.mfa_amr_values = frozenset(mfa_amr_values or _csv("PORTAL_OIDC_MFA_AMR_VALUES"))
         self.mfa_acr_values = frozenset(mfa_acr_values or _csv("PORTAL_OIDC_MFA_ACR_VALUES"))
         if not self.issuer or not self.client_id:
@@ -89,7 +114,15 @@ class MicrosoftExternalIdentityProvider(PortalIdentityProvider):
                     and _env("PORTAL_OIDC_CLIENT_SECRET"))
 
     def mfa_evidence_configured(self) -> bool:
-        """MFA can only be PROVEN when the tenant's actual claim values have been configured."""
+        """Whether this deployment has declared where MFA evidence comes from.
+
+        ``conditional_access`` IS the declaration — an operator named the enforcement authority.
+        ``claims`` additionally needs the tenant's actual claim values, without which MFA can never
+        be proven. An unknown mode declares nothing."""
+        if self.mfa_mode == MFA_MODE_CONDITIONAL_ACCESS:
+            return True
+        if self.mfa_mode != MFA_MODE_CLAIMS:
+            return False
         return bool(self.mfa_amr_values or self.mfa_acr_values)
 
     # --- discovery -----------------------------------------------------------
@@ -158,8 +191,10 @@ class MicrosoftExternalIdentityProvider(PortalIdentityProvider):
         if not subject:
             raise ValueError(GENERIC_AUTH_ERROR)
 
+        # Last, and only after signature, issuer, audience, expiry, nonce and immutable subject have
+        # all passed above: MFA is mandatory, and unproven evidence — unconfigured claim values, or
+        # an unknown enforcement mode — means denied.
         if not self._mfa_verified(claims):
-            # MFA is mandatory. Unconfigured evidence means unproven, which means denied.
             raise ValueError(GENERIC_AUTH_ERROR)
 
         # email is returned for a SECONDARY invitation cross-check only; it is never the identity key.
@@ -173,11 +208,26 @@ class MicrosoftExternalIdentityProvider(PortalIdentityProvider):
         return f"{self.key}:{oid or sub}" if (oid or sub) else ""
 
     def _mfa_verified(self, claims) -> bool:
-        """Fail-closed MFA evidence, driven entirely by configured tenant values.
+        """Fail-closed MFA evidence for the configured enforcement authority.
 
-        Deliberately NOT the workforce interpretation: the values Entra External ID emits for a given
-        user flow must be observed in the real tenant and configured. With nothing configured this
-        returns False, so MFA can never be silently assumed."""
+        ``conditional_access``: the Entra Conditional Access policy protecting the portal application
+        is the enforcement authority. Callers reach this only from :meth:`_verify_id_token`, after the
+        authorization-code/PKCE exchange succeeded and the ID token passed signature, issuer,
+        audience, expiry, nonce and immutable-subject validation — so the token could only have been
+        issued to a session the policy already admitted under its MFA grant control. This deployment's
+        External ID tokens carry no ``amr``/``acr``/``acrs`` at all, so claim evidence cannot exist
+        here; the operator must name this mode explicitly and it is never inferred.
+
+        ``claims``: proven only by the tenant's observed and configured claim values. Deliberately NOT
+        the workforce interpretation: the values Entra External ID emits for a given user flow must be
+        observed in the real tenant and configured. With nothing configured this returns False, so MFA
+        can never be silently assumed.
+
+        Any other mode is unknown configuration, which proves nothing and is refused."""
+        if self.mfa_mode == MFA_MODE_CONDITIONAL_ACCESS:
+            return True
+        if self.mfa_mode != MFA_MODE_CLAIMS:
+            return False
         if not self.mfa_evidence_configured():
             return False
         amr = claims.get("amr") or []

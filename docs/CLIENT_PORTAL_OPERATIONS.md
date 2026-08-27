@@ -70,6 +70,23 @@ Do not assume this flag switches MFA on or off. Reconciling the gate with the un
 separate bounded architecture task; until it is done the unconditional checks are the control, and they
 must not be weakened.
 
+### `PORTAL_OIDC_MFA_MODE`: which authority proves MFA
+The unconditional checks above require `mfa_verified` to be true; `PORTAL_OIDC_MFA_MODE` decides what is
+allowed to establish it for the Microsoft provider. It never removes the requirement.
+
+| Mode | MFA evidence | When to use |
+| --- | --- | --- |
+| `claims` (default) | The tenant's own `amr`/`acr` claims, matched against `PORTAL_OIDC_MFA_AMR_VALUES` / `PORTAL_OIDC_MFA_ACR_VALUES` | The tenant demonstrably emits MFA claims, and the real values have been observed in a validated token |
+| `conditional_access` | The Entra Conditional Access policy protecting the portal application | The tenant emits **no** `amr`/`acr`/`acrs`, and a Conditional Access policy with a `Require multifactor authentication` grant control is `On` for all users against the portal app |
+| anything else | none — refused | never |
+
+`conditional_access` is only sound while that policy remains in force. Before setting it, confirm against
+the tenant that the policy is `On`, targets **all users** and the portal application, and grants access
+only with `Require multifactor authentication`; re-confirm whenever the policy is edited, scoped, or has
+exclusions added, because loosening it silently loosens portal sign-in. The current deployment's policy is
+`Client360 Portal - Require MFA`. `claims` mode is unchanged and remains the default: absent claim
+configuration refuses every sign-in and is **never** read as an implicit Conditional Access deployment.
+
 ### Runtime governance
 Portal gates are intentionally governed outside `runtime_behaviors` — they are enforced directly by
 `app/portal/gate.py` and `app/services/features/portal_gate.py`, and validated by

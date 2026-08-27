@@ -43,11 +43,26 @@ are administratively distinct. (This is Entra External ID, *not* the deprecated 
   never the identity key** and never a fallback; a renamed or re-addressed client keeps the same account,
   and control of a mailbox does not confer access. `sign_in_with_subject()` resolves an *active* account by
   `auth_subject` alone.
-- **MFA is fail-closed.** `_mfa_verified()` accepts a token only when its `amr`/`acr` claims match values
-  configured for the tenant. With no configured values it returns **False**, so a misconfigured deployment
-  refuses every sign-in rather than admitting an unverified one. The workforce tenant's AMR interpretation
-  is deliberately **not** reused — the external tenant's real user-flow values must be established against
-  the tenant and verified under control.
+- **MFA is fail-closed, and its enforcement authority is explicit.** `PORTAL_OIDC_MFA_MODE` names which
+  authority proves MFA, and `_mfa_verified()` refuses anything else:
+  - `claims` (**the default**) accepts a token only when its `amr`/`acr` claims match values configured
+    for the tenant. With no configured values it returns **False**, so a misconfigured deployment refuses
+    every sign-in rather than admitting an unverified one. The workforce tenant's AMR interpretation is
+    deliberately **not** reused — the external tenant's real user-flow values must be established against
+    the tenant and verified under control.
+  - `conditional_access` delegates enforcement to the Entra Conditional Access policy protecting the
+    portal application (`Client360 Portal - Require MFA`: state *On*, all users, target resource
+    *Client360 Portal*, grant *Require multifactor authentication*). This tenant's validated production
+    ID tokens carry **no `amr`, `acr` or `acrs` claim at all**, so claim evidence cannot exist and `claims`
+    mode would refuse every otherwise-valid sign-in. In this mode `_mfa_verified()` is reached only after
+    the authorization-code/PKCE exchange and **every** other check — signature, issuer, audience, expiry,
+    nonce, immutable subject — has already passed, so the token could only have been issued to a session
+    the policy already admitted.
+  - Any other value is unknown configuration, proves nothing, and refuses sign-in.
+
+  The default stays fail-closed and Conditional Access is **never inferred** from absent claim
+  configuration: an operator must name the mode. Nothing downstream changes — `sign_in_with_subject()`
+  still requires `mfa_verified=True`, and the mode only decides what may establish it.
 - **No token retention.** Access and refresh tokens are never stored; the portal wants identity, not Graph.
   Authorization codes, tokens, client secrets, and invitation tokens are never logged.
 - **Uniform errors.** Every failure returns the same `"Sign-in could not be completed."` and redirects to
@@ -55,8 +70,9 @@ are administratively distinct. (This is Entra External ID, *not* the deprecated 
   token. Redirect targets are fixed in code — there is no caller-supplied `next`/`return_to`.
 
 Configuration keys (`PORTAL_OIDC_*`) are declared in `app/config.py`; `PORTAL_OIDC_CLIENT_SECRET` is the
-only secret. Nothing is registered until they are set, and startup warns on a partial configuration or on a
-complete one with no MFA claim values.
+only secret. Nothing is registered until they are set, and startup warns on a partial configuration, on an
+unknown `PORTAL_OIDC_MFA_MODE`, on `claims` mode with no MFA claim values, and on claim values left set
+under `conditional_access` mode (where they are ignored).
 
 ### Local test provider (test only)
 `app/portal/identity_local.py` provides a deterministic `LocalTestIdentityProvider` (assertion
