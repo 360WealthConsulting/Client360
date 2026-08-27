@@ -2,12 +2,16 @@
 
 Validates the deployment configuration BEFORE boot/migrate. Reuses ``app.config`` and
 ``app.deploy.checks``; it prints only variable NAMES and present/missing/ok — never a secret value.
+It also reports WHICH environment file it resolved (path only) and warns when an ambiguous sibling of
+the canonical production file exists, so "RESULT: OK" can never come from a file nobody loads.
 Distinguishes fatal errors (missing production secrets, dev fallback in production) from warnings
 (recommended-but-optional). Exit code 0 = ok/warnings-only, 1 = fatal.
 """
 from __future__ import annotations
 
-from app.deploy import checks
+import os
+
+from app.deploy import checks, service
 
 
 def validate_config() -> dict:
@@ -72,20 +76,57 @@ def _print(result: dict) -> None:
     print("RESULT:", "OK" if result["ok"] else "FAILED")
 
 
-def _load_env_file() -> None:
-    """Load app/.env so the CLI validates the SAME production config the app boots with (uvicorn loads
-    it via --env-file; app.config reads SESSION_SECRET at import before app.db loads the dotenv).
-    override=False so real process/system env always wins and no value is clobbered."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv("app/.env", override=False)
-    except Exception:  # noqa: BLE001 — best-effort; missing file just means rely on process env
-        pass
+def _candidate_env_files() -> list[str]:
+    """Where the CLI looks for the environment file, in order.
+
+    The repo-relative path first, so a developer checkout, CI, Docker and the test suite keep loading
+    their own file exactly as before. The canonical Windows production file second, so running
+    check-config from the wrong directory on the production server validates the file the service
+    actually loads instead of silently validating nothing at all."""
+    return ["app/.env", service.PRODUCTION_ENV_FILE]
+
+
+def _ambiguous_siblings() -> list[str]:
+    """Sibling files that are NOT loaded by the service but exist on disk. Paths only, never read."""
+    return [p for p in service.AMBIGUOUS_ENV_FILES if os.path.isfile(p)]
+
+
+def load_environment_file() -> dict:
+    """Load the environment file the app boots with and report WHICH file — never its contents.
+
+    uvicorn loads it via --env-file; app.config reads SESSION_SECRET at import before app.db loads
+    the dotenv. override=False so real process/system env always wins and no value is clobbered.
+
+    Reporting the resolved path matters as much as loading it: an operator who edited the wrong file
+    used to get a clean "RESULT: OK" from the ambient process environment, which is precisely how a
+    change to a non-loaded env file looked successful."""
+    for candidate in _candidate_env_files():
+        if not os.path.isfile(candidate):
+            continue
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(candidate, override=False)
+        except Exception:  # noqa: BLE001 — best-effort; fall through to the next candidate
+            continue
+        return {"env_file": candidate, "ambiguous": _ambiguous_siblings()}
+    return {"env_file": None, "ambiguous": _ambiguous_siblings()}
+
+
+def _print_env_file(loaded: dict) -> None:
+    """Report the resolved environment file by PATH only. No variable names, no values."""
+    if loaded["env_file"]:
+        print(f"Environment file: {loaded['env_file']}")
+    else:
+        print("Environment file: none found — validating the ambient process environment only.")
+    for sibling in loaded["ambiguous"]:
+        print(f"  WARNING: {sibling} exists and is NOT the file the service loads. "
+              f"The production environment file is {service.PRODUCTION_ENV_FILE}.")
 
 
 def main(argv=None) -> int:
-    _load_env_file()
+    loaded = load_environment_file()
     result = validate_config()
+    _print_env_file(loaded)
     _print(result)
     return 0 if result["ok"] else 1
 

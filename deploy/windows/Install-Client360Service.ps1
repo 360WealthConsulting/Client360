@@ -7,6 +7,14 @@
   keeps running without an interactive terminal and starts again after a server reboot. Prefers NSSM
   (auto-restart + log redirection); falls back to the built-in sc.exe if NSSM is not on PATH.
 
+  PRODUCTION ENVIRONMENT FILE: C:\Client360\app\.env
+
+  The --env-file passed to uvicorn is ABSOLUTE on purpose. A relative 'app\.env' only resolves
+  correctly while the working directory is C:\Client360, and it leaves an operator to infer the real
+  path — which is how C:\Client360\.env and C:\Client360\app.env came to be edited instead.
+  Installing with any other env file is refused unless -AllowNonCanonicalEnvFile is given.
+  See deploy/windows/README.md and validate_production_env.ps1.
+
   Actions: install | start | stop | restart | status | uninstall
 
 .EXAMPLE
@@ -23,10 +31,38 @@ param(
   [string]$BindHost    = '127.0.0.1',
   [int]   $Port        = 8360,
   [string]$LogDir      = 'C:\Client360\logs',
-  [string]$EnvFile     = 'app\.env'
+  [string]$EnvFile     = 'C:\Client360\app\.env',
+  [switch]$AllowNonCanonicalEnvFile
 )
 
 $ErrorActionPreference = 'Stop'
+
+# THE canonical production environment file. Mirrors PRODUCTION_ENV_FILE / AMBIGUOUS_ENV_FILES in
+# app/deploy/service.py — keep these in step.
+$CanonicalEnvFile  = 'C:\Client360\app\.env'
+$AmbiguousEnvFiles = @('C:\Client360\.env', 'C:\Client360\app.env')
+
+function ConvertTo-ComparablePath {
+  param([string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+  return $Path.Trim().Trim('"').Replace('/', '\').TrimEnd('\').ToLowerInvariant()
+}
+
+# Guard the one setting that has repeatedly gone wrong. Installing the service with a non-canonical
+# --env-file is how production ends up reading a file nobody edits.
+if ($Action -eq 'install' -and -not $AllowNonCanonicalEnvFile) {
+  if ((ConvertTo-ComparablePath $EnvFile) -ne (ConvertTo-ComparablePath $CanonicalEnvFile)) {
+    throw ("Refusing to install $ServiceName with -EnvFile '$EnvFile'. The production runtime " +
+           "environment file is '$CanonicalEnvFile'. Pass -AllowNonCanonicalEnvFile only for a " +
+           "non-production host. See deploy/windows/README.md.")
+  }
+  foreach ($ambiguous in $AmbiguousEnvFiles) {
+    if (Test-Path -LiteralPath $ambiguous -PathType Leaf) {
+      Write-Warning "$ambiguous exists and is NOT loaded by $ServiceName. The production runtime environment file is $CanonicalEnvFile."
+    }
+  }
+}
+
 # --env-file is REQUIRED so the service loads the production config (SESSION_SECRET/DATABASE_URL/OIDC).
 $uvicornArgs = @('-m','uvicorn','app.main:app','--host',$BindHost,'--port',"$Port",'--env-file',$EnvFile)
 $nssm = (Get-Command nssm -ErrorAction SilentlyContinue)

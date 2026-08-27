@@ -10,11 +10,18 @@
     4. apply migrations to head + verify (python -m app.deploy migrate)
     5. verify Vault storage           (covered by check-config)
     6. install/update the Windows service (Install-Client360Service.ps1 -Action install)
+    6b. validate the production env path  (validate_production_env.ps1) -- BEFORE any restart
     7. start/restart the service
     8. run smoke tests                (python -m app.deploy smoke --url)
     9. report the deployed URLs
 
   It never resets or recreates the database and never uses the demo app.
+
+  PRODUCTION ENVIRONMENT FILE: C:\Client360\app\.env
+
+  Step 6b fails the deployment before the service is restarted if the installed service does not
+  load exactly that file. C:\Client360\.env and C:\Client360\app.env are NOT the production
+  runtime env file. See deploy/windows/README.md.
 
 .EXAMPLE
   .\Deploy-Client360.ps1 -Port 8360 -Backup
@@ -42,6 +49,9 @@ Step 2 'Database + migration plan';         Run $Python @('-m','app.deploy','mig
 if ($Backup) { Step 3 'Pre-migration backup + migrate'; Run $Python @('-m','app.deploy','migrate','--backup') }
 else         { Step 4 'Apply migrations to head';       Run $Python @('-m','app.deploy','migrate') }
 Step 6 'Install/update Windows service';    Run 'powershell' @('-File',"$here\Install-Client360Service.ps1",'-Action','install','-Python',$Python,'-BindHost',$BindHost,'-Port',"$Port",'-WorkDir',$WorkDir)
+# Fail BEFORE the restart: a service pointed at the wrong env file must never be started into
+# production carrying stale or absent configuration.
+Step '6b' 'Validate production env path';   Run 'powershell' @('-File',"$here\validate_production_env.ps1",'-RequireService')
 Step 7 'Start/restart service';             Run 'powershell' @('-File',"$here\Install-Client360Service.ps1",'-Action','restart','-Python',$Python,'-BindHost',$BindHost,'-Port',"$Port",'-WorkDir',$WorkDir)
 Start-Sleep -Seconds 5
 Step 8 'Smoke test';                        Run $Python @('-m','app.deploy','smoke','--url',"http://$BindHost`:$Port")
