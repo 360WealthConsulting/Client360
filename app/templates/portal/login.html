@@ -1,4 +1,7 @@
 {% extends "portal/base.html" %}{% block title %}Sign In{% endblock %}
+{% block flash %}
+  {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+{% endblock %}
 {% block content %}
 <h1>Secure Client Sign In</h1>
 <p>Use the secure invitation sent by your advisory team. Multi-factor authentication is required when activating portal access.</p>

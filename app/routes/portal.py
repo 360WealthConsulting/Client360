@@ -68,21 +68,41 @@ def _production_identity_provider_available() -> bool:
     return _production_provider_key() in PORTAL_IDENTITY_PROVIDERS.production_capable()
 
 
+#: The ONLY sign-in error codes the login page renders, each mapped to a fixed, client-safe sentence.
+#: The codes are exactly the two ``/portal/auth/start`` and ``/portal/auth/callback`` already redirect
+#: with. The mapping is a closed allow-list, so nothing from the query string ever reaches the
+#: document: an unknown or attacker-supplied value resolves to None and the page renders as if fresh.
+#:
+#: Both messages are deliberately uninformative. ``failed`` covers bad state, bad nonce, bad
+#: signature, bad issuer/audience, an expired token, an unknown subject, a revoked account and a
+#: failed MFA check alike — the callback maps all of them to one redirect precisely so the browser
+#: cannot distinguish them, and this page must not undo that.
+PORTAL_LOGIN_ERRORS = {
+    "unavailable": ("Secure sign-in is temporarily unavailable. Please try again later or contact "
+                    "your advisory team."),
+    "failed": "Sign-in could not be completed. Please try again.",
+}
+
+
 @router.get("/portal/login", response_class=HTMLResponse)
-def portal_login(request: Request, invitation: str | None = None):
+def portal_login(request: Request, invitation: str | None = None, error: str | None = None):
     """Public sign-in landing page.
 
     Renders the external sign-in action only when the production provider is actually registered;
     otherwise it keeps the existing fail-closed configuration message. An optional ``invitation``
     token is forwarded to ``/portal/auth/start`` unchanged — that route holds it server-side in the
     browser session and never passes it to the IdP.
-"""
+
+    An optional ``error`` code is resolved through :data:`PORTAL_LOGIN_ERRORS` to a fixed message;
+    the raw value is never rendered, and an unrecognised code is ignored entirely."""
     auth_start_url = "/portal/auth/start"
     if invitation:
         auth_start_url += f"?invitation={quote(invitation, safe='')}"
+    error_message = PORTAL_LOGIN_ERRORS.get(error or "")
     return templates.TemplateResponse(request=request, name="portal/login.html", context={
         "identity_provider_available": _production_identity_provider_available(),
         "auth_start_url": auth_start_url,
+        "error": error_message,          # the resolved sentence, never the submitted code
     })
 
 @router.get("/portal/auth/start")

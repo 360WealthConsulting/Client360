@@ -13,6 +13,8 @@ authenticated request; they are simply not what decides whether a sign-in button
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.portal.identity_local import LocalTestIdentityProvider
@@ -21,7 +23,7 @@ from app.portal.identity_microsoft import (
     MicrosoftExternalIdentityProvider,
 )
 from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
-from app.routes.portal import portal_auth_start, portal_login
+from app.routes.portal import PORTAL_LOGIN_ERRORS, portal_auth_start, portal_login
 from tests._portal_util import fake_request, render
 
 CONFIG_REQUIRED = "Portal identity provider configuration is required for production sign-in."
@@ -182,3 +184,124 @@ def test_login_page_never_leaks_provider_configuration(empty_provider_registry):
                  "PORTAL_OIDC", "client_secret"):
         assert leak not in html, f"login page disclosed {leak}"
 
+
+# --- generic sign-in error feedback ------------------------------------------------------
+#
+# /portal/auth/start redirects failures to ?error=unavailable and /portal/auth/callback to
+# ?error=failed. The page renders a fixed sentence for each and nothing else: the callback collapses
+# bad state, bad nonce, bad signature, bad issuer/audience, expiry, unknown subject, a revoked
+# account and a failed MFA check into ONE redirect so the browser cannot tell them apart, and the
+# login page must not undo that.
+
+def test_error_unavailable_renders_the_generic_temporary_message(empty_provider_registry):
+    empty_provider_registry.register(_microsoft_provider())
+    html = _login_html(error="unavailable")
+    assert "Secure sign-in is temporarily unavailable." in html
+    assert "contact your advisory team" in html
+    assert "Sign-in could not be completed" not in html
+
+
+def test_error_failed_renders_the_generic_retry_message(empty_provider_registry):
+    empty_provider_registry.register(_microsoft_provider())
+    html = _login_html(error="failed")
+    assert "Sign-in could not be completed. Please try again." in html
+    assert "temporarily unavailable" not in html
+
+
+def test_only_the_two_codes_the_auth_routes_emit_are_supported():
+    """The allow-list must match what /portal/auth/start and /portal/auth/callback redirect with."""
+    assert set(PORTAL_LOGIN_ERRORS) == {"unavailable", "failed"}
+
+
+@pytest.mark.parametrize("unknown", [
+    "unknown", "UNAVAILABLE", "failed ", "", "0", "true",
+    "mfa_required", "bad_nonce", "invalid_signature",          # plausible internal-detail guesses
+])
+def test_an_unrecognised_error_code_is_ignored_entirely(empty_provider_registry, unknown):
+    """Unknown codes behave exactly like no error — and add nothing to the page."""
+    empty_provider_registry.register(_microsoft_provider())
+    baseline = _login_html()
+    html = _login_html(error=unknown)
+    assert "flash error" not in html, f"an unrecognised code ({unknown!r}) rendered an error box"
+    assert html == baseline, "an unrecognised code changed the rendered page"
+
+
+def test_no_error_code_renders_no_error_box(empty_provider_registry):
+    empty_provider_registry.register(_microsoft_provider())
+    assert "flash error" not in _login_html()
+
+
+def test_a_hostile_error_value_is_never_reflected(empty_provider_registry):
+    """The code is attacker-controllable on a PUBLIC page; it must never reach the document."""
+    empty_provider_registry.register(_microsoft_provider())
+    for hostile in ('<script>alert(1)</script>', '"><img src=x onerror=alert(1)>',
+                    "failed'--", "unavailable<br>"):
+        html = _login_html(error=hostile)
+        assert hostile not in html
+        assert "<script>" not in html and "onerror" not in html
+        assert "flash error" not in html, "a hostile code was treated as a known error"
+
+
+def _flash_message(html: str) -> str:
+    """The rendered error box's text, or "" when there is none."""
+    match = re.search(r'<div class="flash error" role="alert">(.*?)</div>', html, re.S)
+    return match.group(1).strip() if match else ""
+
+
+def test_the_error_messages_disclose_no_authentication_detail(empty_provider_registry):
+    """The uniform-error design: nothing in the message distinguishes WHY sign-in failed.
+
+    Scoped to the error box itself — the page's own standing copy legitimately mentions invitations
+    and multi-factor authentication, and that is not what must stay uniform."""
+    empty_provider_registry.register(_microsoft_provider())
+    for code in ("unavailable", "failed"):
+        message = _flash_message(_login_html(error=code))
+        assert message == PORTAL_LOGIN_ERRORS[code], "the rendered message is not the fixed sentence"
+        for leak in ("nonce", "state", "signature", "issuer", "audience", "expired", "mfa",
+                     "subject", "token", "claim", "pkce", "revoked", "invitation", "provider",
+                     "aadsts", "traceback", "exception", "error="):
+            assert leak not in message.lower(), f"the {code} message disclosed '{leak}'"
+
+
+def test_both_error_messages_are_indistinguishable_about_cause(empty_provider_registry):
+    """Neither message names a subsystem, a check, or an account state."""
+    empty_provider_registry.register(_microsoft_provider())
+    messages = {c: _flash_message(_login_html(error=c)) for c in ("unavailable", "failed")}
+    assert messages["unavailable"] != messages["failed"]      # availability vs attempt is fine...
+    for message in messages.values():                         # ...but neither says why
+        assert "microsoft" not in message.lower()
+        assert message.count(".") <= 2 and len(message) < 200, "the message is too specific"
+
+
+def test_error_messages_never_expose_provider_configuration(empty_provider_registry):
+    empty_provider_registry.register(_microsoft_provider())
+    for code in ("unavailable", "failed"):
+        html = _login_html(error=code)
+        for leak in ("not-a-real-secret", "client-id-under-test", "ciamlogin.com",
+                     "PORTAL_OIDC", "client_secret", "microsoft:"):
+            assert leak not in html, f"the {code} page disclosed {leak}"
+
+
+def test_the_sign_in_action_still_appears_alongside_an_error(empty_provider_registry):
+    """A failed attempt must leave the client able to retry."""
+    empty_provider_registry.register(_microsoft_provider())
+    for code in ("unavailable", "failed"):
+        html = _login_html(error=code)
+        assert f'href="{AUTH_START}"' in html and "Sign in with Microsoft" in html
+        assert CONFIG_REQUIRED not in html
+
+
+def test_an_error_does_not_change_the_provider_unavailable_message(empty_provider_registry):
+    """With no provider registered the fail-closed message stands, error code or not."""
+    for code in ("unavailable", "failed", "unknown"):
+        html = _login_html(error=code)
+        assert CONFIG_REQUIRED in html
+        assert AUTH_START not in html
+
+
+def test_an_error_preserves_the_invitation_on_the_retry_link(empty_provider_registry):
+    """Retrying after a failure must not silently drop first-time activation."""
+    empty_provider_registry.register(_microsoft_provider())
+    html = _login_html(invitation="INV-TOKEN-123", error="failed")
+    assert f'href="{AUTH_START}?invitation=INV-TOKEN-123"' in html
+    assert "Sign-in could not be completed. Please try again." in html
