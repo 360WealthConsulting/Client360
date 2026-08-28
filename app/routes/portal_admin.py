@@ -27,7 +27,7 @@ from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import invitation_handoff
 from app.portal import invite_targets
-from app.services import person_creation
+from app.services import email_delivery, person_creation
 from app.portal import visibility
 from app.portal.service import invite_portal_account, portal_base_scope, staff_send_message
 from app.security.audit import write_audit_event
@@ -76,13 +76,20 @@ def _activation_url(request, raw_token: str) -> str:
     return f"{external_url(request, 'portal_login')}?invitation={quote(raw_token, safe='')}"
 
 
-def _remember_activation_url(request, *, display_name: str, url: str) -> None:
-    """Hold the link server-side for ONE read by this staff member's next page load."""
+def _remember_activation_url(request, *, display_name: str, url: str, delivery=None) -> None:
+    """Hold the link — and how delivery went — server-side for ONE read by the next page load.
+
+    The delivery outcome rides along here rather than in the redirect URL so a client's email
+    address never enters browser history, proxy logs or the referrer header."""
     session = getattr(request, "session", None)
     if session is None:                       # no session middleware (direct service call) — skip
         return
     session[HANDOFF_SESSION_KEY] = invitation_handoff.stash(
-        {"display_name": display_name, "url": url})
+        {"display_name": display_name, "url": url,
+         "delivered": bool(delivery and delivery.delivered),
+         # Staff-facing sentence only. Never a Graph body, never the activation URL.
+         "delivery_detail": (delivery.detail if delivery else ""),
+         "delivery_status": (delivery.status if delivery else "")})
 
 
 def _take_activation_url(request):
@@ -172,7 +179,8 @@ def portal_admin_invite_form(
         request: Request,
         person_id: str = Form(default=""), email: str = Form(default=""),
         access_type: str = Form(default=DEFAULT_ACCESS),
-        principal: Principal = Depends(require_capability("client.write"))):
+        principal: Principal = Depends(require_capability("client.write")),
+        mail_transport=None):
     """Browser form over the SAME scoped/audited invite service as POST /invite. Post/Redirect/Get so a
     refresh never re-invites; a failure redirects with an error banner instead of a raw 403.
 
@@ -217,16 +225,30 @@ def portal_admin_invite_form(
     # Metadata deliberately carries person/access only — NEVER the token or the activation URL.
     _audit(request, principal, "portal.admin.invited", account_id,
            {"person_id": target.person_id, "access_type": access, "via": "form"})
-    # The invitation is undeliverable without the raw token, and there is no production-capable email
-    # channel to send it (see app/portal/invitation_handoff.py). Hand the link to the staff member
-    # who created it, exactly once, through a server-side store. It never enters this redirect URL.
+    # The activation URL exists only in this frame: it is emailed, stashed once for the staff
+    # fallback, and then dropped. It is never persisted, logged, audited, or put in a redirect.
     try:
-        _remember_activation_url(request, display_name=name,
-                                 url=_activation_url(request, raw_token))
-    except Exception:  # noqa: BLE001 — the account IS invited; only the convenience link is lost
+        activation_url = _activation_url(request, raw_token)
+    except Exception:  # noqa: BLE001 — the account IS invited; only the link could not be built
         return RedirectResponse(f"/admin/client-portal?invited={quote(name)}"
                                 "&error=Activation+link+unavailable%3A+check+PUBLIC_BASE_URL",
                                 status_code=303)
+
+    # Email is the normal delivery path; the one-time admin handoff remains the fallback for when
+    # it is off, unconfigured, or refused.
+    delivery = email_delivery.send_portal_invitation(
+        recipient_email=email, display_name=name, activation_url=activation_url,
+        request_id=request.state.request_id, graph_post=mail_transport)
+    _audit(request, principal,
+           "portal.admin.invitation_email_sent" if delivery.delivered
+           else "portal.admin.invitation_email_failed",
+           account_id,
+           # Safe metadata only: status, provider, failure class, recipient DOMAIN. Never the
+           # address itself, never the token, never the activation URL.
+           {"person_id": target.person_id, "recipient_domain": delivery.recipient_domain,
+            **delivery.audit_metadata})
+
+    _remember_activation_url(request, display_name=name, url=activation_url, delivery=delivery)
     return RedirectResponse(f"/admin/client-portal?invited={quote(name)}", status_code=303)
 
 

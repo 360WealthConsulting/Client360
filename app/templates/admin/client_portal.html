@@ -10,6 +10,12 @@
 {% if invited %}<div class="banner good">Invitation created for <b>{{ invited }}</b>.</div>{% endif %}
 {% if error %}<div class="banner warn">Could not invite: {{ error }}</div>{% endif %}
 {% if activation %}
+{% if activation.delivered %}
+<div class="banner good">{{ activation.delivery_detail }}</div>
+{% elif activation.delivery_detail %}
+<div class="banner warn">Portal invitation was created, but the email could not be sent.
+{{ activation.delivery_detail }} Use the activation link below or resend the invitation.</div>
+{% endif %}
 <div class="banner warn portal-activation">
   <b>Activation link for {{ activation.display_name }} — shown once, right now</b>
   <p>This link contains a <b>sensitive, single-use invitation credential</b>. Anyone

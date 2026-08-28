@@ -34,6 +34,23 @@ set, and `portal.production_ready()` stays False. NON-SECRET unless marked SECRE
   PORTAL_OIDC_SCOPES      Space-separated scopes. Default "openid profile email".
                           Do NOT add Microsoft Graph scopes: the portal keeps no
                           access or refresh tokens.
+  PORTAL_EMAIL_ENABLED    "true" turns on outbound portal invitation email. Off by
+                          default; with it off an invitation is still created and the
+                          activation link is handed to staff once, but nothing is sent.
+  PORTAL_EMAIL_SENDER     The firm mailbox invitations are sent FROM, e.g.
+                          "clientservices@example.com". Selects the mailbox; it is NOT
+                          a security boundary — only Exchange can enforce which mailbox
+                          the app may send as. Never a staff member's own mailbox;
+                          delegated send-as-self is a separate feature.
+  PORTAL_EMAIL_TENANT_ID  SECRET-adjacent. Tenant of the DEDICATED outbound-mail app
+  PORTAL_EMAIL_CLIENT_ID  registration. Application Mail.Send sends with no signed-in
+  PORTAL_EMAIL_CLIENT_SECRET  user, so it is issued to its own app registration and its
+                          own credential namespace — never MICROSOFT_CLIENT_ID/SECRET,
+                          which must not gain that privilege. PORTAL_EMAIL_CLIENT_SECRET
+                          is a SECRET. The dedicated app needs the Graph APPLICATION
+                          permission Mail.Send ONLY, with admin consent, restricted to
+                          PORTAL_EMAIL_SENDER through Exchange Online Application RBAC.
+
   PORTAL_OIDC_MFA_MODE    Which authority proves MFA. "claims" (default) proves it
                           from the tenant's own `amr`/`acr` claims via the two keys
                           below. "conditional_access" delegates enforcement to the
@@ -310,6 +327,26 @@ def _portal_identity_warnings() -> list[str]:
     return warnings
 
 
+def _portal_email_warnings() -> list[str]:
+    """Warn when invitation email is switched on but cannot actually send. Names only, no values.
+
+    Silence when it is off: no outbound email is a normal state — the one-time staff handoff still
+    delivers the activation link — so only a HALF-configured sender is worth saying out loud."""
+    if os.getenv("PORTAL_EMAIL_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return []
+    # The DEDICATED mail credentials — MICROSOFT_* deliberately absent. PUBLIC_BASE_URL too:
+    # without it no activation URL can be built, so there would be nothing to send.
+    missing = [name for name in ("PORTAL_EMAIL_SENDER", "PORTAL_EMAIL_TENANT_ID",
+                                 "PORTAL_EMAIL_CLIENT_ID", "PORTAL_EMAIL_CLIENT_SECRET",
+                                 "PUBLIC_BASE_URL")
+               if not os.getenv(name, "").strip()]
+    if not missing:
+        return []
+    return ["PORTAL_EMAIL_ENABLED is on but portal invitation email cannot be sent; missing "
+            f"{', '.join(missing)}. Invitations will still be created and the activation link "
+            "handed to staff, but no email will go out."]
+
+
 def configuration_warnings() -> list[str]:
     """Return operational configuration warnings (empty when fully configured).
 
@@ -337,6 +374,7 @@ def configuration_warnings() -> list[str]:
             "than build an OAuth redirect URI from the unvalidated Host header. Set it to the "
             "canonical external origin before enabling the portal.")
     warnings.extend(_portal_identity_warnings())
+    warnings.extend(_portal_email_warnings())
     # No DATABASE_URL warning here: there is no built-in default. app/db.py and
     # app/database/schema.py both raise at import if it is unset, so the process
     # cannot reach startup validation without one. The warning this replaces
