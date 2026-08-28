@@ -282,6 +282,36 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
   line-height: 1.5; resize: vertical; }
 .portal-compose-form select.input { width: 100%; }
 
+/* Secure-message THREAD page. Layout only — every colour comes from the existing theme tokens so
+   both light and dark work, and every rule is prefixed so no other staff page is affected.
+   The shared `.input` height:36px is correct for the selects here and wrong for the reply
+   textarea, so the override is scoped to this form (the wider textarea.input issue across ~18
+   other staff templates is deliberately left alone). */
+.thread-header { display: grid; gap: 14px; }
+.thread-meta { display: grid; gap: 2px; }
+.thread-meta-value { margin: 0; font-weight: 620; }
+.thread-header-action form { margin: 0; }
+.thread-section-summary { cursor: pointer; font-weight: 620; }
+.thread-form { margin-top: 12px; }
+.thread-control-grid { display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.thread-form .field { margin-bottom: 0; }
+.thread-linked-list { margin: 0; padding-left: 18px; color: var(--text-2); }
+.thread-link-existing { max-width: 260px; }
+
+.thread-history { display: grid; gap: 12px; }
+.thread-msg { padding: 10px 13px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border); }
+.thread-msg.staff { background: var(--info-soft); border-color: transparent; }
+.thread-msg.internal { background: var(--warn-soft); border-color: transparent; }
+.thread-msg-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; }
+
+.thread-reply-form .field { margin-bottom: 0; }
+.thread-reply-form textarea.input { height: auto; min-height: 132px; padding: 10px 12px;
+  line-height: 1.5; resize: vertical; }
+.thread-internal-toggle { display: inline-flex; align-items: center; gap: 8px;
+  font-weight: normal; cursor: pointer; }
+
 /* One-field client selector on the secure-message compose form. Results reuse .client-result. */
 .client-typeahead { position: relative; display: grid; gap: 6px; }
 .client-typeahead input[type="text"] { width: 100%; }

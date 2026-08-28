@@ -3,76 +3,138 @@
 {% block title %}{{ thread.subject }} | Secure Messages{% endblock %}
 {% block crumb %}Secure Messages{% endblock %}
 {% block content %}
+{# Layout only. Every form action, field name and value below is unchanged from the version this
+   replaces — routing, assignment, request linking, resolve and reply all post exactly what they
+   posted before. Styling reuses the staff conventions already in app.css: .card, .stat-grid,
+   .field/.input, .cols-2, .row, .stack, .subtle, h2.section-title and the ui.badge macro. #}
 <p><a href="/admin/client-portal/threads">&larr; All secure messages</a></p>
 {% call ui.page_head(thread.subject, eyebrow="Client Portal", desc="Conversation with " ~ (client_name or "the client") ~ ". Replies are visible to the client; internal notes are staff-only.") %}
 {% endcall %}
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
-<div class="card" style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;">
-  <span><b>Topic:</b> {{ thread.topic|title if thread.topic else 'Unassigned' }}</span>
-  <span><b>Assigned:</b> {{ assigned_name or ('Team #' ~ thread.assigned_team_id if thread.assigned_team_id else 'Unassigned (review)') }}</span>
-  <span><b>Status:</b> {{ thread.status|title }}</span>
-  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/resolve" style="margin:0;">
-    <input type="hidden" name="action" value="{{ 'reopen' if thread.status == 'resolved' else 'resolve' }}">
-    <button class="btn secondary" type="submit">{{ 'Reopen' if thread.status == 'resolved' else 'Resolve' }}</button>
-  </form>
+<div class="card thread-header">
+  <div class="stat-grid">
+    <div class="thread-meta">
+      <span class="subtle">Topic</span>
+      <p class="thread-meta-value">{{ thread.topic|title if thread.topic else 'Unassigned' }}</p>
+    </div>
+    <div class="thread-meta">
+      <span class="subtle">Assigned</span>
+      <p class="thread-meta-value">{{ assigned_name or ('Team #' ~ thread.assigned_team_id if thread.assigned_team_id else 'Unassigned (review)') }}</p>
+    </div>
+    <div class="thread-meta">
+      <span class="subtle">Status</span>
+      <p class="thread-meta-value">{{ ui.badge(thread.status|title, 'good' if thread.status == 'resolved' else 'info') }}</p>
+    </div>
+  </div>
+  <div class="row thread-header-action">
+    <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/resolve">
+      <input type="hidden" name="action" value="{{ 'reopen' if thread.status == 'resolved' else 'resolve' }}">
+      <button class="btn secondary" type="submit">{{ 'Reopen' if thread.status == 'resolved' else 'Resolve' }}</button>
+    </form>
+  </div>
 </div>
 
-<details class="card"><summary style="cursor:pointer;font-weight:600;">Route / topic</summary>
-  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/assign" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:.75rem;">
-    <label>Topic<select name="topic"><option value="">—</option>{% for tp in topics %}<option value="{{ tp }}"{% if thread.topic==tp %} selected{% endif %}>{{ tp|title }}</option>{% endfor %}</select></label>
-    <label>Assign to employee
-      <select name="assigned_user_id">
-        <option value="">— Unassigned —</option>
-        {% for u in assignable_users %}<option value="{{ u.id }}"{% if thread.assigned_user_id==u.id %} selected{% endif %}>{{ u.display_name }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Assign to team
-      <select name="assigned_team_id">
-        <option value="">— None —</option>
-        {% for t in assignable_teams %}<option value="{{ t.id }}"{% if thread.assigned_team_id==t.id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
-      </select>
-    </label>
-    <button class="btn" type="submit">Update routing</button>
+<details class="card">
+  <summary class="thread-section-summary">Route / topic</summary>
+  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/assign" class="stack thread-form">
+    <div class="thread-control-grid">
+      <div class="field">
+        <label for="route-topic">Topic</label>
+        <select class="input" id="route-topic" name="topic">
+          <option value="">&mdash;</option>
+          {% for tp in topics %}<option value="{{ tp }}"{% if thread.topic==tp %} selected{% endif %}>{{ tp|title }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="route-user">Assign to employee</label>
+        <select class="input" id="route-user" name="assigned_user_id">
+          <option value="">&mdash; Unassigned &mdash;</option>
+          {% for u in assignable_users %}<option value="{{ u.id }}"{% if thread.assigned_user_id==u.id %} selected{% endif %}>{{ u.display_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="route-team">Assign to team</label>
+        <select class="input" id="route-team" name="assigned_team_id">
+          <option value="">&mdash; None &mdash;</option>
+          {% for t in assignable_teams %}<option value="{{ t.id }}"{% if thread.assigned_team_id==t.id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="row"><button class="btn" type="submit">Update routing</button></div>
   </form>
 </details>
 
-<details class="card"><summary style="cursor:pointer;font-weight:600;">Linked requests ({{ linked_requests|length }})</summary>
-  {% for r in linked_requests %}<p class="meta">{{ r.title }} — {{ r.status|title }}{% if r.due_date %} · Due {{ r.due_date }}{% endif %}</p>{% endfor %}
-  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/create-request" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:.5rem;">
-    <label>New request title<input name="title" required></label>
-    <label>Description<input name="description"></label>
-    <button class="btn secondary" type="submit">Create &amp; link request</button>
-  </form>
-  <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/link-request" style="display:flex;gap:10px;align-items:end;margin-top:.5rem;">
-    <label>Link existing request id<input name="request_ref" type="number" required></label>
-    <button class="btn secondary" type="submit">Link</button>
-  </form>
-</details>
+<details class="card">
+  <summary class="thread-section-summary">Linked requests ({{ linked_requests|length }})</summary>
+  <div class="stack thread-form">
+    {% if linked_requests %}
+    <ul class="thread-linked-list">
+      {% for r in linked_requests %}
+      <li>{{ r.title }} &mdash; {{ r.status|title }}{% if r.due_date %} &middot; Due {{ r.due_date }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="subtle">No requests are linked to this conversation yet.</p>
+    {% endif %}
 
-<div class="card" style="display:flex;flex-direction:column;gap:.75rem;">
-{% for m in messages %}
-  <div style="padding:.6rem .8rem;border-radius:10px;
-    {% if m.visibility == 'internal' %}background:#fef9c3;border:1px solid #fde68a;
-    {% elif m.sender_user_id %}background:#eff6ff;border:1px solid #bfdbfe;
-    {% else %}background:#f9fafb;border:1px solid #e5e7eb;{% endif %}">
-    <div class="msg-body">{{ m.body }}</div>
-    <small style="color:#6b7280;">
-      {% if m.visibility == 'internal' %}Internal note (staff only)
-      {% elif m.sender_user_id %}Staff{% else %}Client{% endif %}
-      · {{ m.sent_at.strftime('%b %d, %Y %I:%M %p') if m.sent_at else '' }}
-    </small>
+    <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/create-request" class="stack">
+      <div class="cols-2">
+        <div class="field">
+          <label for="request-title">New request title</label>
+          <input class="input" id="request-title" name="title" required>
+        </div>
+        <div class="field">
+          <label for="request-description">Description</label>
+          <input class="input" id="request-description" name="description">
+        </div>
+      </div>
+      <div class="row"><button class="btn secondary" type="submit">Create &amp; link request</button></div>
+    </form>
+
+    <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/link-request" class="stack">
+      <div class="field thread-link-existing">
+        {# Behaviour deliberately unchanged: this still posts the same request_ref number. There is
+           no existing request picker to reuse, and adding one is backend work beyond a layout pass. #}
+        <label for="request-ref">Link existing request id</label>
+        <input class="input" id="request-ref" name="request_ref" type="number" required>
+      </div>
+      <div class="row"><button class="btn secondary" type="submit">Link</button></div>
+    </form>
   </div>
+</details>
+
+<h2 class="section-title">Conversation</h2>
+<div class="card thread-history">
+{% for m in messages %}
+  {# Visibility semantics unchanged — this only chooses a neutral tone for an existing state. #}
+  <article class="thread-msg{% if m.visibility == 'internal' %} internal{% elif m.sender_user_id %} staff{% else %} client{% endif %}">
+    <div class="msg-body">{{ m.body }}</div>
+    <p class="thread-msg-meta">
+      {% if m.visibility == 'internal' %}{{ ui.badge('Internal note (staff only)', 'warn') }}
+      {% elif m.sender_user_id %}{{ ui.badge('Staff', 'info') }}
+      {% else %}{{ ui.badge('Client') }}{% endif %}
+      <span class="subtle">{{ m.sent_at.strftime('%b %d, %Y %I:%M %p') if m.sent_at else '' }}</span>
+    </p>
+  </article>
 {% else %}
-  <p>No messages in this thread yet.</p>
+  <p class="subtle">No messages in this thread yet.</p>
 {% endfor %}
 </div>
 
-<h2 class="section-title" style="margin-top:1.25rem;">Reply</h2>
-<form method="post" action="/admin/client-portal/threads/{{ thread.id }}/reply" class="card" style="display:grid;gap:10px;max-width:640px;">
-  <label>Message<textarea name="body" rows="4" required></textarea></label>
-  <label><input type="checkbox" name="internal_note" value="1"> Save as internal note (not visible to the client)</label>
-  <button class="btn" type="submit">Send</button>
+<h2 class="section-title">Reply</h2>
+<form method="post" action="/admin/client-portal/threads/{{ thread.id }}/reply" class="card stack thread-reply-form">
+  <div class="field">
+    <label for="reply-body">Message</label>
+    <textarea class="input" id="reply-body" name="body" rows="5" required></textarea>
+  </div>
+  <div class="row thread-reply-options">
+    <label class="thread-internal-toggle" for="reply-internal">
+      <input type="checkbox" id="reply-internal" name="internal_note" value="1">
+      Save as internal note <span class="subtle">&mdash; not visible to the client</span>
+    </label>
+  </div>
+  <div class="row"><button class="btn" type="submit">Send</button></div>
 </form>
 {% endblock %}

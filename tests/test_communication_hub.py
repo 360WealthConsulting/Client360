@@ -982,3 +982,156 @@ def test_f8_the_typeahead_keyboard_and_accessibility_contract_is_unchanged():
                       'aria-label="Matching clients"', 'for="thread-client"'):
         assert attribute in html, f"the selector lost {attribute}"
     assert "Start typing a client's name..." in html
+
+
+# --- G. thread page layout contract ----------------------------------------------------------
+#
+# The thread page was functionally right but rendered as a raw admin form: metadata jammed on one
+# line, routing controls crushed together, message cards styled with inline hex, and the reply
+# textarea squashed by the shared .input height. This pins STRUCTURE and the behaviour it must not
+# have changed — every form action, field name and value is identical to before.
+
+def _render_thread_page(principal, thread_id):
+    from app.routes.portal_admin import portal_admin_thread
+    request = SimpleNamespace(
+        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}", principal=principal,
+                              demo_mode=False),
+        client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "pytest"},
+        query_params={}, session={},
+        url=SimpleNamespace(path=f"/admin/client-portal/threads/{thread_id}"))
+    return portal_admin_thread(thread_id, request, principal=principal).body.decode()
+
+
+def _seeded_thread(staff):
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    return hub.staff_start_thread(staff, person_id=person_id, subject="Layout check",
+                                  body="First line\nSecond line")
+
+
+def test_g1_the_thread_page_uses_the_standard_staff_conventions():
+    staff = _staff_principal()
+    html = _render_thread_page(staff, _seeded_thread(staff))
+
+    for convention in ('class="card thread-header"', 'class="stat-grid"', 'class="field"',
+                       'class="input"', 'class="row"', 'class="stack', 'class="section-title"',
+                       'class="badge'):
+        assert convention in html, f"the page does not use {convention}"
+
+
+def test_g2_the_page_introduces_no_inline_styles():
+    """Inline style attributes are blocked by the site CSP."""
+    staff = _staff_principal()
+    html = _render_thread_page(staff, _seeded_thread(staff))
+    body = html.split('<a href="/admin/client-portal/threads">', 1)[1].split("</main>", 1)[0]
+    assert "style=" not in body
+    assert "style=" not in open("app/templates/admin/portal_thread.html", encoding="utf-8").read()
+
+
+def test_g3_every_form_action_and_field_name_is_unchanged():
+    """A layout pass must not alter what any control posts."""
+    staff = _staff_principal()
+    thread_id = _seeded_thread(staff)
+    html = _render_thread_page(staff, thread_id)
+
+    base = f"/admin/client-portal/threads/{thread_id}"
+    for action in ("/resolve", "/assign", "/create-request", "/link-request", "/reply"):
+        assert f'action="{base}{action}"' in html, f"the {action} form moved or was renamed"
+    for name in ('name="action"', 'name="topic"', 'name="assigned_user_id"',
+                 'name="assigned_team_id"', 'name="title"', 'name="description"',
+                 'name="request_ref"', 'name="body"', 'name="internal_note"'):
+        assert name in html, f"the {name} control was renamed"
+    assert 'value="1"' in html and 'type="checkbox"' in html   # internal_note unchanged
+
+
+def test_g4_routing_controls_are_a_responsive_grid_not_one_crushed_row():
+    staff = _staff_principal()
+    html = _render_thread_page(staff, _seeded_thread(staff))
+
+    assert 'class="thread-control-grid"' in html
+    css = open("app/static/css/app.css", encoding="utf-8").read()
+    assert "grid-template-columns: repeat(auto-fit, minmax(190px, 1fr))" in css
+    routing = html.split('class="thread-control-grid"', 1)[1].split("</div>\n    <div class=\"row\"", 1)[0]
+    for label in ("Topic", "Assign to employee", "Assign to team"):
+        assert label in routing
+
+
+def test_g5_message_cards_distinguish_client_staff_and_internal_by_class_not_inline_colour():
+    staff = _staff_principal()
+    _, principal, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = create_thread(principal, household_id=_household_of(person_id),
+                              person_id=person_id, subject="Tri-state", body="client says hi")
+    staff_send_message(thread_id=thread_id, user_id=staff.user_id, body="staff replies")
+    staff_send_message(thread_id=thread_id, user_id=staff.user_id, body="note to self",
+                       internal_note=True)
+
+    html = _render_thread_page(staff, thread_id)
+
+    assert 'class="thread-msg client"' in html
+    assert 'class="thread-msg staff"' in html
+    assert 'class="thread-msg internal"' in html
+    for hexish in ("#fef9c3", "#eff6ff", "#f9fafb", "#6b7280"):
+        assert hexish not in html, f"inline colour {hexish} is still rendered"
+
+
+def test_g6_internal_notes_remain_staff_only_and_are_labelled():
+    """Visibility semantics unchanged: the client view still never returns the note."""
+    staff = _staff_principal()
+    _, principal, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = create_thread(principal, household_id=_household_of(person_id),
+                              person_id=person_id, subject="Note check", body="hello")
+    secret = f"INTERNAL-{uuid.uuid4().hex[:8]}"
+    staff_send_message(thread_id=thread_id, user_id=staff.user_id, body=secret, internal_note=True)
+
+    staff_html = _render_thread_page(staff, thread_id)
+    assert secret in staff_html
+    assert "Internal note (staff only)" in staff_html
+
+    assert secret not in [m["body"] for m in list_messages(principal, thread_id)]
+
+
+def test_g7_multiline_bodies_stay_escaped_and_keep_their_line_breaks():
+    staff = _staff_principal()
+    _, principal, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = create_thread(principal, household_id=_household_of(person_id),
+                              person_id=person_id, subject="Escaping",
+                              body="<script>alert(1)</script>\nsecond line")
+
+    html = _render_thread_page(staff, thread_id)
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html
+    assert 'class="msg-body"' in html          # the shared pre-wrap element
+    assert "second line" in html
+    assert "|safe" not in open("app/templates/admin/portal_thread.html", encoding="utf-8").read()
+
+
+def test_g8_the_reply_textarea_has_scoped_multiline_sizing():
+    staff = _staff_principal()
+    html = _render_thread_page(staff, _seeded_thread(staff))
+    assert 'rows="5"' in html and 'id="reply-body"' in html
+
+    css = open("app/static/css/app.css", encoding="utf-8").read()
+    assert ".thread-reply-form textarea.input { height: auto; min-height: 132px;" in css
+    # The GLOBAL textarea problem is deliberately left alone by this pass.
+    unscoped = {line.strip().split("{")[0].strip() for line in css.splitlines()
+                if line.strip().startswith(("textarea", "select", ".input")) and "{" in line}
+    assert unscoped == {".input", ".input:focus", ".input.invalid", "select.input"}, \
+        f"a shared control rule changed: {sorted(unscoped)}"
+
+
+def test_g9_the_internal_note_control_sits_apart_from_the_send_action():
+    staff = _staff_principal()
+    html = _render_thread_page(staff, _seeded_thread(staff))
+    form = html.split('class="card stack thread-reply-form"', 1)[1].split("</form>", 1)[0]
+
+    assert 'class="thread-internal-toggle"' in form
+    assert "not visible to the client" in form
+    # Message field, then the option row, then the action — three separate rows.
+    assert form.index('id="reply-body"') < form.index("thread-internal-toggle") \
+        < form.index('type="submit"')
+
+
+def _household_of(person_id):
+    with engine.connect() as c:
+        return c.execute(select(people.c.household_id).where(
+            people.c.id == person_id)).scalar_one()
