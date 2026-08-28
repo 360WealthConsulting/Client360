@@ -159,7 +159,14 @@ _PROFILE_FILL_FIELDS = (
 #   conflict_singular — singular/business-unique ownership (unique on person_id alone, or one-per-person):
 #                       if BOTH own a row it is a BLOCKER; if only the duplicate does, reassign.
 #   block_if_present  — legal / governance history: if the duplicate is referenced at all, BLOCK.
-# The registry covers every FK to people.id; a final re-scan guarantees nothing was missed.
+#   read_model        — a DERIVED projection row (rm_*): never moved, always deleted. Moving it would
+#                       carry the duplicate's counters onto the survivor and corrupt the rollup; the
+#                       projection rebuilds it from the authoritative tables.
+# The registry covers every hard FK to people.id AND the SOFT references that carry no database FK
+# (person_notes, drake_identity, …). A soft reference is the more dangerous kind: nothing stops the
+# duplicate being deleted out from under it, so it fails silently rather than loudly.
+# tests/test_person_merge_registry.py introspects the live schema and fails if a new FK is added
+# without a decision here. A final re-scan then guarantees nothing was missed at run time.
 _REGISTRY = [
     # --- B. Deduplicating junctions -------------------------------------------------------
     ("person_source_links", "person_id", "dedup", ("source_contact_id",)),
@@ -169,11 +176,16 @@ _REGISTRY = [
     ("opportunity_participants", "person_id", "dedup", ("opportunity_id",)),
     ("match_queue", "candidate_person_id", "dedup", ("source_contact_id",)),
     ("microsoft_document_matching_rules", "person_id", "dedup", ("rule_type", "pattern")),
+    # UNIQUE(identifier_hash, person_id) — both people may be candidates for the same Drake identity.
+    ("drake_identity_match_candidates", "person_id", "dedup", ("identifier_hash",)),
     ("portal_access_grants", "person_id", "dedup",
      ("portal_account_id", "household_id", "access_type", "effective_date")),
     # --- C. Singular / conflict-sensitive ownership ---------------------------------------
     ("relationship_entities", "person_id", "conflict_singular", None),   # UNIQUE(person_id)
     ("portal_accounts", "person_id", "conflict_singular", None),         # one portal account per person
+    ("person_permanent_notes", "person_id", "conflict_singular", None),  # UNIQUE(person_id)
+    # --- D. Derived read models: delete, never move (the projection rebuilds them) ----------
+    ("rm_people_summary", "person_id", "read_model", None),              # UNIQUE(person_id), rollup
     # --- Legal / governance history: refuse to merge a person entangled in these -----------
     ("governance_legal_holds", "person_id", "block_if_present", None),
     ("governance_deletion_requests", "person_id", "block_if_present", None),
@@ -189,6 +201,11 @@ _REGISTRY = [
     ("communication_conversations", "person_id", "simple", None),
     ("compliance_reviews", "person_id", "simple", None),
     ("documents", "person_id", "simple", None),
+    # No unique index involves person_id on any of these four, so a plain reassignment is safe.
+    ("drake_identity", "primary_person_id", "simple", None),             # UNIQUE(identifier_hash) only
+    ("orchestration_instances", "person_id", "simple", None),            # UNIQUE(id, idempotency_key)
+    ("payroll_employees", "person_id", "simple", None),                  # FK was ON DELETE SET NULL
+    ("person_notes", "person_id", "simple", None),                       # append-only; indexes non-unique
     ("engagements", "person_id", "simple", None),
     ("exceptions", "person_id", "simple", None),
     ("governance_cases", "person_id", "simple", None),
@@ -226,6 +243,139 @@ def _history_table_available(conn) -> bool:
     """Whether the pmh01 person_merge_history table exists. preview_person_merge never needs it; an
     APPLIED merge_people does (it records history) and refuses clearly when the migration is absent."""
     return conn.execute(text("SELECT to_regclass('person_merge_history')")).scalar() is not None
+
+
+#: References the merge deliberately leaves pointing at the RETIRED id. Merge history exists to
+#: record what was merged, so rewriting it would erase the lineage the redirect depends on.
+_RESCAN_EXEMPT = {("person_merge_history", "merged_person_id"),
+                  ("person_merge_history", "survivor_person_id")}
+
+_PERSON_REFERENCE_SQL = """
+SELECT tc.table_name, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name
+WHERE tc.constraint_type = 'FOREIGN KEY'
+  AND ccu.table_name = 'people' AND ccu.column_name = 'id'
+UNION
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (column_name LIKE '%person_id%' OR column_name LIKE '%_person')
+"""
+
+
+_PERSON_REFERENCE_CACHE = []
+
+
+def _person_references(conn):
+    """Every column that can point at a person — hard FK or not — straight from the live schema.
+
+    Deliberately NOT derived from ``_REGISTRY``: a re-scan that only re-reads the registry cannot
+    detect the one failure that matters, a table nobody registered. Reading the schema makes the
+    scan an independent check rather than a restatement of the plan."""
+    if not _PERSON_REFERENCE_CACHE:
+        _PERSON_REFERENCE_CACHE.extend(
+            sorted({(t, c) for t, c in conn.execute(text(_PERSON_REFERENCE_SQL))}
+                   - _RESCAN_EXEMPT))
+    return list(_PERSON_REFERENCE_CACHE)
+
+
+def _remaining_references(conn, person_id):
+    """Every reference still pointing at ``person_id``, in ONE round trip.
+
+    A count per reference would be ~60 queries on every merge, which the bulk MDM consolidator pays
+    for each pair; a single UNION ALL keeps the safety net cheap enough to always run."""
+    refs = [(t, c) for t, c in _person_references(conn) if _table_exists(conn, t)]
+    if not refs:
+        return {}
+    union = " UNION ALL ".join(
+        f"SELECT '{t}.{c}' AS ref, count(*) AS n FROM {t} WHERE {c} = :pid" for t, c in refs)
+    rows = conn.execute(text(f"SELECT ref, n FROM ({union}) s WHERE n > 0"),
+                        {"pid": person_id}).mappings().all()
+    return {r["ref"]: r["n"] for r in rows}
+
+
+def _table_exists(conn, table) -> bool:
+    """A registry entry for a table this deployment has not migrated yet must not abort a merge."""
+    return conn.execute(text("SELECT to_regclass(:t)"), {"t": table}).scalar() is not None
+
+
+def _canonical_display_name(row) -> str:
+    """full_name, else first + last, else a neutral label. Never "Person <id>".
+
+    The same rule the search surface uses. relationship_entities.name is a SNAPSHOT written when the
+    entity row was created, so after a merge it can still show the duplicate's name — or the literal
+    "Person <id>" that ensure_person_entity falls back to when full_name was null."""
+    if row is None:
+        return "Unnamed person"
+    for candidate in (row.get("full_name"),
+                      " ".join(p for p in (row.get("first_name"), row.get("last_name")) if p)):
+        if (candidate or "").strip():
+            return candidate.strip()
+    return "Unnamed person"
+
+
+#: Deterministic precedence when both people link the SAME source contact. A confirmed link beats an
+#: unconfirmed one; then the higher match score; then the earlier link, which is the one the rest of
+#: the system has been treating as authoritative.
+def _link_rank(link):
+    return (0 if link.get("confirmed") else 1,
+            -(link.get("match_score") or 0),
+            link.get("created_at") or 0)
+
+
+def _resolve_source_link_collisions(conn, survivor_id, duplicate_id):
+    """Keep the BEST provenance when both people link the same source contact.
+
+    The generic dedup deletes the duplicate's colliding row, which silently discarded a confirmed or
+    higher-scoring link if the survivor's happened to be weaker. Here the winning provenance is
+    copied onto the survivor's row first, and BOTH links are recorded so the merge history shows what
+    existed rather than only what survived. No duplicate link is ever created."""
+    rows = conn.execute(text(
+        "SELECT id, person_id, source_contact_id, match_method, match_score, confirmed, created_at "
+        "FROM person_source_links WHERE person_id IN (:surv, :dup) "
+        "AND source_contact_id IN (SELECT source_contact_id FROM person_source_links "
+        "                          WHERE person_id = :surv "
+        "                          INTERSECT "
+        "                          SELECT source_contact_id FROM person_source_links "
+        "                          WHERE person_id = :dup)"),
+        {"surv": survivor_id, "dup": duplicate_id}).mappings().all()
+    resolved = []
+    by_contact = {}
+    for row in rows:
+        by_contact.setdefault(row["source_contact_id"], []).append(dict(row))
+    for contact_id, links in by_contact.items():
+        survivor_link = next((l for l in links if l["person_id"] == survivor_id), None)
+        duplicate_link = next((l for l in links if l["person_id"] == duplicate_id), None)
+        if survivor_link is None or duplicate_link is None:
+            continue
+        winner = min((survivor_link, duplicate_link), key=_link_rank)
+        if winner is duplicate_link:
+            conn.execute(text(
+                "UPDATE person_source_links SET match_method = :m, match_score = :s, "
+                "confirmed = :c WHERE id = :id"),
+                {"m": duplicate_link["match_method"], "s": duplicate_link["match_score"],
+                 "c": duplicate_link["confirmed"], "id": survivor_link["id"]})
+        resolved.append({
+            "source_contact_id": contact_id,
+            "kept_from": "duplicate" if winner is duplicate_link else "survivor",
+            "survivor_link": {k: str(survivor_link.get(k)) for k in
+                              ("match_method", "match_score", "confirmed")},
+            "duplicate_link": {k: str(duplicate_link.get(k)) for k in
+                               ("match_method", "match_score", "confirmed")}})
+    return resolved
+
+
+def _refresh_person_entity_name(conn, survivor_id):
+    """Re-derive ONLY the survivor's person entity display name from the canonical people row."""
+    person = _person(conn, survivor_id)
+    name = _canonical_display_name(dict(person) if person is not None else None)
+    conn.execute(text(
+        "UPDATE relationship_entities SET name = :name "
+        "WHERE person_id = :pid AND entity_type = 'person'"),
+        {"name": name, "pid": survivor_id})
+    return name
 
 
 def _person(conn, pid, *, lock=False):
@@ -302,9 +452,17 @@ def _build_report(conn, survivor_id, duplicate_id):
                 f"{f}: survivor keeps '{sv}' (duplicate '{dv}' not applied)")
 
     for table, col, strategy, extra in _REGISTRY:
+        if not _table_exists(conn, table):
+            continue
         n = _count(conn, table, col, duplicate_id)
         if n:
             report["foreign_key_row_counts"][f"{table}.{col}"] = n
+        if strategy == "read_model":
+            if n:
+                report["dedup_actions"].append(
+                    {"table": table, "column": col, "reassign": 0, "consolidate": n,
+                     "note": "derived projection row discarded; rebuilt from source"})
+            continue
         if strategy == "dedup":
             move, consolidate = _dedup_counts(conn, table, col, extra, survivor_id, duplicate_id)
             if move or consolidate:
@@ -395,9 +553,22 @@ def merge_people(survivor_person_id: int, duplicate_person_id: int, *, reason: s
             conn.execute(text(f"UPDATE people SET {sets} WHERE id = :sid"), {**fills, "sid": survivor_id})
             summary["profile_filled"] = {k: str(v) for k, v in fills.items()}
 
-        # 2) Handle every FK reference via the explicit registry.
+        # 2a) Resolve source-link provenance BEFORE the generic dedup deletes the losing row.
+        summary["source_link_provenance"] = _resolve_source_link_collisions(
+            conn, survivor_id, duplicate_id)
+
+        # 2b) Handle every reference via the explicit registry.
         for table, col, strategy, extra in _REGISTRY:
-            if strategy == "simple":
+            if not _table_exists(conn, table):
+                continue
+            if strategy == "read_model":
+                # Derived rows are discarded, never moved: the duplicate's counters are not the
+                # survivor's, and the projection rebuilds from the authoritative tables.
+                n = conn.execute(text(f"DELETE FROM {table} WHERE {col} = :dup"),
+                                 {"dup": duplicate_id}).rowcount or 0
+                if n:
+                    summary["consolidated"][f"{table}.{col}"] = n
+            elif strategy == "simple":
                 n = conn.execute(text(f"UPDATE {table} SET {col} = :surv WHERE {col} = :dup"),
                                  {"surv": survivor_id, "dup": duplicate_id}).rowcount or 0
                 if n:
@@ -418,14 +589,22 @@ def merge_people(survivor_person_id: int, duplicate_person_id: int, *, reason: s
 
         # 3) Final safety net: no reference to the duplicate may remain before it is removed, or a
         #    CASCADE/SET NULL delete could silently damage business records.
-        remaining = {f"{t}.{c}": _count(conn, t, c, duplicate_id)
-                     for t, c, _s, _e in _REGISTRY if _count(conn, t, c, duplicate_id)}
+        # Schema-driven, not registry-driven: covers HARD FKs and SOFT references alike, including
+        # any table nobody remembered to register. A soft reference has no database constraint to
+        # catch it, so this scan is the only thing standing between a merge and a silent orphan.
+        remaining = _remaining_references(conn, duplicate_id)
         if remaining:
             raise MergeBlocked(f"references to the duplicate still remain, refusing to delete: {remaining}")
 
+        # 3b) The entity display name is a snapshot: re-derive it now that the survivor's profile
+        #     fields are final and any entity row has been reassigned.
+        summary["entity_display_name"] = _refresh_person_entity_name(conn, survivor_id)
+
         # 4) Record permanent merge history (survives deletion of the duplicate row — no FK on ids).
         summary["applied"] = True
-        merge_summary = {k: summary[k] for k in ("reassigned", "consolidated", "profile_filled")}
+        merge_summary = {k: summary[k] for k in
+                         ("reassigned", "consolidated", "profile_filled",
+                          "source_link_provenance", "entity_display_name")}
         conn.execute(text(
             "INSERT INTO person_merge_history "
             "(survivor_person_id, merged_person_id, reason, merge_method, actor_user_id, "
@@ -435,11 +614,25 @@ def merge_people(survivor_person_id: int, duplicate_person_id: int, *, reason: s
              "method": "manual_review", "actor": actor_user_id,
              "snap": _json(pre_snapshot), "sum": _json(merge_summary)})
 
-        # 5) Publish the identity fact within the same transaction (transactional outbox).
+        # 5) Publish the identity facts within the same transaction (transactional outbox).
         from app.services.events import publisher
         publisher.publish_safe(
             "people.person_merged",
             {"survivor_person_id": survivor_id, "merged_person_id": duplicate_id},
+            conn=conn, producer="people.merge", subject_ref=f"person:{survivor_id}")
+        # ``people.person_merged`` has NO subscriber: the people.summary projection listens for
+        # ``people.identity_merged`` (the same fact merge_source_contacts already publishes), so a
+        # person merge left the survivor's read-model row untouched — and absent entirely when the
+        # survivor had none. Publishing the subscribed type puts the fact in the outbox, which is
+        # what makes a later rebuild/replay reach the SAME state; step 8 then drains it immediately
+        # so the read model is not merely eventually correct.
+        # The contract requires source_contact_count; publish_safe SWALLOWS a contract violation, so
+        # an incomplete payload would fail silently and leave the projection stale with no error.
+        folded_links = (summary["reassigned"].get("person_source_links.person_id", 0)
+                        + summary["consolidated"].get("person_source_links.person_id", 0))
+        publisher.publish_safe(
+            "people.identity_merged",
+            {"person_id": survivor_id, "source_contact_count": folded_links},
             conn=conn, producer="people.merge", subject_ref=f"person:{survivor_id}")
 
         # 6) Remove the now-unreferenced duplicate person.
@@ -457,6 +650,22 @@ def merge_people(survivor_person_id: int, duplicate_person_id: int, *, reason: s
                       "reassigned": summary["reassigned"], "consolidated": summary["consolidated"]})
     except Exception:      # noqa: BLE001 — audit failure must not undo a committed, valid merge
         summary["audit_warning"] = "audit event could not be written"
+
+    # 8) Drain the people.summary projection now, so the read model is consistent immediately after
+    #    the merge rather than at the next scheduled tick. This calls the EXISTING projection engine
+    #    over the event published in step 5 — no projection logic is reimplemented here, and the
+    #    outbox remains the source of truth, so a rebuild reproduces exactly this state.
+    #    Deliberately AFTER the commit: the read model is disposable and must never be able to roll
+    #    back an authoritative merge. process() isolates per-event failures and never raises into a
+    #    caller; if it somehow cannot run, the projection is merely lagging and the normal tick
+    #    catches up, which is recorded rather than hidden.
+    try:
+        from app.services.projections import engine as projection_engine
+        result = projection_engine.process("people.summary")
+        summary["projection_refreshed"] = {"projection": "people.summary",
+                                           "events_processed": (result or {}).get("processed")}
+    except Exception:      # noqa: BLE001 — a disposable read model never invalidates a merge
+        summary["projection_warning"] = "people.summary projection could not be refreshed"
     return summary
 
 

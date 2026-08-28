@@ -73,6 +73,43 @@ def _drake_returns_for_person(person_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _merged_into(person_id: int, principal):
+    """The survivor a MERGED person was folded into, or None.
+
+    Deliberately narrow. It redirects only when all three hold:
+
+      * ``person_merge_history`` records this id as a merged person — an inactive, archived or
+        simply out-of-scope client is NOT redirected, only a retired duplicate;
+      * the ``people`` row is genuinely gone, which is what a completed merge leaves behind. If a
+        row still exists, ``get_workspace`` returned None for a scope reason and the 404 stands;
+      * exactly ONE distinct survivor is recorded, and the principal may actually open it.
+
+    The scope check is what stops this becoming an existence oracle: without it, a redirect would
+    reveal that some id had been merged into a record the viewer is not allowed to see. When it
+    fails, the caller keeps the ordinary 404 and learns nothing."""
+    from sqlalchemy import text as _text
+
+    from app.db import engine as _engine
+    from app.security.authorization import record_in_scope
+
+    try:
+        with _engine.connect() as conn:
+            if conn.execute(_text("SELECT 1 FROM people WHERE id = :pid"),
+                            {"pid": person_id}).first() is not None:
+                return None                       # still exists — not a merge, do not redirect
+            survivors = conn.execute(_text(
+                "SELECT DISTINCT survivor_person_id FROM person_merge_history "
+                "WHERE merged_person_id = :pid"), {"pid": person_id}).scalars().all()
+    except Exception:                             # noqa: BLE001 — history absent/unreadable
+        return None
+    if len(survivors) != 1:
+        return None                               # unknown or ambiguous lineage — keep the 404
+    survivor_id = survivors[0]
+    if not record_in_scope(principal, "person", survivor_id):
+        return None
+    return survivor_id
+
+
 def _render(request, ws, principal, tab):
     tabs = [s for s in ws["section_keys"]]
     active = tab if tab in tabs else (tabs[0] if tabs else "summary")
@@ -216,6 +253,11 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
                   "status": status, "year": year, "doc": doc}
     ws = get_workspace(principal, person_id=person_id, vault_view=vault_view)
     if ws is None:
+        survivor_id = _merged_into(person_id, principal)
+        if survivor_id is not None:
+            # A retired duplicate: send staff to the record that absorbed it, so old links, bookmarks
+            # and emailed URLs keep working instead of dead-ending.
+            return RedirectResponse(f"/client/{survivor_id}", status_code=303)
         return render_error(request, 404, detail="Client not found.")
     ws["drake_returns"] = _drake_returns_for_person(person_id)
     return _render(request, ws, principal, tab)
