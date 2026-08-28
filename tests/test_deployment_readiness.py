@@ -91,7 +91,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "b5d82e04c917"   # signoff/MFA governed as feature flags
+    assert migrate.target_head() == "e1c7a94b2f30"   # portal email one-time-code verification
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():

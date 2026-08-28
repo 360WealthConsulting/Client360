@@ -58,16 +58,25 @@ def revoke_account_access(connection, account_id, *, now=None):
     grants = connection.execute(portal_access_grants.update().where(
         portal_access_grants.c.portal_account_id == account_id,
         portal_access_grants.c.inactive_date.is_(None)).values(inactive_date=today)).rowcount
+    # An emailed one-time code is a live credential exactly like an invitation, so it dies here too:
+    # a revoked client with a code already in their inbox must not be able to complete a sign-in.
+    from app.portal.email_auth import invalidate_codes
+    codes = invalidate_codes(connection, account_id, now=now)
     return {"invitations_revoked": invitations, "sessions_revoked": sessions,
-            "grants_inactivated": grants}
+            "grants_inactivated": grants, "codes_invalidated": codes}
 
+
+#: How long a client portal invitation stays usable. Seven days, not three: an invitation that
+#: expires over a long weekend is a support call and a re-invite, and the credential is single-use,
+#: bound to one account and delivered to one mailbox — the short window was not what protected it.
+INVITATION_TTL_HOURS = 168
 
 #: Staff-facing wording for a live account that blocks a new invitation.
 _LIVE_ACCOUNT_WORDS = {"active": "an active portal account",
                        "invited": "a pending portal invitation"}
 
 
-def invite_portal_account(*, person_id, household_id, email, display_name, access_type, invited_by_user_id, permissions=None, expires_hours=72, organization_id=None):
+def invite_portal_account(*, person_id, household_id, email, display_name, access_type, invited_by_user_id, permissions=None, expires_hours=INVITATION_TTL_HOURS, organization_id=None):
     """Invite a client, or RE-INVITE a previously revoked account.
 
     ``portal_accounts.normalized_email`` is UNIQUE and revoking deliberately leaves the account row
@@ -158,7 +167,39 @@ def accept_invitation(token, auth_subject, mfa_verified):
         if not invitation: raise ValueError("Invitation is invalid or expired")
         if not mfa_verified: raise ValueError("MFA verification is required")
         connection.execute(portal_invitations.update().where(portal_invitations.c.id == invitation["id"]).values(accepted_at=now))
-        connection.execute(portal_accounts.update().where(portal_accounts.c.id == invitation["portal_account_id"]).values(status="active", auth_subject=auth_subject, mfa_enabled=True, updated_at=now))
+        connection.execute(portal_accounts.update().where(portal_accounts.c.id == invitation["portal_account_id"]).values(status="active", auth_subject=auth_subject, mfa_enabled=True, updated_at=now, auth_method="microsoft"))
+    return invitation["portal_account_id"]
+
+
+def accept_invitation_row(connection, invitation_id, *, now=None, auth_method="email_code"):
+    """Accept one invitation BY ID inside the caller's transaction, with no external subject.
+
+    The email one-time-code flow has already proved possession of the invited mailbox by the time it
+    calls this, so there is no identity-provider subject to bind and none is invented:
+    ``auth_subject`` stays NULL and ``auth_method`` records how the account actually authenticates.
+    ``auth_subject`` therefore keeps its original, provider-specific meaning rather than becoming a
+    field that sometimes holds an email address.
+
+    Deliberately connection-scoped: consuming the code and accepting the invitation must commit
+    together, or a client could spend a code against an invitation that was revoked microseconds
+    earlier. Returns the account id, or None when the invitation is no longer usable."""
+    now = now or datetime.now(timezone.utc)
+    invitation = connection.execute(select(portal_invitations).where(
+        portal_invitations.c.id == invitation_id,
+        portal_invitations.c.accepted_at.is_(None),
+        portal_invitations.c.revoked_at.is_(None),
+        portal_invitations.c.expires_at > now).with_for_update()).mappings().one_or_none()
+    if not invitation:
+        return None
+    connection.execute(portal_invitations.update().where(
+        portal_invitations.c.id == invitation["id"]).values(accepted_at=now))
+    # ``mfa_enabled`` keeps its column name but now records "this sign-in was VERIFIED": a code was
+    # emailed to the address on the account and typed back. It is NOT a claim that two distinct
+    # factors were presented — possession of the registered mailbox is the factor. Renaming the
+    # column would need a migration for no behavioural change, so the meaning is documented instead.
+    connection.execute(portal_accounts.update().where(
+        portal_accounts.c.id == invitation["portal_account_id"]).values(
+        status="active", mfa_enabled=True, auth_method=auth_method, updated_at=now))
     return invitation["portal_account_id"]
 
 def request_password_reset(email, expires_minutes=30):

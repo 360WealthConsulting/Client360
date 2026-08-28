@@ -288,18 +288,6 @@ def test_the_json_invite_endpoint_still_returns_no_token():
     assert "raw_token" not in src and "_activation_url" not in src
 
 
-def test_microsoft_activation_still_consumes_the_invitation_through_the_callback(canonical_origin):
-    """The existing authorization-code path is unchanged: the callback pops the session invitation
-    and calls accept_invitation with the verified subject."""
-    import inspect
-
-    from app.routes import portal as portal_routes
-    src = inspect.getsource(portal_routes.portal_auth_callback)
-    assert 'request.session.pop("portal_oidc_invitation", None)' in src
-    assert "accept_invitation(invitation, identity.subject, identity.mfa_verified)" in src
-    assert "verify_activation" not in src, "the refused posted-assertion path reappeared"
-
-
 def test_repeat_sign_in_for_an_already_bound_account_is_unaffected(canonical_origin):
     """An accepted account signs in by immutable subject — no invitation involved, before or after."""
     from app.portal.service import sign_in_with_subject

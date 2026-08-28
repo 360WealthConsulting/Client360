@@ -1,4 +1,3 @@
-import logging
 from typing import Optional
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -32,69 +31,6 @@ from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
 router = APIRouter(tags=["client-portal"])
 templates = Jinja2Templates(directory="app/templates")
 
-logger = logging.getLogger("client360.portal.auth")
-
-# ---------------------------------------------------------------------------------------------
-# TEMPORARY PRODUCTION DIAGNOSTIC — portal_auth_callback only.
-#
-# The callback funnels every failure into one generic redirect, which is correct for the browser
-# but leaves an operator with no way to tell a canonical-origin misconfiguration from a token
-# exchange rejection from a spent invitation. This records WHICH STAGE failed and the exception's
-# CLASS NAME. Nothing else.
-#
-# It is deliberately incapable of leaking: the log line is a fixed format string whose only
-# variables are (a) a stage literal from _AUTH_STAGES below, (b) ``type(exc).__name__``, and
-# (c) a category looked up from the exception's class hierarchy. The exception's message, args,
-# attributes, traceback and cause are never read. No request data of any kind is touched.
-#
-# TO REMOVE once the production cause is known: delete _AUTH_STAGES, _AUTH_FAILURE_CATEGORIES,
-# _auth_failure_category, _log_auth_failure, the ``stage =`` assignments in portal_auth_callback,
-# and the two _log_auth_failure calls. Nothing else depends on them.
-# ---------------------------------------------------------------------------------------------
-
-#: Every stage label that may appear in the diagnostic. Fixed literals — never derived from input.
-_AUTH_STAGES = ("state_validation", "provider_lookup", "redirect_uri", "exchange_code",
-                "accept_invitation", "sign_in_with_subject", "create_portal_session")
-
-#: Exception CLASS NAME -> coarse category. Matched against the class hierarchy so subclasses
-#: (e.g. requests' ConnectTimeout under RequestException) resolve without importing anything.
-_AUTH_FAILURE_CATEGORIES = {
-    "CanonicalOriginError": "configuration",
-    "NotImplementedError": "configuration",
-    "KeyError": "configuration",
-    "ValueError": "validation",
-    "PermissionError": "authorization",
-    "TimeoutError": "network",
-    "ConnectionError": "network",
-    "SSLError": "network",
-    "HTTPError": "network",
-    "RequestException": "network",
-}
-
-
-def _auth_failure_category(exc) -> str:
-    """A category derived ONLY from the exception's class hierarchy.
-
-    The message, ``args``, attributes and ``__cause__`` are never inspected, so a value carried in
-    an exception (a URL, a subject, a token fragment) cannot reach the log through this."""
-    for klass in type(exc).__mro__:
-        category = _AUTH_FAILURE_CATEGORIES.get(klass.__name__)
-        if category:
-            return category
-    return "unexpected"
-
-
-def _log_auth_failure(stage: str, exception_name: str, category: str = "") -> None:
-    """Emit the one fixed-format diagnostic line. Never raises — diagnostics must not be able to
-    turn a handled auth failure into a 500."""
-    try:
-        if stage not in _AUTH_STAGES:                    # only known literals are ever emitted
-            stage = "unknown"
-        logger.warning("portal_auth_callback_failed stage=%s exception=%s category=%s",
-                       stage, exception_name, category or "n/a")
-    except Exception:                                    # noqa: BLE001 — logging is best-effort
-        pass
-
 def current_portal(request: Request):
     principal = getattr(request.state, "portal_principal", None)
     if not principal: raise HTTPException(401, "Portal authentication required")
@@ -111,168 +47,171 @@ class ConsentAction(BaseModel): consent_type: str; version: str = "v1"; accepted
 class ConsentWithdraw(BaseModel): consent_type: str
 class AppointmentRequest(BaseModel): person_id: int; household_id: int; preferred_window: str | None = None; reason: str | None = None
 
-def _production_provider_key():
-    """The provider key used for real external sign-in."""
-    from app.portal.identity_microsoft import MICROSOFT_PROVIDER_KEY
-    return MICROSOFT_PROVIDER_KEY
-
-
-def _production_identity_provider_available() -> bool:
-    """Whether the REAL external identity provider is registered and usable for sign-in.
-
-    Deliberately NOT ``production_ready()``: that also requires ``portal.enabled`` and
-    ``portal.production_signed_off``, which govern whether client data may be exposed at all. Whether
-    anyone CAN authenticate and whether the portal is authorized to serve data are separate concerns,
-    and conflating them is what left a fully configured IdP behind a "configuration is required"
-    message. The gates still apply on every authenticated request, and ``/portal/auth/start`` repeats
-    this lookup and fails closed on its own.
-
-    The local/test provider can never satisfy this: it registers under a different key and is
-    ``production_capable = False``, so it is excluded by ``production_capable()``."""
-    return _production_provider_key() in PORTAL_IDENTITY_PROVIDERS.production_capable()
-
-
-#: The ONLY sign-in error codes the login page renders, each mapped to a fixed, client-safe sentence.
-#: The codes are exactly the two ``/portal/auth/start`` and ``/portal/auth/callback`` already redirect
-#: with. The mapping is a closed allow-list, so nothing from the query string ever reaches the
-#: document: an unknown or attacker-supplied value resolves to None and the page renders as if fresh.
-#:
-#: Both messages are deliberately uninformative. ``failed`` covers bad state, bad nonce, bad
-#: signature, bad issuer/audience, an expired token, an unknown subject, a revoked account and a
-#: failed MFA check alike — the callback maps all of them to one redirect precisely so the browser
-#: cannot distinguish them, and this page must not undo that.
 PORTAL_LOGIN_ERRORS = {
     "unavailable": ("Secure sign-in is temporarily unavailable. Please try again later or contact "
                     "your advisory team."),
     "failed": "Sign-in could not be completed. Please try again.",
+    "invitation": ("That invitation link is no longer valid. It may have expired or already been "
+                   "used. Please contact your advisory team for a new one."),
 }
+
+
+#: Server-side state for an open email-code challenge. The ACCOUNT is held here, in the signed
+#: session, and never in a form field or a URL — so the browser cannot point a verification at
+#: another account, and cannot change where a code was sent.
+AUTH_ACCOUNT_KEY = "portal_auth_account_id"
+AUTH_EMAIL_KEY = "portal_auth_email"          # masked for display only, never the full address
+AUTH_INVITATION_KEY = "portal_invitation"
+
+
+def _mask_email(address: str) -> str:
+    """``mi••••@360wealthconsulting.com`` — enough for the client to recognise their own mailbox,
+    not enough to disclose an address to someone who guessed their way onto the screen."""
+    address = (address or "").strip()
+    if "@" not in address:
+        return ""
+    local, _, domain = address.partition("@")
+    keep = local[:2] if len(local) > 3 else local[:1]
+    return f"{keep}{'•' * max(3, len(local) - len(keep))}@{domain}"
+
+
+def _verify_context(request, *, error=None, notice=None):
+    return {"masked_email": request.session.get(AUTH_EMAIL_KEY, ""),
+            "error": error, "notice": notice}
 
 
 @router.get("/portal/login", response_class=HTMLResponse)
 def portal_login(request: Request, invitation: str | None = None, error: str | None = None):
-    """Public sign-in landing page.
+    """Public client sign-in: enter the email address the firm holds for you.
 
-    Renders the external sign-in action only when the production provider is actually registered;
-    otherwise it keeps the existing fail-closed configuration message. An optional ``invitation``
-    token is forwarded to ``/portal/auth/start`` unchanged — that route holds it server-side in the
-    browser session and never passes it to the IdP.
+    Clients authenticate by proving they hold the mailbox the firm invited. There is no external
+    identity provider in the client flow at all — the routes that used one have been removed.
+
+    An ``invitation`` parameter (an old activation link) is forwarded to ``/portal/activate`` rather
+    than rendered, so existing links in client inboxes keep working.
 
     An optional ``error`` code is resolved through :data:`PORTAL_LOGIN_ERRORS` to a fixed message;
     the raw value is never rendered, and an unrecognised code is ignored entirely."""
-    auth_start_url = "/portal/auth/start"
     if invitation:
-        auth_start_url += f"?invitation={quote(invitation, safe='')}"
-    error_message = PORTAL_LOGIN_ERRORS.get(error or "")
+        return RedirectResponse(f"/portal/activate?invitation={quote(invitation, safe='')}", 303)
     return templates.TemplateResponse(request=request, name="portal/login.html", context={
-        "identity_provider_available": _production_identity_provider_available(),
-        "auth_start_url": auth_start_url,
-        "error": error_message,          # the resolved sentence, never the submitted code
+        "error": PORTAL_LOGIN_ERRORS.get(error or ""),   # resolved sentence, never the raw code
     })
 
-@router.get("/portal/auth/start")
-def portal_auth_start(request: Request, invitation: str | None = None):
-    """Begin external sign-in: mint state/nonce/PKCE server-side and redirect to the IdP.
 
-    ``state``, ``nonce`` and the PKCE verifier are held in the browser session and never given to the
-    client as parameters, so a callback cannot be replayed into a different session. An optional
-    ``invitation`` token is carried in the session (not the redirect) for first-time activation.
+@router.post("/portal/login")
+def portal_login_submit(request: Request, email: str = Form(default="")):
+    """Email a sign-in code, or appear to.
 
-    Refuses BEFORE anything is minted when the portal is not production-ready. The portal auth routes
-    are exempt from the portal gate (they run pre-session), so without this check a client could
-    complete the whole Microsoft flow and have ``accept_invitation`` spend their single-use token —
-    binding their subject and activating the account — only to be refused at ``/portal`` by the gate.
-    The invitation would be gone and the client would have seen a failure. Checked first, so no state,
-    nonce, verifier or OIDC transaction is created and the invitation stays unconsumed."""
-    import base64
-    import hashlib
-    import secrets
+    The response is IDENTICAL whether the address has an active portal account, has a revoked one, or
+    has never existed: same redirect, same message, same screen. That is what stops this form being
+    used to discover who is a client. The address is used only to look up an account — it is never
+    written to an account, and it never becomes a destination on its own."""
+    from app.portal import email_auth
 
-    from app.portal.gate import production_ready
-    from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
-    from app.security.origin import CanonicalOriginError, external_url
+    account_id, _delivery = email_auth.start_login(email)
+    if account_id is not None:
+        request.session[AUTH_ACCOUNT_KEY] = account_id
+        request.session[AUTH_EMAIL_KEY] = _mask_email(email)
+    else:
+        # No account: still show the code screen, with no challenge behind it. A wrong code there
+        # fails exactly like a wrong code against a real account.
+        request.session.pop(AUTH_ACCOUNT_KEY, None)
+        request.session[AUTH_EMAIL_KEY] = _mask_email(email)
+    return RedirectResponse("/portal/verify?sent=1", 303)
 
-    if not production_ready():
-        # Same generic code the other unavailable paths use: the browser learns nothing about which
-        # gate is closed.
-        return RedirectResponse("/portal/login?error=unavailable", 303)
 
-    try:
-        provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
-        # Built from the configured canonical origin, never the inbound Host header: the IdP matches
-        # this string exactly and the token exchange must repeat it byte for byte.
-        redirect_uri = external_url(request, "portal_auth_callback")
-    except (ValueError, CanonicalOriginError):
-        return RedirectResponse("/portal/login?error=unavailable", 303)
+@router.get("/portal/activate", response_class=HTMLResponse)
+def portal_activate(request: Request, invitation: str | None = None):
+    """Land from the invitation email and send the first verification code.
 
-    state = secrets.token_urlsafe(32)
-    nonce = secrets.token_urlsafe(32)
-    verifier = secrets.token_urlsafe(64)
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode("ascii")).digest()).decode("ascii").rstrip("=")
-    request.session["portal_oidc_state"] = state
-    request.session["portal_oidc_nonce"] = nonce
-    request.session["portal_oidc_verifier"] = verifier
+    The invitation token arrives in the link and is immediately moved into the session, then the
+    browser is redirected to a CLEAN url — so the credential leaves the address bar, browser history,
+    the referrer header and any proxy log after one hop.
+
+    The invitation is NOT consumed here. Only a correct code spends it, so a mail scanner or link
+    prefetcher that fetches this URL cannot burn a client's activation."""
+    from app.portal import email_auth
+
     if invitation:
-        request.session["portal_oidc_invitation"] = invitation
-    try:
-        url = provider.authorization_url(
-            state=state, nonce=nonce, redirect_uri=redirect_uri,
-            code_challenge=challenge)
-    except Exception:
-        return RedirectResponse("/portal/login?error=unavailable", 303)
-    return RedirectResponse(url, 303)
+        request.session[AUTH_INVITATION_KEY] = invitation
+        return RedirectResponse("/portal/activate", 303)
 
-
-@router.get("/portal/auth/callback", name="portal_auth_callback")
-def portal_auth_callback(request: Request, code: str | None = None, state: str | None = None):
-    """Validate the callback, bind the immutable subject and establish a portal session.
-
-    Every failure returns the SAME generic redirect: the reason (bad state, bad token, missing MFA,
-    unknown subject, revoked account) is never disclosed to the browser. No token material is logged."""
-    import secrets as _secrets
-
-    from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
-    from app.portal.service import sign_in_with_subject
-    from app.security.origin import external_url
-
-    expected_state = request.session.pop("portal_oidc_state", "")
-    nonce = request.session.pop("portal_oidc_nonce", "")
-    verifier = request.session.pop("portal_oidc_verifier", "")
-    invitation = request.session.pop("portal_oidc_invitation", None)
-
-    if not code or not state or not expected_state \
-            or not _secrets.compare_digest(state, expected_state):
-        # TEMPORARY DIAGNOSTIC. No real exception exists here, so the class is a fixed literal.
-        _log_auth_failure("state_validation", "InvalidState", "validation")
-        return RedirectResponse("/portal/login?error=failed", 303)      # CSRF / replay / no flow open
-    stage = "provider_lookup"                                           # TEMPORARY DIAGNOSTIC
-    try:
-        provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
-        stage = "redirect_uri"
-        # Identical construction to /portal/auth/start — the IdP rejects the exchange otherwise.
-        redirect_uri = external_url(request, "portal_auth_callback")
-        stage = "exchange_code"
-        identity = provider.exchange_code(
-            code=code, redirect_uri=redirect_uri,
-            code_verifier=verifier, expected_nonce=nonce)
-        if invitation:
-            stage = "accept_invitation"
-            account_id = accept_invitation(invitation, identity.subject, identity.mfa_verified)
-        else:
-            stage = "sign_in_with_subject"
-            account_id = sign_in_with_subject(identity.subject, identity.mfa_verified)
-        stage = "create_portal_session"
-        token = create_portal_session(
-            account_id, device_fingerprint=request.headers.get("user-agent", "portal"),
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"))
-    except Exception as exc:                                            # noqa: BLE001
-        # Class name and stage only — see the TEMPORARY PRODUCTION DIAGNOSTIC block above.
-        _log_auth_failure(stage, type(exc).__name__, _auth_failure_category(exc))
+    token = request.session.pop(AUTH_INVITATION_KEY, None)
+    if not token:
         return RedirectResponse("/portal/login?error=failed", 303)
-    request.session["portal_session_token"] = token                     # fresh session id post-auth
+    try:
+        account_id, _delivery = email_auth.start_activation(token)
+    except email_auth.EmailAuthError:
+        # Expired, already used, revoked — one generic outcome, never which.
+        return RedirectResponse("/portal/login?error=invitation", 303)
+    request.session[AUTH_ACCOUNT_KEY] = account_id
+    request.session[AUTH_EMAIL_KEY] = _account_masked_email(account_id)
+    return RedirectResponse("/portal/verify?sent=1", 303)
+
+
+@router.get("/portal/verify", response_class=HTMLResponse)
+def portal_verify(request: Request, sent: str | None = None):
+    """The code entry screen. Reached only after a code was requested."""
+    if AUTH_EMAIL_KEY not in request.session:
+        return RedirectResponse("/portal/login", 303)
+    notice = request.session.pop("portal_auth_notice", None)
+    if sent and not notice:
+        notice = "We sent a 6-digit verification code to:"
+    return templates.TemplateResponse(request=request, name="portal/verify.html",
+                                      context=_verify_context(request, notice=notice))
+
+
+@router.post("/portal/verify")
+def portal_verify_submit(request: Request, code: str = Form(default="")):
+    """Check the code and, if it is right, sign the client in.
+
+    The account comes from the session, the code from the form; nothing else is trusted. On success
+    the session id is replaced, so a session fixed before sign-in cannot be reused afterwards."""
+    from app.portal import email_auth
+
+    account_id = request.session.get(AUTH_ACCOUNT_KEY)
+    if AUTH_EMAIL_KEY not in request.session:
+        return RedirectResponse("/portal/login", 303)
+    try:
+        if account_id is None:
+            raise email_auth.EmailAuthError(email_auth.GENERIC_VERIFY_ERROR)
+        token = email_auth.verify(account_id, code)
+    except email_auth.EmailAuthError as exc:
+        return templates.TemplateResponse(
+            request=request, name="portal/verify.html",
+            context=_verify_context(request, error=str(exc)), status_code=400)
+    request.session.pop(AUTH_ACCOUNT_KEY, None)
+    request.session.pop(AUTH_EMAIL_KEY, None)
+    request.session.pop(AUTH_INVITATION_KEY, None)
+    request.session["portal_session_token"] = token          # fresh session id post-auth
     return RedirectResponse("/portal", 303)
 
+
+@router.post("/portal/verify/resend")
+def portal_verify_resend(request: Request):
+    """Send a replacement code, invalidating the previous one.
+
+    Silently does nothing when there is no eligible account or the send limit is reached: the client
+    always sees the same confirmation, so resend cannot be used to probe either."""
+    from app.portal import email_auth
+
+    if AUTH_EMAIL_KEY not in request.session:
+        return RedirectResponse("/portal/login", 303)
+    account_id = request.session.get(AUTH_ACCOUNT_KEY)
+    if account_id is not None:
+        email_auth.resend(account_id)
+    request.session["portal_auth_notice"] = "If your code has not arrived, check your junk folder."
+    return RedirectResponse("/portal/verify", 303)
+
+
+def _account_masked_email(account_id):
+    from app.db import engine as _engine
+    from app.db import portal_accounts as _accounts
+    with _engine.connect() as connection:
+        address = connection.execute(select(_accounts.c.email).where(
+            _accounts.c.id == account_id)).scalars().first()
+    return _mask_email(address or "")
 
 @router.post("/api/v1/portal/auth/invitations/accept")
 def invitation_accept(payload: InvitationAcceptance, request: Request):

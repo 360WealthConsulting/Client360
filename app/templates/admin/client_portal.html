@@ -27,8 +27,9 @@ invitation link and any signed-in sessions no longer work.</div>{% endif %}
   and do not paste it into a ticket, a chat log, or anywhere it will be retained.</p>
   <input id="activation-link" readonly value="{{ activation.url }}"
          aria-label="Client activation link for {{ activation.display_name }}">
-  <p class="subtle">It is not stored and will not be shown again — copy it now. If
-  you lose it, revoke the account and invite again.</p>
+  <p class="subtle">It is not stored and will not be shown again — copy it now. The invitation is
+  valid for <b>7 days</b>; opening it emails the client a 6-digit code to confirm it is them. If
+  you lose this link, revoke the account and invite again.</p>
 </div>
 {% endif %}
 {% if create_error %}<div class="banner warn">{{ create_error }}</div>{% endif %}

@@ -116,6 +116,9 @@ invoice_line_items = metadata.tables.get("invoice_line_items")
 payments = metadata.tables.get("payments")
 portal_invitations = metadata.tables["portal_invitations"]
 portal_auth_tokens = metadata.tables["portal_auth_tokens"]
+# Client-portal email one-time codes (migration e1c7a94b2f30). Tolerant bind so an unmigrated
+# database still imports; app/portal/email_auth.py checks for None and fails closed.
+portal_email_verifications = metadata.tables.get("portal_email_verifications")
 portal_devices = metadata.tables["portal_devices"]
 portal_sessions = metadata.tables["portal_sessions"]
 portal_threads = metadata.tables["portal_threads"]

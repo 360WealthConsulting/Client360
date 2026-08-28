@@ -30,7 +30,8 @@ _EXEMPT = (
     re.compile(r"^/portal/logout$"),
     re.compile(r"^/api/v1/portal/auth/"),
     re.compile(r"^/api/portal/login$"),
-    re.compile(r"^/portal/auth/"),          # external IdP start/callback, pre-session
+    re.compile(r"^/portal/activate$"),      # email one-time-code sign-in, pre-session
+    re.compile(r"^/portal/verify"),
 )
 
 # (pattern, methods_or_None, feature). First match wins; ordered most-specific first. ``methods=None``

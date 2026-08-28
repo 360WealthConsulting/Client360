@@ -20,20 +20,12 @@ docs/RELEASE_0.9.9_DEPLOYMENT_RUNBOOK.md for the authoritative list):
                           client-portal sign-in flow, which fails closed without
                           it. See app/security/origin.py.
 
-Client-portal external identity (Microsoft Entra External ID, a SEPARATE external
-tenant from the staff workforce tenant — see docs/CLIENT_PORTAL_IDENTITY_AND_SCOPE.md).
-All are unset by default; the portal has no production identity provider until they are
-set, and `portal.production_ready()` stays False. NON-SECRET unless marked SECRET:
+Client-portal sign-in. Clients do NOT authenticate through an external identity provider: they prove
+possession of the mailbox the firm invited, by emailed one-time code (`app/portal/email_auth.py`).
+The keys below are how that code is delivered, and are therefore REQUIRED for client sign-in.
+Staff/admin Microsoft sign-in is a different surface entirely and is unaffected.
+NON-SECRET unless marked SECRET:
 
-  PORTAL_OIDC_ISSUER      Issuer URL of the external tenant. Used for OIDC
-                          discovery and as the required `iss` claim value.
-  PORTAL_OIDC_CLIENT_ID   Application (client) ID of the portal app registration.
-  PORTAL_OIDC_CLIENT_SECRET  SECRET. Client secret for the authorization-code
-                          exchange. Never logged and never rendered.
-  PORTAL_OIDC_AUDIENCE    Required `aud` claim value. Defaults to the client ID.
-  PORTAL_OIDC_SCOPES      Space-separated scopes. Default "openid profile email".
-                          Do NOT add Microsoft Graph scopes: the portal keeps no
-                          access or refresh tokens.
   PORTAL_EMAIL_ENABLED    "true" turns on outbound portal invitation email. Off by
                           default; with it off an invitation is still created and the
                           activation link is handed to staff once, but nothing is sent.
@@ -51,23 +43,6 @@ set, and `portal.production_ready()` stays False. NON-SECRET unless marked SECRE
                           permission Mail.Send ONLY, with admin consent, restricted to
                           PORTAL_EMAIL_SENDER through Exchange Online Application RBAC.
 
-  PORTAL_OIDC_MFA_MODE    Which authority proves MFA. "claims" (default) proves it
-                          from the tenant's own `amr`/`acr` claims via the two keys
-                          below. "conditional_access" delegates enforcement to the
-                          Entra Conditional Access policy protecting the portal
-                          application, and is the correct mode for a tenant whose
-                          ID tokens carry no `amr`/`acr`/`acrs` at all. Any other
-                          value is unknown and refuses every sign-in. The default is
-                          FAIL-CLOSED: Conditional Access is never assumed merely
-                          because claim values are absent — an operator must name it.
-  PORTAL_OIDC_MFA_AMR_VALUES  Comma-separated `amr` claim values the EXTERNAL
-                          tenant emits for a completed MFA challenge. "claims" only.
-  PORTAL_OIDC_MFA_ACR_VALUES  Comma-separated `acr` claim values, same purpose.
-                          In "claims" mode MFA evidence is FAIL-CLOSED: with neither
-                          set, no token can prove MFA and every portal sign-in is
-                          refused. The correct values must come from the real tenant's
-                          user-flow configuration; they are deliberately not guessed
-                          here. Both are IGNORED in "conditional_access" mode.
 """
 import logging
 import os
@@ -268,65 +243,6 @@ def canonical_origin_status() -> tuple[bool, str | None]:
     return _status()
 
 
-_PORTAL_OIDC_REQUIRED = ("PORTAL_OIDC_ISSUER", "PORTAL_OIDC_CLIENT_ID", "PORTAL_OIDC_CLIENT_SECRET")
-
-
-def _portal_identity_warnings() -> list[str]:
-    """Warn about a half-configured portal identity provider. Names only — never values.
-
-    Fully unset is a normal state (the portal simply has no production IdP), so it is silent.
-    A partial set is a deployment mistake; so is an MFA configuration that cannot prove MFA — an
-    unknown PORTAL_OIDC_MFA_MODE, or claims mode with no claim values — since the fail-closed check
-    will then refuse every sign-in. Conditional-access mode needs no claim values and is silent, but
-    claim values set alongside it are ignored and worth flagging as a stale expectation.
-    """
-    # Single source of truth for the mode names: the provider that enforces them.
-    from app.portal.identity_microsoft import (
-        DEFAULT_MFA_MODE,
-        MFA_MODE_CLAIMS,
-        MFA_MODE_CONDITIONAL_ACCESS,
-        MFA_MODES,
-    )
-
-    present = [k for k in _PORTAL_OIDC_REQUIRED if os.getenv(k, "").strip()]
-    if not present:
-        return []
-    warnings: list[str] = []
-    missing = [k for k in _PORTAL_OIDC_REQUIRED if k not in present]
-    mode = (os.getenv("PORTAL_OIDC_MFA_MODE", "").strip() or DEFAULT_MFA_MODE).lower()
-    claim_values_set = bool(os.getenv("PORTAL_OIDC_MFA_AMR_VALUES", "").strip()
-                            or os.getenv("PORTAL_OIDC_MFA_ACR_VALUES", "").strip())
-    if missing:
-        warnings.append(
-            "Portal external identity is partially configured; missing "
-            f"{', '.join(missing)}. The portal will have NO production identity provider "
-            "and portal.production_ready() stays False until all are set."
-        )
-    elif mode not in MFA_MODES:
-        warnings.append(
-            "PORTAL_OIDC_MFA_MODE is set to an unknown value; the valid modes are "
-            f"{', '.join(sorted(MFA_MODES))}. MFA evidence is fail-closed, so EVERY portal "
-            "sign-in will be refused until it names a real enforcement authority."
-        )
-    elif mode == MFA_MODE_CLAIMS and not claim_values_set:
-        warnings.append(
-            f"Portal external identity is configured with PORTAL_OIDC_MFA_MODE={MFA_MODE_CLAIMS} "
-            "but neither PORTAL_OIDC_MFA_AMR_VALUES nor PORTAL_OIDC_MFA_ACR_VALUES is set. MFA "
-            "evidence is fail-closed, so EVERY portal sign-in will be refused. Set the values the "
-            f"external tenant actually emits, or set PORTAL_OIDC_MFA_MODE="
-            f"{MFA_MODE_CONDITIONAL_ACCESS} if this tenant emits no amr/acr and MFA is enforced by "
-            "the Entra Conditional Access policy protecting the portal application."
-        )
-    elif mode == MFA_MODE_CONDITIONAL_ACCESS and claim_values_set:
-        warnings.append(
-            f"PORTAL_OIDC_MFA_MODE={MFA_MODE_CONDITIONAL_ACCESS} delegates MFA enforcement to the "
-            "Entra Conditional Access policy, so PORTAL_OIDC_MFA_AMR_VALUES / "
-            "PORTAL_OIDC_MFA_ACR_VALUES are IGNORED. Unset them, or switch to "
-            f"PORTAL_OIDC_MFA_MODE={MFA_MODE_CLAIMS} to prove MFA from the claims instead."
-        )
-    return warnings
-
-
 def _portal_email_warnings() -> list[str]:
     """Warn when invitation email is switched on but cannot actually send. Names only, no values.
 
@@ -373,7 +289,6 @@ def configuration_warnings() -> list[str]:
             "PUBLIC_BASE_URL is not set. Client-portal sign-in fails closed in production rather "
             "than build an OAuth redirect URI from the unvalidated Host header. Set it to the "
             "canonical external origin before enabling the portal.")
-    warnings.extend(_portal_identity_warnings())
     warnings.extend(_portal_email_warnings())
     # No DATABASE_URL warning here: there is no built-in default. app/db.py and
     # app/database/schema.py both raise at import if it is unset, so the process

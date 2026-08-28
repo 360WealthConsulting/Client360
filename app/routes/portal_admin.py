@@ -85,7 +85,10 @@ def _activation_url(request, raw_token: str) -> str:
     single-use token to whatever origin that header named. The token is URL-encoded so it survives
     the query string intact."""
     from app.security.origin import external_url
-    return f"{external_url(request, 'portal_login')}?invitation={quote(raw_token, safe='')}"
+    # Points at the ACTIVATION route, not the login page: that route moves the token straight into
+    # the session and redirects to a clean URL, so the credential leaves the address bar after one
+    # hop instead of sitting in history and the referrer header.
+    return f"{external_url(request, 'portal_activate')}?invitation={quote(raw_token, safe='')}"
 
 
 def _remember_activation_url(request, *, display_name: str, url: str, delivery=None) -> None:
@@ -178,8 +181,8 @@ def _admin_page(request, principal, **extra):
     """Render the Client Portal administration page. ``extra`` carries one-shot review state
     (a duplicate warning and the values staff typed) so a refused creation comes back as normal
     UI instead of a redirect carrying client details in the URL."""
-    # Imported in-function, matching ``portal_auth_start``: the single canonical patch target for
-    # readiness stays ``app.portal.gate.production_ready`` rather than a copy bound at import time.
+    # Imported in-function so the single canonical patch target for readiness stays
+    # ``app.portal.gate.production_ready`` rather than a copy bound at import time.
     from app.portal.gate import production_ready
 
     q = request.query_params
@@ -299,7 +302,7 @@ def portal_admin_invite_form(
     except Exception as exc:  # noqa: BLE001 — surface a friendly banner, never a stack trace
         # NEVER type(exc).__name__: that put "IntegrityError" in front of staff as if it were an
         # explanation. The class name goes to the log for an operator; staff get a sentence they can
-        # act on. See the same discipline in portal_auth_callback.
+        # act on.
         logger.warning("portal_admin_invite_failed exception=%s", type(exc).__name__)
         return RedirectResponse(
             "/admin/client-portal?error=" + quote(INVITE_FAILED_ERROR), status_code=303)

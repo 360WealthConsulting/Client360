@@ -3,8 +3,13 @@
 ``request.url_for()`` builds its base from ``scope["scheme"]`` and the Host header. Nothing in the
 application validates that header (no ``TrustedHostMiddleware``; ``ALLOWED_HOSTS`` is documented but
 unread), so before this change a spoofed Host produced a spoofed OAuth ``redirect_uri``. These tests
-pin the replacement: a validated ``PUBLIC_BASE_URL`` origin, applied identically at both legs of the
-authorization-code flow, failing closed rather than degrading to the Host header.
+pin the replacement: a validated ``PUBLIC_BASE_URL`` origin, failing closed rather than degrading to
+the Host header.
+
+The OIDC callback these tests were written for is gone — clients now authenticate by emailed
+one-time code — but the protection matters just as much for what replaced it: the ACTIVATION link,
+which carries a single-use invitation credential. A spoofed Host there would mail a client's
+credential to whatever origin the attacker named.
 """
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ from app.security.origin import (
 )
 
 PROD_ORIGIN = "https://app.360wealthconsulting.com"
-PROD_CALLBACK = "https://app.360wealthconsulting.com/portal/auth/callback"
+PROD_ACTIVATE = "https://app.360wealthconsulting.com/portal/activate"
 
 
 @pytest.fixture
@@ -34,7 +39,7 @@ def _request(host="app.360wealthconsulting.com", scheme="https", headers=None):
     from tests._portal_util import fake_request
     req = fake_request()
     req.headers = {**(headers or {}), "host": host}
-    req.url_for = lambda name: f"{scheme}://{host}/portal/auth/callback"
+    req.url_for = lambda name: f"{scheme}://{host}/portal/activate"
     return req
 
 
@@ -43,83 +48,43 @@ def _request(host="app.360wealthconsulting.com", scheme="https", headers=None):
 def test_production_callback_is_https(clean_env):
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
     clean_env.setenv("CLIENT360_ENVIRONMENT", "production")
-    assert external_url(_request(), "portal_auth_callback").startswith("https://")
+    assert external_url(_request(), "portal_activate").startswith("https://")
 
 
 def test_portal_callback_is_exactly_the_registered_uri(clean_env):
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
     clean_env.setenv("CLIENT360_ENVIRONMENT", "production")
-    built = external_url(_request(), "portal_auth_callback")
-    assert built == PROD_CALLBACK
+    built = external_url(_request(), "portal_activate")
+    assert built == PROD_ACTIVATE
     assert not built.endswith("/"), "a trailing slash breaks exact redirect-URI matching"
 
 
 def test_trailing_slash_on_the_configured_origin_is_normalized_away(clean_env):
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN + "/")
-    assert external_url(_request(), "portal_auth_callback") == PROD_CALLBACK
+    assert external_url(_request(), "portal_activate") == PROD_ACTIVATE
 
 
 # --- 3, 4: both legs must agree byte for byte -------------------------------------------
 
-def test_auth_start_and_token_exchange_send_the_identical_redirect_uri(clean_env, monkeypatch):
-    """Microsoft rejects the exchange when the two differ. Capture what each leg actually sends."""
-    from app.routes import portal as portal_routes
-
-    clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
-    clean_env.setenv("CLIENT360_ENVIRONMENT", "production")
-    # /portal/auth/start refuses before minting anything unless the portal is production-ready, so a
-    # gated portal cannot consume a client's single-use invitation. This test drives the AVAILABLE
-    # path; the redirect-URI assertions below are unchanged.
-    monkeypatch.setattr("app.portal.gate.production_ready", lambda: True)
-    sent = {}
-
-    class _P:
-        def authorization_url(self, **kw):
-            sent["start"] = kw["redirect_uri"]
-            return "https://idp.example/authorize"
-
-        def exchange_code(self, **kw):
-            sent["exchange"] = kw["redirect_uri"]
-            raise ValueError("stop here — the redirect_uri is what we are asserting")
-
-    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
-
-    session = {}
-    start_req = _request()
-    start_req.scope = {}
-    start_req.session = session
-    portal_routes.portal_auth_start(start_req)
-
-    cb_req = _request()
-    cb_req.session = session
-    portal_routes.portal_auth_callback(cb_req, code="c", state=session["portal_oidc_state"])
-
-    assert sent["start"] == PROD_CALLBACK
-    assert sent["exchange"] == PROD_CALLBACK
-    assert sent["start"] == sent["exchange"]
-
-
-# --- 5, 6, 7: spoofing ------------------------------------------------------------------
-
 def test_spoofed_host_cannot_change_the_callback(clean_env):
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
     spoofed = _request(host="attacker.example")
-    assert external_url(spoofed, "portal_auth_callback") == PROD_CALLBACK
-    assert "attacker.example" not in external_url(spoofed, "portal_auth_callback")
+    assert external_url(spoofed, "portal_activate") == PROD_ACTIVATE
+    assert "attacker.example" not in external_url(spoofed, "portal_activate")
 
 
 def test_spoofed_x_forwarded_host_cannot_change_the_callback(clean_env):
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
     req = _request(host="attacker.example", headers={"x-forwarded-host": "attacker.example"})
-    assert external_url(req, "portal_auth_callback") == PROD_CALLBACK
+    assert external_url(req, "portal_activate") == PROD_ACTIVATE
 
 
 def test_spoofed_x_forwarded_proto_cannot_downgrade_the_callback(clean_env):
     """Even if the scheme reaching the app is http, the configured origin decides."""
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
     req = _request(scheme="http", headers={"x-forwarded-proto": "http"})
-    built = external_url(req, "portal_auth_callback")
-    assert built == PROD_CALLBACK and built.startswith("https://")
+    built = external_url(req, "portal_activate")
+    assert built == PROD_ACTIVATE and built.startswith("https://")
 
 
 # --- 8, 9: validation and fail-closed ---------------------------------------------------
@@ -153,14 +118,14 @@ def test_an_empty_value_means_unconfigured_not_malformed(clean_env):
     # ...but in production, unconfigured still fails closed at the point of use.
     clean_env.setenv("CLIENT360_ENVIRONMENT", "production")
     with pytest.raises(CanonicalOriginError):
-        external_url(_request(), "portal_auth_callback")
+        external_url(_request(), "portal_activate")
 
 
 def test_malformed_origin_never_degrades_to_the_host_header(clean_env):
     """Fail closed: a broken value must not silently fall back to url_for()."""
     clean_env.setenv("PUBLIC_BASE_URL", "https://app.example.com/oops/path")
     with pytest.raises(CanonicalOriginError):
-        external_url(_request(host="attacker.example"), "portal_auth_callback")
+        external_url(_request(host="attacker.example"), "portal_activate")
 
 
 def test_http_origin_is_refused_in_production_but_allowed_in_development(clean_env):
@@ -174,37 +139,18 @@ def test_http_origin_is_refused_in_production_but_allowed_in_development(clean_e
 def test_production_without_a_canonical_origin_fails_closed(clean_env):
     clean_env.setenv("CLIENT360_ENVIRONMENT", "production")
     with pytest.raises(CanonicalOriginError):
-        external_url(_request(host="attacker.example"), "portal_auth_callback")
+        external_url(_request(host="attacker.example"), "portal_activate")
 
-
-def test_auth_start_reports_unavailable_when_the_origin_is_unusable(clean_env, monkeypatch):
-    """The route must not 500, and must not fall back to a Host-derived URI."""
-    from app.routes import portal as portal_routes
-
-    class _P:
-        def authorization_url(self, **kw):
-            raise AssertionError("must not reach the provider with an unusable origin")
-
-    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
-    clean_env.setenv("PUBLIC_BASE_URL", "javascript:alert(1)")
-    req = _request()
-    req.session = {}
-    response = portal_routes.portal_auth_start(req)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/portal/login?error=unavailable"
-
-
-# --- 10: local/dev fallback -------------------------------------------------------------
 
 def test_development_without_a_canonical_origin_still_uses_url_for(clean_env):
     req = _request(host="localhost:8000", scheme="http")
-    assert external_url(req, "portal_auth_callback") == "http://localhost:8000/portal/auth/callback"
+    assert external_url(req, "portal_activate") == "http://localhost:8000/portal/activate"
 
 
 def test_a_port_in_the_origin_is_preserved(clean_env):
     clean_env.setenv("PUBLIC_BASE_URL", "https://staging.example.com:8443")
-    assert external_url(_request(), "portal_auth_callback") == \
-        "https://staging.example.com:8443/portal/auth/callback"
+    assert external_url(_request(), "portal_activate") == \
+        "https://staging.example.com:8443/portal/activate"
 
 
 # --- 11: no open redirect ---------------------------------------------------------------
@@ -213,11 +159,11 @@ def test_the_route_target_is_server_selected_not_caller_supplied():
     """external_url takes a route NAME. A caller-supplied absolute URL cannot pass through it."""
     import inspect
 
-    from app.routes import portal as portal_routes
-    for fn in (portal_routes.portal_auth_start, portal_routes.portal_auth_callback):
-        src = inspect.getsource(fn)
-        assert 'external_url(request, "portal_auth_callback")' in src or \
-               'redirect_uri = external_url' in src, f"{fn.__name__} must use the helper"
+    from app.routes import portal_admin
+    # The activation link is the one external URL the application builds for a client, and it is
+    # built from a route NAME through the helper — never from anything a caller supplied.
+    src = inspect.getsource(portal_admin._activation_url)
+    assert "external_url(request, 'portal_activate')" in src, "the link bypasses the helper"
     src = inspect.getsource(external_url)
     assert "url_for(route_name)" in src, "the path must come from the app's own routing table"
 

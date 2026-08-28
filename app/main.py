@@ -7,7 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SESSION_HTTPS_ONLY, SESSION_SECRET, validate_startup_configuration
 from app.jobs.scheduler import start_scheduler, stop_scheduler
-from app.observability import configure_logging
+from app.observability import configure_logging, install_log_redaction
 from app.routes.activities import router as activities_router
 from app.routes.activity_dashboard import router as activity_dashboard_router
 from app.routes.activity_timeline import router as activity_timeline_router
@@ -134,6 +134,9 @@ from app.services.runtime.middleware import RuntimeContextMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
+    # Before anything can serve a request: uvicorn's access log writes the query string verbatim,
+    # which put live invitation and OIDC credentials into a rotated on-disk log.
+    install_log_redaction()
     validate_startup_configuration()
     start_scheduler()
 
@@ -160,10 +163,6 @@ async def lifespan(app: FastAPI):
     try:
         from app.portal.identity_local import register_local_provider_if_permitted
         register_local_provider_if_permitted()
-        # The REAL external identity provider, registered only when the deployment is configured for
-        # it. Never fails startup: without it the portal simply cannot be production-ready.
-        from app.portal.identity_microsoft import register_microsoft_provider_if_configured
-        register_microsoft_provider_if_configured()
     except Exception:
         logging.getLogger("client360.portal").exception(
             "portal local identity provider registration skipped")

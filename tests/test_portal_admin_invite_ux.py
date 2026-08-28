@@ -1583,62 +1583,6 @@ def test_p1_1_gate_enforcement_itself_is_unchanged():
     assert 'return (True, "exempt", None)' in src
 
 
-def test_p1_2_auth_start_refuses_before_minting_anything_when_not_production_ready(monkeypatch):
-    """The auth routes are gate-exempt, so without this check the client would complete OIDC,
-    spend their single-use invitation, and only then be refused at /portal.
-
-    A provider IS registered here on purpose: without one the route would refuse anyway via the
-    provider lookup, and the test would pass whether or not the availability guard exists."""
-    from app.routes.portal import portal_auth_start
-
-    class _P:
-        def authorization_url(self, **kw):
-            raise AssertionError("the IdP flow was started while the portal is unavailable")
-
-    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
-    monkeypatch.setattr("app.portal.gate.production_ready", lambda: False)
-    session: dict = {}
-    request = _req(session)
-    request.url_for = lambda name: "https://app.test/portal/auth/callback"
-    response = portal_auth_start(request, invitation="INV-TOKEN-MUST-NOT-BE-CONSUMED")
-    assert response.status_code == 303
-    assert response.headers["location"] == "/portal/login?error=unavailable"
-    # nothing minted, nothing stashed: no state, nonce, verifier, or invitation
-    assert session == {}, "an OIDC transaction or the invitation was stored anyway"
-
-
-def test_p1_2_the_check_runs_before_state_nonce_and_pkce():
-    import inspect
-
-    from app.routes import portal as portal_routes
-    src = inspect.getsource(portal_routes.portal_auth_start)
-    guard = src.index("if not production_ready():")
-    for minted in ("secrets.token_urlsafe(32)", "secrets.token_urlsafe(64)", "hashlib.sha256",
-                   "portal_oidc_state", "portal_oidc_invitation"):
-        assert guard < src.index(minted), f"{minted} is created before the availability check"
-
-
-def test_p1_2_when_production_ready_the_existing_flow_is_unchanged(monkeypatch):
-    from app.routes import portal as portal_routes
-
-    class _P:
-        def authorization_url(self, **kw):
-            _P.seen = kw
-            return "https://idp/authorize?x=1"
-
-    monkeypatch.setattr("app.portal.gate.production_ready", lambda: True)
-    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
-    session: dict = {}
-    request = _req(session)
-    request.url_for = lambda name: "https://app.test/portal/auth/callback"
-    response = portal_routes.portal_auth_start(request, invitation="INV-TOKEN")
-    assert response.status_code == 303 and response.headers["location"].startswith("https://idp/")
-    for key in ("portal_oidc_state", "portal_oidc_nonce", "portal_oidc_verifier"):
-        assert session.get(key), f"{key} was not minted on the available path"
-    assert session["portal_oidc_invitation"] == "INV-TOKEN"
-    assert _P.seen["code_challenge"] != session["portal_oidc_verifier"]   # PKCE unchanged
-
-
 def test_p1_3_every_active_account_has_a_working_revoke_control():
     from app.db import portal_accounts
 

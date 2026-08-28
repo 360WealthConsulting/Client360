@@ -48,6 +48,10 @@ REQUIRED_CREDENTIALS = ("PORTAL_EMAIL_TENANT_ID", "PORTAL_EMAIL_CLIENT_ID",
 
 PROVIDER = "microsoft_graph"
 SUBJECT = "Your 360Plus client portal invitation"
+CODE_SUBJECT = "Your 360Plus verification code"
+#: Stated in the invitation email so the client knows how long they have. Kept in step with
+#: app.portal.service.INVITATION_TTL_HOURS by test_portal_email_auth.py — the two must not drift.
+INVITATION_EXPIRY_DAYS = 7
 FIRM_NAME = "360 Wealth Consulting"
 
 # Honest outcomes. Mirrors the vocabulary of app/services/notification_providers.py.
@@ -160,6 +164,8 @@ def invitation_bodies(display_name: str, activation_url: str) -> tuple[str, str]
         "You have been invited to access the 360Plus client portal.\n\n"
         "Use the secure link below to activate your portal access:\n\n"
         f"{activation_url}\n\n"
+        f"This link expires in {INVITATION_EXPIRY_DAYS} days. When you open it we will email you a "
+        "6-digit code to confirm it is you.\n\n"
         "For your security, this invitation link is intended only for you. If you were not "
         f"expecting this invitation, please contact {FIRM_NAME}.\n\n"
         f"{FIRM_NAME}\n"
@@ -171,6 +177,8 @@ def invitation_bodies(display_name: str, activation_url: str) -> tuple[str, str]
         "<p>You have been invited to access the 360Plus client portal.</p>"
         "<p>Use the secure link below to activate your portal access:</p>"
         f'<p><a href="{safe_url}">{safe_url}</a></p>'
+        f"<p>This link expires in {INVITATION_EXPIRY_DAYS} days. When you open it we will email you "
+        "a 6-digit code to confirm it is you.</p>"
         "<p>For your security, this invitation link is intended only for you. If you were not "
         f"expecting this invitation, please contact {html.escape(FIRM_NAME)}.</p>"
         f"<p>{html.escape(FIRM_NAME)}</p>"
@@ -243,3 +251,92 @@ def send_portal_invitation(*, recipient_email, display_name, activation_url,
                           recipient_domain=domain,
                           detail="Microsoft 365 refused the invitation email "
                                  f"(status {code}).")
+
+
+def verification_code_bodies(display_name: str, code: str) -> tuple[str, str]:
+    """``(html_body, text_body)`` for a one-time sign-in code.
+
+    ``display_name`` comes from a client record and is escaped for the HTML part. The code is
+    generated server-side and is always six digits, but it is escaped too rather than trusted by
+    construction. There is NO LINK: the code must be typed back into the browser session that asked
+    for it, so forwarding the mail does not hand anyone a working credential."""
+    greeting = (display_name or "").strip() or "there"
+    text = (
+        f"Hello {greeting},\n\n"
+        f"Your 360Plus verification code is: {code}\n\n"
+        "Enter it on the sign-in screen to continue. The code expires shortly and can only be used "
+        "once.\n\n"
+        f"If you did not request this code, you can ignore this email and contact {FIRM_NAME}.\n\n"
+        f"{FIRM_NAME}\n"
+    )
+    safe_name, safe_code = html.escape(greeting), html.escape(code)
+    html_body = (
+        f"<p>Hello {safe_name},</p>"
+        "<p>Your 360Plus verification code is:</p>"
+        f'<p style="font-size:28px;font-weight:bold;letter-spacing:4px">{safe_code}</p>'
+        "<p>Enter it on the sign-in screen to continue. The code expires shortly and can only be "
+        "used once.</p>"
+        "<p>If you did not request this code, you can ignore this email and contact "
+        f"{html.escape(FIRM_NAME)}.</p>"
+        f"<p>{html.escape(FIRM_NAME)}</p>"
+    )
+    return html_body, text
+
+
+def send_portal_verification_code(*, recipient_email, display_name, code, purpose="login",
+                                  graph_post=None) -> DeliveryResult:
+    """Send one sign-in code. Never raises — the outcome is the return value.
+
+    Same dedicated app-only registration as the invitation (``PORTAL_EMAIL_*``): an application
+    ``Mail.Send`` identity, never a staff mailbox token and never a delegated sign-in.
+
+    The code is formatted into the message and otherwise never leaves this frame. Nothing here — the
+    :class:`DeliveryResult`, its ``detail``, its ``audit_metadata`` — carries the code, and the Graph
+    response body is discarded for the same reason it is on the invitation path: it can echo the
+    message that contains it."""
+    recipient = _valid_recipient(recipient_email)
+    if not recipient:
+        return DeliveryResult(delivered=False, status=FAILED, failure_class="invalid_recipient",
+                              detail="The account email address is not a valid address.")
+    domain = recipient.rsplit("@", 1)[-1]
+
+    ready, reason = configuration_status()
+    if not ready:
+        status = DISABLED if not is_enabled() else NOT_CONFIGURED
+        return DeliveryResult(delivered=False, status=status,
+                              failure_class="provider_not_configured", recipient_domain=domain,
+                              detail=f"Verification email is not configured ({reason}).")
+    if not (code or "").strip():
+        return DeliveryResult(delivered=False, status=FAILED, failure_class="no_code",
+                              recipient_domain=domain, detail="No verification code was available.")
+
+    html_body, text_body = verification_code_bodies(display_name or "", code)
+    payload = {"message": {"subject": CODE_SUBJECT,
+                           "body": {"contentType": "HTML", "content": html_body},
+                           "toRecipients": [{"emailAddress": {"address": recipient}}]},
+               "saveToSentItems": False}
+    # NOTE: no bodyPreview. On the invitation path it carries a link; here it would carry the code
+    # into a field mail clients surface in list views and notifications.
+    _ = text_body
+
+    try:
+        token = _acquire_app_token()
+    except Exception:                                     # noqa: BLE001 — never leak MSAL detail
+        return DeliveryResult(delivered=False, status=FAILED, failure_class="auth_failed",
+                              recipient_domain=domain,
+                              detail="Client360 could not authenticate to Microsoft 365 to send the "
+                                     "verification code.")
+    try:
+        response = (graph_post or _post_to_graph)(token, sender_mailbox(), payload)
+    except Exception:                                     # noqa: BLE001 — network/transport
+        return DeliveryResult(delivered=False, status=FAILED, failure_class="transport_error",
+                              recipient_domain=domain,
+                              detail="The verification code could not be sent (network error).")
+
+    status_code = getattr(response, "status_code", 0)
+    if status_code in (200, 202):
+        return DeliveryResult(delivered=True, status=SENT, recipient_domain=domain,
+                              detail="Verification code sent.")
+    return DeliveryResult(delivered=False, status=FAILED,
+                          failure_class=f"graph_http_{status_code}", recipient_domain=domain,
+                          detail=f"Microsoft 365 refused the verification email (status {status_code}).")

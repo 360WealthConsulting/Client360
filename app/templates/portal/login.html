@@ -1,13 +1,17 @@
-{% extends "portal/base.html" %}{% block title %}Sign In{% endblock %}
+{% extends "portal/base.html" %}{% block title %}Client sign in{% endblock %}
 {% block flash %}
   {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
 {% endblock %}
 {% block content %}
-<h1>Secure Client Sign In</h1>
-<p>Use the secure invitation sent by your advisory team. Multi-factor authentication is required when activating portal access.</p>
-{% if identity_provider_available %}
-<p><a class="btn" href="{{ auth_start_url }}">Sign in with Microsoft</a></p>
-{% else %}
-<div class="empty">Portal identity provider configuration is required for production sign-in.</div>
-{% endif %}
+{# No external identity-provider action. Clients sign in by proving they hold the mailbox the firm
+   already has on file, so there is nothing here for them to have an account with. #}
+<h1>Client sign in</h1>
+<p>Enter the email address your advisory team has on file. We will send you a 6-digit code.</p>
+<form method="post" action="/portal/login" class="portal-auth-form">
+  <label for="portal-email">Email</label>
+  <input id="portal-email" name="email" type="email" autocomplete="email" inputmode="email"
+         required autofocus>
+  <button class="btn" type="submit">Email me a code</button>
+</form>
+<p class="subtle">If you were invited recently, use the link in your invitation email instead.</p>
 {% endblock %}
