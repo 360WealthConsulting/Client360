@@ -523,3 +523,195 @@ def test_promotion_happens_before_the_limit_is_applied(company):
     finally:
         with engine.begin() as c:
             c.execute(delete(documents).where(documents.c.id.in_(doc_ids)))
+
+
+# --- regression: a NULL display name crashed the whole search ---------------------------------
+#
+# people.full_name is NULLABLE and the person branch also matches on first/last/email/phone, so a
+# person with no full_name entered the results with name=None. _promote_person returns that
+# EXISTING row unchanged, so the None reached the owners list and
+# `", ".join(...)` raised TypeError — a 500 for the entire query, not a missing badge.
+
+def test_joined_discards_nulls_and_blanks():
+    from app.services.universal_search import _joined
+
+    assert _joined([None, "Ada"]) == "Ada"
+    assert _joined([None, None]) == ""
+    assert _joined(["  ", "", None]) == ""
+    assert _joined(["B", "A", "A", None]) == "A, B"          # deduped and sorted
+    assert _joined([]) == ""
+
+
+def test_joined_counts_more_from_valid_names_only():
+    from app.services.universal_search import _MAX_RELATED, _joined
+
+    names = [f"Name {i:02d}" for i in range(_MAX_RELATED + 3)] + [None, "  "]
+    out = _joined(names)
+    assert out.endswith("+3 more"), out                       # nulls do not inflate the count
+    assert "None" not in out
+
+
+def test_context_never_renders_of_none():
+    from app.services.universal_search import _context
+
+    assert _context(None, None) == ""
+    assert _context("Owns", None) == ""
+    assert _context(None, "Acme") == "Related to Acme"
+    assert _context("  ", "Acme") == "Related to Acme"
+    assert _context("Owns", "Acme") == "Owns of Acme"
+
+
+def _nameless_owner(company, *, full_name=None, first=None, last=None):
+    """Add an owner whose display-name sources are null/blank, wired the canonical way."""
+    tag = company["tag"]
+    with engine.begin() as c:
+        type_id = _ownership_type_id(c)
+        pid = c.execute(people.insert().values(
+            full_name=full_name, first_name=first, last_name=last,
+            household_id=company["hids"][0], active=True).returning(people.c.id)).scalar_one()
+        ent = c.execute(relationship_entities.insert().values(
+            entity_type="person", person_id=pid, name=f"Person {pid}", active=True)
+            .returning(relationship_entities.c.id)).scalar_one()
+        edge = c.execute(relationships.insert().values(
+            from_entity_id=ent, to_entity_id=company["business_id"],
+            relationship_type_id=type_id, active=True)
+            .returning(relationships.c.id)).scalar_one()
+    return {"pid": pid, "ent": ent, "edge": edge}
+
+
+def _cleanup_owner(made):
+    with engine.begin() as c:
+        c.execute(delete(relationships).where(relationships.c.id == made["edge"]))
+        c.execute(delete(relationship_entities).where(
+            relationship_entities.c.id == made["ent"]))
+        c.execute(delete(people).where(people.c.id == made["pid"]))
+
+
+def test_an_owner_with_a_null_name_does_not_crash_the_search(company):
+    """The exact production condition: full_name NULL on a related person."""
+    tag = company["tag"]
+    made = _nameless_owner(company, full_name=None, first=None, last=f"Rowe{_TAG}{tag}")
+    try:
+        res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")   # must not raise
+
+        biz = _row(res, "business", company["business_id"])
+        owners = " ".join(c for c in biz["relationship_context"] if c.startswith("Owners:"))
+        assert "None" not in owners
+        # The named owners still render.
+        assert f"Alan Rowe{_TAG}{tag}" in owners and f"Bettina Rowe{_TAG}{tag}" in owners
+    finally:
+        _cleanup_owner(made)
+
+
+def test_a_whitespace_only_name_is_omitted_not_rendered(company):
+    tag = company["tag"]
+    made = _nameless_owner(company, full_name="   ", first="  ", last="  ")
+    try:
+        res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
+        biz = _row(res, "business", company["business_id"])
+        owners = " ".join(c for c in biz["relationship_context"] if c.startswith("Owners:"))
+
+        assert "None" not in owners
+        assert ",  ," not in owners and not owners.endswith(", ")
+        assert f"Alan Rowe{_TAG}{tag}" in owners
+    finally:
+        _cleanup_owner(made)
+
+
+def test_a_nameless_owner_is_labelled_consistently_never_blank_or_none(company):
+    """An owner with no name IS still surfaced as a result row, so the label names it the same way.
+
+    Suppressing the label here would hide the existence of an owner that is listed below it. What
+    must never appear is "None", a dangling "Owners: ", or an empty badge."""
+    tag = company["tag"]
+    with engine.begin() as c:
+        from sqlalchemy import update as _update
+        c.execute(_update(relationships)
+                  .where(relationships.c.id.in_(company["eids"])).values(active=False))
+    made = _nameless_owner(company, full_name=None, first=None, last=None)
+    try:
+        res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
+        biz = _row(res, "business", company["business_id"])
+        labels = biz.get("relationship_context", [])
+
+        owners = [c for c in labels if c.startswith("Owners:")]
+        assert owners == ["Owners: Unnamed person"], owners
+        assert "None" not in " ".join(labels)
+        assert not any(c.strip() in ("Owners:", "Members:") for c in labels)
+        assert all(c.strip() for c in labels), "an empty context badge was emitted"
+        # ...and that name matches the row actually shown for that person.
+        promoted = [r for r in res["results"]
+                    if r["kind"] == "person" and r["id"] == made["pid"]]
+        assert promoted and promoted[0]["name"] == "Unnamed person"
+    finally:
+        _cleanup_owner(made)
+
+
+def test_no_owners_label_at_all_when_no_owner_is_visible(company):
+    """The genuinely-empty path: every owner filtered out by scope leaves no label behind."""
+    from sqlalchemy import update as _update
+
+    from app.db import record_assignments
+    from tests._portal_util import seed_staff_user
+
+    tag = company["tag"]
+    staff_user_id = seed_staff_user()
+    with engine.begin() as c:
+        visible = c.execute(people.insert().values(
+            first_name="Dee", last_name=f"Anchor{_TAG}{tag}",
+            full_name=f"Dee Anchor{_TAG}{tag}", active=True)
+            .returning(people.c.id)).scalar_one()
+        c.execute(record_assignments.insert().values(
+            entity_type="person", entity_id=visible, user_id=staff_user_id,
+            assignment_type="primary"))
+        c.execute(_update(relationship_entities)
+                  .where(relationship_entities.c.id == company["business_id"])
+                  .values(person_id=visible))
+    narrow = Principal(staff_user_id, "narrow@e.test", "Narrow", frozenset({"client.read"}))
+    try:
+        res = universal_search(narrow, f"Rowe Builders Inc {_TAG}{tag}")
+        biz = _row(res, "business", company["business_id"])
+        assert biz is not None, "the business was filtered out — this proves nothing"
+        labels = biz.get("relationship_context", [])
+
+        assert not any(c.startswith("Owners:") for c in labels), labels
+        assert all(c.strip() for c in labels)
+    finally:
+        with engine.begin() as c:
+            c.execute(delete(record_assignments).where(
+                record_assignments.c.entity_id == visible,
+                record_assignments.c.entity_type == "person"))
+            c.execute(_update(relationship_entities)
+                      .where(relationship_entities.c.id == company["business_id"])
+                      .values(person_id=None))
+            c.execute(delete(people).where(people.c.id == visible))
+
+
+def test_a_nameless_person_surfaced_as_a_result_reads_unnamed_person(company):
+    """Requirement: never "Person <id>"; a neutral label only where the person IS a result."""
+    tag = company["tag"]
+    made = _nameless_owner(company, full_name=None, first=None, last=f"Rowe{_TAG}{tag}")
+    try:
+        res = universal_search(_firm(), f"Rowe{_TAG}{tag}")
+        names = [r["name"] for r in res["results"] if r["kind"] == "person"]
+
+        assert not any((n or "").startswith("Person ") for n in names), names
+        assert None not in names, "a NULL display name still reaches the result set"
+        assert str(made["pid"]) not in " ".join(n for n in names if n)
+    finally:
+        _cleanup_owner(made)
+
+
+def test_promotion_and_ranking_still_work_with_a_null_named_owner(company):
+    tag = company["tag"]
+    made = _nameless_owner(company, full_name=None, first=None, last=f"Rowe{_TAG}{tag}")
+    try:
+        res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
+        kinds = [r["kind"] for r in res["results"]]
+
+        assert "business" in kinds and "person" in kinds
+        assert _row(res, "household", company["hids"][0]) is not None
+        keys = [(r["kind"], r["id"]) for r in res["results"]]
+        assert len(keys) == len(set(keys))
+    finally:
+        _cleanup_owner(made)

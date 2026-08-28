@@ -153,7 +153,8 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
             # tolerated by also trying the 10-digit form. See _phone_query_variants.
             for phone_digits in _phone_query_variants(q):
                 conds.append(people.c.normalized_phone.ilike(f"%{phone_digits}%"))
-            stmt = select(people.c.id, people.c.full_name, people.c.primary_email,
+            stmt = select(people.c.id, people.c.full_name, people.c.first_name,
+                          people.c.last_name, people.c.primary_email,
                           people.c.primary_phone, people.c.household_id, people.c.active).where(or_(*conds))
             if not firm_wide:
                 stmt = stmt.where(_person_in_scope(people.c.id))
@@ -162,7 +163,12 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
             if active_only or not include_archived:
                 stmt = stmt.where(people.c.active.is_(True))
             for r in conn.execute(stmt.limit(limit)).mappings():
-                rows.append({"kind": "person", "id": r["id"], "name": r["full_name"],
+                # _display_name, not the raw column: full_name is NULLABLE and this branch also
+                # matches on first/last/email/phone, so a person with no full_name reached the
+                # results with name=None. That None then flowed into the relationship context and
+                # crashed the join. Normalised HERE, at the origin, so every consumer of a result
+                # row gets a real string.
+                rows.append({"kind": "person", "id": r["id"], "name": _display_name(dict(r)),
                              "entity_type": "person", "household_id": r["household_id"],
                              "subtitle": r["primary_email"] or r["primary_phone"] or "",
                              "quick_status": "active" if r["active"] else "inactive",
@@ -175,7 +181,8 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
             if not firm_wide:
                 stmt = stmt.where(_household_in_scope(households.c.id))
             for r in conn.execute(stmt.limit(limit)).mappings():
-                rows.append({"kind": "household", "id": r["id"], "name": r["name"],
+                rows.append({"kind": "household", "id": r["id"],
+                             "name": (r["name"] or "").strip() or "Unnamed household",
                              "entity_type": "household", "household_id": r["id"],
                              "subtitle": r["city"] or "", "quick_status": "",
                              "workspace_url": f"/client/household/{r['id']}"})
@@ -305,9 +312,28 @@ def _display_name(person_row):
 
 
 def _joined(names, limit=_MAX_RELATED):
-    shown = names[:limit]
-    extra = len(names) - len(shown)
+    """Join display names into one label. Defensive by contract, and the ONLY place that sorts.
+
+    Discards ``None`` and blank/whitespace-only entries before anything else, so neither
+    ``sorted()`` (which raises comparing str to None) nor ``", ".join()`` (which raises on a
+    non-str) can ever see one. The "+N more" count is computed from the VALID names only, so a
+    dropped null never inflates it. Returns "" when nothing usable remains — callers use that to
+    suppress the label entirely rather than render a dangling "Owners: "."""
+    clean = sorted({n.strip() for n in names if isinstance(n, str) and n.strip()})
+    if not clean:
+        return ""
+    shown = clean[:limit]
+    extra = len(clean) - len(shown)
     return ", ".join(shown) + (f" +{extra} more" if extra > 0 else "")
+
+
+def _context(role, target_name):
+    """"<Role> of <Target>" — or "" when either half is missing, never "of None"."""
+    role = (role or "").strip()
+    target_name = (target_name or "").strip()
+    if not target_name:
+        return ""
+    return f"{role} of {target_name}".strip() if role else f"Related to {target_name}"
 
 
 def _enrich_and_promote(rows, acc, acc_households, firm_wide):
@@ -437,14 +463,14 @@ def _enrich_and_promote(rows, acc, acc_households, firm_wide):
         if business is not None:
             pid, hid = edge["from_person"], edge["from_household"]
             if pid and pid in person_rows:
-                promoted = _promote_person(pid, f"{role} of {business['name']}".strip())
+                promoted = _promote_person(pid, _context(role, business["name"]))
                 if promoted is not None:
                     owners_of.setdefault(business["id"], []).append(promoted["name"])
                     member_household = person_rows[pid]["household_id"]
                     if member_household in household_rows:
                         _promote_household(member_household, None)
             elif hid and hid in household_rows:
-                promoted = _promote_household(hid, f"{role} of {business['name']}".strip())
+                promoted = _promote_household(hid, _context(role, business["name"]))
                 if promoted is not None:
                     owners_of.setdefault(business["id"], []).append(promoted["name"])
         # --- person/household in the results: name what they own on their own row ---
@@ -452,18 +478,21 @@ def _enrich_and_promote(rows, acc, acc_households, firm_wide):
         subject = (by_key.get(("person", from_person)) if from_person else None) \
             or (by_key.get(("household", from_household)) if from_household else None)
         if subject is not None and edge["to_type"] in _ENTITY_KINDS:
-            target_name = edge["to_entity_name"] or "an entity"
-            subject.setdefault("relationship_context", [])
-            context = f"{role} of {target_name}".strip()
-            if context not in subject["relationship_context"]:
-                subject["relationship_context"].append(context)
+            context = _context(role, edge["to_entity_name"])
+            if context:                          # a nameless target yields no badge at all
+                subject.setdefault("relationship_context", [])
+                if context not in subject["relationship_context"]:
+                    subject["relationship_context"].append(context)
 
     for entity_id, names in owners_of.items():
+        joined = _joined(names)
+        if not joined:
+            continue                            # nothing usable — never render "Owners: "
         for kind in _ENTITY_KINDS:
             row = by_key.get((kind, entity_id))
             if row is not None:
                 row.setdefault("relationship_context", [])
-                label = f"Owners: {_joined(sorted(set(names)))}"
+                label = f"Owners: {joined}"
                 if label not in row["relationship_context"]:
                     row["relationship_context"].append(label)
 
@@ -489,8 +518,11 @@ def _add_household_members(rows, by_key, acc, firm_wide):
         row = by_key.get(("household", hid))
         if row is None:
             continue
+        joined = _joined(names)
+        if not joined:
+            continue                            # never render "Members: "
         row.setdefault("relationship_context", [])
-        label = f"Members: {_joined(sorted(names))}"
+        label = f"Members: {joined}"
         if label not in row["relationship_context"]:
             row["relationship_context"].append(label)
 
