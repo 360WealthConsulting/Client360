@@ -25,6 +25,7 @@
   /* Deliberately generic. A server error body may carry internal detail, so it is never shown. */
   var SEARCH_ERROR = "Search is unavailable right now. Please try again in a moment.";
   var NO_SELECTION = "Select a client before sending the invitation.";
+  var NO_CLIENT_SELECTED = "Select a client before starting a conversation.";
 
   function ready(fn) {
     if (document.readyState === "loading") {
@@ -38,6 +39,7 @@
     var form = document.getElementById("invite-form");
     var results = document.getElementById("client-results");
     bindConfirmForms();
+    bindClientTypeahead();
     if (!form || !results) {
       bindActivationLink();
       return;
@@ -292,6 +294,135 @@
 
     bindActivationLink();
   });
+
+
+  function bindClientTypeahead() {
+    /* ONE-FIELD client selector for the secure-message compose form.
+
+       Not a second autocomplete system: it calls the SAME record-scoped SEARCH_URL the invite
+       form uses, honours the same MIN_TERM and DEBOUNCE_MS, renders the same `.client-result`
+       buttons, and shows the same generic messages. Only the shape of the input differs — staff
+       type a name, not four separate identifiers.
+
+       The person id lives in a hidden field and is never rendered as text. It is a CLAIM: the
+       server re-resolves the person and re-checks write record scope on submit, so nothing here
+       grants access, and a tampered value fails exactly as an unknown one does. */
+    var widgets = document.querySelectorAll("[data-client-typeahead]");
+    Array.prototype.forEach.call(widgets, function (widget) {
+      var input = widget.querySelector('input[type="text"]');
+      var hidden = widget.querySelector("[data-client-typeahead-id]");
+      var list = widget.querySelector(".client-typeahead-results");
+      var chosenLabel = widget.querySelector("[data-client-typeahead-selected]");
+      if (!input || !hidden || !list) { return; }
+      var owner = input.form;
+      var error = owner && owner.querySelector("[data-client-typeahead-error]");
+      var timer = null;
+      var latest = 0;
+
+      function clearList() {
+        while (list.firstChild) { list.removeChild(list.firstChild); }
+        input.setAttribute("aria-expanded", "false");
+      }
+
+      function note(text) {
+        clearList();
+        var p = document.createElement("p");
+        p.className = "subtle";
+        p.textContent = text;                       /* textContent: never parsed as markup */
+        list.appendChild(p);
+      }
+
+      function showError(text) {
+        if (!error) { return; }
+        error.textContent = text;
+        error.hidden = !text;
+      }
+
+      function clearSelection() {
+        hidden.value = "";
+        if (chosenLabel) { chosenLabel.textContent = ""; chosenLabel.hidden = true; }
+      }
+
+      function choose(person) {
+        hidden.value = person.person_id;            /* hidden implementation state only */
+        input.value = person.full_name || "";
+        if (chosenLabel) {
+          chosenLabel.textContent = "Selected: " + (person.full_name || "") +
+            (person.household_name ? " \u2014 " + person.household_name : "");
+          chosenLabel.hidden = false;
+        }
+        clearList();
+        showError("");
+      }
+
+      function detail(person) {
+        return [person.email, person.phone, person.household_name, person.location]
+          .filter(Boolean).join(" \u00b7 ");
+      }
+
+      function render(rows) {
+        if (!rows.length) { note(NO_RESULTS); return; }
+        clearList();
+        rows.forEach(function (person) {
+          var button = document.createElement("button");
+          button.type = "button";                   /* never submits the form it lives in */
+          button.className = "btn secondary client-result";
+          button.setAttribute("role", "option");
+          var name = document.createElement("b");
+          name.textContent = person.full_name || "";
+          var sub = document.createElement("span");
+          sub.className = "subtle";
+          sub.textContent = detail(person);         /* client data is never parsed as markup */
+          button.appendChild(name);
+          button.appendChild(document.createElement("br"));
+          button.appendChild(sub);
+          button.addEventListener("click", function () { choose(person); });
+          list.appendChild(button);
+        });
+        input.setAttribute("aria-expanded", "true");
+      }
+
+      function search() {
+        var term = (input.value || "").trim();
+        if (term.length < MIN_TERM) { clearList(); return; }
+        latest += 1;
+        var token = latest;
+        fetch(SEARCH_URL + "?q=" + encodeURIComponent(term), { credentials: "same-origin" })
+          .then(function (response) {
+            if (!response.ok) { throw new Error("search request failed"); }
+            return response.json();
+          })
+          .then(function (data) {
+            if (token !== latest) { return; }       /* a newer search already answered */
+            render((data && data.results) || []);
+          })
+          .catch(function () {
+            if (token !== latest) { return; }
+            note(SEARCH_ERROR);                     /* generic: no server text is surfaced */
+          });
+      }
+
+      input.addEventListener("input", function () {
+        clearSelection();                           /* typing again means a different person */
+        showError("");
+        latest += 1;                                /* invalidate anything already in flight */
+        if (timer) { clearTimeout(timer); }
+        timer = setTimeout(search, DEBOUNCE_MS);
+      });
+
+      if (owner) {
+        owner.addEventListener("submit", function (event) {
+          if (!(hidden.value || "").trim()) {
+            /* The server refuses this too, with the same wording — this only spares a round
+               trip. It is not the protection. */
+            event.preventDefault();
+            showError(NO_CLIENT_SELECTED);
+            input.focus();
+          }
+        });
+      }
+    });
+  }
 
   function bindConfirmForms() {
     /* Confirmation for destructive staff actions. An inline onsubmit="return confirm(...)" would be

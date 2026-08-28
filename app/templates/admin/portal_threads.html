@@ -15,19 +15,21 @@
    with write record scope in staff_start_thread — nothing here grants access. #}
 <details class="card portal-compose">
   <summary><b>Start a conversation</b></summary>
-  <form method="post" action="/admin/client-portal/threads/new" id="invite-form" class="portal-invite-grid">
-    <label for="sel-first">First name</label>
-    <input id="sel-first" autocomplete="off">
-    <label for="sel-last">Last name</label>
-    <input id="sel-last" autocomplete="off">
-    <label for="sel-email">Email</label>
-    <input id="sel-email" autocomplete="off">
-    <label for="sel-phone">Phone</label>
-    <input id="sel-phone" autocomplete="off">
-    <input type="hidden" name="person_id" id="sel-person-id">
-    <div class="portal-invite-full" id="client-results"></div>
-    <p class="subtle portal-invite-full" id="selected-client" hidden></p>
-    <p class="subtle portal-invite-full" id="sel-household"></p>
+  <form method="post" action="/admin/client-portal/threads/new" class="portal-invite-grid portal-compose-form">
+    {# ONE client selector, not four lookup fields. It queries the SAME record-scoped endpoint the
+       invite form uses (/admin/client-portal/client-search?q=…), so results can only ever contain
+       people this principal may service. The person id is hidden state: never typed, never shown,
+       and re-resolved and re-authorized with write record scope by staff_start_thread on submit. #}
+    <label for="thread-client">Client</label>
+    <div class="client-typeahead" data-client-typeahead>
+      <input id="thread-client" type="text" autocomplete="off" role="combobox"
+             aria-autocomplete="list" aria-expanded="false" aria-controls="thread-client-results"
+             placeholder="Start typing a client's name...">
+      <input type="hidden" name="person_id" data-client-typeahead-id>
+      <div id="thread-client-results" class="client-typeahead-results" role="listbox"
+           aria-label="Matching clients"></div>
+      <p class="subtle" data-client-typeahead-selected hidden></p>
+    </div>
     <label for="thread-topic">Topic</label>
     <select id="thread-topic" name="topic">
       <option value="">General</option>
@@ -39,7 +41,7 @@
     <textarea id="thread-body" name="body" rows="4" maxlength="10000" required></textarea>
     <div class="portal-invite-full">
       <button type="submit">Send secure message</button>
-      <span class="portal-invite-error" id="invite-error" role="alert" hidden></span>
+      <span class="portal-invite-error" data-client-typeahead-error role="alert" hidden></span>
     </div>
   </form>
   <p class="subtle">The client reads this in their 360Plus portal. They must already have an active

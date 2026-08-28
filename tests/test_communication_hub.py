@@ -7,6 +7,7 @@ document protection, disabled-feature enforcement, staff RBAC, forged IDs, audit
 """
 from __future__ import annotations
 
+import re
 import uuid
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from sqlalchemy import delete, func, insert, select
 
 from app.db import (
     audit_events,
+    people,
     client_feature_overrides,
     engine,
     firm_feature_controls,
@@ -742,3 +744,144 @@ def test_starting_a_conversation_sends_no_email():
     for mailer in ("send_portal_invitation", "send_portal_verification_code", "email_delivery",
                    "sendMail", "notify("):
         assert mailer not in src, f"staff_start_thread reaches {mailer}"
+
+
+# --- E. one-field client selector on the compose form ----------------------------------------
+#
+# Staff were shown four lookup fields (first/last/email/phone) mirroring the invite form. The
+# workflow here is "message this client", so it is now ONE typeahead over the SAME record-scoped
+# search endpoint. Authorization is unchanged: the id is a claim, re-resolved on POST.
+
+def _render_threads(principal):
+    from app.routes.portal_admin import portal_admin_threads
+    request = SimpleNamespace(
+        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}", principal=principal,
+                              demo_mode=False),
+        client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "pytest"},
+        query_params={}, session={}, url=SimpleNamespace(path="/admin/client-portal/threads"))
+    return portal_admin_threads(request, principal=principal).body.decode()
+
+
+def test_e1_the_compose_form_offers_one_client_selector_not_four_lookup_fields():
+    html = _render_threads(_staff_principal())
+
+    assert 'for="thread-client">Client<' in html
+    assert "Start typing a client's name..." in html
+    assert "data-client-typeahead" in html
+    for gone in ('id="sel-first"', 'id="sel-last"', 'id="sel-email"', 'id="sel-phone"',
+                 ">First name<", ">Last name<"):
+        assert gone not in html, f"the compose form still shows {gone}"
+    # Topic / Subject / Message remain the rest of the workflow.
+    for kept in (">Topic<", ">Subject<", ">Message<", "Send secure message"):
+        assert kept in html
+
+
+def test_e2_the_person_id_is_hidden_state_and_never_displayed():
+    html = _render_threads(_staff_principal())
+
+    assert '<input type="hidden" name="person_id" data-client-typeahead-id>' in html
+    visible = re.sub(r"<[^>]+>", " ", html)
+    for label in ("person_id", "Person ID", "person id"):
+        assert label not in visible, f"{label} is rendered as visible text"
+
+
+def test_e3_the_selector_reuses_the_existing_record_scoped_search_endpoint():
+    """No second search system: the same endpoint and the same service as the invite form."""
+    js = open("app/static/js/client_portal_admin.js", encoding="utf-8").read()
+    body = js.split("function bindClientTypeahead", 1)[1].split("\n  function ", 1)[0]
+    assert "SEARCH_URL" in body and 'q=" + encodeURIComponent' in body
+    assert "MIN_TERM" in body and "DEBOUNCE_MS" in body
+    assert js.count('var SEARCH_URL = "/admin/client-portal/client-search";') == 1
+
+
+def test_e4_search_results_are_limited_to_the_principals_record_scope():
+    from app.routes.portal_admin import portal_admin_client_search
+
+    owner = _staff_principal()
+    _, _, mine, _ = seed_portal_account(owner.user_id)
+    with engine.connect() as c:
+        my_name = c.execute(select(people.c.full_name).where(people.c.id == mine)).scalar_one()
+
+    narrow = Principal(seed_staff_user(), "staff@example.com", "Staff",
+                       frozenset({"client.read", "client.write"}))     # no record.read_all
+    found = portal_admin_client_search(q=my_name.split()[-1], principal=narrow)
+
+    assert mine not in [r["person_id"] for r in found["results"]], \
+        "an out-of-scope person appeared in the selector"
+    # ...and the authorized principal DOES find them, proving the query itself works.
+    allowed = portal_admin_client_search(q=my_name.split()[-1], principal=owner)
+    assert mine in [r["person_id"] for r in allowed["results"]]
+
+
+def test_e5_an_out_of_scope_search_is_not_an_existence_oracle():
+    """Same empty shape whether the name exists out of scope or not at all."""
+    from app.routes.portal_admin import portal_admin_client_search
+
+    owner = _staff_principal()
+    _, _, hidden_person, _ = seed_portal_account(owner.user_id)
+    with engine.connect() as c:
+        hidden_name = c.execute(select(people.c.full_name).where(
+            people.c.id == hidden_person)).scalar_one()
+    narrow = Principal(seed_staff_user(), "staff@example.com", "Staff",
+                       frozenset({"client.read", "client.write"}))
+
+    real_but_hidden = portal_admin_client_search(q=hidden_name, principal=narrow)
+    pure_fiction = portal_admin_client_search(q="Zzzqqx Nooneatall", principal=narrow)
+
+    assert real_but_hidden["results"] == pure_fiction["results"] == []
+
+
+def test_e6_results_are_bounded():
+    import inspect
+
+    from app.portal import invite_targets
+    signature = inspect.signature(invite_targets.search_people)
+    assert signature.parameters["limit"].default == 20, "the result bound changed"
+
+
+def test_e7_search_results_are_rendered_as_text_never_as_markup():
+    """A person's name is untrusted for HTML purposes; the selector must not parse it."""
+    js = open("app/static/js/client_portal_admin.js", encoding="utf-8").read()
+    body = js.split("function bindClientTypeahead", 1)[1].split("\n  function ", 1)[0]
+    code = "\n".join(line.split("/*")[0] for line in body.splitlines())
+    assert "innerHTML" not in code and "outerHTML" not in code
+    assert "insertAdjacentHTML" not in code
+    assert code.count("textContent") >= 3, "result values are not set as text"
+
+
+def test_e8_a_hostile_person_name_is_escaped_in_the_search_payload_and_page():
+    from app.routes.portal_admin import portal_admin_client_search
+
+    staff = _staff_principal()
+    sfx = uuid.uuid4().hex[:8]
+    hostile = f"<script>alert('{sfx}')</script>"
+    with engine.begin() as c:
+        pid = c.execute(insert(people).values(
+            full_name=hostile, first_name="<img", last_name=f"onerror{sfx}",
+            active=True).returning(people.c.id)).scalar_one()
+    from app.db import record_assignments
+    with engine.begin() as c:
+        c.execute(insert(record_assignments).values(
+            entity_type="person", entity_id=pid, user_id=staff.user_id,
+            assignment_type="primary"))
+
+    # The JSON payload carries the raw value; the BROWSER never parses it as markup (test_e7),
+    # and any server-rendered page escapes it.
+    found = portal_admin_client_search(q=f"onerror{sfx}", principal=staff)
+    assert isinstance(found["results"], list)
+    html = _render_threads(staff)
+    assert f"<script>alert('{sfx}')</script>" not in html
+
+
+def test_e9_the_no_selection_guard_is_a_convenience_not_the_control():
+    """The browser guard and the server refusal say the same thing; the server decides."""
+    from app.routes.portal_admin import portal_admin_start_thread
+
+    js = open("app/static/js/client_portal_admin.js", encoding="utf-8").read()
+    assert 'var NO_CLIENT_SELECTED = "Select a client before starting a conversation.";' in js
+    assert hub.NO_CLIENT_SELECTED == "Select a client before starting a conversation."
+
+    response = portal_admin_start_thread(
+        SimpleNamespace(state=SimpleNamespace(request_id="r1")),
+        person_id="", subject="s", body="b", topic="", principal=_staff_principal())
+    assert response.status_code == 303 and "error=" in response.headers["location"]

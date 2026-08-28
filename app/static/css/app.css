@@ -268,6 +268,10 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .portal-invite-full { grid-column: 1 / -1; }
 .portal-access-option { display: block; font-weight: normal; }
 .client-result { display: block; width: 100%; text-align: left; margin: 4px 0; }
+/* One-field client selector on the secure-message compose form. Results reuse .client-result. */
+.client-typeahead { position: relative; }
+.client-typeahead input[type="text"] { width: 100%; }
+.client-typeahead-results { max-height: 260px; overflow-y: auto; }
 /* Search can return up to the full result limit (20 candidates, two lines each), which pushed the
    Add New Client workflow far below the fold. Bound the list and let it scroll on its own so the
    rest of the form stays reachable. min() keeps it from eating a short viewport; overflow-y:auto
