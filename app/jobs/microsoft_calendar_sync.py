@@ -24,6 +24,13 @@ def normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+# Graph serialises an ABSENT nested object and an EMPTY one differently: an event with no location
+# arrives as "location": null, with the key PRESENT. `.get("location", {})` therefore returns None —
+# the default only applies when the key is missing — and chaining `.get()` onto that raises
+# AttributeError, failing the whole sync rather than the one field. Every nested read below uses
+# `or {}` / `or []`, which is correct for absent, null AND empty payloads alike.
+
+
 def parse_graph_datetime(value: str | None) -> datetime:
     if not value:
         return datetime.now(UTC)
@@ -65,7 +72,7 @@ def build_person_email_index(
 
 def event_participants(event: Mapping[str, Any]) -> list[dict[str, str]]:
     participants: dict[str, dict[str, str]] = {}
-    organizer = event.get("organizer", {}).get("emailAddress", {})
+    organizer = (event.get("organizer") or {}).get("emailAddress") or {}
     organizer_email = normalize_email(organizer.get("address"))
 
     if organizer_email:
@@ -76,15 +83,15 @@ def event_participants(event: Mapping[str, Any]) -> list[dict[str, str]]:
             "response_status": "organizer",
         }
 
-    for attendee in event.get("attendees", []):
-        email_address = attendee.get("emailAddress", {})
+    for attendee in event.get("attendees") or []:
+        email_address = attendee.get("emailAddress") or {}
         email = normalize_email(email_address.get("address"))
 
         if not email:
             continue
 
         response_status = (
-            attendee.get("status", {}).get("response") or "none"
+            (attendee.get("status") or {}).get("response") or "none"
         )
         participants[email] = {
             "email": email,
@@ -101,17 +108,17 @@ def calendar_external_id(event_id: str, person_id: int) -> str:
 
 
 def build_timeline_metadata(event: Mapping[str, Any]) -> dict[str, Any]:
-    organizer = event.get("organizer", {}).get("emailAddress", {})
+    organizer = (event.get("organizer") or {}).get("emailAddress") or {}
     attendees = [
         {
-            "name": attendee.get("emailAddress", {}).get("name"),
+            "name": (attendee.get("emailAddress") or {}).get("name"),
             "email": normalize_email(
-                attendee.get("emailAddress", {}).get("address")
+                (attendee.get("emailAddress") or {}).get("address")
             ),
             "type": attendee.get("type"),
-            "response_status": attendee.get("status", {}).get("response"),
+            "response_status": (attendee.get("status") or {}).get("response"),
         }
-        for attendee in event.get("attendees", [])
+        for attendee in event.get("attendees") or []
     ]
 
     return {
@@ -125,7 +132,7 @@ def build_timeline_metadata(event: Mapping[str, Any]) -> dict[str, Any]:
         "attendees": attendees,
         "start": event.get("start"),
         "end": event.get("end"),
-        "location": event.get("location", {}).get("displayName"),
+        "location": (event.get("location") or {}).get("displayName"),
         # `or {}`, not a {} default: Graph sends "onlineMeeting": null explicitly for an event that
         # is not an online meeting, so the key IS present and .get() returns None rather than the
         # default. Chaining .get() onto that raised AttributeError and failed the whole sync.
@@ -133,7 +140,7 @@ def build_timeline_metadata(event: Mapping[str, Any]) -> dict[str, Any]:
             (event.get("onlineMeeting") or {}).get("joinUrl")
         ),
         "web_link": event.get("webLink"),
-        "response_status": event.get("responseStatus", {}).get("response"),
+        "response_status": (event.get("responseStatus") or {}).get("response"),
         "is_online_meeting": bool(event.get("isOnlineMeeting")),
     }
 
@@ -198,7 +205,7 @@ def process_calendar_events(
                 title=subject,
                 summary=preview or None,
                 event_time=parse_graph_datetime(
-                    event.get("start", {}).get("dateTime")
+                    (event.get("start") or {}).get("dateTime")
                 ),
                 external_id=calendar_external_id(event_id, person_id),
                 event_metadata=metadata,
@@ -240,12 +247,12 @@ def queue_unmatched_calendar_attendee(
         "response_status": participant.get("response_status"),
         "subject": event.get("subject") or "(No subject)",
         "starts_at": parse_graph_datetime(
-            event.get("start", {}).get("dateTime")
+            (event.get("start") or {}).get("dateTime")
         ),
         "ends_at": parse_graph_datetime(
-            event.get("end", {}).get("dateTime")
+            (event.get("end") or {}).get("dateTime")
         ),
-        "location": event.get("location", {}).get("displayName"),
+        "location": (event.get("location") or {}).get("displayName"),
         # `or {}`, not a {} default: Graph sends "onlineMeeting": null explicitly for an event that
         # is not an online meeting, so the key IS present and .get() returns None rather than the
         # default. Chaining .get() onto that raised AttributeError and failed the whole sync.
