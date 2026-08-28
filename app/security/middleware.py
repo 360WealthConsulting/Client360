@@ -300,7 +300,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 # client-facing surface. API callers keep the exact JSON body and status they had.
                 from app.templating import render_error as _render_error
                 from app.templating import wants_html as _wants_html
-                _detail = "This feature is not available on your account."
+                _detail = "This part of the portal isn't available right now. Please contact your advisor if you need it."
                 if _wants_html(request):
                     denied = _render_error(request, 403, detail=_detail)
                 else:
@@ -324,7 +324,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                                   user_agent=request.headers.get("user-agent"),
                                   metadata={"portal_account_id": portal_principal.account_id,
                                             "method": request.method})
-                denied = JSONResponse({"detail": "This action is not available on your account.",
+                denied = JSONResponse({"detail": "This action isn't available right now. Please contact your advisor if you need it.",
                                        "request_id": request.state.request_id}, status_code=403)
                 denied.headers["x-request-id"] = request.state.request_id
                 denied.headers["x-content-type-options"] = "nosniff"

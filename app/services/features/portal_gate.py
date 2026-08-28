@@ -145,6 +145,20 @@ def mutation_is_covered(path: str, method: str) -> bool:
             or _is_self_protected_mutation(path, method))
 
 
+def surface_available(principal, path: str, method: str = "GET") -> bool:
+    """Would :func:`evaluate` admit this client to this path? For deciding whether to RENDER a link.
+
+    This is presentation only — the middleware remains the authority and still evaluates every
+    request. It exists so the UI cannot advertise a destination that the very same evaluation would
+    then refuse: both answers come from one function, so they cannot drift. Never surfaces the
+    reason or the feature name to the client.
+    """
+    try:
+        return bool(evaluate(principal, path, method)[0])
+    except Exception:      # noqa: BLE001 — a presentation helper must never break a page render
+        return False        # fail closed: hide rather than advertise something that may 403
+
+
 def evaluate(principal, path: str, method: str) -> tuple[bool, str, str | None]:
     """(allowed, reason, feature). Exempt auth/security paths always pass. Otherwise external access
     requires ``production_ready()`` (portal enabled AND compliance signed off), then the client's

@@ -1575,7 +1575,7 @@ def test_p1_1_the_middleware_branches_on_wants_html_and_keeps_403():
     assert "_wants_html(request)" in block, "the denial does not branch for browsers"
     assert "_render_error(request, 403" in block
     assert "status_code=403" in block, "the JSON branch no longer returns 403"
-    assert "This feature is not available on your account." in block
+    assert "This part of the portal isn't available right now." in block
 
 
 def test_p1_1_gate_enforcement_itself_is_unchanged():

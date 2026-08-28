@@ -35,9 +35,13 @@
     ('/portal/tasks', 'Tasks'),
     ('/portal/profile', 'Profile'),
   ] %}
+  {# A link is rendered only if the SAME evaluation the middleware enforces would admit this
+     client, so the nav can never advertise a destination that immediately returns 403. #}
   {% for href, label in nav %}
+    {% if portal_can(principal, href) %}
     {% set is_active = (path == href) or (href != '/portal/' and path.startswith(href)) %}
     <a href="{{ href }}"{% if is_active %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+    {% endif %}
   {% endfor %}
 </nav>
 {% endif %}

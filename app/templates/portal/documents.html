@@ -10,7 +10,9 @@
     <h1>Your Documents</h1>
     <p class="portal-lead">Documents your advisor has shared with you, and the files you have uploaded.</p>
   </div>
+  {% if portal_can(principal, '/portal/upload') %}
   <a class="btn" href="/portal/upload">Upload a document</a>
+  {% endif %}
 </div>
 
 {% if requests %}
@@ -23,7 +25,9 @@
     <span class="pill pending">{{ req.status|title }}</span>
     {% if req.due_date %} · Due {{ req.due_date }}{% endif %}
   </p>
+  {% if portal_can(principal, '/portal/upload') %}
   <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/portal/upload?request_id={{ req.id }}">Upload for this request</a></p>
+  {% endif %}
 </article>
 {% endfor %}
 {% endif %}
@@ -48,7 +52,9 @@
 <div class="empty-state">
   <h3>No documents yet</h3>
   <p>When your advisor shares a document, or you upload one, it will appear here.</p>
+  {% if portal_can(principal, '/portal/upload') %}
   <a class="btn" href="/portal/upload">Upload your first document</a>
+  {% endif %}
 </div>
 {% endfor %}
 {% endblock %}

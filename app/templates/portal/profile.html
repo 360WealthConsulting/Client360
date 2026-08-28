@@ -12,7 +12,12 @@
   <div class="field">
     <label>Name</label>
     <input type="text" value="{{ profile.full_name or '' }}" readonly disabled>
+    {# Only point the client at secure messaging when they can actually reach it. #}
+    {% if portal_can(principal, '/portal/messages') %}
     <span class="hint">To update your legal name, please message your advisor.</span>
+    {% else %}
+    <span class="hint">To update your legal name, please contact your advisory team.</span>
+    {% endif %}
   </div>
 
   <div class="field">

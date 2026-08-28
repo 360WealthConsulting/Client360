@@ -31,6 +31,16 @@ from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
 router = APIRouter(tags=["client-portal"])
 templates = Jinja2Templates(directory="app/templates")
 
+
+def _portal_can(principal, path: str, method: str = "GET") -> bool:
+    """Template helper: may this client reach this path? Same evaluation the middleware enforces."""
+    from app.services.features.portal_gate import surface_available
+    return surface_available(principal, path, method)
+
+
+# Registered on the PORTAL template environment only — staff templates are unaffected.
+templates.env.globals["portal_can"] = _portal_can
+
 def current_portal(request: Request):
     principal = getattr(request.state, "portal_principal", None)
     if not principal: raise HTTPException(401, "Portal authentication required")
@@ -421,7 +431,7 @@ def api_portal_document_download(request: Request, document_id: int,
     if not portal_runtime_gate("portal.documents.download_enabled"):
         # Feature unavailable is NOT a resource-existence answer; the middleware returns the same 403
         # before this route runs. Kept here so a direct call cannot bypass the surface gate.
-        raise HTTPException(403, "This feature is not available on your account.")
+        raise HTTPException(403, "This part of the portal isn't available right now. Please contact your advisor if you need it.")
     try:
         path, filename, mime = portal_vault.download_document(
             principal, document_id,

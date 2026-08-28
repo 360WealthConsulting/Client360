@@ -8,15 +8,20 @@
   <a href="/portal/action-needed"><span>Action needed</span><strong>{{ portal.action_items|length }}</strong></a>
   <a href="/portal/tasks"><span>Tasks</span><strong>{{ portal.tasks|length }}</strong></a>
   <a href="/portal/requests"><span>Document requests</span><strong>{{ portal.document_requests|length }}</strong></a>
+  {% if portal_can(principal, '/portal/messages') %}
   <a href="/portal/messages"><span>Messages</span><strong>{{ portal.messages|length }}</strong></a>
+  {% endif %}
   <a href="/portal/documents"><span>Documents</span><strong>{{ portal.documents|length }}</strong></a>
-  <article><span>Upcoming meetings</span><strong>{{ portal.meetings|length }}</strong></article>
 </section>
 
+{% set can_upload = portal_can(principal, '/portal/upload') %}
+{% set can_message = portal_can(principal, '/portal/messages') %}
+{% if can_upload or can_message %}
 <div class="quick-links">
-  <a class="btn" href="/portal/upload">Upload a document</a>
-  <a class="btn secondary" href="/portal/messages">Message your advisor</a>
+  {% if can_upload %}<a class="btn" href="/portal/upload">Upload a document</a>{% endif %}
+  {% if can_message %}<a class="btn secondary" href="/portal/messages">Message your advisor</a>{% endif %}
 </div>
+{% endif %}
 
 {% if portal.action_items %}
 <div class="flash error" style="background:#fef3c7;color:#854d0e;border-color:#fde68a;">

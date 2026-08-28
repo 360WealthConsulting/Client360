@@ -135,7 +135,7 @@ def api_download_document(request: Request, document_id: int,
     if not portal_runtime_gate("portal.documents.download_enabled"):
         # Feature unavailable — deliberately distinct from resource inaccessibility, and the same
         # answer the middleware gives before this route runs.
-        raise HTTPException(403, "This feature is not available on your account.")
+        raise HTTPException(403, "This part of the portal isn't available right now. Please contact your advisor if you need it.")
     try:
         path, filename, mime = portal_vault.download_document(
             principal, document_id, request_id=_rid(request), ip_address=_ip(request))

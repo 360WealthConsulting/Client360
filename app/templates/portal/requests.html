@@ -11,7 +11,7 @@
     <span class="pill {{ 'ok' if row.status == 'uploaded' else 'pending' }}">{{ row.status|title }}</span>
     {% if row.due_date %} · Due {{ row.due_date }}{% endif %}
   </p>
-  {% if row.status != 'uploaded' %}
+  {% if row.status != 'uploaded' and portal_can(principal, '/portal/upload') %}
   <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/portal/upload?request_id={{ row.id }}">Upload for this request</a></p>
   {% endif %}
 </article>

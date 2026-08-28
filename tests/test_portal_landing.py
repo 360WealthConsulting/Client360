@@ -111,7 +111,8 @@ def test_the_route_takes_no_client_identifier_from_the_browser():
 
 
 # --- rendering -----------------------------------------------------------------------------------
-def test_a_authenticated_client_with_data_renders_the_dashboard(env):
+def test_a_authenticated_client_with_data_renders_the_dashboard(env, portal_messaging_on):
+    """The nav is gate-aware, so the Messages link is asserted with messaging switched ON."""
     _, principal, pid, _ = env.account()
     env.staff_doc(pid, client_visible=True)
     html = render(_open(principal))

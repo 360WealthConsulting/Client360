@@ -172,7 +172,7 @@ def test_empty_state_render():
     assert "all caught up" in html.body.decode()
 
 
-def test_navigation_link_present():
+def test_navigation_link_present(portal_master_on):
     base = pathlib.Path("app/templates/portal/base.html").read_text()
     assert "/portal/action-needed" in base           # declared in the (data-driven) portal nav
     u, p, h, portal, r = _case()

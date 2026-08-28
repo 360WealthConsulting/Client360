@@ -41,7 +41,7 @@ _CLIENT_STATUS = {
 _DOWNLOADABLE = {"approved", "signed", "filed"}     # "Download approved documents"
 
 
-def _client_view(row) -> dict:
+def _client_view(row, *, downloads_enabled=True) -> dict:
     pending = row["uploaded_by_portal_account_id"] is not None and row["status"] in {"uploaded", "under_review"}
     return {
         "id": row["id"], "display_name": row["display_name"], "category": row["category"],
@@ -50,8 +50,10 @@ def _client_view(row) -> dict:
         "pending_approval": pending, "file_size": row["file_size"], "version": row["current_version"],
         "uploaded_by_client": row["uploaded_by_portal_account_id"] is not None,
         "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-        "downloadable": row["client_visible"] and (row["status"] in _DOWNLOADABLE
-                                                    or row["uploaded_by_portal_account_id"] is not None),
+        # The firm-wide download gate is part of "downloadable" so the UI cannot render a Download
+        # control that download_document() would then refuse with a 403.
+        "downloadable": downloads_enabled and row["client_visible"] and (
+            row["status"] in _DOWNLOADABLE or row["uploaded_by_portal_account_id"] is not None),
     }
 
 
@@ -77,7 +79,8 @@ def portal_documents(principal, scope=None) -> list[dict]:
             .where(vault_document_links.c.person_id.in_(person_ids),
                    vault_documents.c.client_visible.is_(True))
             .distinct().order_by(vault_documents.c.created_at.desc())).mappings().all()
-    return [_client_view(r) for r in rows]
+    downloads_enabled = gate("portal.documents.download_enabled")   # evaluated once, not per row
+    return [_client_view(r, downloads_enabled=downloads_enabled) for r in rows]
 
 
 def _reachable_document(conn, principal, document_id, scope):

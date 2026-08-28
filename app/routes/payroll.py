@@ -171,7 +171,7 @@ def portal_payroll(organization_id: int, request: Request,
     if organization_id not in set(scope.get("organization_ids", [])):
         raise HTTPException(404, "Not found")
     if not client_can(principal, pay.FEATURE_KEY, organization_id=organization_id):
-        raise HTTPException(403, "This feature is not available on your account.")
+        raise HTTPException(403, "This part of the portal isn't available right now. Please contact your advisor if you need it.")
     summary = _run(lambda: pay.portal_summary(organization_id))
     return templates.TemplateResponse("payroll/portal.html", {
         "request": request, "organization_id": organization_id,

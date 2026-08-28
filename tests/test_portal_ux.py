@@ -13,7 +13,8 @@ from app.routes.portal import (
 from tests._portal_util import fake_request, render, seed_portal_account, seed_staff_user
 
 
-def test_shell_nav_is_coherent_and_branded():
+def test_shell_nav_is_coherent_and_branded(portal_documents_upload_on, portal_messaging_on):
+    """The nav is now gate-aware, so the enabled-surface shell is asserted with those gates ON."""
     _, principal, _, _ = seed_portal_account(seed_staff_user())
     html = render(portal_page("", fake_request("/portal/"), principal))
     # 360Plus brand + the coherent primary nav + a sign-out control.
@@ -24,7 +25,7 @@ def test_shell_nav_is_coherent_and_branded():
     assert 'action="/portal/logout"' in html and "Sign out" in html
 
 
-def test_active_nav_item_is_marked():
+def test_active_nav_item_is_marked(portal_master_on):
     _, principal, _, _ = seed_portal_account(seed_staff_user())
     html = render(portal_documents_page(fake_request("/portal/documents"), principal))
     assert '<a href="/portal/documents" class="active" aria-current="page">Documents</a>' in html
