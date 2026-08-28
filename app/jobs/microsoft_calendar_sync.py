@@ -126,8 +126,11 @@ def build_timeline_metadata(event: Mapping[str, Any]) -> dict[str, Any]:
         "start": event.get("start"),
         "end": event.get("end"),
         "location": event.get("location", {}).get("displayName"),
+        # `or {}`, not a {} default: Graph sends "onlineMeeting": null explicitly for an event that
+        # is not an online meeting, so the key IS present and .get() returns None rather than the
+        # default. Chaining .get() onto that raised AttributeError and failed the whole sync.
         "online_meeting_link": (
-            event.get("onlineMeeting", {}).get("joinUrl")
+            (event.get("onlineMeeting") or {}).get("joinUrl")
         ),
         "web_link": event.get("webLink"),
         "response_status": event.get("responseStatus", {}).get("response"),
@@ -243,8 +246,11 @@ def queue_unmatched_calendar_attendee(
             event.get("end", {}).get("dateTime")
         ),
         "location": event.get("location", {}).get("displayName"),
+        # `or {}`, not a {} default: Graph sends "onlineMeeting": null explicitly for an event that
+        # is not an online meeting, so the key IS present and .get() returns None rather than the
+        # default. Chaining .get() onto that raised AttributeError and failed the whole sync.
         "online_meeting_link": (
-            event.get("onlineMeeting", {}).get("joinUrl")
+            (event.get("onlineMeeting") or {}).get("joinUrl")
         ),
         "web_link": event.get("webLink"),
         "event_metadata": dict(metadata),

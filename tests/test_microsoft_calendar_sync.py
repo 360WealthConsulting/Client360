@@ -149,3 +149,96 @@ def test_cancelled_events_are_not_published_or_queued():
     assert result["cancelled_events"] == 1
     assert published == []
     assert queued == []
+
+
+# --- null onlineMeeting (Graph sends the key with an explicit null) -------------------------
+#
+# Graph returns "onlineMeeting": null for an event that is not an online meeting. The key is
+# PRESENT, so `event.get("onlineMeeting", {})` returns None rather than the {} default, and
+# chaining `.get("joinUrl")` onto it raised AttributeError — which failed the whole calendar sync,
+# not just that one event. Both metadata builders read this field, so both are covered here.
+
+import uuid
+
+import pytest
+from sqlalchemy import select
+
+from app.db import engine, microsoft_unmatched_calendar_attendees
+from app.jobs.microsoft_calendar_sync import (
+    build_timeline_metadata,
+    queue_unmatched_calendar_attendee,
+)
+
+#: The four shapes Graph actually sends, and the join URL each must produce.
+ONLINE_MEETING_CASES = [
+    pytest.param({}, None, id="key-absent"),
+    pytest.param({"onlineMeeting": None}, None, id="explicit-null"),
+    pytest.param({"onlineMeeting": {}}, None, id="empty-object"),
+    pytest.param({"onlineMeeting": {"joinUrl": "https://example.test/meeting"}},
+                 "https://example.test/meeting", id="real-join-url"),
+]
+
+
+@pytest.mark.parametrize("overlay,expected", ONLINE_MEETING_CASES)
+def test_build_timeline_metadata_handles_every_online_meeting_shape(overlay, expected):
+    """Site 1: build_timeline_metadata (app/jobs/microsoft_calendar_sync.py:133)."""
+    event = sample_event()
+    event.pop("onlineMeeting", None)
+    event.update(overlay)
+
+    metadata = build_timeline_metadata(event)          # must not raise
+
+    assert metadata["online_meeting_link"] == expected
+
+
+@pytest.mark.parametrize("overlay,expected", ONLINE_MEETING_CASES)
+def test_queue_unmatched_calendar_attendee_handles_every_online_meeting_shape(overlay, expected):
+    """Site 2: queue_unmatched_calendar_attendee (app/jobs/microsoft_calendar_sync.py:253).
+
+    Asserts on the PERSISTED row, so this covers the real write path rather than a return value."""
+    event = sample_event()
+    event.pop("onlineMeeting", None)
+    event.update(overlay)
+    event["id"] = f"evt-{uuid.uuid4().hex[:12]}"
+
+    queue_unmatched_calendar_attendee(                 # must not raise
+        event=event,
+        participant={"email": f"guest-{uuid.uuid4().hex[:8]}@example.test",
+                     "name": "Unknown Guest", "role": "optional",
+                     "response_status": "none"},
+        metadata={"source": "test"})
+
+    with engine.connect() as connection:
+        stored = connection.execute(select(
+            microsoft_unmatched_calendar_attendees.c.online_meeting_link).where(
+            microsoft_unmatched_calendar_attendees.c.microsoft_event_id == event["id"])
+        ).scalars().one()
+    assert stored == expected
+
+
+def test_an_explicit_null_online_meeting_does_not_disturb_the_other_metadata():
+    """Requirement 5: normal calendar metadata behaviour is unchanged by the fix."""
+    event = sample_event()
+    baseline = build_timeline_metadata(event)
+    event["onlineMeeting"] = None
+
+    metadata = build_timeline_metadata(event)
+
+    assert metadata["online_meeting_link"] is None
+    for field in ("microsoft_event_id", "subject", "body_preview", "organizer", "attendees",
+                  "start", "end", "location", "web_link", "response_status"):
+        assert metadata[field] == baseline[field], f"{field} changed"
+    # isOnlineMeeting is a separate Graph field and is reported independently of the join URL.
+    assert metadata["is_online_meeting"] is True
+
+
+def test_both_online_meeting_reads_are_null_safe_in_source():
+    """Guards against either site regressing to the `{}`-default form."""
+    import inspect
+
+    from app.jobs import microsoft_calendar_sync
+
+    src = inspect.getsource(microsoft_calendar_sync)
+    code = "\n".join(line.split("#")[0] for line in src.splitlines())
+    assert 'get("onlineMeeting", {})' not in code, "an unguarded onlineMeeting read came back"
+    assert code.count('(event.get("onlineMeeting") or {}).get("joinUrl")') == 2
