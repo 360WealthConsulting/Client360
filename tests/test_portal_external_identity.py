@@ -467,6 +467,11 @@ def test_start_redirects_to_login_when_no_production_provider_is_registered():
 def test_start_mints_state_nonce_and_verifier_into_the_session(monkeypatch):
     from app.routes import portal as portal_routes
 
+    # /portal/auth/start now refuses before minting anything unless the portal is production-ready
+    # (so a gated portal cannot consume a client's single-use invitation). This test exercises the
+    # AVAILABLE path, so it sets that precondition explicitly.
+    monkeypatch.setattr("app.portal.gate.production_ready", lambda: True)
+
     class _P:
         def authorization_url(self, **kw):
             _P.seen = kw

@@ -111,13 +111,26 @@ def portal_auth_start(request: Request, invitation: str | None = None):
 
     ``state``, ``nonce`` and the PKCE verifier are held in the browser session and never given to the
     client as parameters, so a callback cannot be replayed into a different session. An optional
-    ``invitation`` token is carried in the session (not the redirect) for first-time activation."""
+    ``invitation`` token is carried in the session (not the redirect) for first-time activation.
+
+    Refuses BEFORE anything is minted when the portal is not production-ready. The portal auth routes
+    are exempt from the portal gate (they run pre-session), so without this check a client could
+    complete the whole Microsoft flow and have ``accept_invitation`` spend their single-use token —
+    binding their subject and activating the account — only to be refused at ``/portal`` by the gate.
+    The invitation would be gone and the client would have seen a failure. Checked first, so no state,
+    nonce, verifier or OIDC transaction is created and the invitation stays unconsumed."""
     import base64
     import hashlib
     import secrets
 
+    from app.portal.gate import production_ready
     from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
     from app.security.origin import CanonicalOriginError, external_url
+
+    if not production_ready():
+        # Same generic code the other unavailable paths use: the browser learns nothing about which
+        # gate is closed.
+        return RedirectResponse("/portal/login?error=unavailable", 303)
 
     try:
         provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())

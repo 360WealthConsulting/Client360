@@ -67,6 +67,10 @@ def test_auth_start_and_token_exchange_send_the_identical_redirect_uri(clean_env
 
     clean_env.setenv("PUBLIC_BASE_URL", PROD_ORIGIN)
     clean_env.setenv("CLIENT360_ENVIRONMENT", "production")
+    # /portal/auth/start refuses before minting anything unless the portal is production-ready, so a
+    # gated portal cannot consume a client's single-use invitation. This test drives the AVAILABLE
+    # path; the redirect-URI assertions below are unchanged.
+    monkeypatch.setattr("app.portal.gate.production_ready", lambda: True)
     sent = {}
 
     class _P:

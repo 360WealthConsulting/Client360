@@ -172,6 +172,8 @@ def _harness(fetch_impl: str, *, activation: bool = False) -> str:
           readyState: "complete",
           getElementById: id => nodes[id] || null,
           createElement: tag => el(null, tag),
+          // The script binds confirmation prompts to data-confirm forms; the stub has none.
+          querySelectorAll: () => [],
           addEventListener: () => {}
         };
         global.setTimeout = (fn) => { fn(); return 1; };   // run debounced work immediately

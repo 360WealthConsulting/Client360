@@ -129,18 +129,28 @@
 <h2 class="section-title">Portal accounts</h2>
 <div class="table-wrap">
   <table class="data">
-    <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>MFA</th><th>Last login</th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Invitation</th><th>MFA</th>
+      <th>Last login</th><th>Actions</th></tr></thead>
     <tbody>
     {% for a in accounts %}
       <tr>
         <td>{{ a.display_name }}</td>
         <td>{{ a.email }}</td>
         <td>{{ a.status }}</td>
+        <td class="subtle">{{ a.invitation_state }}</td>
         <td>{% if a.mfa_enabled %}{{ ui.badge('Yes','good') }}{% else %}{{ ui.badge('No','warn') }}{% endif %}</td>
         <td class="subtle">{{ a.last_login_at or "Never" }}</td>
+        <td>
+          {% if a.status != 'revoked' %}
+          <form method="post" action="/admin/client-portal/accounts/{{ a.id }}/revoke"
+                class="portal-revoke" data-confirm="Revoke portal access for {{ a.display_name }}? They will be signed out and the invitation link will stop working.">
+            <button type="submit" class="btn secondary">Revoke</button>
+          </form>
+          {% else %}<span class="subtle">—</span>{% endif %}
+        </td>
       </tr>
     {% else %}
-      <tr><td colspan="5" class="subtle">No portal accounts yet.</td></tr>
+      <tr><td colspan="7" class="subtle">No portal accounts yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

@@ -37,6 +37,7 @@
   ready(function () {
     var form = document.getElementById("invite-form");
     var results = document.getElementById("client-results");
+    bindConfirmForms();
     if (!form || !results) {
       bindActivationLink();
       return;
@@ -242,6 +243,21 @@
 
     bindActivationLink();
   });
+
+  function bindConfirmForms() {
+    /* Confirmation for destructive staff actions. An inline onsubmit="return confirm(...)" would be
+       blocked by the CSP exactly like an inline <script>, so the prompt is bound here from a
+       data-confirm attribute. With JavaScript unavailable the form still submits and the server
+       still enforces capability + record scope — this is a guard rail, not the protection. */
+    var forms = document.querySelectorAll("form[data-confirm]");
+    Array.prototype.forEach.call(forms, function (form) {
+      form.addEventListener("submit", function (event) {
+        if (!window.confirm(form.getAttribute("data-confirm"))) {
+          event.preventDefault();
+        }
+      });
+    });
+  }
 
   function bindActivationLink() {
     var activation = document.getElementById("activation-link");

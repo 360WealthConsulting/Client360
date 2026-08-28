@@ -1527,3 +1527,300 @@ def test_creation_does_not_change_search_ranking_or_the_invitation_contract():
     assert invite_targets.PERMITTED_ACCESS_TYPES == {"self", "joint"}
     assert invite_targets._tier({"phone": "exact", "email": None,
                                  "first_name": None, "last_name": None}) == 1
+
+
+# --- P1 readiness fixes: gate denial, invitation preservation, revoke, invitation state -----------
+
+def test_p1_1_a_browser_gate_denial_renders_html_not_json():
+    """A client blocked by the portal gate is normally a browser navigation. Raw JSON in the
+    address bar is not an acceptable client-facing surface."""
+    import asyncio
+
+    from app.templating import render_error, wants_html
+
+    request = SimpleNamespace(headers={"accept": "text/html,application/xhtml+xml"},
+                              state=SimpleNamespace(request_id="rq-1"),
+                              url=SimpleNamespace(path="/portal"), query_params={})
+    assert wants_html(request) is True
+    response = render_error(request, 403, detail="This feature is not available on your account.")
+    body = response.body.decode()
+    assert response.status_code == 403
+    assert "<!doctype html>" in body.lower()
+    assert "This feature is not available on your account." in body
+    assert '"detail"' not in body, "raw JSON reached the browser"
+    assert asyncio is not None
+
+
+def test_p1_1_an_api_client_still_receives_json():
+    from app.templating import wants_html
+
+    request = SimpleNamespace(headers={"accept": "application/json"},
+                              state=SimpleNamespace(request_id="rq-1"),
+                              url=SimpleNamespace(path="/api/v1/portal/documents"), query_params={})
+    assert wants_html(request) is False, "an API caller would be given HTML"
+
+
+def test_p1_1_the_middleware_branches_on_wants_html_and_keeps_403():
+    import inspect
+
+    from app.security import middleware
+    src = inspect.getsource(middleware)
+    block = src.split("if not _allowed:")[1].split("return denied")[0]
+    assert "_wants_html(request)" in block, "the denial does not branch for browsers"
+    assert "_render_error(request, 403" in block
+    assert "status_code=403" in block, "the JSON branch no longer returns 403"
+    assert "This feature is not available on your account." in block
+
+
+def test_p1_1_gate_enforcement_itself_is_unchanged():
+    """Only the RESPONSE shape changed; who is denied did not."""
+    import inspect
+
+    from app.services.features import portal_gate
+    src = inspect.getsource(portal_gate.evaluate)
+    assert "if not production_ready():" in src
+    assert 'return (False, "portal_not_production_ready", "portal_access")' in src
+    assert 'return (True, "exempt", None)' in src
+
+
+def test_p1_2_auth_start_refuses_before_minting_anything_when_not_production_ready(monkeypatch):
+    """The auth routes are gate-exempt, so without this check the client would complete OIDC,
+    spend their single-use invitation, and only then be refused at /portal.
+
+    A provider IS registered here on purpose: without one the route would refuse anyway via the
+    provider lookup, and the test would pass whether or not the availability guard exists."""
+    from app.routes.portal import portal_auth_start
+
+    class _P:
+        def authorization_url(self, **kw):
+            raise AssertionError("the IdP flow was started while the portal is unavailable")
+
+    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
+    monkeypatch.setattr("app.portal.gate.production_ready", lambda: False)
+    session: dict = {}
+    request = _req(session)
+    request.url_for = lambda name: "https://app.test/portal/auth/callback"
+    response = portal_auth_start(request, invitation="INV-TOKEN-MUST-NOT-BE-CONSUMED")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/portal/login?error=unavailable"
+    # nothing minted, nothing stashed: no state, nonce, verifier, or invitation
+    assert session == {}, "an OIDC transaction or the invitation was stored anyway"
+
+
+def test_p1_2_the_check_runs_before_state_nonce_and_pkce():
+    import inspect
+
+    from app.routes import portal as portal_routes
+    src = inspect.getsource(portal_routes.portal_auth_start)
+    guard = src.index("if not production_ready():")
+    for minted in ("secrets.token_urlsafe(32)", "secrets.token_urlsafe(64)", "hashlib.sha256",
+                   "portal_oidc_state", "portal_oidc_invitation"):
+        assert guard < src.index(minted), f"{minted} is created before the availability check"
+
+
+def test_p1_2_when_production_ready_the_existing_flow_is_unchanged(monkeypatch):
+    from app.routes import portal as portal_routes
+
+    class _P:
+        def authorization_url(self, **kw):
+            _P.seen = kw
+            return "https://idp/authorize?x=1"
+
+    monkeypatch.setattr("app.portal.gate.production_ready", lambda: True)
+    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
+    session: dict = {}
+    request = _req(session)
+    request.url_for = lambda name: "https://app.test/portal/auth/callback"
+    response = portal_routes.portal_auth_start(request, invitation="INV-TOKEN")
+    assert response.status_code == 303 and response.headers["location"].startswith("https://idp/")
+    for key in ("portal_oidc_state", "portal_oidc_nonce", "portal_oidc_verifier"):
+        assert session.get(key), f"{key} was not minted on the available path"
+    assert session["portal_oidc_invitation"] == "INV-TOKEN"
+    assert _P.seen["code_challenge"] != session["portal_oidc_verifier"]   # PKCE unchanged
+
+
+def test_p1_3_every_active_account_has_a_working_revoke_control():
+    from app.db import portal_accounts
+
+    sfx = uuid.uuid4().hex[:8]
+    pid = _person(first="Rev", last=f"Oke{sfx}", household_id=_household(),
+                  email=f"rev-{sfx}@example.com")
+    with engine.begin() as c:
+        aid = c.execute(portal_accounts.insert().values(
+            person_id=pid, email=f"rev-{sfx}@example.com",
+            normalized_email=f"rev-{sfx}@example.com", display_name=f"Rev Oke{sfx}",
+            status="invited").returning(portal_accounts.c.id)).scalar_one()
+    html = _render_admin_home()
+    assert f'action="/admin/client-portal/accounts/{aid}/revoke"' in html
+    assert 'method="post"' in html and ">Revoke</button>" in html
+    assert f">{aid}<" not in html, "the raw account id is shown as user-facing text"
+
+
+def test_p1_3_the_revoke_control_uses_no_inline_javascript():
+    """A confirmation is offered, but through a data attribute bound in the external script —
+    an inline onsubmit would be blocked by the CSP exactly like an inline <script>."""
+    html = _render_admin_home()
+    assert "data-confirm=" in html
+    for blocked in ("onsubmit=", "onclick=", "javascript:", "<script>", "style="):
+        assert blocked not in html, f"{blocked} would violate the CSP"
+    js = (REPO_ROOT / "app" / "static" / "js" / "client_portal_admin.js").read_text()
+    assert 'querySelectorAll("form[data-confirm]")' in js
+    assert "window.confirm" in js and "event.preventDefault()" in js
+
+
+def test_p1_3_revoke_backend_semantics_are_unchanged():
+    import inspect
+
+    from app.routes import portal_admin
+    src = inspect.getsource(portal_admin.portal_admin_revoke)
+    assert 'require_capability("client.write")' in src
+    assert 'record_in_scope(principal, "person", acct["person_id"], write=True)' in src
+    assert 'values(\n            status="revoked")' in src or 'status="revoked"' in src
+    assert "portal.admin.revoked" in src
+
+
+def test_p1_3_a_revoked_account_offers_no_revoke_form():
+    from app.db import portal_accounts
+
+    sfx = uuid.uuid4().hex[:8]
+    pid = _person(first="Gone", last=f"Already{sfx}", household_id=_household(),
+                  email=f"gone-{sfx}@example.com")
+    with engine.begin() as c:
+        aid = c.execute(portal_accounts.insert().values(
+            person_id=pid, email=f"gone-{sfx}@example.com",
+            normalized_email=f"gone-{sfx}@example.com", display_name=f"Gone Already{sfx}",
+            status="revoked").returning(portal_accounts.c.id)).scalar_one()
+    html = _render_admin_home()
+    assert f'action="/admin/client-portal/accounts/{aid}/revoke"' not in html
+
+
+# --- P1-4 invitation state -------------------------------------------------------------------
+
+def _account_with_invitations(sfx, *invitations):
+    """One portal account plus the given invitations, oldest first."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import portal_accounts, portal_invitations
+
+    pid = _person(first="Inv", last=f"State{sfx}", household_id=_household(),
+                  email=f"inv-{sfx}@example.com")
+    uid = _staff_user()
+    with engine.begin() as c:
+        aid = c.execute(portal_accounts.insert().values(
+            person_id=pid, email=f"inv-{sfx}@example.com",
+            normalized_email=f"inv-{sfx}@example.com", display_name=f"Inv State{sfx}",
+            status="invited").returning(portal_accounts.c.id)).scalar_one()
+        for n, spec in enumerate(invitations):
+            c.execute(portal_invitations.insert().values(
+                portal_account_id=aid, token_hash=f"hash-{sfx}-{n}", invited_by_user_id=uid,
+                expires_at=spec["expires_at"], accepted_at=spec.get("accepted_at"),
+                revoked_at=spec.get("revoked_at")))
+    assert datetime and timedelta and timezone
+    return aid
+
+
+def _state_for(account_id):
+    from app.routes.portal_admin import _accounts
+    return [a for a in _accounts() if a["id"] == account_id][0]["invitation_state"]
+
+
+def test_p1_4_no_invitation():
+    from app.db import portal_accounts
+
+    sfx = uuid.uuid4().hex[:8]
+    pid = _person(first="No", last=f"Invite{sfx}", household_id=_household(),
+                  email=f"ni-{sfx}@example.com")
+    with engine.begin() as c:
+        aid = c.execute(portal_accounts.insert().values(
+            person_id=pid, email=f"ni-{sfx}@example.com", normalized_email=f"ni-{sfx}@example.com",
+            display_name=f"No Invite{sfx}", status="invited").returning(
+            portal_accounts.c.id)).scalar_one()
+    assert _state_for(aid) == "No invitation"
+
+
+def test_p1_4_pending_shows_time_remaining():
+    from datetime import datetime, timedelta, timezone
+
+    sfx = uuid.uuid4().hex[:8]
+    aid = _account_with_invitations(
+        sfx, {"expires_at": datetime.now(timezone.utc) + timedelta(hours=18)})
+    state = _state_for(aid)
+    assert state.startswith("Pending"), state
+    assert "expires in" in state
+
+
+def test_p1_4_accepted():
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    sfx = uuid.uuid4().hex[:8]
+    aid = _account_with_invitations(
+        sfx, {"expires_at": now + timedelta(hours=5), "accepted_at": now})
+    assert _state_for(aid) == "Accepted"
+
+
+def test_p1_4_expired():
+    from datetime import datetime, timedelta, timezone
+
+    sfx = uuid.uuid4().hex[:8]
+    aid = _account_with_invitations(
+        sfx, {"expires_at": datetime.now(timezone.utc) - timedelta(hours=2)})
+    assert _state_for(aid) == "Expired"
+
+
+def test_p1_4_revoked():
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    sfx = uuid.uuid4().hex[:8]
+    aid = _account_with_invitations(
+        sfx, {"expires_at": now + timedelta(hours=5), "revoked_at": now})
+    assert _state_for(aid) == "Revoked"
+
+
+def test_p1_4_the_latest_invitation_wins():
+    """A re-invited client must show the NEW link's state, not the dead one."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    sfx = uuid.uuid4().hex[:8]
+    aid = _account_with_invitations(
+        sfx,
+        {"expires_at": now - timedelta(days=2)},                    # older, expired
+        {"expires_at": now + timedelta(hours=18)},                  # newest, pending
+    )
+    assert _state_for(aid).startswith("Pending")
+
+
+def test_p1_4_no_token_hash_or_invitation_id_reaches_the_template():
+    from datetime import datetime, timedelta, timezone
+
+    sfx = uuid.uuid4().hex[:8]
+    aid = _account_with_invitations(
+        sfx, {"expires_at": datetime.now(timezone.utc) + timedelta(hours=6)})
+    from app.routes.portal_admin import _accounts
+    account = [a for a in _accounts() if a["id"] == aid][0]
+    assert set(account) == {"id", "display_name", "email", "status", "mfa_enabled",
+                            "last_login_at", "person_id", "invitation_state"}
+    html = _render_admin_home()
+    assert f"hash-{sfx}-0" not in html, "an invitation token hash reached the page"
+    assert "token_hash" not in html and "expires_at" not in html
+
+
+def test_p1_4_the_column_is_rendered_and_escaped():
+    from datetime import datetime, timedelta, timezone
+
+    sfx = uuid.uuid4().hex[:8]
+    _account_with_invitations(sfx, {"expires_at": datetime.now(timezone.utc) + timedelta(hours=6)})
+    html = _render_admin_home()
+    assert "<th>Invitation</th>" in html
+    assert "Pending" in html
+
+
+def test_p1_4_uses_one_bounded_query_not_a_per_account_lookup():
+    import inspect
+
+    from app.routes import portal_admin
+    src = inspect.getsource(portal_admin._accounts)
+    assert "scalar_subquery()" in src and "outerjoin" in src
+    assert src.count("connection.execute") == 1, "the accounts table performs N+1 queries"

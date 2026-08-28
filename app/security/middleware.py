@@ -295,8 +295,17 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 portal_principal, request.url.path, request.method)
             if not _allowed:
                 # Never leak the internal reason to the client; the staff Access & Features screen shows it.
-                denied = JSONResponse({"detail": "This feature is not available on your account.",
-                                       "request_id": request.state.request_id}, status_code=403)
+                # A CLIENT hitting this is usually a browser navigation, so it gets the styled 403 the
+                # staff side already renders — raw JSON in the address bar is not an acceptable
+                # client-facing surface. API callers keep the exact JSON body and status they had.
+                from app.templating import render_error as _render_error
+                from app.templating import wants_html as _wants_html
+                _detail = "This feature is not available on your account."
+                if _wants_html(request):
+                    denied = _render_error(request, 403, detail=_detail)
+                else:
+                    denied = JSONResponse({"detail": _detail,
+                                           "request_id": request.state.request_id}, status_code=403)
                 denied.headers["x-request-id"] = request.state.request_id
                 denied.headers["x-content-type-options"] = "nosniff"
                 denied.headers["x-frame-options"] = "DENY"

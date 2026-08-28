@@ -14,13 +14,16 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from sqlalchemy import select
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select
 
 from app.db import (
     engine,
     people,
     portal_access_grants,
     portal_accounts,
+    portal_invitations,
     portal_threads,
 )
 from app.portal import communication_hub as hub
@@ -103,12 +106,63 @@ def _take_activation_url(request):
     return invitation_handoff.take(session.pop(HANDOFF_SESSION_KEY, None))
 
 
+def _invitation_state(row, now) -> str:
+    """The LATEST invitation for an account, as one human-readable phrase.
+
+    Derived entirely from canonical ``portal_invitations`` columns — never guessed, never computed in
+    the browser. Carries no invitation id, token or hash: only what a staff member needs to know
+    whether the link they sent still works."""
+    if row["invited_at"] is None:
+        return "No invitation"
+    if row["revoked_at"] is not None:
+        return "Revoked"
+    if row["accepted_at"] is not None:
+        return "Accepted"
+    expires_at = row["expires_at"]
+    if expires_at is None:
+        return "Pending"
+    if expires_at <= now:
+        return "Expired"
+    remaining = expires_at - now
+    hours = int(remaining.total_seconds() // 3600)
+    if hours >= 24:
+        days = hours // 24
+        return f"Pending · expires in {days}d"
+    if hours >= 1:
+        return f"Pending · expires in {hours}h"
+    minutes = max(1, int(remaining.total_seconds() // 60))
+    return f"Pending · expires in {minutes}m"
+
+
 def _accounts():
+    """Portal accounts with the state of their most recent invitation.
+
+    One bounded query, not a per-account lookup: a correlated subquery picks the latest invitation id
+    per account and the join reads only that row, so the table costs the same whether an account has
+    one invitation or ten."""
+    latest = (select(func.max(portal_invitations.c.id))
+              .where(portal_invitations.c.portal_account_id == portal_accounts.c.id)
+              .correlate(portal_accounts).scalar_subquery())
+    now = datetime.now(timezone.utc)
     with engine.connect() as connection:
-        return [dict(r) for r in connection.execute(select(
-            portal_accounts.c.id, portal_accounts.c.display_name, portal_accounts.c.email,
-            portal_accounts.c.status, portal_accounts.c.mfa_enabled, portal_accounts.c.last_login_at,
-            portal_accounts.c.person_id).order_by(portal_accounts.c.created_at.desc())).mappings().all()]
+        rows = connection.execute(
+            select(portal_accounts.c.id, portal_accounts.c.display_name, portal_accounts.c.email,
+                   portal_accounts.c.status, portal_accounts.c.mfa_enabled,
+                   portal_accounts.c.last_login_at, portal_accounts.c.person_id,
+                   portal_invitations.c.created_at.label("invited_at"),
+                   portal_invitations.c.expires_at, portal_invitations.c.accepted_at,
+                   portal_invitations.c.revoked_at)
+            .select_from(portal_accounts.outerjoin(
+                portal_invitations, portal_invitations.c.id == latest))
+            .order_by(portal_accounts.c.created_at.desc())).mappings().all()
+    accounts = []
+    for row in rows:
+        account = {k: row[k] for k in ("id", "display_name", "email", "status", "mfa_enabled",
+                                       "last_login_at", "person_id")}
+        # Only the derived phrase reaches the template — no invitation id, token hash or timestamps.
+        account["invitation_state"] = _invitation_state(row, now)
+        accounts.append(account)
+    return accounts
 
 
 def _admin_page(request, principal, **extra):
