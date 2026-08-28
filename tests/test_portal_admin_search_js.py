@@ -83,6 +83,34 @@ def test_the_replaced_inline_styles_have_real_css_rules():
 
 # --- the script talks to the right endpoint, defensively --------------------------------
 
+def test_the_results_list_is_vertically_bounded_and_scrolls_on_its_own():
+    """Search can return the full result limit, and Add New Client sits directly below the list.
+    Without a height bound the creation workflow is pushed off the page.
+
+    Deliberately not a pixel/layout assertion: it checks that the container carries the class and
+    that the class actually constrains height and scrolls vertically."""
+    html, css = TEMPLATE.read_text(), CSS.read_text()
+    results_tag = html[html.index('id="client-results"') - 120: html.index('id="client-results"')]
+    assert "portal-results" in results_tag, "the results container is not height-bounded"
+
+    rule = css.split(".portal-results {")[1].split("}")[0]
+    assert "max-height" in rule, "the bounded class does not limit height"
+    assert "overflow-y: auto" in rule, "the list does not scroll independently"
+    assert "overflow-x: hidden" in rule, "horizontal scrolling is not prevented"
+
+
+def test_bounding_the_results_introduced_no_inline_style():
+    """The CSP forbids style attributes, so the bound must live in the stylesheet."""
+    assert "style=" not in TEMPLATE.read_text()
+
+
+def test_the_add_new_client_workflow_still_follows_the_results_list():
+    """The ordering the bound exists to protect."""
+    html = TEMPLATE.read_text()
+    assert html.index('id="client-results"') < html.index('id="add-client-prompt"')
+    assert html.index('id="add-client-prompt"') < html.index('id="add-client-form"')
+
+
 def test_the_script_targets_the_authenticated_search_endpoint():
     js = SCRIPT.read_text()
     assert SEARCH_URL in js
