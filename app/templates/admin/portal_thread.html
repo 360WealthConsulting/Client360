@@ -57,7 +57,7 @@
     {% if m.visibility == 'internal' %}background:#fef9c3;border:1px solid #fde68a;
     {% elif m.sender_user_id %}background:#eff6ff;border:1px solid #bfdbfe;
     {% else %}background:#f9fafb;border:1px solid #e5e7eb;{% endif %}">
-    <div style="white-space:pre-wrap;word-break:break-word;">{{ m.body }}</div>
+    <div class="msg-body">{{ m.body }}</div>
     <small style="color:#6b7280;">
       {% if m.visibility == 'internal' %}Internal note (staff only)
       {% elif m.sender_user_id %}Staff{% else %}Client{% endif %}

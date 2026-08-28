@@ -10,7 +10,7 @@
 
 meta:
   migration_head: e1c7a94b2f30              # `alembic heads` / `alembic current`
-  route_count: 1184                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py  # +1 business entity workspace (/business/{id}); +2 admin business-ownership resolution review/apply; +1 staff client-search for the portal invite form; +1 staff Add New Client creation  # +5 client email one-time-code sign-in (POST /portal/login, GET /portal/activate, GET+POST /portal/verify, POST /portal/verify/resend)  # -2 removed client Microsoft auth (/portal/auth/start, /portal/auth/callback)
+  route_count: 1185                 # len(app.routes); guarded by tests/test_f4_8_workflow_api.py  # +1 business entity workspace (/business/{id}); +2 admin business-ownership resolution review/apply; +1 staff client-search for the portal invite form; +1 staff Add New Client creation  # +5 client email one-time-code sign-in (POST /portal/login, GET /portal/activate, GET+POST /portal/verify, POST /portal/verify/resend)  # -2 removed client Microsoft auth (/portal/auth/start, /portal/auth/callback)  # +1 staff-initiated secure message (POST /admin/client-portal/threads/new)
   production_capability_count: 158    # seeded capabilities excluding e2_2.cap.* test fixtures
   verified_by:
     route_count: "python -c 'from app.main import app; print(len(app.routes))'"

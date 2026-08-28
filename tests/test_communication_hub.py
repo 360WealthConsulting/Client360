@@ -430,3 +430,315 @@ def test_s12_reassign_records_previous_and_new_assignment():
             audit_events.c.entity_id == str(tid)).order_by(audit_events.c.id.desc())).mappings().first()
     assert meta["metadata"]["previous"]["assigned_user_id"] == staff.user_id
     assert meta["metadata"]["new"]["assigned_user_id"] == other
+
+
+# --- staff-initiated conversations ----------------------------------------------------------
+#
+# The gap found during Phase 1 review: clients could open a conversation and staff could reply, but
+# staff had no way to START one. Authorization is derived entirely from the staff Principal; the
+# person id arriving from a form is a claim, re-resolved and re-checked with WRITE record scope.
+
+def _staff_principal(caps=STAFF, uid=None):
+    return Principal(uid or seed_staff_user(), "staff@example.com", "Staff", frozenset(caps))
+
+
+def _thread_row(thread_id):
+    with engine.connect() as c:
+        return c.execute(select(portal_threads).where(
+            portal_threads.c.id == thread_id)).mappings().one()
+
+
+def test_staff_can_start_a_conversation_with_an_active_portal_client():
+    staff = _staff_principal()
+    account_id, principal, person_id, household_id = seed_portal_account(staff.user_id)
+
+    thread_id = hub.staff_start_thread(staff, person_id=person_id,
+                                       subject="Your 2025 return", body="Please review the draft.")
+
+    thread = _thread_row(thread_id)
+    assert thread["person_id"] == person_id and thread["household_id"] == household_id
+    assert thread["created_by_user_id"] == staff.user_id
+    assert thread["created_by_portal_account_id"] is None
+    assert thread["status"] == "open"
+    # The author has read it; the client has not.
+    assert thread["staff_last_read_at"] is not None
+    assert thread["client_last_read_at"] is None
+    assert thread["last_staff_message_at"] is not None
+    assert thread["last_client_message_at"] is None
+
+
+def test_the_opening_message_is_server_attributed_to_the_staff_member():
+    staff = _staff_principal()
+    _, principal, person_id, _ = seed_portal_account(staff.user_id)
+
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="Hello",
+                                       body="Opening message.")
+    messages = hub.staff_thread_messages(thread_id)
+
+    assert len(messages) == 1
+    assert messages[0]["sender_user_id"] == staff.user_id
+    assert messages[0]["sender_portal_account_id"] is None, "a staff message claimed a client sender"
+    assert messages[0]["visibility"] == "client", "the opening message is hidden from the client"
+
+
+def test_the_client_can_read_a_staff_initiated_thread():
+    staff = _staff_principal()
+    _, principal, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="Hi", body="Body.")
+
+    messages = list_messages(principal, thread_id)
+
+    assert [m["body"] for m in messages] == ["Body."]
+
+
+def test_a_staff_initiated_thread_is_unread_for_the_client_until_they_open_it():
+    staff = _staff_principal()
+    _, principal, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="Hi", body="Body.")
+
+    assert _thread_row(thread_id)["client_last_read_at"] is None
+    hub.mark_thread_read_client(principal, thread_id)
+    thread = _thread_row(thread_id)
+    assert thread["client_last_read_at"] is not None
+    # Reading as the client must not touch the staff marker, and vice versa.
+    assert thread["staff_last_read_at"] is not None
+
+
+def test_a_staff_member_outside_record_scope_cannot_start_a_conversation():
+    owner = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(owner.user_id)
+    outsider = _staff_principal(caps={"client.read", "client.write"})   # no record.*_all
+
+    with pytest.raises(hub.StaffMessageError):
+        hub.staff_start_thread(outsider, person_id=person_id, subject="Hi", body="Body.")
+
+    with engine.connect() as c:
+        assert c.execute(select(func.count(portal_threads.c.id)).where(
+            portal_threads.c.person_id == person_id)).scalar_one() == 0
+
+
+def test_an_unknown_person_and_an_out_of_scope_person_are_refused_identically():
+    """The refusal must not become an existence oracle."""
+    owner = _staff_principal()
+    _, _, real_person, _ = seed_portal_account(owner.user_id)
+    outsider = _staff_principal(caps={"client.read", "client.write"})
+
+    with pytest.raises(hub.StaffMessageError) as out_of_scope:
+        hub.staff_start_thread(outsider, person_id=real_person, subject="s", body="b")
+    with pytest.raises(hub.StaffMessageError) as unknown:
+        hub.staff_start_thread(outsider, person_id=99_000_111, subject="s", body="b")
+
+    assert str(out_of_scope.value) == str(unknown.value)
+
+
+def test_a_client_without_a_portal_account_is_explained_not_silently_onboarded():
+    from app.db import people
+    from sqlalchemy import insert as _insert
+
+    staff = _staff_principal()
+    with engine.begin() as c:
+        person_id = c.execute(_insert(people).values(
+            full_name=f"No Portal {uuid.uuid4().hex[:8]}", active=True)
+            .returning(people.c.id)).scalar_one()
+
+    with pytest.raises(hub.StaffMessageError) as exc:
+        hub.staff_start_thread(staff, person_id=person_id, subject="Hi", body="Body.")
+
+    assert "does not have a portal account" in str(exc.value)
+    assert "Client Portal Administration" in str(exc.value), "no route to a remedy is offered"
+    with engine.connect() as c:
+        assert c.execute(select(func.count(portal_threads.c.id)).where(
+            portal_threads.c.person_id == person_id)).scalar_one() == 0
+        from app.db import portal_accounts
+        assert c.execute(select(func.count(portal_accounts.c.id)).where(
+            portal_accounts.c.person_id == person_id)).scalar_one() == 0, \
+            "a portal account was silently created"
+
+
+def test_a_revoked_portal_client_cannot_be_messaged():
+    from app.db import portal_accounts
+    from sqlalchemy import update as _update
+
+    staff = _staff_principal()
+    account_id, _, person_id, _ = seed_portal_account(staff.user_id)
+    with engine.begin() as c:
+        c.execute(_update(portal_accounts).where(portal_accounts.c.id == account_id)
+                  .values(status="revoked"))
+
+    with pytest.raises(hub.StaffMessageError) as exc:
+        hub.staff_start_thread(staff, person_id=person_id, subject="Hi", body="Body.")
+
+    assert "revoked" in str(exc.value).lower()
+    with engine.connect() as c:
+        assert c.execute(select(func.count(portal_threads.c.id)).where(
+            portal_threads.c.person_id == person_id)).scalar_one() == 0
+
+
+@pytest.mark.parametrize("subject,body,fragment", [
+    ("", "body", "subject is required"),
+    ("   ", "body", "subject is required"),
+    ("subject", "", "message is required"),
+    ("subject", "   ", "message is required"),
+    ("x" * 201, "body", "subject is too long"),
+    ("subject", "x" * 10001, "message is too long"),
+])
+def test_subject_and_body_limits_are_enforced_server_side(subject, body, fragment):
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+
+    with pytest.raises(hub.StaffMessageError) as exc:
+        hub.staff_start_thread(staff, person_id=person_id, subject=subject, body=body)
+
+    assert fragment in str(exc.value).lower()
+    with engine.connect() as c:
+        assert c.execute(select(func.count(portal_threads.c.id)).where(
+            portal_threads.c.person_id == person_id)).scalar_one() == 0
+
+
+def test_an_unknown_topic_is_refused():
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+
+    with pytest.raises(hub.StaffMessageError):
+        hub.staff_start_thread(staff, person_id=person_id, subject="s", body="b",
+                               topic="not-a-topic")
+
+
+def test_the_audit_event_names_the_actor_and_entity_but_never_the_content():
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    secret_subject = f"SUBJECT-{uuid.uuid4().hex[:10]}"
+    secret_body = f"BODY-{uuid.uuid4().hex[:10]}"
+
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject=secret_subject,
+                                       body=secret_body)
+
+    with engine.connect() as c:
+        rows = c.execute(select(audit_events).where(
+            audit_events.c.entity_type == "portal_thread",
+            audit_events.c.entity_id == str(thread_id))).mappings().all()
+    assert rows, "the staff-initiated thread was not audited"
+    event = rows[-1]
+    assert event["action"] == "portal.thread.created"
+    assert event["actor_user_id"] == staff.user_id
+    blob = f"{event['metadata']} {event['action']}"
+    assert secret_subject not in blob and secret_body not in blob, \
+        "message content leaked into the audit record"
+    assert str(person_id) in str(event["metadata"])          # the client entity IS identified
+
+
+def test_a_staff_initiated_thread_appears_in_the_staff_inbox_newest_first():
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    hub.staff_start_thread(staff, person_id=person_id, subject="Older", body="b")
+    newest = hub.staff_start_thread(staff, person_id=person_id, subject="Newer", body="b")
+
+    inbox = hub.staff_inbox(staff)
+
+    assert inbox[0]["id"] == newest, "the inbox is not ordered newest activity first"
+
+
+def test_client_portal_status_reports_each_state_without_creating_anything():
+    from app.db import people, portal_accounts
+    from sqlalchemy import insert as _insert
+
+    staff = _staff_principal()
+    active_account, _, active_person, _ = seed_portal_account(staff.user_id)
+    account_id, reason = hub.client_portal_status(active_person)
+    assert account_id == active_account and reason is None
+
+    with engine.begin() as c:
+        lonely = c.execute(_insert(people).values(
+            full_name=f"Lonely {uuid.uuid4().hex[:8]}", active=True)
+            .returning(people.c.id)).scalar_one()
+    account_id, reason = hub.client_portal_status(lonely)
+    assert account_id is None and "does not have a portal account" in reason
+    with engine.connect() as c:
+        assert c.execute(select(func.count(portal_accounts.c.id)).where(
+            portal_accounts.c.person_id == lonely)).scalar_one() == 0
+
+
+# --- C. staff initiation against the FULL portal-account lifecycle ---------------------------
+
+def test_an_invited_but_never_activated_client_cannot_yet_be_messaged():
+    """status='invited': the account exists but the client has never signed in, so there is nowhere
+    for them to read it. Explained, not silently onboarded."""
+    from app.db import households, people, portal_accounts
+    from sqlalchemy import insert as _insert
+
+    staff = _staff_principal()
+    sfx = uuid.uuid4().hex[:8]
+    with engine.begin() as c:
+        hid = c.execute(_insert(households).values(name=f"Invited HH {sfx}")
+                        .returning(households.c.id)).scalar_one()
+        pid = c.execute(_insert(people).values(household_id=hid, full_name=f"Invited {sfx}",
+                                               active=True).returning(people.c.id)).scalar_one()
+        c.execute(_insert(portal_accounts).values(
+            person_id=pid, email=f"inv-{sfx}@e.test", normalized_email=f"inv-{sfx}@e.test",
+            display_name="Invited", status="invited"))
+
+    with pytest.raises(hub.StaffMessageError) as exc:
+        hub.staff_start_thread(staff, person_id=pid, subject="Hi", body="Body.")
+
+    assert "has not activated" in str(exc.value)
+    with engine.connect() as c:
+        assert c.execute(select(func.count(portal_threads.c.id)).where(
+            portal_threads.c.person_id == pid)).scalar_one() == 0
+        # The account is untouched — not activated, not revoked, not duplicated.
+        assert c.execute(select(portal_accounts.c.status).where(
+            portal_accounts.c.person_id == pid)).scalars().all() == ["invited"]
+
+
+def test_a_historical_revoked_account_does_not_block_the_current_active_one():
+    """The schema permits several accounts per person; the CURRENT one decides."""
+    from app.db import portal_accounts
+    from sqlalchemy import insert as _insert
+
+    staff = _staff_principal()
+    active_id, _, person_id, _ = seed_portal_account(staff.user_id)
+    sfx = uuid.uuid4().hex[:8]
+    with engine.begin() as c:                       # an OLDER, revoked account for the same person
+        c.execute(_insert(portal_accounts).values(
+            person_id=person_id, email=f"old-{sfx}@e.test", normalized_email=f"old-{sfx}@e.test",
+            display_name="Old", status="revoked",
+            created_at=hub._now().replace(year=hub._now().year - 1)))
+
+    account_id, reason = hub.client_portal_status(person_id)
+
+    assert account_id == active_id and reason is None
+    assert hub.staff_start_thread(staff, person_id=person_id, subject="Hi", body="Body.")
+
+
+def test_starting_a_conversation_never_touches_the_account_or_grant_lifecycle():
+    """The route may message a client; it may not onboard one."""
+    from app.db import portal_access_grants, portal_accounts, portal_invitations
+
+    staff = _staff_principal()
+    account_id, _, person_id, _ = seed_portal_account(staff.user_id)
+
+    def _counts():
+        with engine.connect() as c:
+            return (
+                c.execute(select(func.count(portal_accounts.c.id)).where(
+                    portal_accounts.c.person_id == person_id)).scalar_one(),
+                c.execute(select(func.count(portal_invitations.c.id)).where(
+                    portal_invitations.c.portal_account_id == account_id)).scalar_one(),
+                c.execute(select(func.count(portal_access_grants.c.id)).where(
+                    portal_access_grants.c.portal_account_id == account_id)).scalar_one(),
+                c.execute(select(portal_accounts.c.status).where(
+                    portal_accounts.c.id == account_id)).scalar_one(),
+            )
+
+    before = _counts()
+    hub.staff_start_thread(staff, person_id=person_id, subject="Hi", body="Body.")
+    assert _counts() == before, "starting a conversation changed the account/invitation/grant state"
+
+
+def test_starting_a_conversation_sends_no_email():
+    """Phase 1 is in-app only; nothing is dispatched to any address."""
+    import inspect
+
+    src = inspect.getsource(hub.staff_start_thread)
+    for mailer in ("send_portal_invitation", "send_portal_verification_code", "email_delivery",
+                   "sendMail", "notify("):
+        assert mailer not in src, f"staff_start_thread reaches {mailer}"

@@ -56,3 +56,13 @@ button:hover {
     box-shadow: var(--shadow);
     padding: 20px;
 }
+
+/* --- secure message bodies ---------------------------------------------
+   Shared by the client portal thread (portal/message_thread.html) and the staff thread
+   (admin/portal_thread.html). Message bodies are STORED AND RENDERED AS PLAIN TEXT and are
+   autoescaped by Jinja; `pre-wrap` is what preserves the line breaks a person typed, without
+   turning any of that text into markup. It lives here, in main.css, because it is the only
+   stylesheet BOTH base templates load — the staff base does not load portal.css.
+   CSS, never an inline style attribute: the CSP is `default-src 'self'` with no 'unsafe-inline',
+   so a style="..." attribute is blocked by the browser and the line breaks silently collapse. */
+.msg-body { white-space: pre-wrap; word-break: break-word; }

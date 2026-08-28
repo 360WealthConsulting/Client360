@@ -495,6 +495,35 @@ def portal_admin_threads(request: Request, principal: Principal = Depends(requir
                                                "error": q.get("error"), "notice": q.get("notice")})
 
 
+@router.post("/threads/new")
+def portal_admin_start_thread(
+        request: Request,
+        person_id: str = Form(default=""), subject: str = Form(default=""),
+        body: str = Form(default=""), topic: str = Form(default=""),
+        principal: Principal = Depends(require_capability("client.write"))):
+    """Staff open a conversation with a client they are authorised to service.
+
+    ``client.write`` and not ``client.read``: starting a conversation writes to the client's record,
+    so it matches the reply route rather than the read-only inbox. Every field is optional at the
+    boundary so FastAPI cannot pre-empt this handler with raw Pydantic JSON; validation and
+    authorization live in :func:`communication_hub.staff_start_thread`, which re-resolves the person
+    and re-checks write record scope. The browser never chooses the sender — the Principal does.
+
+    A client with no usable portal account produces a plain explanation on the inbox, never a
+    silently created account and never an automatic invitation."""
+    if not (person_id or "").strip().isdigit():
+        return RedirectResponse(
+            "/admin/client-portal/threads?error=" + quote(hub.NO_CLIENT_SELECTED), 303)
+    try:
+        thread_id = hub.staff_start_thread(
+            principal, person_id=int(person_id), subject=subject, body=body,
+            topic=(topic or "").strip() or None, request_id=request.state.request_id)
+    except hub.StaffMessageError as exc:
+        return RedirectResponse(f"/admin/client-portal/threads?error={quote(str(exc))}", 303)
+    return RedirectResponse(f"/admin/client-portal/threads/{thread_id}"
+                            "?notice=" + quote("Conversation started."), 303)
+
+
 @router.get("/threads/{thread_id}", response_class=HTMLResponse)
 def portal_admin_thread(thread_id: int, request: Request,
                         principal: Principal = Depends(require_capability("client.read"))):

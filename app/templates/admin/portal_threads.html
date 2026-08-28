@@ -2,11 +2,49 @@
 {% import "components/ui.html" as ui %}
 {% block title %}Secure Messages | 360Plus{% endblock %}
 {% block crumb %}Secure Messages{% endblock %}
+{% block head %}<script src="/static/js/client_portal_admin.js" defer></script>{% endblock %}
 {% block content %}
 {% call ui.page_head("Communication Hub", eyebrow="Client Portal", desc="Conversations you are authorised to service. Filter by what needs attention; open one to read the full thread (incl. internal notes), reply, route, resolve, or link a request.") %}
 {% endcall %}
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+
+{# Start a conversation. The client picker is the EXISTING invite-form search: same element ids, so
+   app/static/js/client_portal_admin.js binds to it unchanged and selection goes through the one
+   select() implementation. The person id is hidden state the server re-resolves and re-authorizes
+   with write record scope in staff_start_thread — nothing here grants access. #}
+<details class="card portal-compose">
+  <summary><b>Start a conversation</b></summary>
+  <form method="post" action="/admin/client-portal/threads/new" id="invite-form" class="portal-invite-grid">
+    <label for="sel-first">First name</label>
+    <input id="sel-first" autocomplete="off">
+    <label for="sel-last">Last name</label>
+    <input id="sel-last" autocomplete="off">
+    <label for="sel-email">Email</label>
+    <input id="sel-email" autocomplete="off">
+    <label for="sel-phone">Phone</label>
+    <input id="sel-phone" autocomplete="off">
+    <input type="hidden" name="person_id" id="sel-person-id">
+    <div class="portal-invite-full" id="client-results"></div>
+    <p class="subtle portal-invite-full" id="selected-client" hidden></p>
+    <p class="subtle portal-invite-full" id="sel-household"></p>
+    <label for="thread-topic">Topic</label>
+    <select id="thread-topic" name="topic">
+      <option value="">General</option>
+      {% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
+    </select>
+    <label for="thread-subject">Subject</label>
+    <input id="thread-subject" name="subject" maxlength="200" required>
+    <label for="thread-body">Message</label>
+    <textarea id="thread-body" name="body" rows="4" maxlength="10000" required></textarea>
+    <div class="portal-invite-full">
+      <button type="submit">Send secure message</button>
+      <span class="portal-invite-error" id="invite-error" role="alert" hidden></span>
+    </div>
+  </form>
+  <p class="subtle">The client reads this in their 360Plus portal. They must already have an active
+  portal account — this never creates one or sends an invitation.</p>
+</details>
 
 <nav class="filters" style="margin-bottom:1rem;display:flex;gap:.4rem;flex-wrap:wrap;">
   <a class="btn{{ ' secondary' if active_filter }}" href="/admin/client-portal/threads">All</a>

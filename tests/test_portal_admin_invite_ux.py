@@ -25,6 +25,7 @@ from app.db import (
     people,
     portal_access_grants,
     portal_accounts,
+    portal_threads,
     users,
 )
 from app.portal import invite_targets
@@ -2160,3 +2161,78 @@ def test_hard_duplicate_candidates_are_selected_through_the_shared_path():
         assert attribute in html, f"the candidate action is missing {attribute}"
     assert "button.use-existing-client" in open(
         "app/static/js/client_portal_admin.js", encoding="utf-8").read()
+
+
+# --- staff-initiated secure messages: route + navigation ------------------------------------
+#
+# Phase 1 review found the messaging system already built but UNREACHABLE from the staff app, and
+# staff unable to open a conversation. These cover the route boundary and the navigation entry.
+
+def test_the_staff_start_thread_route_requires_write_capability():
+    import inspect
+
+    from app.routes import portal_admin
+    src = inspect.getsource(portal_admin.portal_admin_start_thread)
+    assert 'require_capability("client.write")' in src, "starting a conversation is a write"
+    assert "hub.staff_start_thread(" in src, "the route does not delegate to the audited service"
+    for direct in ("portal_threads.insert", "portal_messages.insert"):
+        assert direct not in src, f"the route writes {direct} directly"
+
+
+def test_starting_a_conversation_without_a_client_returns_a_banner():
+    from app.portal import communication_hub as hub
+    from app.routes.portal_admin import portal_admin_start_thread
+
+    response = portal_admin_start_thread(
+        _req(), person_id="", subject="s", body="b", topic="",
+        principal=_principal(_staff_user()))
+
+    assert response.status_code == 303
+    assert "/admin/client-portal/threads?error=" in response.headers["location"]
+    assert quote(hub.NO_CLIENT_SELECTED) in response.headers["location"]
+
+
+def test_a_tampered_person_id_cannot_start_a_conversation():
+    """The id is a claim; the service re-resolves it under write record scope."""
+    from app.routes.portal_admin import portal_admin_start_thread
+
+    narrow = Principal(_staff_user(), "staff@example.com", "Staff",
+                       frozenset({"client.read", "client.write"}))
+    outsider = _person(first="Out", last=f"Reach{uuid.uuid4().hex[:8]}",
+                       email=f"out-{uuid.uuid4().hex[:8]}@e.test")
+
+    response = portal_admin_start_thread(
+        _req(), person_id=str(outsider), subject="Hi", body="Body", topic="",
+        principal=narrow)
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    with engine.connect() as c:
+        assert c.execute(select(portal_threads.c.id).where(
+            portal_threads.c.person_id == outsider)).scalars().all() == []
+
+
+def test_a_non_numeric_person_id_is_refused_before_the_service_is_reached():
+    from app.routes.portal_admin import portal_admin_start_thread
+
+    for tampered in ("abc", "1 OR 1=1", "../../etc/passwd", "1;DROP TABLE people"):
+        response = portal_admin_start_thread(
+            _req(), person_id=tampered, subject="s", body="b", topic="",
+            principal=_principal(_staff_user()))
+        assert response.status_code == 303 and "error=" in response.headers["location"]
+
+
+def test_the_staff_navigation_exposes_messages():
+    """It was previously reachable only by typing the URL."""
+    html = _render_admin_home()
+    assert 'href="/admin/client-portal/threads"' in html, "Messages is missing from the sidebar"
+    assert ">Messages" in html
+
+
+def test_the_messages_nav_item_is_gated_on_the_capability_the_route_enforces():
+    base = open("app/templates/base.html", encoding="utf-8").read()
+    assert "{% set can_messages = 'client.read' in caps %}" in base
+    assert '"show": can_messages' in base
+    # NOT firm_client: the inbox is record-scoped per thread, so record.read_all is not required.
+    assert '"label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": firm_client' \
+        not in base

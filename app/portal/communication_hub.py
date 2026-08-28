@@ -21,10 +21,12 @@ from sqlalchemy import or_, select
 from app.db import (
     engine,
     people,
+    portal_accounts,
     portal_document_requests,
     portal_message_attachments,
     portal_messages,
     portal_notifications,
+    portal_thread_participants,
     portal_threads,
     record_assignments,
     teams,
@@ -365,3 +367,114 @@ def message_attachment_ids(message_id) -> list[int]:
     with engine.connect() as c:
         return [r[0] for r in c.execute(select(portal_message_attachments.c.document_id).where(
             portal_message_attachments.c.message_id == message_id)).all()]
+
+
+# --- staff-initiated conversations -------------------------------------------
+
+#: Longest values accepted from the compose form. The columns are VARCHAR(255) for the subject and
+#: TEXT for the body; these bounds stop a single submission becoming a denial-of-service payload and
+#: are enforced server-side, never only in the browser.
+#: Shown when the compose form is submitted without a client chosen. Matches the invite form's
+#: wording so the two staff surfaces read the same way.
+NO_CLIENT_SELECTED = "Select a client before starting a conversation."
+
+MAX_SUBJECT = 200
+MAX_BODY = 10000
+
+
+class StaffMessageError(ValueError):
+    """A staff-initiated conversation was refused. The message is staff-facing and names no id."""
+
+
+def client_portal_status(person_id):
+    """``(portal_account_id_or_None, human_reason_or_None)`` for one person.
+
+    A conversation needs somewhere for the client to read it, so a person with no ACTIVE portal
+    account cannot be messaged. This reports WHY in words staff can act on, and deliberately does
+    NOT create or invite anything — invitations remain the explicit, audited workflow on the Client
+    Portal Administration screen."""
+    with engine.connect() as connection:
+        row = connection.execute(select(portal_accounts.c.id, portal_accounts.c.status).where(
+            portal_accounts.c.person_id == person_id)
+            .order_by(portal_accounts.c.created_at.desc()).limit(1)).mappings().one_or_none()
+    if row is None:
+        return None, ("This client does not have a portal account yet. Invite them from Client "
+                      "Portal Administration first, then start the conversation.")
+    if row["status"] == "revoked":
+        return None, ("This client's portal access has been revoked. Re-invite them from Client "
+                      "Portal Administration before sending a secure message.")
+    if row["status"] != "active":
+        return None, ("This client has been invited but has not activated their portal account yet. "
+                      "They will be able to receive secure messages once they sign in.")
+    return row["id"], None
+
+
+def staff_start_thread(principal, *, person_id, subject, body, topic=None, request_id=None):
+    """Open a conversation with a client the staff member is authorised to service.
+
+    Authorisation is derived entirely from the staff Principal: the person id arriving from the
+    browser is a CLAIM, re-resolved and re-checked here with ``record_in_scope(..., write=True)``
+    before anything is written. Starting a conversation writes to the client's record, so it needs
+    write scope, matching the reply route rather than the read-only inbox.
+
+    The opening message is a STAFF message: ``sender_user_id`` is taken from the Principal and the
+    browser has no say in it, so ``sender_type`` cannot be forged. The thread is created already
+    read for staff (they just wrote it) and unread for the client, which is what the existing
+    ``staff_last_read_at`` / ``client_last_read_at`` markers are for.
+
+    Raises :class:`StaffMessageError` with a human-readable reason when the client has no usable
+    portal account. Nothing is created in that case — no thread, no account, no invitation."""
+    from app.services.timeline import add_timeline_event
+
+    subject = (subject or "").strip()
+    body = (body or "").strip()
+    if not subject:
+        raise StaffMessageError("A subject is required.")
+    if not body:
+        raise StaffMessageError("A message is required.")
+    if len(subject) > MAX_SUBJECT:
+        raise StaffMessageError(f"The subject is too long (limit {MAX_SUBJECT} characters).")
+    if len(body) > MAX_BODY:
+        raise StaffMessageError(f"The message is too long (limit {MAX_BODY} characters).")
+    if topic is not None and topic not in TOPICS:
+        raise StaffMessageError("That topic is not one of the available topics.")
+
+    with engine.connect() as connection:
+        person = connection.execute(select(people.c.id, people.c.household_id, people.c.full_name)
+                                    .where(people.c.id == person_id)).mappings().one_or_none()
+    # Same refusal for "no such person" and "not yours": a staff member must not be able to probe
+    # for the existence of records outside their scope by watching the error change.
+    if person is None or not record_in_scope(principal, "person", person["id"], write=True):
+        raise StaffMessageError("That client is not available to you.")
+
+    account_id, reason = client_portal_status(person["id"])
+    if account_id is None:
+        raise StaffMessageError(reason)
+
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        thread_id = connection.execute(portal_threads.insert().values(
+            person_id=person["id"], household_id=person["household_id"], subject=subject,
+            topic=topic, status="open", created_by_user_id=principal.user_id,
+            assigned_user_id=principal.user_id,
+            last_staff_message_at=now, staff_last_read_at=now,   # the author has read it
+            updated_at=now).returning(portal_threads.c.id)).scalar_one()
+        connection.execute(portal_thread_participants.insert().values(
+            thread_id=thread_id, portal_account_id=account_id, participant_role="client"))
+        connection.execute(portal_thread_participants.insert().values(
+            thread_id=thread_id, user_id=principal.user_id, participant_role="staff"))
+        message_id = connection.execute(portal_messages.insert().values(
+            thread_id=thread_id, sender_user_id=principal.user_id, body=body,
+            visibility="client").returning(portal_messages.c.id)).scalar_one()
+
+    add_timeline_event(person_id=person["id"], household_id=person["household_id"],
+                       source="client_portal", event_type="secure_message",
+                       title="Secure staff message", external_id=f"portal-message-{message_id}",
+                       event_metadata={"thread_id": thread_id})
+    # Metadata identifies actor, thread and client entity — never the subject or the body.
+    write_audit_event(action="portal.thread.created", entity_type="portal_thread",
+                      entity_id=thread_id, actor_user_id=principal.user_id,
+                      request_id=request_id or f"staff-thread-{uuid.uuid4()}",
+                      metadata={"person_id": person["id"], "household_id": person["household_id"],
+                                "initiated_by": "staff"})
+    return thread_id

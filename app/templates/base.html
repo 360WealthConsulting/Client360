@@ -36,6 +36,10 @@
 {# Document Management (unassigned-folder resolution worklist) is gated on the SAME capability the
    route enforces (client.write) — the migration cleanup queue lives here, not in a client's Documents tab. #}
 {% set can_docmgmt = 'client.write' in caps %}
+{# Secure client messaging. Gated on client.read alone — the SAME capability /admin/client-portal/
+   threads enforces — and deliberately NOT on firm_client: the inbox is record-scoped per thread,
+   so an advisor without record.read_all still sees the conversations they may service. #}
+{% set can_messages = 'client.read' in caps %}
 {% set groups = [
   {"label": "Home", "items": [
     {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p}]},
@@ -47,7 +51,8 @@
   {"label": "Clients", "items": [
     {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": firm_client},
     {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": firm_client},
-    {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": firm_client}]},
+    {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": firm_client},
+    {"href": "/admin/client-portal/threads", "label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": can_messages}]},
   {"label": "Identity", "items": [
     {"href": "/demo/identity", "label": "Identity Review", "match": "/demo/identity", "ico": "◑", "show": demo_mode},
     {"href": "/demo/taxdome-drive", "label": "TaxDome Drive", "match": "/demo/taxdome-drive", "ico": "◇", "show": demo_mode}]},
