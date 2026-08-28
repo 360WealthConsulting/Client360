@@ -121,7 +121,9 @@ def merge_source_contacts(record_ids: Iterable[int]) -> int:
         # (D.35) Publish the identity-merged business FACT (references only) in the merge transaction.
         from app.services.events import publisher
         publisher.publish_safe("people.identity_merged",
-                               {"person_id": person_id, "source_contact_count": len(normalized_ids)},
+                               # No person was retired here — only source contacts were folded in.
+                               {"person_id": person_id, "source_contact_count": len(normalized_ids),
+                                "merged_person_id": None},
                                conn=conn, producer="people.merge", subject_ref=f"person:{person_id}")
 
     return person_id
@@ -632,7 +634,8 @@ def merge_people(survivor_person_id: int, duplicate_person_id: int, *, reason: s
                         + summary["consolidated"].get("person_source_links.person_id", 0))
         publisher.publish_safe(
             "people.identity_merged",
-            {"person_id": survivor_id, "source_contact_count": folded_links},
+            {"person_id": survivor_id, "source_contact_count": folded_links,
+             "merged_person_id": duplicate_id},
             conn=conn, producer="people.merge", subject_ref=f"person:{survivor_id}")
 
         # 6) Remove the now-unreferenced duplicate person.

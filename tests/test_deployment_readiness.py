@@ -91,7 +91,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "e1c7a94b2f30"   # portal email one-time-code verification
+    assert migrate.target_head() == "f2a8c31d90e4"   # identity_merged carries merged_person_id
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():

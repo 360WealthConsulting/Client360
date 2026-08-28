@@ -77,7 +77,10 @@ D35_CONTRACTS_SEED = [
        {"person_id": "int", "changed_fields": "list"},
        "A canonical person record's contact fields were changed (field names only, no values)."),
     _c("people.identity_merged", "people", "Canonical identity merged", "people", "people.merge",
-       {"person_id": "int", "source_contact_count": "int"},
+       # merged_person_id is the RETIRED person (null when only source contacts were folded in).
+       # The people.summary projection needs it to drop the retired person's read-model row on
+       # every replay — a delete done only in the merge transaction does not survive a rebuild.
+       {"person_id": "int", "source_contact_count": "int", "merged_person_id": "int"},
        "Source contacts were merged onto a surviving canonical person."),
     _c("people.person_merged", "people", "Canonical person merged", "people", "people.merge",
        {"survivor_person_id": "int", "merged_person_id": "int"},

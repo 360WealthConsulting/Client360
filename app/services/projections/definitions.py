@@ -38,6 +38,15 @@ def _people(conn, event):
         increment(conn, t, "person_id", pid, "update_count", event)
     elif et == "people.identity_merged":
         increment(conn, t, "person_id", pid, "merge_count", event)
+        # Retire the merged person's row HERE, not in the merge transaction: this projection is
+        # rebuilt from the event stream, so a delete performed outside that stream is undone the
+        # moment a backlogged or replayed event for the retired person is applied (upsert and
+        # increment both INSERT when the row is absent). Deleting on the event itself is
+        # idempotent and reaches the same state on every replay. ``merged`` is null when only
+        # source contacts were folded in, and the survivor is never deleted.
+        merged = p.get("merged_person_id")
+        if merged is not None and merged != pid:
+            conn.execute(t.delete().where(t.c.person_id == merged))
 
 
 def _household(conn, event):
