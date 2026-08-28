@@ -1834,3 +1834,148 @@ def test_the_page_context_reads_readiness_from_the_gate_not_the_environment():
     assert "from app.portal.gate import production_ready" in code
     assert '"production_ready": production_ready()' in code
     assert "os.getenv" not in code and "os.environ" not in code
+
+
+# --- duplicate recovery: identify a duplicate, then be able to USE it -----------------------
+#
+# Production acceptance: creation was correctly refused because the email already belonged to an
+# existing person, and the warning named that person — but offered no way to act on it. Staff had
+# to go back and retype the client into the search box. The candidate is now selectable through
+# the SAME path a search result uses.
+
+def _create_client_form(person, staff, *, acknowledge=""):
+    from app.routes.portal_admin import portal_admin_create_client
+    return portal_admin_create_client(
+        _req(), first_name=person["first"], last_name=person["last"],
+        email=person.get("email", ""), phone=person.get("phone", ""),
+        acknowledge_duplicate=acknowledge, principal=_principal(staff))
+
+
+def test_a_name_duplicate_is_still_refused_and_creates_nothing():
+    sfx = uuid.uuid4().hex[:8]
+    staff = _staff_user()
+    existing = _person(first=f"Nora{sfx}", last=f"Vance{sfx}", email=f"nora-{sfx}@e.test")
+
+    response = _create_client_form(
+        {"first": f"Nora{sfx}", "last": f"Vance{sfx}", "email": f"other-{sfx}@e.test"}, staff)
+    html = response.body.decode()
+
+    assert "Possible existing clients found" in html
+    with engine.connect() as c:
+        rows = c.execute(select(people.c.id).where(
+            people.c.last_name == f"Vance{sfx}")).scalars().all()
+    assert rows == [existing], "a duplicate person was created despite the warning"
+
+
+def test_each_duplicate_candidate_offers_a_use_this_client_action():
+    sfx = uuid.uuid4().hex[:8]
+    staff = _staff_user()
+    _person(first=f"Ivo{sfx}", last=f"Kerr{sfx}", email=f"ivo-{sfx}@e.test",
+            phone="(540) 555-7788")
+
+    html = _create_client_form(
+        {"first": f"Ivo{sfx}", "last": f"Kerr{sfx}", "email": f"new-{sfx}@e.test"},
+        staff).body.decode()
+
+    assert "use-existing-client" in html
+    assert "Use this client" in html
+    # The human-readable identity is what staff read.
+    assert f"Ivo{sfx} Kerr{sfx}" in html and f"ivo-{sfx}@e.test" in html
+    assert "(540) 555-7788" in html
+
+
+def test_the_candidate_action_carries_the_fields_the_shared_selector_needs():
+    sfx = uuid.uuid4().hex[:8]
+    staff = _staff_user()
+    _person(first=f"Rhea{sfx}", last=f"Colm{sfx}", email=f"rhea-{sfx}@e.test")
+
+    html = _create_client_form(
+        {"first": f"Rhea{sfx}", "last": f"Colm{sfx}", "email": f"new-{sfx}@e.test"},
+        staff).body.decode()
+
+    for attribute in ("data-person-id", "data-first-name", "data-last-name",
+                      "data-full-name", "data-email", "data-phone"):
+        assert attribute in html, f"the candidate action is missing {attribute}"
+
+
+def test_no_raw_person_id_is_rendered_as_visible_text():
+    """The id is hidden form state, exactly like the invite form's own hidden person_id."""
+    import re
+
+    sfx = uuid.uuid4().hex[:8]
+    staff = _staff_user()
+    person_id = _person(first=f"Mira{sfx}", last=f"Doyle{sfx}", email=f"mira-{sfx}@e.test")
+
+    html = _create_client_form(
+        {"first": f"Mira{sfx}", "last": f"Doyle{sfx}", "email": f"new-{sfx}@e.test"},
+        staff).body.decode()
+
+    visible = re.sub(r"<[^>]+>", " ", html)          # strip every tag and its attributes
+    assert str(person_id) not in visible.split(), "a raw database id is shown to staff"
+    for label in ("Person ID", "person_id", "Household ID", "household_id"):
+        assert label not in visible, f"{label} is rendered as text"
+
+
+def test_the_creation_path_is_still_a_separate_explicit_submit():
+    """Rendering candidates must not create anything, and the override stays a distinct action."""
+    sfx = uuid.uuid4().hex[:8]
+    staff = _staff_user()
+    _person(first=f"Otto{sfx}", last=f"Pike{sfx}", email=f"otto-{sfx}@e.test")
+
+    html = _create_client_form(
+        {"first": f"Otto{sfx}", "last": f"Pike{sfx}", "email": f"new-{sfx}@e.test"},
+        staff).body.decode()
+
+    assert 'name="acknowledge_duplicate"' in html
+    assert "Create separate client anyway" in html
+    with engine.connect() as c:
+        assert len(c.execute(select(people.c.id).where(
+            people.c.last_name == f"Pike{sfx}")).scalars().all()) == 1
+
+
+def test_acknowledging_the_warning_still_creates_the_separate_client():
+    """The override is unchanged — duplicate detection is not weakened, only made recoverable."""
+    sfx = uuid.uuid4().hex[:8]
+    staff = _staff_user()
+    _person(first=f"Wren{sfx}", last=f"Sage{sfx}", email=f"wren-{sfx}@e.test")
+
+    html = _create_client_form(
+        {"first": f"Wren{sfx}", "last": f"Sage{sfx}", "email": f"new-{sfx}@e.test"},
+        staff, acknowledge="1").body.decode()
+
+    assert "Client created" in html or "created" in html.lower()
+    with engine.connect() as c:
+        assert len(c.execute(select(people.c.id).where(
+            people.c.last_name == f"Sage{sfx}")).scalars().all()) == 2
+
+
+def test_a_candidate_the_principal_cannot_see_is_never_offered():
+    """Candidates are scope-filtered before they reach the browser."""
+    import inspect
+
+    from app.services import person_creation
+    src = inspect.getsource(person_creation.create_client)
+    assert "_visible(name_rows, accessible)" in src, "candidates are no longer scope-filtered"
+    assert "_candidate_view(r) for r in _visible" in src
+
+
+def test_a_tampered_candidate_id_cannot_bypass_record_scope():
+    """The id is a claim, never an authority: the invite route re-resolves and re-authorizes it."""
+    import inspect
+
+    from app.portal import invite_targets
+    from app.routes import portal_admin
+
+    src = inspect.getsource(portal_admin.portal_admin_invite_form)
+    assert "invite_targets.resolve_invite_target(principal, person_id)" in src
+    resolver = inspect.getsource(invite_targets.resolve_invite_target)
+    assert "record_in_scope" in resolver and "write=True" in resolver
+
+    # Behavioural: a person outside the principal's scope is refused even when named directly.
+    staff = _staff_user()
+    outsider = _person(first="Out", last=f"Scope{uuid.uuid4().hex[:8]}",
+                       email=f"out-{uuid.uuid4().hex[:8]}@e.test")
+    narrow = Principal(staff, "staff@example.com", "Staff", frozenset({"client.read",
+                                                                       "client.write"}))
+    with pytest.raises(invite_targets.InviteTargetError):
+        invite_targets.resolve_invite_target(narrow, str(outsider))

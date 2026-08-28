@@ -47,11 +47,26 @@ invitation link and any signed-in sessions no longer work.</div>{% endif %}
   <h2 class="section-title">Add new client</h2>
   {% if create_review.candidates %}
   <p><b>Possible existing clients found. Review them before creating a new client.</b></p>
+  {# Each candidate is ACTIONABLE. Recognising a duplicate and then having to go back and retype the
+     client into the search box was the defect. "Use this client" hands the record to the SAME
+     selection path a search result uses; the id rides in a data attribute as hidden state, is never
+     shown, and is re-resolved and re-authorized server-side when the invitation is submitted. #}
   <ul class="portal-duplicates">
     {% for c in create_review.candidates %}
-    <li>{{ c.full_name }}{% if c.email %} &middot; {{ c.email }}{% endif %}{% if c.phone %} &middot; {{ c.phone }}{% endif %}</li>
+    <li>
+      <span class="portal-duplicate-who">{{ c.full_name }}{% if c.email %} &middot; {{ c.email }}{% endif %}{% if c.phone %} &middot; {{ c.phone }}{% endif %}</span>
+      {% if c.person_id %}
+      <button type="button" class="btn secondary use-existing-client"
+              data-person-id="{{ c.person_id }}"
+              data-first-name="{{ c.first_name }}" data-last-name="{{ c.last_name }}"
+              data-full-name="{{ c.full_name }}"
+              data-email="{{ c.email }}" data-phone="{{ c.phone }}">Use this client</button>
+      {% endif %}
+    </li>
     {% endfor %}
   </ul>
+  <p class="subtle">Choosing an existing client returns you to the invitation form with that client
+  selected. It does not send an invitation.</p>
   {% endif %}
   <dl class="portal-create-values">
     <dt>First name</dt><dd>{{ create_review.first_name }}</dd>

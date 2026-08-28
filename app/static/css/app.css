@@ -287,3 +287,6 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .portal-created p { margin: 4px 0 0; }
 /* Keeps the per-row Revoke control from adding vertical height to the accounts table. */
 .portal-revoke { display: inline; margin: 0; }
+.portal-duplicates li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 6px; }
+.portal-duplicate-who { flex: 1 1 auto; }

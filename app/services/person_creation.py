@@ -127,9 +127,18 @@ def _visible(rows, accessible):
 
 
 def _candidate_view(row) -> dict:
-    """Human-readable duplicate candidate. No person_id, no household_id — this is shown to staff
-    purely so they can recognise a record they already have."""
-    return {"full_name": row["full_name"] or f"{row['first_name'] or ''} {row['last_name'] or ''}".strip(),
+    """A duplicate candidate staff can both RECOGNISE and ACT ON.
+
+    The visible half — name, email, phone — is what staff read. ``person_id`` and the name parts are
+    hidden form state, carried so "Use this client" can hand the record to the existing invite
+    selection instead of making staff retype it; identifying a duplicate and then being unable to
+    use it was the whole defect. The id is never rendered as text, exactly like the invite form's
+    existing hidden ``person_id`` field, and it grants nothing: every candidate here has already
+    passed ``_visible(..., accessible)``, and the invitation route re-resolves and re-authorizes the
+    id server-side on submit regardless of what the browser sends back."""
+    return {"person_id": row["id"],
+            "first_name": row["first_name"] or "", "last_name": row["last_name"] or "",
+            "full_name": row["full_name"] or f"{row['first_name'] or ''} {row['last_name'] or ''}".strip(),
             "email": row["primary_email"] or "", "phone": row["primary_phone"] or ""}
 
 

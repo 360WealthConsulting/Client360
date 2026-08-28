@@ -142,7 +142,7 @@ def test_the_script_keeps_the_two_character_threshold_and_debounce():
 
 # --- behaviour, executed in Node ---------------------------------------------------------
 
-def _harness(fetch_impl: str, *, activation: bool = False) -> str:
+def _harness(fetch_impl: str, *, activation: bool = False, candidates: str = "") -> str:
     """A minimal DOM + fetch stub, then the REAL script, then one simulated search.
 
     Mirrors the four-field invite form: first/last/email/phone are typeable inputs that drive
@@ -159,7 +159,11 @@ def _harness(fetch_impl: str, *, activation: bool = False) -> str:
               this.firstChild = this.children[0] || null;
             },
             focus() { this.focused = true; },
-            select() { this.selected = true; }
+            select() { this.selected = true; },
+            scrollIntoView(opts) { this.scrolledIntoView = opts || true; },
+            getAttribute(name) { return (this._attrs || {})[name] || null; },
+            setAttribute(name, value) { (this._attrs = this._attrs || {})[name] = value; },
+            querySelector(sel) { return (this._query || {})[sel] || null; }
           };
         }
         const nodes = {};
@@ -168,14 +172,21 @@ def _harness(fetch_impl: str, *, activation: bool = False) -> str:
           .forEach(id => nodes[id] = el(id));
         nodes["selected-client"].hidden = true;
         nodes["invite-error"].hidden = true;
+        const collections = {};                 // selector -> nodes, for querySelectorAll
         global.document = {
           readyState: "complete",
           getElementById: id => nodes[id] || null,
           createElement: tag => el(null, tag),
-          // The script binds confirmation prompts to data-confirm forms; the stub has none.
-          querySelectorAll: () => [],
+          // data-confirm forms and duplicate-candidate buttons are looked up this way.
+          querySelectorAll: sel => collections[sel] || [],
           addEventListener: () => {}
         };
+        // The stub models a browser: window always exists there, so it must exist here too.
+        global.window = {
+          confirm: () => true,
+          matchMedia: () => ({ matches: false })
+        };
+        %%CANDIDATES%%
         global.setTimeout = (fn) => { fn(); return 1; };   // run debounced work immediately
         global.clearTimeout = () => {};
         %%FETCH%%
@@ -209,6 +220,7 @@ def _harness(fetch_impl: str, *, activation: bool = False) -> str:
         %%AFTER%%
     """).replace("%%FETCH%%", fetch_impl).replace(
         "%%SCRIPT%%", json.dumps(str(SCRIPT))).replace(
+        "%%CANDIDATES%%", candidates).replace(
         "%%ACTIVATION%%", ',"activation-link"' if activation else "")
 
 
@@ -415,3 +427,106 @@ def test_server_side_resolution_and_handoff_are_untouched():
     assert "_remember_activation_url" in handler
     assert invite_targets.PERMITTED_ACCESS_TYPES == {"self", "joint"}
     assert "record_in_scope" in inspect.getsource(invite_targets.resolve_invite_target)
+
+
+# --- Add New Client must visibly do something ---------------------------------------------
+#
+# Production acceptance: clicking Add New Client unhid #add-client-form, but the form sits below
+# the invite form and therefore below the fold. Nothing scrolled and nothing took focus, so the
+# button read as dead. Creation itself is unchanged — still a second, explicit submit.
+
+def test_the_confirmation_is_brought_into_view_and_focused():
+    js = SCRIPT.read_text()
+    assert "scrollIntoView" in js, "the revealed confirmation is never scrolled into view"
+    assert 'querySelector(\'button[type="submit"]\')' in js, "no control is focused"
+    assert "preventScroll: true" in js, "focus would fight the scroll it was paired with"
+    # Defined AND actually invoked where the form is revealed — a definition alone reveals nothing.
+    handler = js.split('addButton.addEventListener("click"', 1)[1]
+    assert "revealConfirmation(addForm);" in handler.split("\n    }", 1)[0], \
+        "the reveal is never called when Add New Client is clicked"
+
+
+def test_the_duplicate_candidates_are_actually_bound_on_load():
+    js = SCRIPT.read_text()
+    ready_body = js.split("ready(function ()", 1)[1]
+    assert "bindDuplicateCandidates();" in ready_body, \
+        "the candidate buttons are defined but never wired up"
+
+
+def test_the_reveal_respects_reduced_motion():
+    js = SCRIPT.read_text()
+    assert "prefers-reduced-motion" in js
+    assert '"auto" : "smooth"' in js
+
+
+def test_revealing_the_confirmation_still_creates_nothing():
+    """The reveal is presentation only: the second explicit submit remains the only creator."""
+    js = SCRIPT.read_text()
+    body = js.split('addButton.addEventListener("click"', 1)[1].split("});", 1)[0]
+    for creator in ("fetch(", "submit()", "requestSubmit", ".click()"):
+        assert creator not in body, f"the reveal handler performs {creator}"
+    assert 'action="/admin/client-portal/create-client"' in TEMPLATE.read_text()
+    assert "add-client-form" in TEMPLATE.read_text()
+
+
+# --- duplicate candidates reuse the ONE selection path -------------------------------------
+
+def test_use_this_client_routes_through_the_existing_select_implementation():
+    js = SCRIPT.read_text()
+    assert "bindDuplicateCandidates" in js
+    body = js.split("function bindDuplicateCandidates", 1)[1].split("\n    }", 1)[0]
+    assert "select({" in body, "candidates do not use the shared select()"
+    # One selection implementation, not two: no parallel field-filling in the candidate handler.
+    for parallel in ("f.first.value =", "f.personId.value =", "chosen = true"):
+        assert parallel not in body, f"a second selection implementation sets {parallel}"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_clicking_use_this_client_selects_that_person(tmp_path):
+    """The real script, in Node: a candidate button fills the invite form and the hidden id."""
+    candidates = """
+        const useButton = el("use-1", "button");
+        useButton._attrs = {
+          "data-person-id": "8821", "data-first-name": "Dana", "data-last-name": "Whitfield",
+          "data-full-name": "Dana Whitfield", "data-email": "dana@example.test",
+          "data-phone": "(540) 555-0114"
+        };
+        collections["button.use-existing-client"] = [useButton];
+        nodes["invite-form"]._query = { 'input[name="access_type"]': el("access", "input") };
+    """
+    body = _harness("global.fetch = () => Promise.resolve({ok: true, json: () => ({results: []})});",
+                    candidates=candidates)
+    # Clicked AFTER the harness's simulated typing: editing a name field deliberately clears any
+    # standing selection, so a click before it would be undone by the harness itself.
+    out = _run_node(body, tmp_path, query="x", after="useButton._on.click(); done();")
+
+    assert out["personId"] == "8821", "the canonical record was not selected"
+    assert out["first"] == "Dana" and out["last"] == "Whitfield"
+    assert out["email"] == "dana@example.test"
+    assert out["phone"] == "(540) 555-0114"
+    assert "Dana Whitfield" in out["selected"]
+    assert out["selectedHidden"] is False, "the selection is not shown to the staff member"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_selecting_a_candidate_returns_the_user_to_the_invitation_form(tmp_path):
+    candidates = """
+        const useButton = el("use-1", "button");
+        useButton._attrs = { "data-person-id": "77", "data-first-name": "Ana",
+                             "data-last-name": "Ruiz", "data-full-name": "Ana Ruiz",
+                             "data-email": "ana@example.test", "data-phone": "" };
+        collections["button.use-existing-client"] = [useButton];
+        const accessRadio = el("access", "input");
+        nodes["invite-form"]._query = { 'input[name="access_type"]': accessRadio };
+    """
+    body = _harness("global.fetch = () => Promise.resolve({ok: true, json: () => ({results: []})});",
+                    candidates=candidates)
+    body = body.replace('activationSelected: !!(nodes["activation-link"] || {}).selected',
+                        'activationSelected: false,\n'
+                        '            formScrolled: !!nodes["invite-form"].scrolledIntoView,\n'
+                        '            accessFocused: !!accessRadio.focused')
+    out = _run_node(body, tmp_path, query="x", after="useButton._on.click(); done();")
+
+    assert out["formScrolled"] is True, "the invitation form was not brought back into view"
+    assert out["accessFocused"] is True, "focus did not land on the next decision"
+    assert out["personId"] == "77"

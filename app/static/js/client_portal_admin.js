@@ -225,11 +225,60 @@
         });
         addForm.hidden = false;
         showError("");
+        revealConfirmation(addForm);
       });
     }
     if (addCancel && addForm) {
       addCancel.addEventListener("click", function () { addForm.hidden = true; });
     }
+
+    function scrollBehavior() {
+      /* Respect the OS setting; a smooth scroll is a nicety, never a requirement. */
+      return (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+        ? "auto" : "smooth";
+    }
+
+    function revealConfirmation(panel) {
+      /* The confirmation sits below the invite form, so on a normal screen "Add New Client"
+         unhid something the staff member could not see and the button looked dead. Bring it into
+         view and put focus on the action, so it is obvious BOTH visually and to a screen reader.
+         Nothing is created here — the second, explicit submit still does that. */
+      if (panel.scrollIntoView) {
+        panel.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+      }
+      var confirm = panel.querySelector('button[type="submit"]');
+      /* preventScroll: the browser has just been asked to scroll; focus must not fight it. */
+      if (confirm) { confirm.focus({ preventScroll: true }); }
+    }
+
+    function bindDuplicateCandidates() {
+      /* Server-rendered duplicate candidates from a refused creation. Deliberately routed through
+         the SAME select() a search result uses — one selection implementation, one set of rules —
+         rather than a second parallel path. The person id is hidden state the server re-resolves
+         and re-authorizes on submit; nothing here grants access. */
+      var buttons = document.querySelectorAll("button.use-existing-client");
+      Array.prototype.forEach.call(buttons, function (button) {
+        button.addEventListener("click", function () {
+          select({
+            person_id: button.getAttribute("data-person-id"),
+            first_name: button.getAttribute("data-first-name") || "",
+            last_name: button.getAttribute("data-last-name") || "",
+            full_name: button.getAttribute("data-full-name") || "",
+            email: button.getAttribute("data-email") || "",
+            phone: button.getAttribute("data-phone") || "",
+            household_name: ""
+          });
+          // Back to the invitation form, where the next decision (access level) lives.
+          if (form.scrollIntoView) {
+            form.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+          }
+          var access = form.querySelector('input[name="access_type"]');
+          if (access) { access.focus({ preventScroll: true }); }
+        });
+      });
+    }
+
+    bindDuplicateCandidates();
 
     form.addEventListener("submit", function (event) {
       if (!(f.personId.value || "").trim()) {
