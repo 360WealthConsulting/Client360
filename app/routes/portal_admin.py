@@ -366,11 +366,22 @@ def portal_admin_create_client(
         # redirected so no client detail travels in a URL.
         return _admin_page(request, principal, create_error=str(warning),
                            create_review={**typed, "candidates": warning.candidates,
-                                          "needs_acknowledgement": True})
+                                          "needs_acknowledgement": True,
+                                          "hard_duplicate": False})
+    except person_creation.DuplicateClientError as blocked:
+        # An exact email/phone match. Creation stays REFUSED — this branch offers no
+        # acknowledgement and the template renders no create action for it — but the candidates it
+        # carries make the existing record selectable, which is the whole point of telling staff it
+        # exists. Out of scope, ``candidates`` is empty and the page shows only the generic refusal.
+        return _admin_page(request, principal, create_error=str(blocked),
+                           create_review={**typed, "candidates": blocked.candidates,
+                                          "needs_acknowledgement": False,
+                                          "hard_duplicate": True})
     except person_creation.PersonCreationError as exc:
         return _admin_page(request, principal, create_error=str(exc),
                            create_review={**typed, "candidates": [],
-                                          "needs_acknowledgement": False})
+                                          "needs_acknowledgement": False,
+                                          "hard_duplicate": False})
 
     _audit(request, principal, "portal.admin.client_created", created.person_id,
            {"via": "portal_admin", "household_created": created.household_created})

@@ -33,6 +33,7 @@ from app.routes.portal_admin import (
     portal_admin_invite_form,
 )
 from app.security.models import Principal
+from app.services.people import _normalize_phone
 
 from pathlib import Path
 
@@ -62,7 +63,11 @@ def _person(*, first, last, household_id=None, email=None, phone=None, active=Tr
         return c.execute(people.insert().values(
             first_name=first, last_name=last, full_name=f"{first} {last}",
             primary_email=email, normalized_email=(email or "").lower() or None,
-            primary_phone=phone, city=city, active=active, household_id=household_id)
+            # normalized_phone matters: hard duplicate detection matches on it, not on the display
+            # form. A fixture that left it NULL made every phone-duplicate assertion pass without
+            # ever reaching the branch it claimed to test.
+            primary_phone=phone, normalized_phone=_normalize_phone(phone) if phone else None,
+            city=city, active=active, household_id=household_id)
             .returning(people.c.id)).scalar_one()
 
 
@@ -1979,3 +1984,179 @@ def test_a_tampered_candidate_id_cannot_bypass_record_scope():
                                                                        "client.write"}))
     with pytest.raises(invite_targets.InviteTargetError):
         invite_targets.resolve_invite_target(narrow, str(outsider))
+
+
+# --- HARD identifier duplicates must be recoverable too -------------------------------------
+#
+# Missed in acceptance: the earlier duplicate-recovery work exercised PossibleDuplicateWarning
+# (name-only) and never DuplicateClientError (exact email/phone) — the branch a real staff member
+# actually hits. That exception carried only a message, so the route had no candidates to render
+# and the live page showed "...already exists (Mike Agree)" with nothing to click.
+#
+# These tests POST the real route and assert the RENDERED page, not the source.
+
+CREATE_ANYWAY = "Create separate client anyway"
+
+
+def _post_create(*, first, last, email="", phone="", staff=None, acknowledge=""):
+    from app.routes.portal_admin import portal_admin_create_client
+    return portal_admin_create_client(
+        _req(), first_name=first, last_name=last, email=email, phone=phone,
+        acknowledge_duplicate=acknowledge,
+        principal=_principal(staff or _staff_user())).body.decode()
+
+
+def _people_named(last_name):
+    with engine.connect() as c:
+        return c.execute(select(people.c.id).where(
+            people.c.last_name == last_name)).scalars().all()
+
+
+def test_a_hard_email_duplicate_renders_use_this_client_and_creates_nothing():
+    sfx = uuid.uuid4().hex[:8]
+    existing = _person(first=f"Mike{sfx}", last=f"Agree{sfx}", email=f"mike-{sfx}@e.test")
+
+    html = _post_create(first="Different", last=f"Name{sfx}", email=f"mike-{sfx}@e.test")
+
+    assert "already exists" in html
+    assert "use-existing-client" in html and "Use this client" in html
+    assert f"Mike{sfx} Agree{sfx}" in html, "the existing client is not identified"
+    assert CREATE_ANYWAY not in html, "a hard duplicate offered an override"
+    assert _people_named(f"Name{sfx}") == [], "a duplicate person was created"
+    assert _people_named(f"Agree{sfx}") == [existing]
+
+
+def test_a_hard_phone_duplicate_renders_use_this_client_and_creates_nothing():
+    sfx = uuid.uuid4().hex[:8]
+    phone = _unique_phone_digits()
+    existing = _person(first=f"Dana{sfx}", last=f"Reed{sfx}", phone=phone)
+
+    html = _post_create(first="Other", last=f"Person{sfx}", email=f"other-{sfx}@e.test",
+                        phone=phone)
+
+    assert "already exists" in html
+    assert "use-existing-client" in html and "Use this client" in html
+    assert f"Dana{sfx} Reed{sfx}" in html
+    assert CREATE_ANYWAY not in html
+    assert _people_named(f"Person{sfx}") == []
+    assert _people_named(f"Reed{sfx}") == [existing]
+
+
+def test_a_hard_duplicate_offers_no_create_action_at_all():
+    """Not an override, and not a plain "Create client" that would only be refused again."""
+    sfx = uuid.uuid4().hex[:8]
+    _person(first=f"Sol{sfx}", last=f"Vane{sfx}", email=f"sol-{sfx}@e.test")
+
+    html = _post_create(first=f"Sol{sfx}", last=f"Vane{sfx}", email=f"sol-{sfx}@e.test")
+    review = html.split('class="card portal-create-review"', 1)[1].split("</div>", 1)[0]
+
+    assert CREATE_ANYWAY not in review
+    assert 'name="acknowledge_duplicate"' not in review, "an acknowledgement field was rendered"
+    assert 'action="/admin/client-portal/create-client"' not in review, \
+        "the review still posts back to creation"
+
+
+def test_a_hard_duplicate_matching_several_visible_records_offers_each_one():
+    sfx = uuid.uuid4().hex[:8]
+    phone = _unique_phone_digits()
+    first = _person(first=f"Ada{sfx}", last=f"Holt{sfx}", phone=phone)
+    second = _person(first=f"Bea{sfx}", last=f"Holt{sfx}", phone=phone)
+
+    html = _post_create(first="New", last=f"Holt{sfx}", email=f"new-{sfx}@e.test", phone=phone)
+
+    assert html.count("use-existing-client") >= 2, "not every authorized candidate is offered"
+    assert f"Ada{sfx} Holt{sfx}" in html and f"Bea{sfx} Holt{sfx}" in html
+    assert CREATE_ANYWAY not in html
+    assert sorted(_people_named(f"Holt{sfx}")) == sorted([first, second])
+
+
+def test_an_acknowledgement_cannot_override_a_hard_duplicate():
+    """The override belongs to the name-only warning alone; forcing the flag changes nothing."""
+    sfx = uuid.uuid4().hex[:8]
+    _person(first=f"Kai{sfx}", last=f"Boyd{sfx}", email=f"kai-{sfx}@e.test")
+
+    html = _post_create(first=f"Kai{sfx}", last=f"Boyd{sfx}", email=f"kai-{sfx}@e.test",
+                        acknowledge="1")
+
+    assert "already exists" in html
+    assert _people_named(f"Boyd{sfx}") == [_people_named(f"Boyd{sfx}")[0]]
+    assert len(_people_named(f"Boyd{sfx}")) == 1, "an acknowledgement created a hard duplicate"
+
+
+def test_an_out_of_scope_hard_duplicate_reveals_nothing():
+    """Refusal is a data-integrity rule; disclosure is not. The generic message stands alone."""
+    from app.services.person_creation import OUT_OF_SCOPE_DUPLICATE
+
+    sfx = uuid.uuid4().hex[:8]
+    hidden_email = f"hidden-{sfx}@e.test"
+    hidden_id = _person(first=f"Secret{sfx}", last=f"Person{sfx}", email=hidden_email)
+    # A principal WITHOUT record.read_all sees only records assigned to them; this one is not.
+    narrow = Principal(_staff_user(), "staff@example.com", "Staff",
+                       frozenset({"client.read", "client.write"}))
+
+    from app.routes.portal_admin import portal_admin_create_client
+    html = portal_admin_create_client(
+        _req(), first_name="Someone", last_name=f"Else{sfx}", email=hidden_email, phone="",
+        acknowledge_duplicate="", principal=narrow).body.decode()
+
+    assert OUT_OF_SCOPE_DUPLICATE in html
+    assert "use-existing-client" not in html and "Use this client" not in html
+    # hidden_email is deliberately NOT asserted absent: staff typed it, so echoing it back is
+    # their own input, not a disclosure. What must never appear is anything about the RECORD.
+    for leak in (f"Secret{sfx}", f"Person{sfx}", f"data-person-id=\"{hidden_id}\""):
+        assert leak not in html, f"the out-of-scope record disclosed {leak}"
+    assert CREATE_ANYWAY not in html
+    assert _people_named(f"Else{sfx}") == [], "creation was allowed outside scope"
+    assert _people_named(f"Person{sfx}") == [hidden_id]
+
+
+def test_the_name_only_warning_keeps_its_override():
+    """The two duplicate classes stay distinct: name-only remains overridable."""
+    sfx = uuid.uuid4().hex[:8]
+    _person(first=f"Rowan{sfx}", last=f"Frey{sfx}", email=f"rowan-{sfx}@e.test")
+
+    html = _post_create(first=f"Rowan{sfx}", last=f"Frey{sfx}", email=f"unique-{sfx}@e.test")
+
+    assert "use-existing-client" in html and "Use this client" in html
+    assert CREATE_ANYWAY in html, "the name-only override was removed"
+    assert 'name="acknowledge_duplicate"' in html
+
+
+def test_the_hard_duplicate_exception_carries_candidates_without_becoming_overridable():
+    """Design check: the TYPE is the rule. Nothing accepts an acknowledgement for this class."""
+    import inspect
+
+    from app.services import person_creation
+
+    sfx = uuid.uuid4().hex[:8]
+    _person(first=f"Neve{sfx}", last=f"Ash{sfx}", email=f"neve-{sfx}@e.test")
+    principal = _principal(_staff_user())
+
+    with pytest.raises(person_creation.DuplicateClientError) as exc:
+        person_creation.create_client(
+            principal, first_name="X", last_name=f"Y{sfx}", email=f"neve-{sfx}@e.test",
+            phone="", request_id=f"req-{sfx}", acknowledge_name_duplicate=True,
+            require_email=True)
+
+    assert exc.value.candidates, "the in-scope hard duplicate carries no candidates"
+    assert exc.value.candidates[0]["person_id"]
+    assert not isinstance(exc.value, person_creation.PossibleDuplicateWarning)
+    # The acknowledgement flag is consulted ONLY on the name-only branch.
+    src = inspect.getsource(person_creation.create_client)
+    hard_branch = src.split("if hard:", 1)[1].split("name_rows =", 1)[0]
+    assert "acknowledge_name_duplicate" not in hard_branch
+
+
+def test_hard_duplicate_candidates_are_selected_through_the_shared_path():
+    """Same markup contract the JS binds to, so selection reuses the one select() implementation."""
+    sfx = uuid.uuid4().hex[:8]
+    _person(first=f"Iris{sfx}", last=f"Lund{sfx}", email=f"iris-{sfx}@e.test",
+            phone="(540) 555-2299")
+
+    html = _post_create(first="New", last=f"Lund{sfx}", email=f"iris-{sfx}@e.test")
+
+    for attribute in ("data-person-id", "data-first-name", "data-last-name",
+                      "data-full-name", "data-email", "data-phone"):
+        assert attribute in html, f"the candidate action is missing {attribute}"
+    assert "button.use-existing-client" in open(
+        "app/static/js/client_portal_admin.js", encoding="utf-8").read()

@@ -46,7 +46,11 @@ invitation link and any signed-in sessions no longer work.</div>{% endif %}
 <div class="card portal-create-review">
   <h2 class="section-title">Add new client</h2>
   {% if create_review.candidates %}
+  {% if create_review.hard_duplicate %}
+  <p><b>This client already exists.</b> Select the existing record to continue.</p>
+  {% else %}
   <p><b>Possible existing clients found. Review them before creating a new client.</b></p>
+  {% endif %}
   {# Each candidate is ACTIONABLE. Recognising a duplicate and then having to go back and retype the
      client into the search box was the defect. "Use this client" hands the record to the SAME
      selection path a search result uses; the id rides in a data attribute as hidden state, is never
@@ -74,6 +78,12 @@ invitation link and any signed-in sessions no longer work.</div>{% endif %}
     <dt>Email</dt><dd>{{ create_review.email }}</dd>
     <dt>Phone</dt><dd>{{ create_review.phone or "—" }}</dd>
   </dl>
+  {% if create_review.hard_duplicate %}
+  {# An exact email or phone match is NON-OVERRIDABLE. No create action is offered here at all:
+     no acknowledgement, and no plain "Create client" either, because a second submission would
+     simply be refused again by the service. Use the existing record, or cancel. #}
+  <p><a class="btn secondary" href="/admin/client-portal">Cancel</a></p>
+  {% else %}
   <form method="post" action="/admin/client-portal/create-client">
     <input type="hidden" name="first_name" value="{{ create_review.first_name }}">
     <input type="hidden" name="last_name" value="{{ create_review.last_name }}">
@@ -87,6 +97,7 @@ invitation link and any signed-in sessions no longer work.</div>{% endif %}
     {% endif %}
     <a class="btn secondary" href="/admin/client-portal">Cancel</a>
   </form>
+  {% endif %}
 </div>
 {% endif %}
 <h2 class="section-title">Invite a client</h2>

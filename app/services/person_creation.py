@@ -59,7 +59,20 @@ class PersonCreationError(ValueError):
 
 
 class DuplicateClientError(PersonCreationError):
-    """A hard duplicate exists. Never overridable."""
+    """An exact email/phone duplicate exists. NEVER overridable — the type is the rule.
+
+    ``candidates`` carries the matching records the principal is actually allowed to see, so staff
+    can select the existing client instead of being told one exists and left to find it by hand.
+    It is EMPTY when the match lies outside the principal's scope: refusing to create is a
+    data-integrity rule that applies regardless of visibility, but naming an unseeable record would
+    disclose its existence. An empty list is therefore the out-of-scope signal, not an oversight.
+
+    Carrying candidates does NOT make this overridable. Nothing anywhere accepts an acknowledgement
+    for this class; the override belongs solely to :class:`PossibleDuplicateWarning`."""
+
+    def __init__(self, message, candidates=()):
+        super().__init__(message)
+        self.candidates = list(candidates)
 
 
 class PossibleDuplicateWarning(PersonCreationError):
@@ -228,10 +241,12 @@ def create_client(principal, *, first_name, last_name, email=None, phone=None,
                 accessible)
             if not visible:
                 raise DuplicateClientError(OUT_OF_SCOPE_DUPLICATE)
-            names = ", ".join(_candidate_view(r)["full_name"] for r in visible[:3])
+            candidates = [_candidate_view(r) for r in visible]
+            names = ", ".join(c["full_name"] for c in candidates[:3])
             raise DuplicateClientError(
                 f"A client with this email address or phone number already exists ({names}). "
-                "Use the existing record instead of creating a second one.")
+                "Use the existing record instead of creating a second one.",
+                candidates)
 
         # --- name-only duplicates: review, then one explicit override ---------------------
         # A first+last collision is never conclusive on its own — real people share names — so it
