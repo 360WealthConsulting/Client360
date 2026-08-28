@@ -1,8 +1,8 @@
 """MDM-2 — canonical profile enrichment from linked source_contacts.
 
 After consolidation a survivor may own the correct email/phone in its linked ``source_contacts`` while its
-canonical ``people`` row is still sparse (e.g. Austin Weaver 5265: 27 links, but primary_email/phone
-NULL). This step safely backfills canonical identity fields from the linked source contacts:
+canonical ``people`` row is still sparse (e.g. a survivor with dozens of links but primary_email/phone
+still NULL). This step safely backfills canonical identity fields from the linked source contacts:
 
 - fills ONLY null canonical fields (never overwrites a populated one);
 - derives values from the person's linked source_contacts (columns + raw_data);

@@ -4,9 +4,9 @@ Default is PREVIEW (no changes). ``--apply`` fills only null canonical fields fr
 linked-source value (never overwrites; skips conflicts; idempotent). Scope with --person-id / --group.
 
 Usage:
-    python scripts/enrich_canonical_people.py --preview --person-id 5265
-    python scripts/enrich_canonical_people.py --apply   --person-id 5265
-    python scripts/enrich_canonical_people.py --preview --group "austin weaver"
+    python scripts/enrich_canonical_people.py --preview --person-id <person-id>
+    python scripts/enrich_canonical_people.py --apply   --person-id <person-id>
+    python scripts/enrich_canonical_people.py --preview --group "<normalized group name>"
     python scripts/enrich_canonical_people.py --apply
 """
 import argparse

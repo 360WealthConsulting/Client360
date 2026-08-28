@@ -165,6 +165,7 @@ def add_timeline_event(
     event_time: Optional[datetime] = None,
     external_id: Optional[str] = None,
     event_metadata: Optional[dict[str, Any]] = None,
+    conn=None,
 ) -> int:
     if person_id is None and household_id is None:
         raise ValueError(
@@ -202,6 +203,10 @@ def add_timeline_event(
 
     statement = statement.returning(timeline_events.c.id)
 
+    # ``conn`` enlists in the CALLER's transaction so the timeline entry cannot outlive a
+    # rolled-back change. Default keeps the historical stand-alone transaction.
+    if conn is not None:
+        return conn.execute(statement).scalar_one()
     with engine.begin() as connection:
         return connection.execute(statement).scalar_one()
 

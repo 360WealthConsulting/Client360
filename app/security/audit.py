@@ -14,7 +14,10 @@ from app.security.audit_chain import (
 from app.security.redaction import redact_metadata
 
 
-def write_audit_event(*, action, entity_type, request_id, actor_user_id=None, entity_id=None, outcome="success", ip_address=None, user_agent=None, metadata=None, chain_id=DEFAULT_CHAIN):
+def write_audit_event(*, action, entity_type, request_id, actor_user_id=None, entity_id=None, outcome="success", ip_address=None, user_agent=None, metadata=None, chain_id=DEFAULT_CHAIN, conn=None):
+    """Append one entry to the hash chain. Pass ``conn`` to enlist in the CALLER's transaction
+    so the audit entry commits (or rolls back) atomically with the change it describes;
+    the advisory lock is transaction-scoped either way. Default keeps its own transaction."""
     stored_entity_id = str(entity_id) if entity_id is not None else None
     redacted = redact_metadata(metadata)
     content = content_from_fields(
@@ -22,7 +25,7 @@ def write_audit_event(*, action, entity_type, request_id, actor_user_id=None, en
         entity_id=stored_entity_id, outcome=outcome, request_id=request_id,
         ip_address=ip_address, user_agent=user_agent, metadata=redacted,
     )
-    with engine.begin() as connection:
+    def _write(connection):
         # Serialize writers on this chain so the hash chain cannot fork (F3.2/ADR-015).
         connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": chain_lock_key(chain_id)})
         prev = connection.execute(
@@ -40,6 +43,11 @@ def write_audit_event(*, action, entity_type, request_id, actor_user_id=None, en
                 prev_hash=prev_hash, entry_hash=entry_hash, hash_version=HASH_VERSION, chain_id=chain_id,
             ).returning(audit_events.c.id)
         ).scalar_one()
+
+    if conn is not None:
+        return _write(conn)
+    with engine.begin() as connection:
+        return _write(connection)
 
 
 def audit_denied(request, *, action, entity_type, entity_id=None, actor_user_id=None, detail=None):
