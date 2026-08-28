@@ -44,11 +44,25 @@ _SSN_RE = re.compile(r"^\d{3}-?\d{2}-?\d{4}$")
 _SENSITIVE_SSN_CAP = "record.read_all"   # SSN search is gated; there is no SSN data to return anyway.
 
 
+#: An ENTITY is a client record a staff member navigates to; CONTENT is something filed against
+#: one. Ranking by this class first is what stops a page of "<surname> ….pdf" filenames burying the
+#: people of that surname: a prefix match on a filename used to outrank a person outright, because
+#: match quality was the primary sort key and record type was only a tiebreaker.
+_KIND_CLASS = {"household": 0, "person": 0, "business": 0, "trust": 0, "estate": 0,
+               "document": 1, "tax_return": 1, "account": 1, "policy": 1, "info": 2}
+
+
 def _rank(name: str, q: str, kind: str) -> tuple:
+    """Sort key: exact hit, then entity-before-content, then match quality, then type, then name.
+
+    An EXACT name match still wins outright regardless of type — typing a full filename must still
+    put that document first. Below that, entities come before content, so a partial query returns
+    the people, households and businesses it matched before the documents filed against them."""
     n = (name or "").lower()
     ql = q.lower()
     exact = 0 if n == ql else (1 if n.startswith(ql) else 2)
-    return (exact, _TYPE_ORDER.get(kind, 50), n)
+    return (0 if exact == 0 else 1, _KIND_CLASS.get(kind, 1), exact,
+            _TYPE_ORDER.get(kind, 50), n)
 
 
 #: Characters people type around a phone number. A query made only of these plus digits is
@@ -252,10 +266,11 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
             result["notes"].append("SSN search is not available — SSNs are not stored in Client360.")
         # Non-privileged users get nothing (no signal that an SSN exists).
 
+    # BEFORE the sort and slice: a related person must be able to compete for a place in the
+    # results, not be attached to whatever survived a page of document matches.
+    _enrich_and_promote(rows, acc, acc_households, firm_wide)
     rows.sort(key=lambda r: _rank(r["name"], q, r["kind"]))
     result["results"] = rows[:limit]
-    # Attached AFTER the slice, so the extra query only ever covers the entities actually shown.
-    _attach_entity_relations(result["results"], acc, acc_households, firm_wide)
     result["count"] = len(result["results"])
     return result
 
@@ -267,91 +282,217 @@ _RELATION_CATEGORIES = ("ownership", "org_structure")
 #: Related people shown under one business before the list is truncated. Keeps a widely-held entity
 #: from dominating the results page.
 _MAX_RELATED = 6
+#: Hard ceiling on the ONE edge query, so a densely connected entity cannot unbound the search.
+_MAX_EDGES = 400
 
 
-def _attach_entity_relations(result_rows, acc, acc_households, firm_wide):
-    """Attach canonical related people/households to each business/trust/estate row, in ONE query.
+def _display_name(person_row):
+    """The staff-facing name for a person, from the CANONICAL people record.
 
-    WHY THIS EXISTS. ``relationship_entities`` carries a single optional ``person_id`` /
-    ``household_id`` anchor, which is not the ownership graph — a company with two owners has two
-    ``relationships`` EDGES and no way to express both on the entity row. Universal Search only ever
-    read the entity row, so a business result never showed the people behind it.
+    Never ``relationship_entities.name``: that column is a snapshot written by
+    ``ensure_person_entity`` at creation time, and it falls back to the literal string
+    ``f"Person {person_id}"`` when the person had no full name then. Reading it put an internal id
+    in front of staff and went stale whenever a name was corrected afterwards. The id is never a
+    display value; a genuinely nameless person gets a neutral label instead."""
+    if person_row is None:
+        return "Unnamed person"
+    for candidate in (person_row.get("full_name"),
+                      " ".join(p for p in (person_row.get("first_name"),
+                                           person_row.get("last_name")) if p)):
+        if (candidate or "").strip():
+            return candidate.strip()
+    return "Unnamed person"
 
-    ONE query for every business on the page, not one per business: the entity ids are collected
-    first and matched with ``IN``, so adding more business results costs no extra round trips.
 
-    Scope reuses the sets ``universal_search`` has already resolved — ``accessible_person_ids`` and
-    the households derived from them. A related person the principal cannot see is dropped from the
-    list, and the business itself is unaffected, so the omission reveals nothing: the row looks
-    exactly as it would if that edge did not exist."""
-    targets = {r["id"]: r for r in result_rows if r["kind"] in _ENTITY_KINDS}
-    for row in targets.values():
-        row["related_people"] = []
-        row["related_households"] = []
-    if not targets:
+def _joined(names, limit=_MAX_RELATED):
+    shown = names[:limit]
+    extra = len(names) - len(shown)
+    return ", ".join(shown) + (f" +{extra} more" if extra > 0 else "")
+
+
+def _enrich_and_promote(rows, acc, acc_households, firm_wide):
+    """Give entity rows their canonical relationship context, and PROMOTE the related records.
+
+    Relationships enrich a normal result; they are not the only way a related person becomes
+    visible. A person reached through an ownership edge is added to the SAME result set as a
+    first-class row with its own workspace link, then competes for a place on merit like any other
+    row — so it can be found, opened and ranked normally rather than living inside another row.
+
+    ONE HOP ONLY. Edges are read once, from the rows the text search already produced; nothing
+    promoted is expanded again, so the graph is never walked recursively.
+
+    BOUNDED AND BATCHED: a fixed number of queries regardless of how many entities matched — one
+    for the person/household entity ids, one for the edges, one for people names, one for household
+    names. No per-row lookups.
+
+    DEDUPLICATED: a record that both matched textually and was reached through a relationship
+    appears once; the relationship context is merged into the existing row.
+
+    SCOPED: a promoted person must pass the same ``accessible_person_ids`` set a directly matched
+    person passes, and a promoted household the same household set. A relationship can never be a
+    route around record scope, and an omission is indistinguishable from "no such edge"."""
+    by_key = {(r["kind"], r["id"]): r for r in rows}
+    business_ids = {r["id"] for r in rows if r["kind"] in _ENTITY_KINDS}
+    person_ids = {r["id"] for r in rows if r["kind"] == "person"}
+    household_ids = {r["id"] for r in rows if r["kind"] == "household"}
+    if not (business_ids or person_ids or household_ids):
         return
 
     owner = relationship_entities.alias("owner")
+    target = relationship_entities.alias("target")
     with engine.connect() as conn:
+        # The entity ids standing for the people/households already in the result set, so their
+        # outgoing edges can be read in the same pass as the businesses' incoming ones.
+        side_ids = set(business_ids)
+        if person_ids or household_ids:
+            side_ids |= set(conn.scalars(select(relationship_entities.c.id).where(or_(
+                relationship_entities.c.person_id.in_(person_ids or {-1}),
+                relationship_entities.c.household_id.in_(household_ids or {-1})))))
+        if not side_ids:
+            return
+
         edges = conn.execute(
-            select(relationships.c.to_entity_id.label("entity_id"),
-                   owner.c.person_id, owner.c.household_id, owner.c.name.label("owner_name"),
-                   owner.c.entity_type.label("owner_type"),
+            select(relationships.c.from_entity_id, relationships.c.to_entity_id,
+                   owner.c.person_id.label("from_person"), owner.c.household_id.label("from_household"),
+                   owner.c.entity_type.label("from_type"), owner.c.name.label("from_entity_name"),
+                   target.c.person_id.label("to_person"), target.c.household_id.label("to_household"),
+                   target.c.entity_type.label("to_type"), target.c.name.label("to_entity_name"),
                    relationship_types.c.name.label("role"),
-                   relationship_types.c.code.label("role_code"))
+                   relationship_types.c.inverse_name.label("inverse_role"))
             .select_from(relationships
                 .join(relationship_types,
                       relationship_types.c.id == relationships.c.relationship_type_id)
-                .join(owner, owner.c.id == relationships.c.from_entity_id))
-            .where(relationships.c.to_entity_id.in_(list(targets)),
+                .join(owner, owner.c.id == relationships.c.from_entity_id)
+                .join(target, target.c.id == relationships.c.to_entity_id))
+            .where(or_(relationships.c.to_entity_id.in_(side_ids),
+                       relationships.c.from_entity_id.in_(side_ids)),
                    relationships.c.active.is_(True),
                    relationship_types.c.category.in_(_RELATION_CATEGORIES))
-            .order_by(owner.c.name)).mappings().all()
+            .limit(_MAX_EDGES)).mappings().all()
+        if not edges:
+            return
 
-        person_ids = {e["person_id"] for e in edges if e["person_id"] is not None}
+        # Canonical display names, batched. people/households are the authority, not entity rows.
+        want_people = {e["from_person"] for e in edges if e["from_person"]} | \
+                      {e["to_person"] for e in edges if e["to_person"]}
         if not firm_wide:
-            person_ids &= (acc or set())
-        # The household a related PERSON belongs to is canonical data on people.household_id — not
-        # an inference — so it is surfaced alongside household-entity owners.
-        household_of = {}
-        if person_ids:
-            household_of = {r["id"]: r["household_id"] for r in conn.execute(
-                select(people.c.id, people.c.household_id)
-                .where(people.c.id.in_(person_ids))).mappings()}
-        wanted_households = {h for h in household_of.values() if h is not None}
-        wanted_households |= {e["household_id"] for e in edges if e["household_id"] is not None}
-        if not firm_wide:
-            wanted_households &= (acc_households or set())
-        household_names = {}
-        if wanted_households:
-            household_names = {r["id"]: r["name"] for r in conn.execute(
-                select(households.c.id, households.c.name)
-                .where(households.c.id.in_(wanted_households))).mappings()}
+            want_people &= (acc or set())
+        person_rows = {r["id"]: dict(r) for r in conn.execute(
+            select(people.c.id, people.c.full_name, people.c.first_name, people.c.last_name,
+                   people.c.household_id, people.c.primary_email, people.c.active)
+            .where(people.c.id.in_(want_people or {-1}))).mappings()} if want_people else {}
 
-    seen_people, seen_households = {}, {}
+        want_households = {e["from_household"] for e in edges if e["from_household"]} | \
+                          {e["to_household"] for e in edges if e["to_household"]} | \
+                          {r["household_id"] for r in person_rows.values() if r["household_id"]}
+        if not firm_wide:
+            want_households &= (acc_households or set())
+        household_rows = {r["id"]: dict(r) for r in conn.execute(
+            select(households.c.id, households.c.name, households.c.city)
+            .where(households.c.id.in_(want_households or {-1}))).mappings()} \
+            if want_households else {}
+
+    def _promote_person(pid, context):
+        row = by_key.get(("person", pid))
+        if row is None:
+            src = person_rows.get(pid)
+            if src is None:                      # out of scope, or no canonical record
+                return None
+            row = {"kind": "person", "id": pid, "name": _display_name(src),
+                   "entity_type": "person", "household_id": src["household_id"],
+                   "subtitle": src["primary_email"] or "",
+                   "quick_status": "active" if src["active"] else "inactive",
+                   "workspace_url": f"/client/{pid}", "promoted": True}
+            by_key[("person", pid)] = row
+            rows.append(row)
+        row.setdefault("relationship_context", [])
+        if context and context not in row["relationship_context"]:
+            row["relationship_context"].append(context)
+        return row
+
+    def _promote_household(hid, context):
+        row = by_key.get(("household", hid))
+        if row is None:
+            src = household_rows.get(hid)
+            if src is None:
+                return None
+            row = {"kind": "household", "id": hid, "name": src["name"] or "Unnamed household",
+                   "entity_type": "household", "household_id": hid,
+                   "subtitle": src["city"] or "", "quick_status": "",
+                   "workspace_url": f"/client/household/{hid}", "promoted": True}
+            by_key[("household", hid)] = row
+            rows.append(row)
+        row.setdefault("relationship_context", [])
+        if context and context not in row["relationship_context"]:
+            row["relationship_context"].append(context)
+        return row
+
+    owners_of = {}
     for edge in edges:
-        row = targets.get(edge["entity_id"])
+        business = by_key.get(("business", edge["to_entity_id"])) \
+            or by_key.get(("trust", edge["to_entity_id"])) \
+            or by_key.get(("estate", edge["to_entity_id"]))
+        role = (edge["role"] or "").strip()
+        # --- business in the results: promote its owners, and name them on the business row ---
+        if business is not None:
+            pid, hid = edge["from_person"], edge["from_household"]
+            if pid and pid in person_rows:
+                promoted = _promote_person(pid, f"{role} of {business['name']}".strip())
+                if promoted is not None:
+                    owners_of.setdefault(business["id"], []).append(promoted["name"])
+                    member_household = person_rows[pid]["household_id"]
+                    if member_household in household_rows:
+                        _promote_household(member_household, None)
+            elif hid and hid in household_rows:
+                promoted = _promote_household(hid, f"{role} of {business['name']}".strip())
+                if promoted is not None:
+                    owners_of.setdefault(business["id"], []).append(promoted["name"])
+        # --- person/household in the results: name what they own on their own row ---
+        from_person, from_household = edge["from_person"], edge["from_household"]
+        subject = (by_key.get(("person", from_person)) if from_person else None) \
+            or (by_key.get(("household", from_household)) if from_household else None)
+        if subject is not None and edge["to_type"] in _ENTITY_KINDS:
+            target_name = edge["to_entity_name"] or "an entity"
+            subject.setdefault("relationship_context", [])
+            context = f"{role} of {target_name}".strip()
+            if context not in subject["relationship_context"]:
+                subject["relationship_context"].append(context)
+
+    for entity_id, names in owners_of.items():
+        for kind in _ENTITY_KINDS:
+            row = by_key.get((kind, entity_id))
+            if row is not None:
+                row.setdefault("relationship_context", [])
+                label = f"Owners: {_joined(sorted(set(names)))}"
+                if label not in row["relationship_context"]:
+                    row["relationship_context"].append(label)
+
+    # Household rows list their members — canonical people.household_id, never a name match.
+    _add_household_members(rows, by_key, acc, firm_wide)
+
+
+def _add_household_members(rows, by_key, acc, firm_wide):
+    household_ids = [r["id"] for r in rows if r["kind"] == "household"]
+    if not household_ids:
+        return
+    with engine.connect() as conn:
+        stmt = select(people.c.id, people.c.household_id, people.c.full_name,
+                      people.c.first_name, people.c.last_name).where(
+            people.c.household_id.in_(household_ids[:_MAX_RELATED * 4]),
+            people.c.active.is_(True))
+        if not firm_wide:
+            stmt = stmt.where(people.c.id.in_(acc or {-1}))
+        members = {}
+        for r in conn.execute(stmt).mappings():
+            members.setdefault(r["household_id"], []).append(_display_name(dict(r)))
+    for hid, names in members.items():
+        row = by_key.get(("household", hid))
         if row is None:
             continue
-        pid, hid = edge["person_id"], edge["household_id"]
-        if pid is not None and pid in person_ids:
-            key = (edge["entity_id"], pid)
-            if key not in seen_people and len(row["related_people"]) < _MAX_RELATED:
-                seen_people[key] = True
-                row["related_people"].append({
-                    "person_id": pid,                       # link target only, never rendered
-                    "name": edge["owner_name"],
-                    "role": (edge["role"] or edge["role_code"] or "").replace("_", " ").title(),
-                    "url": f"/client/{pid}"})
-            hid = hid or household_of.get(pid)
-        if hid is not None and hid in household_names:
-            key = (edge["entity_id"], hid)
-            if key not in seen_households and len(row["related_households"]) < _MAX_RELATED:
-                seen_households[key] = True
-                row["related_households"].append({
-                    "household_id": hid,                    # link target only, never rendered
-                    "name": household_names[hid],
-                    "url": f"/client/household/{hid}"})
+        row.setdefault("relationship_context", [])
+        label = f"Members: {_joined(sorted(names))}"
+        if label not in row["relationship_context"]:
+            row["relationship_context"].append(label)
 
 
 def _doc_source(r):

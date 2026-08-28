@@ -235,58 +235,136 @@ def _business(res, made):
     return [r for r in res["results"] if r["id"] == made["business_id"]][0]
 
 
-def test_a_business_result_surfaces_its_canonical_owners(company):
+def _row(res, kind, ident):
+    hits = [r for r in res["results"] if r["kind"] == kind and r["id"] == ident]
+    return hits[0] if hits else None
+
+
+def test_a_related_person_is_a_first_class_result_not_a_sub_row(company):
+    """The core fix: an owner reached through a canonical edge joins the MAIN result set."""
     res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{company['tag']}")
-    biz = _business(res, company)
 
-    names = sorted(p["name"] for p in biz["related_people"])
-    assert names == [f"Alan Rowe{_TAG}{company['tag']}", f"Bettina Rowe{_TAG}{company['tag']}"]
-    assert all(p["role"] for p in biz["related_people"]), "the stored role is not surfaced"
+    people_rows = [r for r in res["results"] if r["kind"] == "person"]
+    assert sorted(p["name"] for p in people_rows) == [
+        f"Alan Rowe{_TAG}{company['tag']}", f"Bettina Rowe{_TAG}{company['tag']}"]
+    for row in people_rows:
+        assert row["workspace_url"] == f"/client/{row['id']}"
+    # Nothing is nested any more.
+    assert all("related_people" not in r for r in res["results"])
 
 
-def test_related_people_link_to_the_personal_profile(company):
+def test_the_related_household_is_a_first_class_result(company):
     res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{company['tag']}")
-    biz = _business(res, company)
+    hh = _row(res, "household", company["hids"][0])
 
-    for person in biz["related_people"]:
-        assert person["url"] == f"/client/{person['person_id']}"
-        assert person["person_id"] in company["pids"]
+    assert hh is not None, "the related household did not enter the result set"
+    assert hh["workspace_url"] == f"/client/household/{company['hids'][0]}"
+    assert any("Members:" in c for c in hh["relationship_context"])
 
 
-def test_the_related_household_is_surfaced_and_links_to_household_360(company):
-    res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{company['tag']}")
-    biz = _business(res, company)
+def test_relationship_context_appears_on_the_normal_rows(company):
+    tag = company["tag"]
+    res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
 
-    assert [h["name"] for h in biz["related_households"]] == [
-        f"Rowe{_TAG}{company['tag']} Household"]
-    assert biz["related_households"][0]["url"] == \
-        f"/client/household/{company['hids'][0]}"
+    biz = _row(res, "business", company["business_id"])
+    assert any(c.startswith("Owners:") for c in biz["relationship_context"])
+    assert f"Alan Rowe{_TAG}{tag}" in " ".join(biz["relationship_context"])
+
+    alan = [r for r in res["results"]
+            if r["kind"] == "person" and r["name"].startswith("Alan")][0]
+    assert any(f"Rowe Builders Inc {_TAG}{tag}" in c for c in alan["relationship_context"])
 
 
 def test_the_business_workspace_link_is_unchanged(company):
     res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{company['tag']}")
-    biz = _business(res, company)
-    assert biz["workspace_url"] == f"/business/{company['business_id']}"
+    assert _row(res, "business", company["business_id"])["workspace_url"] == \
+        f"/business/{company['business_id']}"
 
 
-def test_a_same_surname_person_with_no_edge_is_never_shown(company):
-    """Relationships come from the stored graph, never from a matching name."""
+def test_no_entity_is_ever_duplicated_in_the_result_set(company):
+    """Dedup invariant: one row per canonical entity, whether it matched, was promoted, or both."""
+    tag = company["tag"]
+    for query in (f"Rowe Builders Inc {_TAG}{tag}",   # business matches; owners promoted
+                  f"Rowe{_TAG}{tag}"):                # people + household match directly
+        res = universal_search(_firm(), query)
+        keys = [(r["kind"], r["id"]) for r in res["results"]]
+        assert len(keys) == len(set(keys)), f"duplicate entity rows for {query!r}: {keys}"
+
+
+def test_context_is_merged_onto_a_row_that_also_matched_directly(company):
+    """Alan matches by name AND owns the business — one row carrying the relationship context."""
+    tag = company["tag"]
+    res = universal_search(_firm(), f"Rowe{_TAG}{tag}")
+
+    alan = [r for r in res["results"]
+            if r["kind"] == "person" and r["name"].startswith("Alan")]
+    assert len(alan) == 1
+    assert any(f"Rowe Builders Inc {_TAG}{tag}" in c
+               for c in alan[0].get("relationship_context", [])), \
+        "the directly-matched row did not receive its relationship context"
+
+
+def test_the_canonical_person_name_is_used_never_person_id(company):
+    """relationship_entities.name is a stale snapshot that falls back to "Person {id}"."""
+    from sqlalchemy import update as _update
+
+    tag = company["tag"]
+    with engine.begin() as c:                    # simulate the stale snapshot production had
+        c.execute(_update(relationship_entities)
+                  .where(relationship_entities.c.person_id == company["pids"][0])
+                  .values(name=f"Person {company['pids'][0]}"))
+
+    res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
+    names = [r["name"] for r in res["results"] if r["kind"] == "person"]
+
+    assert f"Alan Rowe{_TAG}{tag}" in names, "the canonical people record was not used"
+    assert not any(n.startswith("Person ") for n in names), "an internal id reached the UI"
+    assert str(company["pids"][0]) not in " ".join(names)
+
+
+def test_a_nameless_person_gets_a_neutral_label_not_an_id():
+    from app.services.universal_search import _display_name
+
+    assert _display_name({"full_name": None, "first_name": None, "last_name": None}) == \
+        "Unnamed person"
+    assert _display_name(None) == "Unnamed person"
+    assert _display_name({"full_name": "  ", "first_name": "Ann", "last_name": "Lee"}) == "Ann Lee"
+
+
+def test_entities_outrank_documents_for_the_same_query(data):
+    """A page of filename prefix matches must not bury the people."""
+    tag = data["tag"]
+    res = universal_search(_firm(), f"White{_TAG}{tag}")
+    kinds = [r["kind"] for r in res["results"]]
+
+    if "document" in kinds and "person" in kinds:
+        assert kinds.index("person") < kinds.index("document"), \
+            "a document outranked a person for the same query"
+
+
+def test_an_exact_name_match_still_wins_outright(data):
+    """Typing a full document name must still put that document first."""
+    res = universal_search(_firm(), f"2024 Form 1040 {_TAG}{data['tag']}.pdf")
+    assert res["results"], "the exact document match vanished"
+    assert res["results"][0]["kind"] == "document"
+
+
+def test_a_same_surname_person_with_no_edge_is_not_promoted(company):
     tag = company["tag"]
     with engine.begin() as c:
         stranger = c.execute(people.insert().values(
-            first_name="Clive", last_name=f"Rowe{_TAG}{tag}",
-            full_name=f"Clive Rowe{_TAG}{tag}", active=True)
+            first_name="Clive", last_name=f"Unrelated{_TAG}{tag}",
+            full_name=f"Clive Unrelated{_TAG}{tag}", active=True)
             .returning(people.c.id)).scalar_one()
     try:
         res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
-        biz = _business(res, company)
-        assert f"Clive Rowe{_TAG}{tag}" not in [p["name"] for p in biz["related_people"]]
+        assert f"Clive Unrelated{_TAG}{tag}" not in [r["name"] for r in res["results"]]
     finally:
         with engine.begin() as c:
             c.execute(delete(people).where(people.c.id == stranger))
 
 
-def test_an_inactive_edge_is_not_surfaced(company):
+def test_an_inactive_edge_does_not_promote(company):
     from sqlalchemy import update as _update
 
     with engine.begin() as c:
@@ -294,61 +372,10 @@ def test_an_inactive_edge_is_not_surfaced(company):
                   .where(relationships.c.id == company["eids"][0]).values(active=False))
 
     res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{company['tag']}")
-    biz = _business(res, company)
-    assert len(biz["related_people"]) == 1, "an ended relationship was still shown"
+    assert len([r for r in res["results"] if r["kind"] == "person"]) == 1
 
 
-def test_out_of_scope_related_people_are_omitted_while_the_business_still_shows(company):
-    """The load-bearing case: the business IS visible to a narrow principal, but its owners are not.
-
-    Constructed so the business cannot simply be filtered out — it is anchored to a person the
-    principal is assigned to — which is what makes this prove the related-list scope filter rather
-    than the pre-existing entity filter."""
-    from sqlalchemy import update as _update
-
-    from app.db import record_assignments
-
-    from tests._portal_util import seed_staff_user
-
-    tag = company["tag"]
-    staff_user_id = seed_staff_user()           # a real user row; no record.read_all capability
-    with engine.begin() as c:
-        visible = c.execute(people.insert().values(
-            first_name="Dee", last_name=f"Visible{_TAG}{tag}",
-            full_name=f"Dee Visible{_TAG}{tag}", active=True)
-            .returning(people.c.id)).scalar_one()
-        c.execute(record_assignments.insert().values(
-            entity_type="person", entity_id=visible, user_id=staff_user_id,
-            assignment_type="primary"))
-        # Anchor the business to the person this principal CAN see.
-        c.execute(_update(relationship_entities)
-                  .where(relationship_entities.c.id == company["business_id"])
-                  .values(person_id=visible))
-    narrow = Principal(staff_user_id, "narrow@e.test", "Narrow", frozenset({"client.read"}))
-    try:
-        rows = universal_search(narrow, f"Rowe Builders Inc {_TAG}{tag}")["results"]
-        match = [r for r in rows if r["id"] == company["business_id"]]
-        assert match, "the business itself was filtered out — this test would prove nothing"
-        biz = match[0]
-        assert biz["related_people"] == [], "an out-of-scope owner was disclosed"
-        assert biz["related_households"] == [], "an out-of-scope household was disclosed"
-        # The firm-wide principal still sees them, so the data really is there.
-        firm_biz = _business(
-            universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}"), company)
-        assert len(firm_biz["related_people"]) == 2
-    finally:
-        with engine.begin() as c:
-            c.execute(delete(record_assignments).where(
-                record_assignments.c.entity_id == visible,
-                record_assignments.c.entity_type == "person"))
-            c.execute(_update(relationship_entities)
-                      .where(relationship_entities.c.id == company["business_id"])
-                      .values(person_id=None))
-            c.execute(delete(people).where(people.c.id == visible))
-
-
-def test_only_ownership_category_edges_are_surfaced(company):
-    """A non-ownership edge (e.g. an advisory or referral link) is not "who owns this business"."""
+def test_only_ownership_category_edges_promote(company):
     tag = company["tag"]
     with engine.begin() as c:
         other_type = c.execute(relationship_types.insert().values(
@@ -367,10 +394,8 @@ def test_only_ownership_category_edges_are_surfaced(company):
             relationship_type_id=other_type, active=True)
             .returning(relationships.c.id)).scalar_one()
     try:
-        biz = _business(universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}"), company)
-        assert f"Vera Advisor{_TAG}{tag}" not in [p["name"] for p in biz["related_people"]], \
-            "a non-ownership edge was surfaced as a related client"
-        assert len(biz["related_people"]) == 2
+        res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{tag}")
+        assert f"Vera Advisor{_TAG}{tag}" not in [r["name"] for r in res["results"]]
     finally:
         with engine.begin() as c:
             c.execute(delete(relationships).where(relationships.c.id == edge))
@@ -379,37 +404,122 @@ def test_only_ownership_category_edges_are_surfaced(company):
             c.execute(delete(relationship_types).where(relationship_types.c.id == other_type))
 
 
-def test_non_entity_results_carry_no_related_block(company):
-    res = universal_search(_firm(), f"Alan Rowe{_TAG}{company['tag']}")
-    for row in res["results"]:
-        if row["kind"] == "person":
-            assert "related_people" not in row
+def test_out_of_scope_related_people_are_not_promoted(company):
+    """The business is visible to a narrow principal; its owners must still not be."""
+    from sqlalchemy import update as _update
+
+    from app.db import record_assignments
+    from tests._portal_util import seed_staff_user
+
+    tag = company["tag"]
+    staff_user_id = seed_staff_user()
+    with engine.begin() as c:
+        visible = c.execute(people.insert().values(
+            first_name="Dee", last_name=f"Visible{_TAG}{tag}",
+            full_name=f"Dee Visible{_TAG}{tag}", active=True)
+            .returning(people.c.id)).scalar_one()
+        c.execute(record_assignments.insert().values(
+            entity_type="person", entity_id=visible, user_id=staff_user_id,
+            assignment_type="primary"))
+        c.execute(_update(relationship_entities)
+                  .where(relationship_entities.c.id == company["business_id"])
+                  .values(person_id=visible))
+    narrow = Principal(staff_user_id, "narrow@e.test", "Narrow", frozenset({"client.read"}))
+    try:
+        res = universal_search(narrow, f"Rowe Builders Inc {_TAG}{tag}")
+        assert _row(res, "business", company["business_id"]) is not None, \
+            "the business was filtered out — this test would prove nothing"
+        names = [r["name"] for r in res["results"]]
+        assert f"Alan Rowe{_TAG}{tag}" not in names, "an out-of-scope owner was promoted"
+        assert f"Rowe{_TAG}{tag} Household" not in names
+    finally:
+        with engine.begin() as c:
+            c.execute(delete(record_assignments).where(
+                record_assignments.c.entity_id == visible,
+                record_assignments.c.entity_type == "person"))
+            c.execute(_update(relationship_entities)
+                      .where(relationship_entities.c.id == company["business_id"])
+                      .values(person_id=None))
+            c.execute(delete(people).where(people.c.id == visible))
 
 
-def test_relations_are_attached_with_a_bounded_number_of_queries(company):
-    """One extra round trip for the whole page, not one per business (no N+1)."""
+def test_expansion_is_one_hop_and_query_count_is_bounded(company):
+    """Promoted rows are never expanded again, and the edge query runs once."""
     from sqlalchemy import event
 
     statements = []
-    engine_ = engine
 
     def _before(conn, cursor, statement, *a, **kw):
-        if "relationships" in statement or "relationship_types" in statement:
-            statements.append(statement)
+        statements.append(statement)
 
-    event.listen(engine_, "before_cursor_execute", _before)
+    event.listen(engine, "before_cursor_execute", _before)
     try:
         universal_search(_firm(), f"Rowe{_TAG}{company['tag']}")
     finally:
-        event.remove(engine_, "before_cursor_execute", _before)
+        event.remove(engine, "before_cursor_execute", _before)
 
     edge_queries = [s for s in statements if "relationship_types" in s]
-    assert len(edge_queries) <= 1, f"the edge lookup ran {len(edge_queries)} times (N+1)"
+    assert len(edge_queries) == 1, f"the edge query ran {len(edge_queries)} times (recursion/N+1)"
+    assert len(statements) < 25, f"the search issued {len(statements)} queries"
 
 
 def test_the_related_list_is_capped(company):
-    from app.services.universal_search import _MAX_RELATED
-    assert _MAX_RELATED == 6
-    res = universal_search(_firm(), f"Rowe Builders Inc {_TAG}{company['tag']}")
-    biz = _business(res, company)
-    assert len(biz["related_people"]) <= _MAX_RELATED
+    from app.services.universal_search import _MAX_EDGES, _MAX_RELATED
+    assert _MAX_RELATED == 6 and _MAX_EDGES == 400
+
+
+def test_prefix_matching_documents_cannot_crowd_out_the_people(company):
+    """The production failure, reproduced.
+
+    Documents whose FILENAME starts with the query used to outrank people outright (match quality
+    was the primary sort key), and with enough of them the people fell past the result limit and
+    vanished. This creates that exact condition: many prefix-matching documents, a small limit."""
+    from sqlalchemy import insert as _insert
+
+    tag = company["tag"]
+    prefix = f"Rowe{_TAG}{tag}"
+    doc_ids = []
+    with engine.begin() as c:
+        for i in range(12):
+            doc_ids.append(c.execute(_insert(documents).values(
+                original_name=f"{prefix} statement {i}.pdf", stored_name=f"d-{tag}-{i}",
+                storage_path=f"/x/{tag}/{i}", storage_provider="Client360 Local",
+                size_bytes=10, sha256=f"{i:064d}", household_id=company["hids"][0],
+                status="active", archived=False).returning(documents.c.id)).scalar_one())
+    try:
+        res = universal_search(_firm(), prefix, limit=10)
+        kinds = [r["kind"] for r in res["results"]]
+
+        assert "person" in kinds, "people were crowded out by prefix-matching documents"
+        assert kinds.index("person") < (kinds.index("document") if "document" in kinds else 99), \
+            "a document outranked a person for the same query"
+        names = [r["name"] for r in res["results"] if r["kind"] == "person"]
+        assert f"Alan Rowe{_TAG}{tag}" in names and f"Bettina Rowe{_TAG}{tag}" in names
+    finally:
+        with engine.begin() as c:
+            c.execute(delete(documents).where(documents.c.id.in_(doc_ids)))
+
+
+def test_promotion_happens_before_the_limit_is_applied(company):
+    """A promoted person must compete for a place, not be appended after the page is cut."""
+    from sqlalchemy import insert as _insert
+
+    tag = company["tag"]
+    business_name = f"Rowe Builders Inc {_TAG}{tag}"
+    doc_ids = []
+    with engine.begin() as c:
+        for i in range(12):
+            doc_ids.append(c.execute(_insert(documents).values(
+                original_name=f"{business_name} filing {i}.pdf", stored_name=f"b-{tag}-{i}",
+                storage_path=f"/y/{tag}/{i}", storage_provider="Client360 Local",
+                size_bytes=10, sha256=f"{i + 100:064d}", household_id=company["hids"][0],
+                status="active", archived=False).returning(documents.c.id)).scalar_one())
+    try:
+        res = universal_search(_firm(), business_name, limit=5)
+
+        assert len(res["results"]) <= 5, "the limit was not applied to the final set"
+        kinds = [r["kind"] for r in res["results"]]
+        assert "person" in kinds, "promoted people did not compete for a place in the page"
+    finally:
+        with engine.begin() as c:
+            c.execute(delete(documents).where(documents.c.id.in_(doc_ids)))

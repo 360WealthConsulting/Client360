@@ -28,7 +28,16 @@
       <tr>
         <td><strong>{% if r.workspace_url %}<a href="{{ r.workspace_url }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</strong>{% if r.tax_year %} <span class="subtle">· {{ r.tax_year }}</span>{% endif %}</td>
         <td>{{ r.entity_type|replace("_"," ")|capitalize }}</td>
-        <td class="subtle">{{ r.subtitle }}</td>
+        <td class="subtle">
+          {{ r.subtitle }}
+          {# Canonical relationship context on the row itself — the related records are first-class
+             results in their own right, so nothing is nested underneath this one. #}
+          {% if r.relationship_context %}
+          <span class="search-context">
+            {% for c in r.relationship_context %}<span class="search-context-item">{{ c }}</span>{% endfor %}
+          </span>
+          {% endif %}
+        </td>
         <td>{{ r.source or "—" }}</td>
         <td><span class="subtle">{{ r.quick_status or "—" }}</span></td>
         <td>
@@ -36,37 +45,6 @@
           {% if r.open_url %}{% if r.workspace_url %} · {% endif %}<a href="{{ r.open_url }}">Open document</a>{% endif %}
         </td>
       </tr>
-      {# Canonical related records for a business/trust/estate, grouped directly under it so staff
-         can open the right personal or household profile without a second search. Only records the
-         principal may already see are present — omissions look identical to "no such edge". Ids are
-         link targets only and are never rendered as text. #}
-      {% if r.related_people or r.related_households %}
-      <tr class="search-related">
-        <td colspan="6">
-          {% if r.related_people %}
-          <div class="search-related-group">
-            <span class="subtle">Related clients</span>
-            <ul class="search-related-list">
-              {% for p in r.related_people %}
-              <li><a class="rowlink" href="{{ p.url }}">{{ p.name }}</a>
-                {% if p.role %}<span class="subtle">{{ p.role }}</span>{% endif %}</li>
-              {% endfor %}
-            </ul>
-          </div>
-          {% endif %}
-          {% if r.related_households %}
-          <div class="search-related-group">
-            <span class="subtle">Household</span>
-            <ul class="search-related-list">
-              {% for h in r.related_households %}
-              <li><a class="rowlink" href="{{ h.url }}">{{ h.name }}</a></li>
-              {% endfor %}
-            </ul>
-          </div>
-          {% endif %}
-        </td>
-      </tr>
-      {% endif %}
     {% else %}<tr><td colspan="6">{% call ui.empty("No matches", "No records match your search in your scope.") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>
 {% else %}
