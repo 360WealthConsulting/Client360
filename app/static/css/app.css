@@ -287,6 +287,14 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
    The shared `.input` height:36px is correct for the selects here and wrong for the reply
    textarea, so the override is scoped to this form (the wider textarea.input issue across ~18
    other staff templates is deliberately left alone). */
+/* Universal Search: canonical related people/households grouped under a business result. */
+.search-related > td { padding-top: 0; }
+.search-related-group { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  margin: 2px 0 6px 14px; }
+.search-related-list { display: flex; gap: 16px; flex-wrap: wrap; list-style: none;
+  margin: 0; padding: 0; }
+.search-related-list li { display: flex; gap: 8px; align-items: baseline; }
+
 .thread-backnav { gap: 14px; }
 .c360-compose-summary { cursor: pointer; font-weight: 620; }
 .c360-compose { margin-top: 12px; }

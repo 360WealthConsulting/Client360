@@ -27,6 +27,8 @@ from app.db import (
     insurance_policies,
     people,
     relationship_entities,
+    relationship_types,
+    relationships,
     tax_engagement_returns,
     tax_engagements,
     tax_return_types,
@@ -252,8 +254,104 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
 
     rows.sort(key=lambda r: _rank(r["name"], q, r["kind"]))
     result["results"] = rows[:limit]
+    # Attached AFTER the slice, so the extra query only ever covers the entities actually shown.
+    _attach_entity_relations(result["results"], acc, acc_households, firm_wide)
     result["count"] = len(result["results"])
     return result
+
+
+#: Edge categories that express "who is behind this business". Deliberately narrow: an ownership or
+#: org-structure edge is a deliberate, stored statement about control. Nothing here ever infers a
+#: relationship from a shared surname, a shared document or a shared tax return.
+_RELATION_CATEGORIES = ("ownership", "org_structure")
+#: Related people shown under one business before the list is truncated. Keeps a widely-held entity
+#: from dominating the results page.
+_MAX_RELATED = 6
+
+
+def _attach_entity_relations(result_rows, acc, acc_households, firm_wide):
+    """Attach canonical related people/households to each business/trust/estate row, in ONE query.
+
+    WHY THIS EXISTS. ``relationship_entities`` carries a single optional ``person_id`` /
+    ``household_id`` anchor, which is not the ownership graph — a company with two owners has two
+    ``relationships`` EDGES and no way to express both on the entity row. Universal Search only ever
+    read the entity row, so a business result never showed the people behind it.
+
+    ONE query for every business on the page, not one per business: the entity ids are collected
+    first and matched with ``IN``, so adding more business results costs no extra round trips.
+
+    Scope reuses the sets ``universal_search`` has already resolved — ``accessible_person_ids`` and
+    the households derived from them. A related person the principal cannot see is dropped from the
+    list, and the business itself is unaffected, so the omission reveals nothing: the row looks
+    exactly as it would if that edge did not exist."""
+    targets = {r["id"]: r for r in result_rows if r["kind"] in _ENTITY_KINDS}
+    for row in targets.values():
+        row["related_people"] = []
+        row["related_households"] = []
+    if not targets:
+        return
+
+    owner = relationship_entities.alias("owner")
+    with engine.connect() as conn:
+        edges = conn.execute(
+            select(relationships.c.to_entity_id.label("entity_id"),
+                   owner.c.person_id, owner.c.household_id, owner.c.name.label("owner_name"),
+                   owner.c.entity_type.label("owner_type"),
+                   relationship_types.c.name.label("role"),
+                   relationship_types.c.code.label("role_code"))
+            .select_from(relationships
+                .join(relationship_types,
+                      relationship_types.c.id == relationships.c.relationship_type_id)
+                .join(owner, owner.c.id == relationships.c.from_entity_id))
+            .where(relationships.c.to_entity_id.in_(list(targets)),
+                   relationships.c.active.is_(True),
+                   relationship_types.c.category.in_(_RELATION_CATEGORIES))
+            .order_by(owner.c.name)).mappings().all()
+
+        person_ids = {e["person_id"] for e in edges if e["person_id"] is not None}
+        if not firm_wide:
+            person_ids &= (acc or set())
+        # The household a related PERSON belongs to is canonical data on people.household_id — not
+        # an inference — so it is surfaced alongside household-entity owners.
+        household_of = {}
+        if person_ids:
+            household_of = {r["id"]: r["household_id"] for r in conn.execute(
+                select(people.c.id, people.c.household_id)
+                .where(people.c.id.in_(person_ids))).mappings()}
+        wanted_households = {h for h in household_of.values() if h is not None}
+        wanted_households |= {e["household_id"] for e in edges if e["household_id"] is not None}
+        if not firm_wide:
+            wanted_households &= (acc_households or set())
+        household_names = {}
+        if wanted_households:
+            household_names = {r["id"]: r["name"] for r in conn.execute(
+                select(households.c.id, households.c.name)
+                .where(households.c.id.in_(wanted_households))).mappings()}
+
+    seen_people, seen_households = {}, {}
+    for edge in edges:
+        row = targets.get(edge["entity_id"])
+        if row is None:
+            continue
+        pid, hid = edge["person_id"], edge["household_id"]
+        if pid is not None and pid in person_ids:
+            key = (edge["entity_id"], pid)
+            if key not in seen_people and len(row["related_people"]) < _MAX_RELATED:
+                seen_people[key] = True
+                row["related_people"].append({
+                    "person_id": pid,                       # link target only, never rendered
+                    "name": edge["owner_name"],
+                    "role": (edge["role"] or edge["role_code"] or "").replace("_", " ").title(),
+                    "url": f"/client/{pid}"})
+            hid = hid or household_of.get(pid)
+        if hid is not None and hid in household_names:
+            key = (edge["entity_id"], hid)
+            if key not in seen_households and len(row["related_households"]) < _MAX_RELATED:
+                seen_households[key] = True
+                row["related_households"].append({
+                    "household_id": hid,                    # link target only, never rendered
+                    "name": household_names[hid],
+                    "url": f"/client/household/{hid}"})
 
 
 def _doc_source(r):

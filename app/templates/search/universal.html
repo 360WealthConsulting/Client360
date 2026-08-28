@@ -36,6 +36,37 @@
           {% if r.open_url %}{% if r.workspace_url %} · {% endif %}<a href="{{ r.open_url }}">Open document</a>{% endif %}
         </td>
       </tr>
+      {# Canonical related records for a business/trust/estate, grouped directly under it so staff
+         can open the right personal or household profile without a second search. Only records the
+         principal may already see are present — omissions look identical to "no such edge". Ids are
+         link targets only and are never rendered as text. #}
+      {% if r.related_people or r.related_households %}
+      <tr class="search-related">
+        <td colspan="6">
+          {% if r.related_people %}
+          <div class="search-related-group">
+            <span class="subtle">Related clients</span>
+            <ul class="search-related-list">
+              {% for p in r.related_people %}
+              <li><a class="rowlink" href="{{ p.url }}">{{ p.name }}</a>
+                {% if p.role %}<span class="subtle">{{ p.role }}</span>{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+          {% if r.related_households %}
+          <div class="search-related-group">
+            <span class="subtle">Household</span>
+            <ul class="search-related-list">
+              {% for h in r.related_households %}
+              <li><a class="rowlink" href="{{ h.url }}">{{ h.name }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
     {% else %}<tr><td colspan="6">{% call ui.empty("No matches", "No records match your search in your scope.") %}{% endcall %}</td></tr>{% endfor %}
     </tbody></table></div></article>
 {% else %}
