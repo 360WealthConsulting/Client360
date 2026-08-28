@@ -169,8 +169,16 @@ def _admin_page(request, principal, **extra):
     """Render the Client Portal administration page. ``extra`` carries one-shot review state
     (a duplicate warning and the values staff typed) so a refused creation comes back as normal
     UI instead of a redirect carrying client details in the URL."""
+    # Imported in-function, matching ``portal_auth_start``: the single canonical patch target for
+    # readiness stays ``app.portal.gate.production_ready`` rather than a copy bound at import time.
+    from app.portal.gate import production_ready
+
     q = request.query_params
     context = {"accounts": _accounts(), "principal": principal,
+               # Read-only. The page states whether external access is still blocked; it never
+               # changes a gate. production_ready() AND-gates portal.enabled, the compliance
+               # sign-off and a production-capable IdP, so one value covers the whole condition.
+               "production_ready": production_ready(),
                "invited": q.get("invited"), "error": q.get("error"),
                # Read once; gone on the next load.
                "activation": _take_activation_url(request),

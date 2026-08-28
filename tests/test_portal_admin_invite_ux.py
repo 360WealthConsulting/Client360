@@ -1824,3 +1824,69 @@ def test_p1_4_uses_one_bounded_query_not_a_per_account_lookup():
     src = inspect.getsource(portal_admin._accounts)
     assert "scalar_subquery()" in src and "outerjoin" in src
     assert src.count("connection.execute") == 1, "the accounts table performs N+1 queries"
+
+
+# --------------------------------------------------------------------------------------------
+# Readiness banner. The staff page carried an UNCONDITIONAL "external production access is
+# blocked until the compliance sign-off gate is recorded" footer, so once the gates actually
+# opened the page asserted something false. It must now track production_ready().
+# --------------------------------------------------------------------------------------------
+
+BLOCKED_NOTICE = "External production access is blocked"
+
+
+def _ready(monkeypatch, value):
+    """Patch the gate function itself, not a copy: the route imports it at call time."""
+    monkeypatch.setattr("app.portal.gate.production_ready", lambda: value)
+
+
+def test_readiness_banner_appears_when_production_is_not_ready(monkeypatch):
+    _ready(monkeypatch, False)
+    html = _render_admin_home()
+    assert BLOCKED_NOTICE in html
+    assert "portal.production_signed_off" in html, "the notice no longer names the gate to set"
+
+
+def test_readiness_banner_is_absent_when_production_is_ready(monkeypatch):
+    _ready(monkeypatch, True)
+    html = _render_admin_home()
+    assert BLOCKED_NOTICE not in html, "the page still claims external access is blocked"
+    assert "portal.production_signed_off" not in html
+
+
+def test_readiness_banner_shows_by_default_on_the_real_gates():
+    """No patching: the shipped gate defaults are OFF, so the warning is genuinely true here.
+    This proves the banner is wired to the real gate rather than only to the test double."""
+    from app.portal.gate import production_ready
+
+    assert production_ready() is False, "portal gate defaults changed — this test's premise is gone"
+    assert BLOCKED_NOTICE in _render_admin_home()
+
+
+def test_a_ready_portal_still_renders_the_rest_of_the_page(monkeypatch):
+    """Only the stale claim is suppressed — not the accounts table or the invite form."""
+    _ready(monkeypatch, True)
+    html = _render_admin_home()
+    assert "<th>Invitation</th>" in html and 'id="invite-form"' in html
+
+
+def test_the_readiness_notice_is_conditional_in_the_template():
+    """Guards against the paragraph being re-hardcoded outside the {% if %}."""
+    import pathlib
+
+    tpl = pathlib.Path("app/templates/admin/client_portal.html").read_text(encoding="utf-8")
+    assert tpl.count(BLOCKED_NOTICE) == 1, "a second, unguarded copy of the notice exists"
+    guard = tpl.index("{% if not production_ready %}")
+    assert guard < tpl.index(BLOCKED_NOTICE) < tpl.index("{% endif %}", guard)
+
+
+def test_the_page_context_reads_readiness_from_the_gate_not_the_environment():
+    """Requirement: no raw environment-variable check may decide this."""
+    import inspect
+
+    from app.routes import portal_admin
+    src = inspect.getsource(portal_admin._admin_page)
+    code = "\n".join(line.split("#")[0] for line in src.splitlines())
+    assert "from app.portal.gate import production_ready" in code
+    assert '"production_ready": production_ready()' in code
+    assert "os.getenv" not in code and "os.environ" not in code

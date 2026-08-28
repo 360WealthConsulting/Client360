@@ -155,6 +155,11 @@
     </tbody>
   </table>
 </div>
+{# Blocking notice ONLY while external access really is blocked. production_ready() AND-gates
+   portal.enabled, portal.production_signed_off and a production-capable identity provider, so once
+   it is true this warning is simply false and must not be shown. #}
+{% if not production_ready %}
 <p class="subtle">External production access is blocked until the compliance sign-off gate
 (<code>portal.production_signed_off</code>) is recorded. See the portal diagnostics for gate status.</p>
+{% endif %}
 {% endblock %}
