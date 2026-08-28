@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -30,6 +31,69 @@ from app.portal.providers import PORTAL_IDENTITY_PROVIDERS
 
 router = APIRouter(tags=["client-portal"])
 templates = Jinja2Templates(directory="app/templates")
+
+logger = logging.getLogger("client360.portal.auth")
+
+# ---------------------------------------------------------------------------------------------
+# TEMPORARY PRODUCTION DIAGNOSTIC — portal_auth_callback only.
+#
+# The callback funnels every failure into one generic redirect, which is correct for the browser
+# but leaves an operator with no way to tell a canonical-origin misconfiguration from a token
+# exchange rejection from a spent invitation. This records WHICH STAGE failed and the exception's
+# CLASS NAME. Nothing else.
+#
+# It is deliberately incapable of leaking: the log line is a fixed format string whose only
+# variables are (a) a stage literal from _AUTH_STAGES below, (b) ``type(exc).__name__``, and
+# (c) a category looked up from the exception's class hierarchy. The exception's message, args,
+# attributes, traceback and cause are never read. No request data of any kind is touched.
+#
+# TO REMOVE once the production cause is known: delete _AUTH_STAGES, _AUTH_FAILURE_CATEGORIES,
+# _auth_failure_category, _log_auth_failure, the ``stage =`` assignments in portal_auth_callback,
+# and the two _log_auth_failure calls. Nothing else depends on them.
+# ---------------------------------------------------------------------------------------------
+
+#: Every stage label that may appear in the diagnostic. Fixed literals — never derived from input.
+_AUTH_STAGES = ("state_validation", "provider_lookup", "redirect_uri", "exchange_code",
+                "accept_invitation", "sign_in_with_subject", "create_portal_session")
+
+#: Exception CLASS NAME -> coarse category. Matched against the class hierarchy so subclasses
+#: (e.g. requests' ConnectTimeout under RequestException) resolve without importing anything.
+_AUTH_FAILURE_CATEGORIES = {
+    "CanonicalOriginError": "configuration",
+    "NotImplementedError": "configuration",
+    "KeyError": "configuration",
+    "ValueError": "validation",
+    "PermissionError": "authorization",
+    "TimeoutError": "network",
+    "ConnectionError": "network",
+    "SSLError": "network",
+    "HTTPError": "network",
+    "RequestException": "network",
+}
+
+
+def _auth_failure_category(exc) -> str:
+    """A category derived ONLY from the exception's class hierarchy.
+
+    The message, ``args``, attributes and ``__cause__`` are never inspected, so a value carried in
+    an exception (a URL, a subject, a token fragment) cannot reach the log through this."""
+    for klass in type(exc).__mro__:
+        category = _AUTH_FAILURE_CATEGORIES.get(klass.__name__)
+        if category:
+            return category
+    return "unexpected"
+
+
+def _log_auth_failure(stage: str, exception_name: str, category: str = "") -> None:
+    """Emit the one fixed-format diagnostic line. Never raises — diagnostics must not be able to
+    turn a handled auth failure into a 500."""
+    try:
+        if stage not in _AUTH_STAGES:                    # only known literals are ever emitted
+            stage = "unknown"
+        logger.warning("portal_auth_callback_failed stage=%s exception=%s category=%s",
+                       stage, exception_name, category or "n/a")
+    except Exception:                                    # noqa: BLE001 — logging is best-effort
+        pass
 
 def current_portal(request: Request):
     principal = getattr(request.state, "portal_principal", None)
@@ -178,22 +242,33 @@ def portal_auth_callback(request: Request, code: str | None = None, state: str |
 
     if not code or not state or not expected_state \
             or not _secrets.compare_digest(state, expected_state):
+        # TEMPORARY DIAGNOSTIC. No real exception exists here, so the class is a fixed literal.
+        _log_auth_failure("state_validation", "InvalidState", "validation")
         return RedirectResponse("/portal/login?error=failed", 303)      # CSRF / replay / no flow open
+    stage = "provider_lookup"                                           # TEMPORARY DIAGNOSTIC
     try:
         provider = PORTAL_IDENTITY_PROVIDERS.get(_production_provider_key())
+        stage = "redirect_uri"
         # Identical construction to /portal/auth/start — the IdP rejects the exchange otherwise.
+        redirect_uri = external_url(request, "portal_auth_callback")
+        stage = "exchange_code"
         identity = provider.exchange_code(
-            code=code, redirect_uri=external_url(request, "portal_auth_callback"),
+            code=code, redirect_uri=redirect_uri,
             code_verifier=verifier, expected_nonce=nonce)
         if invitation:
+            stage = "accept_invitation"
             account_id = accept_invitation(invitation, identity.subject, identity.mfa_verified)
         else:
+            stage = "sign_in_with_subject"
             account_id = sign_in_with_subject(identity.subject, identity.mfa_verified)
+        stage = "create_portal_session"
         token = create_portal_session(
             account_id, device_fingerprint=request.headers.get("user-agent", "portal"),
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"))
-    except Exception:
+    except Exception as exc:                                            # noqa: BLE001
+        # Class name and stage only — see the TEMPORARY PRODUCTION DIAGNOSTIC block above.
+        _log_auth_failure(stage, type(exc).__name__, _auth_failure_category(exc))
         return RedirectResponse("/portal/login?error=failed", 303)
     request.session["portal_session_token"] = token                     # fresh session id post-auth
     return RedirectResponse("/portal", 303)

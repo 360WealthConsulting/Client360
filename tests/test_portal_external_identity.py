@@ -15,6 +15,11 @@ inferred, an unknown mode proves nothing, and no other validation is relaxed in 
 """
 from __future__ import annotations
 
+import contextlib
+import logging
+import uuid
+from types import SimpleNamespace
+
 import jwt
 import pytest
 
@@ -657,3 +662,266 @@ def test_every_portal_oidc_key_is_documented_in_the_config_module():
     doc = config.__doc__ or ""
     for mode in (MFA_MODE_CLAIMS, MFA_MODE_CONDITIONAL_ACCESS):
         assert mode in doc, f"the {mode} MFA mode is supported but not documented"
+
+
+# --- TEMPORARY production diagnostic on portal_auth_callback -----------------------------
+# The callback funnels every failure into one generic redirect, so a production activation
+# failure was undiagnosable. These tests pin the diagnostic's two obligations: it must classify
+# the failing stage, and it must be incapable of emitting anything sensitive.
+
+DIAG_LOGGER = "client360.portal.auth"
+
+
+@contextlib.contextmanager
+def _capture_diagnostics():
+    """Collect diagnostic records from the portal auth logger itself.
+
+    Deliberately not pytest's log-capture fixture: app.observability.logging.configure_logging()
+    sets ``propagate = False`` on the ``client360`` parent, so once any test in the suite has
+    configured logging these records never reach the root logger that fixture attaches to.
+    Handling the logger directly makes these assertions independent of suite order and of global
+    logging state."""
+    records = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    logger = logging.getLogger(DIAG_LOGGER)
+    handler = _Collector()
+    previous_level, previous_disabled = logger.level, logger.disabled
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    logger.disabled = False
+    try:
+        yield records
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        logger.disabled = previous_disabled
+
+#: Sentinels seeded into every position the callback touches. None may ever reach the log.
+SECRETS = {
+    "code": "AUTHZ-CODE-b3f1c9",
+    "state": "STATE-VALUE-77ab",
+    "nonce": "NONCE-VALUE-91cd",
+    "verifier": "PKCE-VERIFIER-4e2f",
+    "invitation": "INVITE-TOKEN-d0a6",
+    "subject": "microsoft:SUBJECT-OID-5521",
+    "email": "client-secret-name@example.test",
+    "id_token": "eyJhbGciOiJSUzI1NiJ9.PAYLOAD.SIGNATURE",
+}
+
+
+def _diag_session(*, invitation=False):
+    session = {"portal_oidc_state": SECRETS["state"], "portal_oidc_nonce": SECRETS["nonce"],
+               "portal_oidc_verifier": SECRETS["verifier"]}
+    if invitation:
+        session["portal_oidc_invitation"] = SECRETS["invitation"]
+    return session
+
+
+class _LoudError(ValueError):
+    """An exception whose text carries every secret — proves str(exc) is never logged."""
+
+
+def _loud():
+    return _LoudError(" ".join(SECRETS.values()))
+
+
+class _StubIdentity:
+    subject = SECRETS["subject"]
+    mfa_verified = True
+    email = SECRETS["email"]
+
+
+def _stub_provider(monkeypatch, exchange=None):
+    class _P:
+        def exchange_code(self, **kw):
+            if exchange:
+                raise exchange()
+            return _StubIdentity()
+
+    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
+
+
+def _fail_at(monkeypatch, stage):
+    """Arrange the callback to fail at exactly ``stage``. Returns the session to pass in."""
+    if stage == "state_validation":
+        return _diag_session()                       # driven with a mismatched state below
+    if stage == "provider_lookup":
+        def _boom(key):
+            raise _loud()
+        monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", _boom)
+        return _diag_session()
+    if stage == "redirect_uri":
+        _stub_provider(monkeypatch)
+        monkeypatch.setattr("app.security.origin.external_url",
+                            lambda *a, **k: (_ for _ in ()).throw(_loud()))
+        return _diag_session()
+    if stage == "exchange_code":
+        _stub_provider(monkeypatch, exchange=_loud)
+        return _diag_session()
+    if stage == "accept_invitation":
+        _stub_provider(monkeypatch)
+        monkeypatch.setattr("app.routes.portal.accept_invitation",
+                            lambda *a, **k: (_ for _ in ()).throw(_loud()))
+        return _diag_session(invitation=True)
+    if stage == "sign_in_with_subject":
+        _stub_provider(monkeypatch)
+        monkeypatch.setattr("app.portal.service.sign_in_with_subject",
+                            lambda *a, **k: (_ for _ in ()).throw(_loud()))
+        return _diag_session()
+    if stage == "create_portal_session":
+        _stub_provider(monkeypatch)
+        monkeypatch.setattr("app.portal.service.sign_in_with_subject", lambda *a, **k: 1)
+        monkeypatch.setattr("app.routes.portal.create_portal_session",
+                            lambda *a, **k: (_ for _ in ()).throw(_loud()))
+        return _diag_session()
+    raise AssertionError(f"unhandled stage {stage}")
+
+
+DIAG_STAGES = ["state_validation", "provider_lookup", "redirect_uri", "exchange_code",
+               "accept_invitation", "sign_in_with_subject", "create_portal_session"]
+
+
+@pytest.mark.parametrize("stage", DIAG_STAGES)
+def test_every_callback_failure_stage_still_redirects_generically(stage, monkeypatch):
+    """Requirement: browser behaviour is unchanged — one generic redirect, no session."""
+    from app.routes.portal import portal_auth_callback
+
+    session = _fail_at(monkeypatch, stage)
+    sent_state = "MISMATCH" if stage == "state_validation" else SECRETS["state"]
+    with _capture_diagnostics() as records:
+        response = portal_auth_callback(_session_request(session), code=SECRETS["code"],
+                                        state=sent_state)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/portal/login?error=failed"
+    assert "portal_session_token" not in session
+
+
+@pytest.mark.parametrize("stage", DIAG_STAGES)
+def test_every_callback_failure_stage_is_classified(stage, monkeypatch):
+    from app.routes.portal import portal_auth_callback
+
+    session = _fail_at(monkeypatch, stage)
+    sent_state = "MISMATCH" if stage == "state_validation" else SECRETS["state"]
+    with _capture_diagnostics() as records:
+        portal_auth_callback(_session_request(session), code=SECRETS["code"], state=sent_state)
+    messages = [r.getMessage() for r in records]
+    assert len(messages) == 1, f"expected exactly one diagnostic line, got {len(messages)}"
+    assert f"stage={stage}" in messages[0]
+    expected_exc = "InvalidState" if stage == "state_validation" else "_LoudError"
+    assert f"exception={expected_exc}" in messages[0]
+    assert messages[0].startswith("portal_auth_callback_failed ")
+
+
+@pytest.mark.parametrize("stage", DIAG_STAGES)
+def test_no_sensitive_value_reaches_the_diagnostic_log(stage, monkeypatch):
+    """The failing exception's text contains every secret; none may be emitted."""
+    from app.routes.portal import portal_auth_callback
+
+    session = _fail_at(monkeypatch, stage)
+    sent_state = "MISMATCH" if stage == "state_validation" else SECRETS["state"]
+    with _capture_diagnostics() as records:
+        portal_auth_callback(_session_request(session), code=SECRETS["code"], state=sent_state)
+    assert records, "the diagnostic emitted nothing to inspect"
+    captured = "\n".join(f"{r.getMessage()} {r.args!r} {r.exc_text!r}" for r in records)
+    for label, secret in SECRETS.items():
+        assert secret not in captured, f"the {label} value reached the log"
+    assert "user-agent" not in captured.lower() and "Bearer" not in captured
+
+
+def test_the_category_is_derived_from_the_class_hierarchy_never_the_message():
+    from app.routes.portal import _auth_failure_category
+
+    class _Custom(ValueError):
+        pass
+
+    assert _auth_failure_category(_Custom("anything at all")) == "validation"
+    assert _auth_failure_category(TimeoutError("x")) == "network"
+    assert _auth_failure_category(Exception("x")) == "unexpected"
+
+    class _Nasty(Exception):
+        args = ("secret",)
+
+        def __str__(self):
+            raise AssertionError("__str__ must never be called by the diagnostic")
+
+    assert _auth_failure_category(_Nasty()) == "unexpected"
+
+
+def test_the_diagnostic_only_ever_emits_known_stage_literals():
+    from app.routes.portal import _log_auth_failure
+
+    with _capture_diagnostics() as records:
+        _log_auth_failure("attacker=injected value", "ValueError", "validation")
+    assert len(records) == 1
+    assert "stage=unknown" in records[0].getMessage()
+    assert "attacker" not in records[0].getMessage()
+
+
+def test_the_diagnostic_never_raises():
+    """A broken logger must not turn a handled auth failure into a 500."""
+    from app.routes import portal as portal_routes
+
+    class _Broken:
+        def warning(self, *a, **k):
+            raise RuntimeError("logging backend down")
+
+    original = portal_routes.logger
+    portal_routes.logger = _Broken()
+    try:
+        portal_routes._log_auth_failure("exchange_code", "ValueError", "validation")
+    finally:
+        portal_routes.logger = original
+
+
+def test_the_callback_never_logs_exception_text_or_request_data():
+    """Source-level guard: the diagnostic call sites may pass only the class name."""
+    import inspect
+
+    from app.routes import portal as portal_routes
+    src = inspect.getsource(portal_routes.portal_auth_callback)
+    code = "\n".join(line.split("#")[0] for line in src.splitlines())
+    for forbidden in ("str(exc)", "repr(exc)", "exc.args", "%s\" % exc", "exc_info",
+                      "format(exc)", "{exc}", "exception=True"):
+        assert forbidden not in code, f"the callback may log {forbidden}"
+    assert code.count("_log_auth_failure(") == 2
+    assert "_log_auth_failure(stage, type(exc).__name__, _auth_failure_category(exc))" in code
+
+
+def test_a_successful_callback_is_unchanged_and_logs_nothing(monkeypatch):
+    """The success path still activates the invitation, sets the session and redirects to /portal."""
+    from tests._portal_util import seed_staff_user
+    from app.db import engine, households, people
+    from app.portal.service import invite_portal_account
+    from app.routes.portal import portal_auth_callback
+    from sqlalchemy import insert
+
+    sfx = uuid.uuid4().hex[:10]
+    with engine.begin() as c:
+        hid = c.execute(insert(households).values(name=f"Diag HH {sfx}")
+                        .returning(households.c.id)).scalar_one()
+        pid = c.execute(insert(people).values(household_id=hid, full_name=f"Diag {sfx}", active=True)
+                        .returning(people.c.id)).scalar_one()
+    _, invitation = invite_portal_account(
+        person_id=pid, household_id=hid, email=f"diag-{sfx}@e.test", display_name="Diag Client",
+        access_type="self", invited_by_user_id=seed_staff_user(), permissions={"documents": True})
+
+    subject = f"microsoft:DIAG-{sfx}"
+
+    class _P:
+        def exchange_code(self, **kw):
+            return SimpleNamespace(subject=subject, mfa_verified=True)
+
+    monkeypatch.setattr("app.portal.providers.PORTAL_IDENTITY_PROVIDERS.get", lambda key: _P())
+    session = {"portal_oidc_state": "S", "portal_oidc_nonce": "N", "portal_oidc_verifier": "V",
+               "portal_oidc_invitation": invitation}
+    with _capture_diagnostics() as records:
+        response = portal_auth_callback(_session_request(session), code="c", state="S")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/portal"
+    assert session.get("portal_session_token"), "the successful callback established no session"
+    assert records == [], "a successful sign-in emitted a failure diagnostic"
