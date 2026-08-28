@@ -8,7 +8,11 @@
   <a class="btn secondary" href="/admin/client-portal/diagnostics">Portal diagnostics</a>
 {% endcall %}
 {% if invited %}<div class="banner good">Invitation created for <b>{{ invited }}</b>.</div>{% endif %}
-{% if error %}<div class="banner warn">Could not invite: {{ error }}</div>{% endif %}
+{% if revoked %}<div class="banner good">Portal access revoked for <b>{{ revoked }}</b>. Their
+invitation link and any signed-in sessions no longer work.</div>{% endif %}
+{# No "Could not invite:" prefix any more — revoke reports through this banner too, and the service
+   already supplies a complete, staff-facing sentence. #}
+{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 {% if activation %}
 {% if activation.delivered %}
 <div class="banner good">{{ activation.delivery_detail }}</div>

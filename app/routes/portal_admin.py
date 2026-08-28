@@ -8,6 +8,7 @@ impersonation: staff can preview an account's entitlements but cannot assume its
 """
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -21,7 +22,6 @@ from sqlalchemy import func, select
 from app.db import (
     engine,
     people,
-    portal_access_grants,
     portal_accounts,
     portal_invitations,
     portal_threads,
@@ -32,13 +32,22 @@ from app.portal import invitation_handoff
 from app.portal import invite_targets
 from app.services import email_delivery, person_creation
 from app.portal import visibility
-from app.portal.service import invite_portal_account, portal_base_scope, staff_send_message
+from app.portal.service import (PortalAccountConflictError, invite_portal_account,
+                                portal_base_scope, staff_send_message)
 from app.security.audit import write_audit_event
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
+from app.templating import wants_html
 
 router = APIRouter(prefix="/admin/client-portal", tags=["client-portal-admin"])
+
+logger = logging.getLogger("client360.portal.admin")
+
+#: Shown when the invitation fails for a reason staff cannot act on individually. Deliberately fixed
+#: and non-technical — a database exception class name is not an instruction to anybody.
+INVITE_FAILED_ERROR = ("The invitation could not be created. Please try again, and contact support "
+                       "if it keeps happening.")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -180,6 +189,7 @@ def _admin_page(request, principal, **extra):
                # sign-off and a production-capable IdP, so one value covers the whole condition.
                "production_ready": production_ready(),
                "invited": q.get("invited"), "error": q.get("error"),
+               "revoked": q.get("revoked"),
                # Read once; gone on the next load.
                "activation": _take_activation_url(request),
                "access_choices": invite_targets.ACCESS_CHOICES,
@@ -282,8 +292,17 @@ def portal_admin_invite_form(
             person_id=target.person_id, household_id=household_id, email=email,
             display_name=name, access_type=access,
             invited_by_user_id=principal.user_id)
+    except PortalAccountConflictError as exc:
+        # A deliberate, staff-facing sentence from the service ("... already has an active portal
+        # account. Revoke it first ..."). Safe to show verbatim — it contains no database detail.
+        return RedirectResponse(f"/admin/client-portal?error={quote(str(exc))}", status_code=303)
     except Exception as exc:  # noqa: BLE001 — surface a friendly banner, never a stack trace
-        return RedirectResponse(f"/admin/client-portal?error={type(exc).__name__}", status_code=303)
+        # NEVER type(exc).__name__: that put "IntegrityError" in front of staff as if it were an
+        # explanation. The class name goes to the log for an operator; staff get a sentence they can
+        # act on. See the same discipline in portal_auth_callback.
+        logger.warning("portal_admin_invite_failed exception=%s", type(exc).__name__)
+        return RedirectResponse(
+            "/admin/client-portal?error=" + quote(INVITE_FAILED_ERROR), status_code=303)
     # Metadata deliberately carries person/access only — NEVER the token or the activation URL.
     _audit(request, principal, "portal.admin.invited", account_id,
            {"person_id": target.person_id, "access_type": access, "via": "form"})
@@ -362,21 +381,46 @@ def portal_admin_create_client(
 @router.post("/accounts/{account_id}/revoke", status_code=200)
 def portal_admin_revoke(account_id: int, request: Request,
                         principal: Principal = Depends(require_capability("client.write"))):
-    from datetime import date
+    """Revoke one portal account. Same route for the browser form and for API callers.
+
+    Revocation now closes out the WHOLE of the account's access, not just its status: outstanding
+    invitations and live sessions are revoked alongside the access grants. Leaving an unaccepted
+    invitation live meant a revoked client could still activate from the email already in their
+    inbox; leaving a session live meant an open browser kept working until the session expired.
+    :func:`revoke_account_access` performs all three inside this transaction, and is the same
+    function a re-invitation uses, so the two paths cannot diverge.
+
+    The account row itself is never deleted — it is the audit trail, and it is what a later
+    re-invitation reuses.
+
+    Browsers get a redirect back to the admin page with a banner; the JSON body is preserved
+    verbatim for non-HTML callers. Staff previously saw the raw JSON body rendered in the address
+    bar after clicking Revoke."""
+    from app.portal.service import revoke_account_access
+
+    def _fail(status: int, message: str):
+        """A browser gets the admin page with an error banner; an API caller gets its HTTPException."""
+        if wants_html(request):
+            return RedirectResponse(f"/admin/client-portal?error={quote(message)}", status_code=303)
+        raise HTTPException(status, message)
+
     with engine.begin() as connection:
-        acct = connection.execute(select(portal_accounts.c.person_id).where(
+        acct = connection.execute(select(portal_accounts.c.person_id,
+                                         portal_accounts.c.display_name).where(
             portal_accounts.c.id == account_id)).mappings().one_or_none()
         if not acct:
-            raise HTTPException(404, "Portal account not found")
+            return _fail(404, "Portal account not found")
         if not record_in_scope(principal, "person", acct["person_id"], write=True):
-            raise HTTPException(403, "Person is outside your record scope")
+            return _fail(403, "Person is outside your record scope")
         connection.execute(portal_accounts.update().where(portal_accounts.c.id == account_id).values(
-            status="revoked"))
-        connection.execute(portal_access_grants.update().where(
-            portal_access_grants.c.portal_account_id == account_id,
-            portal_access_grants.c.inactive_date.is_(None)).values(inactive_date=date.today()))
-    _audit(request, principal, "portal.admin.revoked", account_id)
-    return {"account_id": account_id, "status": "revoked"}
+            status="revoked", updated_at=datetime.now(timezone.utc)))
+        closed = revoke_account_access(connection, account_id)
+    _audit(request, principal, "portal.admin.revoked", account_id, closed)
+    if wants_html(request):
+        return RedirectResponse(
+            "/admin/client-portal?revoked=" + quote(acct["display_name"] or "the account"),
+            status_code=303)
+    return {"account_id": account_id, "status": "revoked", **closed}
 
 
 @router.get("/accounts/{account_id}/preview")

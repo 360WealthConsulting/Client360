@@ -26,17 +26,129 @@ def _active_grant():
     today = date.today()
     return and_(portal_access_grants.c.effective_date <= today, or_(portal_access_grants.c.inactive_date.is_(None), portal_access_grants.c.inactive_date >= today))
 
+class PortalAccountConflictError(ValueError):
+    """A portal account already exists for this email and must not be silently reused.
+
+    Carries a STAFF-FACING sentence and nothing else: never a database message, a constraint name,
+    an exception class or SQL. Subclasses ValueError so existing ``except ValueError`` handlers on
+    the invite paths keep working."""
+
+
+def revoke_account_access(connection, account_id, *, now=None):
+    """Close out every live artefact of one portal account's access, inside the CALLER's transaction.
+
+    Revoked here — never deleted, because the rows ARE the audit history:
+      * outstanding invitations (neither accepted nor already revoked) -> ``revoked_at``
+      * live sessions -> ``revoked_at``, so an already-open browser cannot keep using the portal
+      * active access grants -> ``inactive_date``
+
+    Accepted and previously revoked invitations are left untouched: they record what happened.
+    Both the staff revoke route and a re-invitation call this, so the two paths cannot drift apart —
+    a revoke that forgot sessions, or a re-invite that left the old invitation live, is the class of
+    bug this function exists to make impossible."""
+    now = now or datetime.now(timezone.utc)
+    today = now.date()
+    invitations = connection.execute(portal_invitations.update().where(
+        portal_invitations.c.portal_account_id == account_id,
+        portal_invitations.c.accepted_at.is_(None),
+        portal_invitations.c.revoked_at.is_(None)).values(revoked_at=now)).rowcount
+    sessions = connection.execute(portal_sessions.update().where(
+        portal_sessions.c.portal_account_id == account_id,
+        portal_sessions.c.revoked_at.is_(None)).values(revoked_at=now)).rowcount
+    grants = connection.execute(portal_access_grants.update().where(
+        portal_access_grants.c.portal_account_id == account_id,
+        portal_access_grants.c.inactive_date.is_(None)).values(inactive_date=today)).rowcount
+    return {"invitations_revoked": invitations, "sessions_revoked": sessions,
+            "grants_inactivated": grants}
+
+
+#: Staff-facing wording for a live account that blocks a new invitation.
+_LIVE_ACCOUNT_WORDS = {"active": "an active portal account",
+                       "invited": "a pending portal invitation"}
+
+
 def invite_portal_account(*, person_id, household_id, email, display_name, access_type, invited_by_user_id, permissions=None, expires_hours=72, organization_id=None):
+    """Invite a client, or RE-INVITE a previously revoked account.
+
+    ``portal_accounts.normalized_email`` is UNIQUE and revoking deliberately leaves the account row
+    in place (it is the audit trail), so a second INSERT for an address that had ever been invited
+    raised IntegrityError — every revoked client was permanently un-reinvitable and staff saw the
+    exception class name in a banner.
+
+    The three cases are now explicit:
+      * no account yet      -> create one, exactly as before;
+      * account is revoked  -> re-invite IN PLACE: same account id, same person, same historical
+                               invitations and audit trail, a fresh single-use token;
+      * account is live     -> refuse with a staff-facing sentence. Never a second account for the
+                               same address, never an overwritten identity, never silently widened
+                               access.
+
+    A re-invitation is a DELIBERATE staff act and therefore resets authentication state: the old IdP
+    binding is cleared and live sessions are revoked, so whoever held the previous credential cannot
+    get back in without accepting the NEW invitation. Everything happens in ONE transaction, with the
+    account row locked, so an account is never left half re-invited.
+
+    Neither unique constraint is weakened: the account is found BY ``normalized_email`` rather than
+    duplicated, and ``auth_subject`` is set to NULL (Postgres permits many NULLs under a UNIQUE
+    index) rather than reassigned."""
     normalized = email.strip().lower(); raw = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc); today = now.date()
     # Employer portal accounts (organization_id set) keep the HR-contact person on the grant
     # so they can use the existing person-scoped secure messages/documents, and add the
     # organization scope used for the employer "Action Needed" surface.
     grant_person_id = person_id if (access_type == "self" or organization_id is not None) else None
+    grant_values = dict(household_id=household_id, person_id=grant_person_id,
+                        organization_id=organization_id, access_type=access_type,
+                        permissions=permissions or {"messages": True, "documents": True, "tasks": True},
+                        granted_by_user_id=invited_by_user_id)
     with engine.begin() as connection:
-        account_id = connection.execute(portal_accounts.insert().values(person_id=person_id, email=email, normalized_email=normalized, display_name=display_name, status="invited").returning(portal_accounts.c.id)).scalar_one()
-        connection.execute(portal_access_grants.insert().values(portal_account_id=account_id, household_id=household_id, person_id=grant_person_id, organization_id=organization_id, access_type=access_type, permissions=permissions or {"messages": True, "documents": True, "tasks": True}, granted_by_user_id=invited_by_user_id))
-        connection.execute(portal_invitations.insert().values(portal_account_id=account_id, token_hash=_hash(raw), invited_by_user_id=invited_by_user_id, expires_at=datetime.now(timezone.utc)+timedelta(hours=expires_hours)))
-    write_audit_event(action="portal.invited", entity_type="portal_account", entity_id=account_id, actor_user_id=invited_by_user_id, request_id=f"portal-invite-{uuid.uuid4()}", metadata={"person_id": person_id, "household_id": household_id, "access_type": access_type})
+        existing = connection.execute(select(portal_accounts).where(
+            portal_accounts.c.normalized_email == normalized)
+            .with_for_update()).mappings().one_or_none()
+        reinvited = existing is not None
+        if existing is None:
+            account_id = connection.execute(portal_accounts.insert().values(person_id=person_id, email=email, normalized_email=normalized, display_name=display_name, status="invited").returning(portal_accounts.c.id)).scalar_one()
+        else:
+            account_id = existing["id"]
+            if existing["status"] != "revoked":
+                raise PortalAccountConflictError(
+                    f"{existing['email']} already has "
+                    f"{_LIVE_ACCOUNT_WORDS.get(existing['status'], 'a portal account')}. "
+                    "Revoke it first if you need to send a new invitation.")
+            if existing["person_id"] != person_id:
+                # The address is an identity key here. Repointing it at another client would hand
+                # one person's portal history to a different record.
+                raise PortalAccountConflictError(
+                    f"{existing['email']} belongs to a different client's portal account. "
+                    "Use a different email address for this invitation.")
+            # Close out the previous lifecycle before opening the new one.
+            revoke_account_access(connection, account_id, now=now)
+            connection.execute(portal_accounts.update()
+                .where(portal_accounts.c.id == account_id)
+                .values(email=email, display_name=display_name, status="invited",
+                        auth_subject=None,      # the old IdP binding must not survive a re-invite
+                        mfa_enabled=False, updated_at=now))
+        # uq_portal_access_grant is (account, household, person, access_type, effective_date) and
+        # effective_date defaults to today — so re-inviting on the SAME DAY the account was revoked
+        # would collide with the row revoke_account_access just closed. Reactivate that row instead
+        # of inserting a duplicate. Every other grant was inactivated above, so exactly one active
+        # grant remains either way and no two active grants can conflict.
+        person_match = (portal_access_grants.c.person_id.is_(None) if grant_person_id is None
+                        else portal_access_grants.c.person_id == grant_person_id)
+        same_day_grant = connection.execute(select(portal_access_grants.c.id).where(
+            portal_access_grants.c.portal_account_id == account_id,
+            portal_access_grants.c.household_id == household_id, person_match,
+            portal_access_grants.c.access_type == access_type,
+            portal_access_grants.c.effective_date == today)).scalars().first()
+        if same_day_grant is None:
+            connection.execute(portal_access_grants.insert().values(
+                portal_account_id=account_id, effective_date=today, **grant_values))
+        else:
+            connection.execute(portal_access_grants.update()
+                .where(portal_access_grants.c.id == same_day_grant)
+                .values(inactive_date=None, **grant_values))
+        connection.execute(portal_invitations.insert().values(portal_account_id=account_id, token_hash=_hash(raw), invited_by_user_id=invited_by_user_id, expires_at=now+timedelta(hours=expires_hours)))
+    write_audit_event(action="portal.reinvited" if reinvited else "portal.invited", entity_type="portal_account", entity_id=account_id, actor_user_id=invited_by_user_id, request_id=f"portal-invite-{uuid.uuid4()}", metadata={"person_id": person_id, "household_id": household_id, "access_type": access_type})
     return account_id, raw
 
 def accept_invitation(token, auth_subject, mfa_verified):
