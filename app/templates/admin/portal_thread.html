@@ -7,7 +7,12 @@
    replaces — routing, assignment, request linking, resolve and reply all post exactly what they
    posted before. Styling reuses the staff conventions already in app.css: .card, .stat-grid,
    .field/.input, .cols-2, .row, .stack, .subtle, h2.section-title and the ui.badge macro. #}
-<p><a href="/admin/client-portal/threads">&larr; All secure messages</a></p>
+<p class="row thread-backnav">
+  <a href="/admin/client-portal/threads">&larr; All secure messages</a>
+  {% if thread.person_id %}
+  <a class="rowlink" href="/client/{{ thread.person_id }}">{{ client_name or "Client profile" }} &rarr;</a>
+  {% endif %}
+</p>
 {% call ui.page_head(thread.subject, eyebrow="Client Portal", desc="Conversation with " ~ (client_name or "the client") ~ ". Replies are visible to the client; internal notes are staff-only.") %}
 {% endcall %}
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
@@ -15,6 +20,13 @@
 
 <div class="card thread-header">
   <div class="stat-grid">
+    <div class="thread-meta">
+      <span class="subtle">Client</span>
+      <p class="thread-meta-value">
+        {% if thread.person_id %}<a class="rowlink" href="/client/{{ thread.person_id }}">{{ client_name or "View profile" }}</a>
+        {% else %}{{ client_name or "—" }}{% endif %}
+      </p>
+    </div>
     <div class="thread-meta">
       <span class="subtle">Topic</span>
       <p class="thread-meta-value">{{ thread.topic|title if thread.topic else 'Unassigned' }}</p>

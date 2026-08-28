@@ -287,6 +287,12 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
    The shared `.input` height:36px is correct for the selects here and wrong for the reply
    textarea, so the override is scoped to this form (the wider textarea.input issue across ~18
    other staff templates is deliberately left alone). */
+.thread-backnav { gap: 14px; }
+.c360-compose-summary { cursor: pointer; font-weight: 620; }
+.c360-compose { margin-top: 12px; }
+.c360-compose .field { margin-bottom: 0; }
+.c360-compose textarea.input { height: auto; min-height: 132px; padding: 10px 12px;
+  line-height: 1.5; resize: vertical; }
 .thread-header { display: grid; gap: 14px; }
 .thread-meta { display: grid; gap: 2px; }
 .thread-meta-value { margin: 0; font-weight: 620; }

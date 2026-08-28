@@ -618,6 +618,26 @@ def communications(principal, ctx):
             "not_a_second_store": True}
 
 
+def messages(principal, ctx):
+    """Secure client-portal conversations for this person.
+
+    Reads the SAME ``portal_threads`` the Communication Hub reads — the profile is a second VIEW of
+    one store, never a second store. Scope is enforced per thread inside
+    ``communication_hub.person_threads``; the Hub keeps its triage/work-queue role unchanged.
+
+    ``can_start`` mirrors the capability the create route actually enforces (``client.write``), so a
+    read-only principal is never shown an action that would 403."""
+    from app.portal import communication_hub as hub
+    pid, hid = _pid(ctx), _hid(ctx)
+    threads = hub.person_threads(principal, person_id=pid, household_id=hid) if pid else []
+    return {"threads": threads,
+            "can_start": bool(principal.can("client.write")),
+            "person_id": pid,
+            "unread_count": sum(1 for t in threads if t["unread"]),
+            "topics": list(hub.TOPICS),
+            "source": "portal_threads", "not_a_second_store": True}
+
+
 def knowledge(principal, ctx):
     """Connected entities + relationship explanations, composed by the D.45 knowledge layer over the
     authoritative relationship engine + scoped reads (never a graph database, never a second store)."""

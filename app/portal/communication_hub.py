@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 
 from app.db import (
     engine,
@@ -265,6 +265,55 @@ def staff_inbox(principal, *, unread=False, assigned_to_me=False, unassigned=Fal
         if status and r["status"] != status:
             continue
         out.append({**dict(r), "unread": is_unread})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def person_threads(principal, *, person_id, household_id=None, limit=50) -> list[dict]:
+    """Secure conversations to show on ONE person's client profile, record-scoped.
+
+    Reads the SAME ``portal_threads`` rows the Communication Hub reads — no second store, no copy.
+
+    HOUSEHOLD RULE. A thread anchored to a NAMED person belongs to that person, so it appears on
+    their profile and nowhere else; showing one spouse's conversation on the other's profile would
+    misattribute it, which is exactly the duplication to avoid. A thread with NO person anchor
+    (``person_id IS NULL``) is a household-level conversation and appears on every member's profile
+    of that household, flagged ``household_thread`` so staff can see why it is there. Client-side
+    household VISIBILITY (``shared_household_ids``) is a separate question governed by
+    ``portal.household_enabled`` and is deliberately not re-implemented here.
+
+    Scope is enforced per thread by the same :func:`thread_in_staff_scope` the hub and thread page
+    use, so this cannot surface a conversation the principal may not service."""
+    anchors = [portal_threads.c.person_id == person_id]
+    if household_id is not None:
+        anchors.append(and_(portal_threads.c.person_id.is_(None),
+                            portal_threads.c.household_id == household_id))
+    with engine.connect() as c:
+        rows = c.execute(
+            select(portal_threads.c.id, portal_threads.c.subject, portal_threads.c.topic,
+                   portal_threads.c.status, portal_threads.c.person_id,
+                   portal_threads.c.household_id, portal_threads.c.organization_id,
+                   portal_threads.c.assigned_user_id, portal_threads.c.assigned_team_id,
+                   portal_threads.c.last_client_message_at,
+                   portal_threads.c.last_staff_message_at,
+                   portal_threads.c.staff_last_read_at, portal_threads.c.updated_at)
+            .where(or_(*anchors))
+            .order_by(portal_threads.c.updated_at.desc()).limit(limit * 4)).mappings().all()
+    out = []
+    for r in rows:
+        if not thread_in_staff_scope(principal, r):
+            continue
+        lcm, lsm, slr = (r["last_client_message_at"], r["last_staff_message_at"],
+                         r["staff_last_read_at"])
+        out.append({
+            **dict(r),
+            "unread": lcm is not None and (slr is None or lcm > slr),
+            # The client has spoken more recently than the firm has — the thread wants a reply.
+            "awaiting_reply": lcm is not None and (lsm is None or lcm > lsm),
+            "household_thread": r["person_id"] is None,
+            "assigned_name": staff_name(r["assigned_user_id"]),
+        })
         if len(out) >= limit:
             break
     return out

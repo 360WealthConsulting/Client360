@@ -1135,3 +1135,235 @@ def _household_of(person_id):
     with engine.connect() as c:
         return c.execute(select(people.c.household_id).where(
             people.c.id == person_id)).scalar_one()
+
+
+# --- H. secure messaging on the client profile -----------------------------------------------
+#
+# Messaging previously lived ONLY in the Communication Hub, so a client's conversation history was
+# invisible from their profile. The profile now renders a Secure Messages section over the SAME
+# portal_threads rows — a second view, never a second store. The Hub keeps its triage role.
+
+def _render_profile(principal, person_id, tab="messages"):
+    from app.routes.client360 import client_workspace
+    request = SimpleNamespace(
+        state=SimpleNamespace(request_id=f"req-{uuid.uuid4().hex[:6]}", principal=principal,
+                              demo_mode=False),
+        client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "pytest"},
+        query_params={}, session={}, url=SimpleNamespace(path=f"/client/{person_id}"))
+    return client_workspace(request, person_id, tab=tab, principal=principal).body.decode()
+
+
+def test_h1_the_profile_exposes_a_secure_messages_section():
+    from app.services.client360.registry import SECTION_KEYS
+
+    assert "messages" in SECTION_KEYS
+    nav = open("app/templates/client360/_section_nav.html", encoding="utf-8").read()
+    assert '"messages"' in nav, "the section is not grouped into a tab"
+
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    html = _render_profile(staff, person_id)
+    assert "Secure messages" in html
+
+
+def test_h2_only_this_persons_threads_appear():
+    staff = _staff_principal()
+    _, _, mine, _ = seed_portal_account(staff.user_id)
+    _, _, theirs, _ = seed_portal_account(staff.user_id)
+    my_thread = hub.staff_start_thread(staff, person_id=mine, subject="Mine only", body="b")
+    their_thread = hub.staff_start_thread(staff, person_id=theirs, subject="Theirs only", body="b")
+
+    html = _render_profile(staff, mine)
+
+    assert "Mine only" in html
+    assert "Theirs only" not in html, "another client's conversation appeared on this profile"
+    assert f"/admin/client-portal/threads/{my_thread}" in html
+    assert f"/admin/client-portal/threads/{their_thread}" not in html
+
+
+def test_h3_out_of_scope_threads_are_never_listed():
+    owner = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(owner.user_id)
+    hub.staff_start_thread(owner, person_id=person_id, subject="Confidential", body="b")
+
+    narrow = Principal(seed_staff_user(), "staff@example.com", "Staff",
+                       frozenset({"client.read", "client.write"}))       # no record.*_all
+    rows = hub.person_threads(narrow, person_id=person_id)
+
+    assert rows == [], "an out-of-scope conversation was returned"
+    assert hub.person_threads(owner, person_id=person_id), "the owner lost their own threads"
+
+
+def test_h4_thread_metadata_is_carried_and_no_raw_ids_are_displayed():
+    import re as _re
+
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="Metadata",
+                                       body="b", topic="tax")
+
+    row = hub.person_threads(staff, person_id=person_id)[0]
+    for key in ("subject", "topic", "status", "assigned_name", "updated_at", "unread",
+                "awaiting_reply", "household_thread"):
+        assert key in row, f"the profile view is missing {key}"
+    assert row["topic"] == "tax" and row["status"] == "open"
+
+    html = _render_profile(staff, person_id)
+    visible = _re.sub(r"<[^>]+>", " ", html)
+    assert str(thread_id) not in visible.split(), "a raw thread id is shown as text"
+
+
+def test_h5_a_household_thread_without_a_person_shows_for_members_only():
+    """A thread anchored to a NAMED person is not duplicated onto other members' profiles."""
+    from sqlalchemy import insert as _insert
+
+    staff = _staff_principal()
+    _, _, member, household_id = seed_portal_account(staff.user_id)
+    _, _, outsider, _ = seed_portal_account(staff.user_id)
+    with engine.begin() as c:
+        c.execute(_insert(portal_threads).values(
+            household_id=household_id, person_id=None, subject="Household matter",
+            status="open", created_by_user_id=staff.user_id))
+
+    member_rows = hub.person_threads(staff, person_id=member, household_id=household_id)
+    outsider_rows = hub.person_threads(staff, person_id=outsider, household_id=None)
+
+    assert [r["subject"] for r in member_rows if r["household_thread"]] == ["Household matter"]
+    assert "Household matter" not in [r["subject"] for r in outsider_rows]
+
+
+def test_h6_a_named_persons_thread_is_not_duplicated_onto_a_housemate():
+    staff = _staff_principal()
+    _, _, first, household_id = seed_portal_account(staff.user_id)
+    hub.staff_start_thread(staff, person_id=first, subject="Only first member", body="b")
+    # A second person in the SAME household.
+    from sqlalchemy import insert as _insert
+    with engine.begin() as c:
+        second = c.execute(_insert(people).values(
+            household_id=household_id, full_name=f"Housemate {uuid.uuid4().hex[:6]}",
+            active=True).returning(people.c.id)).scalar_one()
+
+    rows = hub.person_threads(staff, person_id=second, household_id=household_id)
+
+    assert "Only first member" not in [r["subject"] for r in rows], \
+        "one member's conversation was duplicated onto another member's profile"
+
+
+def test_h7_starting_a_conversation_from_the_profile_preselects_the_client():
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+
+    html = _render_profile(staff, person_id)
+
+    assert 'action="/admin/client-portal/threads/new"' in html
+    assert f'<input type="hidden" name="person_id" value="{person_id}">' in html
+    # No client search or contact entry — the profile already knows who this is.
+    for absent in ("data-client-typeahead", "Start typing a client's name",
+                   'name="email"', 'name="phone"'):
+        assert absent not in html, f"the profile composer still asks for {absent}"
+
+
+def test_h8_the_compose_action_is_hidden_from_a_read_only_principal():
+    """Never shown-then-403: the create route enforces client.write."""
+    staff_id = seed_staff_user()
+    _, _, person_id, _ = seed_portal_account(staff_id)
+    read_only = Principal(staff_id, "staff@example.com", "Staff",
+                          frozenset({"client.read", "record.read_all"}))
+
+    html = _render_profile(read_only, person_id)
+
+    assert "Secure messages" in html
+    assert 'action="/admin/client-portal/threads/new"' not in html
+
+
+def test_h9_a_tampered_person_id_from_the_profile_form_still_fails_server_side():
+    from app.routes.portal_admin import portal_admin_start_thread
+
+    owner = _staff_principal()
+    _, _, protected, _ = seed_portal_account(owner.user_id)
+    narrow = Principal(seed_staff_user(), "staff@example.com", "Staff",
+                       frozenset({"client.read", "client.write"}))
+
+    response = portal_admin_start_thread(
+        SimpleNamespace(state=SimpleNamespace(request_id="r1")),
+        person_id=str(protected), subject="Hi", body="Body", topic="", principal=narrow)
+
+    assert response.status_code == 303 and "error=" in response.headers["location"]
+    assert hub.person_threads(owner, person_id=protected) == []
+
+
+def test_h10_the_thread_page_links_back_to_the_client_profile():
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="Back link", body="b")
+
+    html = _render_thread_page(staff, thread_id)
+
+    assert f'href="/client/{person_id}"' in html, "no link back to the client profile"
+    assert "All secure messages" in html, "the link to the Hub was removed"
+
+
+def test_h11_the_global_inbox_still_works_and_keeps_its_filters():
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="In the hub", body="b")
+
+    html = _render_threads(staff)
+
+    assert "In the hub" in html
+    for f in ("?filter=unread", "?filter=mine", "?filter=unassigned", "?status=open",
+              "?status=resolved"):
+        assert f in html, f"the inbox lost the {f} filter"
+    assert thread_id in [t["id"] for t in hub.staff_inbox(staff)]
+
+
+def test_h12_the_profile_reads_the_same_store_as_the_hub():
+    """No second table, no copy: identical thread ids from both surfaces."""
+    import inspect
+
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="One store", body="b")
+
+    from_profile = {t["id"] for t in hub.person_threads(staff, person_id=person_id)}
+    from_hub = {t["id"] for t in hub.staff_inbox(staff)}
+    assert thread_id in from_profile and thread_id in from_hub
+
+    src = inspect.getsource(hub.person_threads)
+    assert "portal_threads" in src
+    assert "thread_in_staff_scope" in src, "the profile query skips per-thread record scope"
+
+
+def test_h13_internal_notes_never_reach_the_profile_thread_list_or_the_client():
+    staff = _staff_principal()
+    _, principal, person_id, hid = seed_portal_account(staff.user_id)
+    thread_id = create_thread(principal, household_id=hid, person_id=person_id,
+                              subject="Note check", body="hello")
+    secret = f"INTERNAL-{uuid.uuid4().hex[:8]}"
+    staff_send_message(thread_id=thread_id, user_id=staff.user_id, body=secret, internal_note=True)
+
+    profile_html = _render_profile(staff, person_id)
+    assert secret not in profile_html, "an internal note body leaked onto the profile list"
+    assert secret not in [m["body"] for m in list_messages(principal, thread_id)]
+
+
+def test_h14_message_bodies_are_not_copied_into_the_timeline():
+    """Timeline integration already existed and is body-free; it must stay that way."""
+    from app.db import timeline_events
+
+    staff = _staff_principal()
+    _, _, person_id, _ = seed_portal_account(staff.user_id)
+    body = f"SENSITIVE-{uuid.uuid4().hex[:8]}"
+    thread_id = hub.staff_start_thread(staff, person_id=person_id, subject="Timeline", body=body)
+
+    with engine.connect() as c:
+        rows = c.execute(select(timeline_events).where(
+            timeline_events.c.person_id == person_id,
+            timeline_events.c.event_type == "secure_message")).mappings().all()
+
+    assert rows, "the secure message did not reach the timeline at all"
+    for row in rows:
+        blob = f"{row['title']} {row['summary']} {row['event_metadata']}"
+        assert body not in blob, "a message body was copied into the timeline"
+    assert any(str(thread_id) in str(r["event_metadata"]) for r in rows), \
+        "the timeline entry does not link to the thread"

@@ -65,7 +65,8 @@ def _req(path="/client/1", qs=b""):
 # --- composition + contract --------------------------------------------------
 
 def test_registry_has_thirtyone_sections_with_builders():
-    assert len(SECTIONS) == 39  # 40 minus the standalone Vault tab (consolidated into Documents)
+    assert len(SECTIONS) == 40  # 40 minus the standalone Vault tab (consolidated into Documents)
+                                # +1 Secure Messages (client-portal threads on the client profile)
     assert all(s.builder is not None and s.label for s in SECTIONS)
 
 

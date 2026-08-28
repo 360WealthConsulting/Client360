@@ -293,6 +293,70 @@
     {% for n in sec.notes %}<div class="detail-row"><span>{{ n.body }} <span class="subtle">({{ n.note_type }})</span></span><strong class="subtle">{{ n.author_name or "—" }} · {{ n.created_at.strftime("%Y-%m-%d") if n.created_at else "" }}</strong></div>{% else %}{% call ui.empty("No notes") %}{% endcall %}{% endfor %}
   </article>
 
+{% elif active_tab == "messages" %}
+  {# Secure client-portal conversations. Same portal_threads the Communication Hub reads — this is a
+     second VIEW, not a second store. Thread ids appear only as link targets, never as text. #}
+  <h2 class="section-title">Secure messages
+    {% if sec.unread_count %}<span class="subtle">· {{ sec.unread_count }} unread</span>{% endif %}
+  </h2>
+  {% if sec.can_start and sec.person_id %}
+  <details class="card">
+    <summary class="c360-compose-summary">New secure message</summary>
+    {# The client is already known from the profile, so there is nothing to search for. person_id is
+       hidden state the server re-resolves and re-authorizes with write record scope. #}
+    <form method="post" action="/admin/client-portal/threads/new" class="stack c360-compose">
+      <input type="hidden" name="person_id" value="{{ sec.person_id }}">
+      <div class="cols-2 aside-left">
+        <div class="field">
+          <label for="c360-msg-topic">Topic</label>
+          <select class="input" id="c360-msg-topic" name="topic">
+            <option value="">General</option>
+            {% for tp in sec.topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="c360-msg-subject">Subject</label>
+          <input class="input" id="c360-msg-subject" name="subject" maxlength="200" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="c360-msg-body">Message</label>
+        <textarea class="input" id="c360-msg-body" name="body" rows="5" maxlength="10000"
+                  required></textarea>
+      </div>
+      <div class="row"><button class="btn" type="submit">Send secure message</button></div>
+      <p class="subtle">The client reads this in their 360Plus portal. They must already have an
+      active portal account — this never creates one or sends an invitation.</p>
+    </form>
+  </details>
+  {% endif %}
+  <article class="card">
+    {% if sec.threads %}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Subject</th><th>Topic</th><th>Status</th><th>Assigned</th>
+        <th>Last activity</th></tr></thead>
+      <tbody>
+      {% for t in sec.threads %}
+        <tr>
+          <td>
+            <a class="rowlink" href="/admin/client-portal/threads/{{ t.id }}">{{ t.subject }}</a>
+            {% if t.unread %} {{ ui.badge("Unread", "warn") }}{% endif %}
+            {% if t.awaiting_reply %} {{ ui.badge("Awaiting reply", "info") }}{% endif %}
+            {% if t.household_thread %} {{ ui.badge("Household") }}{% endif %}
+          </td>
+          <td>{{ t.topic|title if t.topic else "—" }}</td>
+          <td>{{ ui.badge(t.status|title, "good" if t.status == "resolved" else "") }}</td>
+          <td class="subtle">{{ t.assigned_name or ("Team" if t.assigned_team_id else "Unassigned") }}</td>
+          <td class="subtle">{{ t.updated_at.strftime("%Y-%m-%d %H:%M") if t.updated_at else "" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    {% call ui.empty("No secure messages yet", "Conversations with this client will appear here.") %}{% endcall %}
+    {% endif %}
+  </article>
+
 {% elif active_tab == "audit" %}
   <h2 class="section-title">Audit history</h2>
   <article class="card"><div class="table-wrap"><table class="data">
