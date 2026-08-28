@@ -12,7 +12,11 @@ projects them into one query-optimized read-model table. Read models are disposa
 # (projection_id, name, category, owner, read_table, subscribed_events, schema_version, depends_on, desc)
 PROJECTION_DEFINITIONS_SEED = [
     ("people.summary", "People Summary", "people", "people", "rm_people_summary",
-     ["people.person_created", "people.person_updated", "people.identity_merged"], 1, [],
+     # people.person_merged has carried merged_person_id since the original merge engine, so it
+     # retires people merged BEFORE identity_merged gained that field: a rebuild converges from
+     # the historical event stream alone, with no outbox backfill and no authoritative reads.
+     ["people.person_created", "people.person_updated", "people.identity_merged",
+      "people.person_merged"], 1, [],
      "Per-person event summary (create/update/merge counts, last activity)."),
     ("household.summary", "Household Summary", "households", "households", "rm_household_summary",
      ["households.household_created", "households.membership_changed"], 1, [],

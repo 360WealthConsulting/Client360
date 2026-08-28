@@ -27,11 +27,21 @@ def _tbl(name):
 
 def _people(conn, event):
     p = event["payload"]
+    t = _tbl("rm_people_summary")
+    et = event["event_type"]
+    if et == "people.person_merged":
+        # Retire the merged person's row. This event carries no person_id — it names the survivor
+        # and the retired person explicitly — and it has done so since the original merge engine,
+        # which is what lets a rebuild retire people merged before identity_merged gained the
+        # field. Delete-only: the survivor's merge_count is owned by identity_merged, so replaying
+        # both events never double-counts.
+        merged = p.get("merged_person_id")
+        if merged is not None and merged != p.get("survivor_person_id"):
+            conn.execute(t.delete().where(t.c.person_id == merged))
+        return
     pid = p.get("person_id")
     if pid is None:
         return
-    t = _tbl("rm_people_summary")
-    et = event["event_type"]
     if et == "people.person_created":
         upsert(conn, t, "person_id", pid, {}, event, insert_extra={"created_at": event.get("occurred_at")})
     elif et == "people.person_updated":

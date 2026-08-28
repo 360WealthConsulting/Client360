@@ -91,7 +91,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "f2a8c31d90e4"   # identity_merged carries merged_person_id
+    assert migrate.target_head() == "a3c7e19b45d2"   # people.summary subscribes to person_merged
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():

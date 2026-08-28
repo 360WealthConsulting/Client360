@@ -10,6 +10,7 @@ Everything here is synthetic. No production people, ids, names or dates.
 """
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -231,3 +232,133 @@ def test_a_projection_failure_after_commit_is_recoverable_by_later_processing(ac
     projection_engine.process("people.summary")
     assert _row(duplicate) is None, "a later run must converge to the correct state"
     assert _row(survivor)["merge_count"] == 1
+
+
+# --- historical compatibility -----------------------------------------------------------------
+#
+# Why the tests above all passed while production acceptance failed: every one of them creates its
+# events by RUNNING the current merge code, so every identity_merged they produce already carries
+# merged_person_id. None of them ever saw an event emitted by the previous release. These tests
+# build the legacy envelope by hand, which is the only way to exercise that path.
+
+def _legacy_event(name, payload, subject):
+    """An outbox row shaped exactly as the pre-merged_person_id release wrote it."""
+    envelope = {"event_type": name, "payload": payload, "event_id": str(uuid.uuid4()),
+                "schema_version": 1, "occurred_at": "2026-08-01T00:00:00+00:00",
+                "correlation_id": None, "causation_id": None, "subject_ref": f"person:{subject}",
+                "producer": "people.merge", "metadata": {}}
+    with engine.begin() as c:
+        c.execute(text(
+            "INSERT INTO outbox_events (event_id, name, payload, status, attempts, available_at,"
+            " created_at) VALUES (:i, :n, CAST(:p AS json), 'pending', 0, now(), now())"),
+            {"i": envelope["event_id"], "n": name, "p": json.dumps(envelope)})
+
+
+def _retire_authoritatively(survivor, duplicate):
+    with engine.begin() as c:
+        c.execute(text(
+            "INSERT INTO person_merge_history (survivor_person_id, merged_person_id, reason,"
+            " merge_method, pre_merge_snapshot, merge_summary, created_at)"
+            " VALUES (:s, :d, 'legacy', 'governed', '{}', '{}', now())"),
+            {"s": survivor, "d": duplicate})
+        c.execute(text("DELETE FROM people WHERE id = :d"), {"d": duplicate})
+
+
+def _legacy_merge(survivor, duplicate):
+    """The exact event pair the previous release emitted: person_merged carries the retired id,
+    identity_merged does NOT."""
+    _legacy_event("people.person_merged",
+                  {"survivor_person_id": survivor, "merged_person_id": duplicate}, survivor)
+    _legacy_event("people.identity_merged",
+                  {"person_id": survivor, "source_contact_count": 6}, survivor)
+    _retire_authoritatively(survivor, duplicate)
+
+
+def test_a_legacy_merge_without_merged_person_id_still_retires_the_row():
+    """The production defect: identity_merged predates the field, so the row must be retired via
+    people.person_merged, which has carried the id since the original merge engine."""
+    survivor, duplicate = _person(), _person()
+    _summary_for(survivor)
+    _summary_for(duplicate)
+    _legacy_merge(survivor, duplicate)
+
+    projection_engine.rebuild("people.summary")
+
+    assert _row(duplicate) is None, \
+        "a full rebuild must retire a person merged before identity_merged carried the id"
+    assert _row(survivor) is not None
+
+
+def test_a_legacy_merge_converges_identically_under_process_rebuild_and_replay():
+    survivor, duplicate = _person(), _person()
+    _summary_for(survivor)
+    _summary_for(duplicate)
+    _legacy_merge(survivor, duplicate)
+
+    seen = []
+    for op_name in ("process", "rebuild", "replay", "rebuild"):
+        getattr(projection_engine, op_name)("people.summary")
+        row = _row(survivor)
+        seen.append((op_name, _row(duplicate) is None, row["merge_count"], row["update_count"]))
+
+    assert all(retired for _, retired, _, _ in seen), f"not deterministic: {seen}"
+    assert {mc for _, _, mc, _ in seen} == {1}, \
+        f"merge_count must not accumulate across replays: {seen}"
+
+
+def test_replaying_a_legacy_merge_does_not_double_count_the_survivor():
+    survivor, duplicate = _person(), _person()
+    _summary_for(survivor)
+    _legacy_merge(survivor, duplicate)
+    projection_engine.rebuild("people.summary")
+    first = _row(survivor)["merge_count"]
+
+    projection_engine.replay("people.summary")
+
+    assert _row(survivor)["merge_count"] == first == 1
+
+
+def test_a_legacy_merge_leaves_unrelated_people_untouched():
+    survivor, duplicate, bystander = _person(), _person(), _person()
+    for pid in (survivor, duplicate, bystander):
+        _summary_for(pid)
+    _legacy_merge(survivor, duplicate)
+
+    projection_engine.rebuild("people.summary")
+
+    assert _row(bystander) is not None, "an unrelated person's row must never be deleted"
+    assert _row(duplicate) is None
+
+
+def test_person_merged_never_deletes_the_survivor_even_if_it_names_itself():
+    person = _person()
+    _summary_for(person)
+    _legacy_event("people.person_merged",
+                  {"survivor_person_id": person, "merged_person_id": person}, person)
+
+    projection_engine.process("people.summary")
+
+    assert _row(person) is not None, "the survivor must never delete its own row"
+
+
+def test_person_merged_without_a_merged_id_deletes_nothing():
+    person = _person()
+    _summary_for(person)
+    _legacy_event("people.person_merged", {"survivor_person_id": person}, person)
+
+    projection_engine.process("people.summary")
+
+    assert _row(person) is not None
+
+
+def test_the_new_format_merge_still_works_end_to_end(actor):
+    """The current release must keep converging through the normal merge path."""
+    survivor, duplicate = _person(), _person()
+    _summary_for(survivor)
+    _summary_for(duplicate)
+
+    _merge(survivor, duplicate, actor)
+    projection_engine.rebuild("people.summary")
+
+    assert _row(duplicate) is None
+    assert _row(survivor)["merge_count"] == 1, "still exactly one, not doubled by two handlers"
