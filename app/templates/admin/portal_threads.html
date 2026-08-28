@@ -15,37 +15,54 @@
    with write record scope in staff_start_thread — nothing here grants access. #}
 <details class="card portal-compose">
   <summary><b>Start a conversation</b></summary>
-  <form method="post" action="/admin/client-portal/threads/new" class="portal-invite-grid portal-compose-form">
-    {# ONE client selector, not four lookup fields. It queries the SAME record-scoped endpoint the
-       invite form uses (/admin/client-portal/client-search?q=…), so results can only ever contain
-       people this principal may service. The person id is hidden state: never typed, never shown,
-       and re-resolved and re-authorized with write record scope by staff_start_thread on submit. #}
-    <label for="thread-client">Client</label>
-    <div class="client-typeahead" data-client-typeahead>
-      <input id="thread-client" type="text" autocomplete="off" role="combobox"
-             aria-autocomplete="list" aria-expanded="false" aria-controls="thread-client-results"
-             placeholder="Start typing a client's name...">
-      <input type="hidden" name="person_id" data-client-typeahead-id>
-      <div id="thread-client-results" class="client-typeahead-results" role="listbox"
-           aria-label="Matching clients"></div>
-      <p class="subtle" data-client-typeahead-selected hidden></p>
+  {# Standard 360Plus form idiom: .stack for rhythm, .field for label+control, .input on every
+     control, .cols-2.aside-left for the Topic/Subject pair (it already collapses to one column on
+     narrow screens), .row for the action. No inline styles — the CSP forbids them. #}
+  <form method="post" action="/admin/client-portal/threads/new" class="stack portal-compose-form">
+    <div class="field">
+      <label for="thread-client">Client</label>
+      {# ONE client selector. It queries the SAME record-scoped endpoint the invite form uses
+         (/admin/client-portal/client-search?q=…), so results can only ever contain people this
+         principal may service. The person id is hidden state: never typed, never shown, and
+         re-resolved and re-authorized with write record scope by staff_start_thread on submit. #}
+      <div class="client-typeahead" data-client-typeahead>
+        <input class="input" id="thread-client" type="text" autocomplete="off" role="combobox"
+               aria-autocomplete="list" aria-expanded="false" aria-controls="thread-client-results"
+               placeholder="Start typing a client's name...">
+        <input type="hidden" name="person_id" data-client-typeahead-id>
+        <div id="thread-client-results" class="client-typeahead-results" role="listbox"
+             aria-label="Matching clients"></div>
+        <p class="subtle" data-client-typeahead-selected hidden></p>
+      </div>
     </div>
-    <label for="thread-topic">Topic</label>
-    <select id="thread-topic" name="topic">
-      <option value="">General</option>
-      {% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
-    </select>
-    <label for="thread-subject">Subject</label>
-    <input id="thread-subject" name="subject" maxlength="200" required>
-    <label for="thread-body">Message</label>
-    <textarea id="thread-body" name="body" rows="4" maxlength="10000" required></textarea>
-    <div class="portal-invite-full">
-      <button type="submit">Send secure message</button>
+
+    <div class="cols-2 aside-left">
+      <div class="field">
+        <label for="thread-topic">Topic</label>
+        <select class="input" id="thread-topic" name="topic">
+          <option value="">General</option>
+          {% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="thread-subject">Subject</label>
+        <input class="input" id="thread-subject" name="subject" maxlength="200" required>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="thread-body">Message</label>
+      <textarea class="input" id="thread-body" name="body" rows="5" maxlength="10000"
+                required></textarea>
+    </div>
+
+    <div class="row">
+      <button class="btn" type="submit">Send secure message</button>
       <span class="portal-invite-error" data-client-typeahead-error role="alert" hidden></span>
     </div>
+    <p class="subtle">The client reads this in their 360Plus portal. They must already have an
+    active portal account — this never creates one or sends an invitation.</p>
   </form>
-  <p class="subtle">The client reads this in their 360Plus portal. They must already have an active
-  portal account — this never creates one or sends an invitation.</p>
 </details>
 
 <nav class="filters" style="margin-bottom:1rem;display:flex;gap:.4rem;flex-wrap:wrap;">

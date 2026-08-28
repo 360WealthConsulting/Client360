@@ -268,9 +268,25 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .portal-invite-full { grid-column: 1 / -1; }
 .portal-access-option { display: block; font-weight: normal; }
 .client-result { display: block; width: 100%; text-align: left; margin: 4px 0; }
+/* Secure-message composer. Layout is the standard staff idiom (.stack / .field / .input /
+   .cols-2.aside-left / .row); only three things need saying here.
+
+   1. .field carries its own margin-bottom for stacked forms; inside a .stack the two would
+      compound, so the margin is dropped and .stack's gap owns the rhythm.
+   2. `.input` is height:36px, which is right for a single-line control and wrong for a textarea.
+      Scoped to this form deliberately: ~18 other staff templates already put class="input" on a
+      textarea and are squashed by the same rule, and fixing those is a separate, wider change.
+   3. The typeahead results sit directly under their input and read as one control. */
+.portal-compose-form .field { margin-bottom: 0; }
+.portal-compose-form textarea.input { height: auto; min-height: 132px; padding: 10px 12px;
+  line-height: 1.5; resize: vertical; }
+.portal-compose-form select.input { width: 100%; }
+
 /* One-field client selector on the secure-message compose form. Results reuse .client-result. */
-.client-typeahead { position: relative; }
+.client-typeahead { position: relative; display: grid; gap: 6px; }
 .client-typeahead input[type="text"] { width: 100%; }
+.client-typeahead-results:not(:empty) { border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); padding: 6px; }
 .client-typeahead-results { max-height: 260px; overflow-y: auto; }
 /* Search can return up to the full result limit (20 candidates, two lines each), which pushed the
    Add New Client workflow far below the fold. Bound the list and let it scroll on its own so the

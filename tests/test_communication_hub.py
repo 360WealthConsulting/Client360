@@ -885,3 +885,100 @@ def test_e9_the_no_selection_guard_is_a_convenience_not_the_control():
         SimpleNamespace(state=SimpleNamespace(request_id="r1")),
         person_id="", subject="s", body="b", topic="", principal=_staff_principal())
     assert response.status_code == 303 and "error=" in response.headers["location"]
+
+
+# --- F. composer layout contract -------------------------------------------------------------
+#
+# The composer rendered as a raw admin form: the client field stretched the container, Topic /
+# Subject / Message were crushed into one row, and the button floated free. It now uses the same
+# form idiom as the rest of the staff app. These pin the STRUCTURE, not the pixels.
+
+def test_f1_the_composer_uses_the_standard_staff_form_idiom():
+    html = _render_threads(_staff_principal())
+    form = html.split('class="stack portal-compose-form"', 1)[1].split("</form>", 1)[0]
+
+    assert '<div class="field">' in form, "controls are not wrapped in the standard .field"
+    assert form.count('class="input"') >= 4, "not every control carries the shared .input class"
+    assert '<div class="row">' in form, "the action is not in the standard action row"
+    assert '<button class="btn" type="submit">Send secure message</button>' in form
+
+
+def test_f2_topic_and_subject_share_a_responsive_two_column_row():
+    """.cols-2.aside-left already collapses to one column on narrow screens."""
+    html = _render_threads(_staff_principal())
+    form = html.split('class="stack portal-compose-form"', 1)[1].split("</form>", 1)[0]
+
+    pair = form.split('class="cols-2 aside-left"', 1)[1].split("</div>\n\n", 1)[0]
+    assert 'for="thread-topic"' in pair and 'for="thread-subject"' in pair
+    css = open("app/static/css/app.css", encoding="utf-8").read()
+    assert ".cols-2.aside-left { grid-template-columns:minmax(0,1fr) minmax(0,2fr); }" in css
+    assert ".cols-2, .cols-2.aside-left, .cols-2.aside-right { grid-template-columns:1fr; }" in css
+
+
+def test_f3_client_and_message_each_occupy_a_full_row():
+    html = _render_threads(_staff_principal())
+    form = html.split('class="stack portal-compose-form"', 1)[1].split("</form>", 1)[0]
+
+    # Neither sits inside the two-column pair.
+    pair = form.split('class="cols-2 aside-left"', 1)[1].split("</div>\n\n", 1)[0]
+    assert 'for="thread-client"' not in pair
+    assert 'for="thread-body"' not in pair
+
+
+def test_f4_the_message_box_is_a_real_multiline_textarea():
+    html = _render_threads(_staff_principal())
+    assert 'rows="5"' in html, "the message box lost its visible line count"
+
+    css = open("app/static/css/app.css", encoding="utf-8").read()
+    assert ".portal-compose-form textarea.input { height: auto; min-height: 132px;" in css, \
+        "the textarea would inherit .input's 36px single-line height"
+    assert "resize: vertical" in css
+
+
+def test_f5_the_composer_rules_are_scoped_and_do_not_restyle_other_pages():
+    """A bounded UI pass must not restyle unrelated staff pages.
+
+    Deliberately NOT a `git diff` check — that passes vacuously once committed. This reads the
+    stylesheet itself: every rule the composer needs is prefixed, and the SHARED `.input` rule is
+    left exactly as it was for the ~18 other staff templates that rely on it."""
+    css = open("app/static/css/app.css", encoding="utf-8").read()
+
+    for scoped in (".portal-compose-form .field",
+                   ".portal-compose-form textarea.input",
+                   ".portal-compose-form select.input"):
+        assert scoped in css, f"{scoped} is missing"
+
+    # The UNSCOPED control rules are exactly the four that were already there. A new one would
+    # change every staff form in the app, which this pass must not do.
+    unscoped = {line.strip().split("{")[0].strip() for line in css.splitlines()
+                if line.strip().startswith(("textarea", "select", ".input")) and "{" in line}
+    assert unscoped == {".input", ".input:focus", ".input.invalid", "select.input"}, \
+        f"the shared control rules changed: {sorted(unscoped)}"
+
+    # The single-line height that ~18 other staff templates depend on is untouched.
+    assert ".input { height:36px;" in css
+
+
+def test_f6_the_composer_uses_no_inline_styles():
+    """Inline style attributes are blocked by the site CSP."""
+    html = _render_threads(_staff_principal())
+    form = html.split('class="stack portal-compose-form"', 1)[1].split("</form>", 1)[0]
+    assert "style=" not in form
+
+
+def test_f7_the_helper_text_is_muted_and_sits_below_the_action():
+    html = _render_threads(_staff_principal())
+    form = html.split('class="stack portal-compose-form"', 1)[1].split("</form>", 1)[0]
+
+    assert 'class="subtle">The client reads this in their 360Plus portal.' in form
+    assert form.index('class="row"') < form.index("The client reads this")
+
+
+def test_f8_the_typeahead_keyboard_and_accessibility_contract_is_unchanged():
+    html = _render_threads(_staff_principal())
+
+    for attribute in ('role="combobox"', 'aria-autocomplete="list"', 'aria-expanded="false"',
+                      'aria-controls="thread-client-results"', 'role="listbox"',
+                      'aria-label="Matching clients"', 'for="thread-client"'):
+        assert attribute in html, f"the selector lost {attribute}"
+    assert "Start typing a client's name..." in html
