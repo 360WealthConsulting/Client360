@@ -144,8 +144,8 @@ def test_same_content_different_owner_is_blocked():
     _doc(sha, person_id=_person(" B"))
     g = _group_for(sha)
     assert g["classification"] == dm.BLOCKED
-    kinds = {b["kind"] for b in g["blockers"]}
-    assert "conflicting_ownership" in kinds
+    codes = {b["code"] for b in g["blockers"]}
+    assert "ownership_person_mismatch" in codes, codes
 
 
 def test_owner_on_a_non_survivor_requires_review():
@@ -154,7 +154,7 @@ def test_owner_on_a_non_survivor_requires_review():
     _doc(sha, person_id=_person())                       # owner sits on the duplicate
     g = _group_for(sha)
     assert g["classification"] == dm.REVIEW
-    assert "ownership_on_non_survivor" in {c["kind"] for c in g["conflicts"]}
+    assert "ownership_unassigned_vs_person" in {c["code"] for c in g["conflicts"]}
 
 
 def test_owner_on_the_survivor_alone_is_safe():
@@ -300,7 +300,7 @@ def test_an_unknown_dependency_blocks_the_group(monkeypatch):
     monkeypatch.setattr(dm, "_STRATEGY", patched)
     g = _group_for(sha)
     assert g["classification"] == dm.BLOCKED
-    blocker = next(b for b in g["blockers"] if b["kind"] == "unknown_dependency")
+    blocker = next(b for b in g["blockers"] if b["code"] == "unknown_dependency")
     assert "document_ocr" in blocker["tables"]
 
 
@@ -475,8 +475,8 @@ def test_batching_does_not_change_any_classification_or_conflict_outcome():
         r = dm.preview(batch_size=batch)
         return {g["sha256"]: (g["classification"], g["proposed_survivor"],
                               tuple(sorted(g["duplicate_document_ids"])),
-                              tuple(sorted(c["kind"] for c in g["conflicts"])),
-                              tuple(sorted(x["kind"] for x in g["blockers"])),
+                              tuple(sorted(c["code"] for c in g["conflicts"])),
+                              tuple(sorted(x["code"] for x in g["blockers"])),
                               g["total_reassignments"])
                 for g in r["groups"] if g["sha256"] in (sha_safe, sha_blocked, sha_review)}
 
@@ -514,7 +514,7 @@ def test_a_version_chain_linking_two_group_members_is_reported_as_a_conflict():
                        " version_number) VALUES (:d, :p, 2)"), {"d": dup, "p": survivor})
     g = _group_for(sha)
     assert g["version_self_references"], "the self-reference risk must be recorded"
-    assert "version_chain_self_reference" in {c["kind"] for c in g["conflicts"]}
+    assert "version_chain_self_reference" in {c["code"] for c in g["conflicts"]}
     assert g["classification"] == dm.REVIEW
 
 
@@ -553,3 +553,224 @@ def test_schema_introspection_is_not_cached():
             break
     else:
         raise AssertionError("_dependencies not found")
+
+
+# --- reason aggregation + reconciliation -------------------------------------------------------
+
+def _mixed_corpus():
+    """One group per reason family, so the aggregate can be checked against known truth."""
+    made = {}
+    sha = _sha(); _doc(sha), _doc(sha); made["safe"] = sha
+    sha = _sha(); _doc(sha, person_id=_person(" A")), _doc(sha, person_id=_person(" B"))
+    made["person_mismatch"] = sha
+    sha = _sha(); _doc(sha); _doc(sha, person_id=_person()); made["unassigned_vs_person"] = sha
+    sha = _sha(); a, b = _doc(sha), _doc(sha); _classification(a, "1099"); _classification(b, "W-2")
+    made["classification_conflict"] = sha
+    sha = _sha(); a, b = _doc(sha), _doc(sha)
+    _ocr(a, status="completed", char_count=9000); _ocr(b, status="unsupported", char_count=0)
+    made["ocr_conflict"] = sha
+    return made
+
+
+def test_every_reason_code_is_declared_in_the_taxonomy():
+    for code, (severity, description) in dm.REASONS.items():
+        assert severity in (dm.BLOCKER, dm.CONFLICT, dm.ADVISORY), code
+        assert description and isinstance(description, str), code
+
+
+def test_reason_aggregation_reports_containing_and_primary_counts():
+    _mixed_corpus()
+    rr = dm.preview()["reasons"]
+    by_code = {r["code"]: r for section in ("blockers", "conflicts", "advisories")
+               for r in rr[section]}
+    assert "ownership_person_mismatch" in by_code
+    assert by_code["ownership_person_mismatch"]["groups_primary"] >= 1
+    assert by_code["ownership_person_mismatch"]["severity"] == dm.BLOCKER
+    for code in ("ownership_unassigned_vs_person", "classification_conflict", "ocr_conflict"):
+        assert code in by_code, code
+        assert by_code[code]["severity"] == dm.CONFLICT
+        assert by_code[code]["groups_primary"] >= 1
+
+
+def test_primary_reason_counts_reconcile_to_the_classification_totals():
+    """The reconciliation the report claims: mutually exclusive primaries sum to the class totals."""
+    _mixed_corpus()
+    r = dm.preview()
+    rr = r["reasons"]
+    assert rr["primary_totals"]["blocked"] == r["blocked_groups"]
+    assert rr["primary_totals"]["review_required"] == r["review_required_groups"]
+    assert rr["reconciles"] is True
+    assert rr["unreported_codes"] == []
+
+
+def test_every_non_safe_group_has_exactly_one_primary_reason():
+    _mixed_corpus()
+    for g in dm.preview()["groups"]:
+        if g["classification"] == dm.SAFE:
+            assert g["primary_reason"] is None
+        else:
+            assert g["primary_reason"] in dm.REASONS
+            assert dm.REASONS[g["primary_reason"]][0] != dm.ADVISORY
+
+
+def test_primary_reason_prefers_a_blocker_over_a_conflict():
+    sha = _sha()
+    a = _doc(sha, person_id=_person(" A"))
+    b = _doc(sha, person_id=_person(" B"))
+    _classification(a, "1099")
+    _classification(b, "W-2")                             # a conflict AND a blocker on one group
+    g = _group_for(sha)
+    assert g["classification"] == dm.BLOCKED
+    assert dm.REASONS[g["primary_reason"]][0] == dm.BLOCKER
+    assert "classification_conflict" in g["reason_codes"]   # still reported as a contained reason
+
+
+def test_reasons_carry_representative_document_ids():
+    _mixed_corpus()
+    rr = dm.preview()["reasons"]
+    for section in ("blockers", "conflicts"):
+        for row in rr[section]:
+            assert row["example_document_ids"], row["code"]
+            assert all(isinstance(i, int) for i in row["example_document_ids"])
+
+
+def test_reason_aggregation_is_deterministic():
+    _mixed_corpus()
+    a, b = dm.preview()["reasons"], dm.preview()["reasons"]
+    assert a == b
+
+
+# --- ownership decomposed by dimension -----------------------------------------------------------
+
+def test_household_mismatch_is_reported_separately_from_person_mismatch():
+    sha = _sha()
+    with engine.begin() as c:
+        h1 = c.execute(text("INSERT INTO households (name) VALUES (:n) RETURNING id"),
+                       {"n": f"{_TAG} HH1 {uuid.uuid4().hex[:6]}"}).scalar_one()
+        h2 = c.execute(text("INSERT INTO households (name) VALUES (:n) RETURNING id"),
+                       {"n": f"{_TAG} HH2 {uuid.uuid4().hex[:6]}"}).scalar_one()
+    _doc(sha, household_id=h1)
+    _doc(sha, household_id=h2)
+    g = _group_for(sha)
+    assert g["classification"] == dm.BLOCKED
+    assert g["primary_reason"] == "ownership_household_mismatch"
+    assert g["ownership"]["conflicting_dimensions"] == ["household_id"]
+
+
+def test_a_disagreement_across_two_dimensions_is_its_own_reason():
+    sha = _sha()
+    with engine.begin() as c:
+        h1 = c.execute(text("INSERT INTO households (name) VALUES (:n) RETURNING id"),
+                       {"n": f"{_TAG} HHx {uuid.uuid4().hex[:6]}"}).scalar_one()
+        h2 = c.execute(text("INSERT INTO households (name) VALUES (:n) RETURNING id"),
+                       {"n": f"{_TAG} HHy {uuid.uuid4().hex[:6]}"}).scalar_one()
+    _doc(sha, person_id=_person(" P"), household_id=h1)
+    _doc(sha, person_id=_person(" Q"), household_id=h2)
+    g = _group_for(sha)
+    assert g["primary_reason"] == "ownership_multiple_dimensions"
+    assert set(g["ownership"]["conflicting_dimensions"]) == {"person_id", "household_id"}
+
+
+# --- advisories must NOT change classification ----------------------------------------------------
+
+def test_set_null_and_no_action_reassignments_are_advisories_not_conflicts():
+    """A repointable reference is work for the executor, never a reason to withhold the merge."""
+    sha = _sha()
+    survivor, dup = sorted([_doc(sha), _doc(sha)])
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO operational_tasks (title, status, document_id)"
+                       " VALUES (:t, 'active', :d)"), {"t": f"{_TAG} task", "d": dup})
+    g = _group_for(sha)
+    assert g["classification"] == dm.SAFE, "a SET NULL reference must not downgrade the group"
+    assert "set_null_reassignment_required" in g["reason_codes"]
+    advisory = next(r for r in g["reasons"] if r["code"] == "set_null_reassignment_required")
+    assert advisory["severity"] == dm.ADVISORY
+
+
+def test_source_collisions_and_relationship_overlap_are_advisories():
+    sha = _sha()
+    a, b = _doc(sha), _doc(sha)
+    _source(a, _SYS_A, "probe://dup")
+    _source(b, _SYS_A, "probe://dup")                       # identical provenance tuple
+    with engine.begin() as c:
+        for d in (a, b):
+            c.execute(text("INSERT INTO document_relationships (document_id, entity_type, entity_id)"
+                           " VALUES (:d, 'person', 1)"), {"d": d})
+    g = _group_for(sha)
+    assert g["classification"] == dm.SAFE
+    assert "document_sources_collision" in g["reason_codes"]
+    assert "document_relationships_redundant" in g["reason_codes"]
+    assert g["source_collisions"] == 1
+    assert g["provenance"]["preserved_after_merge"] == 1     # provenance kept, recorded once
+
+
+def test_relationships_to_different_entities_are_additive_not_a_conflict():
+    sha = _sha()
+    a, b = _doc(sha), _doc(sha)
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO document_relationships (document_id, entity_type, entity_id)"
+                       " VALUES (:d, 'person', 1)"), {"d": a})
+        c.execute(text("INSERT INTO document_relationships (document_id, entity_type, entity_id)"
+                       " VALUES (:d, 'person', 2)"), {"d": b})
+    g = _group_for(sha)
+    assert g["classification"] == dm.SAFE, \
+        "the survivor inherits both relationships; UNIQUE(document_id, entity_type, entity_id) admits both"
+    assert "document_relationships_multi_entity" in g["reason_codes"]
+    assert g["relationships"]["distinct_entities"] == 2
+
+
+# --- FK coverage is re-verified as part of the report ---------------------------------------------
+
+def test_the_report_states_whether_any_unknown_fk_exists():
+    r = dm.preview(limit=1)
+    assert "unregistered_dependencies" in r
+    assert r["unregistered_dependencies"] == [], r["unregistered_dependencies"]
+    assert r["dependencies_checked"] >= 25
+
+
+# --- Windows console safety -----------------------------------------------------------------------
+
+def test_cli_and_service_sources_are_cp1252_encodable():
+    """A Windows console defaults to CP1252; a Unicode arrow in output (or in a traceback's source
+    line) raises UnicodeEncodeError without PYTHONIOENCODING."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    for rel in ("scripts/preview_document_merge.py", "app/services/document_merge.py"):
+        text_ = (root / rel).read_text(encoding="utf-8")
+        try:
+            text_.encode("cp1252")
+        except UnicodeEncodeError as exc:
+            raise AssertionError(f"{rel} is not CP1252-encodable at {exc.start}: "
+                                 f"{text_[exc.start:exc.end]!r}") from exc
+
+
+def test_rendered_cli_output_is_cp1252_encodable():
+    _mixed_corpus()
+    import scripts.preview_document_merge as cli
+    report = dm.preview()
+    rendered = cli._summary(report) + "".join(cli._group(g) for g in report["groups"][:3])
+    rendered.encode("cp1252")                                # must not raise
+    assert "WHY THE NON-SAFE GROUPS ARE NOT SAFE" in rendered
+    assert "reconciles" in rendered
+
+
+def test_a_safe_group_carrying_an_advisory_still_has_no_primary_reason():
+    """The reconciliation gap: if an advisory could become a PRIMARY reason, a SAFE group would be
+    counted under a reason code and the primary totals would stop matching the class totals."""
+    sha = _sha()
+    survivor, dup = sorted([_doc(sha), _doc(sha)])
+    with engine.begin() as c:                                   # a SET NULL advisory, nothing more
+        c.execute(text("INSERT INTO operational_tasks (title, status, document_id)"
+                       " VALUES (:t, 'active', :d)"), {"t": f"{_TAG} adv", "d": dup})
+    g = _group_for(sha)
+    assert g["classification"] == dm.SAFE
+    assert g["reason_codes"], "the advisory must still be reported"
+    assert g["primary_reason"] is None, "an advisory must never become a primary reason"
+
+    r = dm.preview()
+    rr = r["reasons"]
+    assert rr["reconciles"] is True
+    assert rr["primary_totals"]["blocked"] == r["blocked_groups"]
+    assert rr["primary_totals"]["review_required"] == r["review_required_groups"]
+    advisory_primary = sum(row["groups_primary"] for row in rr["advisories"])
+    assert advisory_primary == 0, "no group may take an advisory as its primary reason"

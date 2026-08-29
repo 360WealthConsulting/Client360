@@ -18,7 +18,7 @@ from app.services.document_merge import BLOCKED, REVIEW, SAFE, preview
 
 def _summary(r: dict) -> str:
     L = ["=" * 78,
-         "CANONICAL DOCUMENT MERGE PREVIEW    READ-ONLY — NO CHANGES WERE MADE",
+         "CANONICAL DOCUMENT MERGE PREVIEW    READ-ONLY - NO CHANGES WERE MADE",
          "=" * 78,
          f"  survivor rule      : {r['survivor_rule']}",
          f"  eligibility        : documents.{r['eligibility']}",
@@ -26,7 +26,7 @@ def _summary(r: dict) -> str:
          ""]
     if r["unregistered_dependencies"]:
         L.append(f"  !! UNREGISTERED DEPENDENCIES: {', '.join(r['unregistered_dependencies'])}")
-        L.append("     Groups touching these are BLOCKED — add a strategy before consolidating.")
+        L.append("     Groups touching these are BLOCKED - add a strategy before consolidating.")
         L.append("")
     L += [f"  duplicate SHA groups          : {r['total_duplicate_groups']}",
           f"  document rows in those groups : {r['total_document_rows_in_groups']}",
@@ -44,22 +44,51 @@ def _summary(r: dict) -> str:
         L.append("\n  Reassignments by dependent table:")
         for k, n in r["reassignments_by_table"].items():
             L.append(f"    - {k}: {n}")
+
+    rr = r["reasons"]
+    L.append("")
+    L.append("  " + "-" * 74)
+    L.append("  WHY THE NON-SAFE GROUPS ARE NOT SAFE")
+    L.append("  " + "-" * 74)
+    L.append("  'primary' is mutually exclusive (one per group, so totals reconcile);")
+    L.append("  'containing' counts every group carrying the reason and therefore overlaps.")
+    for label, rows in (("BLOCKERS  -> BLOCKED", rr["blockers"]),
+                        ("CONFLICTS -> REVIEW_REQUIRED", rr["conflicts"]),
+                        ("ADVISORIES (do not affect classification)", rr["advisories"])):
+        L.append(f"\n  {label}")
+        if not rows:
+            L.append("    (none)")
+        for row in rows:
+            L.append(f"    {row['code']:<38} primary {row['groups_primary']:>6}   "
+                     f"containing {row['groups_containing']:>6}")
+            L.append(f"      {row['description']}")
+            if row["example_document_ids"]:
+                L.append(f"      example document ids: {row['example_document_ids']}")
+
+    pt = rr["primary_totals"]
+    L.append("")
+    L.append(f"  primary BLOCKED total        : {pt['blocked']} (classified {r['blocked_groups']})")
+    L.append(f"  primary REVIEW_REQUIRED total: {pt['review_required']} "
+             f"(classified {r['review_required_groups']})")
+    L.append(f"  reconciles                   : {'YES' if rr['reconciles'] else 'NO'}")
+    if rr["unreported_codes"]:
+        L.append(f"  !! codes with no taxonomy entry: {rr['unreported_codes']}")
     return "\n".join(L)
 
 
 def _group(g: dict) -> str:
     L = ["", "-" * 78,
          f"  [{g['classification']}]  survivor {g['proposed_survivor']}  "
-         f"← duplicates {g['duplicate_document_ids']}",
+         f"<- duplicates {g['duplicate_document_ids']}",
          f"    rows {g['row_count']}  excess {g['excess_rows']}  "
          f"reassignments {g['total_reassignments']}",
-         f"    provenance: {g['provenance']['rows']} rows → "
+         f"    provenance: {g['provenance']['rows']} rows -> "
          f"{g['provenance']['preserved_after_merge']} distinct tuples "
          f"({', '.join(g['provenance']['source_systems']) or 'none'})"]
     for b in g["blockers"]:
-        L.append(f"    BLOCKER  {b['kind']}: {b.get('detail', '')}")
+        L.append(f"    BLOCKER  {b['code']}: {b.get('detail', b['description'])}")
     for c in g["conflicts"]:
-        L.append(f"    CONFLICT {c['kind']}: {c.get('detail', '')}")
+        L.append(f"    CONFLICT {c['code']}: {c.get('detail', c['description'])}")
     if g["reassignments_required"]:
         L.append("    would reassign:")
         for k, info in sorted(g["reassignments_required"].items()):
@@ -81,7 +110,7 @@ def main(argv=None) -> int:
     print(_summary(report))
     for g in report["groups"][:args.show]:
         print(_group(g))
-    print("\n  (preview only — no document, row, file or migration was changed)")
+    print("\n  (preview only - no document, row, file or migration was changed)")
     return 0
 
 
