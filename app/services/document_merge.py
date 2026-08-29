@@ -655,3 +655,188 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
         },
         "groups": analyzed,
     }
+
+
+# --- blocker diagnostics -------------------------------------------------------------------------
+# Read-only enrichment of the BLOCKED population so ownership blockers can be reviewed without
+# hand-querying ids. It changes NO classification: it re-reads the same preview() result and adds
+# human-readable labels, provenance and shape evidence. Every read is batched, exactly as preview().
+
+#: How many members/owners/sources a TEXT rendering shows before truncating. Full data is always
+#: present in the returned structure (and therefore in --output-json / --output-csv).
+DEFAULT_SAMPLE = 5
+
+OWNERSHIP_BLOCKER_CODES = tuple(
+    c for c, (sev, _) in REASONS.items() if sev == BLOCKER and c.startswith("ownership_"))
+
+
+def _prefetch_labels(conn, q, table, name_expr, ids, batch) -> dict[int, str]:
+    """id -> display label for an owner table. Empty when there are no ids."""
+    out: dict[int, str] = {}
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return out
+    for chunk in _in_batches(sorted(set(ids)), batch):
+        for r in q.rows(conn, f"SELECT id, {name_expr} AS label FROM {table} WHERE id = ANY(:ids)",
+                        {"ids": chunk}):
+            out[int(r["id"])] = r["label"]
+    return out
+
+
+def _ownership_shape(members) -> dict:
+    """FACTUAL evidence about why several owners appear. It deliberately draws no conclusion.
+
+    Deciding whether a group is one generic file ingested per client, or competing assignments for
+    a client-specific document, needs human judgement about the content. Filenames alone are not
+    evidence, so this reports counts and lets the reviewer decide."""
+    owned = [m for m in members if m["person_id"] or m["household_id"] or m["organization_id"]]
+    owner_keys = [(m["person_id"], m["household_id"], m["organization_id"]) for m in owned]
+    per_owner: dict[tuple, int] = defaultdict(int)
+    for k in owner_keys:
+        per_owner[k] += 1
+    uris = {s["source_uri"] for m in members for s in m["sources"] if s["source_uri"]}
+    systems = {s["source_system"] for m in members for s in m["sources"]}
+    max_per_owner = max(per_owner.values(), default=0)
+
+    notes = []
+    if owned and len(per_owner) == len(owned) and max_per_owner == 1:
+        notes.append("every owned member has a DISTINCT owner and appears once - consistent with "
+                     "one shared/generic file ingested separately per client (needs confirmation)")
+    if max_per_owner > 1:
+        notes.append(f"at least one owner holds {max_per_owner} members - consistent with competing "
+                     "assignments for the same client (needs confirmation)")
+    if len(members) - len(owned):
+        notes.append(f"{len(members) - len(owned)} member(s) carry no owner at all")
+    if len(uris) == 1 and len(members) > 1:
+        notes.append("all members share ONE source_uri - the same stored location was recorded more "
+                     "than once")
+    if len(systems) > 1:
+        notes.append(f"members arrived from {len(systems)} different source systems")
+
+    return {
+        "member_count": len(members),
+        "owned_members": len(owned),
+        "unowned_members": len(members) - len(owned),
+        "distinct_owners": len(per_owner),
+        "max_members_per_owner": max_per_owner,
+        "every_member_a_distinct_owner": bool(owned) and len(per_owner) == len(owned)
+                                         and max_per_owner == 1,
+        "any_owner_with_multiple_members": max_per_owner > 1,
+        "distinct_source_uris": len(uris),
+        "distinct_source_systems": sorted(systems),
+        "evidence_notes": notes,          # observations only - never a verdict
+    }
+
+
+def blocked_details(*, reasons=None, limit=None, batch_size=DEFAULT_BATCH_SIZE,
+                    report=None) -> dict:
+    """READ-ONLY detail for every BLOCKED duplicate group. Performs ZERO writes.
+
+    ``reasons`` filters by primary reason code (default: all ownership blockers). ``report`` reuses
+    an existing preview() result instead of recomputing it. Classification is never recalculated -
+    the groups and their verdicts come straight from preview()."""
+    report = report or preview(limit=limit, batch_size=batch_size)
+    wanted = tuple(reasons) if reasons else None
+    groups = [g for g in report["groups"]
+              if g["classification"] == BLOCKED
+              and (wanted is None or g["primary_reason"] in wanted)]
+
+    doc_ids = sorted({i for g in groups for i in
+                      [g["proposed_survivor"], *g["duplicate_document_ids"]]})
+    q = _QueryCounter()
+    with engine.connect() as conn:
+        docs = _prefetch_documents(conn, q, doc_ids, batch_size)
+        sources = _prefetch_by_document(conn, q,
+            "SELECT document_id, source_system, source_uri, source_path, source_external_id "
+            "FROM document_sources WHERE document_id = ANY(:ids)", doc_ids, batch_size)
+        people_labels = _prefetch_labels(conn, q, "people",
+            "COALESCE(NULLIF(full_name, ''), NULLIF(TRIM(CONCAT_WS(' ', first_name, last_name)), ''), "
+            "'person ' || id::text)", [d.get("person_id") for d in docs.values()], batch_size)
+        household_labels = _prefetch_labels(conn, q, "households",
+            "COALESCE(NULLIF(name, ''), 'household ' || id::text)",
+            [d.get("household_id") for d in docs.values()], batch_size)
+        org_labels = _prefetch_labels(conn, q, "relationship_entities",
+            "COALESCE(NULLIF(name, ''), 'organization ' || id::text)",
+            [d.get("organization_id") for d in docs.values()], batch_size)
+
+    detailed = []
+    for g in groups:
+        ids = [g["proposed_survivor"], *sorted(g["duplicate_document_ids"])]
+        members = []
+        for did in ids:
+            d = docs.get(did, {})
+            members.append({
+                "document_id": did,
+                "is_survivor": did == g["proposed_survivor"],
+                "original_name": d.get("original_name"),
+                "category": d.get("category"),
+                "classification": d.get("classification"),
+                "subcategory": d.get("subcategory"),
+                "status": d.get("status"),
+                "person_id": d.get("person_id"),
+                "person_name": people_labels.get(d.get("person_id")),
+                "household_id": d.get("household_id"),
+                "household_name": household_labels.get(d.get("household_id")),
+                "organization_id": d.get("organization_id"),
+                "organization_name": org_labels.get(d.get("organization_id")),
+                "sources": [{"source_system": s["source_system"], "source_uri": s["source_uri"],
+                             "source_path": s["source_path"],
+                             "source_external_id": s["source_external_id"]}
+                            for s in sources.get(did, [])],
+            })
+        source_rows = sum(len(m["sources"]) for m in members)
+        detailed.append({
+            "sha256": g["sha256"],
+            "primary_reason": g["primary_reason"],
+            "reason_codes": g["reason_codes"],
+            "proposed_survivor": g["proposed_survivor"],
+            "member_document_ids": ids,
+            "member_count": len(ids),
+            "excess_rows": g["excess_rows"],
+            "source_record_count": source_rows,
+            "conflicting_dimensions": g["ownership"]["conflicting_dimensions"],
+            "ownership_shape": _ownership_shape(members),
+            "members": members,
+        })
+
+    detailed.sort(key=lambda x: (-x["member_count"], x["sha256"]))
+    return {
+        "read_only": True,
+        "wrote_anything": False,
+        "filter_reasons": list(wanted) if wanted else sorted(OWNERSHIP_BLOCKER_CODES),
+        "classification_source": "preview() - verdicts are reused, never recomputed",
+        "summary": _blocked_summary(detailed, report),
+        "groups": detailed,
+        "instrumentation": {"sql_query_count": q.count,
+                            "blocked_groups_detailed": len(detailed),
+                            "documents_read": len(doc_ids),
+                            "batch_size": batch_size},
+    }
+
+
+def _blocked_summary(detailed, report) -> dict:
+    by_reason: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"groups": 0, "document_rows": 0, "excess_rows": 0})
+    systems, owner_distribution = set(), defaultdict(int)
+    for g in detailed:
+        b = by_reason[g["primary_reason"] or "unknown"]
+        b["groups"] += 1
+        b["document_rows"] += g["member_count"]
+        b["excess_rows"] += g["excess_rows"]
+        systems.update(g["ownership_shape"]["distinct_source_systems"])
+        owner_distribution[g["ownership_shape"]["distinct_owners"]] += 1
+    largest = [{"sha256": g["sha256"], "member_count": g["member_count"],
+                "primary_reason": g["primary_reason"],
+                "distinct_owners": g["ownership_shape"]["distinct_owners"]}
+               for g in detailed[:20]]
+    return {
+        "blocked_groups_total": report["blocked_groups"],
+        "blocked_groups_in_this_report": len(detailed),
+        "by_reason": {k: dict(v) for k, v in sorted(by_reason.items())},
+        "groups_with_more_than_2_members": sum(1 for g in detailed if g["member_count"] > 2),
+        "groups_with_more_than_10_members": sum(1 for g in detailed if g["member_count"] > 10),
+        "groups_with_more_than_100_members": sum(1 for g in detailed if g["member_count"] > 100),
+        "largest_20_groups": largest,
+        "distinct_source_systems": sorted(systems),
+        "distinct_owners_per_group": dict(sorted(owner_distribution.items())),
+    }

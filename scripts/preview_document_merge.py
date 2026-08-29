@@ -8,12 +8,29 @@ Usage:
     python scripts/preview_document_merge.py --limit 50     # first 50 duplicate groups
     python scripts/preview_document_merge.py --json         # machine-readable
     python scripts/preview_document_merge.py --show 10      # per-group detail for the first 10
+
+    python -m scripts.preview_document_merge --blocked-details
+    python -m scripts.preview_document_merge --blocked-details --reason ownership_person_mismatch
+    python -m scripts.preview_document_merge --blocked-details --output-json /tmp/blocked.json
+    python -m scripts.preview_document_merge --blocked-details --output-csv  /tmp/blocked.csv
+
+Output files are written ONLY when a path is given, and never inside the repository by default.
+All console output is plain ASCII so a CP1252 Windows console needs no PYTHONIOENCODING.
 """
 import argparse
+import csv
 import json
 import sys
 
-from app.services.document_merge import BLOCKED, REVIEW, SAFE, preview
+from app.services.document_merge import (
+    BLOCKED,
+    DEFAULT_SAMPLE,
+    OWNERSHIP_BLOCKER_CODES,
+    REVIEW,
+    SAFE,
+    blocked_details,
+    preview,
+)
 
 
 def _summary(r: dict) -> str:
@@ -96,12 +113,164 @@ def _group(g: dict) -> str:
     return "\n".join(L)
 
 
+def _owner_label(m) -> str:
+    parts = []
+    if m["person_id"]:
+        parts.append(f"person {m['person_id']} ({m['person_name']})")
+    if m["household_id"]:
+        parts.append(f"household {m['household_id']} ({m['household_name']})")
+    if m["organization_id"]:
+        parts.append(f"organization {m['organization_id']} ({m['organization_name']})")
+    return "; ".join(parts) or "(no owner)"
+
+
+def _blocked_text(report, sample) -> str:
+    su = report["summary"]
+    L = ["=" * 78,
+         "BLOCKED DETAIL SUMMARY    READ-ONLY - NO CHANGES WERE MADE",
+         "=" * 78,
+         f"  blocked groups (all)        : {su['blocked_groups_total']}",
+         f"  blocked groups in this view : {su['blocked_groups_in_this_report']}",
+         f"  reasons included            : {', '.join(report['filter_reasons'])}",
+         "",
+         "  By blocker reason:"]
+    for code, b in su["by_reason"].items():
+        L.append(f"    {code:<34} groups {b['groups']:>5}  rows {b['document_rows']:>6}  "
+                 f"excess {b['excess_rows']:>6}")
+    L += ["",
+          f"  groups with >2 members      : {su['groups_with_more_than_2_members']}",
+          f"  groups with >10 members     : {su['groups_with_more_than_10_members']}",
+          f"  groups with >100 members    : {su['groups_with_more_than_100_members']}",
+          f"  distinct source systems     : {', '.join(su['distinct_source_systems']) or '(none)'}",
+          "",
+          "  Distinct owners per group (owners -> group count):"]
+    for owners, n in su["distinct_owners_per_group"].items():
+        L.append(f"    {owners:>4} -> {n}")
+    L += ["", "  Largest 20 groups by member count:"]
+    for g in su["largest_20_groups"]:
+        L.append(f"    {g['sha256'][:16]}...  members {g['member_count']:>5}  "
+                 f"owners {g['distinct_owners']:>5}  {g['primary_reason']}")
+
+    L += ["", "=" * 78, "PER-GROUP DETAIL", "=" * 78]
+    for g in report["groups"]:
+        shape = g["ownership_shape"]
+        L += ["", "-" * 78,
+              f"  sha256 {g['sha256']}",
+              f"  reason {g['primary_reason']}   members {g['member_count']}   "
+              f"excess {g['excess_rows']}   source rows {g['source_record_count']}",
+              f"  survivor {g['proposed_survivor']}   "
+              f"conflicting dimensions: {', '.join(g['conflicting_dimensions']) or '(none)'}",
+              f"  distinct owners {shape['distinct_owners']}   "
+              f"max members per owner {shape['max_members_per_owner']}   "
+              f"unowned {shape['unowned_members']}   "
+              f"distinct source uris {shape['distinct_source_uris']}"]
+        for note in shape["evidence_notes"]:
+            L.append(f"    evidence: {note}")
+        shown = g["members"][:sample]
+        L.append(f"  members (showing {len(shown)} of {g['member_count']}):")
+        for m in shown:
+            flag = "SURVIVOR" if m["is_survivor"] else "duplicate"
+            L.append(f"    [{flag}] doc {m['document_id']}  {m['original_name'] or '(no name)'}")
+            L.append(f"        category={m['category'] or '-'}  "
+                     f"classification={m['classification'] or '-'}")
+            L.append(f"        owner: {_owner_label(m)}")
+            for src in m["sources"][:sample]:
+                L.append(f"        source: {src['source_system']} :: "
+                         f"{src['source_uri'] or src['source_path'] or '(no locator)'}")
+            if len(m["sources"]) > sample:
+                L.append(f"        ... {len(m['sources']) - sample} more source row(s) "
+                         f"(use --output-json for all)")
+        if g["member_count"] > len(shown):
+            L.append(f"    ... {g['member_count'] - len(shown)} more member(s) not shown "
+                     f"(use --output-json / --output-csv for the complete set)")
+    return "\n".join(L)
+
+
+CSV_COLUMNS = (
+    "sha256", "primary_reason", "conflicting_dimensions", "member_count", "excess_rows",
+    "proposed_survivor", "document_id", "is_survivor", "original_name", "category",
+    "classification", "subcategory", "status",
+    "person_id", "person_name", "household_id", "household_name",
+    "organization_id", "organization_name",
+    "source_systems", "source_uris", "source_record_count",
+    "group_distinct_owners", "group_max_members_per_owner", "group_unowned_members",
+    "group_distinct_source_uris", "group_evidence_notes",
+)
+
+
+def _csv_rows(report):
+    """One row per MEMBER document, carrying its group's context - enough to classify later."""
+    for g in report["groups"]:
+        shape = g["ownership_shape"]
+        for m in g["members"]:
+            yield {
+                "sha256": g["sha256"], "primary_reason": g["primary_reason"],
+                "conflicting_dimensions": "|".join(g["conflicting_dimensions"]),
+                "member_count": g["member_count"], "excess_rows": g["excess_rows"],
+                "proposed_survivor": g["proposed_survivor"],
+                "document_id": m["document_id"], "is_survivor": m["is_survivor"],
+                "original_name": m["original_name"], "category": m["category"],
+                "classification": m["classification"], "subcategory": m["subcategory"],
+                "status": m["status"],
+                "person_id": m["person_id"], "person_name": m["person_name"],
+                "household_id": m["household_id"], "household_name": m["household_name"],
+                "organization_id": m["organization_id"],
+                "organization_name": m["organization_name"],
+                "source_systems": "|".join(s["source_system"] for s in m["sources"]),
+                "source_uris": "|".join(s["source_uri"] or s["source_path"] or ""
+                                        for s in m["sources"]),
+                "source_record_count": len(m["sources"]),
+                "group_distinct_owners": shape["distinct_owners"],
+                "group_max_members_per_owner": shape["max_members_per_owner"],
+                "group_unowned_members": shape["unowned_members"],
+                "group_distinct_source_uris": shape["distinct_source_uris"],
+                "group_evidence_notes": " | ".join(shape["evidence_notes"]),
+            }
+
+
+def _write_csv(path, report) -> int:
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(CSV_COLUMNS))
+        writer.writeheader()
+        n = 0
+        for row in _csv_rows(report):
+            writer.writerow(row)
+            n += 1
+    return n
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Read-only canonical document merge preview.")
     ap.add_argument("--limit", type=int, default=None, help="only the first N duplicate groups")
     ap.add_argument("--show", type=int, default=0, help="print per-group detail for the first N")
     ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
+    ap.add_argument("--blocked-details", action="store_true",
+                    help="detailed ownership-blocker diagnostics (read-only)")
+    ap.add_argument("--reason", action="append", choices=sorted(OWNERSHIP_BLOCKER_CODES),
+                    help="restrict --blocked-details to this primary reason (repeatable)")
+    ap.add_argument("--sample", type=int, default=DEFAULT_SAMPLE,
+                    help="members/sources shown per group in text output")
+    ap.add_argument("--output-json", metavar="PATH",
+                    help="write the complete report to PATH (nothing is written without this)")
+    ap.add_argument("--output-csv", metavar="PATH",
+                    help="write one row per member document to PATH")
     args = ap.parse_args(argv)
+
+    if args.blocked_details:
+        report = blocked_details(reasons=args.reason, limit=args.limit)
+        if args.output_json:
+            with open(args.output_json, "w", encoding="utf-8") as fh:
+                json.dump(report, fh, indent=2, default=str)
+            print(f"wrote JSON report: {args.output_json}")
+        if args.output_csv:
+            n = _write_csv(args.output_csv, report)
+            print(f"wrote CSV report: {args.output_csv} ({n} member rows)")
+        if args.json:
+            print(json.dumps(report, indent=2, default=str))
+        elif not (args.output_json or args.output_csv):
+            print(_blocked_text(report, args.sample))
+        print("\n  (read-only - no document, row, file or migration was changed)")
+        return 0
 
     report = preview(limit=args.limit)
     if args.json:
