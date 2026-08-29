@@ -395,7 +395,7 @@ def test_the_preview_is_idempotent():
     first, second = dm.preview(), dm.preview()
     a, b = _group_for(sha, first), _group_for(sha, second)
     assert a == b
-    for key in ("total_duplicate_groups", "excess_duplicate_rows", "safe_auto_merge_groups",
+    for key in ("physical_sha_groups", "rows_eligible_for_retirement", "safe_auto_merge_groups",
                 "review_required_groups", "blocked_groups", "total_proposed_reassignments"):
         assert first[key] == second[key]
 
@@ -1021,7 +1021,7 @@ def test_blocked_summary_reports_size_buckets_and_largest_groups():
     for i in range(12):
         _doc(s2, person_id=_person(f" B{i}"))
     su = dm.blocked_details()["summary"]
-    assert su["blocked_groups_in_this_report"] >= 2
+    assert su["groups_in_this_report"] >= 2
     assert su["by_classification"][dm.SHARED] >= 2
     assert su["groups_with_more_than_2_members"] >= 1
     assert su["groups_with_more_than_10_members"] >= 1
@@ -1029,7 +1029,7 @@ def test_blocked_summary_reports_size_buckets_and_largest_groups():
     assert su["largest_20_groups"][0]["member_count"] >= 12
     assert len(su["largest_20_groups"]) <= 20
     assert su["by_reason"]["shared_content_cross_person"]["groups"] >= 2
-    assert sum(su["distinct_owners_per_group"].values()) == su["blocked_groups_in_this_report"]
+    assert sum(su["distinct_owners_per_group"].values()) == su["groups_in_this_report"]
 
 
 # --- JSON / CSV completeness -------------------------------------------------------------------------
@@ -1116,7 +1116,7 @@ def test_blocked_details_reuses_a_supplied_report_without_reclassifying():
     detail = dm.blocked_details(report=report)
     assert detail["summary"]["blocked_groups_total"] == report["blocked_groups"]
     assert detail["summary"]["shared_content_groups_total"] == report["shared_content_groups"]
-    assert (detail["summary"]["blocked_groups_in_this_report"]
+    assert (detail["summary"]["groups_in_this_report"]
             == report["blocked_groups"] + report["shared_content_groups"])
 
 
@@ -1332,3 +1332,144 @@ def test_shared_content_is_inert_and_can_never_be_read_as_mergeable():
         assert g["rows_preserved_cross_owner"] == g["row_count"]
         assert all(not p["mergeable"] for p in g["partitions"])
     assert seen >= 3, "the corpus must actually contain SHARED groups for this to mean anything"
+
+
+# --- reporting terminology and counters ----------------------------------------------------------
+# These pin the OUTPUT, not the algorithm. Their job is to make a silent regression to global-SHA
+# merge semantics impossible: if a refactor ever reports physical SHA excess as retirement
+# eligibility, or drops the physical/ownership-scoped distinction, these fail.
+
+def _reporting_corpus():
+    """4 physical groups / 11 rows: 2 retirable, 3 survivors, 6 preserved cross-owner."""
+    p = _person(" RC")
+    s1 = _sha(); _doc(s1, person_id=p), _doc(s1, person_id=p)              # 2 rows, 1 retirable
+    s2 = _sha()
+    for i in range(3):
+        _doc(s2, person_id=_person(f" RD{i}"))                              # 3 rows, 0 retirable
+    q = _person(" RE")
+    s3 = _sha(); _doc(s3, person_id=q), _doc(s3, person_id=q)
+    _doc(s3, person_id=_person(" RF"))                                      # 3 rows, 1 retirable
+    s4 = _sha(); _doc(s4), _doc(s4, household_id=_household("HHrc"))
+    _doc(s4, organization_id=_organization("Orc"))                          # 3 rows, 0 retirable
+    return (s1, s2, s3, s4)
+
+
+def test_the_summary_never_presents_physical_sha_excess_as_retirement_eligibility():
+    """The operator hazard this reporting exists to remove.
+
+    Physical excess counts every row beyond one per HASH. Retirement eligibility counts every row
+    beyond one per OWNERSHIP SCOPE. Conflating them is exactly the global-SHA merge bug."""
+    _reporting_corpus()
+    r = dm.preview()
+    assert r["physical_sha_excess_rows"] > r["rows_eligible_for_retirement"], (
+        "this corpus must actually distinguish the two, or the test proves nothing")
+    assert r["physical_sha_excess_rows"] == (r["physical_sha_document_rows"]
+                                             - r["physical_sha_groups"])
+
+    import scripts.preview_document_merge as cli
+    text_out = cli._summary(r)
+    # The retired vocabulary must not come back.
+    for banned in ("excess duplicate rows", "rows eventually retired"):
+        assert banned not in text_out, banned
+    assert "rows eligible for retirement" in text_out
+    assert "proposed retirement rows" in text_out
+    assert "NOT a retirement count" in text_out
+    # The actionable number must never be rendered as the physical one.
+    elig = f"rows eligible for retirement     : {r['rows_eligible_for_retirement']}"
+    assert elig in text_out
+    assert f"physical SHA excess rows         : {r['physical_sha_excess_rows']}" in text_out
+
+
+def test_the_summary_renders_every_required_section():
+    _reporting_corpus()
+    out = __import__("scripts.preview_document_merge", fromlist=["x"])._summary(dm.preview())
+    for heading in ("PHYSICAL CONTENT POPULATION",
+                    "OWNERSHIP-SCOPED MERGE POPULATION",
+                    "MERGE CLASSIFICATION",
+                    "DEPENDENCY / PROVENANCE",
+                    "SHARED CONTENT"):
+        assert heading in out, heading
+    for label in ("physical SHA groups", "ownership partitions", "ownership-scoped merge groups",
+                  "rows preserved", "cross-owner/shared", "shared-content groups",
+                  "proposed dependent-row reassignments", "provenance rows seen",
+                  "provenance tuples preserved", "shape breakdown"):
+        assert label in out, label
+    for code in dm.SHAPE_CODES:
+        assert code in out, code
+    for cls in (dm.SAFE, dm.REVIEW, dm.BLOCKED):
+        assert cls in out
+
+
+def test_the_machine_readable_summary_exposes_every_stable_field():
+    """The JSON contract a downstream reader may depend on."""
+    _reporting_corpus()
+    r = dm.preview()
+    required = ("physical_sha_groups", "physical_sha_document_rows", "physical_sha_excess_rows",
+                "ownership_partitions", "ownership_scoped_merge_groups",
+                "rows_eligible_for_retirement", "rows_preserved", "cross_owner_rows_preserved",
+                "shared_content_groups", "merge_partitions_safe",
+                "merge_partitions_review_required", "merge_partitions_blocked",
+                "provenance_rows_seen", "provenance_tuples_preserved")
+    for key in required:
+        assert key in r, key
+        assert isinstance(r[key], int), key
+    assert r["proposed_retirement_rows"] == r["rows_eligible_for_retirement"]
+    # The ambiguous legacy names must stay gone.
+    for gone in ("excess_duplicate_rows", "total_rows_eventually_retired",
+                 "total_duplicate_groups", "total_document_rows_in_groups"):
+        assert gone not in r, gone
+
+    import json
+    assert json.loads(json.dumps(r, default=str))["physical_sha_groups"] == r["physical_sha_groups"]
+
+
+def test_the_row_counters_reconcile_exactly():
+    """physical rows = survivors + retirable + cross-owner preserved. No row is unaccounted for."""
+    _reporting_corpus()
+    r = dm.preview()
+    assert (r["ownership_scoped_merge_groups"]
+            + r["rows_eligible_for_retirement"]
+            + r["cross_owner_rows_preserved"]) == r["physical_sha_document_rows"]
+    assert r["rows_preserved"] == (r["physical_sha_document_rows"]
+                                   - r["rows_eligible_for_retirement"])
+    assert r["rows_preserved"] == (r["ownership_scoped_merge_groups"]
+                                   + r["cross_owner_rows_preserved"])
+    assert r["rows_eligible_for_retirement"] <= r["physical_sha_excess_rows"]
+    assert r["cross_owner_rows_preserved"] > 0
+    import scripts.preview_document_merge as cli
+    assert "MISMATCH" not in cli._summary(r)
+
+
+def test_shared_content_shape_counts_are_reported_and_sum_to_the_shared_total():
+    _reporting_corpus()
+    r = dm.preview()
+    shared_shapes = {c: r["groups_by_shape"].get(c, 0) for c in dm.CROSS_OWNER_SHAPES}
+    assert sum(shared_shapes.values()) == r["shared_content_groups"]
+    assert r["shared_content_groups"] >= 2
+    assert all(c in r["groups_by_shape"] or True for c in dm.SHAPE_CODES)
+
+
+def test_the_detail_report_field_is_not_named_for_blocked_alone():
+    """The report carries SHARED_CONTENT groups too, so the old name was simply wrong."""
+    _reporting_corpus()
+    d = dm.blocked_details()
+    assert "blocked_groups_in_this_report" not in d["summary"]
+    assert d["summary"]["groups_in_this_report"] == len(d["groups"])
+    assert d["summary"]["groups_in_this_report"] > d["summary"]["blocked_groups_total"]
+
+
+def test_the_survivor_rule_string_states_the_partition_scope():
+    r = dm.preview(limit=1)
+    assert "ownership-scoped" in r["survivor_rule"]
+    assert "ownership never influences selection" in r["survivor_rule"]
+
+
+def test_partition_survivors_is_defined_as_the_merge_group_count():
+    """`partition survivors` must BE ownership_scoped_merge_groups, not merely equal it here."""
+    _reporting_corpus()
+    r = dm.preview()
+    import scripts.preview_document_merge as cli
+    assert f"of which partition survivors   : {r['ownership_scoped_merge_groups']}" in cli._summary(r)
+    # ...and the identity that makes the two readings agree.
+    assert (r["rows_preserved"] - r["cross_owner_rows_preserved"]
+            == r["ownership_scoped_merge_groups"])

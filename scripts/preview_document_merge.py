@@ -24,6 +24,7 @@ import sys
 
 from app.services.document_merge import (
     BLOCKED,
+    CROSS_OWNER_SHAPES,
     DEFAULT_SAMPLE,
     DETAIL_REASON_CODES,
     REVIEW,
@@ -45,22 +46,77 @@ def _summary(r: dict) -> str:
         L.append(f"  !! UNREGISTERED DEPENDENCIES: {', '.join(r['unregistered_dependencies'])}")
         L.append("     Groups touching these are BLOCKED - add a strategy before consolidating.")
         L.append("")
-    L += [f"  duplicate SHA groups          : {r['total_duplicate_groups']}",
-          f"  document rows in those groups : {r['total_document_rows_in_groups']}",
-          f"  excess duplicate rows         : {r['excess_duplicate_rows']}",
+    survivors = r["ownership_scoped_merge_groups"]
+    L += ["  " + "-" * 74,
+          "  PHYSICAL CONTENT POPULATION   (describes CONTENT - not actionable)",
+          "  " + "-" * 74,
+          f"  physical SHA groups              : {r['physical_sha_groups']}",
+          f"  document rows in those groups    : {r['physical_sha_document_rows']}",
+          f"  physical SHA excess rows         : {r['physical_sha_excess_rows']}"
+          "   <- NOT a retirement count",
+          "    (what a global-SHA merge would have retired, ignoring ownership. It is reported",
+          "     only for contrast. The actionable figure is 'rows eligible for retirement'",
+          "     below, which is never larger.)",
           "",
+          "  " + "-" * 74,
+          "  OWNERSHIP-SCOPED MERGE POPULATION   (what may actually merge)",
+          "  " + "-" * 74,
+          f"  ownership partitions             : {r['ownership_partitions']}",
+          f"  ownership-scoped merge groups    : {survivors}",
+          f"  rows eligible for retirement     : {r['rows_eligible_for_retirement']}",
+          f"  rows preserved                   : {r['rows_preserved']}",
+          f"    of which cross-owner/shared    : {r['cross_owner_rows_preserved']}",
+          f"    of which partition survivors   : {survivors}",
+          f"  shared-content groups            : {r['shared_content_groups']}",
+          "",
+          "  merge-group shapes (groups with at least one mergeable partition):",
+          f"    {'single_owner_duplicate_group':<38} "
+          f"{r['groups_by_shape'].get('single_owner_duplicate_group', 0):>6}",
+          f"    {'partial_merge_with_preserved_copies':<38} "
+          f"{r['groups_by_shape'].get('partial_merge_with_preserved_copies', 0):>6}",
+          "",
+          f"    reconciles: {survivors} survivors + {r['rows_eligible_for_retirement']} eligible"
+          f" + {r['cross_owner_rows_preserved']} cross-owner"
+          f" = {r['physical_sha_document_rows']}"
+          f"  [{'OK' if survivors + r['rows_eligible_for_retirement'] + r['cross_owner_rows_preserved'] == r['physical_sha_document_rows'] else 'MISMATCH'}]",
+          "",
+          "  " + "-" * 74,
+          "  MERGE CLASSIFICATION   (groups holding at least one mergeable partition)",
+          "  " + "-" * 74,
           f"  {SAFE:<18}: {r['safe_auto_merge_groups']}",
           f"  {REVIEW:<18}: {r['review_required_groups']}",
           f"  {BLOCKED:<18}: {r['blocked_groups']}",
           "",
-          f"  proposed reassignments        : {r['total_proposed_reassignments']}",
-          f"  rows eventually retired       : {r['total_rows_eventually_retired']}",
-          f"  provenance rows seen          : {r['provenance_rows_seen']}",
-          f"  provenance tuples preserved   : {r['provenance_tuples_preserved']}"]
+          "  merge partitions (the population an executor would ever act on):",
+          f"    {SAFE:<16}: {r['merge_partitions_safe']}",
+          f"    {REVIEW:<16}: {r['merge_partitions_review_required']}",
+          f"    {BLOCKED:<16}: {r['merge_partitions_blocked']}",
+          "",
+          "  " + "-" * 74,
+          "  DEPENDENCY / PROVENANCE",
+          "  " + "-" * 74,
+          f"  proposed dependent-row reassignments : {r['total_proposed_reassignments']}",
+          f"  proposed retirement rows             : {r['proposed_retirement_rows']}"
+          "   (proposed only - no executor exists)",
+          f"  provenance rows seen                 : {r['provenance_rows_seen']}",
+          f"  provenance tuples preserved          : {r['provenance_tuples_preserved']}"]
     if r["reassignments_by_table"]:
         L.append("\n  Reassignments by dependent table:")
         for k, n in r["reassignments_by_table"].items():
             L.append(f"    - {k}: {n}")
+
+    L += ["",
+          "  " + "-" * 74,
+          "  SHARED CONTENT   (identical content in different ownership scopes - never retired)",
+          "  " + "-" * 74,
+          f"  SHARED_CONTENT groups            : {r['shared_content_groups']}",
+          f"  rows preserved cross-owner       : {r['cross_owner_rows_preserved']}",
+          "",
+          "  shape breakdown (these sum to the SHARED_CONTENT group total):"]
+    for code in CROSS_OWNER_SHAPES:
+        L.append(f"    {code:<38} {r['groups_by_shape'].get(code, 0):>6}")
+    L.append(f"    {'(sum)':<38} "
+             f"{sum(r['groups_by_shape'].get(c, 0) for c in CROSS_OWNER_SHAPES):>6}")
 
     rr = r["reasons"]
     L.append("")
@@ -131,7 +187,7 @@ def _blocked_text(report, sample) -> str:
          "=" * 78,
          f"  blocked groups (all)        : {su['blocked_groups_total']}",
          f"  shared-content groups (all) : {su['shared_content_groups_total']}",
-         f"  groups in this view         : {su['blocked_groups_in_this_report']}",
+         f"  groups in this view         : {su['groups_in_this_report']}",
          f"  rows preserved cross-owner  : {su['rows_preserved_cross_owner']}",
          f"  reasons included            : {', '.join(report['filter_reasons'])}",
          "",

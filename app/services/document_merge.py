@@ -732,6 +732,10 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
 
     blocked_primary = sum(primary_counts.get(c, 0) for c in _BLOCKER_CODES)
     review_primary = sum(primary_counts.get(c, 0) for c in _CONFLICT_CODES)
+    physical_rows = sum(g["row_count"] for g in analyzed)
+    eligible = sum(g["excess_rows"] for g in analyzed)
+    cross_owner_preserved = sum(g["rows_preserved_cross_owner"] for g in analyzed)
+
     reason_report = {
         "blockers": _rows(_BLOCKER_CODES),
         "conflicts": _rows(_CONFLICT_CODES),
@@ -745,22 +749,34 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
     return {
         "read_only": True,
         "wrote_anything": False,
-        "survivor_rule": "lowest documents.id among eligible rows (ADR-072 resolution order); "
-                         "ownership never influences selection",
+        "survivor_rule": "lowest documents.id among eligible rows WITHIN one ownership-scoped "
+                         "partition (ADR-072 resolution order); ownership never influences "
+                         "selection",
         "eligibility": ELIGIBLE_SQL,
         "dependencies_checked": len(deps),
         "unregistered_dependencies": sorted({d["table"] for d in deps if d["strategy"] is None}),
-        # PHYSICAL view: hash groups as they exist in the table.
-        "total_duplicate_groups": len(analyzed),
+        # --- PHYSICAL CONTENT POPULATION ------------------------------------------------------
+        # Hash groups exactly as they sit in the table. These describe CONTENT, not merge work.
+        # physical_sha_excess_rows is what a naive global-SHA merge would have retired; it is
+        # reported for contrast only and is NEVER actionable. The actionable number is
+        # rows_eligible_for_retirement, which is always <= it.
         "physical_sha_groups": len(analyzed),
-        "total_document_rows_in_groups": sum(g["row_count"] for g in analyzed),
-        # OWNERSHIP-SCOPED view: what may actually merge. A hash group splits into one partition per
-        # distinct ownership tuple; only partitions holding 2+ documents are merge candidates.
+        "physical_sha_document_rows": physical_rows,
+        "physical_sha_excess_rows": physical_rows - len(analyzed),
+        # --- OWNERSHIP-SCOPED MERGE POPULATION ------------------------------------------------
+        # What may actually merge. A hash group splits into one partition per distinct ownership
+        # tuple; only partitions holding 2+ documents are merge candidates. These three reconcile:
+        #   physical_sha_document_rows
+        #     = ownership_scoped_merge_groups (one survivor each)
+        #     + rows_eligible_for_retirement
+        #     + cross_owner_rows_preserved
         "ownership_partitions": len(partitions),
         "ownership_scoped_merge_groups": len(merge_partitions),
-        "rows_eligible_for_retirement": sum(g["excess_rows"] for g in analyzed),
-        "excess_duplicate_rows": sum(g["excess_rows"] for g in analyzed),
-        "cross_owner_rows_preserved": sum(g["rows_preserved_cross_owner"] for g in analyzed),
+        "rows_eligible_for_retirement": eligible,
+        # Every row NOT proposed for retirement: partition survivors PLUS cross-owner copies.
+        "rows_preserved": physical_rows - eligible,
+        # The subset preserved specifically because no other row shares their ownership scope.
+        "cross_owner_rows_preserved": cross_owner_preserved,
         # Group-level classes (a group is SHARED_CONTENT when no partition can merge).
         "safe_auto_merge_groups": by_class[SAFE],
         "review_required_groups": by_class[REVIEW],
@@ -771,8 +787,10 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
         "merge_partitions_review_required": partition_class[REVIEW],
         "merge_partitions_blocked": partition_class[BLOCKED],
         "groups_by_shape": dict(sorted(shapes.items())),
+        # --- DEPENDENCY / PROVENANCE ----------------------------------------------------------
+        # "proposed": no executor exists, so nothing has been or will be retired by this run.
         "total_proposed_reassignments": sum(g["total_reassignments"] for g in analyzed),
-        "total_rows_eventually_retired": sum(g["excess_rows"] for g in analyzed),
+        "proposed_retirement_rows": eligible,
         "provenance_tuples_preserved": sum(g["provenance"]["preserved_after_merge"] for g in analyzed),
         "provenance_rows_seen": sum(g["provenance"]["rows"] for g in analyzed),
         "reassignments_by_table": dict(sorted(dependent_totals.items())),
@@ -977,7 +995,7 @@ def _blocked_summary(detailed, report) -> dict:
     return {
         "blocked_groups_total": report["blocked_groups"],
         "shared_content_groups_total": report["shared_content_groups"],
-        "blocked_groups_in_this_report": len(detailed),
+        "groups_in_this_report": len(detailed),
         "rows_preserved_cross_owner": sum(g["rows_preserved_cross_owner"] for g in detailed),
         "by_classification": {
             k: sum(1 for g in detailed if g["classification"] == k) for k in (BLOCKED, SHARED)},
