@@ -605,6 +605,49 @@ def test_connector_timeout_surfaced_not_hung():
 # so the importer saw 0 staged items and (before the fix) reported the whole corpus missing. The adapter
 # now stages metadata via the connector's own delta iterator instead — files only, no content download.
 
+# --- the connector's CURRENT authenticated Graph request path -----------------------------------
+# Production builds its Graph session through the REAL connector's auth path
+# (app/connectors/microsoft365/sharepoint_content.py): _load_connected_account -> _acquire_token ->
+# _auth_header, applied to a requests.Session. These stubs mirror exactly that surface, so a
+# connector that satisfies production also satisfies the tests. (The earlier speculative trio
+# latest_account/get_microsoft_access_token/graph_session never existed on the real connector.)
+
+
+class _FakeGraphSession:
+    """Stands in for requests.Session — production sets the auth header on it."""
+
+    def __init__(self):
+        self.headers = {}
+
+    def get(self, url, **kw):                                  # pragma: no cover — not used by enumeration
+        raise AssertionError("enumeration must not issue HTTP requests")
+
+
+def _auth_api(recorder=None, *, session_cls=_FakeGraphSession):
+    """The four attributes ``_connector_session`` requires, with optional call recording."""
+    import types
+
+    def _record(entry):
+        if recorder is not None:
+            recorder.append(entry)
+
+    def _load_connected_account():
+        _record("_load_connected_account")
+        return {"id": "acct-1"}
+
+    def _acquire_token(account):
+        _record(("_acquire_token", account["id"]))
+        return f"tok:{account['id']}"
+
+    def _auth_header(token):
+        _record(("_auth_header", token))
+        return {"Authorization": f"Bearer {token}"}
+
+    return {"_load_connected_account": _load_connected_account, "_acquire_token": _acquire_token,
+            "_auth_header": _auth_header,
+            "requests": types.SimpleNamespace(Session=session_cls)}
+
+
 def _delta_connector(recorder, *, files=10, folders=5):
     """A connector shaped like production: run() couples download+manifest (unusable for dry-run), while
     iter_drive_items() yields raw Graph driveItems (files + folders) with NO download."""
@@ -625,7 +668,9 @@ def _delta_connector(recorder, *, files=10, folders=5):
                    "lastModifiedDateTime": "2024-01-01T00:00:00Z",
                    "parentReference": {"path": "/drive/root:/Clients", "driveId": drive_id, "siteId": "S1"}}
 
-    return types.SimpleNamespace(run=run, iter_drive_items=iter_drive_items)
+    # iter_drive_items here declares no ``session`` parameter, but production builds the session
+    # before dispatch, so the connector must still expose the auth path.
+    return types.SimpleNamespace(run=run, iter_drive_items=iter_drive_items, **_auth_api(recorder))
 
 
 def test_iter_drive_items_stages_file_metadata_without_download():
@@ -700,21 +745,9 @@ def test_partial_dry_run_does_not_report_existing_corpus_missing(tmp_path):
 
 def _session_delta_connector(recorder, *, files=10, folders=5):
     """A connector shaped like production: iter_drive_items(session, drive_id) needs an authenticated
-    requests.Session, and run() builds it from latest_account -> get_microsoft_access_token -> graph_session.
-    The adapter must reuse those exact three functions to construct the session for dry-run enumeration."""
+    requests.Session, which the adapter builds through the connector's OWN auth path
+    (_load_connected_account -> _acquire_token -> _auth_header applied to requests.Session)."""
     import types
-
-    def latest_account():
-        recorder.append("latest_account")
-        return {"id": "acct-1"}
-
-    def get_microsoft_access_token(account):
-        recorder.append(("token", account["id"]))
-        return f"tok:{account['id']}"
-
-    def graph_session(token):
-        recorder.append(("session", token))
-        return {"__session__": True, "token": token}          # stand-in for requests.Session
 
     def run(*, drive_id, root, download, limit, manifest):     # present (needs_drive); NOT used in dry-run
         recorder.append(("run", drive_id))
@@ -722,7 +755,8 @@ def _session_delta_connector(recorder, *, files=10, folders=5):
 
     def iter_drive_items(session, drive_id):                   # exact production signature (positional)
         recorder.append(("iter", session, drive_id))
-        assert isinstance(session, dict) and session.get("__session__") is True   # the built session
+        assert isinstance(session, _FakeGraphSession)          # the session the adapter built
+        assert session.headers.get("Authorization") == "Bearer tok:acct-1"   # ...authenticated
         for i in range(folders):
             yield {"id": f"F{i}", "name": f"Folder{i}", "folder": {"childCount": 1},
                    "parentReference": {"driveId": drive_id, "siteId": "S1", "path": "/drive/root:"}}
@@ -732,10 +766,7 @@ def _session_delta_connector(recorder, *, files=10, folders=5):
                    "lastModifiedDateTime": "2024-01-01T00:00:00Z",
                    "parentReference": {"driveId": drive_id, "siteId": "S1", "path": "/drive/root:/Clients"}}
 
-    return types.SimpleNamespace(latest_account=latest_account,
-                                 get_microsoft_access_token=get_microsoft_access_token,
-                                 graph_session=graph_session, run=run,
-                                 iter_drive_items=iter_drive_items)
+    return types.SimpleNamespace(run=run, iter_drive_items=iter_drive_items, **_auth_api(recorder))
 
 
 def test_enumerator_builds_session_from_connector_auth_path():
@@ -744,12 +775,13 @@ def test_enumerator_builds_session_from_connector_auth_path():
     stager = mi.resolve_sharepoint_stager(module=_session_delta_connector(rec), drive_ids=["drvS"],
                                           dry_run=True, diag=diag)
     items = stager()
-    # session was built via the connector's OWN three functions, in order...
-    assert rec[0] == "latest_account"
-    assert ("token", "acct-1") in rec and ("session", "tok:acct-1") in rec
+    # session was built via the connector's OWN auth path, in order...
+    assert rec[0] == "_load_connected_account"
+    assert ("_acquire_token", "acct-1") in rec and ("_auth_header", "tok:acct-1") in rec
     # ...and iter_drive_items received exactly that authenticated session + the drive id
     icall = next(c for c in rec if isinstance(c, tuple) and c[0] == "iter")
-    assert icall[1] == {"__session__": True, "token": "tok:acct-1"} and icall[2] == "drvS"
+    assert isinstance(icall[1], _FakeGraphSession) and icall[2] == "drvS"
+    assert icall[1].headers.get("Authorization") == "Bearer tok:acct-1"
     assert not any(c[0] == "run" for c in rec if isinstance(c, tuple))   # NOT a run() fallback
     assert len(items) == 10 and diag["total_items"] == 10 and not diag.get("enum_errors")
     assert items[0]["web_url"] == "https://sp/drvS/doc0.pdf" and items[0]["dry_run"] is True
@@ -789,7 +821,11 @@ def test_enumerator_falls_back_to_run_only_when_auth_path_absent():
                                           iter_drive_items=iter_drive_items),
                                           drive_ids=["d1"], dry_run=True, diag=diag)
     stager()
-    assert diag.get("enum_errors") and "session" in diag["enum_errors"][0]
+    # Behaviour, not wording: auth-path construction fails, the failure is RECORDED, and enumeration
+    # falls back to run(). Pinning the message text made this break when the message legitimately
+    # changed, while the behaviour it guards never did.
+    assert diag.get("enum_errors"), "the auth-path failure must be recorded for the operator"
+    assert diag["enum_errors"][0].startswith("d1:")              # attributed to the drive
     assert any(c[0] == "run" for c in rec)       # fell back to run()
 
 
@@ -801,20 +837,11 @@ def test_enumerator_falls_back_to_run_only_when_auth_path_absent():
 def _counting_connector(consumed, *, files=10, folders=5):
     import types
 
-    def latest_account():
-        return {"id": "acct-1"}
-
-    def get_microsoft_access_token(account):
-        return f"tok:{account['id']}"
-
-    def graph_session(token):
-        return {"__session__": True, "token": token}
-
     def run(*, drive_id, root, download, limit, manifest):    # present (needs_drive); not used in dry-run
         return {"status": "ok"}
 
     def iter_drive_items(session, drive_id):
-        assert session and session.get("__session__") is True
+        assert isinstance(session, _FakeGraphSession) and session.headers.get("Authorization")
         for i in range(folders):                              # 5 folders first (skipped, don't count)
             consumed.append(("folder", i))
             yield {"id": f"F{i}", "name": f"Folder{i}", "folder": {"childCount": 1},
@@ -829,10 +856,7 @@ def _counting_connector(consumed, *, files=10, folders=5):
         raise AssertionError("iterator consumed past the first 15 raw items (limit not honored)")
         yield  # pragma: no cover — unreachable; makes this unambiguously a generator
 
-    return types.SimpleNamespace(latest_account=latest_account,
-                                 get_microsoft_access_token=get_microsoft_access_token,
-                                 graph_session=graph_session, run=run,
-                                 iter_drive_items=iter_drive_items)
+    return types.SimpleNamespace(run=run, iter_drive_items=iter_drive_items, **_auth_api())
 
 
 def test_enumerator_streams_and_stops_at_limit_without_materializing():
@@ -2445,18 +2469,17 @@ def test_managed_graph_session_reauths_on_401():
     state = {"builds": 0}
 
     class _S:
-        def __init__(self, n):
-            self.n = n
+        """A requests.Session stand-in: the FIRST session built answers 401, the rebuilt one 200."""
+
+        def __init__(self):
+            state["builds"] += 1
+            self.n = state["builds"]
+            self.headers = {}
 
         def get(self, url, **kw):
             return _FakeResp(401 if self.n == 1 else 200, b"ok")
 
-    def graph_session(_tok):
-        state["builds"] += 1
-        return _S(state["builds"])
-    mod = types.SimpleNamespace(latest_account=lambda: {"id": "a"},
-                                get_microsoft_access_token=lambda acct: "tok",
-                                graph_session=graph_session)
+    mod = types.SimpleNamespace(**_auth_api(session_cls=_S))
     ms = mi._ManagedGraphSession(mod)                               # build #1
     r = ms.get("https://graph.microsoft.com/v1.0/x")
     assert r.status_code == 200 and state["builds"] == 2           # re-auth rebuilt once, then 200
