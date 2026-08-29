@@ -155,14 +155,29 @@ def test_unknown_extension_stays_unsupported(tmp_path):
 # --- inventory + reanalyze (read-only / no mutation) ----------------------------------------------
 
 def test_inventory_lists_unsupported_and_no_mutation(tmp_path):
-    f = tmp_path / "x.zip"
-    f.write_bytes(b"not extractable")
-    did = _doc(f, "archive.zip")                           # unknown type -> UNSUPPORTED
+    # A RECOGNIZED document type that still yields no usable text. ".zip" would no longer appear:
+    # document-intelligence eligibility keeps non-document artifacts out of the analysis corpus
+    # entirely, which is asserted separately below.
+    f = tmp_path / "x.docx"
+    f.write_bytes(b"not a real docx")
+    did = _doc(f, "statement.docx")
     res = du.inventory()
     row = next((r for r in res["rows"] if r["document_id"] == did), None)
-    assert row and row["extension"] == "zip" and row["failure_reason"] in ("unsupported", "no_usable_text")
-    assert res["by_extension"].get("zip", 0) >= 1
+    assert row and row["extension"] == "docx" and row["failure_reason"] in ("unsupported", "no_usable_text")
+    assert res["by_extension"].get("docx", 0) >= 1
     assert _owner(did) == (None, None, None)               # inventory writes nothing
+
+
+def test_inventory_ignores_non_document_artifacts(tmp_path):
+    """Program/runtime files are not analysis candidates, so they never reach the inventory — while
+    the rows themselves remain present and queryable."""
+    f = tmp_path / "x.zip"
+    f.write_bytes(b"not extractable")
+    did = _doc(f, "archive.zip")
+    res = du.inventory()
+    assert all(r["document_id"] != did for r in res["rows"])
+    with engine.connect() as c:
+        assert c.execute(select(documents.c.id).where(documents.c.id == did)).scalar() == did
 
 
 def test_reanalyze_recovers_docx_from_unsupported(tmp_path):

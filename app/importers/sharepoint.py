@@ -44,6 +44,7 @@ from app.importers.taxdome_drive import (
     resolve_folder,
     sanitize_relative_path,
 )
+from app.services.document_eligibility import DOC_FAMILY
 from app.services.storage_paths import document_root as _document_root
 
 SOURCE_SYSTEM = "SharePoint"
@@ -54,16 +55,9 @@ DEFAULT_DESTINATION_ROOT = _document_root("SharePoint", "CLIENT360_SHAREPOINT_DO
 
 _Database = namedtuple("_Database", "engine documents document_sources")
 
-# Extension → coarse document family (discovery; name-only, no contents/OCR).
-_DOC_FAMILY = {
-    "pdf": {"pdf"},
-    "word": {"doc", "docx", "docm", "dot", "dotx", "rtf"},
-    "excel": {"xls", "xlsx", "xlsm", "xlsb", "csv"},
-    "powerpoint": {"ppt", "pptx", "ppsx", "pps"},
-    "image": {"png", "jpg", "jpeg", "gif", "tif", "tiff", "bmp", "heic", "webp"},
-    "text": {"txt", "md", "log"},
-    "email": {"msg", "eml"},
-}
+# Extension → coarse document family (discovery; name-only, no contents/OCR). ``DOC_FAMILY`` lives in
+# app.services.document_eligibility so LABELLING here and ANALYSIS eligibility cannot drift apart.
+_DOC_FAMILY = DOC_FAMILY
 
 
 @cache

@@ -26,6 +26,7 @@ from collections import Counter
 from sqlalchemy import select
 
 from app.db import documents, engine, metadata, people, relationship_entities
+from app.services.document_eligibility import is_intelligence_eligible
 from app.services.document_owner_proposal import (
     _EMAIL_RE,
     _PHONE_RE,
@@ -46,13 +47,39 @@ CONTRADICTION_CLASSES = (
 
 
 def _unassigned_ids(conn, limit=None):
-    stmt = (select(documents.c.id)
+    """Documents eligible for OWNERSHIP ANALYSIS / REVIEW. Nothing else may use this selector.
+
+    Program/runtime artifacts (``.dll``, ``.000``, ``.exe``, Drake data blobs …) were ingested by
+    importers that apply no type filter, and became owner-proposal candidates. They are filtered out
+    HERE, at the analysis boundary — the rows themselves are untouched, keep their provenance and
+    stay fully queryable; they simply do not enter document intelligence.
+
+    AUTHORITY BOUNDARY — do not cross it:
+      * This is a DOCUMENT OWNERSHIP/REVIEW selector (proposal, review queue, confirm, new-entity
+        proposal, NO_MATCH context). It is NOT an input to MDM.
+      * Drake is a PRIMARY AUTHORITY for identity and duplicate resolution, and that authority runs
+        entirely through ``source_contacts`` (``source_system='Drake'`` →
+        ``raw_data.identifier_hash`` → ``drake_identity`` → ``drake_identity_match_candidates``).
+        It never reads the ``documents`` corpus.
+      * Document eligibility must therefore NEVER control MDM, canonical person/household/business
+        identity, duplicate resolution, Drake authority, provenance, or evidence retention. A file
+        that is not worth analysing can still be authoritative evidence and must remain so.
+      * A Drake-native file may simultaneously be authoritative for identity, preserved as
+        provenance, and neither OCR- nor classification-eligible. Excluding it here says nothing
+        about its evidential standing.
+      * ``document_pipeline._unassigned_ids`` is a SEPARATE selector and is deliberately NOT gated:
+        it drives fact/OCR production, so gating it would change what evidence EXISTS rather than
+        what is offered for review.
+    """
+    stmt = (select(documents.c.id, documents.c.original_name, documents.c.content_type)
             .where(documents.c.person_id.is_(None), documents.c.household_id.is_(None),
                    documents.c.organization_id.is_(None), documents.c.status != "deleted")
             .order_by(documents.c.id))
     if limit:
         stmt = stmt.limit(limit)
-    return [r[0] for r in conn.execute(stmt) if r[0] not in PERMANENT_REJECT_DOCUMENT_IDS]
+    return [r[0] for r in conn.execute(stmt)
+            if r[0] not in PERMANENT_REJECT_DOCUMENT_IDS
+            and is_intelligence_eligible(r[1], r[2])]
 
 
 def _doc_meta(conn, did, folder):
