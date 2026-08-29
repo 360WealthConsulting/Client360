@@ -205,7 +205,11 @@ def portal_activity_report(principal):
     from sqlalchemy import func, or_, select
 
     from app.db import engine, insurance_policies, portal_access_grants
-    today = date.today()
+    from app.portal.service import grant_today
+
+    # Grants are written in UTC; comparing them against the server's local date made this count
+    # drop grants created during the evening UTC/local rollover window.
+    today = grant_today()
     with engine.connect() as c:
         grants = c.execute(select(portal_access_grants).where(
             portal_access_grants.c.effective_date <= today,

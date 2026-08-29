@@ -22,8 +22,19 @@ class PortalPrincipal:
     display_name: str
 
 def _hash(value): return hashlib.sha256(value.encode()).hexdigest()
+def grant_today() -> date:
+    """The calendar date portal access grants are measured in — UTC, always.
+
+    Grants are WRITTEN from ``datetime.now(timezone.utc).date()`` (see ``invite_portal_account``),
+    so every comparison must use the same basis. Reading with the server's LOCAL date meant that in
+    the evening window where UTC has rolled over but local time has not, a grant created moments
+    earlier had ``effective_date`` one day in the future and the account was denied its own access
+    until local midnight. Use this everywhere a grant date is compared."""
+    return datetime.now(timezone.utc).date()
+
+
 def _active_grant():
-    today = date.today()
+    today = grant_today()
     return and_(portal_access_grants.c.effective_date <= today, or_(portal_access_grants.c.inactive_date.is_(None), portal_access_grants.c.inactive_date >= today))
 
 class PortalAccountConflictError(ValueError):
