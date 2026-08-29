@@ -49,18 +49,29 @@ def _seed_client(conn, tag, now, *, assigned_to=None, household_id=None,
                  exc_severity="high"):
     """Seed one client with the records that drive each signal. Flags toggle which
     records exist so negative cases (current review, resolved exception, future/
-    completed task, out-of-window/non-calendar meeting) can be built."""
+    completed task, out-of-window/non-calendar meeting) can be built.
+
+    POSITIVE cases are dated from the fixed fixture ``now`` — a past-dated record stays past-dated
+    however long from now the suite runs, so they are deterministic.
+
+    NEGATIVE cases must be dated from the REAL clock. They assert the ABSENCE of a signal, and the
+    dashboard route evaluates producers against the current date (``_firm_now(None)``), not against
+    this fixture. A "future" task dated ``fixture_now + 30d`` silently became overdue once real time
+    passed 2026-08-15, and a "recently reviewed" account dated from the fixture would likewise go
+    stale at ``fixture_now + 365d``. Anchoring the negatives to ``date.today()`` removes both
+    expiries instead of moving them."""
     today = now.date()
+    real_today = date.today()          # the clock the dashboard route actually evaluates against
     pid = conn.execute(people.insert().values(
         full_name=f"Client {tag}", primary_email=f"{tag}@e.test",
         normalized_email=f"{tag}@e.test", household_id=household_id, active=True,
     ).returning(people.c.id)).scalar_one()
 
-    # Account — never-reviewed (review=True) -> overdue High; recent -> current.
+    # Account — never-reviewed (review=True) -> overdue High; recently reviewed -> current.
     conn.execute(insert(accounts).values(
         person_id=pid, custodian="Schwab", account_number=f"ACCT-{tag}",
         account_name=f"Acct {tag}", status="open",
-        last_review_date=None if review else today))
+        last_review_date=None if review else real_today))
 
     if exception:
         conn.execute(insert(exceptions).values(
@@ -68,8 +79,8 @@ def _seed_client(conn, tag, now, *, assigned_to=None, household_id=None,
             severity=exc_severity, status="open", title=f"Exc {tag}", source="system",
             opened_at=now, escalation_level=0, notification_count=0, person_id=pid))
 
-    # Task — overdue (past due, open) vs future (due next month, open).
-    due = today - timedelta(days=5) if task_overdue else today + timedelta(days=30)
+    # Task — overdue (past due, open) vs future (open, due far enough ahead that it cannot age in).
+    due = today - timedelta(days=5) if task_overdue else real_today + timedelta(days=3650)
     conn.execute(insert(tasks).values(
         person_id=pid, title=f"Task {tag}", status="open", priority="normal", due_date=due))
 
