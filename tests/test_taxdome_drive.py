@@ -14,6 +14,8 @@ from pathlib import Path, PurePosixPath
 import pytest
 from starlette.requests import Request
 
+from sqlalchemy import text as sa_text
+
 from app.db import documents, engine, households, people
 from app.demo import taxdome_drive as page
 from app.importers import taxdome_drive as td
@@ -415,12 +417,17 @@ def test_mixed_legacy_and_new_rows_reconciled(tmp_path):
     abs_path = str(src / "Okoro Family" / "Engagement Agreement.pdf")
     _sync(src, dst)                                          # creates a new-style row (no person)
     _legacy_row(src, abs_path, "Okoro Family", person_id=pid)   # legacy row for the SAME file, linked
+    # Dependent intelligence on the row that SURVIVES must come through the reconcile intact.
+    legacy_id = [r["id"] for r in _taxdome_rows() if r["person_id"] == pid][0]
+    _dependent_ocr(legacy_id, text="engagement agreement text")
     summary = _sync(src, dst)
     assert summary["reconciled"] >= 1
     matches = [r for r in _taxdome_rows() if r["original_name"] == "Engagement Agreement.pdf"]
     assert len(matches) == 1                                 # reconciled to one canonical row
     assert matches[0]["person_id"] == pid                    # the linked row was preserved
     assert matches[0]["stored_name"] == td._stored_name(os.path.relpath(abs_path, src))
+    assert _ocr_text(legacy_id) == "engagement agreement text", \
+        "the surviving row's OCR text must not be destroyed by reconciliation"
 
 
 def test_missing_count_correct_after_legacy_matching(tmp_path):
@@ -650,3 +657,135 @@ def test_resolve_keep_separate_creates_person(tmp_path, monkeypatch):
     linked = [r for r in _taxdome_rows()
               if r["tags"]["taxdome_folder"] == "Okoro Family" and r["person_id"] is not None]
     assert len(linked) == 1
+
+
+# --- legacy-key reconciliation must never CASCADE away document intelligence --------------------
+#
+# Deleting a documents row cascades to its OCR, classifications, facts, source references,
+# relationships and events, and aborts on the NO ACTION referrers. These pin the safety rule:
+# a duplicate that anything still references is never deleted.
+
+def _dependent_ocr(document_id, *, text="cached text"):
+    with engine.begin() as conn:
+        conn.execute(sa_text(
+            "INSERT INTO document_ocr (document_id, status, text, char_count) "
+            "VALUES (:d, 'completed', :t, :n)"), {"d": document_id, "t": text, "n": len(text)})
+
+
+def _ocr_text(document_id):
+    with engine.connect() as conn:
+        return conn.execute(sa_text("SELECT text FROM document_ocr WHERE document_id = :d"),
+                            {"d": document_id}).scalar()
+
+
+def _dependent_source(document_id):
+    with engine.begin() as conn:
+        conn.execute(sa_text(
+            "INSERT INTO document_sources (document_id, source_system, source_uri) "
+            "VALUES (:d, 'TaxDome Drive', :u)"), {"d": document_id, "u": f"probe://{document_id}"})
+
+
+def _dependent_fact_and_classification(document_id):
+    with engine.begin() as conn:
+        conn.execute(sa_text(
+            "INSERT INTO document_facts (document_id, fact_type, fact_value, extraction_engine) "
+            "VALUES (:d, 'probe', 'value', 'test')"), {"d": document_id})
+        conn.execute(sa_text(
+            "INSERT INTO document_classifications (document_id, doc_type, classifier_version) "
+            "VALUES (:d, 'probe_type', 'test')"), {"d": document_id})
+
+
+def _count(table, document_id, column="document_id"):
+    with engine.connect() as conn:
+        return conn.execute(sa_text(
+            f"SELECT count(*) FROM {table} WHERE {column} = :d"), {"d": document_id}).scalar()
+
+
+def _reconcile_pair(tmp_path):
+    """A legacy row (linked, canonical) + a new-style row (the duplicate holding the target key)."""
+    src, dst = _dirs(tmp_path)
+    _tree(src)
+    pid = _person("Delgado, Alex")
+    abs_path = str(src / "Okoro Family" / "Engagement Agreement.pdf")
+    _sync(src, dst)                                          # creates the new-style row
+    _legacy_row(src, abs_path, "Okoro Family", person_id=pid)
+    rows = {r["stored_name"]: r for r in _taxdome_rows()
+            if r["original_name"] == "Engagement Agreement.pdf"}
+    key = td._stored_name(os.path.relpath(abs_path, src))
+    return src, dst, pid, rows[key]["id"]                    # the duplicate that would be deleted
+
+
+def test_dependent_ocr_row_prevents_deletion(tmp_path):
+    src, dst, _pid, dup_id = _reconcile_pair(tmp_path)
+    _dependent_ocr(dup_id)
+    summary = _sync(src, dst)
+    assert summary["reconcile_skipped_has_dependents"] >= 1
+    assert _count("documents", dup_id, "id") == 1, "the referenced duplicate must survive"
+    assert _ocr_text(dup_id) == "cached text", "its OCR text must survive"
+    # The blocked duplicate HOLDS the target stored_name, so the canonical row cannot take that key.
+    # The file must be skipped cleanly rather than raising a unique violation the run then records.
+    assert summary["errors"] == [], f"reconcile should skip cleanly, not error: {summary['errors']}"
+
+
+def test_dependent_document_sources_row_prevents_deletion(tmp_path):
+    src, dst, _pid, dup_id = _reconcile_pair(tmp_path)
+    _dependent_source(dup_id)
+    summary = _sync(src, dst)
+    assert summary["reconcile_skipped_has_dependents"] >= 1
+    assert _count("documents", dup_id, "id") == 1
+    assert _count("document_sources", dup_id) >= 1, "provenance must survive"
+
+
+def test_dependent_facts_and_classification_survive(tmp_path):
+    src, dst, _pid, dup_id = _reconcile_pair(tmp_path)
+    _dependent_fact_and_classification(dup_id)
+    _sync(src, dst)
+    assert _count("document_facts", dup_id) == 1
+    assert _count("document_classifications", dup_id) == 1
+
+
+def test_no_action_reference_is_skipped_rather_than_aborting_the_sync(tmp_path):
+    """exceptions.document_id is ON DELETE NO ACTION — deleting would raise mid-sync."""
+    src, dst, _pid, dup_id = _reconcile_pair(tmp_path)
+    with engine.begin() as conn:
+        etype = conn.execute(sa_text("SELECT id FROM exception_types LIMIT 1")).scalar()
+        conn.execute(sa_text(
+            "INSERT INTO exceptions (exception_type_id, domain, category, severity, title,"
+            " document_id) VALUES (:t, 'operations', 'document', 'low', 'probe', :d)"),
+            {"t": etype, "d": dup_id})
+    try:
+        summary = _sync(src, dst)                            # must NOT raise
+        assert summary["status"] != "failed"
+        assert summary["reconcile_skipped_has_dependents"] >= 1
+        assert _count("documents", dup_id, "id") == 1
+    finally:
+        # NO ACTION also blocks the suite's document wipe; release it for teardown.
+        with engine.begin() as conn:
+            conn.execute(sa_text("DELETE FROM exceptions WHERE document_id = :d"), {"d": dup_id})
+
+
+def test_summary_records_the_skipped_reconciliation(tmp_path):
+    src, dst, _pid, dup_id = _reconcile_pair(tmp_path)
+    _dependent_ocr(dup_id)
+    summary = _sync(src, dst)
+    details = [d for d in summary["reconcile_skipped_details"] if d["document_id"] == dup_id]
+    assert len(details) == 1
+    assert "document_ocr.document_id" in details[0]["dependents"]
+
+
+def test_an_unreferenced_legacy_duplicate_is_still_reconciled(tmp_path):
+    """The narrow existing behaviour is unchanged when nothing references the duplicate."""
+    src, dst, pid, dup_id = _reconcile_pair(tmp_path)
+    summary = _sync(src, dst)
+    assert summary["reconcile_skipped_has_dependents"] == 0
+    assert _count("documents", dup_id, "id") == 0, "an orphaned duplicate is still removed"
+    matches = [r for r in _taxdome_rows() if r["original_name"] == "Engagement Agreement.pdf"]
+    assert len(matches) == 1 and matches[0]["person_id"] == pid
+
+
+def test_dry_run_previews_the_skip_without_changing_anything(tmp_path):
+    src, dst, _pid, dup_id = _reconcile_pair(tmp_path)
+    _dependent_ocr(dup_id)
+    summary = _sync(src, dst, dry_run=True)
+    assert summary["reconcile_skipped_has_dependents"] >= 1
+    assert _count("documents", dup_id, "id") == 1

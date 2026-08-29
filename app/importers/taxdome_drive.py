@@ -54,6 +54,7 @@ from pathlib import Path, PurePosixPath
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, and_, create_engine, func, or_, select
+from sqlalchemy import text as sa_text
 
 from app.services.storage_paths import document_root as _document_root
 
@@ -321,6 +322,7 @@ def _new_summary(source_root, destination_root, scan_id, started):
         "folders_examined": 0, "files_examined": 0, "copied": 0, "updated": 0, "skipped": 0,
         "bytes_copied": 0, "missing": 0, "purged": 0, "ignored": 0, "errors": [],
         "legacy_rows_to_upgrade": 0, "legacy_rows_upgraded": 0, "reconciled": 0,
+        "reconcile_skipped_has_dependents": 0, "reconcile_skipped_details": [],
         "folders_linked": 0, "folders_unresolved": 0, "status": "started", "dry_run": False,
     }
 
@@ -413,6 +415,44 @@ def sync(source_root: str | os.PathLike | None = None,
     return summary
 
 
+# --- legacy-key reconciliation safety -----------------------------------------------------------
+# Deleting a documents row CASCADES to its OCR, classifications, facts, source references,
+# relationships, events and version history, and ABORTS on the NO ACTION referrers. The legacy-key
+# reconciliation below therefore refuses to delete a row that anything still references. The FK list
+# is read from the LIVE schema rather than hardcoded, so a newly added reference is covered the day
+# it is created instead of silently losing data.
+_DOCUMENT_REFERENCE_SQL = """
+SELECT tc.table_name, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+WHERE tc.constraint_type = 'FOREIGN KEY'
+  AND ccu.table_name = 'documents' AND ccu.column_name = 'id'
+  AND tc.table_name <> 'documents'
+"""
+_DOCUMENT_REFERENCES: list[tuple[str, str]] | None = None
+
+
+def _document_references(conn):
+    """Every (table, column) with a real FK to documents.id. Cached for the life of the process."""
+    global _DOCUMENT_REFERENCES
+    if _DOCUMENT_REFERENCES is None:
+        _DOCUMENT_REFERENCES = sorted(
+            (r[0], r[1]) for r in conn.execute(sa_text(_DOCUMENT_REFERENCE_SQL)).fetchall())
+    return _DOCUMENT_REFERENCES
+
+
+def _dependent_tables(conn, document_id) -> list[str]:
+    """``table.column`` for every reference that still points at this document. Empty = safe to
+    delete. One UNION ALL query, so the cost does not grow with the number of referring tables."""
+    refs = _document_references(conn)
+    if not refs:
+        return []
+    union = " UNION ALL ".join(
+        f"SELECT '{t}.{c}' AS ref FROM {t} WHERE {c} = :did" for t, c in refs)
+    return [r[0] for r in conn.execute(sa_text(union), {"did": document_id}).fetchall()]
+
+
 def _resolve_identity(rows, key, legacy_key):
     """Resolve the candidate rows for one source file into (canonical, duplicates, had_legacy).
 
@@ -494,7 +534,16 @@ def _sync_one_file(db, source, destination, folder_name, abs_path, filename, sca
             summary["bytes_copied"] += source_size
         if had_legacy:
             summary["legacy_rows_to_upgrade"] += 1
-        summary["reconciled"] += len(duplicates)
+        # Preview the SAME safety decision the real run makes, so an operator sees what would be
+        # skipped before committing to a sync. Read-only.
+        with db.engine.connect() as probe:
+            blocked_preview = [d for d in duplicates if _dependent_tables(probe, d["id"])]
+        if blocked_preview:
+            summary["reconcile_skipped_has_dependents"] += len(blocked_preview)
+            summary["reconcile_skipped_details"].extend(
+                {"document_id": d["id"], "stored_name": d["stored_name"],
+                 "source_relative_path": rel_str, "dry_run": True} for d in blocked_preview)
+        summary["reconciled"] += len(duplicates) - len(blocked_preview)
         return
 
     # Copy the bytes when needed; on a genuine skip, reuse the verified local copy's hash/size.
@@ -524,7 +573,25 @@ def _sync_one_file(db, source, destination, folder_name, abs_path, filename, sca
     with db.engine.begin() as conn:
         # Remove duplicate rows first so converting the canonical row to the new key cannot collide on
         # the unique stored_name. Only DB rows are removed here — never the retained local file.
+        # A duplicate that anything still references is NEVER deleted: the cascade would take its OCR,
+        # classifications, facts and source references with it, and the NO ACTION referrers would abort
+        # the whole sync. Such a row is left exactly as it is and reported instead.
+        removable, blocked = [], []
         for dup in duplicates:
+            deps = _dependent_tables(conn, dup["id"])
+            (blocked if deps else removable).append((dup, deps))
+        if blocked:
+            summary["reconcile_skipped_has_dependents"] += len(blocked)
+            summary["reconcile_skipped_details"].extend(
+                {"document_id": dup["id"], "stored_name": dup["stored_name"],
+                 "dependents": deps, "source_relative_path": rel_str}
+                for dup, deps in blocked)
+        # A blocked duplicate that HOLDS the target key cannot be reconciled at all: converting the
+        # canonical row to that key would violate the unique stored_name. Leave both rows untouched
+        # for this file rather than delete data or raise — the next run retries.
+        if any(dup["stored_name"] == key for dup, _ in blocked):
+            return
+        for dup, _deps in removable:
             conn.execute(db.documents.delete().where(db.documents.c.id == dup["id"]))
         if canonical is None:
             conn.execute(db.documents.insert().values(
@@ -542,7 +609,7 @@ def _sync_one_file(db, source, destination, folder_name, abs_path, filename, sca
             summary["updated" if action != "skip" else "skipped"] += 1
         if had_legacy:
             summary["legacy_rows_upgraded"] += 1
-        summary["reconciled"] += len(duplicates)
+        summary["reconciled"] += len(removable)
     if action in ("new", "changed"):
         summary["bytes_copied"] += size
 
