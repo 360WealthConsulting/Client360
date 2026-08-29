@@ -41,8 +41,10 @@ def domain_nodes_edges(principal, person_id, household_id=None):
     try:
         from app.services.advisor_workspace import get_client_snapshot
         snap = get_client_snapshot(person_id, household_id) if person_id is not None else {}
-        if (snap.get("aum") or 0) > 0:
-            counts["accounts"] = None   # count of accounts not exposed here — presence + deep link only
+        # Account PRESENCE (never a total): the snapshot no longer carries AUM, so presence is read
+        # from the accounts list itself. Presence + deep link only, as before.
+        if snap.get("accounts"):
+            counts["accounts"] = None
         ins = snap.get("insurance") or {}
         if (ins.get("policy_count") or 0) > 0:
             counts["insurance"] = ins["policy_count"]

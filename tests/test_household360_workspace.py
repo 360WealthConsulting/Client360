@@ -123,7 +123,10 @@ def test_financial_rollup_reuses_authoritative_total_no_fabricated_net_worth():
     fin = ws["sections"]["financial"]
     assert fin["not_summed"] is True
     assert "net_worth" in fin["not_tracked"] and "liabilities" in fin["not_tracked"]
-    assert len(fin["members"]) == 2 and all("contribution_pct" in m for m in fin["members"])
+    # Members are listed WITHOUT per-member AUM or contribution_pct: a contribution percentage
+    # combined with any member's total reconstructs the household total exactly.
+    assert len(fin["members"]) == 2
+    assert all("contribution_pct" not in m and "aum" not in m for m in fin["members"])
 
 
 def test_incompatible_values_not_summed():
@@ -176,7 +179,8 @@ def test_household_snapshot():
     ws = get_household_workspace(FIRM, hid())
     s = ws["snapshot"]
     assert s["kind"] == "household_snapshot" and s["not_summed"] is True
-    assert s["member_count"] == 2 and {"portfolio_assets", "open_work", "connected_businesses"} <= set(s)
+    assert s["member_count"] == 2 and {"open_work", "connected_businesses"} <= set(s)
+    assert "portfolio_assets" not in s   # it was the household AUM total
 
 
 def test_quick_actions_deep_link_household():

@@ -34,7 +34,8 @@ NONE = Principal(3, "n@e.com", "None", frozenset({"record.read_all"}))   # no an
 
 def test_dashboard_and_widget_registries_complete():
     assert len(registry.DASHBOARD_REGISTRY) == 26  # +D.49..D.66 (…/enterprise_identity_access_governance/enterprise_data_governance), all reuse existing widgets
-    assert len(registry.WIDGET_REGISTRY) == 14
+    # 12, not 14: the firm_aum and aum_trend widgets were removed — AUM is exposed to nobody.
+    assert len(registry.WIDGET_REGISTRY) == 12
     for d in registry.DASHBOARD_REGISTRY:
         assert d.owner and d.audience and d.runtime_gate and d.navigation and d.widgets
         assert d.required_capabilities and d.governing_services
@@ -97,7 +98,7 @@ def test_list_dashboards_filters_by_capability():
 
 def test_executive_widget_restricted_for_non_executive():
     # A non-executive requesting a firm-AUM widget gets a restricted result (value withheld), never leaked.
-    w = get_widget(ADV, "firm_aum")
+    w = get_widget(ADV, "revenue_kpi")
     assert w is not None and w["restricted"] is True and w["value"] is None
 
 

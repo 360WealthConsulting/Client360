@@ -18,10 +18,8 @@ def build(principal, ctx) -> dict:
         "kind": "client_snapshot",
         "entity_type": ctx["entity_type"],
         "entity_id": ctx["entity_id"],
-        "assets": {"aum": portfolio.get("aum", portfolio.get("total_aum")) or 0,
-                   "cash": portfolio.get("cash") or 0,
-                   "household_aum": (portfolio.get("household") or {}).get("aum",
-                                    (portfolio.get("household") or {}).get("total_aum")) or 0},
+        # assets carries no AUM — see app/services/portfolio.py::_CANONICAL_KEYS.
+        "assets": {"cash": portfolio.get("cash") or 0},
         "revenue": revenue,
         "tax": snap.get("tax") or {"active": 0},
         "insurance": snap.get("insurance") or {"policy_count": 0, "total_face": 0},

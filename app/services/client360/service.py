@@ -152,7 +152,7 @@ def _client_snapshot(principal, ctx):
         # household mode — assemble the comparable figures without a person anchor.
         from app.services.exception_engine import open_count_for_client
         p = ctx["portfolio"]
-        return {"aum": p.get("aum", p.get("total_aum")) or 0, "cash": p.get("cash") or 0,
+        return {"cash": p.get("cash") or 0,
                 "insurance": {"policy_count": 0, "total_face": 0}, "tax": {"active": 0},
                 "open_exceptions": _safe(lambda: open_count_for_client(None, hid), 0), "open_tasks": 0}
     from app.services.advisor_workspace import get_client_snapshot

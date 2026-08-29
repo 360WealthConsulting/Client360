@@ -42,12 +42,10 @@ def _w(key, owner, source, aggregation, unit, viz, permission, deep_link, explai
 
 
 WIDGET_REGISTRY = (
-    # Firm revenue / AUM KPIs — executive-gated (values inherit the analytics.executive gate via
+    # Firm revenue KPIs — executive-gated (values inherit the analytics.executive gate via
     # compute_metric, returning restricted for non-executives).
-    _w("firm_aum", "portfolio", "analytics.metrics:aum", "sum", "currency", "card", "analytics.executive",
-       "/analytics", "Firm assets under management, from the Analytics Registry executive metric."),
-    _w("aum_trend", "analytics", "analytics.trends:aum", "trend", "currency", "trendline",
-       "analytics.executive", "/analytics", "AUM trend over recent snapshot periods."),
+    # The "firm_aum" and "aum_trend" widgets were REMOVED: 360Plus exposes assets under management
+    # to no one. analytics.executive still authorizes every other executive widget below.
     _w("revenue_kpi", "bizdev", "analytics.metrics:total_bd_revenue", "sum", "currency", "card",
        "analytics.executive", "/analytics", "Total business-development revenue, from the Analytics Registry."),
     _w("client_growth", "people", "analytics.metrics:client_count", "count", "count", "card",
@@ -106,7 +104,7 @@ def _d(key, owner, audience, gate, widgets, caps, navigation, governing, *, refr
 
 DASHBOARD_REGISTRY = (
     _d("executive", "executive_intelligence", "executive", "executive_dashboard.enabled",
-       ("firm_aum", "aum_trend", "revenue_kpi", "client_growth", "operational_health",
+       ("revenue_kpi", "client_growth", "operational_health",
         "compliance_workload", "workflow_status", "communication_activity"),
        ("analytics.executive",), "/executive",
        ("analytics", "portfolio", "bizdev", "workflow_automation", "recommendations", "communications")),
@@ -187,7 +185,7 @@ DASHBOARD_REGISTRY = (
     # Financial Operations (D.57) — the executive view of firm financial performance, composed from EXISTING
     # widgets (revenue + AUM, no new widget). The full financial surface lives at /financial-operations.
     _d("financial_operations", "executive_intelligence", "executive", "executive_dashboard.enabled",
-       ("revenue_kpi", "firm_aum", "operational_health"),
+       ("revenue_kpi", "operational_health"),
        ("analytics.view",), "/financial-operations",
        ("analytics", "runtime")),
     # Enterprise Risk & Assurance (D.58) — the executive view of enterprise risk posture, composed from

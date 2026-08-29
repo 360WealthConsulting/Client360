@@ -4,9 +4,8 @@
 {% block content %}
 <div class="page-header"><div><p class="eyebrow">Wealth</p><h1>Wealth dashboard</h1><p class="muted">Book triage — households and accounts that need attention.</p></div></div>
 
-{# Compact firm summary strip: context only (AUM + cash across the book). #}
+{# Compact firm summary strip: context only (cash across the book; AUM is never shown). #}
 <div class="row" style="gap:12px; flex-wrap:wrap; margin-bottom:18px">
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Firm AUM</span><h2 style="margin:2px 0">${{ "{:,.0f}".format(d.firm_aum or 0) }}</h2></article>
   <article class="card" style="padding:12px 16px"><span class="detail-label">Firm Cash</span><h2 style="margin:2px 0">${{ "{:,.0f}".format(d.cash_waiting or 0) }}</h2></article>
 </div>
 

@@ -187,7 +187,8 @@ def test_snapshot_reused_and_current_values_labeled():
     ids = _setup()
     try:
         body = meeting_brief(_req(), ids["a"], None, principal=ids["principal"]).body.decode()
-        assert "Client 360" in body and "Client AUM" in body
+        assert "Client 360" in body
+        assert "AUM" not in body        # AUM is exposed to nobody
         # Financial section labelled current values, not historical change.
         assert "current values" in body.lower()
     finally:

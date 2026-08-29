@@ -15,7 +15,7 @@ from app.services.analytics import metrics, targets
 # Predefined executive scorecards: code -> (name, executive_only, [(metric_key, viz)]).
 PREDEFINED = {
     "firm": ("Firm Dashboard", True,
-             [("aum", "card"), ("client_count", "card"), ("household_count", "card"),
+             [("client_count", "card"), ("household_count", "card"),
               ("pipeline_value", "card"), ("open_work", "card"), ("active_campaigns", "card")]),
     "advisor": ("Advisor Dashboard", False,
                 [("pipeline_value", "card"), ("open_opportunities", "card"),
@@ -40,10 +40,10 @@ PREDEFINED = {
                        [("annual_reviews", "card"), ("annual_reviews_completed", "card"),
                         ("open_tasks", "card"), ("timeline_activity", "card")]),
     "revenue": ("Revenue Dashboard", True,
-                [("aum", "card"), ("campaign_revenue", "card"), ("referral_revenue", "card"),
+                [("campaign_revenue", "card"), ("referral_revenue", "card"),
                  ("forecast_revenue", "card"), ("total_bd_revenue", "card")]),
     "executive_summary": ("Executive Summary", True,
-                          [("aum", "card"), ("total_bd_revenue", "card"), ("pipeline_value", "card"),
+                          [("total_bd_revenue", "card"), ("pipeline_value", "card"),
                            ("client_count", "card"), ("open_work", "card"),
                            ("open_compliance_reviews", "card")]),
 }

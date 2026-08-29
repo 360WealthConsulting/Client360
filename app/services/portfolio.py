@@ -26,8 +26,16 @@ HIGH_CASH_RATIO = Decimal("0.15")
 # result exposes. get_person_portfolio() and get_household_portfolio() both build
 # on `_portfolio()`, so both surface exactly these concepts under exactly these
 # names. Shared Wealth components (Phase C.1 PR-3) consume only this vocabulary.
+#
+# AUM IS DELIBERATELY ABSENT AND MUST STAY ABSENT.
+# 360Plus displays assets under management to NO ONE — not administrators, not advisors, not
+# holders of record.read_all or firm-wide scope. This tuple is the single user-facing boundary:
+# anything not named here never reaches a route, template, or API response. Aggregate totals are
+# still COMPUTED internally (percentages, high-cash triage, reconciliation) but stay behind
+# ``_internal_total`` and never enter a returned contract. Adding "aum"/"total_aum" back here
+# re-exposes it everywhere at once — tests/test_no_aum_exposure.py fails if you do.
 _CANONICAL_KEYS = (
-    "aum", "cash", "cash_percent", "allocation", "largest_positions",
+    "cash", "cash_percent", "allocation", "largest_positions",
     "concentration", "holdings", "accounts", "beneficiary_count", "last_import_date",
 )
 
@@ -60,8 +68,9 @@ def _portfolio(where):
     last_import_date = max((r.get("last_imported_at") for r in account_rows if r.get("last_imported_at")), default=None)
     # Build the canonical contract first — this is the single source of truth for
     # both get_person_portfolio() and get_household_portfolio().
+    # ``agg["total_aum"]`` is the INTERNAL aggregate — used for the percentages below and for
+    # reconciliation. It is deliberately not placed in ``result``; see _CANONICAL_KEYS.
     result = {
-        "aum": agg["total_aum"],
         "cash": agg["cash"],
         "cash_percent": agg["cash_percent"],
         "allocation": agg["asset_allocation"],
@@ -79,15 +88,19 @@ def _portfolio(where):
     # still read; they mirror the canonical values exactly and exist only to keep
     # existing UI rendering byte-identical during the migration. Remove once every
     # consumer reads the canonical vocabulary above (after Phase C.1 PR-3).
-    result["total_aum"] = result["aum"]
+    # ``total_aum`` is NOT aliased here — AUM leaves no user-facing surface.
     result["asset_allocation"] = result["allocation"]
     result["largest_holdings"] = result["largest_positions"]
     result["largest_position_percent"] = result["concentration"]["largest_position_percent"]
     return result
 
-def book_aum(person_ids):
-    """Total AUM (sum of ``accounts.total_value``) across a set of person ids (Phase D.15
-    analytics read). Follows the ``person_ids`` scope convention used elsewhere in this module:
+def _internal_total(person_ids):
+    """INTERNAL ONLY — sum of ``accounts.total_value`` across a set of person ids.
+
+    This is assets under management. It must NEVER be returned to a route, template, or API
+    response: 360Plus exposes AUM to no one. It remains only for internal computation
+    (reconciliation / import verification). It was previously exported as ``book_aum`` and read by
+    the analytics AUM metric and two financial-operations panels; all three were removed. Follows the ``person_ids`` scope convention used elsewhere in this module:
     ``None`` -> firm-wide (all accounts); an empty set -> 0; a set -> only those clients. Bounded
     single aggregate query; no per-account fetch."""
     with engine.connect() as conn:
@@ -146,13 +159,24 @@ def get_household_portfolio(household_id):
 
 def get_firm_portfolio_metrics():
     with engine.connect() as conn:
-        firm_aum = conn.scalar(select(func.coalesce(func.sum(accounts.c.total_value), 0))) or ZERO
         cash = conn.scalar(select(func.coalesce(func.sum(accounts.c.cash_value), 0))) or ZERO
         largest_household = conn.execute(select(households.c.name, func.sum(accounts.c.total_value).label("aum")).join(accounts, accounts.c.household_id == households.c.id).group_by(households.c.id).order_by(func.sum(accounts.c.total_value).desc()).limit(1)).mappings().first()
         largest_position = conn.execute(select(securities.c.symbol, func.sum(account_holdings.c.market_value).label("value")).join(account_holdings, account_holdings.c.security_id == securities.c.id).group_by(securities.c.id).order_by(func.sum(account_holdings.c.market_value).desc()).limit(1)).mappings().first()
         missing_beneficiaries = conn.scalar(select(func.count()).select_from(accounts.outerjoin(account_beneficiaries, and_(account_beneficiaries.c.account_id == accounts.c.id, account_beneficiaries.c.active.is_(True)))).where(and_(accounts.c.registration_type.ilike("%IRA%"), account_beneficiaries.c.id.is_(None)))) or 0
         without_reviews = conn.scalar(select(func.count()).select_from(accounts).where(accounts.c.last_review_date.is_(None))) or 0
-    return {"firm_aum": firm_aum, "cash_waiting": cash, "largest_household": largest_household, "largest_position": largest_position, "missing_beneficiaries": missing_beneficiaries, "accounts_without_reviews": without_reviews}
+    # No firm_aum: the firm-wide total is exactly the prohibited figure. largest_household /
+    # largest_position are returned WITHOUT their value columns for the same reason (see below).
+    return {"cash_waiting": cash, "largest_household": _name_only(largest_household, "name"),
+            "largest_position": _name_only(largest_position, "symbol"),
+            "missing_beneficiaries": missing_beneficiaries, "accounts_without_reviews": without_reviews}
+
+
+def _name_only(row, key):
+    """Identify the largest household/position WITHOUT its dollar value — the value is a direct
+    component of the prohibited total and is a single-row disclosure of a client's book size."""
+    if row is None:
+        return None
+    return {key: row[key]}
 
 def accounts_due_for_review(person_ids, *, stale_days=365, limit=20, today=None):
     """Accounts whose review is due — no `last_review_date`, or older than
@@ -250,8 +274,8 @@ def accounts_missing_required_beneficiary(person_ids, *, limit=200):
 def get_wealth_dashboard():
     """Book-triage figures for the advisor Wealth dashboard.
 
-    Reuses get_firm_portfolio_metrics() (firm AUM, cash, missing beneficiaries,
-    accounts needing review) and adds the high-cash count. Pure reads over
+    Reuses get_firm_portfolio_metrics() (cash, missing beneficiaries, accounts
+    needing review — never firm AUM) and adds the high-cash count. Pure reads over
     existing tables — no new schema or business policy.
     """
     metrics = get_firm_portfolio_metrics()
@@ -263,14 +287,20 @@ def get_wealth_dashboard():
         ) or 0
     return {**metrics, "high_cash_count": high_cash_count}
 
-def search_portfolios(query="", min_aum=None, registration=None, high_cash=False, missing_beneficiary=False, concentration=None, limit=None):
-    stmt = select(people.c.id, people.c.full_name, func.sum(accounts.c.total_value).label("aum"), func.sum(accounts.c.cash_value).label("cash")).join(accounts, accounts.c.person_id == people.c.id).group_by(people.c.id)
+def search_portfolios(query="", registration=None, high_cash=False, missing_beneficiary=False, concentration=None, limit=None):
+    """Portfolio triage search. Returns WHO matches, never how much they hold.
+
+    The ``aum`` result column and the ``min_aum`` filter were removed: the column is the prohibited
+    figure, and a threshold filter is a binary-search oracle that recovers it exactly. The remaining
+    filters (registration, high cash, missing beneficiary, concentration) are ratio/flag based and
+    disclose no total."""
+    stmt = select(people.c.id, people.c.full_name).join(accounts, accounts.c.person_id == people.c.id).group_by(people.c.id)
     if query: stmt = stmt.where(or_(people.c.full_name.ilike(f"%{query}%"), accounts.c.registration_type.ilike(f"%{query}%")))
     if registration: stmt = stmt.where(accounts.c.registration_type.ilike(f"%{registration}%"))
     if missing_beneficiary: stmt = stmt.outerjoin(account_beneficiaries, account_beneficiaries.c.account_id == accounts.c.id).where(account_beneficiaries.c.id.is_(None))
-    if min_aum is not None: stmt = stmt.having(func.sum(accounts.c.total_value) >= min_aum)
     if high_cash: stmt = stmt.having(func.sum(accounts.c.cash_value) / func.nullif(func.sum(accounts.c.total_value), 0) >= HIGH_CASH_RATIO)
-    with engine.connect() as conn: rows = [dict(r) for r in conn.execute(stmt.order_by(func.sum(accounts.c.total_value).desc())).mappings()]
+    # Ordered by name: ordering by total value would rank the book by the prohibited figure.
+    with engine.connect() as conn: rows = [dict(r) for r in conn.execute(stmt.order_by(people.c.full_name)).mappings()]
     if concentration is not None:
         percents = _largest_position_percents([r["id"] for r in rows])
         rows = [r for r in rows if percents.get(r["id"], ZERO) >= concentration]

@@ -28,8 +28,8 @@ def test_portfolio_html_page_returns_200_and_html():
     body = response.body.decode()
     # readable page with the required columns, not raw JSON
     assert "Portfolio search" in body
-    for column in ("Client", "AUM", "Cash"):
-        assert column in body
+    assert "Client" in body
+    assert "AUM" not in body                    # AUM is exposed to nobody
     # Simplified filters: keep search + the two worklist filters; the advanced
     # min-AUM / registration inputs were removed to reduce noise.
     assert 'name="q"' in body
@@ -42,7 +42,6 @@ def test_portfolio_html_page_returns_200_and_html():
     assert 'class="page-head"' in body          # ui.page_head macro
     assert 'class="section-title"' in body
     assert 'class="data"' in body               # table.data, not a bare table
-    assert 'class="num"' in body                # right-aligned AUM/Cash
     assert "rowlink" in body
     # Legacy styling borrowed from the Work / Tax modules is gone.
     assert 'class="filters"' not in body

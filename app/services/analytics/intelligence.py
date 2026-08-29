@@ -70,7 +70,8 @@ def firm_intelligence(principal) -> dict:
                         f"{int(tax_due)} tax returns due within 30 days.", "high"))
 
     # Declining production (year-over-year) from snapshot trends, if available.
-    for key in ("aum", "pipeline_value", "campaign_revenue"):
+    # "aum" excluded: a declining-AUM insight states the trend of a figure nobody may see.
+    for key in ("pipeline_value", "campaign_revenue"):
         t = trends.metric_trend(key)
         yoy = t.get("year_over_year_growth")
         if yoy is not None and yoy <= DECLINE_YOY:

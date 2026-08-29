@@ -20,7 +20,7 @@ application:
 Governance verifies every financial category + revenue type is registered, every panel names an authoritative
 owner + source + deep link, and that this layer never becomes a second accounting / ERP / billing / commission
 / payroll / bookkeeping / GL / budgeting system. The insurance commission ledger is the authoritative owner of
-money; AUM / business-development / pipeline revenue come from the portfolio owner + the single Analytics
+money; business-development / pipeline revenue come from the single Analytics
 Registry — the layer stores NOTHING.
 """
 from __future__ import annotations
@@ -95,7 +95,6 @@ def _rev(key, label, category, authoritative_owner, reporting_owner, *, recognit
 
 
 REVENUE_REGISTRY = (
-    _rev("recurring_revenue", "Recurring Revenue", "recurring", "portfolio", "analytics.metrics"),
     _rev("one_time_revenue", "One-Time Revenue", "one_time", "bizdev", "analytics.metrics"),
     _rev("commissions", "Commissions", "commission", "insurance_commissions", "insurance_reporting",
          recognition_owner="insurance_commissions"),
@@ -135,14 +134,8 @@ def _p(key, owner, source, measure, unit, viz, permission, deep_link, explainabi
 # Firm financial figures require analytics.executive; catalog/operational panels require analytics.view.
 PANEL_REGISTRY = (
     # revenue
-    _p("firm_aum", "portfolio", "analytics.metrics:aum", "revenue", "currency", "card",
-       "analytics.executive", "/analytics",
-       "Firm assets under management (the advisory revenue basis), from the portfolio owner via the single "
-       "Analytics Registry `aum` metric. No second revenue engine."),
-    _p("recurring_revenue", "portfolio", "analytics.metrics:aum", "revenue", "currency", "card",
-       "analytics.executive", "/analytics",
-       "Recurring advisory revenue basis (AUM), from the portfolio owner via the Analytics Registry. Recurring "
-       "fee billing itself has no authoritative owner — reported honestly, never fabricated."),
+    # "firm_aum" and "recurring_revenue" were REMOVED: both reported assets under management (the
+    # second under the label "recurring advisory revenue basis"). 360Plus exposes AUM to nobody.
     _p("business_development_revenue", "bizdev", "analytics.metrics:total_bd_revenue", "revenue", "currency",
        "card", "analytics.executive", "/analytics",
        "Business-development revenue (campaign + referral), from the bizdev owner via the Analytics Registry "
@@ -153,12 +146,9 @@ PANEL_REGISTRY = (
     _p("forecast_revenue", "opportunity", "analytics.metrics:forecast_revenue", "revenue", "currency", "card",
        "analytics.executive", "/analytics",
        "Weighted revenue forecast, from the opportunity forecast owner via the Analytics Registry."),
-    _p("revenue_trend", "analytics.trends", "analytics.trends:aum", "revenue", "mixed", "chart",
-       "analytics.executive", "/analytics",
-       "AUM revenue trend (time series + moving average), from the single Analytics trends owner."),
     _p("revenue_mix", "financial_operations", "financial_operations.compose", "revenue", "mixed", "chart",
        "analytics.executive", "/financial-operations?dashboard=revenue",
-       "Revenue mix across the authoritative signals (commissions vs business-development vs AUM basis) — "
+       "Revenue mix across the authoritative signals (commissions vs business-development) — "
        "composed read-only from the owners. Advisory only; never posts a journal entry."),
     # commissions (the one authoritative money ledger)
     _p("commission_revenue", "insurance_commissions", "insurance_reporting.commission_report", "commissions",
@@ -181,7 +171,7 @@ PANEL_REGISTRY = (
     # firm performance / KPIs
     _p("firm_kpis", "executive_intelligence", "executive_intelligence.executive_summary", "performance",
        "mixed", "list", "analytics.executive", "/executive",
-       "Firm executive KPIs (AUM + revenue), from Executive Reporting composed over the single Analytics "
+       "Firm executive KPIs (revenue), from Executive Reporting composed over the single Analytics "
        "Registry. No second BI engine."),
     _p("firm_performance_score", "financial_operations", "financial_operations.compose", "performance",
        "percent", "gauge", "analytics.executive", "/financial-operations?dashboard=firm_performance",
@@ -247,11 +237,11 @@ def _d(key, owner, audience, gate, panels, caps, navigation, governing, *, refre
 
 FINANCIAL_DASHBOARDS = (
     _d("firm_performance", "financial_operations", "executive", "financial_operations.enabled",
-       ("firm_performance_score", "firm_kpis", "firm_aum"),
+       ("firm_performance_score", "firm_kpis"),
        ("analytics.view",), "/financial-operations?dashboard=firm_performance",
        ("portfolio", "executive_intelligence", "analytics")),
     _d("revenue", "financial_operations", "revenue", "revenue.enabled",
-       ("recurring_revenue", "business_development_revenue", "revenue_mix"),
+       ("business_development_revenue", "revenue_mix"),
        ("analytics.view",), "/financial-operations?dashboard=revenue",
        ("portfolio", "bizdev", "analytics")),
     _d("profitability", "financial_operations", "executive", "profitability.enabled",
@@ -271,7 +261,7 @@ FINANCIAL_DASHBOARDS = (
        ("analytics.view",), "/financial-operations?dashboard=commissions",
        ("insurance_commissions", "insurance_reporting")),
     _d("financial_operations", "financial_operations", "executive", "financial_operations.enabled",
-       ("firm_kpis", "collections", "revenue_trend", "forecast_revenue"),
+       ("firm_kpis", "collections", "forecast_revenue"),
        ("analytics.view",), "/financial-operations?dashboard=financial_operations",
        ("executive_intelligence", "insurance_commissions", "analytics")),
 )

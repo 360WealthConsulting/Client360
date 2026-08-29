@@ -5,7 +5,7 @@ Registry. It composes named executive dashboards from registered widgets — it 
 NO persistence, and never mutates. Every dashboard carries its generated timestamp, source inventory,
 governing services, explainable widgets, and deep links. Gate- and policy-aware; returns ``None`` when the
 dashboard is not registered or the principal lacks its required capability (route → 404/403). Executive
-(firm revenue/AUM) widgets inherit the ``analytics.executive`` gate from ``compute_metric`` — a non-executive
+(firm revenue) widgets inherit the ``analytics.executive`` gate from ``compute_metric`` — a non-executive
 sees them ``restricted``, never their value.
 """
 from __future__ import annotations

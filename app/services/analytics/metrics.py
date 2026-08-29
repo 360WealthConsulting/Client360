@@ -48,9 +48,8 @@ def _safe(fn):
 
 
 _DEFS = (
-    # Revenue / AUM (executive).
-    Metric("aum", "AUM", "revenue", "currency", "card", True,
-           lambda p: _f(sources.book_aum(p))),
+    # Revenue (executive). The "aum" metric was REMOVED: 360Plus exposes assets under management
+    # to no one, and analytics.executive must keep authorizing the other executive metrics below.
     Metric("forecast_revenue", "Forecast Revenue", "revenue", "currency", "card", True,
            lambda p: sources.forecast_report(p)["weighted_forecast_total"]),
     Metric("campaign_revenue", "Campaign Revenue", "revenue", "currency", "card", True,

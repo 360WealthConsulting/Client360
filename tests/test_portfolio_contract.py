@@ -28,7 +28,6 @@ from app.services.portfolio import (
 )
 
 _LEGACY_ALIASES = {
-    "total_aum": "aum",
     "asset_allocation": "allocation",
     "largest_holdings": "largest_positions",
 }
@@ -92,13 +91,14 @@ def test_both_services_expose_identical_canonical_values():
             assert key in person, f"person missing canonical key {key}"
             assert key in household, f"household missing canonical key {key}"
         # Scalar/dict canonical values match (person owns every household account).
-        for key in ("aum", "cash", "cash_percent", "allocation", "beneficiary_count"):
+        for key in ("cash", "cash_percent", "allocation", "beneficiary_count"):
             assert person[key] == household[key], f"canonical {key} diverges"
         assert person["concentration"]["largest_position_percent"] == household["concentration"]["largest_position_percent"]
         for key in ("holdings", "largest_positions", "accounts"):
             assert len(person[key]) == len(household[key])
         # Sanity on the actual numbers.
-        assert person["aum"] == Decimal("400000")
+        # AUM is exposed to nobody, so it is absent from the contract (tests/test_no_aum_exposure.py).
+        assert "aum" not in person and "total_aum" not in person
         assert person["concentration"]["largest_position_percent"] == Decimal("62.5")
     finally:
         _teardown(ids)

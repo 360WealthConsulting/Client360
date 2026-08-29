@@ -23,7 +23,6 @@
      page decides which cards, their order, captions, and formatting; the shared
      macro only renders. #}
   <div class="workspace-grid">
-    {{ wc.summary_card("Household AUM", "$" ~ "{:,.2f}".format(portfolio.aum or 0)) }}
     {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(portfolio.cash or 0), "{:.1f}".format(portfolio.cash_percent or 0) ~ "%") }}
     {{ wc.summary_card("Concentration", "{:.1f}".format(portfolio.concentration.largest_position_percent or 0) ~ "%", "Largest single position") }}
     {{ wc.summary_card("Beneficiaries", portfolio.beneficiary_count, "Active beneficiaries on file") }}

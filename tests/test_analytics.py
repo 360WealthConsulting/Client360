@@ -3,7 +3,7 @@
 Covers metric computation + aggregation, book-scope vs firm-wide, executive gating (restricted !=
 missing), dashboard composition + executive gating, targets + variance classification, snapshot
 capture + trend math (MoM/YoY/moving average), opportunity revenue trend, export models, custom
-dashboards + widgets, deterministic firm intelligence, book_aum additive read, route auth, and
+dashboards + widgets, deterministic firm intelligence, internal-total additive read, route auth, and
 dependency direction (D.5 golden / advisor_intelligence untouched).
 """
 import re
@@ -117,10 +117,12 @@ def test_pipeline_metric_from_opportunities():
 def test_executive_metric_gating():
     ids = _setup()
     try:
-        # aum is executive -> restricted for a plain analytics.view advisor, available for exec.
-        assert metrics.compute_metric(_adv(ids), "aum").get("restricted") is True
-        assert metrics.compute_metric(_adv(ids), "aum")["value"] is None
-        assert metrics.compute_metric(_exec(ids), "aum").get("restricted") is not True
+        # The "aum" metric was REMOVED (AUM is exposed to nobody), so it is unknown to the
+        # registry for EVERY principal — including an executive. Executive gating itself is still
+        # exercised by forecast_revenue below.
+        assert metrics.compute_metric(_exec(ids), "aum")["value"] is None
+        assert metrics.compute_metric(_adv(ids), "forecast_revenue").get("restricted") is True
+        assert metrics.compute_metric(_exec(ids), "forecast_revenue").get("restricted") is not True
     finally:
         _teardown(ids)
 
@@ -131,16 +133,18 @@ def test_metric_catalog_and_unknown():
     assert metrics.compute_metric(Principal(1, "a", "a", frozenset()), "nope")["error"]
 
 
-def test_book_aum_additive_read():
+def test_internal_total_additive_read():
     ids = _setup()
     try:
         with engine.begin() as c:
             c.execute(accounts.insert().values(person_id=ids["pid"], account_name="A",
                                                custodian="schwab", total_value=500000,
                                                status="active"))
-        from app.services.portfolio import book_aum
-        assert float(book_aum({ids["pid"]})) == 500000
-        assert float(book_aum(set())) == 0
+        # Renamed to _internal_total and made private: it is an INTERNAL computation only and
+        # must never be reachable from a user-facing surface (tests/test_no_aum_exposure.py).
+        from app.services.portfolio import _internal_total
+        assert float(_internal_total({ids["pid"]})) == 500000
+        assert float(_internal_total(set())) == 0
     finally:
         _teardown(ids)
 
@@ -151,7 +155,7 @@ def test_dashboard_composition_and_exec_gating():
     ids = _setup()
     try:
         d = dashboards.compose_predefined(_exec(ids), "firm")
-        assert d["name"] == "Firm Dashboard" and len(d["widgets"]) == 6
+        assert d["name"] == "Firm Dashboard" and len(d["widgets"]) == 5   # aum card removed
         assert all("viz" in w for w in d["widgets"])       # visualization metadata present
         with pytest.raises(dashboards.DashboardError):     # exec dashboard gated for advisor
             dashboards.compose_predefined(_adv(ids), "firm")

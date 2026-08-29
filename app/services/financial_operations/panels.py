@@ -2,7 +2,7 @@
 
 Each panel's value is composed on READ by its authoritative owner — never persisted, never a second metric,
 and never any payroll detail / tax return / bank account number / payment credential / accounting payload.
-Revenue panels compose the AUTHORITATIVE portfolio AUM owner + the single Analytics Registry
+Revenue panels compose the single Analytics Registry
 (`analytics.metrics` / `analytics.trends`); commission panels compose the AUTHORITATIVE insurance commission
 ledger (`insurance_reporting.commission_report`, the one money owner); firm-KPI panels compose Executive
 Reporting; operating panels compose Practice Management; technology-spend panels compose the D.56 Vendor
@@ -40,25 +40,9 @@ def _metric_value(principal, key):
     return m.get("value") if isinstance(m, dict) else None
 
 
-def _firm_aum(principal, pdef):
-    try:
-        v = _metric_value(principal, "aum")
-        if v is None:
-            return _result(pdef, None, available=False)
-        return _result(pdef, {"aum": float(v), "currency": "USD"})
-    except Exception:
-        return _result(pdef, None, available=False)
-
-
-def _recurring_revenue(principal, pdef):
-    try:
-        v = _metric_value(principal, "aum")
-        if v is None:
-            return _result(pdef, None, available=False)
-        return _result(pdef, {"recurring_basis": float(v), "basis": "aum",
-                              "fee_billing": registry.NOT_CONFIGURED})
-    except Exception:
-        return _result(pdef, None, available=False)
+# _firm_aum and _recurring_revenue were REMOVED: the first returned assets under management, the
+# second returned the same figure as a "recurring basis". 360Plus exposes AUM to nobody, and a
+# rename does not make it disclosable.
 
 
 def _business_development_revenue(principal, pdef):
@@ -87,17 +71,6 @@ def _forecast_revenue(principal, pdef):
         if v is None:
             return _result(pdef, None, available=False)
         return _result(pdef, {"forecast_revenue": float(v), "currency": "USD"})
-    except Exception:
-        return _result(pdef, None, available=False)
-
-
-def _revenue_trend(principal, pdef):
-    try:
-        from app.services.analytics.trends import metric_trend
-        t = metric_trend("aum")
-        points = t.get("points") or t.get("series") or []
-        return _result(pdef, {"metric": "aum", "point_count": len(points),
-                              "latest": (points[-1] if points else None)})
     except Exception:
         return _result(pdef, None, available=False)
 
@@ -240,10 +213,9 @@ def _revenue_mix(principal, pdef):
         except Exception:
             commissions = None
         bd = _metric_value(principal, "total_bd_revenue")
-        aum = _metric_value(principal, "aum")
+        # No aum_basis: that component was assets under management.
         mix = {"commissions": (float(commissions) if commissions is not None else None),
-               "business_development": (float(bd) if bd is not None else None),
-               "aum_basis": (float(aum) if aum is not None else None)}
+               "business_development": (float(bd) if bd is not None else None)}
         if all(v is None for v in mix.values()):
             return _result(pdef, None, available=False)
         return _result(pdef, {"mix": mix, "advisory_only": True})
@@ -253,8 +225,7 @@ def _revenue_mix(principal, pdef):
 
 def _profitability_indicator(principal, pdef):
     try:
-        aum = _metric_value(principal, "aum")
-        has_revenue = aum is not None
+        has_revenue = _metric_value(principal, "total_bd_revenue") is not None
         return _result(pdef, {"revenue_signals_owned": has_revenue,
                               "operating_expenses": registry.NOT_CONFIGURED,
                               "payroll": registry.NOT_CONFIGURED,
@@ -268,7 +239,7 @@ def _profitability_indicator(principal, pdef):
 def _firm_performance_score(principal, pdef):
     try:
         signals = 0
-        for key in ("aum", "total_bd_revenue"):
+        for key in ("total_bd_revenue",):
             if _metric_value(principal, key):
                 signals += 1
         collection_health = None
@@ -287,12 +258,9 @@ def _firm_performance_score(principal, pdef):
 
 
 _COMPUTE = {
-    "firm_aum": _firm_aum,
-    "recurring_revenue": _recurring_revenue,
     "business_development_revenue": _business_development_revenue,
     "pipeline_revenue": _pipeline_revenue,
     "forecast_revenue": _forecast_revenue,
-    "revenue_trend": _revenue_trend,
     "revenue_mix": _revenue_mix,
     "commission_revenue": _commission_revenue,
     "commission_reconciliation": _commission_reconciliation,

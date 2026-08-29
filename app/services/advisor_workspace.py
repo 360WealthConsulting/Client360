@@ -181,13 +181,11 @@ def get_client_snapshot(person_id, household_id=None, *, portfolio=None, open_ta
     person-profile context to avoid recomputing them.
     """
     portfolio = portfolio or {}
-    household = portfolio.get("household") or {}
+    # The household portfolio was read only to surface household AUM, which is no longer exposed.
     return {
         "person_id": person_id,
         "household_id": household_id,
         # Wealth (reused from the person portfolio; canonical keys with legacy fallback).
-        "aum": portfolio.get("aum", portfolio.get("total_aum")) or 0,
-        "household_aum": household.get("aum", household.get("total_aum")) or 0,
         "cash": portfolio.get("cash") or 0,
         "cash_percent": portfolio.get("cash_percent") or 0,
         # Insurance / tax (small authoritative reads).

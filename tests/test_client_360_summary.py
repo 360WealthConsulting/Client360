@@ -70,12 +70,13 @@ def test_snapshot_composes_per_domain_and_never_sums():
                                        open_exceptions=1, tax_active=True)
     try:
         snap = get_client_snapshot(pid, None, portfolio={
-            "aum": Decimal("600000"), "cash": Decimal("30000"), "cash_percent": Decimal("5"),
-            "household": {"aum": Decimal("800000")},
+            "cash": Decimal("30000"), "cash_percent": Decimal("5"),
+            "household": {},
         }, open_task_count=3)
         # Wealth reused from the passed portfolio.
-        assert snap["aum"] == Decimal("600000")
-        assert snap["household_aum"] == Decimal("800000")
+        # AUM is exposed to nobody, so the snapshot carries neither figure.
+        assert "aum" not in snap and "household_aum" not in snap
+        assert snap["cash"] == Decimal("30000")
         assert snap["cash"] == Decimal("30000")
         # Insurance / tax / attention / agenda composed.
         assert snap["insurance"]["policy_count"] == 2
@@ -134,7 +135,8 @@ def test_person_overview_renders_client_360_section():
                                         frozenset({"client.read", "record.read_all", "work.read", "exception.read"}))
         body = person_profile(req, pid, tab="overview").body.decode()
         assert "Client 360" in body
-        for label in ("Client AUM", "Insurance", "Tax engagements", "Open exceptions", "Open tasks"):
+        assert "AUM" not in body            # AUM is exposed to nobody
+        for label in ("Insurance", "Tax engagements", "Open exceptions", "Open tasks"):
             assert label in body
         # No advisor-intelligence recommendation strings in the snapshot itself.
         assert "Roth" not in body and "cross-sell" not in body.lower()

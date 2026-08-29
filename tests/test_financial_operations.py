@@ -46,8 +46,8 @@ NONE = Principal(3, "n@e.com", "N", frozenset({"record.read_all"}))         # no
 
 def test_registries_complete():
     assert len(registry.FINANCIAL_REGISTRY) == 10
-    assert len(registry.REVENUE_REGISTRY) == 8
-    assert len(registry.PANEL_REGISTRY) == 20
+    assert len(registry.REVENUE_REGISTRY) == 7   # recurring_revenue (AUM basis) removed
+    assert len(registry.PANEL_REGISTRY) == 17   # firm_aum, recurring_revenue, revenue_trend removed
     assert len(registry.FINANCIAL_DASHBOARDS) == 7
 
 
@@ -121,7 +121,7 @@ def test_unauthorized_principal_gets_none():
 
 
 def test_unentitled_panel_is_restricted_never_valued():
-    p = get_panel(NONE, "firm_aum")
+    p = get_panel(NONE, "commission_revenue")
     assert p is not None and p["restricted"] and p["value"] is None
 
 
@@ -165,9 +165,11 @@ def test_firm_financial_summary_shape():
 
 def test_client_and_household_financial_are_portfolio_composition():
     cf = client_financial(FIRM, 1)
-    assert cf["source"] == "portfolio.book_aum" or cf.get("enabled") is not None
+    assert cf.get("enabled") is not None
     hf = household_financial(FIRM, 1, [1, 2])
-    assert "advisory_revenue_basis" in hf
+    # advisory_revenue_basis was the members' AUM under another label — it is gone entirely.
+    assert "advisory_revenue_basis" not in hf
+    assert hf.get("member_count") is not None
 
 
 # --- governance --------------------------------------------------------------
@@ -241,7 +243,7 @@ def test_counters_registered_in_single_analytics_registry():
 def test_diagnostics_shape_low_cardinality():
     d = diag.financial_diagnostics()
     assert {"enabled", "gates", "registry_coverage", "panel_compute_coverage", "governance"} <= set(d)
-    assert d["panel_compute_coverage"]["with_compute"] == d["panel_compute_coverage"]["total"] == 20
+    assert d["panel_compute_coverage"]["with_compute"] == d["panel_compute_coverage"]["total"] == 17
     assert d["governance"]["ok"] is True
 
 

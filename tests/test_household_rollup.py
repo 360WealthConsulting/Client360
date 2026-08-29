@@ -48,7 +48,7 @@ def _rollup(household_id):
     return resp.context["rollup"]
 
 
-def test_rollup_aggregates_members_aum_and_open_tasks():
+def test_rollup_aggregates_members_and_open_tasks():
     hid = _household(f"Hawthorne {uuid.uuid4().hex[:6]}")
     p1 = _member(hid, "Alex Hawthorne")
     p2 = _member(hid, "Blair Hawthorne")
@@ -61,7 +61,7 @@ def test_rollup_aggregates_members_aum_and_open_tasks():
 
     rollup = _rollup(hid)
     assert rollup["member_count"] == 2
-    assert float(rollup["household_aum"]) == 150000.50
+    assert "household_aum" not in rollup   # AUM is exposed to nobody
     assert rollup["open_task_count"] == 2
 
 
@@ -69,5 +69,5 @@ def test_empty_household_rollup_is_zeroed():
     hid = _household(f"Empty {uuid.uuid4().hex[:6]}")
     rollup = _rollup(hid)
     assert rollup["member_count"] == 0
-    assert float(rollup["household_aum"]) == 0
+    assert "household_aum" not in rollup
     assert rollup["open_task_count"] == 0

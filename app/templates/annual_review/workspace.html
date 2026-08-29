@@ -20,7 +20,6 @@
     <div class="detail-row"><span class="subtle">Client status</span><span>{% if ws.client.active %}{{ ui.badge('Active','good') }}{% else %}{{ ui.badge('Inactive') }}{% endif %}</span></div>
     <div class="detail-row"><span class="subtle">Last meeting / contact</span><span>{% if ws.client.last_contact_at %}{{ ws.client.last_contact_at | humandt }}{% if ws.client.last_event_title %} · {{ ws.client.last_event_title }}{% endif %}{% else %}<span class="subtle">None recorded</span>{% endif %}</span></div>
     <div class="detail-row"><span class="subtle">Next scheduled meeting</span><span>{% if ws.client.next_meeting %}{{ ws.client.next_meeting.event_time | humandt }} · {{ ws.client.next_meeting.title }}{% else %}<span class="subtle">None scheduled</span>{% endif %}</span></div>
-    <div class="detail-row"><span class="subtle">Household summary</span><span>Household AUM ${{ "{:,.0f}".format(ws.snapshot.household_aum or 0) }}</span></div>
   </div>
 </section>
 
@@ -115,7 +114,6 @@
 <section class="stack" style="margin-bottom:22px">
   <h2 class="section-title">Portfolio overview{% if ws.household_id %} <a class="rowlink" style="font-size:13px; font-weight:500" href="/people/{{ ws.person.id }}?tab=portfolio">Full portfolio →</a>{% endif %}</h2>
   <div class="card">
-    <div class="detail-row"><span class="subtle">Client AUM</span><strong>${{ "{:,.2f}".format(ws.snapshot.aum or 0) }}</strong></div>
     <div class="detail-row"><span class="subtle">Cash</span><span>${{ "{:,.2f}".format(ws.snapshot.cash or 0) }} · {{ "{:.1f}".format(ws.snapshot.cash_percent or 0) }}%</span></div>
     <div class="detail-row"><span class="subtle">Open exceptions</span><span>{{ ws.snapshot.open_exceptions }}</span></div>
   </div>

@@ -337,7 +337,7 @@ def test_executive_dashboard_reuses_existing_widgets():
     d = next(d for d in DASHBOARD_REGISTRY if d.key == "enterprise_change_release_governance")
     widget_keys = {w.key for w in WIDGET_REGISTRY}
     assert all(w in widget_keys for w in d.widgets)   # no new widget introduced
-    assert len(WIDGET_REGISTRY) == 14
+    assert len(WIDGET_REGISTRY) == 12   # firm_aum + aum_trend removed (no AUM anywhere)
 
 
 def test_client360_and_household_sections_registered():

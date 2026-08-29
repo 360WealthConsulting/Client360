@@ -29,7 +29,6 @@
 
 {# Household snapshot — incompatible figures side by side; never a composite score. #}
 <section class="stat-grid c360-snapshot">
-  <article class="card"><span class="detail-label">Portfolio assets</span><h2>{{ "${:,.0f}".format(s.portfolio_assets|float) }}</h2></article>
   <article class="card"><span class="detail-label">Members</span><h2>{{ s.member_count }}</h2></article>
   <article class="card"><span class="detail-label">Open work</span><h2>{{ s.open_work }}</h2></article>
   <article class="card"><span class="detail-label">Opportunities</span><h2>{{ s.open_opportunities }}</h2></article>
@@ -80,14 +79,13 @@
 {% elif active_tab == "financial" %}
   <h2 class="section-title">Financial rollup (side by side — never summed)</h2>
   <article class="card">
-    <div class="detail-row"><span>Household AUM (authoritative)</span><strong>{{ "${:,.0f}".format(sec.household_aum|float) }}</strong></div>
     <div class="detail-row"><span>Household cash</span><strong>{{ "${:,.0f}".format(sec.household_cash|float) }}</strong></div>
     <div class="detail-row"><span class="subtle">Not tracked</span><span class="subtle">{{ sec.not_tracked|join(", ")|replace("_"," ") }}</span></div>
   </article>
   <h2 class="section-title">By member</h2>
   <article class="card"><div class="table-wrap"><table class="data">
-    <thead><tr><th>Member</th><th class="num">AUM</th><th class="num">Contribution</th></tr></thead><tbody>
-    {% for m in sec.members %}<tr><td><a href="/client/{{ m.person_id }}">{{ m.name }}</a></td><td class="num">{{ "${:,.0f}".format(m.aum|float) }}</td><td class="num">{{ (m.contribution_pct ~ "%") if m.contribution_pct is not none else "—" }}</td></tr>{% endfor %}
+    <thead><tr><th>Member</th></tr></thead><tbody>
+    {% for m in sec.members %}<tr><td><a href="/client/{{ m.person_id }}">{{ m.name }}</a></td></tr>{% endfor %}
     </tbody></table></div></article>
 
 {% elif active_tab == "relationships" %}

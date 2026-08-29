@@ -32,7 +32,6 @@
 <h2 class="section-title">Client 360 — current values</h2>
 <p class="subtle" style="margin:-6px 0 10px">Current values, side by side — not historical change and not a composite total.</p>
 <section class="stat-grid" style="margin-bottom:18px">
-  {{ wc.summary_card("Client AUM", "$" ~ "{:,.2f}".format(b.snapshot.aum)) }}
   {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(b.snapshot.cash), "{:.1f}".format(b.snapshot.cash_percent) ~ "%") }}
   {{ wc.summary_card("Insurance", b.snapshot.insurance.policy_count ~ (" policy" if b.snapshot.insurance.policy_count == 1 else " policies"), "$" ~ "{:,.2f}".format(b.snapshot.insurance.total_face) ~ " coverage") }}
   {{ wc.summary_card("Tax engagements", b.snapshot.tax.active, "Active") }}

@@ -196,7 +196,6 @@ def _match_answer(question, bundle):
         (("sla", "breach"), "work.sla_breaches"), (("unassigned",), "work.unassigned_team"),
         (("meeting", "next"), "meetings.next_activity"), (("meetings today",), "meetings.today"),
         (("open work", "how much work", "work"), "work.open_work"),
-        (("aum", "assets", "portfolio"), "financial.aum"),
         (("tax",), "tax.active"), (("insurance", "policies"), "insurance.policy_count"),
         (("compliance", "reviews"), "compliance.open_reviews"),
         (("members", "household"), "members.count"),

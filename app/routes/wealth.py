@@ -20,10 +20,11 @@ def wealth_dashboard(
     """Firm-wide wealth overview — privileged firm financial aggregates.
 
     The whole page is firm-wide portfolio metrics (`get_wealth_dashboard` →
-    `get_firm_portfolio_metrics`: firm AUM, cash, largest household/position). It is
+    `get_firm_portfolio_metrics`: cash, largest household/position BY NAME — never AUM). It is
     therefore gated on `portfolio.firm_metrics`, the dedicated firm-metrics capability —
     NOT `client.read`/`record.read_all` — so an employee who can read records does not
-    automatically see firm AUM here. No new aggregation, schema, or business policy.
+    see firm financials here. Assets under management are shown to NOBODY, capability or not.
+    No new aggregation, schema, or business policy.
     """
     dashboard = get_wealth_dashboard()
     return templates.TemplateResponse(

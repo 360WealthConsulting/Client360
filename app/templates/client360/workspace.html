@@ -28,7 +28,6 @@
 
 {# Client Snapshot — compact executive summary (never summed; units differ). #}
 <section class="stat-grid c360-snapshot">
-  <article class="card"><span class="detail-label">AUM</span><h2>{{ "${:,.0f}".format(s.assets.aum|float) }}</h2></article>
   <article class="card"><span class="detail-label">Cash</span><h2>{{ "${:,.0f}".format(s.assets.cash|float) }}</h2></article>
   {% if s.revenue %}<article class="card"><span class="detail-label">Open pipeline</span><h2>{{ "${:,.0f}".format(s.revenue.expected_revenue|float) }}</h2></article>{% endif %}
   <article class="card"><span class="detail-label">Insurance face</span><h2>{{ "${:,.0f}".format(s.insurance.total_face|float) }}</h2></article>
@@ -212,14 +211,12 @@
 {% elif active_tab == "financial" %}
   <h2 class="section-title">Financial (side by side — never summed)</h2>
   <article class="card">
-    <div class="detail-row"><span>AUM</span><strong>{{ "${:,.0f}".format(sec.aum|float) }}</strong></div>
     <div class="detail-row"><span>Cash ({{ sec.cash_percent or 0 }}%)</span><strong>{{ "${:,.0f}".format(sec.cash|float) }}</strong></div>
-    <div class="detail-row"><span>Household AUM</span><strong>{{ "${:,.0f}".format(sec.household_aum|float) }}</strong></div>
     {% if sec.insurance %}<div class="detail-row"><span>Insurance face</span><strong>{{ "${:,.0f}".format(sec.insurance.total_face|float) }}</strong></div>{% endif %}
     <div class="detail-row"><span class="subtle">Not tracked</span><span class="subtle">{{ sec.not_tracked|join(", ")|replace("_"," ") }}</span></div>
   </article>
 
-  {# Linked investment accounts (same portfolio read as the AUM/Cash tiles above — totals cannot disagree). #}
+  {# Linked investment accounts (same portfolio read as the Cash tile above). #}
   <h2 class="section-title">Accounts</h2>
   <article class="card"><div class="table-wrap"><table class="data">
     <thead><tr><th>Custodian</th><th>Account #</th><th>Name</th><th>Type</th><th class="num">Total value</th><th class="num">Cash value</th><th>As of</th></tr></thead>

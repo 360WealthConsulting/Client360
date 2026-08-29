@@ -22,10 +22,11 @@ def can_view_firm_metrics(principal) -> bool:
 
 
 def get_dashboard_data(principal=None):
-    """Operational dashboard data for everyone; firm-wide financial aggregates ONLY for a principal that
-    holds ``portfolio.firm_metrics``. When unauthorized, the sensitive metrics are neither computed nor
-    returned (fail-safe: a missing/insufficient principal yields no firm metrics) — they cannot leak via
-    the template context or the /api/stats JSON."""
+    """Operational dashboard data for everyone; non-AUM firm triage ONLY for a principal that holds
+    ``portfolio.firm_metrics``. When unauthorized, those metrics are neither computed nor returned
+    (fail-safe) — they cannot leak via the template context or the /api/stats JSON.
+
+    Assets under management are returned to NOBODY, capability or not."""
     with engine.connect() as connection:
         total_people = connection.scalar(
             select(func.count()).select_from(people)
@@ -70,10 +71,9 @@ def get_dashboard_data(principal=None):
         "recent_activities": recent_activities,
     }
     if can_view_firm_metrics(principal):
-        with engine.connect() as connection:
-            total_aum = connection.scalar(
-                select(func.coalesce(func.sum(accounts.c.total_value), 0))
-            ) or 0
-        result["total_aum"] = total_aum
+        # No total_aum / firm_aum. 360Plus exposes assets under management to NO ONE, so the
+        # firm-wide total is neither computed nor returned here regardless of capability. What
+        # remains under this gate is the non-AUM firm triage: cash waiting, missing beneficiaries,
+        # accounts without reviews, and the largest household/position BY NAME ONLY.
         result.update(get_firm_portfolio_metrics())
     return result

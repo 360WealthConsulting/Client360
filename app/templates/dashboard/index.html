@@ -13,7 +13,6 @@
 {% if show_firm_metrics %}
 <h2 class="section-title">Book of business</h2>
 <div class="stat-grid">
-  {{ ui.stat("Firm AUM", "${:,.0f}".format(dashboard.firm_aum or 0)) }}
   {{ ui.stat("Cash waiting to invest", "${:,.0f}".format(dashboard.cash_waiting or 0)) }}
   {{ ui.stat("Largest household", dashboard.largest_household.name if dashboard.largest_household else "—") }}
   {{ ui.stat("Largest position", dashboard.largest_position.symbol if dashboard.largest_position else "—") }}
@@ -28,7 +27,6 @@
   {{ ui.stat("Households", dashboard.households or 0) }}
   {{ ui.stat("Accounts", dashboard.accounts or 0) }}
   {{ ui.stat("Open tasks", dashboard.open_tasks or 0) }}
-  {% if show_firm_metrics %}{{ ui.stat("Total account value", "${:,.2f}".format(dashboard.total_aum or 0)) }}{% endif %}
 </div>
 
 <h2 class="section-title">Recent activity</h2>

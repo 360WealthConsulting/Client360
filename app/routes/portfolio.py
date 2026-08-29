@@ -20,14 +20,13 @@ templates = Jinja2Templates(directory="app/templates")
 def portfolio_page(
     request: Request,
     q: str = "",
-    min_aum: Optional[float] = None,
     registration: Optional[str] = None,
     high_cash: bool = False,
     missing_beneficiary: bool = False,
     concentration: Optional[float] = None,
     principal: Principal = Depends(require_capability("client.read")),
 ):
-    results = search_portfolios(q, min_aum, registration, high_cash, missing_beneficiary, concentration)
+    results = search_portfolios(q, registration, high_cash, missing_beneficiary, concentration)
     return templates.TemplateResponse(
         request=request,
         name="portfolio/search.html",
@@ -35,7 +34,7 @@ def portfolio_page(
             "results": results,
             "principal": principal,
             "filters": {
-                "q": q, "min_aum": min_aum, "registration": registration,
+                "q": q, "registration": registration,
                 "high_cash": high_cash, "missing_beneficiary": missing_beneficiary,
                 "concentration": concentration,
             },
@@ -46,13 +45,12 @@ def portfolio_page(
 @router.get("/search")
 def portfolio_search(
     q: str = "",
-    min_aum: Optional[float] = None,
     registration: Optional[str] = None,
     high_cash: bool = False,
     missing_beneficiary: bool = False,
     concentration: Optional[float] = None,
 ):
-    return {"results": search_portfolios(q, min_aum, registration, high_cash, missing_beneficiary, concentration)}
+    return {"results": search_portfolios(q, registration, high_cash, missing_beneficiary, concentration)}
 
 @router.post("/import/schwab")
 def manual_schwab_import(path: str):

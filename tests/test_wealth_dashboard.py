@@ -1,7 +1,7 @@
 """Tests for the advisor-facing Wealth dashboard at `/wealth`.
 
 A lean book-triage view fed by `get_wealth_dashboard()` (which reuses
-`get_firm_portfolio_metrics()`): a compact Firm AUM / Firm Cash summary strip and
+`get_firm_portfolio_metrics()`): a compact Firm Cash summary strip (never AUM) and
 the three Advisor attention worklists. Gated exactly like `/portfolio`:
 `client.read` (middleware RULE + route dependency) plus `record.read_all`
 (FIRM_WIDE_COLLECTION). No new capability, schema, or business policy.
@@ -51,7 +51,8 @@ def test_wealth_dashboard_renders_html_for_authorized_admin():
     body = response.body.decode()
     assert "Wealth dashboard" in body
     # Compact firm strip + the attention worklists remain.
-    for label in ("Firm AUM", "Firm Cash", "Advisor attention",
+    assert "AUM" not in body               # AUM is exposed to nobody
+    for label in ("Firm Cash", "Advisor attention",
                   "Missing beneficiaries", "High cash", "Accounts needing review"):
         assert label in body
     # Attention tiles deep-link into the matching portfolio worklists.
@@ -115,7 +116,8 @@ def test_get_wealth_dashboard_reuses_metrics_and_counts_high_cash():
         ).returning(accounts.c.id)).scalar_one()
     try:
         d = get_wealth_dashboard()
-        for key in ("firm_aum", "cash_waiting", "missing_beneficiaries", "accounts_without_reviews"):
+        assert "firm_aum" not in d         # firm AUM is exposed to nobody
+        for key in ("cash_waiting", "missing_beneficiaries", "accounts_without_reviews"):
             assert key in d
         assert d["high_cash_count"] >= 1  # our 60%-cash account
         # Removed reads are gone from the payload.

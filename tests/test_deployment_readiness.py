@@ -91,7 +91,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "a3c7e19b45d2"   # people.summary subscribes to person_merged
+    assert migrate.target_head() == "b4f1a207c9d3"   # portfolio.firm_metrics revoked (no AUM)
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():

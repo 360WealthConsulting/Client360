@@ -132,14 +132,13 @@ def financial(principal, ctx):
     insurance face + benefit relationships — side by side. No net-worth roll-up (not modelled)."""
     portfolio = ctx.get("portfolio") or {}
     pid, hid = _pid(ctx), _hid(ctx)
+    # No "aum"/"household_aum": 360Plus exposes assets under management to nobody. The keys are
+    # ABSENT rather than zeroed, so a template cannot render a misleading $0 tile.
     section = {
-        "aum": portfolio.get("aum", portfolio.get("total_aum")) or 0,
         "cash": portfolio.get("cash") or 0,
         "cash_percent": portfolio.get("cash_percent") or 0,
         "allocation": portfolio.get("allocation") or portfolio.get("asset_allocation") or {},
         "accounts": portfolio.get("accounts") or [],
-        "household_aum": (portfolio.get("household") or {}).get("aum",
-                          (portfolio.get("household") or {}).get("total_aum")) or 0,
         # not summed — the units are not comparable.
         "not_summed": True,
         "not_tracked": list(_UNMODELLED_FINANCIAL),
@@ -820,14 +819,15 @@ def technology_dependencies(principal, ctx):
 
 
 def financial_relationship(principal, ctx):
-    """A compact financial-relationship summary for this client (D.57) — the advisory revenue basis (the
-    client's AUM) the firm's relationship rests on, composed read-only from the authoritative portfolio owner.
-    Aggregate total only, never a payload; per-client fee / commission billing has no authoritative owner
+    """A compact financial-relationship summary for this client (D.57) — the fee/commission billing
+    OWNERSHIP state, composed read-only from the authoritative owner. It no longer carries an advisory
+    revenue basis: that value was the client's AUM under another label, and 360Plus exposes assets
+    under management to nobody. Per-client fee / commission billing has no authoritative owner
     (`not_configured`) and is never fabricated. Never bills/invoices/posts anything; never a second accounting
     or billing engine; deep-links to the authoritative financial surface."""
     from app.services.financial_operations import client_financial
     pid = _pid(ctx)
-    return {**(client_financial(principal, pid) if pid else {"enabled": False, "advisory_revenue_basis": None}),
+    return {**(client_financial(principal, pid) if pid else {"enabled": False}),
             "source": "financial_operations.client_financial", "not_a_second_engine": True}
 
 

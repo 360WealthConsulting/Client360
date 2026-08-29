@@ -45,21 +45,6 @@ def _result(wdef, value, *, restricted=False, available=True):
 
 # --- per-widget compute functions (read-only, fail-closed) -------------------
 
-def _firm_aum(principal, wdef):
-    return _metric_widget(principal, wdef, "aum")
-
-
-def _aum_trend(principal, wdef):
-    if not principal.can("analytics.executive"):
-        return _result(wdef, None, restricted=True, available=False)
-    try:
-        from app.services.analytics.trends import metric_trend
-        t = metric_trend("aum")
-        return _result(wdef, {"series": t.get("series", []), "growth": t.get("period_over_period_growth")})
-    except Exception:
-        return _result(wdef, None, available=False)
-
-
 def _revenue_kpi(principal, wdef):
     return _metric_widget(principal, wdef, "total_bd_revenue")
 
@@ -164,7 +149,7 @@ def _runtime_health(principal, wdef):
 
 
 _COMPUTE = {
-    "firm_aum": _firm_aum, "aum_trend": _aum_trend, "revenue_kpi": _revenue_kpi,
+    "revenue_kpi": _revenue_kpi,
     "client_growth": _client_growth, "compliance_workload": _compliance_workload,
     "advisor_workload": _advisor_workload, "workflow_status": _workflow_status,
     "workflow_aging": _workflow_aging, "review_cadence": _review_cadence,

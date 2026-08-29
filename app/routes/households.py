@@ -195,9 +195,9 @@ def household_profile(
     # Reuses get_household_portfolio() (aggregate_portfolio/calculate_allocation);
     # no duplicate aggregation. Feeds both the roll-up AUM and the Wealth Workspace.
     portfolio = get_household_portfolio(household_id)
+    # No household_aum: assets under management are not shown to anyone in 360Plus.
     rollup = {
         "member_count": len(members),
-        "household_aum": portfolio["aum"],
         "open_task_count": open_task_count,
     }
 

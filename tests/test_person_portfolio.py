@@ -2,7 +2,7 @@
 
 This tab is the individual-client view of the meeting-prep screen. These tests
 assert it is aligned with the Household Wealth Workspace: the same summary
-ordering (Client AUM · Household AUM · Cash % · Beneficiary status), the
+ordering (Cash % · Beneficiary status; AUM is shown to nobody), the
 "Client wealth" section title, allocation/positions before an Accounts table,
 and matched empty-state language. Reuses get_person_portfolio() — no new query.
 """
@@ -86,7 +86,8 @@ def test_client_workspace_aligned_with_household():
         body = _render(ids["person_id"]).body.decode()
         # Aligned section title + summary ordering.
         assert "Client wealth" in body
-        for label in ("Client AUM", "Household AUM", "Cash", "Beneficiaries"):
+        assert "AUM" not in body           # AUM is exposed to nobody
+        for label in ("Cash", "Beneficiaries"):
             assert label in body
         # Beneficiary status uses the existing count (1 active beneficiary).
         assert "Active beneficiaries on file" in body

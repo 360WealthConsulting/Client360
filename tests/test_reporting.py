@@ -125,9 +125,10 @@ def test_executive_gating_inherited_from_analytics():
         p = _principal(ids["uid"], {"reporting.view", "reporting.manage", "analytics.view"})
         d = svc.create_dashboard(p, code=f"d-{ids['tag']}", name="Exec", category="executive",
                                  actor_user_id=ids["uid"])
-        svc.add_widget(p, d["id"], title="AUM", metric_key="aum", actor_user_id=ids["uid"])
+        svc.add_widget(p, d["id"], title="Forecast", metric_key="forecast_revenue",
+                       actor_user_id=ids["uid"])
         rendered = svc.render_dashboard(p, d["id"])
-        # aum is an executive metric -> Analytics withholds it (restricted), inherited automatically
+        # forecast_revenue is an executive metric -> Analytics withholds it, inherited automatically
         assert rendered["widgets"][0]["value"]["restricted"] is True
     finally:
         _teardown(ids)

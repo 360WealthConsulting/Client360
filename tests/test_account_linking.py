@@ -200,7 +200,8 @@ def test_client_account_aggregation_matches_account_totals():
     try:
         al.link_accounts_to_people()
         portfolio = get_person_portfolio(ids["person_id"])
-        assert portfolio["aum"] == Decimal("250000")
+        assert "aum" not in portfolio          # AUM is exposed to nobody
+        assert len(portfolio["accounts"]) >= 1  # account linkage itself still works
         assert portfolio["cash"] == Decimal("25000")
         assert len(portfolio["accounts"]) == 1
     finally:
@@ -215,7 +216,8 @@ def test_multiple_accounts_for_one_person_are_summed():
     try:
         al.link_accounts_to_people()
         portfolio = get_person_portfolio(ids["person_id"])
-        assert portfolio["aum"] == Decimal("500000.00")
+        assert "aum" not in portfolio
+        assert len(portfolio["accounts"]) == 2  # both accounts still linked to the person
         assert portfolio["cash"] == Decimal("220000.00")
         assert len(portfolio["accounts"]) == 2
     finally:
@@ -226,7 +228,7 @@ def test_zero_account_client_reads_zero_and_renders():
     ids = _scenario(accounts_spec=[])   # person, no accounts
     try:
         portfolio = get_person_portfolio(ids["person_id"])
-        assert (portfolio.get("aum") or 0) == 0 and (portfolio.get("cash") or 0) == 0
+        assert "aum" not in portfolio and (portfolio.get("cash") or 0) == 0
         body = _render_financial(ids["person_id"])
         assert "No linked accounts" in body                       # empty state, no crash
     finally:
@@ -241,7 +243,9 @@ def test_summary_tiles_and_financial_tab_use_one_source():
         al.link_accounts_to_people()
         ws = get_workspace(FIRM, person_id=ids["person_id"])
         # Summary snapshot tiles and the Financial section derive from the SAME portfolio read.
-        assert ws["snapshot"]["assets"]["aum"] == ws["sections"]["financial"]["aum"] == Decimal("250000")
+        # One source, and it carries no AUM on either surface.
+        assert "aum" not in ws["snapshot"]["assets"]
+        assert "aum" not in ws["sections"]["financial"]
         assert ws["snapshot"]["assets"]["cash"] == ws["sections"]["financial"]["cash"] == Decimal("25000")
     finally:
         _teardown(ids)

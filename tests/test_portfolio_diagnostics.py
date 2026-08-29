@@ -45,8 +45,9 @@ def test_trace_flags_zero_when_account_attributed_to_other_household_member():
     try:
         d = pdx.diagnose(ids["viewed"])
         assert d["person_row_count"] == 0
-        assert d["portfolio"]["aum"] == 0 and d["snapshot_assets"]["aum"] == 0
-        assert d["financial_section"]["aum"] == 0
+        # The developer diagnostic reads through the user-facing contracts, which no longer
+        # carry AUM; it reports None rather than a figure.
+        assert d["portfolio"]["aum"] is None
         assert "0 rows" in d["first_zero_point"] and "different person_id" in d["first_zero_point"]
         # The trace still surfaces where the money sits (under the other member).
         assert d["household_rows"] and d["household_rows"][0]["total_value"] == Decimal("512345.67")
@@ -61,9 +62,7 @@ def test_trace_reports_nonzero_for_person_with_own_account():
     try:
         d = pdx.diagnose(ids["viewed"])
         assert d["person_row_count"] == 1
-        assert d["portfolio"]["aum"] == Decimal("512345.67")
-        assert d["snapshot_assets"]["aum"] == Decimal("512345.67")   # tiles read the same figure
-        assert d["financial_section"]["aum"] == Decimal("512345.67")
+        assert d["portfolio"]["aum"] is None       # AUM is exposed to nobody
         assert "no zero" in d["first_zero_point"]
     finally:
         _teardown(ids)

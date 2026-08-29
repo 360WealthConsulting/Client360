@@ -101,7 +101,7 @@ def firm_financial_summary(principal):
     if not gate.enabled():
         return {"enabled": False, "panels": [], "kpis": {}, "dashboards": []}
     t0 = time.monotonic()
-    panel_keys = ("firm_performance_score", "recurring_revenue", "commission_revenue", "collections",
+    panel_keys = ("firm_performance_score", "commission_revenue", "collections",
                   "vendor_dependencies")
     panels = []
     for pkey in panel_keys:
@@ -119,38 +119,26 @@ def firm_financial_summary(principal):
 
 def client_financial(principal, person_id):
     """A compact financial-relationship summary in the context of ONE client — the advisory revenue basis
-    (the client's AUM) the firm's relationship rests on, composed read-only from the authoritative portfolio
+    (fee/commission billing ownership only — never the client's AUM), composed read-only from the
     owner. Aggregate total only, never a payload; per-client fee / commission billing has no authoritative
     owner (`not_configured`) and is never fabricated. Record scope is validated at the Client 360 boundary.
     Never bills, invoices, or posts anything."""
     if not gate.enabled() or person_id is None:
-        return {"enabled": False, "advisory_revenue_basis": None}
-    try:
-        from app.services.portfolio import book_aum
-        aum = book_aum([person_id])
-        return {"enabled": True, "source": "portfolio.book_aum", "not_a_second_engine": True,
-                "advisory_revenue_basis": float(aum) if aum is not None else 0.0,
-                "fee_billing": registry.NOT_CONFIGURED, "deep_link": "/financial-operations"}
-    except Exception:
-        stats.note("aggregation_failures", panel="client_financial")
-        return {"enabled": True, "advisory_revenue_basis": None, "error": "unavailable"}
+        return {"enabled": False}
+    # advisory_revenue_basis WAS the client's AUM under another label. 360Plus exposes assets under
+    # management to no one, and renaming it does not make it disclosable, so the value is gone —
+    # not zeroed, not nulled, absent. The panel still reports the fee-billing ownership state.
+    return {"enabled": True, "not_a_second_engine": True,
+            "fee_billing": registry.NOT_CONFIGURED, "deep_link": "/financial-operations"}
 
 
 def household_financial(principal, household_id, member_ids=None):
     """Aggregated financial-relationship summary in the context of a household — the advisory revenue basis
-    (the household members' AUM) composed read-only from the authoritative portfolio owner. Aggregate total
-    only; a rollup, never a payload. Per-household fee / commission billing has no authoritative owner
+    (never the household members' AUM — that figure is shown to nobody). Ownership state only. Per-household fee / commission billing has no authoritative owner
     (`not_configured`)."""
     if not gate.enabled() or household_id is None:
-        return {"enabled": False, "advisory_revenue_basis": None}
-    try:
-        from app.services.portfolio import book_aum
-        ids = list(member_ids or [])
-        aum = book_aum(ids) if ids else 0.0
-        return {"enabled": True, "source": "portfolio.book_aum", "not_a_second_engine": True,
-                "advisory_revenue_basis": float(aum) if aum is not None else 0.0,
-                "fee_billing": registry.NOT_CONFIGURED, "member_count": len(ids),
-                "deep_link": "/financial-operations"}
-    except Exception:
-        stats.note("aggregation_failures", panel="household_financial")
-        return {"enabled": True, "advisory_revenue_basis": None, "error": "unavailable"}
+        return {"enabled": False}
+    # Same rule as client_financial: the household advisory revenue basis was the members' AUM.
+    return {"enabled": True, "not_a_second_engine": True,
+            "fee_billing": registry.NOT_CONFIGURED, "member_count": len(list(member_ids or [])),
+            "deep_link": "/financial-operations"}

@@ -204,22 +204,22 @@ def _member_indicators(principal, pid):
     if principal.can("advisor_work.read"):
         from app.services.advisor_work import person_work
         ind["work"] = _safe(lambda: len(person_work(principal, pid, open_only=True)), 0)
-    ind["portfolio_aum"] = _safe(lambda: _person_aum(pid), 0)
+    # No portfolio_aum: assets under management are shown to nobody in 360Plus.
     return ind
 
 
 def _financial(principal, ctx):
-    """Portfolio rollup: the authoritative household total (reused, never re-summed) + per-member AUM +
-    each member's contribution. Insurance/benefits/opportunity/tax are NOT summed into assets."""
+    """Portfolio rollup WITHOUT assets under management.
+
+    360Plus shows AUM to nobody, so neither the household total, the per-member totals, nor each
+    member's contribution percentage is produced. The contribution percentage is excluded
+    deliberately: combined with any one member's total it reconstructs the household total exactly,
+    and a percentage of a prohibited figure is still that figure. Allocation, cash, accounts and the
+    member roster remain — none of them states a total."""
     hp = ctx["portfolio"]
-    household_aum = float(hp.get("aum") or 0)
-    members = []
-    for m in ctx["members"]:
-        aum = float(_safe(lambda pid=m["id"]: _person_aum(pid), 0) or 0)
-        members.append({"person_id": m["id"], "name": person_row_display_name(m), "aum": aum,
-                        "contribution_pct": round(aum / household_aum * 100, 1) if household_aum else None})
+    members = [{"person_id": m["id"], "name": person_row_display_name(m)} for m in ctx["members"]]
     return {
-        "household_aum": household_aum, "household_cash": float(hp.get("cash") or 0),
+        "household_cash": float(hp.get("cash") or 0),
         "allocation": hp.get("allocation") or {}, "accounts": hp.get("accounts") or [],
         "members": members,
         "not_summed": True,   # portfolio assets are never combined with insurance/opportunity/benefit/tax
@@ -522,7 +522,7 @@ def _technology_dependencies(principal, ctx):
 
 def _financial_relationship(principal, ctx):
     """Household financial-relationship summary (D.57) — the advisory revenue basis (the household members'
-    AUM) the firm's relationship rests on, composed read-only from the authoritative portfolio owner.
+    fee/commission billing ownership state (never AUM), composed read-only from the owner.
     Aggregate total only; a rollup, never a payload. Per-household fee / commission billing has no
     authoritative owner (`not_configured`). Never bills/invoices/posts anything; never a second accounting or
     billing engine; deep-links to the authoritative financial surface."""
@@ -727,7 +727,7 @@ _SECTION_BUILDERS = {
 # --- snapshot + quick actions ------------------------------------------------
 
 def _snapshot(principal, ctx, built):
-    fin = built.get("financial") or {}
+    # ``financial`` is no longer read here: its only use was portfolio_assets (household AUM).
     work = built.get("work") or {}
     opps = built.get("opportunities") or {}
     meet = built.get("meetings") or {}
@@ -741,7 +741,6 @@ def _snapshot(principal, ctx, built):
         "primary_member": ctx["public"]["primary_member"],
         "member_count": ctx["public"]["member_count"],
         "active_members": ctx["public"]["active_client_count"],
-        "portfolio_assets": fin.get("household_aum", 0),
         "open_work": work.get("total", 0),
         "open_opportunities": len(opps.get("opportunities", [])),
         "upcoming_meetings": len(meet.get("upcoming", [])),
@@ -780,12 +779,6 @@ def _quick_actions(principal, ctx):
 
 
 # --- helpers -----------------------------------------------------------------
-
-def _person_aum(pid):
-    from app.services.portfolio import get_person_portfolio
-    p = get_person_portfolio(pid)
-    return float(p.get("aum", p.get("total_aum")) or 0)
-
 
 def _name(ctx, pid):
     for m in ctx["roster"]:

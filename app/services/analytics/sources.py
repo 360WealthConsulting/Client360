@@ -141,11 +141,6 @@ def document_count(principal) -> int:
         return c.scalar(stmt) or 0
 
 
-def book_aum(principal) -> Decimal:
-    from app.services.portfolio import book_aum as portfolio_book_aum
-    return portfolio_book_aum(book_scope(principal))
-
-
 def active_workflow_count(principal) -> int:
     """Book-scoped count of active workflow instances (Phase D.17 — Analytics consumes workflow
     statistics; Workflow never depends on Analytics)."""

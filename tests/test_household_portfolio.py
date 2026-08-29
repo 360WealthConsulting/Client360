@@ -93,7 +93,7 @@ def test_household_portfolio_aggregates_all_facets():
     try:
         result = get_household_portfolio(ids["household_id"])
         assert result["household_id"] == ids["household_id"]
-        assert result["aum"] == Decimal("400000")
+        assert "aum" not in result          # AUM is exposed to nobody
         assert result["cash"] == Decimal("40000")
         assert result["cash_percent"] == Decimal("10")
         assert len(result["accounts"]) == 2
@@ -129,7 +129,7 @@ def test_household_portfolio_matches_aggregate_portfolio_directly():
                 .where(account_holdings.c.account_id.in_(acct_ids))
             ).mappings().all()
         expected = aggregate_portfolio(account_rows, holding_rows)
-        assert result["aum"] == expected["total_aum"]
+        assert "aum" not in result          # the internal total is never surfaced
         assert result["cash"] == expected["cash"]
         assert result["concentration"]["largest_position_percent"] == expected["largest_position_percent"]
         assert result["allocation"] == expected["asset_allocation"]
@@ -141,7 +141,7 @@ def test_empty_household_returns_safe_zeros():
     ids = _make_household(with_accounts=False)
     try:
         result = get_household_portfolio(ids["household_id"])
-        assert result["aum"] == Decimal("0")
+        assert "aum" not in result
         assert result["cash"] == Decimal("0")
         assert result["holdings"] == []
         assert result["allocation"] == {}

@@ -17,7 +17,6 @@
 
 <h2 class="section-title">Client 360 — current values</h2>
 <section class="stat-grid" style="margin-bottom:16px">
-  {{ wc.summary_card("Client AUM", "$" ~ "{:,.2f}".format(b.snapshot.aum)) }}
   {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(b.snapshot.cash), "{:.1f}".format(b.snapshot.cash_percent) ~ "%") }}
   {{ wc.summary_card("Open exceptions", b.snapshot.open_exceptions, "Needs attention") }}
   {{ wc.summary_card("Open tasks", b.snapshot.open_tasks, "Agenda") }}

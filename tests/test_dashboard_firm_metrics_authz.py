@@ -18,7 +18,10 @@ from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.dashboard import FIRM_METRICS_CAPABILITY, get_dashboard_data
 
-_SENSITIVE = ("firm_aum", "total_aum", "cash_waiting", "largest_household", "largest_position")
+# AUM ("firm_aum"/"total_aum") is no longer in this set: it is exposed to NOBODY, capability or
+# not, so it cannot be asserted as "present for the privileged principal". tests/test_no_aum_exposure.py
+# pins its total absence. What remains here is the non-AUM firm triage this capability still gates.
+_SENSITIVE = ("cash_waiting", "largest_household", "largest_position")
 _OPERATIONAL = ("people", "households", "accounts", "open_tasks", "recent_activities")
 
 # Privileged: holds the dedicated firm-metrics capability.
@@ -122,11 +125,12 @@ def test_template_omits_firm_section_when_unauthorized():
 
 def test_template_shows_firm_section_when_authorized():
     html = _render(True, {"people": 5, "households": 3, "accounts": 9, "open_tasks": 2,
-                          "recent_activities": [], "firm_aum": 1000, "cash_waiting": 10,
+                          "recent_activities": [], "cash_waiting": 10,
                           "largest_household": None, "largest_position": None,
-                          "missing_beneficiaries": 0, "accounts_without_reviews": 0,
-                          "total_aum": 1000})
-    assert "Firm AUM" in html and "Total account value" in html
+                          "missing_beneficiaries": 0, "accounts_without_reviews": 0})
+    # The non-AUM firm triage renders; AUM never does, for anyone.
+    assert "Cash waiting" in html
+    assert "AUM" not in html
 
 
 # --- /wealth (second surface) + capability gate --------------------------------------------------
@@ -148,20 +152,16 @@ def test_wealth_route_gated_on_firm_metrics_not_client_read():
 
 # --- migration policy: firm metrics granted to administrator only ---------------------------------
 
-def test_capability_seeded_and_granted_to_administrator_only():
+def test_capability_is_seeded_but_granted_to_no_role():
+    """Migration b4f1a207c9d3 revoked it from EVERY role — 360Plus shows AUM to nobody. The
+    capability row is retained (reversible, and it still gates the non-AUM firm triage)."""
     with engine.connect() as c:
         cid = c.execute(select(capabilities.c.id)
                         .where(capabilities.c.code == FIRM_METRICS_CAPABILITY)).scalar()
-        assert cid is not None
-        admin = c.execute(select(roles.c.id).where(roles.c.code == "administrator")).scalar()
-        assert c.execute(select(role_capabilities.c.role_id).where(
-            role_capabilities.c.role_id == admin,
-            role_capabilities.c.capability_id == cid)).first() is not None
-        advisor = c.execute(select(roles.c.id).where(roles.c.code == "advisor")).scalar()
-        if advisor is not None:                                         # advisor holds record.read_all...
-            assert c.execute(select(role_capabilities.c.role_id).where(
-                role_capabilities.c.role_id == advisor,
-                role_capabilities.c.capability_id == cid)).first() is None   # ...but NOT firm metrics
+        assert cid is not None, "the capability row is retained, not dropped"
+        holders = c.execute(select(role_capabilities.c.role_id).where(
+            role_capabilities.c.capability_id == cid)).all()
+        assert holders == [], "no role may hold portfolio.firm_metrics"
 
 
 # --- no username/email-specific logic -------------------------------------------------------------

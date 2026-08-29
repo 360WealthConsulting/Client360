@@ -138,8 +138,9 @@ def _client(principal, person_id):
     s = ws.get("snapshot") or {}
     facts = [_fact("client360", "identity.name", ws.get("display_name"), deep_link=link)]
     a = s.get("assets") or {}
-    for k in ("aum", "cash", "household_aum"):
-        facts.append(_fact("client360", f"financial.{k}", a.get(k, 0), deep_link=link))
+    # Cash only — AUM (client and household) is exposed to nobody, so it is not a fact the
+    # assistant can state, summarize, or be asked for.
+    facts.append(_fact("client360", "financial.cash", a.get("cash", 0), deep_link=link))
     for key, val in (("work.open_work", s.get("open_work")), ("work.open_exceptions", s.get("open_exceptions")),
                      ("tax.active", (s.get("tax") or {}).get("active")),
                      ("insurance.policy_count", (s.get("insurance") or {}).get("policy_count"))):
@@ -278,15 +279,9 @@ def _client(principal, person_id):
     if vm.get("enabled") and isinstance(vm.get("vendor_dependencies"), int):
         facts.append(_fact("vendor_management", "vendor.dependencies", vm["vendor_dependencies"],
                            fact_class=DERIVED, deep_link="/vendor-management"))
-    # Financial Operations — SUMMARIZED advisory revenue basis (the client's AUM) the firm relationship rests
-    # on, composed read-only over the authoritative portfolio owner. AI summarizes the aggregate; it never
-    # issues invoices, processes payroll, modifies accounting records, changes commissions, alters billing, or
-    # executes payments.
-    fin = (ws.get("sections") or {}).get("financial_relationship") or {}
-    if fin.get("enabled") and isinstance(fin.get("advisory_revenue_basis"), (int, float)):
-        facts.append(_fact("financial_operations", "financial.advisory_revenue_basis",
-                           fin["advisory_revenue_basis"], fact_class=DERIVED,
-                           deep_link="/financial-operations"))
+    # Financial Operations contributes NO fact here. Its only fact was the advisory revenue basis —
+    # the client's AUM under another label — and 360Plus exposes assets under management to nobody,
+    # so the assistant must not be able to state, summarize, or be asked for it.
     # Enterprise Risk & Controls — SUMMARIZED client-relevant risk signal COUNT (open compliance exceptions),
     # composed read-only from the authoritative per-client owners. AI summarizes the count; it never assigns
     # risk, changes severity, accepts risk, closes findings, certifies controls, approves exceptions,
@@ -440,13 +435,11 @@ def _meeting(principal, person_id, event_id):
         return _bundle("meeting_prep", [], [], unavail=["meeting (out of scope or not found)"])
     link = f"/workspace/meetings/{person_id}"
     person = brief.get("person") or {}
-    snap = brief.get("snapshot") or {}
     ev = brief.get("meeting_event") or {}
     facts = [
         _fact("meeting_brief", "meeting.client", person.get("full_name"), deep_link=link),   # name only
         _fact("meeting_brief", "meeting.event",
               _safe_title(ev.get("title")) if ev else "No linked meeting event", deep_link=link),
-        _fact("client360", "context.aum", snap.get("aum", 0), deep_link=f"/client/{person_id}"),
         _fact("client360", "context.open_tasks", len(brief.get("open_tasks") or []), fact_class=DERIVED,
               deep_link=f"/client/{person_id}"),
         _fact("client360", "open_items.open_exceptions", len(brief.get("open_exceptions") or []),

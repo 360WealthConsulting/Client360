@@ -3,7 +3,7 @@
 {% block title %}Portfolio Search | 360Plus{% endblock %}
 {% block crumb %}Portfolio{% endblock %}
 {% block content %}
-{{ ui.page_head("Portfolio search", eyebrow="Wealth", desc="Client portfolios by AUM. Search by name, or filter for high cash and missing beneficiaries.") }}
+{{ ui.page_head("Portfolio search", eyebrow="Wealth", desc="Client portfolios. Search by name, or filter for high cash and missing beneficiaries.") }}
 
 <form class="row" method="get" action="/portfolio" style="gap:10px; flex-wrap:wrap; margin-bottom:16px">
   <input class="input" name="q" value="{{ filters.q }}" placeholder="Client or registration" style="max-width:280px">
@@ -15,17 +15,15 @@
 <h2 class="section-title">Results ({{ results|length }})</h2>
 <div class="table-wrap">
   <table class="data">
-    <thead><tr><th>Client</th><th class="num">AUM</th><th class="num">Cash</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Client</th><th>Detail</th></tr></thead>
     <tbody>
     {% for r in results %}
       <tr>
         <td>{{ r.full_name }}</td>
-        <td class="num">${{ "{:,.0f}".format(r.aum or 0) }}</td>
-        <td class="num">${{ "{:,.0f}".format(r.cash or 0) }}</td>
         <td><a class="rowlink" href="/people/{{ r.id }}?tab=portfolio">View portfolio</a></td>
       </tr>
     {% else %}
-      <tr><td colspan="4" class="subtle">No portfolios match these filters.</td></tr>
+      <tr><td colspan="2" class="subtle">No portfolios match these filters.</td></tr>
     {% endfor %}
     </tbody>
   </table>
