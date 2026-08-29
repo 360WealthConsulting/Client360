@@ -789,3 +789,241 @@ def test_dry_run_previews_the_skip_without_changing_anything(tmp_path):
     summary = _sync(src, dst, dry_run=True)
     assert summary["reconcile_skipped_has_dependents"] >= 1
     assert _count("documents", dup_id, "id") == 1
+
+
+# --- a merge-retired document must never be resurrected by a routine sync --------------------------
+# Production defect: a sync unconditionally forced status='active', archived=False, archived_at=None,
+# deleted_at=None onto every matched row, so 23,988 TaxDome documents were rewritten and 1,532 of
+# them - documents the merge executor had soft-deleted minutes earlier - came back to life and
+# re-entered the merge plan as fresh SAFE_AUTO_MERGE candidates.
+
+def _retire_as_merge(document_id, survivor_id=None):
+    """Retire a row exactly as document_merge_execute._retire does."""
+    from datetime import UTC, datetime
+    now = datetime.now(UTC)
+    with engine.begin() as c:
+        c.execute(sa_text("UPDATE documents SET status='deleted', deleted_at=:n, updated_at=:n"
+                          " WHERE id=:i"), {"n": now, "i": document_id})
+        c.execute(sa_text(
+            "INSERT INTO document_events (document_id, event_type, from_status, to_status, note,"
+            " occurred_at) VALUES (:d, :ev, 'active', 'deleted', :note, :n)"),
+            {"d": document_id, "ev": td.MERGE_RETIREMENT_EVENT,
+             "note": f"consolidated into document {survivor_id or 0}", "n": now})
+
+
+def _doc_state(document_id):
+    with engine.connect() as c:
+        return dict(c.execute(sa_text(
+            "SELECT id, status, deleted_at, archived, storage_uri, updated_at FROM documents"
+            " WHERE id=:i"), {"i": document_id}).mappings().one())
+
+
+def _merge_events(document_id):
+    with engine.connect() as c:
+        return c.execute(sa_text("SELECT count(*) FROM document_events WHERE document_id=:i"
+                                 " AND event_type=:e"),
+                         {"i": document_id, "e": td.MERGE_RETIREMENT_EVENT}).scalar_one()
+
+
+def test_a_merge_retired_document_is_not_reactivated_by_sync(tmp_path):
+    src, dst = _dirs(tmp_path)
+    (src / "Hawthorne, Taylor").mkdir()
+    (src / "Hawthorne, Taylor" / "2025 W-2.pdf").write_text("w2 content")
+    _sync(src, dst)
+    row = _taxdome_rows()[0]
+    _retire_as_merge(row["id"], survivor_id=row["id"] + 1000)
+    before = _doc_state(row["id"])
+
+    summary = _sync(src, dst)                      # a routine re-sync, source unchanged
+
+    after = _doc_state(row["id"])
+    assert after["status"] == "deleted", "sync must never resurrect a merge-retired document"
+    assert after["deleted_at"] == before["deleted_at"], "deleted_at must be preserved"
+    assert after["archived"] == before["archived"]
+    assert _merge_events(row["id"]) == 1, "merged_into_canonical history must survive"
+    assert summary["merge_retired_preserved"] == 1
+    assert summary["merge_retired_details"][0]["document_id"] == row["id"]
+
+
+def test_no_replacement_duplicate_document_is_created(tmp_path):
+    """Requirement 5: the merged row is RECOGNISED, not bypassed into a new canonical row."""
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir()
+    (src / "Okoro Family" / "Engagement Agreement.pdf").write_text("agreement")
+    _sync(src, dst)
+    rows = _taxdome_rows()
+    assert len(rows) == 1
+    _retire_as_merge(rows[0]["id"])
+
+    for _ in range(3):
+        summary = _sync(src, dst)
+        assert summary["copied"] == 0, "no replacement canonical document may be created"
+
+    after = _taxdome_rows()
+    assert len(after) == 1, "still exactly one row for this file"
+    assert after[0]["id"] == rows[0]["id"] and after[0]["status"] == "deleted"
+
+
+def test_repeated_sync_over_a_merge_retired_row_is_idempotent(tmp_path):
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir()
+    (src / "Okoro Family" / "Engagement Agreement.pdf").write_text("agreement")
+    _sync(src, dst)
+    did = _taxdome_rows()[0]["id"]
+    _retire_as_merge(did)
+    first = _doc_state(did)
+    for _ in range(3):
+        _sync(src, dst)
+    assert _doc_state(did) == first, "not even updated_at may churn on a merge-retired row"
+    assert _merge_events(did) == 1, "no duplicate lifecycle events"
+
+
+def test_provenance_of_a_merge_retired_row_is_left_coherent(tmp_path):
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir()
+    (src / "Okoro Family" / "Engagement Agreement.pdf").write_text("agreement")
+    _sync(src, dst)
+    did = _taxdome_rows()[0]["id"]
+    with engine.connect() as c:
+        before = c.execute(sa_text("SELECT count(*) FROM document_sources WHERE document_id=:i"),
+                           {"i": did}).scalar_one()
+    _retire_as_merge(did)
+    _sync(src, dst)
+    with engine.connect() as c:
+        after = c.execute(sa_text("SELECT count(*) FROM document_sources WHERE document_id=:i"),
+                          {"i": did}).scalar_one()
+        tags = c.execute(sa_text("SELECT tags->>'source_system' FROM documents WHERE id=:i"),
+                         {"i": did}).scalar()
+    assert after == before, "no provenance row added or removed"
+    assert tags == td.SOURCE_SYSTEM, "the discriminator is untouched"
+
+
+def test_an_ACTIVE_taxdome_document_still_refreshes_normally(tmp_path):
+    """The narrow rule must not change ordinary sync behaviour."""
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir()
+    f = src / "Okoro Family" / "Engagement Agreement.pdf"
+    f.write_text("agreement")
+    _sync(src, dst)
+    did = _taxdome_rows()[0]["id"]
+    assert _doc_state(did)["status"] == "active"
+
+    f.write_text("agreement REVISED and longer")     # a genuine content change
+    summary = _sync(src, dst)
+    after = _doc_state(did)
+    assert summary["updated"] == 1 and summary["merge_retired_preserved"] == 0
+    assert after["status"] == "active" and after["deleted_at"] is None
+    with engine.connect() as c:
+        sha = c.execute(sa_text("SELECT sha256 FROM documents WHERE id=:i"), {"i": did}).scalar()
+    assert sha == hashlib.sha256(b"agreement REVISED and longer").hexdigest()
+
+
+def test_a_plain_user_deleted_row_keeps_its_existing_behaviour(tmp_path):
+    """Deliberately NOT changed: only MERGE retirement is protected by this rule.
+
+    A soft delete with no merged_into_canonical evidence is an administrative lifecycle decision
+    and is left exactly as it behaves today. Recorded here so the boundary is explicit and any
+    future change to it is a conscious one."""
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir()
+    (src / "Okoro Family" / "Engagement Agreement.pdf").write_text("agreement")
+    _sync(src, dst)
+    did = _taxdome_rows()[0]["id"]
+    with engine.begin() as c:                        # deleted, but NOT by a merge
+        c.execute(sa_text("UPDATE documents SET status='deleted', deleted_at=now() WHERE id=:i"),
+                  {"i": did})
+    (src / "Okoro Family" / "Engagement Agreement.pdf").write_text("changed content here")
+    _sync(src, dst)
+    assert _doc_state(did)["status"] == "active", "existing behaviour, unchanged by this fix"
+    assert _merge_events(did) == 0
+
+
+def test_the_production_sequence_end_to_end(tmp_path):
+    """Reproduces exactly what happened in production, through the REAL merge executor:
+
+    two same-owner TaxDome duplicates -> merge retires one -> a routine sync runs ->
+    the retired row must stay deleted and must NOT re-enter the merge plan."""
+    from app.services import document_merge as dm
+    from app.services import document_merge_execute as dx
+
+    src, dst = _dirs(tmp_path)
+    (src / "Hawthorne, Taylor").mkdir()
+    (src / "Hawthorne, Taylor" / "2025 W-2.pdf").write_text("identical w2 bytes")
+    (src / "Hawthorne, Taylor" / "sub").mkdir()
+    (src / "Hawthorne, Taylor" / "sub" / "2025 W-2.pdf").write_text("identical w2 bytes")
+    _sync(src, dst)
+
+    rows = sorted(_taxdome_rows(), key=lambda r: r["id"])
+    assert len(rows) == 2 and rows[0]["sha256"] == rows[1]["sha256"], "same content, two rows"
+    pid = _person("Taylor Hawthorne TDX")
+    with engine.begin() as c:                        # same owner -> one mergeable partition
+        c.execute(sa_text("UPDATE documents SET person_id=:p WHERE id = ANY(:ids)"),
+                  {"p": pid, "ids": [r["id"] for r in rows]})
+
+    plan = dx.plan()
+    mine = [p for p in plan["partitions"] if p["sha256"] == rows[0]["sha256"]]
+    assert len(mine) == 1, "one ownership-scoped partition"
+    survivor, retired = mine[0]["survivor_document_id"], mine[0]["duplicate_document_ids"][0]
+
+    result = dx.apply(plan_doc={**plan, "partitions": mine, "safe_partitions": 1,
+                                "rows_to_retire": 1},
+                      apply_writes=True, expected_safe_partitions=1, expected_retirement_rows=1)
+    assert result["status"] == dx.STATUS_SUCCESS
+    assert _doc_state(retired)["status"] == "deleted"
+    assert _merge_events(retired) == 1
+    deleted_at = _doc_state(retired)["deleted_at"]
+
+    # ...and now the routine sync that caused the production resurrection.
+    summary = _sync(src, dst)
+    assert summary["merge_retired_preserved"] == 1
+
+    after = _doc_state(retired)
+    assert after["status"] == "deleted", "THE DEFECT: sync must not resurrect the retired document"
+    assert after["deleted_at"] == deleted_at
+    assert _merge_events(retired) == 1
+    assert _doc_state(survivor)["status"] == "active", "the survivor is untouched and still active"
+
+    # The retired duplicate must not come back as a fresh merge candidate.
+    fresh = dm.preview()
+    group = next((g for g in fresh["groups"] if g["sha256"] == rows[0]["sha256"]), None)
+    assert group is None, "the hash group no longer has two eligible rows"
+    assert not any(retired in p["duplicate_document_ids"] or p["survivor_document_id"] == retired
+                   for p in dx.plan()["partitions"]), "retired row must not re-enter the plan"
+
+
+def test_every_taxdome_write_of_documents_status_is_guarded():
+    """Structural: the sync's unconditional lifecycle reset must stay behind the merge guard."""
+    import pathlib
+    src = pathlib.Path("app/importers/taxdome_drive.py").read_text(encoding="utf-8")
+    assert '"status": "active", "archived": False' in src, "the reset block still exists"
+    assert "_is_merge_retired" in src and "MERGE_RETIREMENT_EVENT" in src
+    guard = src.index("_is_merge_retired(probe, canonical[\"id\"])")
+    reset = src.index('"status": "active", "archived": False')
+    assert guard < reset, "the guard must run BEFORE the lifecycle reset is ever applied"
+
+
+def test_a_deliberately_restored_document_resumes_normal_sync(tmp_path):
+    """The guard keys on the CURRENT deleted state, not merely on merge history.
+
+    document_platform.restore() is the sanctioned way to bring a merged row back. Once an
+    administrator has done that, sync must treat it as an ordinary active document again -
+    the historic merged_into_canonical event must not blacklist it forever."""
+    src, dst = _dirs(tmp_path)
+    (src / "Okoro Family").mkdir()
+    f = src / "Okoro Family" / "Engagement Agreement.pdf"
+    f.write_text("agreement")
+    _sync(src, dst)
+    did = _taxdome_rows()[0]["id"]
+    _retire_as_merge(did)
+    assert _sync(src, dst)["merge_retired_preserved"] == 1        # protected while deleted
+
+    with engine.begin() as c:                                     # explicit administrative restore
+        c.execute(sa_text("UPDATE documents SET status='active', deleted_at=NULL WHERE id=:i"),
+                  {"i": did})
+    f.write_text("agreement revised after restore")
+    summary = _sync(src, dst)
+
+    assert summary["merge_retired_preserved"] == 0, "a restored row is no longer protected"
+    assert summary["updated"] == 1, "and refreshes normally"
+    assert _doc_state(did)["status"] == "active"
+    assert _merge_events(did) == 1, "the historic merge event is still preserved as history"

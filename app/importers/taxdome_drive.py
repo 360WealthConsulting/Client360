@@ -323,6 +323,7 @@ def _new_summary(source_root, destination_root, scan_id, started):
         "bytes_copied": 0, "missing": 0, "purged": 0, "ignored": 0, "errors": [],
         "legacy_rows_to_upgrade": 0, "legacy_rows_upgraded": 0, "reconciled": 0,
         "reconcile_skipped_has_dependents": 0, "reconcile_skipped_details": [],
+        "merge_retired_preserved": 0, "merge_retired_details": [],
         "folders_linked": 0, "folders_unresolved": 0, "status": "started", "dry_run": False,
     }
 
@@ -453,6 +454,27 @@ def _dependent_tables(conn, document_id) -> list[str]:
     return [r[0] for r in conn.execute(sa_text(union), {"did": document_id}).fetchall()]
 
 
+#: Lifecycle event the merge executor writes on every document it retires
+#: (app/services/document_merge_execute._retire). It is the authoritative, already-existing
+#: evidence that a soft-deleted row was retired BY A MERGE rather than by a person.
+MERGE_RETIREMENT_EVENT = "merged_into_canonical"
+
+
+def _is_merge_retired(conn, document_id) -> bool:
+    """True when this document was soft-deleted BY A MERGE and must never be reactivated.
+
+    Deliberately narrow. It is not "the row is deleted" - an administrative or user deletion is a
+    different lifecycle decision and is left exactly as it behaves today. The distinguishing
+    evidence already exists and needs no new column: the merge executor stamps a
+    ``merged_into_canonical`` document_events row on each document it retires, inside the same
+    transaction as the retirement, and the hash-chained audit records the same fact."""
+    return bool(conn.execute(sa_text(
+        "SELECT 1 FROM documents d WHERE d.id = :did AND d.status = 'deleted'"
+        " AND EXISTS (SELECT 1 FROM document_events e WHERE e.document_id = d.id"
+        "             AND e.event_type = :ev) LIMIT 1"),
+        {"did": document_id, "ev": MERGE_RETIREMENT_EVENT}).scalar())
+
+
 def _resolve_identity(rows, key, legacy_key):
     """Resolve the candidate rows for one source file into (canonical, duplicates, had_legacy).
 
@@ -507,9 +529,24 @@ def _sync_one_file(db, source, destination, folder_name, abs_path, filename, sca
         rows = conn.execute(
             select(db.documents.c.id, db.documents.c.stored_name, db.documents.c.sha256,
                    db.documents.c.tags, db.documents.c.person_id, db.documents.c.household_id,
-                   db.documents.c.category, db.documents.c.classification, db.documents.c.size_bytes)
+                   db.documents.c.category, db.documents.c.classification, db.documents.c.size_bytes,
+                   db.documents.c.status)
             .where(db.documents.c.stored_name.in_([key, legacy_key]))).mappings().all()
     canonical, duplicates, had_legacy = _resolve_identity(rows, key, legacy_key)
+
+    # A document the merge executor retired must never be resurrected by a routine sync. The row is
+    # still MATCHED above, so nothing here creates a replacement duplicate - the sync simply
+    # recognises the merged row and leaves its lifecycle exactly as the merge left it: status
+    # 'deleted', deleted_at intact, merged_into_canonical history intact. Its content now lives on
+    # the surviving canonical document, which this sync keeps up to date under its own key.
+    if canonical is not None and canonical["status"] == "deleted":
+        with db.engine.connect() as probe:
+            if _is_merge_retired(probe, canonical["id"]):
+                summary["merge_retired_preserved"] += 1
+                summary["merge_retired_details"].append(
+                    {"document_id": canonical["id"], "stored_name": canonical["stored_name"],
+                     "source_relative_path": rel_str})
+                return
 
     # Decide the copy action using the size+mtime fast path; hash only when needed.
     action = "new"
