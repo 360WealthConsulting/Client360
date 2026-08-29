@@ -53,10 +53,28 @@ def _sync(src, dst, **kw):
     return drake.sync(src, dst, progress=lambda *_a, **_k: None, **kw)
 
 
-def _drake_rows():
+def _drake_rows(document_id=None):
+    """Drake source references; pass ``document_id`` to scope the count to ONE document.
+
+    An UNSCOPED count is only correct while no other test in the suite produces a Drake source
+    reference, and that does not hold. SHA-256 canonical reuse (ADR-072) legitimately attaches a
+    Drake reference to a document some other test created, and this file's name-pattern teardown
+    cannot see that row to clean it up — so a global count picks up the survivor and reports a
+    duplicate that never existed. Any assertion about idempotency must name its document."""
     ds = metadata.tables["document_sources"]
+    stmt = select(ds).where(ds.c.source_system == "Drake")
+    if document_id is not None:
+        stmt = stmt.where(ds.c.document_id == document_id)
     with engine.connect() as c:
-        return c.execute(select(ds).where(ds.c.source_system == "Drake")).mappings().all()
+        return c.execute(stmt).mappings().all()
+
+
+def _document_id_for(content: str) -> int:
+    """The canonical document holding this content — resolved by SHA-256, the same identity the
+    Drake importer resolves on."""
+    sha = hashlib.sha256(content.encode()).hexdigest()
+    with engine.connect() as c:
+        return c.execute(select(documents.c.id).where(documents.c.sha256 == sha)).scalar_one()
 
 
 # --- discovery + canonical creation + source ref -----------------------------
@@ -163,10 +181,17 @@ def test_incremental_skips_unchanged(tmp_path):
 def test_idempotent_no_duplicate_source_refs(tmp_path):
     src, dst = _dirs(tmp_path)
     (src / f"C {_TAG}").mkdir()
-    (src / f"C {_TAG}" / f"doc {_TAG}.pdf").write_text("y")
+    # UNIQUE content. A one-byte fixture can share its SHA-256 with an unrelated test's synthetic
+    # document, and ADR-072 would then correctly attach this Drake reference to THAT document —
+    # making "the document this test produced" ambiguous. Unique content keeps it unambiguous.
+    content = f"{_TAG} idempotency {uuid.uuid4().hex}"
+    (src / f"C {_TAG}" / f"doc {_TAG}.pdf").write_text(content)
     _sync(src, dst)
     _sync(src, dst)
-    assert len(_drake_rows()) == 1                           # one Drake source ref, not two
+    document_id = _document_id_for(content)
+    # Scoped to THIS document: re-syncing an unchanged file must refresh the existing reference
+    # (uq_document_source_ref → on_conflict_do_update), never insert a second one.
+    assert len(_drake_rows(document_id)) == 1
 
 
 def test_deleted_source_marked_unavailable(tmp_path):
