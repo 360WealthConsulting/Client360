@@ -393,7 +393,8 @@ def test_the_cli_reports_partial_apply_and_exits_nonzero(monkeypatch, capsys):
                      "--expected-retirement-rows", "4"])
     out = capsys.readouterr().out
     assert code == 3, "a partial apply must exit non-zero"
-    assert "PARTIAL APPLY" in out
+    assert "PARTIAL" in out and "APPLIED - SUCCESS" not in out
+    assert "FINAL STATUS        : PARTIAL" in out
     assert "committed batches   : 1" in out
     assert "failed batch        : 2" in out
     assert "partitions committed: 2" in out
@@ -1253,3 +1254,167 @@ def test_a_content_digest_never_embeds_the_value_it_summarises():
     assert d["length"] == len(body)
     assert body not in json.dumps(d)
     assert dx._digest(None) == {"sha256": None, "length": 0, "is_null": True}
+
+
+# === run STATUS and exit code =====================================================================
+# The production defect this section exists to prevent: a run that applied 1,068 partitions and
+# refused 931 printed "APPLIED" and exited 0, because the status was derived from whether a batch
+# had RAISED rather than from what happened to every planned partition.
+
+def _cli_run(monkeypatch, capsys, plan_rows, plan_doc):
+    import scripts.execute_document_merge as cli
+    doc = {**plan_doc, "partitions": plan_rows, "safe_partitions": len(plan_rows),
+           "rows_to_retire": sum(p["rows_to_retire"] for p in plan_rows)}
+    monkeypatch.setattr(dx, "plan", lambda **kw: doc)
+    code = cli.main(["--apply", "--expected-safe-partitions", str(len(plan_rows)),
+                     "--expected-retirement-rows", str(doc["rows_to_retire"])])
+    return code, capsys.readouterr().out
+
+
+def test_status_success_when_every_planned_partition_applies(monkeypatch, capsys):
+    shas = [_safe_pair()[0] for _ in range(3)]
+    plan_doc = dx.plan()
+    mine = [p for p in plan_doc["partitions"] if p["sha256"] in shas]
+    code, out = _cli_run(monkeypatch, capsys, mine, plan_doc)
+    assert code == 0
+    assert "APPLIED - SUCCESS" in out
+    assert "FINAL STATUS        : SUCCESS   (exit 0)" in out
+
+
+def _good_and_doomed(n_good=2, n_bad=2):
+    """n_good partitions that will apply, plus n_bad whose fingerprints are tampered so they are
+    refused at revalidation - a refusal, with nothing raised anywhere."""
+    good = [_safe_pair()[0] for _ in range(n_good)]
+    bad = [_safe_pair()[0] for _ in range(n_bad)]
+    plan_doc = dx.plan()
+    keep = [p for p in plan_doc["partitions"] if p["sha256"] in good]
+    doomed = [{**p, "fingerprint": "0" * 64} for p in plan_doc["partitions"]
+              if p["sha256"] in bad]
+    assert len(keep) == n_good and len(doomed) == n_bad
+    return plan_doc, keep, doomed
+
+
+def _apply_mixed(plan_doc, rows):
+    total = sum(p["rows_to_retire"] for p in rows)
+    return dx.apply(plan_doc={**plan_doc, "partitions": rows, "safe_partitions": len(rows),
+                              "rows_to_retire": total},
+                    apply_writes=True, expected_safe_partitions=len(rows),
+                    expected_retirement_rows=total)
+
+
+def test_status_partial_when_some_partitions_are_refused_even_though_nothing_raised():
+    """The exact production shape: applied + refused, no exception anywhere."""
+    plan_doc, keep, doomed = _good_and_doomed()
+    r = _apply_mixed(plan_doc, keep + doomed)
+    assert r["failed_batch"] is None, "nothing raised - this is the production shape"
+    assert r["partitions_applied"] == 2 and r["partitions_refused"] == 2
+    assert r["status"] == dx.STATUS_PARTIAL
+    assert r["exit_code"] == 3
+    assert r["partial_apply"] is True
+
+
+def test_the_cli_exits_3_and_never_prints_applied_for_a_partial_run(monkeypatch, capsys):
+    plan_doc, keep, doomed = _good_and_doomed()
+    code, out = _cli_run(monkeypatch, capsys, keep + doomed, plan_doc)
+    assert code == 3, "a partial run must exit 3"
+    assert "PARTIAL" in out
+    assert "APPLIED - SUCCESS" not in out
+    assert "FINAL STATUS        : PARTIAL   (exit 3)" in out
+    assert "partitions applied  : 2" in out and "partitions refused  : 2" in out
+
+
+def test_status_failed_and_exit_4_when_nothing_commits(monkeypatch, capsys):
+    plan_doc, _keep, doomed = _good_and_doomed(0, 2)
+    code, out = _cli_run(monkeypatch, capsys, doomed, plan_doc)
+    assert code == 4, "a zero-commit run must exit 4"
+    assert "FAILED - NOTHING COMMITTED" in out
+    assert "FINAL STATUS        : FAILED   (exit 4)" in out
+    assert "APPLIED" not in out.split("FINAL STATUS")[0].replace("partitions applied", "")
+
+
+def test_a_keyboard_interrupt_is_never_reported_as_success(monkeypatch):
+    """Production lost a run to Ctrl-C; the operator still needed the committed batch list."""
+    shas = [_safe_pair()[0] for _ in range(4)]
+    plan_doc = dx.plan()
+    mine = sorted([p for p in plan_doc["partitions"] if p["sha256"] in shas],
+                  key=lambda p: p["survivor_document_id"])
+    real = dx._execute_prepared
+    calls = {"n": 0}
+
+    def _interrupt(conn, prepared, run_id, actor, request_id):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise KeyboardInterrupt()
+        return real(conn, prepared, run_id, actor, request_id)
+
+    monkeypatch.setattr(dx, "_execute_prepared", _interrupt)
+    # apply() must RETURN a result rather than let the interrupt escape - otherwise the operator
+    # loses the committed-batch list, which is exactly what happened in production.
+    try:
+        r = dx.apply(plan_doc={**plan_doc, "partitions": mine, "safe_partitions": 4,
+                               "rows_to_retire": 4},
+                     apply_writes=True, batch_size=2, expected_safe_partitions=4,
+                     expected_retirement_rows=4)
+    except BaseException as exc:                       # noqa: BLE001 - the point of the test
+        raise AssertionError(
+            f"apply() let {type(exc).__name__} escape; the committed-batch list is lost") from None
+    assert r["status"] == dx.STATUS_PARTIAL and r["exit_code"] == 3
+    assert r["failed_batch"]["error"] == "KeyboardInterrupt"
+    assert r["committed_batches"] == [1]
+    assert r["partitions_applied"] == 2 and r["partitions_failed"] == 2
+    assert r["wrote_anything"] is True
+
+
+def test_a_keyboard_interrupt_before_any_commit_is_FAILED_not_success(monkeypatch):
+    _safe_pair()
+    plan_doc = dx.plan()
+
+    def _interrupt(conn, prepared, run_id, actor, request_id):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(dx, "_execute_prepared", _interrupt)
+    try:
+        r = dx.apply(plan_doc=plan_doc, apply_writes=True,
+                     expected_safe_partitions=plan_doc["safe_partitions"],
+                     expected_retirement_rows=plan_doc["rows_to_retire"])
+    except BaseException as exc:                       # noqa: BLE001
+        raise AssertionError(f"apply() let {type(exc).__name__} escape") from None
+    assert r["status"] == dx.STATUS_FAILED and r["exit_code"] == 4
+    assert r["partitions_applied"] == 0
+
+
+def test_the_result_artifact_and_the_human_heading_always_agree(monkeypatch, capsys):
+    """The heading is rendered FROM the status field, so text and artifact cannot diverge."""
+    import scripts.execute_document_merge as cli
+    plan_doc, keep, doomed = _good_and_doomed(2, 1)
+    doc = {**plan_doc, "partitions": keep + doomed, "safe_partitions": 3,
+           "rows_to_retire": sum(p["rows_to_retire"] for p in keep + doomed)}
+    monkeypatch.setattr(dx, "plan", lambda **kw: doc)
+    code = cli.main(["--apply", "--json", "--expected-safe-partitions", "3",
+                     "--expected-retirement-rows", str(doc["rows_to_retire"])])
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["status"] == "PARTIAL"
+    assert payload["exit_code"] == code == 3
+    assert payload["partitions_applied"] == 2 and payload["partitions_refused"] == 1
+
+
+def test_the_json_artifact_carries_the_status_and_every_required_count():
+    plan_doc, keep, doomed = _good_and_doomed(2, 1)
+    r = _apply_mixed(plan_doc, keep + doomed)
+    for key in ("status", "exit_code", "partitions_planned", "partitions_applied",
+                "partitions_refused", "partitions_failed", "partitions_not_attempted",
+                "planned_retirement_rows", "rows_retired", "reassignments_total"):
+        assert key in r, key
+    assert json.loads(json.dumps(r, default=str))["status"] == "PARTIAL"
+    assert r["partitions_planned"] == (r["partitions_applied"] + r["partitions_refused"]
+                                       + r["partitions_failed"] + r["partitions_not_attempted"])
+
+
+def test_a_dry_run_status_is_dry_run_and_exits_zero(monkeypatch, capsys):
+    import scripts.execute_document_merge as cli
+    _safe_pair()
+    r = dx.apply(plan_doc=dx.plan())
+    assert r["status"] == dx.STATUS_DRY_RUN and r["exit_code"] == 0
+    assert cli.main([]) == 0
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out and "APPLIED - SUCCESS" not in out

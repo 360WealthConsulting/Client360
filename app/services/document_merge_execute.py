@@ -75,6 +75,18 @@ EXECUTABLE_CLASSIFICATIONS = frozenset({SAFE})
 #: Never executable, spelled out so the refusal is greppable and testable.
 NON_EXECUTABLE_CLASSIFICATIONS = frozenset({REVIEW, BLOCKED, SHARED})
 
+#: Final run status. It is derived from what actually happened to every PLANNED partition, not
+#: from whether a batch raised: a run that applied some partitions and refused others is PARTIAL
+#: even though no exception was ever thrown. Getting this wrong is what let a production run of
+#: 1,068 applied / 931 refused print "APPLIED" and exit 0.
+STATUS_SUCCESS = "SUCCESS"
+STATUS_PARTIAL = "PARTIAL"
+STATUS_FAILED = "FAILED"
+STATUS_DRY_RUN = "DRY_RUN"
+
+#: Process exit code per status. Guard/usage errors keep their own codes in the CLI.
+EXIT_CODES = {STATUS_SUCCESS: 0, STATUS_DRY_RUN: 0, STATUS_PARTIAL: 3, STATUS_FAILED: 4}
+
 AUDIT_ACTION = "document.merge.partition_applied"
 AUDIT_ENTITY = "document_merge_partition"
 
@@ -690,9 +702,17 @@ def apply(*, plan_doc=None, apply_writes=False, batch_size=DEFAULT_BATCH_SIZE,
                     if apply_writes:
                         results.append(_execute_prepared(conn, prepared, run_id, actor_user_id,
                                                          request_id))
-        except Exception as exc:                       # noqa: BLE001 - reported, then re-raised
+        except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - recorded, then reported
+            # KeyboardInterrupt is caught DELIBERATELY. Production lost a run to Ctrl-C and the
+            # operator needed to know which batches had already committed; an unhandled traceback
+            # discards exactly that. It is recorded as a failure and surfaces as PARTIAL/FAILED,
+            # never as success.
+            # Everything in this batch rolled back, so nothing here counts as applied. The
+            # partitions that were not already refused are FAILED.
             failure = {"batch": n, "partitions_in_batch": len(batch),
-                       "error": type(exc).__name__, "detail": str(exc)}
+                       "partitions_failed": len(batch) - len(errors),
+                       "error": type(exc).__name__, "detail": str(exc) or type(exc).__name__}
+            refused.extend(errors)              # refusals inside the failing batch are still real
             batch_reports.append({"batch": n, "partitions": len(batch), "applied": 0,
                                   "refused": len(errors), "committed": False,
                                   "error": f"{type(exc).__name__}: {exc}"})
@@ -724,11 +744,28 @@ def apply(*, plan_doc=None, apply_writes=False, batch_size=DEFAULT_BATCH_SIZE,
             if a["delete"]:
                 would_delete[f"{a['table']}.{a['column']}"] += len(a["delete"])
 
+    # --- final status -------------------------------------------------------------------------
+    # Derived from every PLANNED partition, so a refusal counts even when nothing raised.
+    planned_n, applied_n, refused_n = len(partitions), len(applied), len(refused)
+    failed_n = failure["partitions_failed"] if failure else 0
+    not_attempted = max(0, planned_n - applied_n - refused_n - failed_n)
+
+    if not apply_writes:
+        status = STATUS_DRY_RUN
+    elif applied_n == planned_n and refused_n == 0 and failed_n == 0 and not_attempted == 0:
+        status = STATUS_SUCCESS
+    elif applied_n > 0:
+        status = STATUS_PARTIAL
+    else:
+        status = STATUS_FAILED
+
     return {
         "run_id": run_id,
+        "status": status,
+        "exit_code": EXIT_CODES[status],
         "dry_run": not apply_writes,
         "wrote_anything": bool(apply_writes and applied),
-        "partial_apply": bool(failure and committed_batches),
+        "partial_apply": status == STATUS_PARTIAL,
         "failed_batch": failure,
         "committed_batches": committed_batches,
         "retirement_mechanism": "documents.status='deleted' + deleted_at, document_events "
@@ -741,10 +778,15 @@ def apply(*, plan_doc=None, apply_writes=False, batch_size=DEFAULT_BATCH_SIZE,
         "batches": batch_reports,
         "partitions_planned": len(partitions),
         "partitions_prepared": len(prepared_all),
-        "partitions_applied": len(applied),
-        "partitions_refused": len(refused),
+        "partitions_applied": applied_n,
+        "partitions_refused": refused_n,
+        "partitions_failed": failed_n,
+        "partitions_not_attempted": not_attempted,
+        "planned_retirement_rows": sum(p["rows_to_retire"] for p in partitions),
         "rows_retired": sum(r["rows_retired"] for r in applied),
         "rows_committed": sum(r["rows_retired"] for r in applied),
+        "reassignments_total": sum(v for r in applied
+                                   for v in r["reassigned_by_table"].values()),
         "reassigned_by_table": dict(sorted(reassigned_totals.items())),
         "deleted_by_table": dict(sorted(deleted_totals.items())),
         "would_reassign_by_table": dict(sorted(would_reassign.items())),

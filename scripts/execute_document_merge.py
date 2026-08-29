@@ -68,14 +68,14 @@ def _plan_text(p: dict) -> str:
 
 def _run_text(r: dict) -> str:
     dry = r["dry_run"]
-    if dry:
-        mode = "DRY RUN - NO DATABASE WRITE WAS ISSUED"
-    elif r["partial_apply"]:
-        mode = "*** PARTIAL APPLY - SOME BATCHES ARE COMMITTED ***"
-    elif r["failed_batch"]:
-        mode = "FAILED - NOTHING COMMITTED"
-    else:
-        mode = "APPLIED"
+    # The heading is the STATUS the service derived - never re-derived here, so the text and the
+    # result artifact can never disagree.
+    mode = {
+        "DRY_RUN": "DRY RUN - NO DATABASE WRITE WAS ISSUED",
+        "SUCCESS": "APPLIED - SUCCESS",
+        "PARTIAL": "*** PARTIAL - SOME PARTITIONS DID NOT APPLY ***",
+        "FAILED": "FAILED - NOTHING COMMITTED",
+    }[r["status"]]
     would = "would " if dry else ""
     L = ["=" * 78, f"DOCUMENT MERGE EXECUTION    {mode}", "=" * 78,
          f"  run id              : {r['run_id']}",
@@ -84,10 +84,18 @@ def _run_text(r: dict) -> str:
          f"  batch size          : {r['batch_size']}",
          "",
          f"  partitions planned  : {r['partitions_planned']}",
-         f"  partitions that {would}apply : {r['partitions_applied'] if not dry else r['partitions_prepared']}",
+         f"  partitions applied  : {r['partitions_applied'] if not dry else r['partitions_prepared']}",
          f"  partitions refused  : {r['partitions_refused']}",
-         f"  rows that {would}retire      : "
+         f"  partitions failed   : {r['partitions_failed']}",
+         f"  partitions not attempted : {r['partitions_not_attempted']}",
+         "",
+         f"  planned retirement rows  : {r['planned_retirement_rows']}",
+         f"  actual retirement rows   : "
          f"{r['would_retire_rows'] if dry else r['rows_retired']}",
+         f"  dependent-row reassignments: "
+         f"{sum(r['would_reassign_by_table'].values()) if dry else r['reassignments_total']}",
+         "",
+         f"  FINAL STATUS        : {r['status']}   (exit {r['exit_code']})",
          ""]
     if r["failed_batch"]:
         f = r["failed_batch"]
@@ -97,7 +105,7 @@ def _run_text(r: dict) -> str:
               f"  partitions committed: {r['partitions_applied']}",
               f"  retirement rows committed: {r['rows_committed']}",
               ""]
-        if r["partial_apply"]:
+        if r["status"] == "PARTIAL":
             L += ["  WARNING: batches commit independently. The batches listed above are DURABLE.",
                   "  The failed batch rolled back completely; later batches were never attempted.",
                   "  Re-plan against current state before retrying - do NOT replay the old plan.",
@@ -165,12 +173,12 @@ def main(argv=None) -> int:
             print(f"\n  REFUSED - nothing was written.\n  {exc}")
             return 2
         print(json.dumps(out, indent=2, default=str) if args.json else _run_text(out))
-        if out["failed_batch"]:
+        if out["exit_code"] != 0:
             if args.output_json:
                 with open(args.output_json, "w", encoding="utf-8") as fh:
                     json.dump(out, fh, indent=2, default=str)
                 print(f"\n  wrote {args.output_json}")
-            return 3 if out["partial_apply"] else 4
+            return out["exit_code"]
 
     if args.output_json:
         with open(args.output_json, "w", encoding="utf-8") as fh:
