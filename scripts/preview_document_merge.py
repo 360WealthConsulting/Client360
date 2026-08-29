@@ -10,7 +10,7 @@ Usage:
     python scripts/preview_document_merge.py --show 10      # per-group detail for the first 10
 
     python -m scripts.preview_document_merge --blocked-details
-    python -m scripts.preview_document_merge --blocked-details --reason ownership_person_mismatch
+    python -m scripts.preview_document_merge --blocked-details --reason shared_content_cross_person
     python -m scripts.preview_document_merge --blocked-details --output-json /tmp/blocked.json
     python -m scripts.preview_document_merge --blocked-details --output-csv  /tmp/blocked.csv
 
@@ -25,7 +25,7 @@ import sys
 from app.services.document_merge import (
     BLOCKED,
     DEFAULT_SAMPLE,
-    OWNERSHIP_BLOCKER_CODES,
+    DETAIL_REASON_CODES,
     REVIEW,
     SAFE,
     blocked_details,
@@ -127,13 +127,18 @@ def _owner_label(m) -> str:
 def _blocked_text(report, sample) -> str:
     su = report["summary"]
     L = ["=" * 78,
-         "BLOCKED DETAIL SUMMARY    READ-ONLY - NO CHANGES WERE MADE",
+         "NON-MERGEABLE DETAIL      READ-ONLY - NO CHANGES WERE MADE",
          "=" * 78,
          f"  blocked groups (all)        : {su['blocked_groups_total']}",
-         f"  blocked groups in this view : {su['blocked_groups_in_this_report']}",
+         f"  shared-content groups (all) : {su['shared_content_groups_total']}",
+         f"  groups in this view         : {su['blocked_groups_in_this_report']}",
+         f"  rows preserved cross-owner  : {su['rows_preserved_cross_owner']}",
          f"  reasons included            : {', '.join(report['filter_reasons'])}",
          "",
-         "  By blocker reason:"]
+         "  By group shape:"]
+    for code, n in su["by_shape"].items():
+        L.append(f"    {code:<40} {n:>6}")
+    L += ["", "  By reason / shape:"]
     for code, b in su["by_reason"].items():
         L.append(f"    {code:<34} groups {b['groups']:>5}  rows {b['document_rows']:>6}  "
                  f"excess {b['excess_rows']:>6}")
@@ -156,9 +161,14 @@ def _blocked_text(report, sample) -> str:
         shape = g["ownership_shape"]
         L += ["", "-" * 78,
               f"  sha256 {g['sha256']}",
-              f"  reason {g['primary_reason']}   members {g['member_count']}   "
+              f"  {g['classification']}  shape {g['shape']}",
+              f"  reason {g['primary_reason'] or '(none - no merge proposed)'}   "
+              f"members {g['member_count']}   "
               f"excess {g['excess_rows']}   source rows {g['source_record_count']}",
-              f"  survivor {g['proposed_survivor']}   "
+              f"  merge partitions {g['merge_partition_count']}   "
+              f"preserved rows {g['rows_preserved_cross_owner']}",
+              f"  survivor {g['proposed_survivor'] if g['proposed_survivor'] is not None else '-'}"
+              f"   "
               f"conflicting dimensions: {', '.join(g['conflicting_dimensions']) or '(none)'}",
               f"  distinct owners {shape['distinct_owners']}   "
               f"max members per owner {shape['max_members_per_owner']}   "
@@ -169,7 +179,8 @@ def _blocked_text(report, sample) -> str:
         shown = g["members"][:sample]
         L.append(f"  members (showing {len(shown)} of {g['member_count']}):")
         for m in shown:
-            flag = "SURVIVOR" if m["is_survivor"] else "duplicate"
+            flag = ("SURVIVOR" if m["is_survivor"]
+                    else ("duplicate" if m["proposed_for_retirement"] else "PRESERVED"))
             L.append(f"    [{flag}] doc {m['document_id']}  {m['original_name'] or '(no name)'}")
             L.append(f"        category={m['category'] or '-'}  "
                      f"classification={m['classification'] or '-'}")
@@ -187,8 +198,11 @@ def _blocked_text(report, sample) -> str:
 
 
 CSV_COLUMNS = (
-    "sha256", "primary_reason", "conflicting_dimensions", "member_count", "excess_rows",
-    "proposed_survivor", "document_id", "is_survivor", "original_name", "category",
+    "sha256", "group_classification", "group_shape", "primary_reason",
+    "conflicting_dimensions", "member_count", "excess_rows",
+    "group_merge_partitions", "group_rows_preserved",
+    "proposed_survivor", "document_id", "is_survivor", "proposed_for_retirement", "preserved",
+    "original_name", "category",
     "classification", "subcategory", "status",
     "person_id", "person_name", "household_id", "household_name",
     "organization_id", "organization_name",
@@ -204,11 +218,16 @@ def _csv_rows(report):
         shape = g["ownership_shape"]
         for m in g["members"]:
             yield {
-                "sha256": g["sha256"], "primary_reason": g["primary_reason"],
+                "sha256": g["sha256"], "group_classification": g["classification"],
+                "group_shape": g["shape"], "primary_reason": g["primary_reason"],
                 "conflicting_dimensions": "|".join(g["conflicting_dimensions"]),
                 "member_count": g["member_count"], "excess_rows": g["excess_rows"],
+                "group_merge_partitions": g["merge_partition_count"],
+                "group_rows_preserved": g["rows_preserved_cross_owner"],
                 "proposed_survivor": g["proposed_survivor"],
                 "document_id": m["document_id"], "is_survivor": m["is_survivor"],
+                "proposed_for_retirement": m["proposed_for_retirement"],
+                "preserved": m["preserved"],
                 "original_name": m["original_name"], "category": m["category"],
                 "classification": m["classification"], "subcategory": m["subcategory"],
                 "status": m["status"],
@@ -245,9 +264,11 @@ def main(argv=None) -> int:
     ap.add_argument("--show", type=int, default=0, help="print per-group detail for the first N")
     ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
     ap.add_argument("--blocked-details", action="store_true",
-                    help="detailed ownership-blocker diagnostics (read-only)")
-    ap.add_argument("--reason", action="append", choices=sorted(OWNERSHIP_BLOCKER_CODES),
-                    help="restrict --blocked-details to this primary reason (repeatable)")
+                    help="per-group detail for every BLOCKED and SHARED_CONTENT group "
+                         "(read-only)")
+    ap.add_argument("--reason", action="append", choices=sorted(DETAIL_REASON_CODES),
+                    help="restrict --blocked-details to groups whose primary reason OR shape "
+                         "is this code (repeatable)")
     ap.add_argument("--sample", type=int, default=DEFAULT_SAMPLE,
                     help="members/sources shown per group in text output")
     ap.add_argument("--output-json", metavar="PATH",

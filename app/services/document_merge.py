@@ -43,6 +43,10 @@ from app.db import engine
 ELIGIBLE_SQL = "status <> 'deleted'"
 
 SAFE, REVIEW, BLOCKED = "SAFE_AUTO_MERGE", "REVIEW_REQUIRED", "BLOCKED"
+#: A hash group whose members belong to DIFFERENT owners. Identical content legitimately held by
+#: two clients is not a duplicate to resolve - it is the same file reused. No retirement is ever
+#: proposed for these, and they are counted apart from the merge population.
+SHARED = "SHARED_CONTENT"
 
 # --- reason taxonomy ------------------------------------------------------------------------------
 # Every conflict, blocker and advisory the preview can emit carries a stable CODE, so the non-safe
@@ -51,18 +55,20 @@ SAFE, REVIEW, BLOCKED = "SAFE_AUTO_MERGE", "REVIEW_REQUIRED", "BLOCKED"
 # An advisory is real, reportable evidence that does NOT make a merge unsafe (e.g. rows that simply
 # need repointing). Advisories can therefore appear on SAFE_AUTO_MERGE groups.
 BLOCKER, CONFLICT, ADVISORY = "blocker", "conflict", "advisory"
+#: SHAPE describes what a hash group IS, not a problem with it. Shapes never gate a merge and never
+#: appear as a primary reason, so blocker/conflict totals keep reconciling to the class counts.
+SHAPE = "shape"
 
 #: code -> (severity, human description). Ordered: PRIMARY reason selection walks this top-down, so
 #: the listing order IS the precedence and the primary reason is deterministic.
 REASONS: dict[str, tuple[str, str]] = {
     # --- blockers -------------------------------------------------------------------------------
     "unknown_dependency": (BLOCKER, "a reference to documents.id with no declared strategy"),
-    "ownership_person_mismatch": (BLOCKER, "members name DIFFERENT people"),
-    "ownership_household_mismatch": (BLOCKER, "members name DIFFERENT households"),
-    "ownership_organization_mismatch": (BLOCKER, "members name DIFFERENT organizations"),
-    "ownership_multiple_dimensions": (BLOCKER, "members disagree on more than one ownership dimension"),
+    # NOTE: the former ownership_* BLOCKERS are gone by construction. A merge partition is keyed on
+    # the exact (person_id, household_id, organization_id) tuple, so every member of a partition has
+    # the SAME owner and an ownership mismatch cannot arise inside one. Differing owners now split
+    # the hash group into partitions and are described by the SHAPE codes below.
     # --- conflicts ------------------------------------------------------------------------------
-    "ownership_unassigned_vs_person": (CONFLICT, "only a non-survivor carries an owner"),
     "ocr_conflict": (CONFLICT, "extracted-text state differs materially"),
     "classification_conflict": (CONFLICT, "document_classifications doc_type differs"),
     "fact_conflict": (CONFLICT, "same fact_type asserts different current values"),
@@ -86,10 +92,29 @@ REASONS: dict[str, tuple[str, str]] = {
     "no_action_reassignment_required": (ADVISORY,
                                         "ON DELETE NO ACTION references must be repointed before retire"),
     "soft_reference_present": (ADVISORY, "a document_id column carrying no FK (e.g. rm_document_status)"),
+    # --- shapes (describe the hash group; never gate a merge) ------------------------------------
+    "shared_content_cross_person": (SHAPE,
+        "identical content held by DIFFERENT people - the same file reused, not a duplicate"),
+    "shared_content_cross_household": (SHAPE,
+        "identical content held by DIFFERENT households"),
+    "shared_content_cross_organization": (SHAPE,
+        "identical content held by DIFFERENT organizations"),
+    "shared_content_mixed_dimensions": (SHAPE,
+        "owners differ on more than one dimension (person / household / organization)"),
+    "shared_content_unowned": (SHAPE,
+        "an unowned copy sits alongside owned copies; ownership is never inferred from a hash"),
+    "partial_merge_with_preserved_copies": (SHAPE,
+        "the group holds BOTH owner-local duplicates that may merge AND copies belonging to other "
+        "owners that must be preserved"),
+    "single_owner_duplicate_group": (SHAPE,
+        "every member has the same owner - an ordinary duplicate group"),
 }
 
 _BLOCKER_CODES = tuple(c for c, (sev, _) in REASONS.items() if sev == BLOCKER)
 _CONFLICT_CODES = tuple(c for c, (sev, _) in REASONS.items() if sev == CONFLICT)
+SHAPE_CODES = tuple(c for c, (sev, _) in REASONS.items() if sev == SHAPE)
+#: Shapes that mean "content is shared across owners", i.e. rows that must be PRESERVED.
+CROSS_OWNER_SHAPES = tuple(c for c in SHAPE_CODES if c.startswith("shared_content_"))
 
 
 def _reason(code, *, detail=None, document_ids=None, **extra) -> dict:
@@ -372,165 +397,249 @@ def _source_collisions(rows) -> int:
 
 # --- per-group analysis --------------------------------------------------------------------------------
 
-def analyze_group(group, deps, pre) -> dict:
-    """Full analysis of ONE duplicate hash group. Issues NO query  -  everything is prefetched."""
-    ids = group["document_ids"]
-    docs = [pre["documents"][i] for i in sorted(ids) if i in pre["documents"]]
-    survivor = min(d["id"] for d in docs)          # mechanical: lowest eligible id. No owner bump.
-    duplicates = [d["id"] for d in docs if d["id"] != survivor]
+def _owner_key(doc) -> tuple:
+    """The MERGE SCOPE key: the exact ownership tuple.
 
-    counts = {key: {did: n for did, n in per.items() if did in set(ids)}
-              for key, per in pre["dependency_counts"].items()}
-    counts = {k: v for k, v in counts.items() if v}
-    unknown = sorted({d["table"] for d in deps if d["strategy"] is None
-                      and counts.get(f"{d['table']}.{d['column']}")})
+    Two documents may only be considered duplicates of each other when all three ownership
+    dimensions match exactly. Anything else is a different scope: identical content held by a
+    different person, household or organization is the same file reused, not a duplicate to
+    resolve. An unowned document forms its own scope - a matching hash NEVER implies it belongs to
+    the owner of another copy, because content does not establish identity (Drake does)."""
+    return (doc.get("person_id"), doc.get("household_id"), doc.get("organization_id"))
+
+
+def _owner_label(key) -> dict:
+    person, household, organization = key
+    return {"person_id": person, "household_id": household, "organization_id": organization,
+            "unowned": person is None and household is None and organization is None}
+
+
+def _group_shape(partitions) -> str:
+    """What this hash group IS. Purely descriptive; never gates a merge."""
+    owned = [p for p in partitions if not p["owner"]["unowned"]]
+    mergeable = [p for p in partitions if p["mergeable"]]
+    if len(partitions) == 1:
+        return "single_owner_duplicate_group"
+    if mergeable and len(partitions) > len(mergeable):
+        return "partial_merge_with_preserved_copies"
+    dims = [d for d in ("person_id", "household_id", "organization_id")
+            if len({p["owner"][d] for p in owned if p["owner"][d] is not None}) > 1]
+    if len(dims) > 1:
+        return "shared_content_mixed_dimensions"
+    if dims == ["person_id"]:
+        return "shared_content_cross_person"
+    if dims == ["household_id"]:
+        return "shared_content_cross_household"
+    if dims == ["organization_id"]:
+        return "shared_content_cross_organization"
+    return "shared_content_unowned"
+
+
+def _analyze_partition(sha, key, member_docs, deps, pre, counts) -> dict:
+    """One ownership-scoped merge candidate. Every member here has the SAME owner."""
+    ids = [d["id"] for d in member_docs]
+    survivor = min(ids)                    # lowest eligible id WITHIN the partition. No owner bias:
+    duplicates = sorted(i for i in ids if i != survivor)   # the owner is identical for all of them.
+    mergeable = len(ids) > 1
 
     def _rows(bucket):
         return [r for i in ids for r in pre[bucket].get(i, [])]
 
-    ownership = _ownership_evidence(docs)
+    scoped = {k: {did: n for did, n in per.items() if did in set(ids)}
+              for k, per in counts.items()}
+    scoped = {k: v for k, v in scoped.items() if v}
+    unknown = sorted({d["table"] for d in deps if d["strategy"] is None
+                      and scoped.get(f"{d['table']}.{d['column']}")})
+
     ocr = _singular_conflict(_rows("ocr"), ("status", "char_count"))
     classification = _singular_conflict(_rows("classifications"), ("doc_type",))
     facts = _fact_conflicts(_rows("facts"))
     provenance = _provenance(_rows("sources"))
-    version_self_refs = _rows("version_self_reference")
-
-    distinct_categories = {d["category"] for d in docs if d["category"]}
-    distinct_classification = {d["classification"] for d in docs if d["classification"]}
-
-    # Reassignments the executor WOULD have to perform. SET NULL references are included
-    # deliberately: leaving them to a cascade would null a live reference instead of preserving it.
-    reassignments = {}
-    for d in deps:
-        key = f"{d['table']}.{d['column']}"
-        per_doc = counts.get(key, {})
-        n = sum(v for did, v in per_doc.items() if did != survivor)
-        if n:
-            reassignments[key] = {"rows": n, "strategy": d["strategy"],
-                                  "delete_rule": d["delete_rule"]}
-
     relationships = _relationship_evidence(_rows("relationships"))
     source_collisions = _source_collisions(_rows("sources"))
+    version_self_refs = [r for i in ids for r in pre["version_self_reference"].get(i, [])
+                         if r["previous_document_id"] in set(ids)]
+
+    distinct_categories = {d["category"] for d in member_docs if d["category"]}
+    distinct_classification = {d["classification"] for d in member_docs if d["classification"]}
+
+    reassignments = {}
+    for d in deps:
+        k = f"{d['table']}.{d['column']}"
+        n = sum(v for did, v in scoped.get(k, {}).items() if did != survivor)
+        if n:
+            reassignments[k] = {"rows": n, "strategy": d["strategy"],
+                                "delete_rule": d["delete_rule"]}
 
     reasons: list[dict] = []
-
-    # --- blockers ----------------------------------------------------------------------------
-    if unknown:
-        reasons.append(_reason("unknown_dependency", detail=f"tables: {', '.join(unknown)}",
-                               document_ids=ids, tables=unknown))
-    conflicting_dims = ownership["conflicting_dimensions"]
-    if len(conflicting_dims) > 1:
-        reasons.append(_reason("ownership_multiple_dimensions",
-                               detail=f"dimensions: {', '.join(conflicting_dims)}",
-                               document_ids=ownership["owned_documents"],
-                               dimensions=conflicting_dims))
-    elif conflicting_dims == ["person_id"]:
-        reasons.append(_reason("ownership_person_mismatch",
-                               document_ids=ownership["owned_documents"],
-                               values=ownership["dimensions"]["person_id"]["values"]))
-    elif conflicting_dims == ["household_id"]:
-        reasons.append(_reason("ownership_household_mismatch",
-                               document_ids=ownership["owned_documents"],
-                               values=ownership["dimensions"]["household_id"]["values"]))
-    elif conflicting_dims == ["organization_id"]:
-        reasons.append(_reason("ownership_organization_mismatch",
-                               document_ids=ownership["owned_documents"],
-                               values=ownership["dimensions"]["organization_id"]["values"]))
-
-    # --- conflicts ---------------------------------------------------------------------------
-    if not conflicting_dims and ownership["distinct_owner_count"] == 1 and ownership["unowned_count"]:
-        owned_ids = sorted(ownership["owned_documents"])
-        if survivor not in owned_ids:
-            reasons.append(_reason("ownership_unassigned_vs_person",
-                                   detail="consolidating changes which row holds the owner",
-                                   document_ids=owned_ids))
-    if ocr["conflict"]:
-        reasons.append(_reason("ocr_conflict", document_ids=ocr.get("document_ids"),
-                               distinct_values=ocr["distinct_values"]))
-    if classification["conflict"]:
-        reasons.append(_reason("classification_conflict",
-                               document_ids=classification.get("document_ids"),
-                               distinct_values=classification["distinct_values"]))
-    if facts["conflict"]:
-        reasons.append(_reason("fact_conflict", document_ids=ids,
-                               fact_types=facts["conflicting_fact_types"]))
-    if len(distinct_categories) > 1:
-        reasons.append(_reason("category_conflict", document_ids=ids,
-                               values=sorted(distinct_categories)))
-    if len(distinct_classification) > 1:
-        reasons.append(_reason("document_classification_conflict", document_ids=ids,
-                               values=sorted(distinct_classification)))
-    if version_self_refs:
-        reasons.append(_reason("version_chain_self_reference", document_ids=ids,
-                               rows=version_self_refs))
-
-    # --- advisories (never change the classification) ----------------------------------------
-    if ocr["rows"] > 1 and not ocr["conflict"]:
-        reasons.append(_reason("ocr_equivalent_duplicate", document_ids=ocr.get("document_ids"),
-                               rows=ocr["rows"]))
-    if classification["rows"] > 1 and not classification["conflict"]:
-        reasons.append(_reason("classification_equivalent_duplicate",
-                               document_ids=classification.get("document_ids"),
-                               rows=classification["rows"]))
-    if facts["redundant_rows"]:
-        reasons.append(_reason("facts_equivalent_duplicate", document_ids=ids,
-                               rows=facts["redundant_rows"]))
-    if source_collisions:
-        reasons.append(_reason("document_sources_collision", document_ids=ids,
-                               colliding_tuples=source_collisions))
-    if relationships["redundant_rows"]:
-        reasons.append(_reason("document_relationships_redundant", document_ids=ids,
-                               rows=relationships["redundant_rows"]))
-    if relationships["distinct_entities"] > 1:
-        reasons.append(_reason("document_relationships_multi_entity", document_ids=ids,
-                               distinct_entities=relationships["distinct_entities"]))
-
-    set_null_rows = sum(v["rows"] for v in reassignments.values() if v["delete_rule"] == "SET NULL")
-    no_action_rows = sum(v["rows"] for v in reassignments.values() if v["delete_rule"] == "NO ACTION")
-    soft_rows = sum(v["rows"] for v in reassignments.values() if v["delete_rule"] == "SOFT")
-    if set_null_rows:
-        reasons.append(_reason("set_null_reassignment_required", document_ids=ids, rows=set_null_rows))
-    if no_action_rows:
-        reasons.append(_reason("no_action_reassignment_required", document_ids=ids, rows=no_action_rows))
-    if soft_rows:
-        reasons.append(_reason("soft_reference_present", document_ids=ids, rows=soft_rows))
+    if mergeable:
+        if unknown:
+            reasons.append(_reason("unknown_dependency", detail=f"tables: {', '.join(unknown)}",
+                                   document_ids=ids, tables=unknown))
+        if ocr["conflict"]:
+            reasons.append(_reason("ocr_conflict", document_ids=ocr.get("document_ids"),
+                                   distinct_values=ocr["distinct_values"]))
+        if classification["conflict"]:
+            reasons.append(_reason("classification_conflict",
+                                   document_ids=classification.get("document_ids"),
+                                   distinct_values=classification["distinct_values"]))
+        if facts["conflict"]:
+            reasons.append(_reason("fact_conflict", document_ids=ids,
+                                   fact_types=facts["conflicting_fact_types"]))
+        if len(distinct_categories) > 1:
+            reasons.append(_reason("category_conflict", document_ids=ids,
+                                   values=sorted(distinct_categories)))
+        if len(distinct_classification) > 1:
+            reasons.append(_reason("document_classification_conflict", document_ids=ids,
+                                   values=sorted(distinct_classification)))
+        if version_self_refs:
+            reasons.append(_reason("version_chain_self_reference", document_ids=ids,
+                                   rows=version_self_refs))
+        if ocr["rows"] > 1 and not ocr["conflict"]:
+            reasons.append(_reason("ocr_equivalent_duplicate", document_ids=ocr.get("document_ids"),
+                                   rows=ocr["rows"]))
+        if classification["rows"] > 1 and not classification["conflict"]:
+            reasons.append(_reason("classification_equivalent_duplicate",
+                                   document_ids=classification.get("document_ids"),
+                                   rows=classification["rows"]))
+        if facts["redundant_rows"]:
+            reasons.append(_reason("facts_equivalent_duplicate", document_ids=ids,
+                                   rows=facts["redundant_rows"]))
+        if source_collisions:
+            reasons.append(_reason("document_sources_collision", document_ids=ids,
+                                   colliding_tuples=source_collisions))
+        if relationships["redundant_rows"]:
+            reasons.append(_reason("document_relationships_redundant", document_ids=ids,
+                                   rows=relationships["redundant_rows"]))
+        if relationships["distinct_entities"] > 1:
+            reasons.append(_reason("document_relationships_multi_entity", document_ids=ids,
+                                   distinct_entities=relationships["distinct_entities"]))
+        for rule, code in (("SET NULL", "set_null_reassignment_required"),
+                           ("NO ACTION", "no_action_reassignment_required"),
+                           ("SOFT", "soft_reference_present")):
+            rows = sum(v["rows"] for v in reassignments.values() if v["delete_rule"] == rule)
+            if rows:
+                reasons.append(_reason(code, document_ids=ids, rows=rows))
 
     blockers = [r for r in reasons if r["severity"] == BLOCKER]
     conflicts = [r for r in reasons if r["severity"] == CONFLICT]
-    advisories = [r for r in reasons if r["severity"] == ADVISORY]
-
-    # PRIMARY reason: the first code in REASONS order that this group carries. Deterministic, and
-    # mutually exclusive, so primary counts reconcile exactly to the classification totals.
     codes = {r["code"] for r in reasons}
-    primary = next((c for c in REASONS if c in codes and REASONS[c][0] != ADVISORY), None)
+    primary = next((c for c in REASONS if c in codes and REASONS[c][0] not in (ADVISORY, SHAPE)),
+                   None)
+    if not mergeable:
+        result = None                       # a single-document scope is not a merge candidate
+    else:
+        result = BLOCKED if blockers else (REVIEW if conflicts else SAFE)
 
-    classification_result = BLOCKED if blockers else (REVIEW if conflicts else SAFE)
+    return {
+        "sha256": sha,
+        "owner": _owner_label(key),
+        "mergeable": mergeable,
+        "classification": result,
+        "proposed_survivor": survivor if mergeable else None,
+        "member_document_ids": sorted(ids),
+        "member_count": len(ids),
+        "duplicate_document_ids": duplicates if mergeable else [],
+        "excess_rows": len(duplicates) if mergeable else 0,
+        "rows_preserved": 0 if mergeable else len(ids),
+        "dependent_row_counts": {k: dict(sorted(v.items())) for k, v in sorted(scoped.items())},
+        "reassignments_required": reassignments if mergeable else {},
+        "total_reassignments": sum(v["rows"] for v in reassignments.values()) if mergeable else 0,
+        "provenance": provenance,
+        "ocr": ocr, "classification_rows": classification, "facts": facts,
+        "relationships": relationships, "source_collisions": source_collisions,
+        "version_self_references": version_self_refs,
+        "reasons": reasons, "reason_codes": sorted(codes), "primary_reason": primary,
+        "conflicts": conflicts, "blockers": blockers,
+        "advisories": [r for r in reasons if r["severity"] == ADVISORY],
+    }
+
+
+def analyze_group(group, deps, pre) -> dict:
+    """One physical SHA group, PARTITIONED BY OWNERSHIP SCOPE. Issues NO query.
+
+    A hash group is no longer a single merge decision. It is partitioned on the exact ownership
+    tuple, and each partition is evaluated independently. Copies belonging to different owners are
+    never proposed for retirement merely because their content matches - that would let a content
+    hash decide client identity, which is Drake's authority, not this layer's."""
+    ids = group["document_ids"]
+    docs = [pre["documents"][i] for i in sorted(ids) if i in pre["documents"]]
+
+    counts = {key: {did: n for did, n in per.items() if did in set(ids)}
+              for key, per in pre["dependency_counts"].items()}
+    counts = {k: v for k, v in counts.items() if v}
+
+    buckets: dict[tuple, list] = defaultdict(list)
+    for d in docs:
+        buckets[_owner_key(d)].append(d)
+    partitions = [_analyze_partition(group["sha256"], key, members, deps, pre, counts)
+                  for key, members in sorted(buckets.items(), key=lambda kv: min(
+                      d["id"] for d in kv[1]))]
+
+    mergeable = [p for p in partitions if p["mergeable"]]
+    ownership = _ownership_evidence(docs)
+    shape = _group_shape(partitions)
+
+    if not mergeable:
+        classification = SHARED
+    elif any(p["classification"] == BLOCKED for p in mergeable):
+        classification = BLOCKED
+    elif any(p["classification"] == REVIEW for p in mergeable):
+        classification = REVIEW
+    else:
+        classification = SAFE
+
+    all_sources = [r for i in ids for r in pre["sources"].get(i, [])]
+
+    # Convenience view for the common single-scope case: when exactly ONE partition can merge, its
+    # decision IS the group's decision. With several merge partitions there is no single survivor,
+    # and proposed_survivor is None deliberately - a caller must read `partitions`.
+    solo = mergeable[0] if len(mergeable) == 1 else None
+    aggregate_reassignments: dict[str, dict] = {}
+    for p in mergeable:
+        for k, info in p["reassignments_required"].items():
+            acc = aggregate_reassignments.setdefault(
+                k, {"rows": 0, "strategy": info["strategy"], "delete_rule": info["delete_rule"]})
+            acc["rows"] += info["rows"]
 
     return {
         "sha256": group["sha256"],
-        "classification": classification_result,
-        "proposed_survivor": survivor,
-        "survivor_rule": "lowest documents.id among eligible rows (ADR-072 resolution order)",
-        "duplicate_document_ids": duplicates,
+        "classification": classification,
+        "shape": shape,
         "row_count": len(docs),
-        "excess_rows": len(duplicates),
-        "dependent_row_counts": {k: dict(sorted(v.items())) for k, v in sorted(counts.items())},
-        "reassignments_required": reassignments,
-        "total_reassignments": sum(v["rows"] for v in reassignments.values()),
-        "provenance": provenance,
+        "member_document_ids": sorted(d["id"] for d in docs),
+        "partitions": partitions,
+        "merge_partition_count": len(mergeable),
+        "preserved_partition_count": len(partitions) - len(mergeable),
+        "excess_rows": sum(p["excess_rows"] for p in mergeable),
+        "rows_preserved_cross_owner": sum(p["rows_preserved"] for p in partitions),
+        "total_reassignments": sum(p["total_reassignments"] for p in mergeable),
+        "provenance": _provenance(all_sources),
         "ownership": ownership,
-        "ocr": ocr,
-        "classification_rows": classification,
-        "facts": facts,
-        "relationships": relationships,
-        "source_collisions": source_collisions,
-        "version_self_references": version_self_refs,
-        "reasons": reasons,
-        "reason_codes": sorted(codes),
-        "primary_reason": primary,
-        "conflicts": conflicts,
-        "blockers": blockers,
-        "advisories": advisories,
+        "proposed_survivor": solo["proposed_survivor"] if solo else None,
+        "duplicate_document_ids": sorted(i for p in mergeable for i in p["duplicate_document_ids"]),
+        "survivor_rule": "lowest documents.id within the ownership-scoped partition",
+        "dependent_row_counts": (solo["dependent_row_counts"] if solo
+                                 else {k: dict(sorted(v.items()))
+                                       for k, v in sorted(counts.items())}),
+        "reassignments_required": aggregate_reassignments,
+        "ocr": solo["ocr"] if solo else _singular_conflict(
+            [r for i in ids for r in pre["ocr"].get(i, [])], ("status", "char_count")),
+        "classification_rows": solo["classification_rows"] if solo else _singular_conflict(
+            [r for i in ids for r in pre["classifications"].get(i, [])], ("doc_type",)),
+        "facts": solo["facts"] if solo else _fact_conflicts(
+            [r for i in ids for r in pre["facts"].get(i, [])]),
+        "relationships": solo["relationships"] if solo else _relationship_evidence(
+            [r for i in ids for r in pre["relationships"].get(i, [])]),
+        "source_collisions": solo["source_collisions"] if solo else _source_collisions(all_sources),
+        "version_self_references": solo["version_self_references"] if solo else [],
+        "reason_codes": sorted({c for p in partitions for c in p["reason_codes"]} | {shape}),
+        "primary_reason": next((p["primary_reason"] for p in mergeable if p["primary_reason"]),
+                               None),
+        "conflicts": [r for p in mergeable for r in p["conflicts"]],
+        "blockers": [r for p in mergeable for r in p["blockers"]],
+        "advisories": [r for p in partitions for r in p["advisories"]],
+        "reasons": [r for p in partitions for r in p["reasons"]],
     }
 
 
@@ -580,9 +689,17 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
         analyzed = [analyze_group(g, deps, pre) for g in groups]   # pure Python, no queries
     elapsed = round(time.monotonic() - started, 3)
 
-    by_class = {SAFE: 0, REVIEW: 0, BLOCKED: 0}
+    by_class = {SAFE: 0, REVIEW: 0, BLOCKED: 0, SHARED: 0}
     for g in analyzed:
         by_class[g["classification"]] += 1
+    partitions = [p for g in analyzed for p in g["partitions"]]
+    merge_partitions = [p for p in partitions if p["mergeable"]]
+    partition_class = {SAFE: 0, REVIEW: 0, BLOCKED: 0}
+    for p in merge_partitions:
+        partition_class[p["classification"]] += 1
+    shapes: dict[str, int] = defaultdict(int)
+    for g in analyzed:
+        shapes[g["shape"]] += 1
 
     dependent_totals: dict[str, int] = defaultdict(int)
     for g in analyzed:
@@ -633,12 +750,27 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
         "eligibility": ELIGIBLE_SQL,
         "dependencies_checked": len(deps),
         "unregistered_dependencies": sorted({d["table"] for d in deps if d["strategy"] is None}),
+        # PHYSICAL view: hash groups as they exist in the table.
         "total_duplicate_groups": len(analyzed),
+        "physical_sha_groups": len(analyzed),
         "total_document_rows_in_groups": sum(g["row_count"] for g in analyzed),
+        # OWNERSHIP-SCOPED view: what may actually merge. A hash group splits into one partition per
+        # distinct ownership tuple; only partitions holding 2+ documents are merge candidates.
+        "ownership_partitions": len(partitions),
+        "ownership_scoped_merge_groups": len(merge_partitions),
+        "rows_eligible_for_retirement": sum(g["excess_rows"] for g in analyzed),
         "excess_duplicate_rows": sum(g["excess_rows"] for g in analyzed),
+        "cross_owner_rows_preserved": sum(g["rows_preserved_cross_owner"] for g in analyzed),
+        # Group-level classes (a group is SHARED_CONTENT when no partition can merge).
         "safe_auto_merge_groups": by_class[SAFE],
         "review_required_groups": by_class[REVIEW],
         "blocked_groups": by_class[BLOCKED],
+        "shared_content_groups": by_class[SHARED],
+        # Partition-level classes - the population an executor would ever act on.
+        "merge_partitions_safe": partition_class[SAFE],
+        "merge_partitions_review_required": partition_class[REVIEW],
+        "merge_partitions_blocked": partition_class[BLOCKED],
+        "groups_by_shape": dict(sorted(shapes.items())),
         "total_proposed_reassignments": sum(g["total_reassignments"] for g in analyzed),
         "total_rows_eventually_retired": sum(g["excess_rows"] for g in analyzed),
         "provenance_tuples_preserved": sum(g["provenance"]["preserved_after_merge"] for g in analyzed),
@@ -666,8 +798,11 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
 #: present in the returned structure (and therefore in --output-json / --output-csv).
 DEFAULT_SAMPLE = 5
 
-OWNERSHIP_BLOCKER_CODES = tuple(
-    c for c, (sev, _) in REASONS.items() if sev == BLOCKER and c.startswith("ownership_"))
+#: What blocked_details() can be filtered on: the group SHAPE codes (which describe how the copies
+#: are spread across owners) plus every partition-level BLOCKER. Ownership can no longer BLOCK a
+#: merge - the partition key IS the ownership tuple - so cross-owner cases surface as shapes.
+DETAIL_REASON_CODES = tuple(sorted(
+    set(SHAPE_CODES) | {c for c, (sev, _) in REASONS.items() if sev == BLOCKER}))
 
 
 def _prefetch_labels(conn, q, table, name_expr, ids, batch) -> dict[int, str]:
@@ -738,11 +873,11 @@ def blocked_details(*, reasons=None, limit=None, batch_size=DEFAULT_BATCH_SIZE,
     report = report or preview(limit=limit, batch_size=batch_size)
     wanted = tuple(reasons) if reasons else None
     groups = [g for g in report["groups"]
-              if g["classification"] == BLOCKED
-              and (wanted is None or g["primary_reason"] in wanted)]
+              if g["classification"] in (BLOCKED, SHARED)
+              and (wanted is None
+                   or not {g["primary_reason"], g["shape"]}.isdisjoint(wanted))]
 
-    doc_ids = sorted({i for g in groups for i in
-                      [g["proposed_survivor"], *g["duplicate_document_ids"]]})
+    doc_ids = sorted({i for g in groups for i in g["member_document_ids"]})
     q = _QueryCounter()
     with engine.connect() as conn:
         docs = _prefetch_documents(conn, q, doc_ids, batch_size)
@@ -761,13 +896,18 @@ def blocked_details(*, reasons=None, limit=None, batch_size=DEFAULT_BATCH_SIZE,
 
     detailed = []
     for g in groups:
-        ids = [g["proposed_survivor"], *sorted(g["duplicate_document_ids"])]
+        ids = list(g["member_document_ids"])
+        retirable = set(g["duplicate_document_ids"])
+        survivors = {p["proposed_survivor"] for p in g["partitions"] if p["mergeable"]}
         members = []
         for did in ids:
             d = docs.get(did, {})
             members.append({
                 "document_id": did,
-                "is_survivor": did == g["proposed_survivor"],
+                "is_survivor": did in survivors,
+                # Preserved = kept exactly as-is because no other copy shares its ownership scope.
+                "proposed_for_retirement": did in retirable,
+                "preserved": did not in retirable,
                 "original_name": d.get("original_name"),
                 "category": d.get("category"),
                 "classification": d.get("classification"),
@@ -787,9 +927,14 @@ def blocked_details(*, reasons=None, limit=None, batch_size=DEFAULT_BATCH_SIZE,
         source_rows = sum(len(m["sources"]) for m in members)
         detailed.append({
             "sha256": g["sha256"],
+            "classification": g["classification"],
+            "shape": g["shape"],
             "primary_reason": g["primary_reason"],
             "reason_codes": g["reason_codes"],
             "proposed_survivor": g["proposed_survivor"],
+            "merge_partition_count": g["merge_partition_count"],
+            "preserved_partition_count": g["preserved_partition_count"],
+            "rows_preserved_cross_owner": g["rows_preserved_cross_owner"],
             "member_document_ids": ids,
             "member_count": len(ids),
             "excess_rows": g["excess_rows"],
@@ -803,7 +948,7 @@ def blocked_details(*, reasons=None, limit=None, batch_size=DEFAULT_BATCH_SIZE,
     return {
         "read_only": True,
         "wrote_anything": False,
-        "filter_reasons": list(wanted) if wanted else sorted(OWNERSHIP_BLOCKER_CODES),
+        "filter_reasons": list(wanted) if wanted else sorted(DETAIL_REASON_CODES),
         "classification_source": "preview() - verdicts are reused, never recomputed",
         "summary": _blocked_summary(detailed, report),
         "groups": detailed,
@@ -819,19 +964,25 @@ def _blocked_summary(detailed, report) -> dict:
         lambda: {"groups": 0, "document_rows": 0, "excess_rows": 0})
     systems, owner_distribution = set(), defaultdict(int)
     for g in detailed:
-        b = by_reason[g["primary_reason"] or "unknown"]
+        b = by_reason[g["primary_reason"] or g["shape"] or "unknown"]
         b["groups"] += 1
         b["document_rows"] += g["member_count"]
         b["excess_rows"] += g["excess_rows"]
         systems.update(g["ownership_shape"]["distinct_source_systems"])
         owner_distribution[g["ownership_shape"]["distinct_owners"]] += 1
     largest = [{"sha256": g["sha256"], "member_count": g["member_count"],
-                "primary_reason": g["primary_reason"],
+                "primary_reason": g["primary_reason"] or g["shape"],
                 "distinct_owners": g["ownership_shape"]["distinct_owners"]}
                for g in detailed[:20]]
     return {
         "blocked_groups_total": report["blocked_groups"],
+        "shared_content_groups_total": report["shared_content_groups"],
         "blocked_groups_in_this_report": len(detailed),
+        "rows_preserved_cross_owner": sum(g["rows_preserved_cross_owner"] for g in detailed),
+        "by_classification": {
+            k: sum(1 for g in detailed if g["classification"] == k) for k in (BLOCKED, SHARED)},
+        "by_shape": {k: sum(1 for g in detailed if g["shape"] == k)
+                     for k in sorted({g["shape"] for g in detailed})},
         "by_reason": {k: dict(v) for k, v in sorted(by_reason.items())},
         "groups_with_more_than_2_members": sum(1 for g in detailed if g["member_count"] > 2),
         "groups_with_more_than_10_members": sum(1 for g in detailed if g["member_count"] > 10),
