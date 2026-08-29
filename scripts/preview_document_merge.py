@@ -1,0 +1,89 @@
+"""Read-only preview of canonical DOCUMENT consolidation (ADR-072). Makes NO changes.
+
+Database-only: it reads documents, their stored SHA-256 hashes and their dependent rows. It never
+touches the filesystem, a storage backend, SharePoint, TaxDome or OCR, and it never writes.
+
+Usage:
+    python scripts/preview_document_merge.py                # whole corpus
+    python scripts/preview_document_merge.py --limit 50     # first 50 duplicate groups
+    python scripts/preview_document_merge.py --json         # machine-readable
+    python scripts/preview_document_merge.py --show 10      # per-group detail for the first 10
+"""
+import argparse
+import json
+import sys
+
+from app.services.document_merge import BLOCKED, REVIEW, SAFE, preview
+
+
+def _summary(r: dict) -> str:
+    L = ["=" * 78,
+         "CANONICAL DOCUMENT MERGE PREVIEW    READ-ONLY — NO CHANGES WERE MADE",
+         "=" * 78,
+         f"  survivor rule      : {r['survivor_rule']}",
+         f"  eligibility        : documents.{r['eligibility']}",
+         f"  dependencies known : {r['dependencies_checked']}",
+         ""]
+    if r["unregistered_dependencies"]:
+        L.append(f"  !! UNREGISTERED DEPENDENCIES: {', '.join(r['unregistered_dependencies'])}")
+        L.append("     Groups touching these are BLOCKED — add a strategy before consolidating.")
+        L.append("")
+    L += [f"  duplicate SHA groups          : {r['total_duplicate_groups']}",
+          f"  document rows in those groups : {r['total_document_rows_in_groups']}",
+          f"  excess duplicate rows         : {r['excess_duplicate_rows']}",
+          "",
+          f"  {SAFE:<18}: {r['safe_auto_merge_groups']}",
+          f"  {REVIEW:<18}: {r['review_required_groups']}",
+          f"  {BLOCKED:<18}: {r['blocked_groups']}",
+          "",
+          f"  proposed reassignments        : {r['total_proposed_reassignments']}",
+          f"  rows eventually retired       : {r['total_rows_eventually_retired']}",
+          f"  provenance rows seen          : {r['provenance_rows_seen']}",
+          f"  provenance tuples preserved   : {r['provenance_tuples_preserved']}"]
+    if r["reassignments_by_table"]:
+        L.append("\n  Reassignments by dependent table:")
+        for k, n in r["reassignments_by_table"].items():
+            L.append(f"    - {k}: {n}")
+    return "\n".join(L)
+
+
+def _group(g: dict) -> str:
+    L = ["", "-" * 78,
+         f"  [{g['classification']}]  survivor {g['proposed_survivor']}  "
+         f"← duplicates {g['duplicate_document_ids']}",
+         f"    rows {g['row_count']}  excess {g['excess_rows']}  "
+         f"reassignments {g['total_reassignments']}",
+         f"    provenance: {g['provenance']['rows']} rows → "
+         f"{g['provenance']['preserved_after_merge']} distinct tuples "
+         f"({', '.join(g['provenance']['source_systems']) or 'none'})"]
+    for b in g["blockers"]:
+        L.append(f"    BLOCKER  {b['kind']}: {b.get('detail', '')}")
+    for c in g["conflicts"]:
+        L.append(f"    CONFLICT {c['kind']}: {c.get('detail', '')}")
+    if g["reassignments_required"]:
+        L.append("    would reassign:")
+        for k, info in sorted(g["reassignments_required"].items()):
+            L.append(f"      - {k}: {info['rows']} ({info['strategy']}, ON DELETE {info['delete_rule']})")
+    return "\n".join(L)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Read-only canonical document merge preview.")
+    ap.add_argument("--limit", type=int, default=None, help="only the first N duplicate groups")
+    ap.add_argument("--show", type=int, default=0, help="print per-group detail for the first N")
+    ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
+    args = ap.parse_args(argv)
+
+    report = preview(limit=args.limit)
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    print(_summary(report))
+    for g in report["groups"][:args.show]:
+        print(_group(g))
+    print("\n  (preview only — no document, row, file or migration was changed)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
