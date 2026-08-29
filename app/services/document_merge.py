@@ -236,15 +236,24 @@ def _in_batches(ids, size):
 
 # --- duplicate discovery ---------------------------------------------------------------------
 
-def duplicate_hash_groups(conn, q, *, limit=None) -> list[dict]:
-    """SHA-256 groups holding more than one ELIGIBLE document row. ONE query for the whole corpus."""
+def duplicate_hash_groups(conn, q, *, limit=None, shas=None) -> list[dict]:
+    """SHA-256 groups holding more than one ELIGIBLE document row. ONE query for the whole corpus.
+
+    ``shas`` restricts the SCAN to specific hashes. It narrows which groups are read; it changes
+    nothing about how a group is analysed, so a group's verdict is identical either way. The
+    executor uses it to revalidate one batch without re-scanning the whole corpus."""
+    params: dict = {}
+    where = f"{ELIGIBLE_SQL} AND sha256 IS NOT NULL"
+    if shas is not None:
+        where += " AND sha256 = ANY(:shas)"
+        params["shas"] = sorted(set(shas))
     stmt = (f"SELECT sha256, count(*) AS n, array_agg(id ORDER BY id) AS ids "
-            f"FROM documents WHERE {ELIGIBLE_SQL} AND sha256 IS NOT NULL "
+            f"FROM documents WHERE {where} "
             f"GROUP BY sha256 HAVING count(*) > 1 ORDER BY min(id)")
     if limit:
         stmt += f" LIMIT {int(limit)}"
     return [{"sha256": r["sha256"], "row_count": int(r["n"]),
-             "document_ids": [int(i) for i in r["ids"]]} for r in q.rows(conn, stmt)]
+             "document_ids": [int(i) for i in r["ids"]]} for r in q.rows(conn, stmt, params)]
 
 
 # --- batched prefetch -------------------------------------------------------------------------
@@ -645,7 +654,7 @@ def analyze_group(group, deps, pre) -> dict:
 
 # --- the preview -----------------------------------------------------------------------------------------
 
-def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
+def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE, conn=None, shas=None) -> dict:
     """READ-ONLY preview of canonical document consolidation. Performs ZERO writes.
 
     Query cost scales with (dependency tables x id batches), NOT with the number of duplicate
@@ -653,14 +662,20 @@ def preview(*, limit=None, batch_size=DEFAULT_BATCH_SIZE) -> dict:
     set, and each group is then analysed in pure Python. A corpus with thousands of groups issues
     tens of statements, not tens of thousands.
 
-    Deterministic: the same database state yields the same report, so the preview is idempotent."""
+    Deterministic: the same database state yields the same report, so the preview is idempotent.
+
+    ``conn`` runs every read on the CALLER's connection, so a caller inside a transaction sees its
+    own uncommitted state - this is how the executor revalidates after locking. ``shas`` restricts
+    the scan. Neither changes how a group is partitioned or classified; both are plumbing. This
+    function still performs ZERO writes on whichever connection it is given."""
+    import contextlib
     import time
 
     q = _QueryCounter()
     started = time.monotonic()
-    with engine.connect() as conn:
+    with (contextlib.nullcontext(conn) if conn is not None else engine.connect()) as conn:
         deps = _dependencies(conn)
-        groups = duplicate_hash_groups(conn, q, limit=limit)
+        groups = duplicate_hash_groups(conn, q, limit=limit, shas=shas)
         all_ids = sorted({i for g in groups for i in g["document_ids"]})
 
         pre = {
