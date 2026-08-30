@@ -3,6 +3,8 @@
 {% block title %}Confirm Document Assignment | Admin | 360Plus{% endblock %}
 {% block crumb %}Admin · Document Management · Confirm Document{% endblock %}
 {% block content %}
+
+{% set back_url = ("/admin/documents/unassigned/review?folder=" ~ (folder|urlencode)) if folder else "/admin/documents/unassigned" %}
 {% call ui.page_head("Confirm document assignment", eyebrow="Admin · Document Management",
     desc="Assign this single document. Other documents in the folder are not affected. Nothing has changed yet.") %}
   <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back to review</a>
