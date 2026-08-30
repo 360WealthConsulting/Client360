@@ -26,6 +26,7 @@ from sqlalchemy import select
 
 from app.db import (
     documents,
+    metadata,
     engine,
     households,
     people,
@@ -33,6 +34,8 @@ from app.db import (
     relationship_entities,
     source_contacts,
 )
+
+document_sources = metadata.tables["document_sources"]
 
 PERMANENT_REJECT_DOCUMENT_IDS = frozenset({4704, 4716, 4717, 17932, 22336, 22338})
 
@@ -474,23 +477,53 @@ def _augment_from_source_contacts(conn, idx):
 
 # --- analysis ----------------------------------------------------------------------------------
 
-def _confidence(sigs, unique_name):
-    """Deterministic tier for one person candidate from its content signal set."""
+def _confidence(sigs, unique_name, *, tax_document=False):
+    # Deterministic tier for one person candidate from its content signal set.
+    # Tax returns contain preparer / ERO / accounting-firm contact information.
+    # On tax documents, email / phone / address are corroborating evidence only.
+    if tax_document:
+        if "name" in sigs and ({"email", "phone", "address"} & sigs):
+            return "HIGH"
+        # Name alone is unsafe on tax documents because taxpayer, spouse,
+        # preparer, ERO, representative, and signer names can all appear.
+        return "LOW"
+
     if "email" in sigs or "phone" in sigs:
-        return "HIGH"                                   # exact email / phone = very strong
+        return "HIGH"
     if "name" in sigs and "address" in sigs:
-        return "HIGH"                                   # taxpayer name + matching address = very strong
+        return "HIGH"
     if "name" in sigs and unique_name:
-        return "MEDIUM"                                 # exact full name alone = plausible, inspect
-    return "LOW"                                         # ambiguous / weak
+        return "MEDIUM"
+    return "LOW"
 
 
-def analyze_identity(text, filename, folder, idx):
+def analyze_identity(text, filename, folder, idx, *, tax_document=False):
     """Pure content analysis: extract identity evidence from `text`, score canonical candidates, and
     return a proposal. Folder/filename are NEVER scored (content wins). Returns proposed_entity_type/id/
     name, confidence (HIGH/MEDIUM/AMBIGUOUS/NO_MATCH), evidence[], competing[], best_candidates[],
     extracted{}."""
     ntext = _norm(text)
+
+    # Tax documents routinely contain preparer / ERO / accounting-firm identity.
+    # Treat contact identifiers as corroboration only on these documents.
+    tax_markers = (
+        "internal revenue service",
+        "form 1040",
+        "form 1040x",
+        "form 1120",
+        "form 1120s",
+        "form 1065",
+        "form 1041",
+        "paid preparer",
+        "preparer s signature",
+        "preparer signature",
+        "electronic return originator",
+        "ero firm name",
+        "ptin",
+        "taxpayer s pin",
+        "taxpayer pin",
+    )
+    tax_document = tax_document or any(marker in ntext for marker in tax_markers)
     emails = sorted({m.group(0).lower() for m in _EMAIL_RE.finditer(text)})
     phones = sorted({p for p in (_phone10(m.group(0)) for m in _PHONE_RE.finditer(text))
                      if p and _valid_nanp(p)})            # reject numeric form/application IDs
@@ -593,7 +626,7 @@ def analyze_identity(text, filename, folder, idx):
         top_score = _score(top_sig)
         tied = [pid for pid, s in ranked if _score(s) == top_score]
         unique_name = name_pid_counts.get(top_pid, 2) == 1
-        conf = _confidence(top_sig, unique_name)
+        conf = _confidence(top_sig, unique_name, tax_document=tax_document)
         # If the leader has only a (possibly duplicated) name and there is a genuine tie, it is ambiguous.
         if len(tied) > 1 and top_sig == {"name"}:
             result.update({"confidence": "AMBIGUOUS"})
@@ -615,15 +648,19 @@ def analyze_identity(text, filename, folder, idx):
         return result
 
     # Business legal name in content (non-institution canonical business).
-    for nm in full_names:
-        if nm in idx["biz"]:
-            bid, bname = idx["biz"][nm]
-            conf = "HIGH" if (doc_zips or doc_streets) else "MEDIUM"
-            result.update({"proposed_entity_type": "organization", "proposed_entity_id": bid,
-                           "proposed_entity_name": bname, "confidence": conf})
-            result["evidence"] = [f"✓ business legal name '{bname}' found in document"
-                                  + (" + address" if conf == "HIGH" else "")] + result["evidence"]
-            return result
+    # On tax documents a preparer / ERO firm name can appear throughout the
+    # return, so fail closed until role-aware entity parsing identifies the
+    # taxpayer/entity block specifically.
+    if not tax_document:
+        for nm in full_names:
+            if nm in idx["biz"]:
+                bid, bname = idx["biz"][nm]
+                conf = "HIGH" if (doc_zips or doc_streets) else "MEDIUM"
+                result.update({"proposed_entity_type": "organization", "proposed_entity_id": bid,
+                               "proposed_entity_name": bname, "confidence": conf})
+                result["evidence"] = [f"✓ business legal name '{bname}' found in document"
+                                      + (" + address" if conf == "HIGH" else "")] + result["evidence"]
+                return result
 
     return result
 
@@ -658,7 +695,20 @@ def propose_document_owner(document_id, *, conn=None, idx=None, with_text=False,
         text, method = extract_document_text(own, row, path, ocr=ocr)
         indexes = idx if idx is not None else build_match_indexes(own)
         folder = (row["tags"] or {}).get("taxdome_folder")
-        proposal = analyze_identity(text, row["original_name"], folder, indexes)
+        drake_source = own.execute(
+            select(document_sources.c.id)
+            .where(document_sources.c.document_id == document_id)
+            .where(document_sources.c.source_system == "Drake")
+            .limit(1)
+        ).first() is not None
+
+        proposal = analyze_identity(
+            text,
+            row["original_name"],
+            folder,
+            indexes,
+            tax_document=drake_source,
+        )
         proposal.update({"document_id": document_id, "filename": row["original_name"],
                          "source_folder": folder, "extraction_method": method, "eligible": True})
         if with_text:
