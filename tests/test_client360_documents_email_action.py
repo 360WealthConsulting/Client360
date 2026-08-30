@@ -99,8 +99,10 @@ def test_client_document_row_reads_open_email_source():
                    display_name="2025 - 1099-R - Adam Steinman - Fidelity")
     html = _render_documents_tab(SENDER, pid)
     cell = _actions_cell(html, did)
-    assert cell.startswith("⋯"), "row actions live behind an overflow menu"
-    assert "Open" in cell and "Email" in cell
+    # Open is a direct control; everything else sits behind the three-dot menu.
+    assert cell.startswith("Open"), "Open stays immediately accessible"
+    assert "⋯" in cell, "the remaining actions live behind an overflow menu"
+    assert "Email" in cell
     assert "Source location" not in cell                   # no source_path on this fixture
     assert f'href="/documents/{did}/email"' in html
 
@@ -127,8 +129,11 @@ def test_filename_link_still_points_at_the_download_url():
         pid = _person(c, tag)
         did = _doc(c, f"W2 {tag}.pdf", person_id=pid, display_name="2025 - W-2 - Adam Steinman")
     html = _render_documents_tab(SENDER, pid)
-    assert f'<a href="/documents/{did}/download">2025 - W-2 - Adam Steinman</a>' in html
-    assert f'<a href="/documents/{did}/download">Open</a>' in html   # Open unchanged
+    # The filename anchor carries a title (the full name stays reachable when the label clamps to
+    # two lines), so match the href and the label rather than an exact attribute string.
+    assert re.search(rf'<a href="/documents/{did}/download"[^>]*>\s*2025 - W-2 - Adam Steinman\s*</a>',
+                     html), "filename still links to the download url"
+    assert f'<a href="/documents/{did}/download">Open</a>' in html   # menu Open unchanged
 
 
 def test_email_action_target_is_the_existing_route():

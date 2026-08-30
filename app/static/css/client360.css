@@ -97,14 +97,18 @@
    parameter and calls no endpoint — the server contract is untouched. */
 .docs-toolbar {
   display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
-  padding:var(--s3); margin-bottom:var(--s3);
+  padding:10px var(--s3); margin-bottom:var(--s3);
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
 }
-.docs-toolbar .search { position:relative; flex:1; min-width:220px; max-width:420px; }
-.docs-toolbar .search .mag { position:absolute; left:11px; top:9px; color:var(--muted); pointer-events:none; font-size:13px; }
-.docs-toolbar .search input { width:100%; height:34px; padding-left:31px; }
-.docs-toolbar select.input { height:34px; font-size:13px; padding-right:8px; }
-.docs-toolbar .count { font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; margin-left:auto; }
+.docs-toolbar .search { position:relative; flex:1 1 240px; min-width:200px; max-width:400px; }
+.docs-toolbar .search .mag { position:absolute; left:10px; top:0; height:32px; display:flex;
+  align-items:center; color:var(--muted); pointer-events:none; font-size:13px; }
+.docs-toolbar .search input { width:100%; height:32px; padding-left:29px; font-size:13px; }
+/* Every control on one 32px baseline so the row reads as a single band, not stacked heights. */
+.docs-toolbar select.input { height:32px; font-size:13px; padding:0 26px 0 10px; min-width:118px;
+  max-width:170px; }
+.docs-toolbar .count { font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums;
+  margin-left:auto; white-space:nowrap; padding-left:var(--s2); }
 .docs-toolbar .count b { color:var(--text); font-weight:660; }
 
 /* upload, folded into a disclosure so it stops competing with the list */
@@ -119,25 +123,53 @@
 .docs-upload .field { margin:0; }
 
 /* table */
-.docs-table { width:100%; min-width:940px; }
-.docs-table td { vertical-align:top; padding-top:10px; padding-bottom:10px; }
-.docs-name { display:flex; flex-direction:column; gap:3px; min-width:0; }
-.docs-name > a { color:var(--text); font-weight:620; text-decoration:none; word-break:break-word; }
+/* A fixed layout stops the browser widening whichever column happens to hold a long filename,
+   which is what made every other column cramped. */
+.docs-table { width:100%; min-width:880px; table-layout:fixed; }
+.docs-table col.col-name   { width:auto; }
+.docs-table col.col-type   { width:132px; }
+.docs-table col.col-source { width:124px; }
+.docs-table col.col-text   { width:142px; }
+.docs-table col.col-review { width:104px; }
+.docs-table col.col-when   { width:96px; }
+.docs-table col.col-act    { width:104px; }
+.docs-table th { padding:8px 10px; }
+.docs-table td { vertical-align:top; padding:9px 10px; }
+.docs-table tbody tr:hover { background:var(--surface-2); }
+
+.docs-name { display:flex; flex-direction:column; gap:2px; min-width:0; }
+/* Two lines, then ellipsis. The full filename stays reachable through the title attribute, so
+   nothing is lost - and rows stop growing to four lines for one long name. */
+.docs-name > a {
+  color:var(--text); font-weight:620; text-decoration:none; line-height:1.35;
+  display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; overflow-wrap:anywhere; word-break:normal;
+}
 .docs-name > a:hover { color:var(--accent); text-decoration:underline; }
-.docs-sub { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+.docs-sub { display:flex; flex-wrap:wrap; align-items:center; gap:5px; font-size:11px;
+  color:var(--muted); line-height:1.3; }
 .docs-sub .dot { opacity:.45; }
-.docs-type { font-weight:600; color:var(--text-2); }
-.docs-year { font-family:var(--font-mono); font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+/* type + year on one line: "1099-R  2021" */
+.docs-typeline { display:flex; align-items:baseline; gap:7px; min-width:0; }
+.docs-type { font-weight:620; color:var(--text-2); font-size:13px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.docs-year { font-family:var(--font-mono); font-size:11.5px; color:var(--muted); flex:none;
+  font-variant-numeric:tabular-nums; background:var(--surface-2); border-radius:4px; padding:1px 5px; }
 .docs-when { font-family:var(--font-mono); font-size:12px; color:var(--muted);
   font-variant-numeric:tabular-nums; white-space:nowrap; }
-.docs-cell-stack { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+.docs-cell-stack { display:flex; flex-direction:column; gap:3px; align-items:flex-start; min-width:0; }
 
 /* source + status badges — each source system gets a stable, distinguishable tint */
-.src { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:660;
-  padding:2px 8px; border-radius:5px; border:1px solid transparent; white-space:nowrap;
+/* Recognisable in peripheral vision via a leading colour bar, but set at 11px in a muted tint so
+   it never competes with the filename for first read. */
+.src { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:670;
+  letter-spacing:.01em; padding:2px 8px 2px 6px; border-radius:5px; border:1px solid transparent;
+  white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis;
   background:var(--surface-3); color:var(--text-2); text-decoration:none; }
-a.src:hover { border-color:var(--border-strong); }
-.src::before { content:""; width:5px; height:5px; border-radius:1px; background:currentColor; flex:none; }
+a.src:hover { border-color:currentColor; }
+.src::before { content:""; width:3px; height:12px; border-radius:2px; background:currentColor;
+  flex:none; opacity:.9; }
 .src-drake      { background:var(--info-soft);   color:var(--info); }
 .src-taxdome    { background:var(--accent-soft); color:var(--accent-ink); }
 .src-sharepoint { background:var(--warn-soft);   color:var(--warn); }
@@ -145,10 +177,26 @@ a.src:hover { border-color:var(--border-strong); }
 .src-unavailable { opacity:.6; text-decoration:line-through; }
 
 /* overflow menu — pure CSS disclosure, no script and no inline handler */
+/* Actions: Open stays a real one-click control; everything else - including the destructive
+   action - sits behind the three-dot menu. */
+.docs-actionbar { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }
+/* PAINT ONLY. The box geometry below (26px, gap 4px) is unchanged from the approved layout - only
+   the border and background are removed so "Open" reads as a compact text control rather than a
+   button. Nothing here affects column width: the table is table-layout:fixed with an explicit
+   colgroup, so the action cell cannot influence any other column. */
+.act-open { display:inline-flex; align-items:center; height:26px; padding:0 6px; border-radius:6px;
+  border:1px solid transparent; background:none; color:var(--accent);
+  font-size:12.5px; font-weight:620; text-decoration:none; }
+.act-open:hover { background:var(--accent-soft); color:var(--accent-ink); text-decoration:underline; }
+
 .rowmenu { position:relative; display:inline-block; }
-.rowmenu > summary { list-style:none; cursor:pointer; width:28px; height:28px; border-radius:6px;
-  border:1px solid transparent; display:grid; place-items:center; color:var(--muted);
-  font-size:15px; line-height:1; }
+/* `display:block` removes the UA disclosure triangle in Chromium; `list-style` covers Firefox and
+   the two pseudo-elements cover WebKit and the modern spec. The visible glyph is the ⋯ span in
+   the markup. Geometry is unchanged from the approved layout. */
+.rowmenu > summary { display:block; list-style:none; list-style-type:none; cursor:pointer;
+  width:26px; height:26px; border-radius:6px; border:1px solid transparent;
+  color:var(--muted); font-size:15px; line-height:24px; text-align:center; }
+.rowmenu > summary::marker { content:""; }
 .rowmenu > summary::-webkit-details-marker { display:none; }
 .rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
 .rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
@@ -174,7 +222,27 @@ a.src:hover { border-color:var(--border-strong); }
 .docs-noresult { display:none; }
 .docs-table.is-filtered ~ .docs-noresult.show { display:block; }
 
+/* A hidden <tr> must actually disappear: `display:table-row` from the UA sheet can otherwise win
+   over the [hidden] attribute, which would leave filtered rows on screen. */
+.docs-table tr[hidden] { display:none; }
+
+/* 900-1200px: tighten the fixed columns rather than dropping any, so no information is lost and
+   the workspace still fits beside the navigation rail. */
+@media (max-width:1280px) {
+  .docs-table col.col-type { width:118px; }
+  .docs-table col.col-text { width:128px; }
+  .docs-table col.col-review { width:96px; }
+}
+@media (max-width:1100px) {
+  .docs-table { min-width:820px; }
+  .docs-table th, .docs-table td { padding-left:8px; padding-right:8px; }
+  .docs-table col.col-source { width:112px; }
+  .docs-table col.col-when { width:88px; }
+  .docs-table col.col-act { width:96px; }
+  .docs-toolbar select.input { min-width:104px; }
+}
 @media (max-width:900px) {
   .c360-hero { padding:var(--s3) var(--s4); }
   .docs-toolbar .count { margin-left:0; }
+  .docs-toolbar .search { flex:1 1 100%; max-width:none; }
 }

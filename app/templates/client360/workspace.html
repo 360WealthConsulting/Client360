@@ -443,6 +443,10 @@
   <article class="card table-wrap">
     <div class="table-scroll">
     <table class="data docs-table" data-docs-table>
+    <colgroup>
+      <col class="col-name"><col class="col-type"><col class="col-source"><col class="col-text">
+      <col class="col-review"><col class="col-when"><col class="col-act">
+    </colgroup>
     <thead><tr>
       <th>Document</th><th>Type &amp; year</th><th>Source</th><th>Text</th>
       <th>Review</th><th>Modified</th><th class="docs-actions">Actions</th>
@@ -458,7 +462,7 @@
           data-haystack="{{ (d.name ~ ' ' ~ (d.document_type or '') ~ ' ' ~ (d.tax_year or '') ~ ' ' ~ ((d.source_systems or []) | join(' ')) ~ ' ' ~ (d.owner_label or ''))|lower }}">
         <td>
           <span class="docs-name">
-            <a href="{{ d.download_url }}">{{ d.name }}</a>
+            <a href="{{ d.download_url }}" title="{{ d.name }}">{{ d.name }}</a>
             <span class="docs-sub">
               <span>{{ d.owner_label }}</span>
               {% if d.version_count and d.version_count > 1 %}<span class="dot" aria-hidden="true">·</span><span>v{{ d.version_count }}</span>{% endif %}
@@ -467,12 +471,17 @@
           </span>
         </td>
         <td>
-          <span class="docs-cell-stack">
-            <span class="docs-type">{{ d.document_type or "—" }}</span>
-            {% if d.tax_year %}<span class="docs-year">Tax year {{ d.tax_year }}</span>{% endif %}
-            {% if d.classification_confidence is not none %}<span class="subtle" title="How confident we are in the document type">{{ (d.classification_confidence * 100)|round|int }}% match</span>{% endif %}
-            {% if d.extraction_label %}<span class="subtle" title="Details read from the document">🧠 {{ d.extraction_label }}</span>{% endif %}
+          <span class="docs-typeline">
+            <span class="docs-type" title="{{ d.document_type or 'Unclassified' }}">{{ d.document_type or "—" }}</span>
+            {% if d.tax_year %}<span class="docs-year">{{ d.tax_year }}</span>{% endif %}
           </span>
+          {% if d.classification_confidence is not none or d.extraction_label %}
+          <span class="docs-sub">
+            {% if d.classification_confidence is not none %}<span title="How confident we are in the document type">{{ (d.classification_confidence * 100)|round|int }}% match</span>{% endif %}
+            {% if d.classification_confidence is not none and d.extraction_label %}<span class="dot" aria-hidden="true">·</span>{% endif %}
+            {% if d.extraction_label %}<span title="Details read from the document">🧠 {{ d.extraction_label }}</span>{% endif %}
+          </span>
+          {% endif %}
         </td>
         {# Source references (ADR-072). An external (http) source_uri still links out to the
            originating system; the tint is derived from the source system name, so a new source
@@ -509,8 +518,10 @@
           {# Overflow menu — a pure-CSS disclosure. The destructive action keeps its own POST form
              and confirm field exactly as before; it is simply no longer a permanent red button on
              every row. #}
+          <span class="docs-actionbar">
+          <a class="act-open" href="{{ d.download_url }}" title="Open {{ d.name }}">Open</a>
           <details class="rowmenu">
-            <summary title="Document actions" aria-label="Actions for {{ d.name }}" role="button">⋯</summary>
+            <summary title="More actions" aria-label="More actions for {{ d.name }}" role="button"><span aria-hidden="true">⋯</span></summary>
             <div class="menu">
               <a href="{{ d.download_url }}">Open</a>
               {% if d.source_kind == "canonical" and principal and principal.can("communications.send") %}
@@ -527,6 +538,7 @@
               {% endif %}
             </div>
           </details>
+          </span>
         </td>
       </tr>
     {% else %}
