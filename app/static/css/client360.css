@@ -125,7 +125,12 @@
 /* table */
 /* A fixed layout stops the browser widening whichever column happens to hold a long filename,
    which is what made every other column cramped. */
-.docs-table { width:100%; min-width:880px; table-layout:fixed; }
+/* `table.data` in app.css is (0,1,1) and beats a bare `.docs-table` (0,1,0), so the min-width
+   floor below silently lost the cascade and app.css's 520px applied instead. With
+   table-layout:fixed surviving but its floor gone, the table could shrink under the 702px of
+   declared columns and the auto Document column was allocated a negative remainder - clamped to
+   zero. Matching app.css's specificity is what makes the floor real. */
+table.data.docs-table { width:100%; min-width:880px; table-layout:fixed; }
 .docs-table col.col-name   { width:auto; }
 .docs-table col.col-type   { width:132px; }
 .docs-table col.col-source { width:124px; }
@@ -133,8 +138,11 @@
 .docs-table col.col-review { width:104px; }
 .docs-table col.col-when   { width:96px; }
 .docs-table col.col-act    { width:104px; }
-.docs-table th { padding:8px 10px; }
-.docs-table td { vertical-align:top; padding:9px 10px; }
+/* overflow:hidden so any future width error CLIPS the header instead of painting it over the
+   next column - which is exactly how the collapse showed itself (app.css sets white-space:nowrap
+   on th, and table cells default to overflow:visible). */
+table.data.docs-table th { padding:8px 10px; overflow:hidden; }
+table.data.docs-table td { vertical-align:top; padding:9px 10px; }
 .docs-table tbody tr:hover { background:var(--surface-2); }
 
 .docs-name { display:flex; flex-direction:column; gap:2px; min-width:0; }
@@ -234,8 +242,8 @@ a.src:hover { border-color:currentColor; }
   .docs-table col.col-review { width:96px; }
 }
 @media (max-width:1100px) {
-  .docs-table { min-width:820px; }
-  .docs-table th, .docs-table td { padding-left:8px; padding-right:8px; }
+  table.data.docs-table { min-width:820px; }
+  table.data.docs-table th, table.data.docs-table td { padding-left:8px; padding-right:8px; }
   .docs-table col.col-source { width:112px; }
   .docs-table col.col-when { width:88px; }
   .docs-table col.col-act { width:96px; }
