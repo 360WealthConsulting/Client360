@@ -77,11 +77,17 @@ def _render_documents_tab(principal, person_id):
 
 
 def _actions_cell(html, document_id):
-    """The Actions cell text for one document row, whitespace-collapsed."""
-    row = re.search(rf'<tr>(?:(?!</tr>).)*?/documents/{document_id}/download.*?</tr>', html, re.S)
+    """The Actions cell text for one document row, whitespace-collapsed.
+
+    Phase 1 moved the row actions into an overflow (three-dot) menu, so the cell now reads as the
+    menu's items rather than a middot-separated strip. The guarantees these tests exist for - which
+    actions appear, in what order, and under which capability - are unchanged."""
+    row = re.search(rf'<tr[^>]*>(?:(?!</tr>).)*?/documents/{document_id}/download.*?</tr>',
+                    html, re.S)
     assert row, f"row for document {document_id} not found"
     cells = re.findall(r"<td[^>]*>(.*?)</td>", row.group(0), re.S)
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", cells[-1])).strip()
+    text = re.sub(r"<[^>]+>", " ", cells[-1])
+    return re.sub(r"\s+", " ", text).replace("\u2026", "").strip()
 
 
 # --------------------------------------------------------------------- the action row
@@ -92,7 +98,12 @@ def test_client_document_row_reads_open_email_source():
         did = _doc(c, f"Fidelity 1099-R 2025 {tag}.pdf", person_id=pid,
                    display_name="2025 - 1099-R - Adam Steinman - Fidelity")
     html = _render_documents_tab(SENDER, pid)
-    assert _actions_cell(html, did) == "Open · Email"      # no source_path on this fixture
+    cell = _actions_cell(html, did)
+    # Open is a direct control; everything else sits behind the three-dot menu.
+    assert cell.startswith("Open"), "Open stays immediately accessible"
+    assert "⋯" in cell, "the remaining actions live behind an overflow menu"
+    assert "Email" in cell
+    assert "Source location" not in cell                   # no source_path on this fixture
     assert f'href="/documents/{did}/email"' in html
 
 
@@ -106,11 +117,10 @@ def test_email_action_sits_between_open_and_source():
                   .values(tags={"source_path": "/TaxDome/Adam/1099R.pdf"}))
     html = _render_documents_tab(SENDER, pid)
     cell = _actions_cell(html, did)
-    if "Source" in cell:                                   # source_path surfaced by the view model
-        assert cell == "Open · Email · Source"
-    else:
-        assert cell == "Open · Email"
+    assert "Open" in cell and "Email" in cell
     assert cell.index("Open") < cell.index("Email")
+    if "Source location" in cell:                          # source_path surfaced by the view model
+        assert cell.index("Email") < cell.index("Source location")
 
 
 def test_filename_link_still_points_at_the_download_url():
@@ -119,8 +129,11 @@ def test_filename_link_still_points_at_the_download_url():
         pid = _person(c, tag)
         did = _doc(c, f"W2 {tag}.pdf", person_id=pid, display_name="2025 - W-2 - Adam Steinman")
     html = _render_documents_tab(SENDER, pid)
-    assert f'<a href="/documents/{did}/download">2025 - W-2 - Adam Steinman</a>' in html
-    assert f'<a href="/documents/{did}/download">Open</a>' in html   # Open unchanged
+    # The filename anchor carries a title (the full name stays reachable when the label clamps to
+    # two lines), so match the href and the label rather than an exact attribute string.
+    assert re.search(rf'<a href="/documents/{did}/download"[^>]*>\s*2025 - W-2 - Adam Steinman\s*</a>',
+                     html), "filename still links to the download url"
+    assert f'<a href="/documents/{did}/download">Open</a>' in html   # menu Open unchanged
 
 
 def test_email_action_target_is_the_existing_route():
@@ -129,7 +142,7 @@ def test_email_action_target_is_the_existing_route():
         pid = _person(c, tag)
         did = _doc(c, f"doc {tag}.pdf", person_id=pid)
     html = _render_documents_tab(SENDER, pid)
-    assert f'<a href="/documents/{did}/email">Email</a>' in html
+    assert f'<a href="/documents/{did}/email">Email' in html
     from app.main import app
     assert "/documents/{document_id}/email" in {getattr(r, "path", None) for r in app.routes}
 
@@ -142,8 +155,8 @@ def test_principal_without_communications_send_gets_no_email_action():
         did = _doc(c, f"doc {tag}.pdf", person_id=pid)
     html = _render_documents_tab(NO_SEND, pid)
     assert f"/documents/{did}/email" not in html
-    assert ">Email<" not in html
-    assert _actions_cell(html, did).startswith("Open")     # Open still there
+    assert ">Email" not in html
+    assert "Open" in _actions_cell(html, did)              # Open still there
     assert f'href="/documents/{did}/download"' in html     # download untouched
 
 

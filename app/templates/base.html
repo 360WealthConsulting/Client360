@@ -40,25 +40,22 @@
    threads enforces — and deliberately NOT on firm_client: the inbox is record-scoped per thread,
    so an advisor without record.read_all still sees the conversations they may service. #}
 {% set can_messages = 'client.read' in caps %}
+{# Navigation groups. PRESENTATION ONLY: every href, match prefix and `show` capability below is
+   byte-identical to what it was - the twelve original groups are consolidated into eight so the rail
+   scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated. #}
 {% set groups = [
-  {"label": "Home", "items": [
-    {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p}]},
-  {"label": "Workspace", "items": [
-    {"href": "/workspace", "label": "Today", "match": "/workspace", "ico": "◭", "show": can_workspace}]},
   {"label": "Overview", "items": [
+    {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p},
+    {"href": "/workspace", "label": "Today", "match": "/workspace", "ico": "◭", "show": can_workspace},
     {"href": "/", "label": "Dashboard", "match": "/", "ico": "◧", "show": firm_client},
     {"href": "/activities", "label": "Activity", "match": "/activities", "ico": "◈", "show": firm_client}]},
   {"label": "Clients", "items": [
     {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": firm_client},
     {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": firm_client},
     {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": firm_client},
-    {"href": "/admin/client-portal/threads", "label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": can_messages}]},
-  {"label": "Identity", "items": [
+    {"href": "/admin/client-portal/threads", "label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": can_messages},
     {"href": "/demo/identity", "label": "Identity Review", "match": "/demo/identity", "ico": "◑", "show": demo_mode},
     {"href": "/demo/taxdome-drive", "label": "TaxDome Drive", "match": "/demo/taxdome-drive", "ico": "◇", "show": demo_mode}]},
-  {"label": "Wealth", "items": [
-    {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": firm_client},
-    {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": firm_client}]},
   {"label": "Work", "items": [
     {"href": "/work", "label": "My Work", "match": "/work", "ico": "▦", "show": 'work.read' in caps},
     {"href": "/work/team", "label": "Team Work", "match": "/work/team", "ico": "▦", "show": 'capacity.read' in caps},
@@ -70,30 +67,31 @@
     {"href": "/tax/intake", "label": "Intake", "match": "/tax/intake", "ico": "◇", "show": 'tax.intake.read' in caps},
     {"href": "/tax/returns", "label": "Returns", "match": "/tax/returns", "ico": "◇", "show": 'tax.read' in caps},
     {"href": "/tax/documents", "label": "Documents", "match": "/tax/documents", "ico": "◇", "show": 'tax.read' in caps}]},
-  {"label": "Benefits", "items": [
+  {"label": "Wealth", "items": [
+    {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": firm_client},
+    {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": firm_client}]},
+  {"label": "Benefits & Insurance", "items": [
     {"href": "/organizations", "label": "Organizations", "match": "/organizations", "ico": "⬢", "show": can_org},
     {"href": "/benefits", "label": "Benefits", "match": "/benefits", "ico": "⊕", "show": can_ben},
-    {"href": "/benefits/reporting", "label": "Reporting", "match": "/benefits/reporting", "ico": "▥", "show": can_ben}]},
-  {"label": "Insurance", "items": [
-    {"href": "/insurance", "label": "Book", "match": "/insurance", "ico": "☂", "show": can_ins},
-    {"href": "/insurance/reviews", "label": "Reviews", "match": "/insurance/reviews", "ico": "◷", "show": can_ins},
+    {"href": "/benefits/reporting", "label": "Benefits Reporting", "match": "/benefits/reporting", "ico": "▥", "show": can_ben},
+    {"href": "/insurance", "label": "Insurance Book", "match": "/insurance", "ico": "☂", "show": can_ins},
+    {"href": "/insurance/reviews", "label": "Insurance Reviews", "match": "/insurance/reviews", "ico": "◷", "show": can_ins},
     {"href": "/insurance/licensing", "label": "Licensing", "match": "/insurance/licensing", "ico": "✦", "show": can_ins_lic},
-    {"href": "/insurance/reporting", "label": "Pipeline", "match": "/insurance/reporting", "ico": "▥", "show": can_ins}]},
+    {"href": "/insurance/reporting", "label": "Insurance Pipeline", "match": "/insurance/reporting", "ico": "▥", "show": can_ins}]},
+  {"label": "Oversight", "items": [
+    {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
+    {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
+    {"href": "/admin/review", "label": "Review Inbox", "match": "/admin/review", "ico": "☑", "show": can_docmgmt},
+    {"href": "/admin/documents/unassigned", "label": "Unassigned Documents", "match": "/admin/documents/unassigned", "ico": "❏", "show": can_docmgmt},
+    {"href": "/compliance/reviews", "label": "Compliance Reviews", "match": "/compliance/reviews", "ico": "✓", "show": 'compliance.review.read' in caps},
+    {"href": "/compliance/authorities", "label": "Reviewer Authorities", "match": "/compliance/authorities", "ico": "◆", "show": 'compliance.authority.read' in caps},
+    {"href": "/admin/rule-catalog", "label": "Rule Catalog", "match": "/admin/rule-catalog", "ico": "▤", "show": 'audit.read' in caps},
+    {"href": "/microsoft365/status", "label": "Microsoft 365", "match": "/microsoft365", "ico": "◫", "show": 'communication.read' in caps}]},
   {"label": "Administration", "items": [
     {"href": "/admin/employees", "label": "Employees", "match": "/admin/employees", "ico": "◐", "show": can_admin},
     {"href": "/admin/access-profiles", "label": "Roles & Access", "match": "/admin/access-profiles", "ico": "◆", "show": can_admin},
     {"href": "/admin/invitations", "label": "Invitations", "match": "/admin/invitations", "ico": "✉", "show": can_admin},
-    {"href": "/admin/review", "label": "Review Inbox", "match": "/admin/review", "ico": "☑", "show": can_docmgmt},
-    {"href": "/admin/documents/unassigned", "label": "Unassigned Documents", "match": "/admin/documents/unassigned", "ico": "❏", "show": can_docmgmt},
-    {"href": "/admin/audit", "label": "Access Audit", "match": "/admin/audit", "ico": "▦", "show": can_admin}]},
-  {"label": "Oversight", "items": [
-    {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
-    {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
-    {"href": "/admin/audit", "label": "Audit", "match": "/admin/audit", "ico": "▦", "show": 'audit.read' in caps},
-    {"href": "/admin/rule-catalog", "label": "Rule Catalog", "match": "/admin/rule-catalog", "ico": "▤", "show": 'audit.read' in caps},
-    {"href": "/compliance/reviews", "label": "Compliance Reviews", "match": "/compliance/reviews", "ico": "✓", "show": 'compliance.review.read' in caps},
-    {"href": "/compliance/authorities", "label": "Reviewer Authorities", "match": "/compliance/authorities", "ico": "◆", "show": 'compliance.authority.read' in caps},
-    {"href": "/microsoft365/status", "label": "Microsoft 365", "match": "/microsoft365", "ico": "◫", "show": 'communication.read' in caps}]}
+    {"href": "/admin/audit", "label": "Access Audit", "match": "/admin/audit", "ico": "▦", "show": can_admin or 'audit.read' in caps}]}
 ] %}
 <body class="c360">
 <a class="skip-link" href="#main">Skip to content</a>

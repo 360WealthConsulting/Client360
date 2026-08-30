@@ -28,3 +28,271 @@
 .c360-backnav a:hover { text-decoration: underline; }
 .c360-backnav .sep { color: var(--border, #cbd5e1); }
 .c360-backnav .current { color: var(--text, #1f2937); font-weight: 600; }
+
+/* ============================================================================
+   PHASE 1 REDESIGN — client header + document workspace
+   Layered on app.css tokens. No inline styles anywhere: the CSP is
+   `default-src 'self'` with no 'unsafe-inline', so a style="" attribute is
+   silently dropped by the browser.
+   ============================================================================ */
+
+/* ---- client identity header ---------------------------------------------- */
+.c360-hero {
+  display:flex; align-items:flex-start; gap:var(--s4); flex-wrap:wrap;
+  margin:0 0 var(--s4); padding:var(--s4) var(--s5);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+}
+.c360-hero .identity { display:flex; align-items:center; gap:var(--s4); min-width:0; flex:1; }
+.c360-hero .crest {
+  width:52px; height:52px; flex:none; border-radius:14px; display:grid; place-items:center;
+  background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--border);
+  font-family:var(--font-mono); font-size:17px; font-weight:700; letter-spacing:-.02em;
+}
+.c360-hero .who { min-width:0; }
+.c360-hero h1 { margin:0; font-size:23px; line-height:1.2; letter-spacing:-.02em; font-weight:670; }
+.c360-hero .kind {
+  display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:700;
+  letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin-bottom:2px;
+}
+.c360-hero .meta {
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
+  margin-top:5px; font-size:12.5px; color:var(--muted);
+}
+.c360-hero .meta a { color:var(--accent); text-decoration:none; font-weight:600; }
+.c360-hero .meta a:hover { text-decoration:underline; }
+.c360-hero .meta .dot { opacity:.45; }
+.c360-hero .hero-actions { display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center; }
+
+/* ---- section navigation --------------------------------------------------- */
+.c360-tabs {
+  display:flex; flex-wrap:wrap; gap:2px; margin:0 0 var(--s4); padding:0;
+  border-bottom:1px solid var(--border);
+}
+.c360-tab {
+  position:relative; padding:9px 14px; border-radius:0; border:0; background:none;
+  text-decoration:none; color:var(--muted); font-size:13.5px; font-weight:600; line-height:1.2;
+}
+.c360-tab:hover { color:var(--text); }
+.c360-tab.active { background:none; color:var(--text); font-weight:680; }
+.c360-tab.active::after {
+  content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2px;
+  background:var(--accent); border-radius:2px 2px 0 0;
+}
+.c360-subtabs { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 var(--s4); }
+.c360-tab--sub {
+  padding:4px 11px; border-radius:999px; font-size:12px; font-weight:600;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--text-2);
+}
+.c360-tab--sub:hover { border-color:var(--border-strong); color:var(--text); }
+.c360-tab--sub.active { background:var(--accent-soft); color:var(--accent-ink); border-color:transparent; }
+.c360-tab--sub.active::after { display:none; }
+
+/* ---- document workspace --------------------------------------------------- */
+.docs-head { display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s4);
+  flex-wrap:wrap; margin-bottom:var(--s3); }
+.docs-head h2 { margin:0; font-size:17px; font-weight:660; letter-spacing:-.01em; }
+.docs-head p { margin:3px 0 0; font-size:12.5px; color:var(--muted); max-width:68ch; }
+
+/* toolbar: pure client-side narrowing over rows ALREADY on the page. It adds no query
+   parameter and calls no endpoint — the server contract is untouched. */
+.docs-toolbar {
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
+  padding:10px var(--s3); margin-bottom:var(--s3);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+}
+.docs-toolbar .search { position:relative; flex:1 1 240px; min-width:200px; max-width:400px; }
+.docs-toolbar .search .mag { position:absolute; left:10px; top:0; height:32px; display:flex;
+  align-items:center; color:var(--muted); pointer-events:none; font-size:13px; }
+.docs-toolbar .search input { width:100%; height:32px; padding-left:29px; font-size:13px; }
+/* Every control on one 32px baseline so the row reads as a single band, not stacked heights. */
+.docs-toolbar select.input { height:32px; font-size:13px; padding:0 26px 0 10px; min-width:118px;
+  max-width:170px; }
+.docs-toolbar .count { font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums;
+  margin-left:auto; white-space:nowrap; padding-left:var(--s2); }
+.docs-toolbar .count b { color:var(--text); font-weight:660; }
+
+/* upload, folded into a disclosure so it stops competing with the list */
+.docs-upload { margin-bottom:var(--s3); border:1px solid var(--border); border-radius:var(--radius);
+  background:var(--surface); }
+.docs-upload > summary { cursor:pointer; padding:10px var(--s3); font-size:13px; font-weight:620;
+  color:var(--text-2); list-style:none; display:flex; align-items:center; gap:8px; }
+.docs-upload > summary::-webkit-details-marker { display:none; }
+.docs-upload > summary::before { content:"+"; font-family:var(--font-mono); color:var(--accent); font-weight:700; }
+.docs-upload[open] > summary { border-bottom:1px solid var(--border); }
+.docs-upload .body { display:flex; flex-wrap:wrap; gap:var(--s3); align-items:flex-end; padding:var(--s3); }
+.docs-upload .field { margin:0; }
+
+/* table */
+/* A fixed layout stops the browser widening whichever column happens to hold a long filename,
+   which is what made every other column cramped. */
+/* `table.data` in app.css is (0,1,1) and beats a bare `.docs-table` (0,1,0), so the min-width
+   floor below silently lost the cascade and app.css's 520px applied instead. With
+   table-layout:fixed surviving but its floor gone, the table could shrink under the 702px of
+   declared columns and the auto Document column was allocated a negative remainder - clamped to
+   zero. Matching app.css's specificity is what makes the floor real. */
+table.data.docs-table { width:100%; min-width:880px; table-layout:fixed; }
+.docs-table col.col-name   { width:auto; }
+.docs-table col.col-type   { width:132px; }
+.docs-table col.col-source { width:124px; }
+.docs-table col.col-text   { width:142px; }
+.docs-table col.col-review { width:104px; }
+.docs-table col.col-when   { width:96px; }
+.docs-table col.col-act    { width:104px; }
+/* overflow:hidden so any future width error CLIPS the header instead of painting it over the
+   next column - which is exactly how the collapse showed itself (app.css sets white-space:nowrap
+   on th, and table cells default to overflow:visible). */
+table.data.docs-table th { padding:8px 10px; overflow:hidden; }
+table.data.docs-table td { vertical-align:top; padding:9px 10px; }
+.docs-table tbody tr:hover { background:var(--surface-2); }
+
+.docs-name { display:flex; flex-direction:column; gap:2px; min-width:0; }
+/* Two lines, then ellipsis. The full filename stays reachable through the title attribute, so
+   nothing is lost - and rows stop growing to four lines for one long name. */
+.docs-name > a {
+  color:var(--text); font-weight:620; text-decoration:none; line-height:1.35;
+  display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; overflow-wrap:anywhere; word-break:normal;
+}
+.docs-name > a:hover { color:var(--accent); text-decoration:underline; }
+.docs-sub { display:flex; flex-wrap:wrap; align-items:center; gap:5px; font-size:11px;
+  color:var(--muted); line-height:1.3; }
+.docs-sub .dot { opacity:.45; }
+
+/* type + year on one line: "1099-R  2021" */
+.docs-typeline { display:flex; align-items:baseline; gap:7px; min-width:0; }
+.docs-type { font-weight:620; color:var(--text-2); font-size:13px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.docs-year { font-family:var(--font-mono); font-size:11.5px; color:var(--muted); flex:none;
+  font-variant-numeric:tabular-nums; background:var(--surface-2); border-radius:4px; padding:1px 5px; }
+.docs-when { font-family:var(--font-mono); font-size:12px; color:var(--muted);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.docs-cell-stack { display:flex; flex-direction:column; gap:3px; align-items:flex-start; min-width:0; }
+
+/* source + status badges — each source system gets a stable, distinguishable tint */
+/* Recognisable in peripheral vision via a leading colour bar, but set at 11px in a muted tint so
+   it never competes with the filename for first read. */
+.src { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:670;
+  letter-spacing:.01em; padding:2px 8px 2px 6px; border-radius:5px; border:1px solid transparent;
+  white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis;
+  background:var(--surface-3); color:var(--text-2); text-decoration:none; }
+a.src:hover { border-color:currentColor; }
+.src::before { content:""; width:3px; height:12px; border-radius:2px; background:currentColor;
+  flex:none; opacity:.9; }
+.src-drake      { background:var(--info-soft);   color:var(--info); }
+.src-taxdome    { background:var(--accent-soft); color:var(--accent-ink); }
+.src-sharepoint { background:var(--warn-soft);   color:var(--warn); }
+.src-upload     { background:var(--good-soft);   color:var(--good); }
+.src-unavailable { opacity:.6; text-decoration:line-through; }
+
+/* overflow menu — pure CSS disclosure, no script and no inline handler */
+/* Actions: Open stays a real one-click control; everything else - including the destructive
+   action - sits behind the three-dot menu. */
+.docs-actionbar { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }
+/* PAINT ONLY. The box geometry below (26px, gap 4px) is unchanged from the approved layout - only
+   the border and background are removed so "Open" reads as a compact text control rather than a
+   button. Nothing here affects column width: the table is table-layout:fixed with an explicit
+   colgroup, so the action cell cannot influence any other column. */
+.act-open { display:inline-flex; align-items:center; height:26px; padding:0 6px; border-radius:6px;
+  border:1px solid transparent; background:none; color:var(--accent);
+  font-size:12.5px; font-weight:620; text-decoration:none; }
+.act-open:hover { background:var(--accent-soft); color:var(--accent-ink); text-decoration:underline; }
+
+.rowmenu { position:relative; display:inline-block; }
+/* `display:block` removes the UA disclosure triangle in Chromium; `list-style` covers Firefox and
+   the two pseudo-elements cover WebKit and the modern spec. The visible glyph is the ⋯ span in
+   the markup. Geometry is unchanged from the approved layout. */
+.rowmenu > summary { display:block; list-style:none; list-style-type:none; cursor:pointer;
+  width:26px; height:26px; border-radius:6px; border:1px solid transparent;
+  color:var(--muted); font-size:15px; line-height:24px; text-align:center; }
+.rowmenu > summary::marker { content:""; }
+.rowmenu > summary::-webkit-details-marker { display:none; }
+.rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
+.rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
+.rowmenu .menu { position:absolute; right:0; top:32px; z-index:30; min-width:186px; padding:5px;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.rowmenu .menu a, .rowmenu .menu button {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 10px;
+  border-radius:5px; border:0; background:none; color:var(--text); font:inherit; font-size:13px;
+  font-weight:550; text-decoration:none; cursor:pointer; height:auto; }
+.rowmenu .menu a:hover, .rowmenu .menu button:hover { background:var(--surface-2); }
+.rowmenu .menu .sep { height:1px; background:var(--border); margin:4px 2px; }
+.rowmenu .menu button.danger { color:var(--crit); }
+.rowmenu .menu button.danger:hover { background:var(--crit-soft); }
+.rowmenu .menu form { margin:0; }
+.docs-actions { text-align:right; white-space:nowrap; }
+
+/* empty state inside the workspace */
+.docs-empty { padding:var(--s6) var(--s5); text-align:center; }
+.docs-empty .em { font-size:26px; opacity:.5; display:block; margin-bottom:var(--s2); }
+.docs-empty h3 { margin:0 0 4px; font-size:15px; font-weight:650; }
+.docs-empty p { margin:0 auto; font-size:13px; color:var(--muted); max-width:46ch; }
+.docs-noresult { display:none; }
+.docs-table.is-filtered ~ .docs-noresult.show { display:block; }
+
+/* ---- review status badge ---------------------------------------------------
+   "not required" wrapped to two lines and pushed every row taller. Scoped by STRUCTURE, not by
+   column position: the Review cell holds the badge as a DIRECT child of the td, while the Text
+   cell nests its badge inside .docs-cell-stack - so `td > .badge` reaches the review badge and
+   nothing else, and stays correct if columns are ever reordered.
+
+   nowrap on its own was not enough: at 11.5px with the shared 9px padding the badge measures
+   about 93px against an 84px cell budget (76px at the narrow breakpoints), so it would have
+   spilled over Modified - the same overlap the header fix removed. Trimming the padding and type
+   one step lets it sit on one line inside the existing column, so no width, colgroup, min-width
+   or overflow behaviour changes. max-width/overflow are on the BADGE itself, so a longer status
+   value clips within its own pill rather than painting into the next column. */
+table.data.docs-table td > .badge {
+  white-space:nowrap; padding:2px 7px; font-size:11px; letter-spacing:0;
+  max-width:100%; overflow:hidden;
+}
+
+/* ---- one horizontal scroll container ---------------------------------------
+   The documents article carries BOTH .card and .table-wrap, and .table-wrap brings
+   overflow-x:auto - so the table sat inside TWO nested horizontal scroll containers. The inner
+   .table-scroll is the real scroller (it is the narrower box), which left the outer one as a
+   second clipping box that never scrolled: content was cut at the card edge with no way to reach
+   it. Because overflow-x:auto also forces overflow-y to a non-visible value, the outer box was
+   clipping vertically too.
+
+   Neutralising the outer leaves exactly one scroller. Both selectors below are scoped to
+   `.card.table-wrap`, which matches this one element in the entire codebase - .table-wrap alone
+   is used by 87 templates and .table-scroll by five, and none of them are touched. */
+.card.table-wrap { overflow:visible; }
+
+/* Styling the bar opts out of auto-hiding overlay scrollbars in both engines, so the affordance
+   is visible the moment the table is wider than the workspace instead of only on hover. It costs
+   nothing at full desktop width, where there is no overflow and no bar. */
+.card.table-wrap > .table-scroll { overscroll-behavior-x:contain;
+  scrollbar-color:var(--border-strong) var(--surface-2); }
+.card.table-wrap > .table-scroll::-webkit-scrollbar { height:11px; }
+.card.table-wrap > .table-scroll::-webkit-scrollbar-track { background:var(--surface-2);
+  border-radius:6px; }
+.card.table-wrap > .table-scroll::-webkit-scrollbar-thumb { background:var(--border-strong);
+  border-radius:6px; border:2px solid var(--surface-2); }
+.card.table-wrap > .table-scroll::-webkit-scrollbar-thumb:hover { background:var(--muted); }
+
+/* A hidden <tr> must actually disappear: `display:table-row` from the UA sheet can otherwise win
+   over the [hidden] attribute, which would leave filtered rows on screen. */
+.docs-table tr[hidden] { display:none; }
+
+/* 900-1200px: tighten the fixed columns rather than dropping any, so no information is lost and
+   the workspace still fits beside the navigation rail. */
+@media (max-width:1280px) {
+  .docs-table col.col-type { width:118px; }
+  .docs-table col.col-text { width:128px; }
+  .docs-table col.col-review { width:96px; }
+}
+@media (max-width:1100px) {
+  table.data.docs-table { min-width:820px; }
+  table.data.docs-table th, table.data.docs-table td { padding-left:8px; padding-right:8px; }
+  .docs-table col.col-source { width:112px; }
+  .docs-table col.col-when { width:88px; }
+  .docs-table col.col-act { width:96px; }
+  .docs-toolbar select.input { min-width:104px; }
+}
+@media (max-width:900px) {
+  .c360-hero { padding:var(--s3) var(--s4); }
+  .docs-toolbar .count { margin-left:0; }
+  .docs-toolbar .search { flex:1 1 100%; max-width:none; }
+}
