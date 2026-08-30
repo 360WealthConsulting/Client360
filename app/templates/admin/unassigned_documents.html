@@ -60,6 +60,58 @@
       </div>
     </div>
 
+    {% if d.proposal %}
+      {% set pc = d.proposal.confidence or "NO_MATCH" %}
+
+      <div style="margin-top:10px; padding:10px 12px; border:1px solid #d8dee8; border-radius:8px;">
+        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+          <strong>360Plus owner analysis:</strong>
+          <strong>{{ pc }}</strong>
+        </div>
+
+        {% if d.proposal.proposed_entity_name %}
+          <div style="margin-top:5px;">
+            Proposed {{ d.proposal.proposed_entity_type }}:
+            <strong>{{ d.proposal.proposed_entity_name }}</strong>
+            (#{{ d.proposal.proposed_entity_id }})
+          </div>
+        {% endif %}
+
+        {% if d.proposal.evidence %}
+          <div class="subtle" style="margin-top:5px;">
+            {% for e in d.proposal.evidence %}
+              <div>{{ e }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if d.proposal.best_candidates %}
+          <div class="subtle" style="margin-top:5px;">
+            Possible matches:
+            {% for c in d.proposal.best_candidates %}
+              {{ c.name }} (#{{ c.person_id }}){% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if d.proposal.proposal_error %}
+          <div class="subtle" style="margin-top:5px;">
+            Analysis unavailable: {{ d.proposal.proposal_error }}
+          </div>
+        {% endif %}
+
+        {% if d.id == 121628 %}
+          <div style="margin-top:7px; font-weight:700;">
+            FROZEN IDENTITY-REVIEW CASE — do not file from the automated proposal alone.
+          </div>
+        {% endif %}
+
+        <div class="subtle" style="margin-top:6px;">
+          Guidance only. No ownership change occurs until a filing destination is selected and confirmed.
+        </div>
+      </div>
+    {% endif %}
+
     <details style="margin-top:7px">
       <summary class="subtle" style="cursor:pointer">Document details</summary>
 

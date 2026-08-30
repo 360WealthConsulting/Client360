@@ -258,7 +258,11 @@ def unassigned_documents(request: Request, q: str = "",
 
     from app.db import documents, metadata
     from app.services.households import unresolved_taxdome_folders
-    from app.services.document_owner_proposal import PERMANENT_REJECT_DOCUMENT_IDS
+    from app.services.document_owner_proposal import (
+        PERMANENT_REJECT_DOCUMENT_IDS,
+        build_match_indexes,
+        propose_document_owner,
+    )
 
     folders = _folder_samples_and_candidates(
         unresolved_taxdome_folders(limit=200)
@@ -302,6 +306,30 @@ def unassigned_documents(request: Request, q: str = "",
                 for row in rows
                 if int(row["id"]) not in PERMANENT_REJECT_DOCUMENT_IDS
             ]
+
+            proposal_idx = build_match_indexes(conn)
+            proposal_map = {}
+
+            for document_id in ids:
+                try:
+                    proposal_map[document_id] = propose_document_owner(
+                        document_id,
+                        conn=conn,
+                        idx=proposal_idx,
+                        with_text=False,
+                        ocr=False,
+                    )
+                except Exception as exc:
+                    proposal_map[document_id] = {
+                        "eligible": True,
+                        "confidence": "ERROR",
+                        "proposed_entity_type": None,
+                        "proposed_entity_id": None,
+                        "proposed_entity_name": None,
+                        "evidence": [],
+                        "best_candidates": [],
+                        "proposal_error": f"{type(exc).__name__}: {exc}",
+                    }
 
             source_map = {}
 
@@ -350,6 +378,7 @@ def unassigned_documents(request: Request, q: str = "",
                     "source_metadata": meta,
                     "view_url": f"/documents/{document_id}/download?inline=1",
                     "download_url": f"/documents/{document_id}/download",
+                    "proposal": proposal_map.get(document_id),
                 })
 
     return templates.TemplateResponse(
