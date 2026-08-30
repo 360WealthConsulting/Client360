@@ -26,14 +26,16 @@
   --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
   /* frame */
-  --nav-w:232px; --header-h:56px;
+  --nav-w:236px; --header-h:56px;
+  /* spacing scale — one ladder, so gaps stop being ad hoc */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground:#0E1514; --surface:#16201E; --surface-2:#1D2A27; --surface-3:#25332F;
-    --border:#293633; --border-strong:#3A4A46;
-    --text:#E7ECEA; --text-2:#C4CFCB; --muted:#8FA09B;
+    --ground:#0B1211; --surface:#141D1B; --surface-2:#1B2725; --surface-3:#243330;
+    --border:#2A3835; --border-strong:#40524E;
+    --text:#EDF2F0; --text-2:#CBD6D2; --muted:#93A5A0;
     --accent:#2FB3A3; --accent-2:#54C8BA; --accent-soft:#123430; --accent-ink:#BDEDE6;
     --good:#57B15C; --good-soft:#173021; --warn:#D89A3C; --warn-soft:#33280F;
     --crit:#E27568; --crit-soft:#37201C; --info:#74A6DC; --info-soft:#17293B;
@@ -49,8 +51,8 @@
   --shadow-sm:0 1px 2px rgba(15,32,30,.06); --shadow:0 4px 14px rgba(15,32,30,.09);
 }
 :root[data-theme="dark"] {
-  --ground:#0E1514; --surface:#16201E; --surface-2:#1D2A27; --surface-3:#25332F;
-  --border:#293633; --border-strong:#3A4A46; --text:#E7ECEA; --text-2:#C4CFCB; --muted:#8FA09B;
+  --ground:#0B1211; --surface:#141D1B; --surface-2:#1B2725; --surface-3:#243330;
+  --border:#2A3835; --border-strong:#40524E; --text:#EDF2F0; --text-2:#CBD6D2; --muted:#93A5A0;
   --accent:#2FB3A3; --accent-2:#54C8BA; --accent-soft:#123430; --accent-ink:#BDEDE6;
   --good:#57B15C; --good-soft:#173021; --warn:#D89A3C; --warn-soft:#33280F;
   --crit:#E27568; --crit-soft:#37201C; --info:#74A6DC; --info-soft:#17293B;
@@ -73,20 +75,30 @@ body.c360 {
    ============================================================ */
 .app-shell { display:grid; grid-template-columns:var(--nav-w) 1fr; min-height:100vh; font-family:var(--font-sans); color:var(--text); }
 .app-sidebar { background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:sticky; top:0; height:100vh; }
+.app-sidebar::-webkit-scrollbar-thumb, .app-nav::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:4px; }
+.app-nav::-webkit-scrollbar { width:8px; }
 .app-brand { display:flex; align-items:center; gap:10px; height:var(--header-h); padding:0 18px; border-bottom:1px solid var(--border); flex:none; text-decoration:none; color:var(--text); }
 .app-brand .mark { width:26px; height:26px; border-radius:7px; flex:none; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:800; font-size:13px; font-family:var(--font-mono); }
 .app-brand .name { font-weight:680; letter-spacing:-.01em; }
-.app-nav { padding:14px 10px; overflow-y:auto; flex:1; }
-.nav-group { margin-bottom:16px; }
-.nav-group > .label { font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:0 10px 6px; }
-.nav-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:7px; color:var(--text-2); font-size:13.5px; font-weight:550; text-decoration:none; line-height:1.2; }
+.app-nav { padding:var(--s3) var(--s2) var(--s5); overflow-y:auto; flex:1; }
+.nav-group { margin-bottom:var(--s4); }
+.nav-group > .label { font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+  font-weight:700; padding:0 10px var(--s1); opacity:.85; }
+/* Active state is a left RAIL plus a tinted ground: the marker survives at a glance in a long
+   list, where a tint alone reads as mere hover. */
+.nav-item { position:relative; display:flex; align-items:center; gap:10px; padding:7px 10px 7px 12px;
+  border-radius:7px; color:var(--text-2); font-size:13.5px; font-weight:550; text-decoration:none;
+  line-height:1.25; transition:background .1s ease, color .1s ease; }
 .nav-item .ico { width:16px; flex:none; color:var(--muted); text-align:center; font-size:13px; }
 .nav-item:hover { background:var(--surface-2); color:var(--text); }
-.nav-item.active { background:var(--accent-soft); color:var(--accent-ink); font-weight:650; }
+.nav-item.active { background:var(--accent-soft); color:var(--accent-ink); font-weight:660; }
 .nav-item.active .ico { color:var(--accent); }
+.nav-item.active::before { content:""; position:absolute; left:-8px; top:6px; bottom:6px; width:3px;
+  border-radius:0 3px 3px 0; background:var(--accent); }
 
 .app-main { display:flex; flex-direction:column; min-width:0; }
-.app-header { height:var(--header-h); border-bottom:1px solid var(--border); background:var(--surface); display:flex; align-items:center; gap:14px; padding:0 20px; position:sticky; top:0; z-index:20; }
+.app-header { height:var(--header-h); border-bottom:1px solid var(--border); background:var(--surface);
+  display:flex; align-items:center; gap:14px; padding:0 var(--s5); position:sticky; top:0; z-index:20; }
 .crumbs { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
 .crumbs a { color:var(--muted); text-decoration:none; }
 .crumbs a:hover { color:var(--text); }
@@ -105,7 +117,7 @@ body.c360 {
 .user-chip .who { line-height:1.15; }
 .user-chip .who b { font-size:12.5px; font-weight:620; display:block; }
 .user-chip .who span { font-size:11px; color:var(--muted); }
-.app-content { padding:22px 24px 40px; overflow:auto; }
+.app-content { padding:var(--s5) var(--s5) 56px; overflow:auto; max-width:1680px; width:100%; }
 
 /* mobile nav toggle (pure CSS) */
 .nav-toggle, .nav-toggle-btn { display:none; }
@@ -352,3 +364,7 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .portal-duplicates li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-bottom: 6px; }
 .portal-duplicate-who { flex: 1 1 auto; }
+
+/* Visually-hidden label that stays available to assistive technology. */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap; border:0; }

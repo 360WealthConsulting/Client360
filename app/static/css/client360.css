@@ -28,3 +28,153 @@
 .c360-backnav a:hover { text-decoration: underline; }
 .c360-backnav .sep { color: var(--border, #cbd5e1); }
 .c360-backnav .current { color: var(--text, #1f2937); font-weight: 600; }
+
+/* ============================================================================
+   PHASE 1 REDESIGN — client header + document workspace
+   Layered on app.css tokens. No inline styles anywhere: the CSP is
+   `default-src 'self'` with no 'unsafe-inline', so a style="" attribute is
+   silently dropped by the browser.
+   ============================================================================ */
+
+/* ---- client identity header ---------------------------------------------- */
+.c360-hero {
+  display:flex; align-items:flex-start; gap:var(--s4); flex-wrap:wrap;
+  margin:0 0 var(--s4); padding:var(--s4) var(--s5);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+}
+.c360-hero .identity { display:flex; align-items:center; gap:var(--s4); min-width:0; flex:1; }
+.c360-hero .crest {
+  width:52px; height:52px; flex:none; border-radius:14px; display:grid; place-items:center;
+  background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--border);
+  font-family:var(--font-mono); font-size:17px; font-weight:700; letter-spacing:-.02em;
+}
+.c360-hero .who { min-width:0; }
+.c360-hero h1 { margin:0; font-size:23px; line-height:1.2; letter-spacing:-.02em; font-weight:670; }
+.c360-hero .kind {
+  display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:700;
+  letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin-bottom:2px;
+}
+.c360-hero .meta {
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
+  margin-top:5px; font-size:12.5px; color:var(--muted);
+}
+.c360-hero .meta a { color:var(--accent); text-decoration:none; font-weight:600; }
+.c360-hero .meta a:hover { text-decoration:underline; }
+.c360-hero .meta .dot { opacity:.45; }
+.c360-hero .hero-actions { display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center; }
+
+/* ---- section navigation --------------------------------------------------- */
+.c360-tabs {
+  display:flex; flex-wrap:wrap; gap:2px; margin:0 0 var(--s4); padding:0;
+  border-bottom:1px solid var(--border);
+}
+.c360-tab {
+  position:relative; padding:9px 14px; border-radius:0; border:0; background:none;
+  text-decoration:none; color:var(--muted); font-size:13.5px; font-weight:600; line-height:1.2;
+}
+.c360-tab:hover { color:var(--text); }
+.c360-tab.active { background:none; color:var(--text); font-weight:680; }
+.c360-tab.active::after {
+  content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2px;
+  background:var(--accent); border-radius:2px 2px 0 0;
+}
+.c360-subtabs { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 var(--s4); }
+.c360-tab--sub {
+  padding:4px 11px; border-radius:999px; font-size:12px; font-weight:600;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--text-2);
+}
+.c360-tab--sub:hover { border-color:var(--border-strong); color:var(--text); }
+.c360-tab--sub.active { background:var(--accent-soft); color:var(--accent-ink); border-color:transparent; }
+.c360-tab--sub.active::after { display:none; }
+
+/* ---- document workspace --------------------------------------------------- */
+.docs-head { display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s4);
+  flex-wrap:wrap; margin-bottom:var(--s3); }
+.docs-head h2 { margin:0; font-size:17px; font-weight:660; letter-spacing:-.01em; }
+.docs-head p { margin:3px 0 0; font-size:12.5px; color:var(--muted); max-width:68ch; }
+
+/* toolbar: pure client-side narrowing over rows ALREADY on the page. It adds no query
+   parameter and calls no endpoint — the server contract is untouched. */
+.docs-toolbar {
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
+  padding:var(--s3); margin-bottom:var(--s3);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+}
+.docs-toolbar .search { position:relative; flex:1; min-width:220px; max-width:420px; }
+.docs-toolbar .search .mag { position:absolute; left:11px; top:9px; color:var(--muted); pointer-events:none; font-size:13px; }
+.docs-toolbar .search input { width:100%; height:34px; padding-left:31px; }
+.docs-toolbar select.input { height:34px; font-size:13px; padding-right:8px; }
+.docs-toolbar .count { font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; margin-left:auto; }
+.docs-toolbar .count b { color:var(--text); font-weight:660; }
+
+/* upload, folded into a disclosure so it stops competing with the list */
+.docs-upload { margin-bottom:var(--s3); border:1px solid var(--border); border-radius:var(--radius);
+  background:var(--surface); }
+.docs-upload > summary { cursor:pointer; padding:10px var(--s3); font-size:13px; font-weight:620;
+  color:var(--text-2); list-style:none; display:flex; align-items:center; gap:8px; }
+.docs-upload > summary::-webkit-details-marker { display:none; }
+.docs-upload > summary::before { content:"+"; font-family:var(--font-mono); color:var(--accent); font-weight:700; }
+.docs-upload[open] > summary { border-bottom:1px solid var(--border); }
+.docs-upload .body { display:flex; flex-wrap:wrap; gap:var(--s3); align-items:flex-end; padding:var(--s3); }
+.docs-upload .field { margin:0; }
+
+/* table */
+.docs-table { width:100%; min-width:940px; }
+.docs-table td { vertical-align:top; padding-top:10px; padding-bottom:10px; }
+.docs-name { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.docs-name > a { color:var(--text); font-weight:620; text-decoration:none; word-break:break-word; }
+.docs-name > a:hover { color:var(--accent); text-decoration:underline; }
+.docs-sub { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+.docs-sub .dot { opacity:.45; }
+.docs-type { font-weight:600; color:var(--text-2); }
+.docs-year { font-family:var(--font-mono); font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.docs-when { font-family:var(--font-mono); font-size:12px; color:var(--muted);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.docs-cell-stack { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+
+/* source + status badges — each source system gets a stable, distinguishable tint */
+.src { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:660;
+  padding:2px 8px; border-radius:5px; border:1px solid transparent; white-space:nowrap;
+  background:var(--surface-3); color:var(--text-2); text-decoration:none; }
+a.src:hover { border-color:var(--border-strong); }
+.src::before { content:""; width:5px; height:5px; border-radius:1px; background:currentColor; flex:none; }
+.src-drake      { background:var(--info-soft);   color:var(--info); }
+.src-taxdome    { background:var(--accent-soft); color:var(--accent-ink); }
+.src-sharepoint { background:var(--warn-soft);   color:var(--warn); }
+.src-upload     { background:var(--good-soft);   color:var(--good); }
+.src-unavailable { opacity:.6; text-decoration:line-through; }
+
+/* overflow menu — pure CSS disclosure, no script and no inline handler */
+.rowmenu { position:relative; display:inline-block; }
+.rowmenu > summary { list-style:none; cursor:pointer; width:28px; height:28px; border-radius:6px;
+  border:1px solid transparent; display:grid; place-items:center; color:var(--muted);
+  font-size:15px; line-height:1; }
+.rowmenu > summary::-webkit-details-marker { display:none; }
+.rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
+.rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
+.rowmenu .menu { position:absolute; right:0; top:32px; z-index:30; min-width:186px; padding:5px;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.rowmenu .menu a, .rowmenu .menu button {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 10px;
+  border-radius:5px; border:0; background:none; color:var(--text); font:inherit; font-size:13px;
+  font-weight:550; text-decoration:none; cursor:pointer; height:auto; }
+.rowmenu .menu a:hover, .rowmenu .menu button:hover { background:var(--surface-2); }
+.rowmenu .menu .sep { height:1px; background:var(--border); margin:4px 2px; }
+.rowmenu .menu button.danger { color:var(--crit); }
+.rowmenu .menu button.danger:hover { background:var(--crit-soft); }
+.rowmenu .menu form { margin:0; }
+.docs-actions { text-align:right; white-space:nowrap; }
+
+/* empty state inside the workspace */
+.docs-empty { padding:var(--s6) var(--s5); text-align:center; }
+.docs-empty .em { font-size:26px; opacity:.5; display:block; margin-bottom:var(--s2); }
+.docs-empty h3 { margin:0 0 4px; font-size:15px; font-weight:650; }
+.docs-empty p { margin:0 auto; font-size:13px; color:var(--muted); max-width:46ch; }
+.docs-noresult { display:none; }
+.docs-table.is-filtered ~ .docs-noresult.show { display:block; }
+
+@media (max-width:900px) {
+  .c360-hero { padding:var(--s3) var(--s4); }
+  .docs-toolbar .count { margin-left:0; }
+}
