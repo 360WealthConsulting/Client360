@@ -230,6 +230,23 @@ a.src:hover { border-color:currentColor; }
 .docs-noresult { display:none; }
 .docs-table.is-filtered ~ .docs-noresult.show { display:block; }
 
+/* ---- review status badge ---------------------------------------------------
+   "not required" wrapped to two lines and pushed every row taller. Scoped by STRUCTURE, not by
+   column position: the Review cell holds the badge as a DIRECT child of the td, while the Text
+   cell nests its badge inside .docs-cell-stack - so `td > .badge` reaches the review badge and
+   nothing else, and stays correct if columns are ever reordered.
+
+   nowrap on its own was not enough: at 11.5px with the shared 9px padding the badge measures
+   about 93px against an 84px cell budget (76px at the narrow breakpoints), so it would have
+   spilled over Modified - the same overlap the header fix removed. Trimming the padding and type
+   one step lets it sit on one line inside the existing column, so no width, colgroup, min-width
+   or overflow behaviour changes. max-width/overflow are on the BADGE itself, so a longer status
+   value clips within its own pill rather than painting into the next column. */
+table.data.docs-table td > .badge {
+  white-space:nowrap; padding:2px 7px; font-size:11px; letter-spacing:0;
+  max-width:100%; overflow:hidden;
+}
+
 /* ---- one horizontal scroll container ---------------------------------------
    The documents article carries BOTH .card and .table-wrap, and .table-wrap brings
    overflow-x:auto - so the table sat inside TWO nested horizontal scroll containers. The inner
