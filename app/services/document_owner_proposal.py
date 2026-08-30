@@ -702,13 +702,26 @@ def propose_document_owner(document_id, *, conn=None, idx=None, with_text=False,
             .limit(1)
         ).first() is not None
 
-        proposal = analyze_identity(
-            text,
-            row["original_name"],
-            folder,
-            indexes,
-            tax_document=drake_source,
-        )
+        proposal = None
+
+        if drake_source:
+            from app.services.drake_document_owner import (
+                propose_drake_document_owner,
+            )
+
+            proposal = propose_drake_document_owner(
+                document_id,
+                conn=own,
+            )
+
+        if proposal is None:
+            proposal = analyze_identity(
+                text,
+                row["original_name"],
+                folder,
+                indexes,
+                tax_document=drake_source,
+            )
         proposal.update({"document_id": document_id, "filename": row["original_name"],
                          "source_folder": folder, "extraction_method": method, "eligible": True})
         if with_text:
