@@ -94,9 +94,9 @@
           </div>
         {% endif %}
 
-        {% if d.proposal.proposal_error %}
+        {% if d.proposal.analysis_unavailable %}
           <div class="subtle" style="margin-top:5px;">
-            Analysis unavailable: {{ d.proposal.proposal_error }}
+            Analysis unavailable for this document.
           </div>
         {% endif %}
 

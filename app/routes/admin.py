@@ -319,7 +319,7 @@ def unassigned_documents(request: Request, q: str = "",
                         with_text=False,
                         ocr=False,
                     )
-                except Exception as exc:
+                except Exception:
                     proposal_map[document_id] = {
                         "eligible": True,
                         "confidence": "ERROR",
@@ -328,7 +328,7 @@ def unassigned_documents(request: Request, q: str = "",
                         "proposed_entity_name": None,
                         "evidence": [],
                         "best_candidates": [],
-                        "proposal_error": f"{type(exc).__name__}: {exc}",
+                        "analysis_unavailable": True,
                     }
 
             source_map = {}
