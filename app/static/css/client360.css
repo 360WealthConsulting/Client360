@@ -230,6 +230,31 @@ a.src:hover { border-color:currentColor; }
 .docs-noresult { display:none; }
 .docs-table.is-filtered ~ .docs-noresult.show { display:block; }
 
+/* ---- one horizontal scroll container ---------------------------------------
+   The documents article carries BOTH .card and .table-wrap, and .table-wrap brings
+   overflow-x:auto - so the table sat inside TWO nested horizontal scroll containers. The inner
+   .table-scroll is the real scroller (it is the narrower box), which left the outer one as a
+   second clipping box that never scrolled: content was cut at the card edge with no way to reach
+   it. Because overflow-x:auto also forces overflow-y to a non-visible value, the outer box was
+   clipping vertically too.
+
+   Neutralising the outer leaves exactly one scroller. Both selectors below are scoped to
+   `.card.table-wrap`, which matches this one element in the entire codebase - .table-wrap alone
+   is used by 87 templates and .table-scroll by five, and none of them are touched. */
+.card.table-wrap { overflow:visible; }
+
+/* Styling the bar opts out of auto-hiding overlay scrollbars in both engines, so the affordance
+   is visible the moment the table is wider than the workspace instead of only on hover. It costs
+   nothing at full desktop width, where there is no overflow and no bar. */
+.card.table-wrap > .table-scroll { overscroll-behavior-x:contain;
+  scrollbar-color:var(--border-strong) var(--surface-2); }
+.card.table-wrap > .table-scroll::-webkit-scrollbar { height:11px; }
+.card.table-wrap > .table-scroll::-webkit-scrollbar-track { background:var(--surface-2);
+  border-radius:6px; }
+.card.table-wrap > .table-scroll::-webkit-scrollbar-thumb { background:var(--border-strong);
+  border-radius:6px; border:2px solid var(--surface-2); }
+.card.table-wrap > .table-scroll::-webkit-scrollbar-thumb:hover { background:var(--muted); }
+
 /* A hidden <tr> must actually disappear: `display:table-row` from the UA sheet can otherwise win
    over the [hidden] attribute, which would leave filtered rows on screen. */
 .docs-table tr[hidden] { display:none; }
