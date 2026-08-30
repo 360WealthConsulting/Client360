@@ -208,9 +208,16 @@ a.src:hover { border-color:currentColor; }
 .rowmenu > summary::-webkit-details-marker { display:none; }
 .rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
 .rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
-.rowmenu .menu { position:absolute; right:0; top:32px; z-index:30; min-width:186px; padding:5px;
+/* The table scrolls horizontally, and overflow-x:auto forces overflow-y to a non-visible value,
+   so an absolutely positioned menu is CLIPPED by that scroll container and cannot float over the
+   rows below. The fallback below stays absolute (correct without JavaScript); documents.js
+   promotes an opened menu to .is-floating and sets fixed coordinates from the button's rect,
+   which escapes ancestor overflow entirely. Both states are out of flow, so neither can grow a
+   row. */
+.rowmenu .menu { position:absolute; right:0; top:32px; z-index:60; min-width:186px; padding:5px;
   background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
   box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.rowmenu .menu.is-floating { position:fixed; right:auto; top:auto; z-index:1000; }
 .rowmenu .menu a, .rowmenu .menu button {
   display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 10px;
   border-radius:5px; border:0; background:none; color:var(--text); font:inherit; font-size:13px;
