@@ -218,3 +218,73 @@ def test_rendering_the_tab_mutates_nothing():
     _render_documents_tab(SENDER, pid)
     _render_documents_tab(NO_SEND, pid)
     assert snapshot() == before
+
+
+# --------------------------------------------------------- row overflow menu presentation
+# The documents table scrolls horizontally, and overflow-x:auto forces overflow-y to a
+# non-visible value - so an absolutely positioned menu is clipped by that scroll container and
+# spills into the rows below instead of floating over them. documents.js promotes an open menu to
+# position:fixed, which escapes ancestor overflow. These pin the contract that fix depends on.
+
+def _assets():
+    import pathlib
+    return (pathlib.Path("app/static/css/client360.css").read_text(encoding="utf-8"),
+            pathlib.Path("app/static/js/documents.js").read_text(encoding="utf-8"))
+
+
+def test_the_row_menu_keeps_details_summary_markup():
+    """Keyboard operation and the no-JS fallback both depend on this staying <details>."""
+    tag = _tag()
+    with engine.begin() as c:
+        pid = _person(c, tag)
+        did = _doc(c, f"menu {tag}.pdf", person_id=pid)
+    html = _render_documents_tab(SENDER, pid)
+    assert '<details class="rowmenu">' in html
+    assert "<summary" in html and "</details>" in html
+    # Open stays a direct control outside the menu; Email stays inside it.
+    assert f'<a class="act-open" href="/documents/{did}/download"' in html
+    assert f'/documents/{did}/email' in html
+
+
+def test_the_open_menu_escapes_the_scroll_container():
+    css, js = _assets()
+    # Fallback is absolute (correct with no JavaScript); the promoted state is fixed.
+    assert ".rowmenu .menu { position:absolute;" in css
+    assert ".rowmenu .menu.is-floating { position:fixed;" in css
+    assert "is-floating" in js, "the script must promote an opened menu"
+    # position:fixed is what is NOT clipped by an ancestor's overflow.
+    assert "position:fixed" in css
+
+
+def test_the_menu_floats_on_an_opaque_surface_above_the_rows():
+    css, _ = _assets()
+    rule = css[css.index(".rowmenu .menu {"):css.index(".rowmenu .menu.is-floating")]
+    assert "background:var(--surface)" in rule, "opaque, so rows cannot show through"
+    assert "border:1px solid var(--border-strong)" in rule
+    assert "box-shadow:var(--shadow)" in rule
+    floating = css[css.index(".rowmenu .menu.is-floating"):]
+    floating = floating[:floating.index("}") + 1]
+    assert "z-index:1000" in floating, "must paint above the table"
+
+
+def test_the_menu_is_out_of_flow_so_it_cannot_grow_a_row():
+    css, _ = _assets()
+    rule = css[css.index(".rowmenu .menu {"):css.index(".rowmenu .menu.is-floating")]
+    assert "position:absolute" in rule
+    floating = css[css.index(".rowmenu .menu.is-floating"):]
+    assert "position:fixed" in floating[:floating.index("}") + 1]
+
+
+def test_the_script_handles_the_bottom_of_the_viewport_and_closes_on_scroll():
+    _, js = _assets()
+    assert "clientHeight" in js and "getBoundingClientRect" in js, "it measures before placing"
+    assert "btn.top - GAP - box.height" in js, "flips above the button when there is no room below"
+    assert 'addEventListener("scroll"' in js, "a fixed menu must not float away from its row"
+    assert 'addEventListener("resize"' in js
+
+
+def test_the_horizontal_scroller_is_still_present():
+    """The fix must not have been achieved by removing the scroll container."""
+    css, _ = _assets()
+    assert ".card.table-wrap { overflow:visible; }" in css, "one scroller, the inner one"
+    assert "table.data.docs-table { width:100%; min-width:880px; table-layout:fixed; }" in css
