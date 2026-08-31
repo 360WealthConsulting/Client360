@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Review Queue (MEDIUM / AMBIGUOUS) | Admin | 360Plus{% endblock %}
+{% block title %}Document Review Queue | Admin | 360Plus{% endblock %}
 {% block crumb %}Admin · Document Management · Review Queue{% endblock %}
 
 {% macro approve_btn(doc_id, cand, primary=False) %}
@@ -52,13 +52,28 @@
 
 {% block content %}
 {% call ui.page_head("Review queue", eyebrow="Admin · Document Management",
-    desc="MEDIUM and AMBIGUOUS proposals that need a human decision. The document and its evidence are on
-          this page — click Approve beside the correct owner to assign it (atomic, audited, never
-          overwriting). Nothing is auto-assigned.") %}
+    desc="Documents that need a human decision after the automated sweep. Ownership ambiguity,
+          contradictions, unreadable scans, OCR failures, and encrypted files stop here instead of being
+          rescanned forever. Nothing is auto-assigned from this page.") %}
   <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
 {% endcall %}
 
 {% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
+
+{% if ocr_review %}
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+  <div style="font-weight:600; margin-bottom:6px">
+    OCR / EXTRACTION REVIEW — terminal exceptions ({{ ocr_review_count }})
+  </div>
+  <div class="subtle" style="margin-bottom:8px">
+    These documents were swept out of automatic processing. They will not be automatically OCR'd again.
+    Review the source document and choose an owner manually when appropriate.
+  </div>
+  {% for r in ocr_review %}
+    {{ doc_row(r, ambiguous=True, review=True) }}
+  {% endfor %}
+</article>
+{% endif %}
 
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
   <div style="font-weight:600; margin-bottom:6px">MEDIUM — proposed owner, explicit approval required ({{ medium_count }})</div>

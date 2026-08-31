@@ -362,11 +362,42 @@ def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_
         summary["failed"] += 1
         return
 
-    _write_state(doc_id, status="completed", text=text, engine_name=engine_name,
-                 page_count=page_count, source_hash=sha, bump_attempt=True,
-                 completed=True)
+    clean_text = (text or "").strip()
+
+    # A successful OCR engine invocation that extracts no readable
+    # characters is a terminal REVIEW outcome, not a successful
+    # searchable document and not a retry candidate.
+    #
+    # Persist as "skipped" so incremental/initial/retry sweeps do not
+    # automatically select it again. Staff can explicitly reprocess a
+    # document later if they replace/rotate/improve the source file.
+    if not clean_text:
+        _write_state(
+            doc_id,
+            status="skipped",
+            text="",
+            engine_name=engine_name,
+            page_count=page_count,
+            source_hash=sha,
+            last_error="no_readable_text: OCR completed but extracted zero readable characters",
+            bump_attempt=True,
+            completed=True,
+        )
+        summary["skipped"] += 1
+        return
+
+    _write_state(
+        doc_id,
+        status="completed",
+        text=clean_text,
+        engine_name=engine_name,
+        page_count=page_count,
+        source_hash=sha,
+        bump_attempt=True,
+        completed=True,
+    )
     summary["completed"] += 1
-    summary["chars_extracted"] += len(text or "")
+    summary["chars_extracted"] += len(clean_text)
 
 
 def _write_state(doc_id, *, status, text=None, engine_name=None, page_count=None,
