@@ -209,3 +209,117 @@ def test_source_embeds_no_secrets_or_absolute_paths():
     assert not re.search(r"client_secret\s*=\s*['\"][^'\"]+['\"]", _SRC)
     assert not re.search(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", _SRC)
     assert "Bearer ey" not in _SRC
+def test_graph_get_json_managed_session_refreshes_on_401(monkeypatch):
+    monkeypatch.setattr(
+        spc,
+        "_acquire_token",
+        lambda account: account["token"],
+    )
+    monkeypatch.setattr(
+        spc,
+        "_load_connected_account",
+        lambda: {"id": 1, "token": "fresh"},
+    )
+
+    session = spc._GraphTokenSession({"id": 1, "token": "stale"})
+    calls = []
+
+    def _get(url, headers=None, params=None, timeout=None, **kwargs):
+        calls.append(headers["Authorization"])
+
+        if headers["Authorization"] == "Bearer stale":
+            return FakeResp(status_code=401)
+
+        if headers["Authorization"] == "Bearer fresh":
+            return FakeResp(
+                status_code=200,
+                json_data={"value": [{"id": "ok"}]},
+            )
+
+        raise AssertionError(headers["Authorization"])
+
+    monkeypatch.setattr(spc.requests, "get", _get)
+
+    result = spc._graph_get_json(
+        "https://graph.example/test",
+        session,
+    )
+
+    assert result == {"value": [{"id": "ok"}]}
+    assert calls == ["Bearer stale", "Bearer fresh"]
+    assert session.current() == "fresh"
+
+
+def test_download_managed_session_refreshes_on_401(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        spc,
+        "_acquire_token",
+        lambda account: account["token"],
+    )
+    monkeypatch.setattr(
+        spc,
+        "_load_connected_account",
+        lambda: {"id": 1, "token": "fresh"},
+    )
+
+    session = spc._GraphTokenSession({"id": 1, "token": "stale"})
+    calls = []
+    body = b"refreshed sharepoint download"
+
+    def _get(url, headers=None, **kwargs):
+        calls.append(headers["Authorization"])
+
+        if headers["Authorization"] == "Bearer stale":
+            return FakeResp(status_code=401)
+
+        if headers["Authorization"] == "Bearer fresh":
+            return FakeResp(status_code=200, content=body)
+
+        raise AssertionError(headers["Authorization"])
+
+    monkeypatch.setattr(spc.requests, "get", _get)
+
+    dest = tmp_path / "refreshed.bin"
+
+    size, sha = spc._graph_download(
+        "drive1",
+        "item1",
+        session,
+        dest,
+    )
+
+    assert calls == ["Bearer stale", "Bearer fresh"]
+    assert size == len(body)
+    assert sha == hashlib.sha256(body).hexdigest()
+    assert dest.read_bytes() == body
+    assert session.current() == "fresh"
+
+
+def test_managed_session_second_401_still_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        spc,
+        "_acquire_token",
+        lambda account: account["token"],
+    )
+    monkeypatch.setattr(
+        spc,
+        "_load_connected_account",
+        lambda: {"id": 1, "token": "still-bad"},
+    )
+
+    session = spc._GraphTokenSession({"id": 1, "token": "stale"})
+    calls = {"n": 0}
+
+    def _get(url, **kwargs):
+        calls["n"] += 1
+        return FakeResp(status_code=401)
+
+    monkeypatch.setattr(spc.requests, "get", _get)
+
+    with pytest.raises(spc.ReconnectRequired):
+        spc._graph_get_json(
+            "https://graph.example/test",
+            session,
+        )
+
+    assert calls["n"] == 2
