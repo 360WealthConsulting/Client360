@@ -50,7 +50,7 @@ import requests
 from sqlalchemy import select
 
 # --- reuse existing auth + Graph constants/helpers (no new auth, no duplication) ---------
-from app.db import documents, document_sources, engine, microsoft_accounts
+from app.db import documents, engine, metadata, microsoft_accounts
 from app.jobs.microsoft_document_sync import (
     GRAPH_BASE_URL,
     _identity_email,  # uploader-email extraction (ownership metadata)
@@ -187,6 +187,7 @@ def _load_existing_sharepoint_fastpath() -> dict[str, dict]:
     Anything incomplete, conflicting, changed, or missing local storage
     falls through to the normal Graph download path.
     """
+    document_sources = metadata.tables["document_sources"]
     grouped: dict[str, list[dict]] = {}
 
     with engine.connect() as conn:
