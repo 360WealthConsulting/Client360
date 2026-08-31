@@ -131,12 +131,100 @@ def _ocr_review_rows(conn, *, limit=None):
     return rows
 
 
+def _unresolved_review_row(conn, document_id, proposal=None, *, reason="unresolved"):
+    """Build a review row for a still-unassigned document that automatic
+    analysis could not safely resolve.
+
+    This is the catch-all stage of the document sweep. Nothing is dropped:
+    if automation cannot assign it, staff can see it in Review.
+    """
+    row = conn.execute(
+        text("""
+            SELECT
+                d.id,
+                d.original_name,
+                d.storage_uri,
+                (
+                    SELECT ds.source_path
+                    FROM document_sources ds
+                    WHERE ds.document_id = d.id
+                    ORDER BY ds.id
+                    LIMIT 1
+                ) AS source_path
+            FROM documents d
+            WHERE d.id = :document_id
+        """),
+        {"document_id": int(document_id)},
+    ).mappings().one()
+
+    proposal = proposal or {}
+
+    confidence = str(
+        proposal.get("confidence") or "NO_MATCH"
+    ).upper()
+
+    evidence = list(
+        proposal.get("evidence") or []
+    )
+
+    candidates = []
+
+    proposed_id = proposal.get(
+        "proposed_entity_id"
+    )
+
+    proposed_type = proposal.get(
+        "proposed_entity_type"
+    )
+
+    proposed_name = proposal.get(
+        "proposed_entity_name"
+    )
+
+    if proposed_id and proposed_type:
+        candidates.append({
+            "type": proposed_type,
+            "id": proposed_id,
+            "name": proposed_name,
+        })
+
+    if reason == "high_unconfirmed":
+        explanation = (
+            "HIGH proposal exists but was not automatically assigned; "
+            "explicit review is required."
+        )
+    elif reason == "low_confidence":
+        explanation = (
+            "Automatic ownership evidence was insufficient for a safe assignment."
+        )
+    else:
+        explanation = (
+            "No defensible automatic owner proposal was produced."
+        )
+
+    evidence.insert(0, explanation)
+
+    return {
+        "document_id": int(row["id"]),
+        "filename": row["original_name"],
+        "source_path": row["source_path"] or row["storage_uri"],
+        "extraction_class": "analysis",
+        "extraction_method": "existing-content",
+        "confidence": confidence,
+        "evidence_classes": [reason],
+        "evidence": evidence,
+        "contradictions": [],
+        "candidates": candidates,
+        "review_reason": reason,
+    }
+
+
 def review_queue(*, limit=None, include_high_review=True, ocr=False):
     """READ-ONLY. Returns proposal-review buckets plus terminal OCR-review rows. Each row has
     document_id, filename, source_path, extraction method/class, confidence, evidence, and `candidates`
     (a list of {type,id,name}). MEDIUM: one prominent proposed candidate. AMBIGUOUS: all defensible
     candidates, no default. high_review: HIGH proposals a contradiction sent to review. Writes nothing."""
-    medium, ambiguous, high_review = [], [], []
+    medium, ambiguous, high_review, unresolved = [], [], [], []
     with engine.connect() as conn:
         ocr_review = _ocr_review_rows(conn, limit=limit)
         ocr_review_ids = {
@@ -155,6 +243,14 @@ def review_queue(*, limit=None, include_high_review=True, ocr=False):
 
             proposal = propose_document_owner(did, conn=conn, idx=idx, with_text=True, ocr=ocr)
             if not proposal.get("eligible"):
+                unresolved.append(
+                    _unresolved_review_row(
+                        conn,
+                        did,
+                        proposal,
+                        reason="no_match",
+                    )
+                )
                 continue
             text = proposal.pop("text", "")
             conf = proposal.get("confidence")
@@ -174,15 +270,42 @@ def review_queue(*, limit=None, include_high_review=True, ocr=False):
                              "id": proposal.get("proposed_entity_id"),
                              "name": proposal.get("proposed_entity_name")}]
                     high_review.append(_row_with_candidates(conn, did, proposal, contradictions, idx, cand))
+                else:
+                    unresolved.append(
+                        _unresolved_review_row(
+                            conn,
+                            did,
+                            proposal,
+                            reason="high_unconfirmed",
+                        )
+                    )
+            else:
+                unresolved.append(
+                    _unresolved_review_row(
+                        conn,
+                        did,
+                        proposal,
+                        reason="low_confidence",
+                    )
+                )
     return {
         "medium": medium,
         "ambiguous": ambiguous,
         "high_review": high_review,
         "ocr_review": ocr_review,
+        "unresolved": unresolved,
         "medium_count": len(medium),
         "ambiguous_count": len(ambiguous),
         "high_review_count": len(high_review),
         "ocr_review_count": len(ocr_review),
+        "unresolved_count": len(unresolved),
+        "review_total_count": (
+            len(medium)
+            + len(ambiguous)
+            + len(high_review)
+            + len(ocr_review)
+            + len(unresolved)
+        ),
     }
 
 

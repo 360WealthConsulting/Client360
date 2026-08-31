@@ -29,7 +29,7 @@ def review_queue_page(request: Request,
     """READ-ONLY. Live queue of MEDIUM + AMBIGUOUS (+ HIGH-review) proposals with evidence, candidate
     owners, and a View link to the actual document. Nothing is assigned until an Approve button is used."""
     data = review_queue()
-    for bucket in ("medium", "ambiguous", "high_review", "ocr_review"):
+    for bucket in ("medium", "ambiguous", "high_review", "ocr_review", "unresolved"):
         for r in data[bucket]:
             r["view_url"] = _view_url(r["document_id"], r["filename"])
     return templates.TemplateResponse(

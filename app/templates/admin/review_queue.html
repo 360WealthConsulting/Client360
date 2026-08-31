@@ -75,6 +75,21 @@
 </article>
 {% endif %}
 
+{% if unresolved %}
+<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
+  <div style="font-weight:600; margin-bottom:6px">
+    UNRESOLVED / NO SAFE AUTO-MATCH ({{ unresolved_count }})
+  </div>
+  <div class="subtle" style="margin-bottom:8px">
+    Automation finished with these documents but did not have enough defensible evidence to file them automatically.
+    They stay here for staff review and are not repeatedly rescanned.
+  </div>
+  {% for r in unresolved %}
+    {{ doc_row(r, ambiguous=True, review=True) }}
+  {% endfor %}
+</article>
+{% endif %}
+
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
   <div style="font-weight:600; margin-bottom:6px">MEDIUM — proposed owner, explicit approval required ({{ medium_count }})</div>
   {% for r in medium %}{{ doc_row(r) }}{% else %}<div class="subtle">None.</div>{% endfor %}
