@@ -50,7 +50,7 @@ import requests
 from sqlalchemy import select
 
 # --- reuse existing auth + Graph constants/helpers (no new auth, no duplication) ---------
-from app.db import engine, microsoft_accounts
+from app.db import documents, document_sources, engine, microsoft_accounts
 from app.jobs.microsoft_document_sync import (
     GRAPH_BASE_URL,
     _identity_email,  # uploader-email extraction (ownership metadata)
@@ -172,6 +172,112 @@ def _load_connected_account():
         raise RuntimeError(
             "No Microsoft 365 account is connected. Run /microsoft365/connect once before staging.")
     return account
+
+
+def _load_existing_sharepoint_fastpath() -> dict[str, dict]:
+    """Return canonical SharePoint items safe to skip downloading.
+
+    Eligibility is deliberately fail-closed:
+      * stable source_external_id exists;
+      * size + modified metadata exist;
+      * source_hash exists;
+      * duplicate rows agree on size + modified + hash;
+      * at least one linked canonical document has a real local file.
+
+    Anything incomplete, conflicting, changed, or missing local storage
+    falls through to the normal Graph download path.
+    """
+    grouped: dict[str, list[dict]] = {}
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                document_sources.c.source_external_id,
+                document_sources.c.source_hash,
+                document_sources.c.metadata,
+                documents.c.storage_uri,
+            )
+            .select_from(
+                document_sources.join(
+                    documents,
+                    documents.c.id == document_sources.c.document_id,
+                )
+            )
+            .where(
+                document_sources.c.source_system == SOURCE_SYSTEM,
+                document_sources.c.source_external_id.is_not(None),
+                document_sources.c.source_external_id != "",
+                documents.c.status != "deleted",
+            )
+        ).mappings()
+
+        for row in rows:
+            item_id = str(row["source_external_id"] or "").strip()
+            if not item_id:
+                continue
+
+            metadata = row["metadata"] or {}
+
+            if not isinstance(metadata, dict):
+                grouped.setdefault(item_id, []).append({"valid": False})
+                continue
+
+            try:
+                size = int(metadata.get("size"))
+            except (TypeError, ValueError):
+                grouped.setdefault(item_id, []).append({"valid": False})
+                continue
+
+            modified = metadata.get("modified")
+            source_hash = str(row["source_hash"] or "").strip()
+
+            if modified in (None, "") or not source_hash:
+                grouped.setdefault(item_id, []).append({"valid": False})
+                continue
+
+            storage_uri = str(row["storage_uri"] or "").strip()
+
+            grouped.setdefault(item_id, []).append(
+                {
+                    "valid": True,
+                    "size": size,
+                    "modified": str(modified),
+                    "sha256": source_hash,
+                    "local_ok": bool(
+                        storage_uri and Path(storage_uri).is_file()
+                    ),
+                }
+            )
+
+    fastpath: dict[str, dict] = {}
+
+    for item_id, candidates in grouped.items():
+        if not candidates:
+            continue
+
+        if any(not c.get("valid") for c in candidates):
+            continue
+
+        signatures = {
+            (c["size"], c["modified"], c["sha256"])
+            for c in candidates
+        }
+
+        if len(signatures) != 1:
+            continue
+
+        if not any(c["local_ok"] for c in candidates):
+            continue
+
+        size, modified, sha256 = next(iter(signatures))
+
+        fastpath[item_id] = {
+            "size": size,
+            "modified": modified,
+            "sha256": sha256,
+        }
+
+    return fastpath
 
 
 def _acquire_token(account) -> str:
@@ -619,9 +725,16 @@ def stage_sharepoint_content(*, site_ids=None, staging_root=None, manifest_path=
     # encrypted MSAL cache without restarting the crawl.
     token = _GraphTokenSession(account)
     state = {} if dry_run else _load_state(staging)
+    existing_fastpath = _load_existing_sharepoint_fastpath()
     manifest: list[dict] = []
 
-    logger.info("Staging SharePoint content: sites=%s staging=%s dry_run=%s", ids, staging, dry_run)
+    logger.info(
+        "Staging SharePoint content: sites=%s staging=%s dry_run=%s canonical_fastpath=%d",
+        ids,
+        staging,
+        dry_run,
+        len(existing_fastpath),
+    )
 
     try:
         for site_id in ids:
@@ -640,9 +753,19 @@ def stage_sharepoint_content(*, site_ids=None, staging_root=None, manifest_path=
                 summary.drives += 1
                 try:
                     for item in walk_drive(drive_id, token, summary):
-                        _stage_one(item, site_id=site_id, drive_id=drive_id, drive_name=drive_name,
-                                   staging=staging, token=token, state=state, dry_run=dry_run,
-                                   manifest=manifest, summary=summary)
+                        _stage_one(
+                            item,
+                            site_id=site_id,
+                            drive_id=drive_id,
+                            drive_name=drive_name,
+                            staging=staging,
+                            token=token,
+                            state=state,
+                            dry_run=dry_run,
+                            manifest=manifest,
+                            summary=summary,
+                            existing_fastpath=existing_fastpath,
+                        )
                 except RuntimeError as exc:
                     summary.errors.append(f"drive {drive_name} ({drive_id}): {exc}")
                     logger.error("Drive %s walk failed: %s", drive_id, exc)
@@ -675,8 +798,20 @@ def stage_sharepoint_content(*, site_ids=None, staging_root=None, manifest_path=
     return manifest, summary.as_record()
 
 
-def _stage_one(item, *, site_id, drive_id, drive_name, staging, token, state, dry_run,
-               manifest, summary):
+def _stage_one(
+    item,
+    *,
+    site_id,
+    drive_id,
+    drive_name,
+    staging,
+    token,
+    state,
+    dry_run,
+    manifest,
+    summary,
+    existing_fastpath=None,
+):
     item_id = str(item.get("id") or "")
     name = item.get("name") or ""
     if not item_id or not name:
@@ -696,6 +831,37 @@ def _stage_one(item, *, site_id, drive_id, drive_name, staging, token, state, dr
             item, site_id=site_id, drive_id=drive_id, drive_name=drive_name,
             local_path=prior.get("local_path", str(dest)),
             sha256=prior.get("sha256"), size=prior.get("size")))
+        return
+
+    canonical_prior = (existing_fastpath or {}).get(item_id)
+
+    try:
+        normalized_size_hint = (
+            int(size_hint)
+            if size_hint is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        normalized_size_hint = None
+
+    if (
+        canonical_prior
+        and normalized_size_hint == canonical_prior.get("size")
+        and str(modified or "") == canonical_prior.get("modified")
+    ):
+        summary.skipped_unchanged += 1
+
+        manifest.append(
+            _manifest_item(
+                item,
+                site_id=site_id,
+                drive_id=drive_id,
+                drive_name=drive_name,
+                local_path=None,
+                sha256=canonical_prior.get("sha256"),
+                size=normalized_size_hint,
+            )
+        )
         return
 
     if dry_run:

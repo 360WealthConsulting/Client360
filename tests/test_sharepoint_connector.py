@@ -323,3 +323,101 @@ def test_managed_session_second_401_still_fails_closed(monkeypatch):
         )
 
     assert calls["n"] == 2
+
+def test_canonical_metadata_fastpath_skips_graph_download(monkeypatch, tmp_path):
+    item = {
+        "id": "canonical-i1",
+        "name": "already-canonical.pdf",
+        "size": 4242,
+        "lastModifiedDateTime": "2026-08-30T12:34:56Z",
+        "file": {"mimeType": "application/pdf"},
+    }
+
+    monkeypatch.setattr(
+        spc,
+        "_graph_download",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("unchanged canonical item must not download")
+        ),
+    )
+
+    summary = spc.StagingSummary(dry_run=False)
+    manifest = []
+
+    spc._stage_one(
+        item,
+        site_id="s1",
+        drive_id="d1",
+        drive_name="Documents",
+        staging=tmp_path,
+        token="tok",
+        state={},
+        dry_run=False,
+        manifest=manifest,
+        summary=summary,
+        existing_fastpath={
+            "canonical-i1": {
+                "size": 4242,
+                "modified": "2026-08-30T12:34:56Z",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+
+    assert summary.skipped_unchanged == 1
+    assert summary.files_downloaded == 0
+    assert len(manifest) == 1
+    assert manifest[0]["local_path"] is None
+    assert manifest[0]["sha256"] == "a" * 64
+    assert manifest[0]["size"] == 4242
+
+
+def test_canonical_metadata_fastpath_changed_item_still_downloads(monkeypatch, tmp_path):
+    item = {
+        "id": "changed-i1",
+        "name": "changed.pdf",
+        "size": 5000,
+        "lastModifiedDateTime": "2026-08-31T01:02:03Z",
+        "file": {"mimeType": "application/pdf"},
+    }
+
+    calls = {"n": 0}
+
+    def fake_download(drive_id, item_id, token, dest):
+        calls["n"] += 1
+        return 5000, "b" * 64
+
+    monkeypatch.setattr(
+        spc,
+        "_graph_download",
+        fake_download,
+    )
+
+    summary = spc.StagingSummary(dry_run=False)
+    manifest = []
+
+    spc._stage_one(
+        item,
+        site_id="s1",
+        drive_id="d1",
+        drive_name="Documents",
+        staging=tmp_path,
+        token="tok",
+        state={},
+        dry_run=False,
+        manifest=manifest,
+        summary=summary,
+        existing_fastpath={
+            "changed-i1": {
+                "size": 4242,
+                "modified": "2026-08-30T12:34:56Z",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+
+    assert calls["n"] == 1
+    assert summary.skipped_unchanged == 0
+    assert summary.files_downloaded == 1
+    assert len(manifest) == 1
+    assert manifest[0]["sha256"] == "b" * 64
