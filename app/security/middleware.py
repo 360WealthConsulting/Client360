@@ -30,6 +30,7 @@ def _is_cross_site(origin, referer, base_url):
 
 
 PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/readiness", "/auth/login", "/auth/callback", "/portal/login",
+    "/api/microsoft/sharepoint/webhook",
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume", "/api/portal/login",
     # Client email one-time-code sign-in: reached BEFORE a portal session exists.
