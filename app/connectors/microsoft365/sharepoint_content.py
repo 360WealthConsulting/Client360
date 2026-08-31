@@ -217,19 +217,19 @@ def _load_existing_sharepoint_fastpath() -> dict[str, dict]:
             if not item_id:
                 continue
 
-            metadata = row["metadata"] or {}
+            source_metadata = row["metadata"] or {}
 
-            if not isinstance(metadata, dict):
+            if not isinstance(source_metadata, dict):
                 grouped.setdefault(item_id, []).append({"valid": False})
                 continue
 
             try:
-                size = int(metadata.get("size"))
+                size = int(source_metadata.get("size"))
             except (TypeError, ValueError):
                 grouped.setdefault(item_id, []).append({"valid": False})
                 continue
 
-            modified = metadata.get("modified")
+            modified = source_metadata.get("modified")
             source_hash = str(row["source_hash"] or "").strip()
 
             if modified in (None, "") or not source_hash:
