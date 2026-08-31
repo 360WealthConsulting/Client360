@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 import app.services.sharepoint_subscription as sub
 
@@ -10,11 +12,8 @@ def test_subscription_resource(monkeypatch):
 
 def test_client_state_rejects_too_long(monkeypatch):
     monkeypatch.setenv("MICROSOFT_SHAREPOINT_WEBHOOK_CLIENT_STATE", "x" * 129)
-    try:
+    with pytest.raises(RuntimeError):
         sub.client_state()
-        assert False
-    except RuntimeError:
-        pass
 
 
 def test_ensure_creates_when_missing(monkeypatch):
@@ -26,7 +25,7 @@ def test_ensure_creates_when_missing(monkeypatch):
 
 
 def test_ensure_renews_near_expiry(monkeypatch):
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat()
+    expires = (datetime.now(UTC) + timedelta(minutes=60)).isoformat()
     monkeypatch.setattr(
         sub,
         "find_matching_subscription",
@@ -39,7 +38,7 @@ def test_ensure_renews_near_expiry(monkeypatch):
 
 
 def test_ensure_leaves_healthy_subscription(monkeypatch):
-    expires = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    expires = (datetime.now(UTC) + timedelta(days=2)).isoformat()
     monkeypatch.setattr(
         sub,
         "find_matching_subscription",

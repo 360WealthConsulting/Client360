@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import requests
-
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 DEFAULT_LIFETIME_MINUTES = 4200
@@ -20,11 +19,11 @@ def _required(name: str) -> str:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _iso_z(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _headers() -> dict[str, str]:
@@ -120,8 +119,8 @@ def _parse_graph_time(raw: str) -> datetime:
     value = raw.strip().replace("Z", "+00:00")
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def ensure_subscription() -> dict[str, Any]:

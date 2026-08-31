@@ -5,8 +5,6 @@ import json
 
 from dotenv import load_dotenv
 
-load_dotenv(r"C:\Client360\app\.env")
-
 from app.services.sharepoint_subscription import (
     ensure_subscription,
     subscription_status,
@@ -14,6 +12,7 @@ from app.services.sharepoint_subscription import (
 
 
 def main() -> None:
+    load_dotenv(r"C:\Client360\app\.env")
     parser = argparse.ArgumentParser()
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--ensure", action="store_true")
