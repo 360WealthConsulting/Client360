@@ -333,10 +333,77 @@ def _client_folder_hint(folder_path: str) -> str | None:
     return top or None
 
 
+_STAGE_MAX_TEMP_PATH = 240
+
+
+def _bounded_staged_filename(
+    parent: Path,
+    item_id: str,
+    name: str,
+    *,
+    max_temp_path: int = _STAGE_MAX_TEMP_PATH,
+) -> str:
+    """Build a stable staging filename whose download ``.part`` path
+    remains below the conservative Windows path limit.
+
+    Preserve the SharePoint item id and original extension.  When the
+    original filename would make the temporary download path too long,
+    truncate the stem and append a deterministic hash so different long
+    SharePoint filenames cannot collapse to the same local name.
+    """
+    safe_id = _safe_name(item_id)
+    safe_name = _safe_name(name)
+
+    prefix = f"{safe_id}__"
+    candidate = prefix + safe_name
+
+    if len(str(parent / (candidate + ".part"))) <= max_temp_path:
+        return candidate
+
+    suffix = Path(safe_name).suffix
+    stem = safe_name[:-len(suffix)] if suffix else safe_name
+
+    digest = hashlib.sha256(
+        safe_name.encode("utf-8", errors="replace")
+    ).hexdigest()[:12]
+
+    # Length available for the stem after accounting for:
+    # parent + slash + item-id prefix + hyphen + hash + extension + .part
+    fixed_length = (
+        len(str(parent))
+        + 1
+        + len(prefix)
+        + 1
+        + len(digest)
+        + len(suffix)
+        + len(".part")
+    )
+
+    available = max_temp_path - fixed_length
+
+    if available < 1:
+        raise OSError(
+            f"SharePoint staging parent path leaves no room for a bounded filename: {parent}"
+        )
+
+    return f"{prefix}{stem[:available]}-{digest}{suffix}"
+
+
 def _staged_path(staging_root: Path, site_id: str, drive_id: str, item_id: str, name: str) -> Path:
     # item_id keeps the path unique + stable across runs (duplicate prevention).
-    return (staging_root / _safe_name(site_id) / _safe_name(drive_id)
-            / f"{_safe_name(item_id)}__{_safe_name(name)}")
+    parent = (
+        staging_root
+        / _safe_name(site_id)
+        / _safe_name(drive_id)
+    )
+
+    filename = _bounded_staged_filename(
+        parent,
+        item_id,
+        name,
+    )
+
+    return parent / filename
 
 
 def _load_state(staging_root: Path) -> dict:
