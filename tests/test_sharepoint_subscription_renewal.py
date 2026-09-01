@@ -457,3 +457,82 @@ def test_action_parse_never_trips_strict_mode(tmp_path, lines):
     combined = proc.stdout + proc.stderr
     assert "$Matches" not in combined
     assert "has not been set" not in combined
+
+
+# --- 5. scheduled-task XML durations -----------------------------------------
+#
+# PRODUCTION DEFECT (observed installing the task on the 2ffbe4cd release): the trigger was built
+# with
+#
+#     -RepetitionDuration ([TimeSpan]::MaxValue)
+#
+# [TimeSpan]::MaxValue serializes to the ISO-8601 duration P99999999DT23H59M59S, which is out of
+# range for Task Scheduler's Duration element, so Register-ScheduledTask rejected the ENTIRE task
+# XML:
+#
+#     The task XML contains a value which is incorrectly formatted or out of range.
+#     (14,42):Duration:P99999999DT23H59M59S
+#
+# This fails at REGISTRATION, so the task is never created — automatic renewal simply does not
+# exist, while the deploy log shows only one failed line. Task Scheduler's schema defines PT0S
+# ([TimeSpan]::Zero) as "repeat indefinitely", which is the intended semantic.
+#
+# These assertions are static (PowerShell cannot execute on CI or a developer Mac), so they pin the
+# SOURCE of the bad value rather than the emitted XML.
+
+def _executable_lines(asset):
+    """``asset`` with comment lines removed.
+
+    The defect commentary in these files names the bad value and its serialized form on purpose, so
+    the assertions below must look at executable code only or they would match the warning itself.
+    """
+    return "\n".join(ln for ln in asset.read_text(encoding="utf-8").splitlines()
+                      if not ln.lstrip().startswith("#"))
+
+
+@pytest.mark.parametrize("asset", [_WRAPPER, _INSTALLER], ids=["wrapper", "installer"])
+def test_no_windows_asset_uses_an_out_of_range_timespan(asset):
+    """TimeSpan::MaxValue must never reach a scheduled-task duration again, in either asset."""
+    code = _executable_lines(asset)
+    assert "TimeSpan]::MaxValue" not in code, (
+        f"{asset.name} passes TimeSpan::MaxValue to a task duration; it serializes to "
+        "P99999999DT23H59M59S and Register-ScheduledTask rejects the task XML")
+
+
+@pytest.mark.parametrize("asset", [_WRAPPER, _INSTALLER], ids=["wrapper", "installer"])
+def test_no_windows_asset_hard_codes_the_out_of_range_duration_literal(asset):
+    """The serialized form must not be smuggled in as a literal either."""
+    assert "P99999999" not in _executable_lines(asset)
+
+
+def test_repetition_repeats_indefinitely_via_pt0s():
+    """Indefinite repetition is TimeSpan::Zero (PT0S). Anything finite silently stops renewing."""
+    text = _installer_text()
+    match = re.search(r"-RepetitionDuration\s*\(([^)]*)\)", text)
+    assert match, "no -RepetitionDuration found on the trigger"
+    assert "TimeSpan]::Zero" in match.group(1), (
+        f"-RepetitionDuration is {match.group(1)!r}; expected [TimeSpan]::Zero so Task Scheduler "
+        "serializes PT0S and repeats indefinitely")
+
+
+def test_execution_time_limit_stays_bounded():
+    """The 10-minute cap is the hung-run guard and is NOT the field that caused the defect — fixing
+    the repetition duration must not turn the execution limit into an unlimited one."""
+    text = _installer_text()
+    match = re.search(r"-ExecutionTimeLimit\s*\(([^)]*)\)", text)
+    assert match, "no -ExecutionTimeLimit found"
+    limit = match.group(1)
+    assert "New-TimeSpan" in limit and "TimeSpan]::Zero" not in limit, (
+        f"-ExecutionTimeLimit is {limit!r}; an unlimited (PT0S) limit lets a hung run block the next")
+    assert int(re.search(r"-Minutes\s+(\d+)", limit).group(1)) <= 60
+
+
+def test_the_task_contract_is_unchanged_by_the_duration_fix():
+    """Everything the deployment depends on must survive this fix."""
+    text = _installer_text()
+    assert "'Client360 SharePoint Subscription Renewal'" in text
+    assert "NT AUTHORITY\\SYSTEM" in text and "ServiceAccount" in text
+    assert re.search(r"\$IntervalHours\s*=\s*4", text)
+    assert "-StartWhenAvailable" in text
+    assert "Renew-SharePointSubscription.ps1" in text
+    assert "MultipleInstances IgnoreNew" in text

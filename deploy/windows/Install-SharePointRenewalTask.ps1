@@ -86,10 +86,19 @@ $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -WorkingDirectory $InstallRoot
 
 # Start on the next hour boundary, then repeat indefinitely.
+#
+# Indefinite repetition is [TimeSpan]::Zero, NOT [TimeSpan]::MaxValue. Task Scheduler's schema
+# defines a Repetition Duration of PT0S as "repeat indefinitely", and that is what Zero serializes
+# to. MaxValue instead serializes to P99999999DT23H59M59S, which is out of range for the Duration
+# element, so Register-ScheduledTask rejects the whole task XML:
+#     The task XML contains a value which is incorrectly formatted or out of range.
+#     (14,42):Duration:P99999999DT23H59M59S
+# That is a REGISTRATION-time failure — the task is never created at all, so automatic renewal
+# silently does not exist. (Observed in production installing this task on the 0.13.0 release.)
 $startAt = (Get-Date).Date.AddHours((Get-Date).Hour + 1)
 $trigger = New-ScheduledTaskTrigger -Once -At $startAt `
     -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)
+    -RepetitionDuration ([TimeSpan]::Zero)
 
 # IgnoreNew: never overlap runs. StartWhenAvailable: catch up a run missed while powered off.
 # A 10-minute limit is generous for one Graph call and stops a hung run blocking the next.
