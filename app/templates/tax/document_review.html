@@ -1,6 +1,58 @@
-{% extends "base.html" %}{% block title %}Tax Document Review | 360Plus{% endblock %}{% block content %}
-<div class="page-header"><div><p class="eyebrow">Tax Production</p><h1>Document match review</h1><p class="muted">Documents awaiting a human match decision. Ambiguous and low-confidence matches are never auto-assigned.</p></div></div>
-<div class="stats-grid"><div class="stat-card"><span>Awaiting review</span><strong>{{ data.count }}</strong></div></div>
-<section class="panel"><h2>Review queue</h2><div class="table-wrap"><table><thead><tr><th>Link</th><th>Document</th><th>Return</th><th>Source</th><th>Confidence</th><th>Status</th></tr></thead><tbody>
-{% for item in data['items'] %}<tr><td>#{{ item.id }}</td><td>{{ item.document_id }}</td><td>{{ item.tax_engagement_return_id or '—' }}</td><td>{{ item.match_source }}</td><td>{{ '%.2f'|format(item.confidence|float) }}</td><td><span class="status-pill {{ item.status }}">{{ item.status }}</span></td></tr>{% else %}<tr><td colspan="6" class="muted">No documents are awaiting review.</td></tr>{% endfor %}
-</tbody></table></div></section>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Tax Document Review | 360Plus{% endblock %}
+{% block crumb %}Document review{% endblock %}
+{% block content %}
+{# Presentation only - same fields and same order. Ids read as ids, confidence reads as
+   a proportion rather than a bare decimal, and the queue gets a real empty state
+   instead of one grey cell spanning the table. #}
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Tax Production</p>
+    <h1>Document match review</h1>
+    <p class="muted">Documents awaiting a human match decision. Ambiguous and low-confidence
+      matches are never auto-assigned.</p>
+  </div>
+</div>
+
+<div class="stats-grid pack">
+  <div class="stat-card"><span>Awaiting review</span><strong>{{ data.count }}</strong></div>
+</div>
+
+<section class="panel">
+  <h2>Review queue</h2>
+  {% if data['items'] %}
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Link</th><th>Document</th><th>Return</th><th>Source</th>
+      <th>Confidence</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% for item in data['items'] %}
+      {% set pct = (item.confidence | float * 100) | round | int %}
+      <tr>
+        <td><span class="id-mono">#{{ item.id }}</span></td>
+        <td><span class="id-mono">#{{ item.document_id }}</span></td>
+        <td>{% if item.tax_engagement_return_id %}<span class="id-mono">#{{ item.tax_engagement_return_id }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ item.match_source.replace('_',' ') }}</td>
+        {# Low confidence is the whole reason a row is in this queue, so it is marked. #}
+        <td>
+          <span class="meter{{ ' is-low' if pct < 50 else '' }}">
+            <progress max="100" value="{{ pct }}">{{ pct }}%</progress>
+            <span class="meter-val">{{ '%.2f'|format(item.confidence|float) }}</span>
+          </span>
+        </td>
+        <td><span class="status-pill {{ item.status }}">{{ item.status }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty">
+    <div class="em-ico">✓</div>
+    <h4>Nothing awaiting review</h4>
+    <p>Documents appear here only when a match is ambiguous or below the confidence
+      threshold. They are never auto-assigned.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -17,7 +17,9 @@
 {% endif %}
 
 <h2 class="section-title">Summary</h2>
-<div class="stat-grid">
+{# `compact` because this row is six tiles of formatted currency: at the default 26px a
+   value like $184,500.00 does not fit a 183px track and wrapped mid-number. #}
+<div class="stat-grid compact">
   {{ ui.stat("Next payroll", summary.next_payroll_date or "—") }}
   {{ ui.stat("Employees (active)", summary.employee_count or 0) }}
   {{ ui.stat("Latest gross payroll", money(summary.latest_gross_cents)) }}
@@ -36,11 +38,11 @@
     <tbody>
     {% for a in summary.accounts %}
       <tr><td>{{ a.provider_id or "—" }}</td><td>{{ a.external_account_id or "—" }}</td>
-        <td>{{ a.status }}</td><td>{{ a.pay_frequency or "—" }}</td><td>{{ a.next_payroll_date or "—" }}</td></tr>
+        <td><span class="status-pill">{{ a.status }}</span></td><td>{{ a.pay_frequency or "—" }}</td><td>{{ a.next_payroll_date or "—" }}</td></tr>
     {% else %}<tr><td colspan="5" class="muted">No payroll accounts yet.</td></tr>{% endfor %}
     </tbody>
   </table></div>
-  <details><summary>Add payroll account</summary>
+  <details class="card disclosure"><summary>Add payroll account</summary>
     <form method="post" action="/business/{{ organization_id }}/payroll/accounts" class="stack">
       <label>Provider
         <select name="provider_code">
@@ -63,15 +65,15 @@
     <thead><tr><th>Name</th><th>Status</th><th>Comp type</th><th>Amount</th><th>Provider ID</th><th>Retirement</th></tr></thead>
     <tbody>
     {% for e in employees %}
-      <tr><td>{{ e.full_name }}</td><td>{{ e.employment_status }}</td><td>{{ e.compensation_type or "—" }}</td>
+      <tr><td>{{ e.full_name }}</td><td><span class="status-pill">{{ e.employment_status }}</span></td><td>{{ e.compensation_type or "—" }}</td>
         <td>{{ money(e.compensation_amount_cents) }} {{ ("/ " + e.compensation_period) if e.compensation_amount_cents is not none else "" }}</td>
         <td>{{ e.provider_employee_id or "—" }}</td>
-        <td>{{ "yes" if e.retirement_plan_participant else "no" }}</td></tr>
+        <td>{% if e.retirement_plan_participant %}<span class="badge good">Yes</span>{% else %}<span class="subtle">No</span>{% endif %}</td></tr>
     {% else %}<tr><td colspan="6" class="muted">No employees yet.</td></tr>{% endfor %}
     </tbody>
   </table></div>
   {% if summary.accounts %}
-  <details><summary>Add employee</summary>
+  <details class="card disclosure"><summary>Add employee</summary>
     <form method="post" action="/business/{{ organization_id }}/payroll/employees" class="stack">
       <label>Payroll account <select name="payroll_account_id" required>
         {% for a in summary.accounts %}<option value="{{ a.id }}">#{{ a.id }} {{ a.external_account_id or "" }}</option>{% endfor %}
@@ -106,7 +108,7 @@
     </tbody>
   </table></div>
   {% if summary.accounts %}
-  <details><summary>Record payroll run</summary>
+  <details class="card disclosure"><summary>Record payroll run</summary>
     <form method="post" action="/business/{{ organization_id }}/payroll/runs" class="stack">
       <label>Payroll account <select name="payroll_account_id" required>
         {% for a in summary.accounts %}<option value="{{ a.id }}">#{{ a.id }}</option>{% endfor %}</select></label>
@@ -139,7 +141,7 @@
     {% else %}<tr><td colspan="4" class="muted">No payroll documents linked yet.</td></tr>{% endfor %}
     </tbody>
   </table></div>
-  <details><summary>Link an existing document</summary>
+  <details class="card disclosure"><summary>Link an existing document</summary>
     <p class="muted">Associates an existing Client360 document — never duplicates storage.</p>
     <form method="post" action="/business/{{ organization_id }}/payroll/documents" class="stack">
       <label>Document ID <input name="document_id" type="number" required></label>
@@ -167,7 +169,7 @@
     {% else %}<tr><td colspan="6" class="muted">No open payroll issues.</td></tr>{% endfor %}
     </tbody>
   </table></div>
-  <details><summary>Open an issue / task</summary>
+  <details class="card disclosure"><summary>Open an issue / task</summary>
     <form method="post" action="/business/{{ organization_id }}/payroll/issues" class="stack">
       <label>Type <select name="issue_type" required>
         {% for t in issue_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></label>

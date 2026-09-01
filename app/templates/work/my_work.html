@@ -25,13 +25,13 @@
   {{ ui.stat("Capacity", (work.capacity.capacity_score ~ "%")) }}
 </div>
 
-<div class="cols-2 aside-right" style="margin-top:16px">
+<div class="cols-2 aside-right mt-4">
   <section>
     <h2 class="section-title">Daily agenda</h2>
     <div class="stack">
     {% for item in work['items'] %}
       <div class="card">
-        <div class="row" style="justify-content:space-between">
+        <div class="row between">
           <span class="badge">{{ item.entity_type.replace('_',' ') }}</span>
           <span class="sev {{ 'critical' if item.priority in ['urgent','high'] else ('medium' if item.priority == 'medium' else 'low') }}">{{ item.priority }}</span>
         </div>
@@ -39,9 +39,9 @@
         <div class="subtle">{{ item.status.replace('_',' ') }}{% if item.due_date %} · Due {{ item.due_date }}{% endif %}</div>
         <div class="subtle" style="margin-top:2px">Priority score {{ item.priority_score }} · SLA {{ item.sla_risk.level }}</div>
         {% if principal and principal.can('work.write') %}
-        <details style="margin-top:10px">
+        <details class="mt-3">
           <summary style="cursor:pointer; color:var(--accent); font-size:13px; font-weight:620">Assign</summary>
-          <form class="row" style="margin-top:8px" method="post" action="/work/assignments/{{ item.entity_type }}/{{ item.entity_id }}">
+          <form class="row mt-2" method="post" action="/work/assignments/{{ item.entity_type }}/{{ item.entity_id }}">
             <select class="input" name="assignment_role" style="height:32px"><option>secondary</option><option>primary</option><option>supervisor</option><option>owner</option></select>
             <input class="input" name="user_id" inputmode="numeric" placeholder="User ID" style="height:32px; max-width:110px">
             <input class="input" name="team_id" inputmode="numeric" placeholder="Team ID" style="height:32px; max-width:110px">
@@ -68,7 +68,7 @@
     <h2 class="section-title">Bottlenecks</h2>
     <div class="stack">
     {% for row in work.bottlenecks %}
-      <div class="card row" style="justify-content:space-between"><span>{{ row.reason.replace('_',' ') }}</span><span class="badge warn">{{ row.count }}</span></div>
+      <div class="card row between"><span>{{ row.reason.replace('_',' ') }}</span><span class="badge warn">{{ row.count }}</span></div>
     {% else %}
       {% call ui.empty("No bottlenecks detected") %}{% endcall %}
     {% endfor %}

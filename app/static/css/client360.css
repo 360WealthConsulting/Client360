@@ -197,36 +197,9 @@ a.src:hover { border-color:currentColor; }
   font-size:12.5px; font-weight:620; text-decoration:none; }
 .act-open:hover { background:var(--accent-soft); color:var(--accent-ink); text-decoration:underline; }
 
-.rowmenu { position:relative; display:inline-block; }
-/* `display:block` removes the UA disclosure triangle in Chromium; `list-style` covers Firefox and
-   the two pseudo-elements cover WebKit and the modern spec. The visible glyph is the ⋯ span in
-   the markup. Geometry is unchanged from the approved layout. */
-.rowmenu > summary { display:block; list-style:none; list-style-type:none; cursor:pointer;
-  width:26px; height:26px; border-radius:6px; border:1px solid transparent;
-  color:var(--muted); font-size:15px; line-height:24px; text-align:center; }
-.rowmenu > summary::marker { content:""; }
-.rowmenu > summary::-webkit-details-marker { display:none; }
-.rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
-.rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
-/* The table scrolls horizontally, and overflow-x:auto forces overflow-y to a non-visible value,
-   so an absolutely positioned menu is CLIPPED by that scroll container and cannot float over the
-   rows below. The fallback below stays absolute (correct without JavaScript); documents.js
-   promotes an opened menu to .is-floating and sets fixed coordinates from the button's rect,
-   which escapes ancestor overflow entirely. Both states are out of flow, so neither can grow a
-   row. */
-.rowmenu .menu { position:absolute; right:0; top:32px; z-index:60; min-width:186px; padding:5px;
-  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
-  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
-.rowmenu .menu.is-floating { position:fixed; right:auto; top:auto; z-index:1000; }
-.rowmenu .menu a, .rowmenu .menu button {
-  display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 10px;
-  border-radius:5px; border:0; background:none; color:var(--text); font:inherit; font-size:13px;
-  font-weight:550; text-decoration:none; cursor:pointer; height:auto; }
-.rowmenu .menu a:hover, .rowmenu .menu button:hover { background:var(--surface-2); }
-.rowmenu .menu .sep { height:1px; background:var(--border); margin:4px 2px; }
-.rowmenu .menu button.danger { color:var(--crit); }
-.rowmenu .menu button.danger:hover { background:var(--crit-soft); }
-.rowmenu .menu form { margin:0; }
+/* `.rowmenu` (the overflow disclosure this bar opens) moved to app.css in Phase 3:
+   the workspace identity header reuses it on /people/{id} and /households/{id}, which
+   load workspace.css rather than this file. */
 .docs-actions { text-align:right; white-space:nowrap; }
 
 /* empty state inside the workspace */
@@ -303,3 +276,37 @@ table.data.docs-table td > .badge {
   .docs-toolbar .count { margin-left:0; }
   .docs-toolbar .search { flex:1 1 100%; max-width:none; }
 }
+
+/* ---- communication-audience markers on the section tabs -------------------
+   The `.ws-*` and `.audience` primitives they pair with live in app.css, which every
+   base-extending screen loads; only these two depend on the c360 tab vocabulary. */
+/* The same split is carried on the tabs, so the two are distinguishable before a
+   panel is even opened. A dot, not a colour swap: the tab bar stays a tab bar. */
+.c360-tab--aud::after { content:""; display:inline-block; width:5px; height:5px; margin-left:6px;
+  border-radius:50%; vertical-align:middle; }
+.c360-tab--client::after { background:var(--info); }
+.c360-tab--internal::after { background:var(--warn); }
+
+
+/* ---- vault panel ----------------------------------------------------------
+   Seventeen style="" attributes lived here, every one of them dropped by the CSP
+   (`default-src 'self'`, no 'unsafe-inline') - so the upload form, the filter row
+   and the detail card had never actually laid out as written, and the "client
+   upload" pill was a hardcoded #fde that ignored the theme entirely. */
+.vault-head { margin-bottom:var(--s3); }
+.vault-upload { padding:14px 16px; margin-bottom:var(--s3); }
+.vault-fields { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr));
+  gap:var(--s3); align-items:end; }
+.vault-fields label { display:block; font-size:12.5px; font-weight:620; color:var(--text-2); }
+.vault-fields label input, .vault-fields label select { margin-top:4px; width:100%; }
+.vault-submit { margin-top:var(--s3); }
+.vault-filter { gap:var(--s2); flex-wrap:wrap; margin-bottom:var(--s3); }
+/* Filter widths as data attributes rather than inline styles, so the CSP keeps them. */
+.vault-filter .input[data-w="lg"] { max-width:200px; }
+.vault-filter .input[data-w="md"] { max-width:130px; }
+.vault-filter .input[data-w="sm"] { max-width:100px; }
+.vault-detail { margin-top:var(--s4); padding:14px 16px; }
+.vault-detail .id-mono { font-size:11px; word-break:break-all; }
+.vault-actions { gap:var(--s3); margin-top:var(--s2); }
+.vault-inline { display:inline; }
+h3.vault-sub { margin:var(--s3) 0 6px; font-size:13px; font-weight:640; color:var(--text-2); }

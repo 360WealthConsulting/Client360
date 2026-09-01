@@ -6,8 +6,8 @@
 {% call ui.page_head("Client tasks", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
   <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
 {% endcall %}
-{% if created %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Task created successfully.</div></div>{% endif %}
-{% if completed %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Task marked complete.</div></div>{% endif %}
+{% if created %}<div class="alert good mb-3"><span class="ico">✓</span><div>Task created successfully.</div></div>{% endif %}
+{% if completed %}<div class="alert good mb-3"><span class="ico">✓</span><div>Task marked complete.</div></div>{% endif %}
 <div class="card" style="max-width:760px; margin-bottom:16px">
   <h3>Create task</h3>
   <form method="post" action="/people/{{ person.id }}/tasks">
@@ -29,14 +29,14 @@
 <div class="stack">
 {% for task in tasks %}
   <div class="card" {% if task.status == 'complete' %}style="opacity:.65"{% endif %}>
-    <div class="row" style="justify-content:space-between">
+    <div class="row between">
       <h3 style="margin:0; font-size:15px">{{ task.title }}</h3>
       {% if task.status == 'complete' %}{{ ui.badge('Complete','good') }}{% else %}{{ ui.badge(task.priority) }}{% endif %}
     </div>
-    {% if task.description %}<div style="margin-top:6px">{{ task.description }}</div>{% endif %}
-    <div class="subtle" style="margin-top:6px">Status: {{ task.status }} · Priority: {{ task.priority }} · Assigned: {{ task.assignee_name or task.assigned_to or "Unassigned" }} · Due: {{ (task.due_date | humandt) or "No due date" }}</div>
+    {% if task.description %}<div class="mt-2">{{ task.description }}</div>{% endif %}
+    <div class="subtle mt-2">Status: {{ task.status }} · Priority: {{ task.priority }} · Assigned: {{ task.assignee_name or task.assigned_to or "Unassigned" }} · Due: {{ (task.due_date | humandt) or "No due date" }}</div>
     {% if task.status != "complete" %}
-    <form method="post" action="/people/{{ person.id }}/tasks/{{ task.id }}/complete" style="margin-top:10px"><button class="btn secondary sm" type="submit">Mark complete</button></form>
+    <form class="mt-3" method="post" action="/people/{{ person.id }}/tasks/{{ task.id }}/complete"><button class="btn secondary sm" type="submit">Mark complete</button></form>
     {% endif %}
   </div>
 {% else %}

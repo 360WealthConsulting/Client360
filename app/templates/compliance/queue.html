@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_head("Compliance Reviews", eyebrow="Compliance", desc="Human-controlled review of governed Advisor Recommendations. This queue records review decisions — it is not an electronic signature or regulatory certification.") }}
 
-<form method="get" action="/compliance/reviews" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" action="/compliance/reviews" class="card filterbar">
   <div class="field" style="margin:0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="recommendation, rule, type"></div>
   <div class="field" style="margin:0"><label for="status">Status</label>

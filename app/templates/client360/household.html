@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
+{% import "components/workspace.html" as wsx %}
 {% block title %}{{ ws.display_name }} · Household 360 | 360Plus{% endblock %}
 {% block crumb %}{{ ws.display_name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">{% endblock %}
@@ -15,32 +16,31 @@
 </nav>
 
 {# Household 360 (D.41): read-only COMPOSITION over the authoritative services. Rollup + navigation; the
-   person workspace (/client/{id}) remains the member-detail surface. Every edit deep-links out. #}
-<header class="c360-hero">
-  <div>
-    <span class="detail-label">Household · {{ ws.context.member_count }} members
-      {% if ws.context.active_client_count != ws.context.member_count %}· {{ ws.context.active_client_count }} visible{% endif %}</span>
-    <h1>{{ ws.display_name }}</h1>
-    {% if ws.context.primary_member %}<p class="subtle">Primary: <a href="/client/{{ ws.context.primary_member.id }}">{{ ws.context.primary_member.name }}</a></p>{% endif %}
-    <p class="subtle"><a href="/client/household/{{ ws.entity_id }}/brief">AI Brief ✨ (review required)</a>
-      · <a href="/client/access/household/{{ ws.entity_id }}">Access &amp; Features</a></p>
-  </div>
-</header>
+   person workspace (/client/{id}) remains the member-detail surface. Every edit deep-links out.
+   Phase 3: the same shared header macro the person workspace uses — these two were
+   three different header shapes between them, and the household one had no crest at
+   all and rendered its actions as a row of solid buttons below the snapshot. #}
+{% call wsx.identity_header("Household", ws.display_name, ws.quick_actions or []) %}
+  <span>{{ ws.context.member_count }} member{{ "" if ws.context.member_count == 1 else "s" }}
+    {%- if ws.context.active_client_count != ws.context.member_count %} · {{ ws.context.active_client_count }} visible{% endif %}</span>
+  {% if ws.context.primary_member %}
+    <span class="dot" aria-hidden="true">·</span>
+    <span>Primary: <a href="/client/{{ ws.context.primary_member.id }}">{{ ws.context.primary_member.name }}</a></span>
+  {% endif %}
+  <span class="dot" aria-hidden="true">·</span>
+  <a href="/client/household/{{ ws.entity_id }}/brief">AI Brief ✨ (review required)</a>
+  <span class="dot" aria-hidden="true">·</span>
+  <a href="/client/access/household/{{ ws.entity_id }}">Access &amp; Features</a>
+{% endcall %}
 
 {# Household snapshot — incompatible figures side by side; never a composite score. #}
-<section class="stat-grid c360-snapshot">
-  <article class="card"><span class="detail-label">Members</span><h2>{{ s.member_count }}</h2></article>
-  <article class="card"><span class="detail-label">Open work</span><h2>{{ s.open_work }}</h2></article>
-  <article class="card"><span class="detail-label">Opportunities</span><h2>{{ s.open_opportunities }}</h2></article>
-  <article class="card"><span class="detail-label">Upcoming meetings</span><h2>{{ s.upcoming_meetings }}</h2></article>
-  <article class="card"><span class="detail-label">Compliance items</span><h2>{{ s.compliance_items }}</h2></article>
+<section class="signal-bar ws-snapshot" aria-label="Household snapshot">
+  {{ ui.signal("Members", s.member_count) }}
+  {{ ui.signal("Open work", s.open_work, "warn") }}
+  {{ ui.signal("Opportunities", s.open_opportunities) }}
+  {{ ui.signal("Upcoming meetings", s.upcoming_meetings) }}
+  {{ ui.signal("Compliance items", s.compliance_items, "warn") }}
 </section>
-
-{% if ws.quick_actions %}
-<nav class="c360-actions" aria-label="Quick actions">
-  {% for a in ws.quick_actions %}<a class="btn sm" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
-</nav>
-{% endif %}
 
 {% include "client360/_section_nav.html" %}
 
@@ -53,12 +53,15 @@
 
 {% elif active_tab == "summary" %}
   <article class="card">
+    {{ ui.card_head("Household & assignment") }}
+    <div class="kv-grid">
     <div class="detail-row"><span>Household</span><strong>{{ sec.household_name or "—" }}</strong></div>
     <div class="detail-row"><span>Members</span><strong>{{ sec.member_count }} ({{ sec.active_client_count }} visible)</strong></div>
     <div class="detail-row"><span>Assigned</span><strong>{{ (sec.assigned or [])|length }} advisor/team</strong></div>
     <div class="detail-row"><span>Last activity</span><strong>{{ sec.last_activity.title if sec.last_activity else "—" }}</strong></div>
     <div class="detail-row"><span>Next activity</span><strong>{{ sec.next_activity.title if sec.next_activity else "—" }}</strong></div>
-    <div class="detail-row"><span class="subtle">Status / tier / risk</span><span class="subtle">Not tracked in this platform</span></div>
+    <div class="detail-row"><span class="subtle">Status / tier / risk</span><span class="subtle">Not tracked</span></div>
+    </div>
   </article>
 
 {% elif active_tab == "members" %}

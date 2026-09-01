@@ -76,11 +76,25 @@ def test_wealth_is_a_firm_wide_collection():
     assert FIRM_WIDE_COLLECTION.match("/wealth")
 
 
-def test_wealth_group_shows_dashboard_and_portfolio_for_admin():
+def test_wealth_group_shows_portfolio_but_not_the_inaccessible_dashboard():
+    """The nav item is gated on the capability /wealth actually enforces.
+
+    `portfolio.firm_metrics` is held by NO role by design (b4f1a207c9d3 revoked it firm-wide;
+    test_dashboard_firm_metrics_authz asserts holders == []), so a principal with
+    record.read_all + client.read - which is what previously satisfied `firm_client` - was
+    shown the link and then refused by the route. Portfolio, gated on firm_client, is
+    unaffected and keeps the group."""
     groups = _nav_groups(_admin())
     assert "Wealth" in groups
-    assert 'href="/wealth"' in groups["Wealth"]
+    assert 'href="/wealth"' not in groups["Wealth"]
     assert 'href="/portfolio"' in groups["Wealth"]
+
+
+def test_wealth_nav_returns_if_the_capability_is_ever_granted():
+    """Hiding it is a capability check, not a removal: grant the capability and it is back."""
+    holder = Principal(1, "admin@example.com", "Admin",
+                       frozenset({"record.read_all", "client.read", "portfolio.firm_metrics"}))
+    assert 'href="/wealth"' in _nav_groups(holder)["Wealth"]
 
 
 def test_unauthorized_user_sees_neither_wealth_section_nor_dashboard():

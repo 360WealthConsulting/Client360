@@ -4,11 +4,11 @@
 {% block crumb %}<a href="/operations">Operations</a> / {% if t.project_id %}<a href="/operations/projects/{{ t.project_id }}">Project</a> / {% endif %}{{ t.title }}{% endblock %}
 {% block content %}
 {{ ui.page_head(t.title, eyebrow="Operational task", desc=(t.description or "")) }}
-<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
-  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(t.status|replace("_"," ")|capitalize, 'good' if t.status in ['active','completed'] else '') }}</div>
-  <div><div class="subtle" style="font-size:12px">Priority</div><div>{{ t.priority }}</div></div>
-  <div><div class="subtle" style="font-size:12px">Estimate</div><div>{{ t.estimated_minutes or "—" }} min</div></div>
-  <div><div class="subtle" style="font-size:12px">Due</div><div>{{ t.due_date or "—" }}</div></div>
+<section class="card filterbar">
+  <div><div class="subtle text-sm">Status</div>{{ ui.badge(t.status|replace("_"," ")|capitalize, 'good' if t.status in ['active','completed'] else '') }}</div>
+  <div><div class="subtle text-sm">Priority</div><div>{{ t.priority }}</div></div>
+  <div><div class="subtle text-sm">Estimate</div><div>{{ t.estimated_minutes or "—" }} min</div></div>
+  <div><div class="subtle text-sm">Due</div><div>{{ t.due_date or "—" }}</div></div>
   {% if can_manage and t.status not in ['completed','cancelled','archived'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
     <form method="post" action="/operations/items/{{ t.id }}/status"><input type="hidden" name="status" value="active"><button class="btn btn-ghost" type="submit">Start</button></form>
     <form method="post" action="/operations/items/{{ t.id }}/status"><input type="hidden" name="status" value="blocked"><button class="btn btn-ghost" type="submit">Block</button></form>
@@ -32,20 +32,20 @@
 </section>{% endif %}
 
 {% if t.comments %}<section class="stack"><h2 class="section-title">Comments</h2>
-  {% for cm in t.comments %}<article class="card" style="margin-bottom:8px"><p style="white-space:pre-wrap; margin:0">{{ cm.body }}</p></article>{% endfor %}
+  {% for cm in t.comments %}<article class="card mb-2"><p style="white-space:pre-wrap; margin:0">{{ cm.body }}</p></article>{% endfor %}
 </section>{% endif %}
 
 {% if can_manage %}
-<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add checklist item</summary>
-  <form method="post" action="/operations/items/{{ t.id }}/checklist" style="margin-top:12px">
+<details class="card mt-4"><summary>Add checklist item</summary>
+  <form class="mt-3" method="post" action="/operations/items/{{ t.id }}/checklist">
     <div class="field"><label for="description">Item</label><input class="input" id="description" name="description" required></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Add</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Add</button></div>
   </form>
 </details>
-<details class="card" style="margin-top:10px"><summary style="cursor:pointer; font-weight:640">Add comment</summary>
-  <form method="post" action="/operations/items/{{ t.id }}/comments" style="margin-top:12px">
+<details class="card mt-3"><summary>Add comment</summary>
+  <form class="mt-3" method="post" action="/operations/items/{{ t.id }}/comments">
     <div class="field"><label for="body">Comment</label><textarea class="input" id="body" name="body" rows="3"></textarea></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Post</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Post</button></div>
   </form>
 </details>{% endif %}
 {% endblock %}

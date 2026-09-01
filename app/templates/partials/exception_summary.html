@@ -1,11 +1,27 @@
+{# Firm exception triage, as one segmented instrument rather than six competing cards.
+   PRESENTATION ONLY: the same six numbers off the same `exception_summary.summary`,
+   and the same single link to /exceptions/reporting. No counter is a link, because
+   none of them mapped to a filter this partial could construct without guessing at
+   the console's query contract.
+
+   Severity is applied only to a NON-ZERO count (see `.signal` in app.css): on every
+   one of these counters a zero is the good outcome, so a wall of red zeroes would
+   be exactly backwards. #}
 {% if exception_summary %}
-<section class="metrics" aria-label="Exception summary">
-  <article><span>Open exceptions</span><strong>{{ exception_summary.summary.open }}</strong></article>
-  <article><span>Blocker</span><strong>{{ exception_summary.summary.blocker }}</strong></article>
-  <article><span>At risk</span><strong>{{ exception_summary.summary.at_risk }}</strong></article>
-  <article><span>Breached</span><strong>{{ exception_summary.summary.breached }}</strong></article>
-  <article><span>Unassigned</span><strong>{{ exception_summary.summary.unassigned }}</strong></article>
-  <article><span>Compliance</span><strong>{{ exception_summary.summary.compliance }}</strong></article>
+{% import "components/ui.html" as _ui %}
+{% set s = exception_summary.summary %}
+<section class="section" aria-label="Exception summary">
+  <div class="card-head">
+    <h2>Exceptions</h2>
+    <a class="more" href="/exceptions/reporting">Open exception reporting →</a>
+  </div>
+  <div class="signal-bar">
+    {{ _ui.signal("Open exceptions", s.open) }}
+    {{ _ui.signal("Blocker", s.blocker, "crit") }}
+    {{ _ui.signal("At risk", s.at_risk, "warn") }}
+    {{ _ui.signal("Breached", s.breached, "crit") }}
+    {{ _ui.signal("Unassigned", s.unassigned, "info") }}
+    {{ _ui.signal("Compliance", s.compliance, "info") }}
+  </div>
 </section>
-<p><a href="/exceptions/reporting">Open exception reporting →</a></p>
 {% endif %}

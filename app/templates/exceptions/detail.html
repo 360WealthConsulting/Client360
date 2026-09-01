@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Exception #{{ exception.id }} | 360Plus{% endblock %}
+{% block title %}Exception #{{ exception.id }} | 360Plus{% endblock %}{% block crumb %}Exception #{{ exception.id }}{% endblock %}
 {% block content %}
 {% set ex = exception %}
 {% set can_write = principal.can('exception.write') %}

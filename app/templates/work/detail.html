@@ -13,15 +13,15 @@
 
 {% if result %}<div class="banner banner-{{ 'ok' if result == 'ok' else 'warn' }}" role="status">{{ message or 'Done.' }}</div>{% endif %}
 
-<section class="stat-grid" style="margin-bottom:14px">
-  <article class="card"><span class="detail-label">Status</span><h2 style="font-size:18px">{{ (it.status or "")|replace("_"," ")|capitalize }}</h2></article>
-  <article class="card"><span class="detail-label">Priority</span><h2 style="font-size:18px">{{ it.priority|capitalize }}</h2></article>
-  <article class="card"><span class="detail-label">SLA</span><h2 style="font-size:18px"><span class="sla sla-{{ it.sla_state }}">{{ it.sla_state|replace("_"," ") }}</span></h2></article>
-  <article class="card"><span class="detail-label">Due</span><h2 style="font-size:18px">{{ it.due_at[:10] if it.due_at else "—" }}{% if it.overdue %} {{ ui.badge("Overdue","warn") }}{% endif %}</h2></article>
+<section class="stat-grid mb-3">
+  <article class="card"><span class="detail-label">Status</span><h2 class="text-lg">{{ (it.status or "")|replace("_"," ")|capitalize }}</h2></article>
+  <article class="card"><span class="detail-label">Priority</span><h2 class="text-lg">{{ it.priority|capitalize }}</h2></article>
+  <article class="card"><span class="detail-label">SLA</span><h2 class="text-lg"><span class="sla sla-{{ it.sla_state }}">{{ it.sla_state|replace("_"," ") }}</span></h2></article>
+  <article class="card"><span class="detail-label">Due</span><h2 class="text-lg">{{ it.due_at[:10] if it.due_at else "—" }}{% if it.overdue %} {{ ui.badge("Overdue","warn") }}{% endif %}</h2></article>
 </section>
 
 <div class="row" style="gap:14px; align-items:flex-start; flex-wrap:wrap">
-<article class="card" style="flex:1; min-width:300px">
+<article class="card grow-lg">
   <h2 class="section-title">Details</h2>
   <div class="detail-row"><span>Domain</span><strong>{{ it.source_domain|replace("_"," ")|capitalize }} · {{ it.source_type }} #{{ d.source_id }}</strong></div>
   <div class="detail-row"><span>Client</span><strong>{% if it.person_id %}<a href="/client/{{ it.person_id }}">{{ it.person_name or ("Person " ~ it.person_id) }}</a>{% elif it.household_id %}<a href="/client/household/{{ it.household_id }}">{{ it.household_name or ("Household " ~ it.household_id) }}</a>{% else %}—{% endif %}</strong></div>
@@ -29,7 +29,7 @@
   <div class="detail-row"><span>Age</span><strong>{{ it.age_days if it.age_days is not none else "—" }} days</strong></div>
 </article>
 
-<article class="card" style="flex:1; min-width:300px">
+<article class="card grow-lg">
   <h2 class="section-title">Actions</h2>
   {% if can_act %}
     <div class="row" style="gap:8px; flex-wrap:wrap">

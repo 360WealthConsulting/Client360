@@ -1,31 +1,33 @@
 {% extends "base.html" %}
 {% import "wealth/components.html" as wc %}
+{% import "components/workspace.html" as wsx %}
 {% import "components/intelligence.html" as intel %}
 {% block title %}{{ person.full_name or ("Person " ~ person.id) }} | 360Plus{% endblock %}
 {% block crumb %}{{ person.full_name or ("Person " ~ person.id) }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
 {% block content %}
-<div class="page-head"><div>
-  <p class="eyebrow">Client</p>
-  <h1>{{ person.full_name or ("Person " ~ person.id) }}</h1>
-  {% if person.primary_phone or person.primary_email or person.city or person.state %}
-  <p class="desc contact-line">
-    {% if person.primary_phone %}<a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a>{% endif %}
-    {% if person.primary_phone and person.primary_email %} &middot; {% endif %}
-    {% if person.primary_email %}<a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a>{% endif %}
-    {% if (person.primary_phone or person.primary_email) and (person.city or person.state) %} &middot; {% endif %}
-    {% if person.city or person.state %}{{ [person.city, person.state]|select|join(", ") }}{% endif %}
-  </p>
-  {% endif %}
-  <p class="desc">Canonical person record #{{ person.id }} · {{ "Active" if person.active else "Inactive" }}</p>
-  <div class="quick-actions" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap">
-    <a class="btn secondary" href="/people/{{ person.id }}/notes?log=call#logform">Log Call</a>
-    <a class="btn secondary" href="/people/{{ person.id }}/notes?log=email#logform">Log Email</a>
-    <a class="btn secondary" href="/people/{{ person.id }}/notes?log=meeting#logform">Log Meeting</a>
-    <a class="btn secondary" href="/people/{{ person.id }}/edit">Edit details</a>
-  </div>
-</div></div>
-{% if saved %}<div class="alert good" style="margin:0 0 14px"><span class="ico">✓</span><div>Client details updated.</div></div>{% endif %}
+{# Phase 3: the same identity header the Client 360 and Household 360 workspaces use.
+   This page had its own `.page-head` shape and a `.quick-actions` row whose layout was
+   set entirely by a style="" attribute the CSP drops. Every link, label and gate below
+   is the one that was here before. #}
+{% set _actions = [
+  {"href": "/people/" ~ person.id ~ "/notes?log=call#logform",    "label": "Log Call"},
+  {"href": "/people/" ~ person.id ~ "/notes?log=email#logform",   "label": "Log Email"},
+  {"href": "/people/" ~ person.id ~ "/notes?log=meeting#logform", "label": "Log Meeting"},
+  {"href": "/people/" ~ person.id ~ "/edit",                      "label": "Edit details"},
+] %}
+{% call wsx.identity_header("Client", person.full_name or ("Person " ~ person.id), _actions) %}
+  {% if person.primary_phone %}<a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a>
+    <span class="dot" aria-hidden="true">·</span>{% endif %}
+  {% if person.primary_email %}<a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a>
+    <span class="dot" aria-hidden="true">·</span>{% endif %}
+  {% if person.city or person.state %}<span>{{ [person.city, person.state]|select|join(", ") }}</span>
+    <span class="dot" aria-hidden="true">·</span>{% endif %}
+  <span>Record #{{ person.id }}</span>
+  <span class="dot" aria-hidden="true">·</span>
+  <span>{{ "Active" if person.active else "Inactive" }}</span>
+{% endcall %}
+{% if saved %}<div class="alert good section"><span class="ico">✓</span><div>Client details updated.</div></div>{% endif %}
 
 <nav class="tabs">
   <a class="tab {{ 'active' if active_tab == 'overview' else '' }}" href="/people/{{ person.id }}?tab=overview">Overview</a>
@@ -378,8 +380,13 @@
     {# Client 360 summary (Phase D.2): a factual per-domain relationship snapshot,
        shown side by side and NEVER summed into a single composite figure (the
        units are not comparable). Read-only composition of existing services. #}
-    <h2 class="section-title">Client 360 <a class="rowlink" style="font-size:13px; font-weight:500; margin-left:8px" href="/workspace/meetings/{{ person.id }}">Prepare for meeting →</a>{% if 'timeline.read' in caps %}<a class="rowlink" style="font-size:13px; font-weight:500; margin-left:8px" href="/people/{{ person.id }}/timeline">Activity timeline →</a>{% endif %}{% if 'annual_review.read' in caps %}<a class="rowlink" style="font-size:13px; font-weight:500; margin-left:8px" href="/annual-review/{{ person.id }}">Annual review →</a>{% endif %}{% if 'business_owner.read' in caps %}<a class="rowlink" style="font-size:13px; font-weight:500; margin-left:8px" href="/business-owner/{{ person.id }}">Business owner planning →</a>{% endif %}</h2>
-    <section class="stat-grid" style="margin-bottom:18px">
+    <div class="card-head ws-links">
+      <h2>Client 360</h2>
+      <span class="more-links">
+        <a class="more" href="/workspace/meetings/{{ person.id }}">Prepare for meeting →</a>{% if 'timeline.read' in caps %}<a class="more" href="/people/{{ person.id }}/timeline">Activity timeline →</a>{% endif %}{% if 'annual_review.read' in caps %}<a class="more" href="/annual-review/{{ person.id }}">Annual review →</a>{% endif %}{% if 'business_owner.read' in caps %}<a class="more" href="/business-owner/{{ person.id }}">Business owner planning →</a>{% endif %}
+      </span>
+    </div>
+    <section class="stat-grid mb-4">
       {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(client_snapshot.cash), "{:.1f}".format(client_snapshot.cash_percent) ~ "%") }}
       {{ wc.summary_card("Insurance", client_snapshot.insurance.policy_count ~ (" policy" if client_snapshot.insurance.policy_count == 1 else " policies"), "$" ~ "{:,.2f}".format(client_snapshot.insurance.total_face) ~ " coverage") }}
       {{ wc.summary_card("Tax engagements", client_snapshot.tax.active, "Active") }}
@@ -390,7 +397,7 @@
     {# Advisor Intelligence (Phase D.5C): deterministic, factual signals + opportunities
        for this client. Reuses get_client_signals (never generated in-template). #}
     <h2 class="section-title">Advisor Intelligence</h2>
-    <section class="card" style="margin-bottom:18px">
+    <section class="card section">
       {{ intel.signals_panel(advisor_signals, compact=True, work_index=advisor_work_index, work_person_id=person.id) }}
     </section>
 

@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}{{ org.name }} | 360Plus{% endblock %}
+{% block title %}{{ org.name }} | 360Plus{% endblock %}{% block crumb %}{{ org.name }}{% endblock %}
 {% block content %}
 <div class="page-header"><div>
   <p class="eyebrow">Employer Operations · {{ (org.entity_type or 'organization')|title }}</p>
-  <h1>{{ org.name }}</h1>
-  <p class="muted"><span class="status-pill">{{ (org.status or 'prospect')|title }}</span></p>
-  <p><a href="/organizations">← All organizations</a></p>
+  <h1>{{ org.name }} <span class="status-pill">{{ (org.status or 'prospect')|title }}</span></h1>
+  <p class="muted"><a href="/organizations">← All organizations</a></p>
+
 </div></div>
 
 <section class="panel">
   <h2>Profile</h2>
-  <dl>
+  <dl class="kv-list">
     <dt>Legal name</dt><dd>{{ org.legal_name or '—' }}</dd>
     <dt>Industry</dt><dd>{{ org.industry or '—' }}</dd>
     <dt>Entity form</dt><dd>{{ org.entity_form or '—' }}</dd>
@@ -24,7 +24,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Service line</th><th>Status</th><th>Since</th></tr></thead>
     <tbody>
-    {% for sl in service_lines %}<tr><td>{{ sl.code|replace('_',' ')|title }}</td><td>{{ sl.status|title }}</td><td>{{ sl.since_date or '—' }}</td></tr>
+    {% for sl in service_lines %}<tr><td>{{ sl.code|replace('_',' ')|title }}</td><td><span class="status-pill">{{ sl.status|title }}</span></td><td>{{ sl.since_date or '—' }}</td></tr>
     {% else %}<tr><td colspan="3" class="muted">No service lines.</td></tr>{% endfor %}
     </tbody>
   </table></div>
@@ -65,7 +65,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Type</th><th>Title</th><th>Status</th><th>Due</th></tr></thead>
     <tbody>
-    {% for e in engagements %}<tr><td>{{ e.engagement_type|replace('_',' ')|title }}</td><td>{{ e.title or '—' }}</td><td>{{ e.status|replace('_',' ')|title }}</td><td>{{ e.due_date or '—' }}</td></tr>
+    {% for e in engagements %}<tr><td>{{ e.engagement_type|replace('_',' ')|title }}</td><td>{{ e.title or '—' }}</td><td><span class="status-pill">{{ e.status|replace('_',' ')|title }}</span></td><td>{{ e.due_date or '—' }}</td></tr>
     {% else %}<tr><td colspan="4" class="muted">No engagements.</td></tr>{% endfor %}
     </tbody>
   </table></div>
@@ -77,7 +77,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Plan</th><th>Status</th><th>Funding</th><th>Renewal</th></tr></thead>
     <tbody>
-    {% for p in plans %}<tr><td>{{ p.name }}</td><td>{{ p.status|title }}</td><td>{{ p.funding_type or '—' }}</td><td>{{ p.renewal_date or '—' }}</td></tr>
+    {% for p in plans %}<tr><td>{{ p.name }}</td><td><span class="status-pill">{{ p.status|title }}</span></td><td>{{ p.funding_type or '—' }}</td><td>{{ p.renewal_date or '—' }}</td></tr>
     {% else %}<tr><td colspan="4" class="muted">No plans.</td></tr>{% endfor %}
     </tbody>
   </table></div>
@@ -90,7 +90,7 @@
     <tbody>
     {% for o in obligations %}<tr>
       <td>{{ o.obligation_type|replace('_',' ')|title }}</td><td>{{ o.title }}</td>
-      <td>{{ o.due_date }}</td><td>{{ o.status|title }}</td><td>{{ o.recurrence|replace('_',' ')|title }}</td>
+      <td>{{ o.due_date }}</td><td><span class="status-pill">{{ o.status|title }}</span></td><td>{{ o.recurrence|replace('_',' ')|title }}</td>
     </tr>{% else %}<tr><td colspan="5" class="muted">No obligations recorded.</td></tr>{% endfor %}
     </tbody>
   </table></div>

@@ -21,7 +21,7 @@
   {% if can_manage %}<a class="btn" href="/compliance/authorities/new">New authority</a>{% endif %}
 </div>
 
-<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} record(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+<p class="subtle result-count">{{ result.total }} record(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
 
 {% if result.rows %}
 <div class="table-wrap"><table class="data">

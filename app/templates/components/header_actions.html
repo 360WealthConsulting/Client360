@@ -1,0 +1,134 @@
+{# Global quick-access bar (Phase 4) — the right side of the application header.
+
+   Rendered by base.html, so it inherits that template's already-computed context:
+   `p`, `caps`, `can_exc`, `can_admin`, `path`.
+
+   ROUTES. Every destination here is an EXISTING route, and each item's `show` is the
+   capability the route actually enforces - verified by probing all five demo personas,
+   not by reading the sidebar's gating. That matters for two of them: /admin/review and
+   /admin/client-portal/threads both sit under the `^/admin` -> `identity.manage`
+   middleware rule, so `client.read` alone is NOT enough. The sidebar still gates those
+   two on client.write / client.read and consequently shows them to advisors,
+   operations, taxprep and compliance, who all get 403. This bar does not repeat that.
+
+   BADGES. None are rendered, deliberately. A badge here would have to come from the
+   shared header, and no badge count reaches it: `inbox_summary()` (the real unassigned-
+   document backlog) is computed inside the /admin/review route only, there is no context
+   processor or env.global carrying counts, and route modules build their own
+   Jinja2Templates instances. Populating them means new per-request backend work. The
+   `badge()` macro and its styles exist and emit nothing until a real count is passed, so
+   wiring one later is a one-line change at the call site - and never a fabricated number.
+
+   ICONS. Inline SVG on `currentColor` at a single 18px size. The sidebar uses text
+   glyphs beside text labels, where a glyph is a decorative marker; here the icon is the
+   only affordance, and `⚑`/`✉` fall back to colour emoji on some platforms. Sizing,
+   colour and radius all come from the existing tokens.
+#}
+
+{# Inbox is a tray WITH an inbound arrow: a plain tray sat two icons from the Messages
+   envelope, and the two silhouettes were close enough to trade places at a glance. #}
+{% macro icon(key) %}
+{%- set paths = {
+  "inbox":    '<path d="M3 13h4.5l1.6 2.5h5.8L16.5 13H21"/><path d="M21 13v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M12 3v7"/><path d="M9.2 7.4 12 10.2l2.8-2.8"/>',
+  "chat":     '<path d="M8 13h5"/><path d="M8 9h8"/><path d="M21 15a2 2 0 0 1-2 2H8l-4 3V6a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>',
+  "messages": '<path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/>',
+  "work":     '<path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M8.5 12.5l2.2 2.2 4.3-4.3"/>',
+  "alerts":   '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 4.3 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/>',
+  "create":   '<path d="M12 6v12"/><path d="M6 12h12"/>',
+  "more":     '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>'
+} -%}
+<svg class="qa-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+     focusable="false">{{ paths.get(key, "") | safe }}</svg>
+{%- endmacro %}
+
+{# Emits nothing unless a real, positive count is supplied. "Needs attention", never
+   "data exists" - so a zero is silence, not a grey nought. #}
+{% macro badge(count) %}
+{%- if count is not none and count is number and count > 0 -%}
+<span class="qa-badge" aria-hidden="true">{{ count if count < 100 else "99+" }}</span>
+<span class="sr-only">{{ count }} needing attention</span>
+{%- endif -%}
+{% endmacro %}
+
+{# Ordered by the priority they collapse in reverse of: Inbox survives longest. #}
+{% set qa = [
+  {"key": "inbox",    "href": "/admin/review",                 "label": "Inbox",
+   "hint": "Inbox — what needs your attention",
+   "show": can_admin and ('client.read' in caps)},
+  {"key": "chat",     "href": none,                            "label": "Team chat",
+   "hint": "Team chat — internal staff messaging (not yet available)",
+   "show": p},
+  {"key": "messages", "href": "/admin/client-portal/threads",  "label": "Messages",
+   "hint": "Messages — secure client conversations",
+   "show": 'communications.message.read' in caps},
+  {"key": "work",     "href": "/work",                         "label": "My work",
+   "hint": "My work — assigned to you",
+   "show": 'work.read' in caps},
+  {"key": "alerts",   "href": "/exceptions",                   "label": "Alerts",
+   "hint": "Alerts — operational exceptions",
+   "show": can_exc},
+] %}
+
+{# Quick create. Only actions with a real route that actually opens a creation surface. #}
+{% set qc = [
+  {"href": "/households",              "label": "Household",         "show": firm_client},
+  {"href": "/admin/client-portal",     "label": "Client & portal invitation",
+   "show": can_admin},
+  {"href": "/admin/client-portal/threads", "label": "Secure client message",
+   "show": 'communications.message.write' in caps},
+  {"href": "/compliance/authorities/new",  "label": "Reviewer authority",
+   "show": 'compliance.authority.manage' in caps},
+] %}
+
+{% set qa_visible = qa | selectattr("show") | list %}
+{% set qc_visible = qc | selectattr("show") | list %}
+
+{% if qa_visible or qc_visible %}
+<div class="qa-bar">
+  {% for it in qa_visible %}
+    {% set active = it["href"] and (path == it["href"] or path.startswith(it["href"] ~ "/")) %}
+    {% if it["href"] %}
+    <a class="qa-btn qa-{{ it['key'] }}{{ ' active' if active else '' }}" href="{{ it['href'] }}"
+       title="{{ it['hint'] }}" aria-label="{{ it['hint'] }}"{% if active %} aria-current="page"{% endif %}>
+      {{ icon(it["key"]) }}
+    </a>
+    {% else %}
+    {# No chat route exists anywhere in the application. A disabled affordance holds the
+       place and says so; it is not a link and is not focusable, so it cannot be mistaken
+       for a working control. #}
+    <span class="qa-btn qa-{{ it['key'] }} is-unavailable" title="{{ it['hint'] }}" aria-label="{{ it['hint'] }}"
+          aria-disabled="true" role="img">{{ icon(it["key"]) }}</span>
+    {% endif %}
+  {% endfor %}
+
+  {% if qc_visible %}
+  <details class="qa-menu qa-create">
+    <summary class="qa-btn" title="Quick create" aria-label="Quick create">{{ icon("create") }}</summary>
+    <div class="menu">
+      <p class="menu-label">Create</p>
+      {% for a in qc_visible %}<a href="{{ a['href'] }}">{{ a["label"] }}</a>{% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {# Priority+ overflow. Every collapsible control is also listed here; CSS hides this
+     trigger while the bar has room, and hides bar items one tier at a time as it runs
+     out. Hidden items are display:none, so they leave the accessibility tree too and
+     neither copy is ever announced twice. #}
+  <details class="qa-menu qa-overflow">
+    <summary class="qa-btn" title="More" aria-label="More actions">{{ icon("more") }}</summary>
+    <div class="menu">
+      {% for it in qa_visible %}
+        {% if it["href"] %}<a class="ov-{{ it['key'] }}" href="{{ it['href'] }}">{{ icon(it["key"]) }}{{ it["label"] }}</a>
+        {% else %}<span class="ov-{{ it['key'] }} is-unavailable">{{ icon(it["key"]) }}{{ it["label"] }}<em>Not yet available</em></span>{% endif %}
+      {% endfor %}
+      {% if qc_visible %}
+      <span class="sep"></span>
+      <p class="menu-label">Create</p>
+      {% for a in qc_visible %}<a class="ov-create" href="{{ a['href'] }}">{{ a["label"] }}</a>{% endfor %}
+      {% endif %}
+    </div>
+  </details>
+</div>
+{% endif %}

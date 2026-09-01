@@ -7,7 +7,7 @@
 
 {# Read-only governance view. Search + filter + sort are GET query params resolved in
    Python (compliance.rule_catalog); this template only renders. No action controls. #}
-<form method="get" action="/admin/rule-catalog" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" action="/admin/rule-catalog" class="card filterbar">
   <div class="field" style="margin:0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="rule, title, description, governing rule"></div>
   <div class="field" style="margin:0"><label for="category">Category</label>

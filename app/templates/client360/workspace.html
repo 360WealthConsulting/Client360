@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
+{% import "components/workspace.html" as wsx %}
 {% block title %}{{ ws.display_name }} · Client 360 | 360Plus{% endblock %}
 {% block crumb %}{{ ws.display_name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">
@@ -20,50 +21,44 @@
    deep link into the authoritative workflow — the workspace never mutates.
    Phase 1 redesign: the identity, the household relationship and the quick actions are one header
    block instead of three stacked strips. Same links, same data, same gating. #}
-{% set _parts = (ws.display_name or "?").split() %}
-<header class="c360-hero">
-  <div class="identity">
-    <span class="crest" aria-hidden="true">{{ (_parts[0][0] ~ (_parts[1][0] if _parts|length > 1 else "")) | upper }}</span>
-    <div class="who">
-      <span class="kind">{{ ws.entity_type|capitalize }}</span>
-      <h1>{{ ws.display_name }}</h1>
-      <p class="meta">
-        {% if ws.household_name %}
-          {% if ws.household_id %}<a href="/client/household/{{ ws.household_id }}">↑ {{ ws.household_name }}</a>
-          {% else %}<span>{{ ws.household_name }}</span>{% endif %}
-          <span class="dot" aria-hidden="true">·</span>
-        {% endif %}
-        <a href="/client/{{ ws.entity_id }}/brief">AI Brief ✨ (review required)</a>
-      </p>
-    </div>
-  </div>
-  {% if ws.quick_actions %}
-  <nav class="hero-actions" aria-label="Quick actions">
-    {% for a in ws.quick_actions %}<a class="btn sm secondary" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
-  </nav>
+{# Master client record (D.40): read-only COMPOSITION of the authoritative services. Every edit is a
+   deep link into the authoritative workflow - the workspace never mutates.
+   Phase 3: identity, household context and quick actions come from the shared workspace
+   macro, so this surface and the household one are the same header. Same links, same
+   data, same gating. #}
+{% call wsx.identity_header(ws.entity_type|capitalize, ws.display_name, ws.quick_actions or []) %}
+  {% if ws.household_name %}
+    {% if ws.household_id %}<a href="/client/household/{{ ws.household_id }}">↑ {{ ws.household_name }}</a>
+    {% else %}<span>{{ ws.household_name }}</span>{% endif %}
+    <span class="dot" aria-hidden="true">·</span>
   {% endif %}
-</header>
+  <span>Record #{{ ws.entity_id }}</span>
+  <span class="dot" aria-hidden="true">·</span>
+  <a href="/client/{{ ws.entity_id }}/brief">AI Brief ✨ (review required)</a>
+{% endcall %}
 
-{# Client Snapshot — compact executive summary (never summed; units differ). #}
-<section class="stat-grid c360-snapshot">
-  <article class="card"><span class="detail-label">Cash</span><h2>{{ "${:,.0f}".format(s.assets.cash|float) }}</h2></article>
-  {% if s.revenue %}<article class="card"><span class="detail-label">Open pipeline</span><h2>{{ "${:,.0f}".format(s.revenue.expected_revenue|float) }}</h2></article>{% endif %}
-  <article class="card"><span class="detail-label">Insurance face</span><h2>{{ "${:,.0f}".format(s.insurance.total_face|float) }}</h2></article>
-  <article class="card"><span class="detail-label">Tax engagements</span><h2>{{ s.tax.active or 0 }}</h2></article>
-  {% if s.open_work is not none %}<article class="card"><span class="detail-label">Open work</span><h2>{{ s.open_work }}</h2></article>{% endif %}
-  {% if s.compliance %}<article class="card"><span class="detail-label">Open reviews</span><h2>{{ s.compliance.open_reviews }}</h2></article>{% endif %}
+{# Client Snapshot - compact executive summary (never summed; units differ). Folded into
+   the header as one strip: as six cards it was a second full band of chrome before any
+   content. `zero=` is passed explicitly because these values arrive pre-formatted. #}
+<section class="signal-bar ws-snapshot" aria-label="Client snapshot">
+  {{ ui.signal("Cash", "${:,.0f}".format(s.assets.cash|float), zero=(s.assets.cash|float == 0)) }}
+  {% if s.revenue %}{{ ui.signal("Open pipeline", "${:,.0f}".format(s.revenue.expected_revenue|float), zero=(s.revenue.expected_revenue|float == 0)) }}{% endif %}
+  {{ ui.signal("Insurance face", "${:,.0f}".format(s.insurance.total_face|float), zero=(s.insurance.total_face|float == 0)) }}
+  {{ ui.signal("Tax engagements", s.tax.active or 0) }}
+  {% if s.open_work is not none %}{{ ui.signal("Open work", s.open_work, "warn") }}{% endif %}
+  {% if s.compliance %}{{ ui.signal("Open reviews", s.compliance.open_reviews, "warn") }}{% endif %}
 </section>
 
 {% if ws.drake_returns %}
-<section class="card" style="margin-top:12px">
-  <h2 class="section-title">Drake Tax</h2>
+<section class="card section">
+  {{ ui.card_head("Drake Tax") }}
 
   {% for d in ws.drake_returns %}
     <div class="detail-row">
       <span>
         <strong>{{ d.tax_year }} {{ d.return_type or "Return" }}</strong>
         <span class="subtle">
-          ? {{ d.taxpayer_first_name }} {{ d.taxpayer_last_name }}
+          · {{ d.taxpayer_first_name }} {{ d.taxpayer_last_name }}
           {% if d.spouse_first_name %}
             &amp; {{ d.spouse_first_name }}
             {{ d.spouse_last_name or d.taxpayer_last_name }}
@@ -85,13 +80,13 @@
     <div class="detail-row">
       <span>AGI</span>
       <strong>
-        {{ "${:,.0f}".format(d.agi|float) if d.agi is not none else "?" }}
+        {{ "${:,.0f}".format(d.agi|float) if d.agi is not none else "—" }}
       </strong>
     </div>
 
     <div class="detail-row">
       <span>Preparer</span>
-      <strong>{{ d.preparer_code or "?" }}</strong>
+      <strong>{{ d.preparer_code or "—" }}</strong>
     </div>
 
     {% if d.federal_product %}
@@ -99,7 +94,7 @@
       <span>Federal return</span>
       <strong>
         {{ d.federal_product }}
-        {% if d.federal_ack_date %} ? {{ d.federal_ack_date }}{% endif %}
+        {% if d.federal_ack_date %} · {{ d.federal_ack_date }}{% endif %}
       </strong>
     </div>
     {% endif %}
@@ -109,7 +104,7 @@
       <span>State return</span>
       <strong>
         {{ d.state_product }}
-        {% if d.state_ack_date %} ? {{ d.state_ack_date }}{% endif %}
+        {% if d.state_ack_date %} · {{ d.state_ack_date }}{% endif %}
       </strong>
     </div>
     {% endif %}
@@ -202,18 +197,23 @@
   </div>
 
 {% elif active_tab == "summary" %}
-  <h2 class="section-title">Household &amp; assignment</h2>
   <article class="card">
-    <div class="detail-row"><span>Household</span><strong>{{ sec.household_name or "—" }}</strong></div>
-    <div class="detail-row"><span>Members</span><strong>{{ (sec.members or [])|length }}</strong></div>
-    <div class="detail-row"><span>Last contact</span><strong>{{ sec.last_contact.title if sec.last_contact else "—" }}</strong></div>
-    <div class="detail-row"><span>Next activity</span><strong>{{ sec.next_activity.title if sec.next_activity else "—" }}</strong></div>
-    <div class="detail-row"><span>Assigned</span><strong>{{ (sec.assigned or [])|length }} advisor/team</strong></div>
-    <div class="detail-row"><span class="subtle">Status / tier / risk</span><span class="subtle">Not tracked in this platform</span></div>
+    {{ ui.card_head("Household & assignment") }}
+    {# `.kv-grid` columns these rows instead of stretching six pairs across the full
+       card width, where the label sat at one edge and the value at the other. #}
+    <div class="kv-grid">
+      <div class="detail-row"><span>Household</span><strong>{% if sec.household_id %}<a class="rowlink" href="/client/household/{{ sec.household_id }}">{{ sec.household_name or "—" }}</a>{% else %}{{ sec.household_name or "—" }}{% endif %}</strong></div>
+      <div class="detail-row"><span>Members</span><strong>{{ (sec.members or [])|length }}</strong></div>
+      <div class="detail-row"><span>Assigned</span><strong>{{ (sec.assigned or [])|length }} advisor/team</strong></div>
+      <div class="detail-row"><span>Last contact</span><strong>{{ sec.last_contact.title if sec.last_contact else "—" }}</strong></div>
+      <div class="detail-row"><span>Next activity</span><strong>{{ sec.next_activity.title if sec.next_activity else "—" }}</strong></div>
+      <div class="detail-row"><span class="subtle">Status / tier / risk</span><span class="subtle">Not tracked</span></div>
+    </div>
   </article>
   {% if sec.members %}
-  <h2 class="section-title">Members</h2>
-  <article class="card"><div class="table-wrap"><table class="data">
+  <article class="card section">
+    {{ ui.card_head("Household members") }}
+    <div class="table-wrap"><table class="data">
     <thead><tr><th>Name</th><th>Relationship</th></tr></thead><tbody>
     {% for m in sec.members %}<tr><td><a href="/client/{{ m.id }}">{{ m.full_name }}</a></td><td>{{ m.relationship_type or "—" }}</td></tr>{% endfor %}
     </tbody></table></div></article>
@@ -271,8 +271,8 @@
 {% elif active_tab == "tasks" %}
   <h2 class="section-title">Tasks</h2>
   {% if sec.can_write and sec.primary_person_id %}
-  <form method="post" action="/client/{{ sec.primary_person_id }}/tasks" class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:10px">
-    <input class="input" type="text" name="title" placeholder="New task…" required style="min-width:220px">
+  <form method="post" action="/client/{{ sec.primary_person_id }}/tasks" class="row ws-composer-row">
+    <input class="input ws-grow" type="text" name="title" placeholder="New task…" required>
     <select class="input" name="priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
     <input class="input" type="date" name="due_date">
     <button class="btn" type="submit">Create task</button>
@@ -290,15 +290,25 @@
   <p class="subtle">Assign, reprioritize, or reschedule on the <a href="/tasks">task surface</a>.</p>
 
 {% elif active_tab == "notes" %}
-  <h2 class="section-title">Notes <span class="subtle">· internal</span></h2>
+  <h2 class="section-title">Internal notes</h2>
+  {{ wsx.audience("internal") }}
   {% if sec.can_write and sec.primary_person_id %}
-  <form method="post" action="/client/{{ sec.primary_person_id }}/notes" class="stack" style="gap:8px; margin-bottom:10px">
+  <form method="post" action="/client/{{ sec.primary_person_id }}/notes" class="card stack ws-composer">
     <textarea class="input" name="body" rows="2" placeholder="Add an internal note…" required></textarea>
-    <div class="row" style="gap:8px"><select class="input" name="note_type">{% for nt in sec.note_types %}<option value="{{ nt }}">{{ nt|capitalize }}</option>{% endfor %}</select><button class="btn" type="submit">Add note</button></div>
+    <div class="row"><select class="input" name="note_type">{% for nt in sec.note_types %}<option value="{{ nt }}">{{ nt|capitalize }}</option>{% endfor %}</select><button class="btn" type="submit">Add note</button></div>
   </form>
   {% endif %}
   <article class="card">
-    {% for n in sec.notes %}<div class="detail-row"><span>{{ n.body }} <span class="subtle">({{ n.note_type }})</span></span><strong class="subtle">{{ n.author_name or "—" }} · {{ n.created_at.strftime("%Y-%m-%d") if n.created_at else "" }}</strong></div>{% else %}{% call ui.empty("No notes") %}{% endcall %}{% endfor %}
+    {% for n in sec.notes %}
+    <div class="feed-item">
+      <div class="node" aria-hidden="true"></div>
+      <div class="what">
+        <strong>{{ n.body }}</strong>
+        <div class="meta"><span>{{ n.note_type }}</span><span class="dot">·</span><span>{{ n.author_name or "—" }}</span></div>
+      </div>
+      <div class="when">{{ n.created_at.strftime("%b %d, %Y") if n.created_at else "" }}</div>
+    </div>
+    {% else %}{% call ui.empty("No notes", "Internal notes about this client appear here. They are never shown to the client.") %}{% endcall %}{% endfor %}
   </article>
 
 {% elif active_tab == "messages" %}
@@ -307,6 +317,7 @@
   <h2 class="section-title">Secure messages
     {% if sec.unread_count %}<span class="subtle">· {{ sec.unread_count }} unread</span>{% endif %}
   </h2>
+  {{ wsx.audience("client") }}
   {% if sec.can_start and sec.person_id %}
   <details class="card">
     <summary class="c360-compose-summary">New secure message</summary>
@@ -561,17 +572,17 @@
   </article>
 
 {% elif active_tab == "vault" %}
-  <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">
-    <h2 class="section-title" style="margin:0">Vault</h2>
+  <div class="card-head vault-head">
+    <h2>Vault</h2>
     {% if sec.can_upload %}<button id="vault-upload-toggle" class="btn sm" type="button">Upload document</button>{% endif %}
   </div>
 
   {% if sec.can_upload %}
-  <form id="vault-upload" hidden class="card" style="padding:14px 16px; margin-bottom:12px"
+  <form id="vault-upload" hidden class="card vault-upload"
         onsubmit="return vaultUpload(event)">
     <input type="hidden" name="person_id" value="{{ sec.person_id or '' }}">
     <input type="hidden" name="household_id" value="{{ sec.household_id or '' }}">
-    <div class="row" style="gap:10px; flex-wrap:wrap">
+    <div class="vault-fields">
       <label>File<br><input type="file" name="file" required></label>
       <label>Display name<br><input class="input" type="text" name="display_name" required></label>
       <label>Category<br><select class="input" name="category">{% for c in sec.categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></label>
@@ -580,17 +591,17 @@
       <label>Status<br><select class="input" name="status">{% for s in sec.statuses %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select></label>
       <label>Engagement (optional)<br><input class="input" type="number" name="engagement_id" placeholder="id"></label>
     </div>
-    <div style="margin-top:10px"><button class="btn" type="submit">Upload</button></div>
+    <div class="vault-submit"><button class="btn" type="submit">Upload</button></div>
   </form>
   {% endif %}
 
-  <form method="get" action="{{ base }}" class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:10px">
+  <form method="get" action="{{ base }}" class="row vault-filter">
     <input type="hidden" name="tab" value="vault">
-    <input class="input" type="text" name="q" value="{{ sec.filters.q }}" placeholder="Search name…" style="max-width:200px">
+    <input class="input" type="text" name="q" value="{{ sec.filters.q }}" placeholder="Search name…" data-w="lg">
     <select class="input" name="category"><option value="">All categories</option>{% for c in sec.categories %}<option value="{{ c }}" {{ 'selected' if sec.filters.category == c }}>{{ c }}</option>{% endfor %}</select>
-    <input class="input" type="text" name="document_type" value="{{ sec.filters.document_type }}" placeholder="Type" style="max-width:130px">
+    <input class="input" type="text" name="document_type" value="{{ sec.filters.document_type }}" placeholder="Type" data-w="md">
     <select class="input" name="status"><option value="">All statuses</option>{% for s in sec.statuses %}<option value="{{ s }}" {{ 'selected' if sec.filters.status == s }}>{{ s }}</option>{% endfor %}</select>
-    <input class="input" type="number" name="year" value="{{ sec.filters.year }}" placeholder="Year" style="max-width:100px">
+    <input class="input" type="number" name="year" value="{{ sec.filters.year }}" placeholder="Year" data-w="sm">
     <button class="btn secondary" type="submit">Filter</button>
   </form>
 
@@ -608,7 +619,7 @@
           <a href="/api/vault/documents/{{ d.id }}/download">Download</a>
           · <a href="{{ base }}?tab=vault&doc={{ d.id }}">Details</a>
           {% if d.client_visible %}<span class="pill" title="Visible in the client portal">◑ client-visible</span>{% endif %}
-          {% if d.uploaded_by_portal_account_id and d.status in ["uploaded","under_review"] %}<span class="pill" style="background:#fde">client upload — pending</span>{% endif %}
+          {% if d.uploaded_by_portal_account_id and d.status in ["uploaded","under_review"] %}<span class="badge warn">client upload — pending</span>{% endif %}
           {% if sec.can_manage %}
             {% if d.uploaded_by_portal_account_id and d.status in ["uploaded","under_review"] %} · <a href="#" onclick="return vaultApprove(event, {{ d.id }}, true)">Approve</a> · <a href="#" onclick="return vaultApprove(event, {{ d.id }}, false)">Reject</a>{% endif %}
             · <a href="#" onclick="return vaultVisible(event, {{ d.id }}, {{ 'false' if d.client_visible else 'true' }})">{{ 'Hide from client' if d.client_visible else 'Show to client' }}</a>
@@ -621,28 +632,28 @@
 
   {% if sec.detail %}
   {% set dt = sec.detail.document %}
-  <article class="card" style="margin-top:14px; padding:14px 16px">
+  <article class="card vault-detail">
     <h2 class="section-title">Details — {{ dt.display_name }}</h2>
     <div class="detail-row"><span>Original filename</span><strong>{{ dt.original_filename }}</strong></div>
     <div class="detail-row"><span>Category / Type</span><strong>{{ dt.category }} / {{ dt.document_type or "—" }}</strong></div>
     <div class="detail-row"><span>Classification / Status</span><strong>{{ dt.security_classification }} / {{ dt.status }}</strong></div>
     <div class="detail-row"><span>Current version</span><strong>v{{ dt.current_version }}</strong></div>
-    <div class="detail-row"><span>Checksum (SHA-256)</span><strong style="font-family:monospace; font-size:11px">{{ dt.checksum_sha256 }}</strong></div>
-    <div class="row" style="gap:10px; margin-top:8px">
+    <div class="detail-row"><span>Checksum (SHA-256)</span><strong class="id-mono">{{ dt.checksum_sha256 }}</strong></div>
+    <div class="row vault-actions">
       <a class="btn sm" href="/api/vault/documents/{{ dt.id }}/download">Download current</a>
       {% if sec.can_upload %}
-      <form style="display:inline" onsubmit="return vaultNewVersion(event, {{ dt.id }})">
+      <form class="vault-inline" onsubmit="return vaultNewVersion(event, {{ dt.id }})">
         <input type="file" name="file" required> <button class="btn sm secondary" type="submit">Upload new version</button>
       </form>
       {% endif %}
     </div>
-    <h3 style="margin:12px 0 6px">Version history</h3>
+    <h3 class="vault-sub">Version history</h3>
     <div class="table-wrap"><table class="data"><thead><tr><th>Ver</th><th>Size</th><th>Uploaded</th><th>By</th></tr></thead><tbody>
       {% for v in sec.detail.versions %}<tr><td>{{ v.version_number }}</td><td>{{ "{:,.0f} KB".format((v.file_size or 0)/1024) }}</td><td>{{ v.created_at.strftime("%Y-%m-%d %H:%M") if v.created_at else "—" }}</td><td>{{ v.uploaded_by_user_id or "—" }}</td></tr>{% endfor %}
     </tbody></table></div>
-    <h3 style="margin:12px 0 6px">Linked records</h3>
+    <h3 class="vault-sub">Linked records</h3>
     <article class="card">{% for l in sec.detail.links %}<div class="detail-row"><span>Links</span><strong>person={{ l.person_id or "—" }} · household={{ l.household_id or "—" }} · engagement={{ l.engagement_id or "—" }} · work_item={{ l.work_item_id or "—" }}</strong></div>{% else %}<div class="subtle">No linked records.</div>{% endfor %}</article>
-    <h3 style="margin:12px 0 6px">Audit history</h3>
+    <h3 class="vault-sub">Audit history</h3>
     <div class="table-wrap"><table class="data"><thead><tr><th>Action</th><th>User</th><th>When</th><th>IP</th></tr></thead><tbody>
       {% for a in sec.detail.audit %}<tr><td>{{ a.action }}</td><td>{{ a.user_id or "—" }}</td><td>{{ a.occurred_at.strftime("%Y-%m-%d %H:%M:%S") if a.occurred_at else "—" }}</td><td>{{ a.ip_address or "—" }}</td></tr>{% endfor %}
     </tbody></table></div>

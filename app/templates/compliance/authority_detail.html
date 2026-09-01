@@ -6,14 +6,14 @@
 {{ ui.page_head("Reviewer Authority", eyebrow="Compliance", desc=(a.reviewer_name or ("principal " ~ a.principal_id)) ~ " · " ~ a.reviewer_role) }}
 
 {% if request.query_params.get("error") %}
-<div class="alert crit" style="margin-bottom:14px"><span class="ico">⚠</span><div>{{ request.query_params.get("error") }}</div></div>
+<div class="alert crit mb-3"><span class="ico">⚠</span><div>{{ request.query_params.get("error") }}</div></div>
 {% endif %}
 
-<section class="stat-grid" style="margin-bottom:16px">
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Status</span><h3 style="margin:2px 0">{{ a.effective_status|capitalize }}</h3>{% if a.effective_status != a.status %}<p class="subtle">(stored: {{ a.status }})</p>{% endif %}</article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Effective</span><h3 style="margin:2px 0" class="id-mono">{{ a.effective_date or "—" }}</h3></article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Expiration</span><h3 style="margin:2px 0" class="id-mono">{{ a.expiration_date or "—" }}</h3></article>
-  <article class="card" style="padding:12px 16px"><span class="detail-label">Recorded by</span><h3 style="margin:2px 0">principal {{ a.recorded_by }}</h3></article>
+<section class="stat-grid mb-4">
+  <article class="card pad-sm"><span class="detail-label">Status</span><h3 class="tight">{{ a.effective_status|capitalize }}</h3>{% if a.effective_status != a.status %}<p class="subtle">(stored: {{ a.status }})</p>{% endif %}</article>
+  <article class="card pad-sm"><span class="detail-label">Effective</span><h3 class="id-mono tight">{{ a.effective_date or "—" }}</h3></article>
+  <article class="card pad-sm"><span class="detail-label">Expiration</span><h3 class="id-mono tight">{{ a.expiration_date or "—" }}</h3></article>
+  <article class="card pad-sm"><span class="detail-label">Recorded by</span><h3 class="tight">principal {{ a.recorded_by }}</h3></article>
 </section>
 
 <h2 class="section-title">Authority record</h2>
@@ -34,27 +34,27 @@
 <h2 class="section-title">Administer</h2>
 <div class="row" style="gap:12px; flex-wrap:wrap">
   {% if a.status == "draft" %}
-  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/activate" style="padding:12px 16px" onsubmit="return confirm('Activate this authority? It will confer approval authority for its scope once effective.');">
+  <form class="card pad-sm" method="post" action="/compliance/authorities/{{ a.id }}/activate" onsubmit="return confirm('Activate this authority? It will confer approval authority for its scope once effective.');">
     <input type="hidden" name="expected_status" value="{{ a.status }}"><button class="btn" type="submit">Activate</button></form>
   {% endif %}
   {% if a.status == "active" %}
-  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/suspend" style="padding:12px 16px" onsubmit="return confirm('Suspend this authority?');">
-    <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input" name="reason" placeholder="reason (required)" style="margin-bottom:6px"><button class="btn" type="submit">Suspend</button></form>
+  <form class="card pad-sm" method="post" action="/compliance/authorities/{{ a.id }}/suspend" onsubmit="return confirm('Suspend this authority?');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input mb-2" name="reason" placeholder="reason (required)"><button class="btn" type="submit">Suspend</button></form>
   {% endif %}
   {% if a.status == "suspended" %}
-  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/restore" style="padding:12px 16px" onsubmit="return confirm('Restore this authority to active?');">
+  <form class="card pad-sm" method="post" action="/compliance/authorities/{{ a.id }}/restore" onsubmit="return confirm('Restore this authority to active?');">
     <input type="hidden" name="expected_status" value="{{ a.status }}"><button class="btn" type="submit">Restore</button></form>
   {% endif %}
   {% if a.status in ["draft","active","suspended"] %}
-  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/revoke" style="padding:12px 16px" onsubmit="return confirm('Revoke this authority? This is prospective and permanent (history retained).');">
-    <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input" name="reason" placeholder="reason (required)" style="margin-bottom:6px"><button class="btn" type="submit">Revoke</button></form>
+  <form class="card pad-sm" method="post" action="/compliance/authorities/{{ a.id }}/revoke" onsubmit="return confirm('Revoke this authority? This is prospective and permanent (history retained).');">
+    <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input mb-2" name="reason" placeholder="reason (required)"><button class="btn" type="submit">Revoke</button></form>
   {% endif %}
   {% if a.status in ["active","suspended"] %}
   <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/supersede" style="padding:12px 16px; min-width:280px" onsubmit="return confirm('Supersede with a new active version? The prior record is retained as superseded.');">
     <input type="hidden" name="expected_status" value="{{ a.status }}">
-    <div class="field" style="margin:0 0 6px"><label>New scope (blank = carry forward)</label><input class="input" name="authority_scope" placeholder="rule ids / gate categories"></div>
-    <div class="field" style="margin:0 0 6px"><label>New effective date</label><input class="input" name="effective_date" type="date"></div>
-    <div class="field" style="margin:0 0 6px"><label>Reason / evidence</label><input class="input" name="reason" placeholder="reason"></div>
+    <div class="field mb-2"><label>New scope (blank = carry forward)</label><input class="input" name="authority_scope" placeholder="rule ids / gate categories"></div>
+    <div class="field mb-2"><label>New effective date</label><input class="input" name="effective_date" type="date"></div>
+    <div class="field mb-2"><label>Reason / evidence</label><input class="input" name="reason" placeholder="reason"></div>
     <button class="btn" type="submit">Supersede</button></form>
   {% endif %}
 </div>
@@ -77,7 +77,7 @@
     {% endfor %}
     </tbody>
   </table></div>
-  <p class="subtle" style="margin-top:8px">Append-only history. Prior authority versions and events are never modified or deleted. These records are factual administrative metadata — not electronic signatures, not licensing verification, not regulatory certification.</p>
+  <p class="subtle mt-2">Append-only history. Prior authority versions and events are never modified or deleted. These records are factual administrative metadata — not electronic signatures, not licensing verification, not regulatory certification.</p>
   {% else %}{% call ui.empty("No history") %}{% endcall %}{% endif %}
 </article>
 {% endblock %}

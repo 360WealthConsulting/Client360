@@ -104,7 +104,9 @@ body.c360 {
 .crumbs a:hover { color:var(--text); }
 .crumbs .sep { opacity:.5; }
 .crumbs b { color:var(--text); font-weight:620; }
-.app-search { margin-left:6px; flex:1; max-width:380px; position:relative; }
+/* `min-width` is the guard that keeps the quick-access bar from starving the search:
+   without a floor, `flex:1` lets it shrink toward nothing as controls are added. */
+.app-search { margin-left:6px; flex:1 1 220px; min-width:150px; max-width:380px; position:relative; }
 .app-search input { width:100%; height:34px; border:1px solid var(--border); background:var(--surface-2); border-radius:7px; padding:0 12px 0 32px; color:var(--text); font:inherit; font-size:13px; }
 .app-search input::placeholder { color:var(--muted); }
 .app-search .mag { position:absolute; left:11px; top:8px; color:var(--muted); pointer-events:none; }
@@ -127,6 +129,20 @@ body.c360 {
   .nav-toggle-btn { display:inline-flex; }
   .app-nav { display:none; }
   .nav-toggle:checked ~ .app-nav { display:block; }
+  /* The header packs six fixed-width items into a row that stops fitting well before
+     a phone width, and the user chip was being clipped off the right edge. The brand
+     bar directly above already says "360Plus", so the crumb keeps only the page name. */
+  .app-header { padding:0 var(--s4); gap:10px; }
+  .crumbs a, .crumbs .sep { display:none; }
+  .app-search { margin-left:0; min-width:0; }
+}
+@media (max-width:640px) {
+  /* Below this the name and role cannot fit beside a search field; the avatar still
+     carries identity and the chip keeps its title attribute. */
+  .user-chip .who { display:none; }
+  .user-chip { padding:4px; }
+  .app-content { padding:var(--s4) var(--s4) 40px; }
+  .page-head { align-items:flex-start; }
 }
 
 /* ============================================================
@@ -150,12 +166,20 @@ body.c360 {
 .btn.danger { background:var(--crit); color:#fff; }
 
 .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
-.card > h3 { margin:0 0 12px; font-size:13px; color:var(--text-2); font-weight:640; }
+/* A heading directly inside a card is that card's own title. `h3` was covered; `h2`
+   was not, so 77 of them across 51 templates rendered at the browser default 1.5em
+   bold - larger than the page's own h1 context and detached from the card. */
+.card > :is(h2,h3) { margin:0 0 12px; font-size:13px; color:var(--text-2); font-weight:640; }
 
 .stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; }
 .stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
 .stat .k { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
-.stat .v { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em; margin-top:6px; font-variant-numeric:tabular-nums; word-break:break-word; }
+/* `overflow-wrap`, not `word-break:break-word`: the latter splits a run of digits at any
+   character, so a currency figure rendered as `$184,500.` / `00` across two lines. This
+   breaks only where there is a real opportunity, and the compact track below is sized to
+   fit a formatted currency value without needing one. */
+.stat .v { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em;
+  margin-top:6px; font-variant-numeric:tabular-nums; overflow-wrap:break-word; }
 .stat .delta { font-family:var(--font-mono); font-size:11.5px; margin-top:4px; }
 .delta.up { color:var(--good); } .delta.down { color:var(--crit); } .delta.flat { color:var(--muted); }
 
@@ -194,7 +218,11 @@ table.data th[aria-sort="descending"]::after { content:" ↓"; opacity:1; color:
 .sev.low::before { background:var(--good); }
 
 /* alerts */
-.alert { display:flex; gap:12px; padding:12px 14px; border-radius:var(--radius); font-size:13.5px; border:1px solid var(--border); background:var(--surface); align-items:flex-start; }
+/* A default bottom margin: an alert is always followed by the content it is about,
+   and every call site was adding the same margin by hand. */
+.alert { display:flex; gap:12px; padding:12px 14px; border-radius:var(--radius); font-size:13.5px;
+  border:1px solid var(--border); background:var(--surface); align-items:flex-start;
+  margin:0 0 var(--s3); }
 .alert .ico { flex:none; margin-top:1px; }
 .alert b { display:block; margin-bottom:2px; }
 .alert p { margin:0; opacity:.92; }
@@ -267,6 +295,193 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .err-card .brand { display:inline-flex; align-items:center; gap:8px; margin-bottom:18px; }
 .err-card .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:800; font-size:12px; font-family:var(--font-mono); }
 
+/* ============================================================
+   OVERVIEW SURFACES + SHARED PRIMITIVES (Phase 2)
+   Everything here is presentation. It exists in a stylesheet — never in a
+   style="" attribute — because the CSP is `default-src 'self'` with no
+   'unsafe-inline', so an inline style is dropped by the browser exactly like
+   an inline <script>. Several layouts in this app were already relying on
+   attributes that never applied.
+   ============================================================ */
+
+/* ---- signal bar -----------------------------------------------------------
+   One segmented strip of counters, for a triage summary that should read as a
+   single instrument rather than six competing cards. The 1px grid gap over a
+   border-coloured ground draws every separator, so a wrapped row keeps its
+   rules on both axes without per-cell border bookkeeping. */
+.signal-bar { display:grid; grid-template-columns:repeat(auto-fit, minmax(148px,1fr));
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden; }
+/* Separators are drawn by each cell rather than by a 1px grid gap over a
+   border-coloured ground: when the cells wrap to a partial row, that ground shows
+   through the empty tracks as a grey block. A shadow leaves the empty area plain
+   surface, and `overflow:hidden` on the bar clips the lines the edge cells cast onto
+   its own border. Works for any number of cells at any wrap point. */
+.signal { display:flex; flex-direction:column; gap:3px; padding:11px 15px 12px;
+  background:var(--surface); color:inherit; text-decoration:none; position:relative;
+  transition:background .1s ease;
+  box-shadow:1px 0 0 var(--border), 0 1px 0 var(--border); }
+a.signal:hover { background:var(--surface-2); }
+.signal .k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.signal .v { font-family:var(--font-mono); font-size:23px; font-weight:600; line-height:1.1;
+  letter-spacing:-.025em; font-variant-numeric:tabular-nums; }
+/* A zero is good news on every one of these counters, so it recedes; a non-zero
+   count carries its severity colour and a top rail. Both states are set from the
+   SAME markup — the template adds `.is-zero` from the value it already renders. */
+.signal.is-zero .v { color:var(--muted); font-weight:500; }
+.signal:not(.is-zero) .v { color:var(--text); }
+/* The rail runs down the leading edge rather than across the top: when the bar wraps,
+   a top rail sits directly under the cell above and reads as that cell's underline. A
+   left rail belongs to its own cell at every wrap point, and echoes the same device on
+   `.src` badges and `.audience` bands. */
+.signal:not(.is-zero)::before { content:""; position:absolute; inset:0 auto 0 0; width:2px;
+  background:var(--accent); }
+.signal.warn:not(.is-zero) .v { color:var(--warn); }
+.signal.warn:not(.is-zero)::before { background:var(--warn); }
+.signal.crit:not(.is-zero) .v { color:var(--crit); }
+.signal.crit:not(.is-zero)::before { background:var(--crit); }
+.signal.info:not(.is-zero) .v { color:var(--info); }
+.signal.info:not(.is-zero)::before { background:var(--info); }
+
+/* ---- card header ----------------------------------------------------------
+   Title on the left, one optional escape hatch on the right. Replaces the
+   pattern of nesting a small link inside an <h2>, where the link inherited the
+   heading's size because the inline font-size was dropped. */
+.card-head { display:flex; align-items:baseline; justify-content:space-between;
+  gap:var(--s3); margin:0 0 var(--s3); }
+.card-head > :is(h2,h3) { margin:0; font-size:13.5px; font-weight:660; letter-spacing:0;
+  color:var(--text-2); }
+.card-head .more { font-size:12px; font-weight:600; color:var(--accent);
+  text-decoration:none; white-space:nowrap; flex:none; }
+.card-head .more:hover { text-decoration:underline; }
+
+/* ---- figure list ----------------------------------------------------------
+   Dense label/number rows. A four-integer summary in a side rail does not earn
+   four full cards; it earns four lines. */
+.figure-list { display:block; }
+.figure { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s3);
+  padding:9px 0; border-bottom:1px solid var(--border); }
+.figure:first-child { padding-top:0; }
+.figure:last-child { padding-bottom:0; border-bottom:0; }
+.figure .k { font-size:13px; color:var(--text-2); min-width:0; }
+.figure .v { font-family:var(--font-mono); font-size:15.5px; font-weight:620;
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em; flex:none; }
+.figure .v.muted-v { color:var(--muted); font-weight:500; }
+
+/* ---- activity feed --------------------------------------------------------
+   A timeline rail, the event, and its date — three columns so the dates align
+   into a readable edge instead of trailing each line at a different offset. */
+.feed { display:block; }
+.feed-item { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:0 var(--s3);
+  padding:11px 0; }
+.feed-item + .feed-item { border-top:1px solid var(--border); }
+.feed-item:first-child { padding-top:0; }
+.feed-item:last-child { padding-bottom:0; }
+.feed-item .node { position:relative; }
+.feed-item .node::before { content:""; position:absolute; left:3px; top:6px; width:7px; height:7px;
+  border-radius:50%; background:var(--surface-3); border:1.5px solid var(--border-strong); }
+.feed-item:first-child .node::before { background:var(--accent); border-color:var(--accent); }
+/* The connector is drawn downward from each dot and stops at the last row. */
+.feed-item:not(:last-child) .node::after { content:""; position:absolute; left:6.25px; top:16px;
+  bottom:-12px; width:1.5px; background:var(--border); }
+.feed-item .what { min-width:0; }
+.feed-item .what > a, .feed-item .what > strong { display:block; font-size:13.5px; font-weight:620;
+  color:var(--text); text-decoration:none; }
+.feed-item .what > a:hover { color:var(--accent); text-decoration:underline; }
+.feed-item .meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 7px; margin-top:2px;
+  font-size:11.5px; color:var(--muted); }
+.feed-item .meta .dot { opacity:.45; }
+.feed-item .note { margin:3px 0 0; font-size:12px; color:var(--text-2); }
+.feed-item .when { font-family:var(--font-mono); font-size:11.5px; color:var(--muted);
+  white-space:nowrap; text-align:right; padding-top:1px; }
+
+/* ---- key/value detail rows ------------------------------------------------
+   `.detail-row` and `.detail-label` are used by ~37 and ~19 templates, but were
+   only ever defined in workspace.css, which five of them load — everywhere else
+   they rendered as unstyled divs. Defining them here (app.css is loaded by every
+   base-extending screen) styles the rest without touching their markup.
+   workspace.css still loads AFTER this file on its five pages, so nothing there
+   changes. */
+.detail-row { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s3);
+  padding:7px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+.detail-row:last-child { border-bottom:0; padding-bottom:0; }
+.detail-row > :first-child { min-width:0; color:var(--text-2); }
+.detail-row > :last-child { text-align:right; }
+/* Several call sites wrap the left half in a <div style="flex:1"> that the CSP drops. */
+.detail-row > div { flex:1 1 auto; min-width:0; text-align:left; }
+.detail-row strong { font-weight:620; }
+/* Many call sites write the value as a bare text node next to the label, so it
+   becomes an anonymous flex item. Without this the label is the only shrinkable
+   box in the row and a long value (an email address) squeezes it to nothing. */
+.detail-row > .detail-label { flex:none; margin-bottom:0; }
+.detail-row { overflow-wrap:anywhere; }
+.detail-label { display:block; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; margin-bottom:3px; }
+
+/* ---- stat, as a link ------------------------------------------------------
+   `.stat` is a static tile; several screens wrap one in an <a>, where it picked
+   up the global link colour and weight for every line inside it. */
+a.stat { display:block; text-decoration:none; color:var(--text);
+  transition:background .1s ease, border-color .1s ease; }
+a.stat:hover { background:var(--surface-2); border-color:var(--border-strong); }
+a.stat .k, a.stat .detail-label { color:var(--muted); font-weight:700; }
+a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
+/* Call sites that put an <h2> where `.stat .v` belongs get the same treatment,
+   so the number reads as a figure rather than as a heading. */
+.stat > h2 { margin:5px 0 0; font-family:var(--font-mono); font-size:26px; font-weight:600;
+  letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.1; }
+
+/* ---- item title -----------------------------------------------------------
+   The title of a row or record inside a card. Distinct from `.card > h3`, which
+   is that card's own section heading and is deliberately small and muted — an
+   item title styled as a section heading reads as a label, not as the record.
+   The second selector outranks `.card > h3` (0,2,0 over 0,1,1). */
+.item-title, .card > .item-title { margin:0 0 3px; font-size:14.5px; font-weight:640;
+  letter-spacing:-.005em; color:var(--text); }
+
+/* ---- key/value grid -------------------------------------------------------
+   A `.detail-row` justifies its value to the far right, which is correct in a rail
+   and wrong across a 1,156px card: the label sits at one edge and six characters
+   of value at the other. This lays the same rows out in columns, so each pair stays
+   adjacent and a screen's width buys more facts rather than more gap. */
+.kv-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px,1fr));
+  gap:0 var(--s5); }
+/* Each column ends on its own hairline, so a short last column does not leave a
+   rule hanging under nothing. */
+.kv-grid > .detail-row:last-child { border-bottom:1px solid var(--border); }
+.kv-grid > .detail-row { padding:8px 0; }
+
+/* ---- layout helpers -------------------------------------------------------
+   Column sets that collapse on their own, replacing `style="flex:1;min-width:Npx"`
+   on flex rows — which the CSP drops, leaving the children to size to content. */
+.cols-3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr));
+  gap:var(--s4); align-items:start; }
+.cols-2.even { grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); }
+.stack-lg { display:grid; gap:var(--s4); align-items:start; }
+/* `.stat-grid` stretches to fill, so a short row of tiles inflates each one. */
+.stat-grid.compact { grid-template-columns:repeat(auto-fit, minmax(168px,1fr)); gap:10px; }
+.stat-grid.compact .stat { padding:11px 14px; }
+.stat-grid.compact .stat .v { font-size:21px; margin-top:4px; }
+
+/* An empty state inside a card is already inside a border, so the dashed box just
+   draws a second one around a message. Flatten it there and let the card hold the
+   frame; the standalone `.empty` on a bare page keeps its dashed outline. */
+.card .empty, .empty.flush { border:0; background:none; padding:26px 16px; }
+.card .empty .em-ico, .empty.flush .em-ico { width:32px; height:32px; border-radius:9px;
+  font-size:16px; margin-bottom:9px; }
+
+/* `table.data` carries min-width:520px so a wide firm-level table scrolls rather than
+   crushing its columns. In a narrow side-by-side panel that min-width is the reason the
+   panel scrolls at all, and these panels only ever hold two or three columns. */
+.cols-3 table.data, .cols-2 table.data, .workspace-grid table.data { min-width:0; }
+/* At panel width the default 14px cell padding is most of the column, and a wrapped
+   ISO date reads as two half-dates. */
+.cols-3 table.data :is(th,td), .workspace-grid table.data :is(th,td) { padding:8px 10px; }
+/* A currency column is the one thing that must never wrap mid-number. */
+.workspace-grid table.data .num { white-space:nowrap; }
+.id-mono { white-space:nowrap; }
+
 /* --- Client Portal administration: invite form ---------------------------
    These replace inline style attributes on admin/client_portal.html. The site CSP is
    `default-src 'self'` with no 'unsafe-inline', so a style="..." attribute is blocked
@@ -306,7 +521,6 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
   color: var(--muted); }
 
 .thread-backnav { gap: 14px; }
-.c360-compose-summary { cursor: pointer; font-weight: 620; }
 .c360-compose { margin-top: 12px; }
 .c360-compose .field { margin-bottom: 0; }
 .c360-compose textarea.input { height: auto; min-height: 132px; padding: 10px 12px;
@@ -315,7 +529,6 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .thread-meta { display: grid; gap: 2px; }
 .thread-meta-value { margin: 0; font-weight: 620; }
 .thread-header-action form { margin: 0; }
-.thread-section-summary { cursor: pointer; font-weight: 620; }
 .thread-form { margin-top: 12px; }
 .thread-control-grid { display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
@@ -368,3 +581,506 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 /* Visually-hidden label that stays available to assistive technology. */
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+/* ============================================================
+   WORKSPACE PATTERN (Phase 3)
+   The identity header, action overflow, snapshot strip and audience band shared by
+   ALL FOUR person/household surfaces — /client/{id}, /client/household/{id},
+   /people/{id} and /households/{id}. Markup: components/workspace.html.
+
+   These live here rather than in client360.css because two of the four surfaces
+   load workspace.css instead, and the whole point of the pattern is that they stop
+   diverging. `.rowmenu` moved here from client360.css for the same reason: the
+   header's action overflow is the same disclosure the documents table row menu uses.
+   ============================================================ */
+
+/* ---- identity header ------------------------------------------------------
+   `.ws-id` takes `flex:1 1 320px` and `.ws-actions` takes `flex:0 0 auto`. That
+   pairing is the fix for the collapsed header: previously the identity had
+   `flex:1 1 0%` (a zero basis, so it only ever got the leftover) while eight action
+   buttons sized to their content and took 1009px of a 1156px row, leaving the
+   client's own name 81px to wrap in. With a real basis the identity holds its
+   ground and the actions wrap beneath it instead. */
+.ws-head { display:flex; align-items:flex-start; justify-content:space-between;
+  gap:var(--s3) var(--s4); flex-wrap:wrap; margin:0 0 var(--s3); }
+.ws-head .ws-id { display:flex; align-items:center; gap:var(--s3); flex:1 1 320px; min-width:0; }
+.ws-head .crest { width:40px; height:40px; flex:none; border-radius:10px; display:grid;
+  place-items:center; background:var(--accent-soft); color:var(--accent-ink);
+  font-family:var(--font-mono); font-size:14px; font-weight:700; letter-spacing:-.02em; }
+.ws-head .who { min-width:0; }
+.ws-head .kind { display:block; font-family:var(--font-mono); font-size:10px; font-weight:700;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--accent); }
+.ws-head h1 { margin:1px 0 0; font-size:21px; line-height:1.2; font-weight:670;
+  letter-spacing:-.02em; overflow-wrap:anywhere; }
+.ws-head .meta { display:flex; flex-wrap:wrap; align-items:center; gap:3px 8px;
+  margin:3px 0 0; font-size:12.5px; color:var(--muted); }
+.ws-head .meta a { color:var(--accent); text-decoration:none; font-weight:600; }
+.ws-head .meta a:hover { text-decoration:underline; }
+.ws-head .meta .dot { opacity:.45; }
+.ws-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; flex-wrap:wrap;
+  padding-top:2px; }
+/* The overflow trigger sits on the 28px button baseline rather than a table row's 26px. */
+.ws-more > summary { height:28px; min-width:28px; padding:0 7px; line-height:26px;
+  border-color:var(--border-strong); background:var(--surface); }
+.ws-more .menu { top:34px; }
+
+/* ---- header snapshot strip ------------------------------------------------
+   The snapshot figures were a row of six cards below the header — a second full band
+   of chrome before any content. As a `.signal-bar` they are one strip in the header. */
+.ws-snapshot { margin:0 0 var(--s4); }
+.ws-snapshot .signal .v { font-size:19px; }
+
+/* ---- audience band --------------------------------------------------------
+   Client-facing and internal threads are the two things in this product that must
+   never be confused. Before this the entire distinction was the grey word "internal"
+   in one heading. Colour, icon and a literal sentence, at the top of the panel the
+   writing happens in; the leading bar makes the two readable apart in peripheral
+   vision, before the sentence is read at all. */
+.audience { display:flex; align-items:flex-start; gap:9px; margin:0 0 var(--s3);
+  padding:9px 13px; border-radius:var(--radius); font-size:12.5px; line-height:1.45;
+  border-left:3px solid currentColor; }
+.audience .ico { flex:none; font-size:12px; line-height:1.5; }
+.audience b { font-weight:700; }
+.audience > span:last-child { font-weight:520; }
+.audience.client { background:var(--info-soft); color:var(--info); }
+.audience.internal { background:var(--warn-soft); color:var(--warn); }
+
+/* ---- panel composers ------------------------------------------------------
+   The note and task composers set their spacing with style="" attributes, which the
+   CSP drops. */
+.ws-composer { gap:var(--s2); margin-bottom:var(--s3); padding:var(--s3); }
+.ws-composer textarea.input { height:auto; min-height:60px; padding:9px 12px; line-height:1.5;
+  resize:vertical; }
+.ws-composer .row { gap:var(--s2); }
+.ws-composer-row { gap:var(--s2); flex-wrap:wrap; margin-bottom:var(--s3); }
+.ws-grow { flex:1 1 220px; min-width:0; }
+
+/* ---- overflow menu — pure CSS disclosure, no script and no inline handler ---
+   Moved from client360.css unchanged (Phase 3). `display:block` removes the UA
+   disclosure triangle in Chromium; `list-style` covers Firefox and the two
+   pseudo-elements cover WebKit and the modern spec. The visible glyph is the ⋯ span
+   in the markup. */
+.rowmenu { position:relative; display:inline-block; }
+.rowmenu > summary { display:block; list-style:none; list-style-type:none; cursor:pointer;
+  width:26px; height:26px; border-radius:6px; border:1px solid transparent;
+  color:var(--muted); font-size:15px; line-height:24px; text-align:center; }
+.rowmenu > summary::marker { content:""; }
+.rowmenu > summary::-webkit-details-marker { display:none; }
+.rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
+.rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
+/* A table scrolls horizontally, and overflow-x:auto forces overflow-y to a non-visible
+   value, so an absolutely positioned menu is CLIPPED by that scroll container. The
+   fallback below stays absolute (correct without JavaScript); documents.js promotes an
+   opened menu to .is-floating and sets fixed coordinates from the button's rect, which
+   escapes ancestor overflow entirely. Both states are out of flow, so neither can grow
+   a row. */
+.rowmenu .menu { position:absolute; right:0; top:32px; z-index:60; min-width:186px; padding:5px;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.rowmenu .menu.is-floating { position:fixed; right:auto; top:auto; z-index:1000; }
+.rowmenu .menu a, .rowmenu .menu button {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 10px;
+  border-radius:5px; border:0; background:none; color:var(--text); font:inherit; font-size:13px;
+  font-weight:550; text-decoration:none; cursor:pointer; height:auto; }
+.rowmenu .menu a:hover, .rowmenu .menu button:hover { background:var(--surface-2); }
+.rowmenu .menu .sep { height:1px; background:var(--border); margin:4px 2px; }
+.rowmenu .menu button.danger { color:var(--crit); }
+.rowmenu .menu button.danger:hover { background:var(--crit-soft); }
+.rowmenu .menu form { margin:0; }
+
+@media (max-width:640px) {
+  .ws-head .ws-id { flex-basis:100%; }
+  .ws-actions { width:100%; }
+}
+
+/* A card head whose right side carries several deep links rather than one. */
+.ws-links .more-links { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+  justify-content:flex-end; }
+
+/* ============================================================
+   GLOBAL QUICK-ACCESS BAR (Phase 4)
+   The right side of the application header. Markup:
+   components/header_actions.html.
+   ============================================================ */
+
+/* `flex:none` matters: the bar must never take width from the search field or the
+   user chip. The search keeps a floor of its own (see `.app-search` below) so the two
+   cannot squeeze each other. */
+.qa-bar { display:flex; align-items:center; gap:2px; flex:none; }
+/* A hairline against the user chip, so the actions read as one group rather than as
+   loose icons drifting toward the avatar. */
+.qa-bar { padding-right:10px; margin-right:2px; border-right:1px solid var(--border); }
+
+.qa-btn { position:relative; width:34px; height:34px; flex:none; border-radius:7px;
+  border:1px solid transparent; background:none; color:var(--muted);
+  display:grid; place-items:center; cursor:pointer; text-decoration:none;
+  transition:background .1s ease, color .1s ease; }
+.qa-btn:hover { background:var(--surface-2); color:var(--text); }
+.qa-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.qa-ico { display:block; }
+
+/* Active: a tinted ground plus a short underline. Restrained on purpose — the header
+   is chrome, and a filled accent button here would outrank the page's own primary
+   action. */
+.qa-btn.active { background:var(--accent-soft); color:var(--accent-ink); }
+.qa-btn.active::after { content:""; position:absolute; left:9px; right:9px; bottom:3px;
+  height:2px; border-radius:2px; background:var(--accent); }
+
+/* No route exists for this control yet. Non-interactive and visibly inert: not a link,
+   not focusable, no hover response — it cannot be mistaken for something that works. */
+.qa-btn.is-unavailable { color:var(--border-strong); cursor:default; }
+.qa-btn.is-unavailable:hover { background:none; color:var(--border-strong); }
+
+/* Badge. Nothing renders this today (no count reaches the shared header); it is here so
+   that wiring a real one later needs no new styling and no new decisions. Small, and
+   reserved for "needs attention" — a zero never renders at all. */
+.qa-badge { position:absolute; top:2px; right:2px; min-width:15px; height:15px; padding:0 4px;
+  border-radius:8px; background:var(--crit); color:#fff; font-family:var(--font-mono);
+  font-size:9.5px; font-weight:700; line-height:15px; text-align:center;
+  border:1.5px solid var(--surface); font-variant-numeric:tabular-nums; }
+.qa-btn.qa-inbox .qa-badge { background:var(--accent); }
+.qa-btn.qa-messages .qa-badge, .qa-btn.qa-chat .qa-badge { background:var(--info); }
+
+/* ---- disclosure menus (quick create + overflow) ---------------------------
+   `.rowmenu` is the row-scale disclosure; these sit on the 34px header baseline and
+   drop from the header's bottom edge, so they carry their own box. */
+.qa-menu { position:relative; }
+.qa-menu > summary { display:grid; list-style:none; }
+.qa-menu > summary::marker { content:""; }
+.qa-menu > summary::-webkit-details-marker { display:none; }
+.qa-menu[open] > summary { background:var(--surface-2); color:var(--text); }
+.qa-menu .menu { position:absolute; right:0; top:40px; z-index:60; min-width:232px; padding:6px;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.qa-menu .menu .menu-label { margin:4px 8px 3px; font-size:10px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
+/* No `display` here on purpose: this rule is (0,3,1) and would outrank the overflow
+   list's default-hidden rule below, leaking every item into the menu at every width. */
+.qa-menu .menu a, .qa-menu .menu > span:not(.sep) {
+  align-items:center; gap:9px; padding:7px 9px; border-radius:5px;
+  color:var(--text); font-size:13px; font-weight:550; text-decoration:none; }
+.qa-create .menu > a { display:flex; }
+.qa-menu .menu a:hover { background:var(--surface-2); }
+.qa-menu .menu a .qa-ico { color:var(--muted); flex:none; }
+/* No `display` for the same specificity reason as the item rule above; the tier that
+   reveals the create group turns it on. */
+.qa-menu .menu .sep { height:1px; background:var(--border); margin:5px 2px; padding:0; }
+.qa-menu .menu .is-unavailable { color:var(--muted); }
+.qa-menu .menu .is-unavailable em { margin-left:auto; font-style:normal; font-size:10.5px;
+  color:var(--muted); opacity:.8; }
+
+/* ---- priority+ overflow ----------------------------------------------------
+   Each collapsible control is in the bar AND in the overflow list. Only one copy is
+   ever displayed: `display:none` removes the other from the accessibility tree as well,
+   so nothing is announced twice. Items fold in reverse priority order — Quick Create
+   first, Inbox last — and the bar never wraps. */
+.qa-overflow { display:none; }
+.qa-overflow .menu > * { display:none; }
+
+@media (max-width:1280px) {   /* fold: Quick Create */
+  .qa-create { display:none; }
+  .qa-overflow { display:block; }
+  .qa-overflow .menu > .ov-create { display:flex; }
+  .qa-overflow .menu > .menu-label, .qa-overflow .menu > .sep { display:block; }
+}
+@media (max-width:1120px) {   /* + Alerts */
+  .qa-bar > .qa-alerts { display:none; }
+  .qa-overflow .menu > .ov-alerts { display:flex; }
+}
+@media (max-width:1000px) {   /* + My work */
+  .qa-bar > .qa-work { display:none; }
+  .qa-overflow .menu > .ov-work { display:flex; }
+}
+@media (max-width:900px) {    /* + Messages and Team chat; Inbox alone survives */
+  .qa-bar > .qa-messages, .qa-bar > .qa-chat { display:none; }
+  .qa-overflow .menu > .ov-messages, .qa-overflow .menu > .ov-chat { display:flex; }
+  .qa-bar { padding-right:6px; margin-right:0; }
+}
+
+/* ---- readiness meter ------------------------------------------------------
+   A native <progress> so the fill can be set from an attribute: the CSP drops a
+   style="width:N%", which is how a div-based bar would normally be driven. Sized
+   to sit inside a dense table row without adding height. */
+.meter { display:inline-flex; align-items:center; gap:8px; }
+.meter progress { appearance:none; -webkit-appearance:none; width:74px; height:5px;
+  border:0; border-radius:3px; background:var(--surface-3); display:block; }
+.meter progress::-webkit-progress-bar { background:var(--surface-3); border-radius:3px; }
+.meter progress::-webkit-progress-value { background:var(--accent); border-radius:3px; }
+.meter progress::-moz-progress-bar { background:var(--accent); border-radius:3px; }
+.meter .meter-val { font-family:var(--font-mono); font-size:11.5px; color:var(--muted);
+  font-variant-numeric:tabular-nums; min-width:34px; }
+.meter.is-full progress::-webkit-progress-value { background:var(--good); }
+.meter.is-full progress::-moz-progress-bar { background:var(--good); }
+.meter.is-full .meter-val { color:var(--good); }
+.meter.is-low progress::-webkit-progress-value { background:var(--warn); }
+.meter.is-low progress::-moz-progress-bar { background:var(--warn); }
+
+/* A `.section-title` nested directly inside a card is that card's OWN heading, not a
+   page section heading — but it was rendering at page-section scale with a 22px top
+   margin, so every card opened with an oversized title pushed away from its border.
+   42 of them across 9 templates, the client and household workspaces worst of all.
+   Matched to `.card-head` instead; the standalone `.section-title` between cards is
+   untouched. */
+.card > :is(h2,h3).section-title,
+.panel > :is(h2,h3).section-title {
+  margin:0 0 12px; font-size:13.5px; font-weight:660; letter-spacing:0; color:var(--text-2); }
+
+/* ---- lane cards -----------------------------------------------------------
+   A card that is entirely a link to one destination. The arrow is generated, so
+   the label never carries a literal "→" that a screen reader has to read out. */
+.lane { display:flex; flex-direction:column; gap:5px; text-decoration:none; color:inherit;
+  transition:background .1s ease, border-color .1s ease; }
+.lane:hover { background:var(--surface-2); border-color:var(--border-strong); }
+.lane .lane-label { font-size:13.5px; font-weight:660; color:var(--text);
+  display:flex; align-items:center; gap:6px; }
+.lane .lane-label::after { content:"→"; color:var(--accent); font-weight:700;
+  transition:transform .1s ease; }
+.lane:hover .lane-label::after { transform:translateX(2px); }
+.lane .lane-desc { font-size:12.5px; color:var(--muted); line-height:1.45; }
+
+/* ============================================================
+   UNDEFINED-CLASS ALIASES (Phase 5)
+   Three vocabularies that templates use but no loaded stylesheet defined, so the
+   markup rendered with NO styling at all on staff screens:
+
+     .table   — defined nowhere in the codebase.        12 templates
+     .banner  — only in work_queue.css, which base.html does not load.  14 templates
+     .pill    — only in portal.css, which the STAFF base does not load. 21 templates
+
+   Each is aliased to the design-system component it is the older name of. The
+   portal base loads main.css + portal.css only (never app.css), so `.pill` here
+   cannot collide with the client portal's own.
+   ============================================================ */
+
+/* `.table` == `table.data`. */
+table.table { width:100%; border-collapse:collapse; font-size:13.5px; }
+table.table th { text-align:left; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; padding:10px 14px; background:var(--surface-2);
+  border-bottom:1px solid var(--border); white-space:nowrap; }
+table.table td { padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
+table.table tr:last-child td { border-bottom:0; }
+table.table tbody tr:hover { background:var(--surface-2); }
+/* A bare `.table` is usually not wrapped, so it carries its own frame. */
+table.table { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.table-wrap > table.table { border:0; border-radius:0; }
+
+/* `.banner` == `.alert`. Both naming conventions are in use (`warn` / `banner-warn`,
+   `good` / `ok` / `banner-ok`, `err`), so all of them are mapped. */
+.banner { display:block; padding:11px 14px; border-radius:var(--radius); font-size:13.5px;
+  border:1px solid var(--border); background:var(--surface); color:var(--text);
+  margin:0 0 var(--s4); }
+.banner:is(.good, .ok, .banner-ok) { background:var(--good-soft); color:var(--good); border-color:transparent; }
+.banner:is(.warn, .banner-warn) { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+.banner:is(.err, .crit, .banner-err) { background:var(--crit-soft); color:var(--crit); border-color:transparent; }
+
+/* `.pill` == `.badge`, with the portal's four states on the semantic tokens. */
+.pill { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600;
+  padding:2px 9px; border-radius:999px; background:var(--surface-2); color:var(--text-2);
+  border:1px solid var(--border); white-space:nowrap; }
+.pill.ok { background:var(--good-soft); color:var(--good); border-color:transparent; }
+.pill.pending { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+.pill.review { background:var(--info-soft); color:var(--info); border-color:transparent; }
+.pill.stop { background:var(--crit-soft); color:var(--crit); border-color:transparent; }
+
+/* ---- Messages: thread list ------------------------------------------------
+   Filters read as filters, not as a row of primary buttons: seven `.btn`s in a
+   line all looked like actions, and the three groups (attention / status / topic)
+   were undifferentiated. */
+.msg-filters { display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin:0 0 var(--s4); }
+.msg-filter-group { display:flex; flex-wrap:wrap; gap:6px; }
+.msg-filter-sep { width:1px; align-self:stretch; min-height:22px; background:var(--border);
+  margin:0 4px; }
+/* An unread conversation is the one thing on this screen that needs finding. */
+.msg-table .unread-dot { display:block; width:7px; height:7px; border-radius:50%;
+  background:var(--accent); }
+.msg-table tr.is-unread td:nth-child(2) .rowlink { font-weight:700; }
+.msg-table td:first-child { width:22px; padding-right:0; }
+.msg-table .msg-open { text-align:right; white-space:nowrap; }
+
+/* ---- Messages: reply composer audience ------------------------------------
+   Only one of the two bands is ever shown, and which one follows the internal-note
+   checkbox through `:has()` - no script, and the warning cannot fall out of step
+   with the control. Without :has() support the client-facing band shows and the
+   checkbox still carries its own "not visible to the client" label, so the default
+   is the safe one either way. */
+.thread-reply-form .reply-audience-internal { display:none; }
+.thread-reply-form:has(#reply-internal:checked) .reply-audience-client { display:none; }
+.thread-reply-form:has(#reply-internal:checked) .reply-audience-internal { display:flex; }
+/* The whole composer follows, so the change is unmissable rather than a swapped line. */
+.thread-reply-form:has(#reply-internal:checked) { border-color:var(--warn); }
+.thread-reply-form:has(#reply-internal:checked) .btn { background:var(--warn); }
+.thread-reply-form:has(#reply-internal:checked) .btn:hover { filter:brightness(.94); }
+
+/* ============================================================
+   PLATFORM-PAGE PRIMITIVES (Phase 6)
+   Extracted from the eighteen near-identical */overview.html screens, where the
+   same four shapes were repeated as inline styles the CSP drops. These are
+   primitives, not per-page rules: each one replaces a pattern that recurred
+   across many templates.
+   ============================================================ */
+
+/* A filter bar whose controls are label-over-input `.field`s rather than bare
+   controls: they align on their baseline, and `.field`'s own stacking margin would
+   otherwise fight the bar's gap. */
+.filterbar .field { margin:0; }
+.filterbar:has(.field) { align-items:flex-end; }
+
+/* A card that is a disclosure — "New meeting", "New dashboard", "Start a
+   conversation". One definition; the two page-scoped copies that predated it
+   (`.c360-compose-summary`, `.thread-section-summary`) now resolve here. */
+.disclosure { margin-top:var(--s4); }
+.disclosure > summary,
+.c360-compose-summary,
+.thread-section-summary { cursor:pointer; font-weight:620; font-size:13.5px;
+  color:var(--text-2); list-style:none; display:flex; align-items:center; gap:7px; }
+.disclosure > summary::-webkit-details-marker { display:none; }
+.disclosure > summary::marker { content:""; }
+.disclosure > summary::before { content:"+"; font-family:var(--font-mono); color:var(--accent);
+  font-weight:700; }
+.disclosure[open] > summary::before { content:"−"; }
+.disclosure[open] > summary { margin-bottom:var(--s3); }
+
+/* The "N results" line that sits directly under a filter bar and belongs to it. */
+.result-count { margin:-4px 0 var(--s3); font-size:12.5px; color:var(--muted);
+  font-variant-numeric:tabular-nums; }
+
+/* ---- profile / definition list --------------------------------------------
+   `<dl>` is the right element for a record profile and was styled nowhere, so it
+   rendered as a browser-default indented list. Two columns, matching `.kv-grid`'s
+   label/value rhythm. */
+.kv-list { display:grid; grid-template-columns:minmax(120px,max-content) 1fr;
+  gap:0 var(--s4); margin:0; }
+.kv-list dt { padding:8px 0; font-size:13px; color:var(--text-2);
+  border-bottom:1px solid var(--border); }
+.kv-list dd { padding:8px 0; margin:0; font-size:13.5px; font-weight:620; color:var(--text);
+  border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
+.kv-list > :is(dt,dd):nth-last-child(-n+2) { border-bottom:0; }
+@media (max-width:520px) { .kv-list { grid-template-columns:1fr; gap:0; }
+  .kv-list dt { padding-bottom:0; border-bottom:0; } }
+
+/* ---- stacked label forms --------------------------------------------------
+   `<label>Caption <input></label>` inside a `.stack` form — six templates. The
+   caption and its control were running together on one line at body size. */
+form.stack > label { display:grid; gap:4px; font-size:12.5px; font-weight:620;
+  color:var(--text-2); }
+form.stack > label > :is(input,select,textarea) { font-weight:400; }
+/* A checkbox label is the exception: the control belongs beside its caption. */
+form.stack > label:has(> input[type="checkbox"]) { display:flex; align-items:center; gap:8px;
+  font-weight:520; }
+
+/* `.warning` — used by three templates, defined nowhere. Same object as `.alert.warn`. */
+.warning { display:block; padding:11px 14px; border-radius:var(--radius); font-size:13.5px;
+  background:var(--warn-soft); color:var(--warn); border:1px solid transparent; }
+
+/* ============================================================
+   SPACING + SHAPE UTILITIES (Phase 6)
+   The remaining CSP-dead inline styles are overwhelmingly ONE of a dozen shapes,
+   repeated hundreds of times: a margin nudge, a small type size, a justified row,
+   a tight list. Rather than lifting each occurrence into a page rule, they map
+   onto this small set, every value drawn from the existing --s / type tokens.
+
+   Prefer the component first — `.section` for a block's own rhythm, `.card-head`
+   for a card's title row, `.stack` for a run of siblings. These are for the
+   genuine one-off nudge that no component owns.
+   ============================================================ */
+
+/* margin scale, on the --s ladder */
+.m0 { margin:0 !important; }
+.mt-1 { margin-top:var(--s1); }   .mb-1 { margin-bottom:var(--s1); }
+.mt-2 { margin-top:var(--s2); }   .mb-2 { margin-bottom:var(--s2); }
+.mt-3 { margin-top:var(--s3); }   .mb-3 { margin-bottom:var(--s3); }
+.mt-4 { margin-top:var(--s4); }   .mb-4 { margin-bottom:var(--s4); }
+.mt-5 { margin-top:var(--s5); }   .mb-5 { margin-bottom:var(--s5); }
+
+/* type scale — the two sizes below `.subtle`'s 12px that templates kept asking for */
+.text-sm { font-size:12px; }
+.text-xs { font-size:11px; }
+.text-lg { font-size:15px; }
+/* A headline figure outside a `.stat` (scan results, counters). */
+.figure { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; line-height:1.15; display:block; }
+
+/* rows */
+.row.between { justify-content:space-between; }
+.row.wide { gap:var(--s3); }
+.row.tight { gap:var(--s2); }
+.inline { display:inline; }
+.scroll-x { overflow-x:auto; }
+
+/* A list inside a card: no browser margin, one indent step. */
+.list-tight { margin:0; padding-left:18px; }
+.list-tight li + li { margin-top:3px; }
+/* A list with no bullets at all. */
+.list-plain { margin:0; padding:0; list-style:none; }
+
+/* A card with the denser padding several screens were setting by hand. */
+.card.pad-sm { padding:12px 16px; }
+
+/* A bordered callout — an inline note stronger than `.subtle`, weaker than `.alert`.
+   Seven screens were drawing it by hand with a hardcoded 4px warn border. */
+.callout { padding:12px 15px; margin:0 0 var(--s3); border-radius:var(--radius);
+  border-left:3px solid var(--border-strong); background:var(--surface-2);
+  font-size:13px; color:var(--text-2); }
+.callout.warn { border-left-color:var(--warn); background:var(--warn-soft); color:var(--warn); }
+.callout.crit { border-left-color:var(--crit); background:var(--crit-soft); color:var(--crit); }
+.callout.info { border-left-color:var(--info); background:var(--info-soft); color:var(--info); }
+.callout > :first-child { margin-top:0; } .callout > :last-child { margin-bottom:0; }
+.mt-0 { margin-top:0; }  .mb-0 { margin-bottom:0; }
+/* A heading used as a figure/label inside a tile: tight vertical rhythm, not a page heading. */
+.tight { margin:2px 0; }
+/* A secondary link trailing a heading or label — smaller and lighter than the text it follows. */
+.link-sm { font-size:13px; font-weight:500; margin-left:8px; }
+
+/* ---- status rail on a card ------------------------------------------------
+   A card whose left edge carries a semantic colour — 21 uses across 7 screens,
+   each hand-drawn as a 4px `border-left` against `var(--ok)` / `var(--bg)`, two
+   tokens that do not exist, so they were falling back to hardcoded hex that
+   ignores the theme. Same left-rail device the active nav item, `.audience` and
+   `.signal` already use, at the system's 3px. */
+.card:is(.rail-good, .rail-warn, .rail-crit, .rail-neutral) {
+  border-left-width:3px; margin-bottom:var(--s3); }
+.card.rail-good    { border-left-color:var(--good); }
+.card.rail-warn    { border-left-color:var(--warn); }
+.card.rail-crit    { border-left-color:var(--crit); }
+.card.rail-neutral { border-left-color:var(--border-strong); }
+
+/* Semantic emphasis on a run of text — a status word inside a sentence or a
+   heading, where a `.badge` would be too heavy. */
+.text-good { color:var(--good); font-weight:620; }
+.text-warn { color:var(--warn); font-weight:620; }
+.text-crit { color:var(--crit); font-weight:620; }
+
+/* A responsive grid of equal cards — the auto-fill/200px shape five screens
+   were writing out by hand. `.cols-3` is the 260px sibling for wider content. */
+.card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr));
+  gap:var(--s3); align-items:start; }
+
+/* `.row` modifiers for the alignments templates kept setting inline. */
+.row.start { align-items:flex-start; }
+.row.grow > .grow { flex:1; min-width:0; }
+.grow { flex:1; min-width:0; }
+.grow-lg { flex:1; min-width:300px; }
+.nowrap { white-space:nowrap; }
+.semibold { font-weight:620; }
+/* A "details →" link at the foot of a stat tile. */
+.stat-link { display:inline-block; margin-top:6px; font-size:11.5px; font-weight:600;
+  color:var(--accent); text-decoration:none; }
+.stat-link:hover { text-decoration:underline; }
+.stat .v.muted-v { color:var(--muted); font-weight:500; }
+.row.end { align-items:flex-end; }
+/* A button sized for a table row, where `.btn.sm` (28px) still adds row height. */
+.btn.xs { height:24px; padding:0 9px; font-size:11.5px; }
+/* Page sub-navigation: a row of destination links directly under the page head. */
+.subnav { margin:-4px 0 var(--s4); }
+.subnav .rowlink { font-size:12.5px; }
+/* A count trailing a badge label. */
+.badge strong { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-weight:700;
+  margin-left:1px; }
+
+/* `.stat` written with `.label`/`.value` instead of `.k`/`.v` — 39 tiles across the six
+   insurance screens, none of which had any styling because neither selector exists.
+   Aliased rather than churning the markup; `.k`/`.v` remain the canonical names. */
+.stat > .label { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.stat > .value { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em;
+  margin-top:6px; font-variant-numeric:tabular-nums; overflow-wrap:break-word; }

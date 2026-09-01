@@ -15,16 +15,16 @@
   <div class="detail-row"><span class="subtle">Document</span>
     <strong>#{{ doc.id }} · {{ doc.name }}</strong></div>
   <div class="detail-row"><span class="subtle">Current owner</span><span>{{ doc.current_owner }}</span></div>
-  <p style="margin:6px 0">
+  <p class="tight">
     <a class="btn sm secondary" href="{{ doc.view_url }}" target="_blank" rel="noopener">View ↗</a>
     <a class="btn sm secondary" href="{{ doc.download_url }}">Download</a>
   </p>
   {% endif %}
 
-  <div style="margin-top:8px"><span class="subtle">PROPOSED OWNER</span>
+  <div class="mt-2"><span class="subtle">PROPOSED OWNER</span>
   {% if destination.kind == "person" %}
     <div><strong>{% if destination.is_business %}Business Contact{% else %}Person{% endif %} #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
-      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open record ↗</a></div>
+      <a class="btn sm secondary link-sm" href="{{ destination.link }}" target="_blank" rel="noopener">Open record ↗</a></div>
     <div class="subtle">
       {% if destination.contact_type %}contact_type: {{ destination.contact_type }} · {% endif %}
       {% if destination.email %}{{ destination.email }} · {% endif %}
@@ -33,24 +33,24 @@
     </div>
   {% elif destination.kind == "household" %}
     <div><strong>Household #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
-      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open household ↗</a></div>
+      <a class="btn sm secondary link-sm" href="{{ destination.link }}" target="_blank" rel="noopener">Open household ↗</a></div>
     <div class="subtle">Members: {% for m in destination.members %}{{ m }}{% if not loop.last %}, {% endif %}{% else %}(none listed){% endfor %}</div>
   {% elif destination.kind == "organization" %}
     <div><strong>Organization #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
-      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open organization ↗</a></div>
+      <a class="btn sm secondary link-sm" href="{{ destination.link }}" target="_blank" rel="noopener">Open organization ↗</a></div>
     <div class="subtle">Entity type: {{ destination.entity_type or "—" }}</div>
   {% endif %}
   </div>
 
   {% if preview.would_assign %}
-  <form method="post" action="/admin/documents/unassigned/resolve-document" style="margin-top:14px">
+  <form class="mt-4" method="post" action="/admin/documents/unassigned/resolve-document">
     <input type="hidden" name="document_id" value="{{ document_id }}">
     <input type="hidden" name="entity_type" value="{{ entity_type }}">
     <input type="hidden" name="entity_id" value="{{ entity_id }}">
     <input type="hidden" name="folder" value="{{ folder }}">
     <input type="hidden" name="confirm" value="yes">
     <button class="btn" type="submit">Confirm — assign this document to {{ destination.name or (entity_type ~ " #" ~ entity_id) }}</button>
-    <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}" style="margin-left:8px">Cancel</a>
+    <a class="btn secondary link-sm" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Cancel</a>
   </form>
   {% elif preview.reason == "already_owned" %}
   <p class="subtle" style="margin-top:14px; color:var(--muted, #6b7280)">This document is already owned and will not be changed.</p>
@@ -59,7 +59,7 @@
   <p class="subtle" style="margin-top:14px; color:var(--warn, #b45309)">This is a protected permanent-reject document and cannot be assigned.</p>
   <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
   {% else %}
-  <p class="subtle" style="margin-top:14px">This document is no longer eligible for assignment.</p>
+  <p class="subtle mt-4">This document is no longer eligible for assignment.</p>
   <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
   {% endif %}
 </article>

@@ -10,7 +10,7 @@
     candidates can be applied, one business at a time. Ownership percentages are never inferred.</p>
 </header>
 
-{% if notice %}<div class="card" style="margin-bottom:12px"><strong>{{ notice }}</strong></div>{% endif %}
+{% if notice %}<div class="card mb-3"><strong>{{ notice }}</strong></div>{% endif %}
 
 <section class="card">
   <h2 class="section-title">Buckets</h2>
@@ -20,7 +20,7 @@
     <tr><td>{{ b }}</td><td>{{ summary[b] }}</td></tr>
     {% endfor %}
   </tbody></table>
-  <p class="subtle" style="margin-top:8px">
+  <p class="subtle mt-2">
     {{ summary.businesses_evaluated }} evaluated ·
     {{ summary.explicit_owner_matches }} explicit-ownership titles ·
     {{ summary.officer_management_associations }} officer/management (association only) ·
@@ -43,7 +43,7 @@
         {% else %}{{ ui.badge("not applied") }}{% endif %}</span>
     </div>
 
-    <table style="margin-top:6px"><thead>
+    <table class="mt-2"><thead>
       <tr><th>Proposed owner (canonical)</th><th>Title</th><th>Evidence company</th><th>Identity</th><th>State</th></tr>
     </thead><tbody>
       {% for o in c.owners %}
@@ -60,27 +60,27 @@
     </tbody></table>
 
     {% for r in c.reconciliations %}
-    <div class="subtle" style="margin:4px 0">Reconciliation: stale #{{ r.stale_person_id }}
+    <div class="subtle tight">Reconciliation: stale #{{ r.stale_person_id }}
       ({{ r.stale_name }}) → canonical #{{ r.canonical_person_id }} ({{ r.canonical_name }})
       [{{ r.reason }}] — ownership is written to the canonical person only; the stale record is not
       modified.</div>
     {% endfor %}
 
     {% for h in c.household_associations %}
-    <div class="subtle" style="margin:4px 0">Household:
+    <div class="subtle tight">Household:
       <a href="/client/household/{{ h.household_id }}">{{ h.household_name }}</a>
       (#{{ h.household_id }}, document co-ownership {{ h.doc_coownership_count }})</div>
     {% endfor %}
 
-    {% for n in c.notes %}<div class="subtle" style="margin:4px 0">Note: {{ n }}</div>{% endfor %}
+    {% for n in c.notes %}<div class="subtle tight">Note: {{ n }}</div>{% endfor %}
 
-    <form method="post" action="/admin/business-resolution/{{ c.business_id }}/apply"
-          style="margin-top:8px">
+    <form class="mt-2" method="post" action="/admin/business-resolution/{{ c.business_id }}/apply"
+     >
       <input type="hidden" name="confirm" value="yes">
       <button class="btn{% if c.applied_state == 'applied' %} sm secondary{% endif %}" type="submit">
         {% if c.applied_state == "applied" %}Re-apply (idempotent){% else %}Apply ownership{% endif %}
       </button>
-      <span class="subtle" style="margin-left:8px">evidence_source: {{ evidence_source }}</span>
+      <span class="subtle link-sm">evidence_source: {{ evidence_source }}</span>
     </form>
   </div>
   {% endfor %}

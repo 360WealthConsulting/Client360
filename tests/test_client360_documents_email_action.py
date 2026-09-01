@@ -227,8 +227,12 @@ def test_rendering_the_tab_mutates_nothing():
 # position:fixed, which escapes ancestor overflow. These pin the contract that fix depends on.
 
 def _assets():
+    # `.rowmenu` moved to app.css in Phase 3 (the workspace identity header reuses the
+    # same disclosure on surfaces that never load client360.css). Both sheets are read
+    # so these assertions pin the RULE, not the file it happens to live in.
     import pathlib
-    return (pathlib.Path("app/static/css/client360.css").read_text(encoding="utf-8"),
+    return ("\n".join(pathlib.Path(f).read_text(encoding="utf-8") for f in
+                      ("app/static/css/app.css", "app/static/css/client360.css")),
             pathlib.Path("app/static/js/documents.js").read_text(encoding="utf-8"))
 
 

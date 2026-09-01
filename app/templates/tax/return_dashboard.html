@@ -1,4 +1,69 @@
-{% extends "base.html" %}{% block title %}Tax {{ view }} | 360Plus{% endblock %}{% block content %}<div class="page-header"><div><p class="eyebrow">Tax Production</p><h1>{{ view }} dashboard</h1><p class="muted">Authorized return lifecycle, review, filing, and velocity intelligence.</p></div></div>
-<div class="stats-grid">{% for label,value in data.metrics.items() %}<div class="stat-card"><span>{{ label.replace('_',' ')|title }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>
-<section class="panel"><h2>Returns by status</h2><div class="stats-grid">{% for label,value in data.by_status.items() %}{% if value %}<div class="stat-card"><span>{{ label.replace('_',' ')|title }}</span><strong>{{ value }}</strong></div>{% endif %}{% endfor %}</div></section>
-<section class="panel"><h2>Production work</h2><div class="table-wrap"><table><thead><tr><th>Return</th><th>Client</th><th>Contact</th><th>Status</th><th>Filing</th><th>Preparer</th><th>Entered</th></tr></thead><tbody>{% for item in data['items'] %}<tr><td>#{{ item.id }}</td><td>{% if item.taxpayer_person_id %}<a href="/people/{{ item.taxpayer_person_id }}">{{ item.taxpayer_name or '—' }}</a>{% else %}{{ item.taxpayer_name or '—' }}{% endif %}</td><td>{% if item.taxpayer_phone %}<a href="tel:{{ item.taxpayer_phone }}">{{ item.taxpayer_phone }}</a>{% endif %}{% if item.taxpayer_phone and item.taxpayer_email %} &middot; {% endif %}{% if item.taxpayer_email %}<a href="mailto:{{ item.taxpayer_email }}">{{ item.taxpayer_email }}</a>{% endif %}</td><td>{{ item.status.replace('_',' ') }}</td><td>{{ item.filing_status }}</td><td>{{ item.assignee_user_id or 'Unassigned' }}</td><td>{{ item.status_entered_at }}</td></tr>{% else %}<tr><td colspan="7">No authorized returns.</td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Tax {{ view }} | 360Plus{% endblock %}
+{% block crumb %}{{ view }}{% endblock %}
+{% block content %}
+{# Presentation only. Every field, link and gate is the one that was here before; what
+   changes is that the values are formatted for reading rather than dumped raw - the
+   "Entered" column was printing `2026-08-04 22:26:28.038244-04:00`, microseconds and
+   UTC offset included, in the widest column on the page. #}
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Tax Production</p>
+    <h1>{{ view }} dashboard</h1>
+    <p class="muted">Authorized return lifecycle, review, filing, and velocity intelligence.</p>
+  </div>
+</div>
+
+<div class="stats-grid">
+  {% for label, value in data.metrics.items() %}
+  <div class="stat-card"><span>{{ label.replace('_',' ')|title }}</span><strong>{{ value }}</strong></div>
+  {% endfor %}
+</div>
+
+{# A status breakdown is a handful of small counts, and only the non-zero ones render.
+   `.pack` stops one surviving tile from stretching the full width of the card. #}
+<section class="panel">
+  <h2>Returns by status</h2>
+  {% if data.by_status.values() | select | list %}
+  <div class="stats-grid pack">
+    {% for label, value in data.by_status.items() %}{% if value %}
+    <div class="stat-card"><span>{{ label.replace('_',' ')|title }}</span><strong>{{ value }}</strong></div>
+    {% endif %}{% endfor %}
+  </div>
+  {% else %}<p class="muted">No returns in any status.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Production work</h2>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Return</th><th>Client</th><th>Contact</th><th>Status</th>
+      <th>Filing</th><th>Preparer</th><th>Entered</th>
+    </tr></thead>
+    <tbody>
+    {% for item in data['items'] %}
+      <tr>
+        <td><span class="id-mono">#{{ item.id }}</span></td>
+        <td>{% if item.taxpayer_person_id %}<a href="/people/{{ item.taxpayer_person_id }}">{{ item.taxpayer_name or '—' }}</a>{% else %}{{ item.taxpayer_name or '—' }}{% endif %}</td>
+        <td>
+          {% if item.taxpayer_phone %}<a href="tel:{{ item.taxpayer_phone }}">{{ item.taxpayer_phone }}</a>{% endif %}
+          {%- if item.taxpayer_phone and item.taxpayer_email %} <span class="muted">·</span> {% endif %}
+          {%- if item.taxpayer_email %}<a href="mailto:{{ item.taxpayer_email }}">{{ item.taxpayer_email }}</a>{% endif %}
+          {%- if not item.taxpayer_phone and not item.taxpayer_email %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td><span class="status-pill">{{ item.status.replace('_',' ') }}</span></td>
+        <td><span class="status-pill">{{ item.filing_status }}</span></td>
+        <td>{% if item.assignee_user_id %}<span class="id-mono">#{{ item.assignee_user_id }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
+        {# Formatted inline rather than through the `humandt` filter: that filter is
+           registered on app.templating.templates, and the tax routes build their own
+           Jinja2Templates instance, so it is not available here. The guard keeps the
+           cell correct whether the value arrives as a datetime, a string, or None. #}
+        <td><span class="id-mono">{% if item.status_entered_at is none %}<span class="muted">—</span>{% elif item.status_entered_at is string %}{{ item.status_entered_at[:16] }}{% else %}{{ item.status_entered_at.strftime("%b %d, %Y %I:%M %p") }}{% endif %}</span></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7"><span class="muted">No authorized returns.</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

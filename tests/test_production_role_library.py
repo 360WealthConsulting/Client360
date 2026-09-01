@@ -18,6 +18,8 @@ from app.security.role_library import (
     EXISTING_PROFILES,
     FORBIDDEN_FOR_NEW_PROFILES,
     NEW_PROFILES,
+    POST_SEED_GRANTS,
+    effective_capabilities,
 )
 
 
@@ -66,12 +68,34 @@ def test_all_fourteen_profiles_exist_and_active():
 
 @pytest.mark.parametrize("code", sorted(NEW_PROFILES))
 def test_new_profile_has_exactly_its_intended_capabilities(code):
-    expected = set(NEW_PROFILES[code][2])
+    # NEW_PROFILES is what prodrolelib01 seeds; POST_SEED_GRANTS is what later migrations add to a
+    # library profile (a capability created after the library was seeded cannot be named in
+    # NEW_PROFILES - prodrolelib01 hard-fails on any capability missing from the catalogue at its
+    # point in history). The seeded role must equal exactly their union: still an exact-set
+    # assertion, so an unrecorded grant anywhere still fails.
+    expected = set(effective_capabilities(code))
     assert _role_caps(code) == expected, code
     # Every referenced capability is a real catalogue entry (no typos / invented caps).
     with engine.connect() as c:
         known = set(c.scalars(select(capabilities.c.code).where(capabilities.c.code.in_(list(expected)))))
     assert expected <= known
+
+
+def test_post_seed_grants_are_declared_for_real_profiles_and_add_something_new():
+    """Guards the escape hatch: it may only extend existing NEW_PROFILES entries, and may not
+    restate a capability the profile is already seeded with (which would hide a drift)."""
+    for code, granted in POST_SEED_GRANTS.items():
+        assert code in NEW_PROFILES, code
+        assert granted, code
+        assert not (granted & set(NEW_PROFILES[code][2])), code
+
+
+def test_post_seed_grants_hold_no_forbidden_capability():
+    """The least-privilege ceiling applies to post-seed grants exactly as it does to NEW_PROFILES,
+    so the escape hatch cannot be used to slip a profile past FORBIDDEN_FOR_NEW_PROFILES."""
+    for code, granted in POST_SEED_GRANTS.items():
+        assert not (granted & FORBIDDEN_FOR_NEW_PROFILES), code
+        assert not (granted & ADMINISTRATOR_ONLY), code
 
 
 @pytest.mark.parametrize("code", sorted(EXISTING_PROFILES))
@@ -93,25 +117,28 @@ def test_advisor_has_firm_wide_read_but_not_firm_wide_write():
 
 # --- effective permissions are the union of assigned profiles -----------------
 
+# `effective_capabilities` = what a profile holds once post-seed migrations have run, so these
+# stay exact-set assertions of the real union rather than being loosened to a subset check.
+
 def test_effective_permissions_are_union_jessica(make_user):
     # Jessica = Accounting + Payroll + Tax Staff
     uid = make_user(["accounting", "payroll", "tax_staff"])
-    expected = (set(NEW_PROFILES["accounting"][2]) | set(NEW_PROFILES["payroll"][2])
-                | set(NEW_PROFILES["tax_staff"][2]))
+    expected = (effective_capabilities("accounting") | effective_capabilities("payroll")
+                | effective_capabilities("tax_staff"))
     assert resolve_capabilities(uid) == expected
 
 
 def test_effective_permissions_are_union_lauren(make_user):
     # Lauren = Senior Tax + Client Service
     uid = make_user(["senior_tax", "client_service"])
-    expected = set(NEW_PROFILES["senior_tax"][2]) | set(NEW_PROFILES["client_service"][2])
+    expected = effective_capabilities("senior_tax") | effective_capabilities("client_service")
     assert resolve_capabilities(uid) == expected
 
 
 def test_single_profile_resolves_to_that_profile(make_user):
     # Sarah = Tax Staff (single profile still works — backward compatible)
     uid = make_user(["tax_staff"])
-    assert resolve_capabilities(uid) == set(NEW_PROFILES["tax_staff"][2])
+    assert resolve_capabilities(uid) == effective_capabilities("tax_staff")
 
 
 def test_adding_a_profile_only_adds_capabilities(make_user):

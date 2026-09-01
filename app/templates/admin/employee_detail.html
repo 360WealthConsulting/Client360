@@ -14,7 +14,7 @@
 
 <div class="row" style="gap:14px; align-items:flex-start; flex-wrap:wrap">
 {# --- Identity + status (stacked, full-width forms: usable on a phone) --- #}
-<article class="card" style="flex:1; min-width:300px">
+<article class="card grow-lg">
   <h2 class="section-title">Identity &amp; account</h2>
   <div class="detail-row"><span>Account status</span><strong>{{ ui.badge(u.status, {"active":"","invited":"warn","disabled":"warn"}.get(u.status,"")) }}</strong></div>
   <div class="detail-row"><span>Entra identity</span><strong>{{ "linked" if d.entra_linked else "not mapped (auto-links on first sign-in)" }}</strong></div>
@@ -33,7 +33,7 @@
   {% if is_last_admin %}<p class="subtle">This is the final active administrator — deactivation is blocked.</p>{% endif %}
 
   <h3 style="margin:12px 0 6px">Correct email / map Microsoft identity</h3>
-  <form method="post" action="/admin/employees/{{ u.id }}/identity" class="stack" style="gap:8px">
+  <form method="post" action="/admin/employees/{{ u.id }}/identity" class="stack tight">
     <label class="field"><span>Work email</span><input class="input" type="email" name="email" value="{{ u.email }}"></label>
     <label class="field"><span>Entra subject/object id (optional — usually auto-linked at first sign-in)</span><input class="input" type="text" name="auth_subject" placeholder="leave blank to keep"></label>
     <button class="btn secondary" type="submit">Save identity</button>
@@ -41,7 +41,7 @@
 </article>
 
 {# --- Access profiles (multi-select) --- #}
-<article class="card" style="flex:1; min-width:300px">
+<article class="card grow-lg">
   <h2 class="section-title">Access profiles</h2>
   <p class="subtle">An employee can hold several profiles at once — effective permissions are the
     <strong>union</strong> of every checked profile (shown below). Check or uncheck, then save.</p>
@@ -60,7 +60,7 @@
         </span>
       </label>
     {% else %}{% call ui.empty("No assignable profiles") %}{% endcall %}{% endfor %}
-    <button class="btn" type="submit" style="margin-top:10px">Save access profiles</button>
+    <button class="btn mt-3" type="submit">Save access profiles</button>
   </form>
   <p class="subtle">You can only grant a profile whose capabilities you already hold. Changes are
     audited per profile; the final active administrator cannot lose the administrator profile.</p>
@@ -73,12 +73,12 @@
   <div class="row" style="gap:14px; flex-wrap:wrap">
     {% for area, caps in d.effective_capabilities.items() %}
     <div style="flex:1; min-width:220px">
-      <h3 style="margin:6px 0">{{ area }}</h3>
+      <h3 class="tight">{{ area }}</h3>
       <div class="stack">{% for c in caps %}<span class="pill">{{ c }}</span>{% endfor %}</div>
     </div>
     {% else %}<div>{% call ui.empty("No capabilities", "Assign a role to grant access.") %}{% endcall %}</div>{% endfor %}
   </div>
-  <div class="detail-row" style="margin-top:10px"><span>Record scope</span><strong>{{ "Firm-wide (record.read_all)" if d.record_scope.firm_wide else (d.record_scope.person_count ~ " reachable client record(s)") }}</strong></div>
+  <div class="detail-row mt-3"><span>Record scope</span><strong>{{ "Firm-wide (record.read_all)" if d.record_scope.firm_wide else (d.record_scope.person_count ~ " reachable client record(s)") }}</strong></div>
 </article>
 
 <article class="card">

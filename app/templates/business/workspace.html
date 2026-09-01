@@ -69,7 +69,7 @@
     {% for d in ws.documents %}
     {# Email reuses the EXISTING /documents/{id}/email compose route; canonical rows only, and only
        for a principal holding the same communications.send capability the route enforces. #}
-    <tr><td><a href="{{ d.download_url }}">{{ d.name }}</a></td><td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form method="post" action="/business/{{ ws.id }}/documents/{{ d.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}</td></tr>
+    <tr><td><a href="{{ d.download_url }}">{{ d.name }}</a></td><td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form class="inline" method="post" action="/business/{{ ws.id }}/documents/{{ d.id }}/delete"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}</td></tr>
     {% endfor %}
   </tbody></table>
   {% else %}{% call ui.empty("No documents", "No documents are assigned to this business.") %}{% endcall %}{% endif %}

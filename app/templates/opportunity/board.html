@@ -9,19 +9,19 @@
   {% if can_report %}<a class="rowlink" href="/opportunities/reports">Pipeline reports →</a>{% endif %}
 </div>
 
-<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
-  <div class="field" style="margin:0"><label for="q">Search</label>
+<form method="get" class="card filterbar">
+  <div class="field m0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="title"></div>
-  <div class="field" style="margin:0"><label for="stage_id">Stage</label>
+  <div class="field m0"><label for="stage_id">Stage</label>
     <select class="input" id="stage_id" name="stage_id"><option value="">All</option>
       {% for s in stages %}<option value="{{ s.id }}" {% if filters.stage_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
-  <div class="field" style="margin:0"><label for="status">Status</label>
+  <div class="field m0"><label for="status">Status</label>
     <select class="input" id="status" name="status"><option value="">All</option>
       {% for st in ["open","won","lost","dormant","cancelled"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
   <div><button class="btn" type="submit">Apply</button></div>
 </form>
 
-<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} opportunit{{ "y" if result.total == 1 else "ies" }}{% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+<p class="subtle result-count">{{ result.total }} opportunit{{ "y" if result.total == 1 else "ies" }}{% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
 
 {% if result.rows %}
 <div class="table-wrap"><table class="data">
@@ -42,11 +42,11 @@
 {% else %}{% call ui.empty("No opportunities", "No opportunities match the current filters.") %}{% endcall %}{% endif %}
 
 {% if can_edit %}
-<details class="card" style="margin-top:16px">
-  <summary style="cursor:pointer; font-weight:640">New opportunity</summary>
-  <form method="post" action="/opportunities" style="margin-top:12px">
+<details class="card mt-4">
+  <summary>New opportunity</summary>
+  <form class="mt-3" method="post" action="/opportunities">
     <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+    <div class="card-grid">
       <div class="field"><label for="person_id">Target person id</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
       <div class="field"><label for="organization_id">Target org id</label><input class="input" id="organization_id" name="organization_id" inputmode="numeric"></div>
       <div class="field"><label for="primary_service_line">Service line</label><input class="input" id="primary_service_line" name="primary_service_line"></div>
@@ -54,7 +54,7 @@
       <div class="field"><label for="expected_revenue">Expected revenue</label><input class="input" id="expected_revenue" name="expected_revenue" inputmode="decimal"></div>
       <div class="field"><label for="expected_close_date">Expected close</label><input class="input" id="expected_close_date" name="expected_close_date" type="date"></div>
     </div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Create opportunity</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Create opportunity</button></div>
   </form>
 </details>
 {% endif %}

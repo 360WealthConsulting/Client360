@@ -55,7 +55,11 @@ def test_review_inbox_route_is_capability_gated():
 def test_review_inbox_template_renders_lanes_and_counts():
     html = open("app/templates/admin/review_inbox.html", encoding="utf-8").read()
     assert "{% for lane in lanes %}" in html and 'href="{{ lane.url }}"' in html   # links every lane by data
-    assert "{{ unassigned_documents }}" in html and "{{ ocr.completed }}" in html   # backlog + OCR counts
+    # The same context values, now rendered through ui.stat with thousands separators
+    # rather than interpolated bare, so the assertion is on the BINDING not the syntax.
+    for name in ("unassigned_documents", "ocr.completed", "ocr.pending",
+                 "ocr.failed", "ocr.timed_out", "total_documents"):
+        assert name in html, name
 
 
 def test_review_inbox_mounted():

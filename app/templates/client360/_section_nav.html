@@ -9,19 +9,48 @@
    present in its own ws.section_keys, so the two stay consistent while remaining correctly gated
    (a section the principal cannot open is absent — no shown-then-403). Any section not explicitly
    grouped still appears under "More", so nothing is ever hidden. #}
+{# Phase 3 tab model. The groups are the client domains a person actually thinks in,
+   rather than the order the sections were built in. Messages (staff <-> client) and
+   Internal (staff-only) are deliberately SEPARATE top-level tabs: they were both
+   buried inside "Overview" next to each other, distinguished only by the grey word
+   "internal" in one heading.
+
+   Planning and Billing are absent on purpose - no section backs them yet, and a tab
+   that opens onto nothing is worse than no tab.
+
+   "Internal" is the `notes` section: a staff note log, which is what exists.
+
+   EVERY key in a headline group below has a renderer in at least one of the two
+   workspace templates. The rest are composed by the services but have no renderer and
+   fall through to "No renderer for this section", so they stay in "More". Eleven of
+   them were reachable as subtabs of a real tab before this - `knowledge` and
+   `document_intelligence` under Documents, `recommendations` and `automation_history`
+   under Tasks, `risk_controls` and `evidence_readiness` under Compliance, and so on -
+   which is how a Documents tab came to offer four sub-sections where only two open
+   onto anything. Nothing is hidden: More still lists them all. #}
 {% set groups_def = [
-    ("Overview",   ["dashboard","summary","members","relationships","messages","timeline","notes","audit"]),
-    ("Financial",  ["financial","insurance","benefits","opportunities"]),
+    ("Overview",   ["dashboard","summary"]),
+    ("People",     ["members","relationships"]),
+    ("Wealth",     ["financial","insurance","benefits","opportunities"]),
     ("Tax",        ["tax","work"]),
-    ("Documents",  ["documents","vault","knowledge","communications","document_intelligence"]),
-    ("Tasks",      ["tasks","operational_workload","recommendations","automation_history"]),
-    ("Meetings",   ["meetings"]),
-    ("Compliance", ["compliance","compliance_summary","risk_controls","evidence_readiness"]),
-    ("More",       ["executive","business_continuity","technology_dependencies","operational_impact",
-                    "security_access","servicing_team","change_impact","platform_dependencies",
-                    "data_governance","data_governance_metadata","financial_relationship",
-                    "knowledge_documentation","external_integrations","authorization_context"]),
+    ("Documents",  ["documents","vault"]),
+    ("Work",       ["tasks","meetings"]),
+    ("Messages",   ["messages"]),
+    ("Internal",   ["notes"]),
+    ("Compliance", ["compliance","audit"]),
+    ("Activity",   ["timeline"]),
+    ("More",       ["executive","communications","servicing_team","financial_relationship",
+                    "knowledge","document_intelligence","knowledge_documentation",
+                    "operational_workload","recommendations","automation_history",
+                    "compliance_summary","risk_controls","evidence_readiness",
+                    "business_continuity","technology_dependencies","operational_impact",
+                    "change_impact","platform_dependencies","security_access",
+                    "data_governance","data_governance_metadata",
+                    "external_integrations","authorization_context"]),
 ] %}
+{# Audience marker classes for the two communication tabs (see `.c360-tab--aud`). #}
+{% set aud_class = {"Messages": " c360-tab--aud c360-tab--client",
+                    "Internal": " c360-tab--aud c360-tab--internal"} %}
 {% set gk = namespace(all=[]) %}
 {% for _l, keys in groups_def %}{% for k in keys %}{% set _ = gk.all.append(k) %}{% endfor %}{% endfor %}
 {% set nav = namespace(groups=[], active_group="", active_subs=[]) %}
@@ -36,7 +65,7 @@
 
 <nav class="c360-tabs" aria-label="Sections">
   {% for lbl, subs in nav.groups %}
-    <a class="c360-tab {% if lbl == nav.active_group %}active{% endif %}" href="{{ base }}?tab={{ subs[0] }}">{{ lbl }}</a>
+    <a class="c360-tab{{ aud_class.get(lbl, "") }} {% if lbl == nav.active_group %}active{% endif %}" href="{{ base }}?tab={{ subs[0] }}">{{ lbl }}</a>
   {% endfor %}
 </nav>
 {% if nav.active_subs | length > 1 %}

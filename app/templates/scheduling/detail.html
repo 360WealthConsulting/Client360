@@ -4,12 +4,12 @@
 {% block crumb %}<a href="/scheduling">Scheduling</a> / {{ m.subject }}{% endblock %}
 {% block content %}
 {{ ui.page_head(m.subject, eyebrow=m.meeting_type|replace("_"," "), desc=(m.category ~ " · " ~ m.location_type)) }}
-<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
-  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(m.status|replace("_"," ")|capitalize, 'good' if m.status in ['scheduled','confirmed','completed'] else '') }}</div>
-  <div><div class="subtle" style="font-size:12px">Starts</div><div>{{ m.starts_at.strftime('%Y-%m-%d %H:%M') if m.starts_at else '—' }}</div></div>
-  <div><div class="subtle" style="font-size:12px">Ends</div><div>{{ m.ends_at.strftime('%Y-%m-%d %H:%M') if m.ends_at else '—' }}</div></div>
-  <div><div class="subtle" style="font-size:12px">Location</div><div>{{ m.location or m.location_type }}</div></div>
-  <div><div class="subtle" style="font-size:12px">Attendees</div><div>{{ m.attendees|length }}</div></div>
+<section class="card filterbar">
+  <div><div class="subtle text-sm">Status</div>{{ ui.badge(m.status|replace("_"," ")|capitalize, 'good' if m.status in ['scheduled','confirmed','completed'] else '') }}</div>
+  <div><div class="subtle text-sm">Starts</div><div>{{ m.starts_at.strftime('%Y-%m-%d %H:%M') if m.starts_at else '—' }}</div></div>
+  <div><div class="subtle text-sm">Ends</div><div>{{ m.ends_at.strftime('%Y-%m-%d %H:%M') if m.ends_at else '—' }}</div></div>
+  <div><div class="subtle text-sm">Location</div><div>{{ m.location or m.location_type }}</div></div>
+  <div><div class="subtle text-sm">Attendees</div><div>{{ m.attendees|length }}</div></div>
   {% if can_manage and m.status in ['scheduled','confirmed','checked_in'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
     <form method="post" action="/scheduling/{{ m.id }}/confirm"><button class="btn btn-ghost" type="submit">Confirm</button></form>
     <form method="post" action="/scheduling/{{ m.id }}/checkin"><button class="btn btn-ghost" type="submit">Check in</button></form>
@@ -37,19 +37,19 @@
 </section>{% endif %}
 
 {% if can_manage and m.status not in ['completed','cancelled','no_show'] %}
-<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add attendee</summary>
-  <form method="post" action="/scheduling/{{ m.id }}/attendees" style="margin-top:12px">
+<details class="card mt-4"><summary>Add attendee</summary>
+  <form class="mt-3" method="post" action="/scheduling/{{ m.id }}/attendees">
     <div class="field"><label for="attendee_ref">Attendee (email or person id)</label><input class="input" id="attendee_ref" name="attendee_ref" required></div>
     <div class="field"><label for="attendee_role">Role</label>
       <select class="input" id="attendee_role" name="attendee_role">{% for r in ["required","optional","organizer","resource"] %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Add</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Add</button></div>
   </form>
 </details>
-<details class="card" style="margin-top:10px"><summary style="cursor:pointer; font-weight:640">Record outcome</summary>
-  <form method="post" action="/scheduling/{{ m.id }}/outcome" style="margin-top:12px">
+<details class="card mt-3"><summary>Record outcome</summary>
+  <form class="mt-3" method="post" action="/scheduling/{{ m.id }}/outcome">
     <div class="field"><label for="outcome">Outcome summary</label><input class="input" id="outcome" name="outcome"></div>
     <div class="field"><label for="outcome_notes">Notes</label><textarea class="input" id="outcome_notes" name="outcome_notes" rows="3"></textarea></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Save &amp; complete</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Save &amp; complete</button></div>
   </form>
 </details>{% endif %}
 {% endblock %}

@@ -7,43 +7,66 @@
 
 {% include "partials/exception_summary.html" %}
 
-{# Firm-wide financial aggregates are gated server-side: the values are absent from the context unless the
-   viewer holds portfolio.firm_metrics, and show_firm_metrics drives whether the section renders at all.
-   The whole "Book of business" section is omitted for unauthorized viewers (never shown as $0). #}
-{% if show_firm_metrics %}
-<h2 class="section-title">Book of business</h2>
-<div class="stat-grid">
-  {{ ui.stat("Cash waiting to invest", "${:,.0f}".format(dashboard.cash_waiting or 0)) }}
-  {{ ui.stat("Largest household", dashboard.largest_household.name if dashboard.largest_household else "—") }}
-  {{ ui.stat("Largest position", dashboard.largest_position.symbol if dashboard.largest_position else "—") }}
-  {{ ui.stat("Missing beneficiaries", dashboard.missing_beneficiaries, delta="needs review" if dashboard.missing_beneficiaries else "clear", trend="down" if dashboard.missing_beneficiaries else "up") }}
-  {{ ui.stat("Accounts without reviews", dashboard.accounts_without_reviews, delta="follow up" if dashboard.accounts_without_reviews else "clear", trend="down" if dashboard.accounts_without_reviews else "up") }}
-</div>
-{% endif %}
+{# Book of business and the activity feed carry the reading weight; the record counts
+   are four integers and belong in the rail as four lines, not four full-width cards.
+   `.cols-2.aside-right` is the existing 2fr/1fr split from app.css and collapses to a
+   single column under 820px on its own. #}
+<div class="cols-2 aside-right">
+  <div class="stack-lg">
 
-<h2 class="section-title">Records</h2>
-<div class="stat-grid">
-  {{ ui.stat("Canonical people", dashboard.people or 0) }}
-  {{ ui.stat("Households", dashboard.households or 0) }}
-  {{ ui.stat("Accounts", dashboard.accounts or 0) }}
-  {{ ui.stat("Open tasks", dashboard.open_tasks or 0) }}
-</div>
-
-<h2 class="section-title">Recent activity</h2>
-<div class="card">
-  <div class="stack">
-    {% for activity in dashboard.recent_activities %}
-    <div class="row" style="justify-content:space-between; align-items:flex-start; gap:14px; {% if not loop.last %}border-bottom:1px solid var(--border); padding-bottom:12px;{% endif %}">
-      <div>
-        <a class="rowlink" href="/people/{{ activity.person_id }}">{{ activity.title }}</a>
-        <div class="subtle">{{ activity.activity_type.replace("_", " ").title() }} · {{ activity.created_by or "Unknown user" }}</div>
-        {% if activity.details %}<div class="subtle" style="margin-top:2px">{{ activity.details }}</div>{% endif %}
+    {# Firm-wide financial aggregates are gated server-side: the values are absent from the context unless the
+       viewer holds portfolio.firm_metrics, and show_firm_metrics drives whether the section renders at all.
+       The whole "Book of business" section is omitted for unauthorized viewers (never shown as $0). #}
+    {% if show_firm_metrics %}
+    <section class="card">
+      {{ ui.card_head("Book of business") }}
+      <div class="stat-grid compact">
+        {{ ui.stat("Cash waiting to invest", "${:,.0f}".format(dashboard.cash_waiting or 0)) }}
+        {{ ui.stat("Largest household", dashboard.largest_household.name if dashboard.largest_household else "—") }}
+        {{ ui.stat("Largest position", dashboard.largest_position.symbol if dashboard.largest_position else "—") }}
+        {{ ui.stat("Missing beneficiaries", dashboard.missing_beneficiaries, delta="needs review" if dashboard.missing_beneficiaries else "clear", trend="down" if dashboard.missing_beneficiaries else "up") }}
+        {{ ui.stat("Accounts without reviews", dashboard.accounts_without_reviews, delta="follow up" if dashboard.accounts_without_reviews else "clear", trend="down" if dashboard.accounts_without_reviews else "up") }}
       </div>
-      <span class="id-mono">{{ activity.occurred_at }}</span>
-    </div>
-    {% else %}
-    {% call ui.empty("No recent activity", "Client activity across the firm will appear here.") %}{% endcall %}
-    {% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="card">
+      {{ ui.card_head("Recent activity") }}
+      {% if dashboard.recent_activities %}
+      <div class="feed">
+        {% for activity in dashboard.recent_activities %}
+        <div class="feed-item">
+          <div class="node" aria-hidden="true"></div>
+          <div class="what">
+            <a href="/people/{{ activity.person_id }}">{{ activity.title }}</a>
+            <div class="meta">
+              <span>{{ activity.activity_type.replace("_", " ").title() }}</span>
+              <span class="dot">·</span>
+              <span>{{ activity.created_by or "Unknown user" }}</span>
+            </div>
+            {% if activity.details %}<p class="note">{{ activity.details }}</p>{% endif %}
+          </div>
+          {# occurred_at is a datetime from the activities table; the isinstance guard keeps
+             the cell correct if a caller ever passes the value through as a string. #}
+          <div class="when">{{ activity.occurred_at.strftime("%b %d, %Y") if activity.occurred_at is not string else activity.occurred_at[:10] }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      {% call ui.empty("No recent activity", "Client activity across the firm will appear here.") %}{% endcall %}
+      {% endif %}
+    </section>
+
   </div>
+
+  <aside class="card">
+    {{ ui.card_head("Records") }}
+    <div class="figure-list">
+      <div class="figure"><span class="k">Canonical people</span><span class="v">{{ "{:,}".format(dashboard.people or 0) }}</span></div>
+      <div class="figure"><span class="k">Households</span><span class="v">{{ "{:,}".format(dashboard.households or 0) }}</span></div>
+      <div class="figure"><span class="k">Accounts</span><span class="v">{{ "{:,}".format(dashboard.accounts or 0) }}</span></div>
+      <div class="figure"><span class="k">Open tasks</span><span class="v{{ '' if dashboard.open_tasks else ' muted-v' }}">{{ "{:,}".format(dashboard.open_tasks or 0) }}</span></div>
+    </div>
+  </aside>
 </div>
 {% endblock %}

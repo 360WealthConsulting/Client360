@@ -2,8 +2,10 @@
 {% block title %}Insurance Commissions{% endblock %}
 {% block crumb %}<a href="/insurance">Insurance</a> / Commissions{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Insurance Commissions</h1></div>
-
+<div class="page-head">
+  <div><p class="eyebrow">Insurance</p><h1>Insurance Commissions</h1>
+  <p class="desc">Commission statements and reconciliation across carriers.</p></div>
+</div>
 <div class="stat-grid">
   <div class="stat"><div class="label">Expected</div><div class="value">{{ '%.2f' | format(report.expected_total) }}</div></div>
   <div class="stat"><div class="label">Received</div><div class="value">{{ '%.2f' | format(report.received_total) }}</div></div>

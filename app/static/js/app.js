@@ -149,3 +149,39 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+/* ---- Header quick-access menus (Phase 4) -------------------------------
+   Progressive enhancement only. The <details> disclosures in the global header
+   already open and close on their own without JavaScript; this adds the three
+   dismissals a native <details> does not give you — click-away, Escape, and
+   closing a sibling when another opens — so the menus behave like menus.
+   documents.js does the same for `.rowmenu`, but it loads on one page only and
+   these controls are in the shell on every page. */
+(function () {
+  "use strict";
+
+  function closeAll(except) {
+    document.querySelectorAll("details.qa-menu[open]").forEach(function (d) {
+      if (d !== except) { d.removeAttribute("open"); }
+    });
+  }
+
+  document.addEventListener("toggle", function (ev) {
+    var d = ev.target;
+    if (d && d.classList && d.classList.contains("qa-menu") && d.open) { closeAll(d); }
+  }, true);
+
+  document.addEventListener("click", function (ev) {
+    document.querySelectorAll("details.qa-menu[open]").forEach(function (d) {
+      if (!d.contains(ev.target)) { d.removeAttribute("open"); }
+    });
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") { return; }
+    /* Return focus to the trigger, so Escape does not strand a keyboard user. */
+    var open = document.querySelector("details.qa-menu[open]");
+    closeAll(null);
+    if (open) { var s = open.querySelector("summary"); if (s) { s.focus(); } }
+  });
+})();

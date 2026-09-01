@@ -2,8 +2,10 @@
 {% block title %}Insurance Reviews{% endblock %}
 {% block crumb %}<a href="/insurance">Insurance</a> / Reviews{% endblock %}
 {% block content %}
-<div class="page-head"><h1>In-force Reviews</h1></div>
-
+<div class="page-head">
+  <div><p class="eyebrow">Insurance</p><h1>In-force Reviews</h1>
+  <p class="desc">In-force policy reviews scheduled or due across your book.</p></div>
+</div>
 <div class="stat-grid">
   <div class="stat"><div class="label">Reviews</div><div class="value">{{ metrics.total }}</div></div>
   <div class="stat"><div class="label">Completed</div><div class="value">{{ metrics.completed }}</div></div>

@@ -5,10 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}360Plus{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/main.css">
-  <link rel="stylesheet" href="/static/css/work.css">
-  <link rel="stylesheet" href="/static/css/tax.css">
-  <link rel="stylesheet" href="/static/css/app.css">
+  {# ?v=<asset digest> — deterministic, computed once from the asset bytes themselves
+     (app/templating.py::_asset_version), so it is identical across workers and changes if
+     and only if an asset changes. Without it a deploy serves new HTML to a browser holding
+     a cached copy of the old CSS, which renders the redesigned pages unreadable. #}
+  <link rel="stylesheet" href="/static/css/main.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/work.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/tax.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 {% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
@@ -33,16 +37,38 @@
 {# Administrator-only: employee & access management. Derived from the SAME capability the routes
    enforce (identity.manage) — visibility never grants access. #}
 {% set can_admin = 'identity.manage' in caps %}
-{# Document Management (unassigned-folder resolution worklist) is gated on the SAME capability the
-   route enforces (client.write) — the migration cleanup queue lives here, not in a client's Documents tab. #}
-{% set can_docmgmt = 'client.write' in caps %}
-{# Secure client messaging. Gated on client.read alone — the SAME capability /admin/client-portal/
-   threads enforces — and deliberately NOT on firm_client: the inbox is record-scoped per thread,
-   so an advisor without record.read_all still sees the conversations they may service. #}
-{% set can_messages = 'client.read' in caps %}
+{# Review Inbox and Unassigned Documents. Both live under /admin and are administrative BY
+   DESIGN, not by accident of URL: admin_review_inbox's own docstring records "Under /admin
+   (the identity.manage middleware gate applies)", and the unassigned-documents worklist
+   describes itself as "Admin -> Document Management ... lets an admin search the database".
+   That is the opposite of Messages, whose seventeen handlers all declared client.read /
+   client.write and only sat under /admin because of the path it was given.
+
+   So the NAV is corrected to the real requirement rather than the routes being carved out —
+   widening authorization to make a nav item work would invent access the model never
+   intended. Each gate is identity.manage AND the capability that route's own
+   require_capability declares: client.read for the read-only inbox, client.write for the
+   resolution worklist. Previously both were `client.write` alone, so every advisor and
+   operations user was shown two links that answered 403. #}
+{% set can_review_inbox = can_admin and ('client.read' in caps) %}
+{% set can_docmgmt = can_admin and ('client.write' in caps) %}
+{# Secure client messaging. Gated on communications.message.read — the SAME capability
+   /admin/client-portal/threads enforces (msgcap01) — and deliberately NOT on firm_client: the inbox
+   is record-scoped per thread, so an advisor without record.read_all still sees the conversations
+   they may service. It was client.read, which eleven roles hold; those without the dedicated
+   capability were shown the link and then refused. #}
+{% set can_messages = 'communications.message.read' in caps %}
 {# Navigation groups. PRESENTATION ONLY: every href, match prefix and `show` capability below is
    byte-identical to what it was - the twelve original groups are consolidated into eight so the rail
-   scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated. #}
+   scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated.
+
+   Wealth > Dashboard is gated on the capability its ROUTE enforces rather than on firm_client.
+   /wealth requires portfolio.firm_metrics, which no role holds by design - migration
+   b4f1a207c9d3 revoked it firm-wide and tests/test_dashboard_firm_metrics_authz.py asserts
+   holders == [] - so every user who could see that link received a 403 on it. The item now
+   hides for everyone and reappears on its own if the capability is ever granted. Visibility
+   only: no capability, grant, role or route authorization changes. (Jinja comments cannot sit
+   inside the `{% set %}` literal below, so the note lives here.) #}
 {% set groups = [
   {"label": "Overview", "items": [
     {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p},
@@ -68,7 +94,7 @@
     {"href": "/tax/returns", "label": "Returns", "match": "/tax/returns", "ico": "◇", "show": 'tax.read' in caps},
     {"href": "/tax/documents", "label": "Documents", "match": "/tax/documents", "ico": "◇", "show": 'tax.read' in caps}]},
   {"label": "Wealth", "items": [
-    {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": firm_client},
+    {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": 'portfolio.firm_metrics' in caps},
     {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": firm_client}]},
   {"label": "Benefits & Insurance", "items": [
     {"href": "/organizations", "label": "Organizations", "match": "/organizations", "ico": "⬢", "show": can_org},
@@ -81,7 +107,7 @@
   {"label": "Oversight", "items": [
     {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
     {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
-    {"href": "/admin/review", "label": "Review Inbox", "match": "/admin/review", "ico": "☑", "show": can_docmgmt},
+    {"href": "/admin/review", "label": "Review Inbox", "match": "/admin/review", "ico": "☑", "show": can_review_inbox},
     {"href": "/admin/documents/unassigned", "label": "Unassigned Documents", "match": "/admin/documents/unassigned", "ico": "❏", "show": can_docmgmt},
     {"href": "/compliance/reviews", "label": "Compliance Reviews", "match": "/compliance/reviews", "ico": "✓", "show": 'compliance.review.read' in caps},
     {"href": "/compliance/authorities", "label": "Reviewer Authorities", "match": "/compliance/authorities", "ico": "◆", "show": 'compliance.authority.read' in caps},
@@ -99,6 +125,22 @@
   <aside class="app-sidebar">
     <input type="checkbox" id="c360-nav" class="nav-toggle" hidden>
     <a class="app-brand" href="/"><span class="mark" aria-hidden="true">3+</span><span class="name">360Plus</span></a>
+{# Active item: LONGEST matching prefix wins, so exactly one item lights up.
+   The per-item hit test below is character-for-character the previous one — the
+   only change is that when several items match, the most specific one is chosen
+   instead of all of them. Eleven pairs collide today (/work vs /work/team,
+   /work/workflows and /workspace; /tax vs its three children; /benefits,
+   /insurance and /exceptions vs their reporting pages), and on each of those
+   paths two nav items were highlighted at once. Every `match` value in `groups`
+   is unique, so the longest hit is unambiguous. Presentation only: no href,
+   capability gate or route is touched. #}
+    {% set ns = namespace(best=0) %}
+    {% for g in groups %}{% for it in g["items"] if it["show"] %}
+      {% set m = it["match"] %}
+      {% if ((path == '/') if m == '/' else (path == it["href"] or path.startswith(m))) and m|length > ns.best %}
+        {% set ns.best = m|length %}
+      {% endif %}
+    {% endfor %}{% endfor %}
     <nav class="app-nav" aria-label="Primary">
       {% for g in groups %}
         {% set visible = g["items"] | selectattr("show") | list %}
@@ -106,7 +148,8 @@
         <div class="nav-group">
           <div class="label">{{ g["label"] }}</div>
           {% for it in visible %}
-            {% set active = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
+            {% set hit = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
+            {% set active = hit and it["match"]|length == ns.best %}
             <a class="nav-item{{ ' active' if active else '' }}" href="{{ it['href'] }}"{% if active %} aria-current="page"{% endif %}><span class="ico" aria-hidden="true">{{ it["ico"] }}</span>{{ it["label"] }}</a>
           {% endfor %}
         </div>
@@ -119,12 +162,21 @@
     <header class="app-header">
       <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" role="button" tabindex="0" aria-controls="c360-nav" aria-expanded="false" aria-label="Toggle navigation">☰</label>
       <div class="crumbs"><a href="/">360Plus</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
+      {# Gated on what /search actually enforces. The route needs client.read from the RULES
+         map AND record.read_all, because `search` is in FIRM_WIDE_COLLECTION — together that
+         is exactly `firm_client`. The box used to render for every signed-in staff member,
+         so Operations and Tax Prep were handed a search field that answered 403. Visibility
+         only: /search authorization is untouched. #}
+      {% if firm_client %}
       <form class="app-search" method="get" action="/search" role="search">
         <span class="mag" aria-hidden="true">⌕</span>
         <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search people, households, and organizations">
       </form>
+      {% endif %}
       <div class="spacer"></div>
-      {% if can_exc %}<a class="icon-btn" href="/exceptions" title="Exceptions" aria-label="Exceptions"><span aria-hidden="true">⚑</span></a>{% endif %}
+      {# Global quick-access bar. The lone Exceptions flag that used to sit here is now
+         the "Alerts" control inside it, on the same href and the same capability. #}
+      {% include "components/header_actions.html" %}
       {% if p %}
       <div class="user-chip" title="{{ p.email }}">
         <span class="avatar">{% set parts = (p.display_name or '?').split() %}{{ (parts[0][0] ~ (parts[1][0] if parts|length > 1 else '')) | upper }}</span>

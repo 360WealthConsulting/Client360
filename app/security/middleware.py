@@ -70,6 +70,32 @@ RULES = (
     (re.compile(r"^/workspace"), "client.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
+    # Secure client MESSAGING (the Communication Hub work-queue and thread pages) is staff
+    # client service, not administration - it only lives under /admin because of the URL it
+    # was given. The generic "^/admin" rule below demanded identity.manage, which only the
+    # Administrator role holds, so a Client Service or Advisor employee whose entire job is
+    # answering clients got a 403 on a link the sidebar advertised to them.
+    #
+    # This carve-out is deliberately the NARROWEST that makes Messages usable: the /threads
+    # subtree only. Every other /admin/client-portal route - invitations, account revocation,
+    # create-client, diagnostics - is genuinely administrative and still requires
+    # identity.manage from the rule below. Nothing about /admin in general changes.
+    #
+    # The capability is DEDICATED (msgcap01), not client.read. Gating on client.read would have
+    # made Messages reachable, but eleven roles hold it - including Accounting, Payroll, Reviewer
+    # and Read Only, who have no business reading a client's correspondence. Reading client
+    # messages is a narrower authority than reading a client record, so it has its own capability.
+    # The ".read"->".write" inference below turns every mutation into
+    # communications.message.write, which is granted to five roles rather than six - so viewing a
+    # conversation and replying to the client are separately gated. require_capability runs ON TOP
+    # of this rule, never instead of it, so the handlers' own client.read / client.write still
+    # apply and /threads/diagnostics keeps its stricter observability.audit.
+    #
+    # Record scope is untouched and still decides WHICH threads are visible:
+    # communication_hub.thread_in_staff_scope() runs per row, independent of capability. These
+    # capabilities gate the door, not the contents.
+    # Placement matters exactly as it does for the workflow/tax carve-outs above.
+    (re.compile(r"^/admin/client-portal/threads"), "communications.message.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
     (re.compile(r"^/admin/rule-catalog"), "audit.read"),
     (re.compile(r"^/admin/(roles|user-roles)"), "role.manage"),
@@ -425,14 +451,20 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         record_match = RECORD_PATH.match(request.url.path)
         if record_match:
             entity_type = "person" if record_match.group(1) == "people" else "household"
+            # `record_in_scope` rather than `has_record_scope` directly: it applies the SAME
+            # direct-assignment check first, then — for a READ of a person/household only —
+            # the work-derived path (assignment to that client's task / tax return /
+            # exception / workflow instance). Using it here keeps /people/{id} and
+            # /client/{id} on one answer; they were diverging, since the client route
+            # already resolves through record_in_scope.
+            from app.security.authorization import record_in_scope
             with engine.connect() as connection:
-                allowed = has_record_scope(
-                    connection,
+                allowed = record_in_scope(
                     principal,
                     entity_type,
                     int(record_match.group(2)),
-                    record_assignments=record_assignments,
                     write=request.method not in {"GET", "HEAD", "OPTIONS"},
+                    connection=connection,
                 )
             if not allowed:
                 return _denied(

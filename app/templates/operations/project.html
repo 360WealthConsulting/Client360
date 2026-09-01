@@ -4,12 +4,12 @@
 {% block crumb %}<a href="/operations">Operations</a> / {{ p.name }}{% endblock %}
 {% block content %}
 {{ ui.page_head(p.name, eyebrow=p.category|replace("_"," "), desc=(p.description or "")) }}
-<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
-  <div><div class="subtle" style="font-size:12px">Status</div>{{ ui.badge(p.status|replace("_"," ")|capitalize, 'good' if p.status in ['active','completed'] else '') }}</div>
-  <div><div class="subtle" style="font-size:12px">Health</div>{{ ui.badge(p.health|capitalize, 'good' if p.health == 'green' else ('warn' if p.health == 'yellow' else 'bad')) }}</div>
-  <div><div class="subtle" style="font-size:12px">Priority</div><div>{{ p.priority }}</div></div>
-  <div><div class="subtle" style="font-size:12px">Phases</div><div>{{ p.phases|length }}</div></div>
-  <div><div class="subtle" style="font-size:12px">Tasks</div><div>{{ p.tasks|length }}</div></div>
+<section class="card filterbar">
+  <div><div class="subtle text-sm">Status</div>{{ ui.badge(p.status|replace("_"," ")|capitalize, 'good' if p.status in ['active','completed'] else '') }}</div>
+  <div><div class="subtle text-sm">Health</div>{{ ui.badge(p.health|capitalize, 'good' if p.health == 'green' else ('warn' if p.health == 'yellow' else 'bad')) }}</div>
+  <div><div class="subtle text-sm">Priority</div><div>{{ p.priority }}</div></div>
+  <div><div class="subtle text-sm">Phases</div><div>{{ p.phases|length }}</div></div>
+  <div><div class="subtle text-sm">Tasks</div><div>{{ p.tasks|length }}</div></div>
   {% if can_manage and p.status not in ['completed','cancelled','archived'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
     <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="active"><button class="btn btn-ghost" type="submit">Activate</button></form>
     <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="on_hold"><button class="btn btn-ghost" type="submit">Hold</button></form>
@@ -36,18 +36,18 @@
 </section>
 
 {% if can_manage %}
-<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">Add operational task</summary>
-  <form method="post" action="/operations/projects/{{ p.id }}/items" style="margin-top:12px">
+<details class="card mt-4"><summary>Add operational task</summary>
+  <form class="mt-3" method="post" action="/operations/projects/{{ p.id }}/items">
     <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
     <div class="field"><label for="estimated_minutes">Estimated minutes</label><input class="input" id="estimated_minutes" name="estimated_minutes" inputmode="numeric"></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Add task</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Add task</button></div>
   </form>
 </details>
-<details class="card" style="margin-top:10px"><summary style="cursor:pointer; font-weight:640">Add milestone</summary>
-  <form method="post" action="/operations/projects/{{ p.id }}/milestones" style="margin-top:12px">
+<details class="card mt-3"><summary>Add milestone</summary>
+  <form class="mt-3" method="post" action="/operations/projects/{{ p.id }}/milestones">
     <div class="field"><label for="ms_name">Name</label><input class="input" id="ms_name" name="name" required></div>
     <div class="field"><label for="due_date">Due date (ISO)</label><input class="input" id="due_date" name="due_date" placeholder="2026-09-01"></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Add milestone</button></div>
+    <div class="mt-3"><button class="btn" type="submit">Add milestone</button></div>
   </form>
 </details>{% endif %}
 {% endblock %}

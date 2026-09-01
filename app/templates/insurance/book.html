@@ -3,9 +3,9 @@
 {% block crumb %}Insurance{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Insurance Book</h1>
+  <div><p class="eyebrow">Insurance</p><h1>Insurance Book</h1>
+  <p class="desc">Policies you are authorised to service, across every carrier and line.</p></div>
 </div>
-
 <div class="filterbar">
   <a class="chip{{ ' active' if not status else '' }}" href="/insurance">All</a>
   <a class="chip{{ ' active' if status == 'in_force' else '' }}" href="/insurance?status=in_force">In force</a>
@@ -37,6 +37,10 @@
 </table>
 </div></div>
 {% else %}
-<div class="empty">No insurance policies in scope.</div>
+<div class="empty">
+  <div class="em-ico">☂</div>
+  <h4>No policies in scope</h4>
+  <p>Policies appear here once they are recorded against a client in your book.</p>
+</div>
 {% endif %}
 {% endblock %}
