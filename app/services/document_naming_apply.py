@@ -29,6 +29,7 @@ from sqlalchemy import select
 
 from app.db import documents, engine
 from app.security.audit import write_audit_event
+from app.services import document_name_safety as safety
 from app.services.document_normalization_preview import build_preview
 
 APPLICABLE_BUCKET = "SAFE"
@@ -42,6 +43,7 @@ REFUSED_BUCKET = "refused_not_safe"
 REFUSED_COLLISION = "refused_collision"
 REFUSED_EMPTY = "refused_empty_name"
 NOT_IN_PREVIEW = "not_in_preview"
+REFUSED_UNSAFE = "refused_sensitive_identifier"
 
 
 def _rid(request_id):
@@ -55,7 +57,14 @@ class DocumentNamingApplyError(RuntimeError):
 
 
 def _eligible(row):
-    """(ok, reason) for one live preview row. Order matters: report the most specific refusal."""
+    """(ok, reason) for one live preview row. Order matters: report the most specific refusal.
+
+    The sensitive-identifier check is FIRST and is deliberately independent of the bucket: the
+    preview already refuses to mark such a row SAFE, so this is a second, self-sufficient gate that
+    holds even if bucketing were changed or a stale/hand-built row reached this function.
+    """
+    if safety.scan(row.get("proposed_display_name")):
+        return False, REFUSED_UNSAFE
     if row["bucket"] != APPLICABLE_BUCKET:
         return False, REFUSED_BUCKET
     if row.get("collision"):
@@ -88,7 +97,7 @@ def apply_display_names(*, principal, document_ids=None, safe_all=False, dry_run
 
     considered, counts = [], {k: 0 for k in (
         APPLIED, UNCHANGED_ALREADY_SET, CONFLICT_EXISTING_NAME, REFUSED_BUCKET,
-        REFUSED_COLLISION, REFUSED_EMPTY, NOT_IN_PREVIEW)}
+        REFUSED_COLLISION, REFUSED_EMPTY, REFUSED_UNSAFE, NOT_IN_PREVIEW)}
 
     with engine.connect() as conn:
         existing = {r["id"]: r["display_name"] for r in conn.execute(
