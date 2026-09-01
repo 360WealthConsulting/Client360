@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -323,3 +324,136 @@ def test_installer_prevents_overlapping_runs():
 
 def test_installer_catches_up_a_missed_run():
     assert "-StartWhenAvailable" in _installer_text()
+
+
+# --- 4. action-verb parsing --------------------------------------------------
+#
+# PRODUCTION DEFECT (observed on the deployed release): the wrapper parsed the action verb with
+#
+#     if ($output -match '"action"...') { $action = $Matches[1] }
+#
+# $output is an ARRAY of captured child-process lines. PowerShell's -match on an array is a FILTER —
+# it returns the matching ELEMENTS and never populates $Matches. Under the wrapper's own
+# Set-StrictMode the following $Matches read throws "The variable '$Matches' cannot be retrieved
+# because it has not been set", so a SUCCESSFUL `--ensure` was logged as a FAILED task run; in a
+# session where $Matches already existed it logged a stale or blank verb instead.
+#
+# The verb is how an operator reads the scheduler log to tell "renewed" from "unchanged", so a wrong
+# or missing verb hides whether the subscription is actually being renewed.
+#
+# The parse block is EXTRACTED FROM THE WRAPPER rather than restated here, so these tests exercise the
+# shipped code and cannot drift from it.
+
+_PWSH = shutil.which("pwsh") or shutil.which("powershell")
+_needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="PowerShell not available on this host")
+
+
+def _action_parse_snippet():
+    """The wrapper's own action-parsing block, from the fallback assignment to the success log."""
+    text = _wrapper_text()
+    start = text.index("$action = 'unknown'")
+    end = text.index('Write-Log "SUCCESS:', start)
+    return text[start:end]
+
+
+def _run_action_parse(tmp_path, lines):
+    """Run the wrapper's real parse block under StrictMode against a synthetic $output array."""
+    literal = ", ".join("'" + ln.replace("'", "''") + "'" for ln in lines)
+    script = (
+        "Set-StrictMode -Version Latest\n"
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$output = @({literal})\n"
+        f"{_action_parse_snippet()}\n"
+        "Write-Output \"ACTION=$action\"\n"
+    )
+    path = tmp_path / "parse.ps1"
+    path.write_text(script, encoding="utf-8")
+    return subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(path)],
+        capture_output=True, text=True, timeout=60,
+    )
+
+
+# -- static: the defect cannot come back --------------------------------------
+
+def test_wrapper_never_reads_matches_after_an_array_match():
+    """No CODE may read $Matches. The comment explaining the defect names it, and should."""
+    code = [ln for ln in _wrapper_text().splitlines() if not ln.lstrip().startswith("#")]
+    assert code, "no code lines found - the check would be vacuous"
+    for line in code:
+        assert "$Matches" not in line, (
+            f"$Matches is unreliable here: -match on the $output ARRAY filters and never "
+            f"populates it: {line.strip()}"
+        )
+
+
+def test_wrapper_matches_the_action_on_a_joined_scalar():
+    """The array must be flattened before matching, and the match tested via its own result object."""
+    snippet = _action_parse_snippet()
+    assert "-join" in snippet, "the $output array must be joined into a scalar before matching"
+    assert "[regex]::Match" in snippet, "an explicit scalar regex match is required"
+    assert ".Success" in snippet and ".Groups[1].Value" in snippet
+
+
+def test_wrapper_still_defaults_the_action_to_unknown():
+    """No match must leave a readable placeholder, never an empty or undefined verb."""
+    assert "$action = 'unknown'" in _action_parse_snippet()
+
+
+def test_action_parse_only_runs_on_a_successful_child_exit():
+    """A non-zero `--ensure` exit must log FAILURE and never report an action verb."""
+    text = _wrapper_text()
+    success_branch = text[text.index("if ($exitCode -eq 0) {"):text.index("catch {")]
+    body, _, else_body = success_branch.partition("else {")
+    assert "$action" in body, "action parsing is not in the success branch"
+    assert "$action" not in else_body, "action parsing must not run on a failed child exit"
+    assert "FAILURE: ensure exited with code $exitCode" in else_body
+
+
+# -- behavioural: the real block, executed under StrictMode --------------------
+
+@_needs_pwsh
+@pytest.mark.parametrize("verb", ["unchanged", "renewed", "created"])
+def test_action_parse_reports_the_verb_from_ensure_output(tmp_path, verb):
+    """The production case: --ensure returns 'unchanged' and the log must say so."""
+    proc = _run_action_parse(tmp_path, [
+        "2026-09-01T12:00:00Z [INFO] Running: python -m scripts.manage_sharepoint_subscription --ensure",
+        "{",
+        f'  "action": "{verb}",',
+        '  "subscription": {',
+        '    "clientState": "***REDACTED***",',
+        '    "id": "sub-1"',
+        "  }",
+        "}",
+    ])
+    assert proc.returncode == 0, proc.stderr
+    assert f"ACTION={verb}" in proc.stdout
+
+
+@_needs_pwsh
+def test_action_parse_falls_back_to_unknown_when_the_verb_is_absent(tmp_path):
+    proc = _run_action_parse(tmp_path, ["{", '  "subscription": {"id": "sub-1"}', "}"])
+    assert proc.returncode == 0, proc.stderr
+    assert "ACTION=unknown" in proc.stdout
+
+
+@_needs_pwsh
+def test_action_parse_falls_back_to_unknown_on_empty_output(tmp_path):
+    proc = _run_action_parse(tmp_path, [])
+    assert proc.returncode == 0, proc.stderr
+    assert "ACTION=unknown" in proc.stdout
+
+
+@_needs_pwsh
+@pytest.mark.parametrize("lines", [
+    ['  "action": "unchanged"'],
+    ["no action here"],
+    [],
+])
+def test_action_parse_never_trips_strict_mode(tmp_path, lines):
+    """The regression itself: StrictMode + an unset $Matches turned a success into a failed run."""
+    proc = _run_action_parse(tmp_path, lines)
+    assert proc.returncode == 0, proc.stderr
+    combined = proc.stdout + proc.stderr
+    assert "$Matches" not in combined
+    assert "has not been set" not in combined

@@ -128,8 +128,17 @@ try {
 
     if ($exitCode -eq 0) {
         # The action verb is the operationally interesting bit for a scheduler log.
+        #
+        # $output is an ARRAY of lines captured from the child process. PowerShell's -match on an
+        # array is a FILTER: it returns the matching elements and does NOT populate $Matches. Under
+        # the Set-StrictMode above, reading $Matches then THROWS ("The variable '$Matches' cannot be
+        # retrieved because it has not been set"), turning a successful renewal into a failed task
+        # run; in a session where $Matches happens to already exist it silently logs a stale or blank
+        # verb instead. Flatten to a single string and match that scalar explicitly.
         $action = 'unknown'
-        if ($output -match '"action"\s*:\s*"([a-z]+)"') { $action = $Matches[1] }
+        $outputText = ($output | ForEach-Object { "$_" }) -join "`n"
+        $actionMatch = [regex]::Match($outputText, '"action"\s*:\s*"([a-z]+)"')
+        if ($actionMatch.Success) { $action = $actionMatch.Groups[1].Value }
         Write-Log "SUCCESS: subscription ensure completed (action=$action)"
     }
     else {
