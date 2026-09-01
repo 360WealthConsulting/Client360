@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'’-]*")
 

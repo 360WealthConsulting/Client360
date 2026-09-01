@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from starlette.requests import Request
 
-from app.db import capabilities, engine, role_capabilities, roles
+from app.db import capabilities, engine, role_capabilities
 from app.routes.dashboard import advisor_dashboard, stats
 from app.security.dependencies import require_capability
 from app.security.models import Principal

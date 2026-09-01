@@ -8,6 +8,7 @@ import uuid
 
 import pytest
 from sqlalchemy import delete, insert
+from sqlalchemy import select as _select
 
 from app.db import (
     accounts,
@@ -16,6 +17,8 @@ from app.db import (
     households,
     people,
     relationship_entities,
+    relationship_types,
+    relationships,
 )
 from app.security.models import Principal
 from app.services.universal_search import universal_search
@@ -169,10 +172,6 @@ def test_search_page_renders(data):
 #
 # Everything below builds the relationship the canonical way — a typed edge in an ownership
 # category — and asserts that shared surnames alone are never enough.
-
-from sqlalchemy import select as _select
-
-from app.db import relationship_types, relationships
 
 _OWN = frozenset({"client.read", "record.read_all"})
 
@@ -563,7 +562,6 @@ def test_context_never_renders_of_none():
 
 def _nameless_owner(company, *, full_name=None, first=None, last=None):
     """Add an owner whose display-name sources are null/blank, wired the canonical way."""
-    tag = company["tag"]
     with engine.begin() as c:
         type_id = _ownership_type_id(c)
         pid = c.execute(people.insert().values(

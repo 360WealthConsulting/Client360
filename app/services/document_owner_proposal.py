@@ -26,9 +26,9 @@ from sqlalchemy import select
 
 from app.db import (
     documents,
-    metadata,
     engine,
     households,
+    metadata,
     people,
     person_source_links,
     relationship_entities,

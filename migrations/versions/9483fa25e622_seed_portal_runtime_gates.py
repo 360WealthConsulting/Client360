@@ -7,7 +7,6 @@ external access disabled by default.
 import sqlalchemy as sa
 from alembic import op
 
-
 revision = "9483fa25e622"
 down_revision = "docdisp01"
 branch_labels = None

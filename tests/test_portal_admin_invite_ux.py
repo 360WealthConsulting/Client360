@@ -13,6 +13,8 @@ still means "this person only" and ``joint`` still means "this household, expand
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import quote
 
@@ -35,8 +37,6 @@ from app.routes.portal_admin import (
 )
 from app.security.models import Principal
 from app.services.people import _normalize_phone
-
-from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = "https://portal.example.com"
@@ -643,8 +643,8 @@ def test_an_invitation_with_no_email_anywhere_is_refused(canonical_origin):
 # --- the one-time handoff and token handling still hold ----------------------------------------
 
 def test_the_invitation_still_produces_the_one_time_activation_url(canonical_origin):
-    from app.routes.portal_admin import HANDOFF_SESSION_KEY
     from app.portal import invitation_handoff
+    from app.routes.portal_admin import HANDOFF_SESSION_KEY
 
     sfx = uuid.uuid4().hex[:8]
     pid = _person(first="Hand", last=f"Off{sfx}", household_id=_household(),
@@ -662,10 +662,10 @@ def test_the_raw_token_still_never_leaks_through_the_new_form(canonical_origin):
     from unittest.mock import patch
     from urllib.parse import parse_qs, urlsplit
 
-    from app.routes.portal_admin import HANDOFF_SESSION_KEY
-    from app.portal import invitation_handoff
     from app.db import portal_invitations
+    from app.portal import invitation_handoff
     from app.portal.service import _hash
+    from app.routes.portal_admin import HANDOFF_SESSION_KEY
 
     sfx = uuid.uuid4().hex[:8]
     pid = _person(first="Leak", last=f"Check{sfx}", household_id=_household(),
@@ -694,9 +694,9 @@ def test_the_invitation_still_activates_through_the_microsoft_callback_path(cano
     account binds the Microsoft subject with MFA — unchanged."""
     from urllib.parse import parse_qs, urlsplit
 
+    from app.portal import invitation_handoff
     from app.portal.service import accept_invitation, sign_in_with_subject
     from app.routes.portal_admin import HANDOFF_SESSION_KEY
-    from app.portal import invitation_handoff
 
     sfx = uuid.uuid4().hex[:8]
     pid = _person(first="Flow", last=f"End{sfx}", household_id=_household(),
@@ -955,8 +955,8 @@ def test_the_person_id_remains_hidden_implementation_state():
 
 def test_selecting_a_client_still_produces_a_working_invitation(canonical_origin):
     """End to end after the redesign: resolve → grant → one-time handoff, all unchanged."""
-    from app.routes.portal_admin import HANDOFF_SESSION_KEY
     from app.portal import invitation_handoff
+    from app.routes.portal_admin import HANDOFF_SESSION_KEY
 
     sfx = uuid.uuid4().hex[:8]
     fam = _family(sfx)
@@ -1074,7 +1074,12 @@ def test_a_person_matching_more_fields_ranks_above_one_matching_fewer():
 
 def test_the_documented_ranking_tiers_are_implemented_in_order():
     from app.portal.invite_targets import _tier
-    exact = lambda **kw: {**{f: None for f in ("first_name", "last_name", "email", "phone")}, **kw}
+    def exact(**kw):
+        return {
+            **{f: None for f in ("first_name", "last_name", "email", "phone")},
+            **kw,
+        }
+
     # Phone before email: for client identity discovery a phone number is more discriminating,
     # and a stale stored email is exactly what made the production case fail.
     assert _tier(exact(phone="exact")) == 1
@@ -1159,10 +1164,10 @@ def _crowded_dataset(sfx, *, target_phone_digits, target_normalized_phone):
     hid = _household(f"Crowd HH {sfx}")
     first, last = f"Michael{sfx}", f"Shelton{sfx}"
 
-    def add(f, l, mail, digits, phone=None):
+    def add(f, last_name, mail, digits, phone=None):
         with engine.begin() as c:
             return c.execute(people.insert().values(
-                first_name=f, last_name=l, full_name=f"{f} {l}", primary_email=mail,
+                first_name=f, last_name=last_name, full_name=f"{f} {last_name}", primary_email=mail,
                 normalized_email=mail, primary_phone=phone, normalized_phone=digits,
                 active=True, household_id=hid).returning(people.c.id)).scalar_one()
 
@@ -1177,8 +1182,8 @@ def _crowded_dataset(sfx, *, target_phone_digits, target_normalized_phone):
 
 def test_the_target_is_not_even_retrieved_by_a_broad_truncated_name_search():
     """Proves the root cause is retrieval, not ordering: the broad term does not contain it."""
-    from app.services.universal_search import universal_search
     from app.portal.invite_targets import _TERM_LIMIT
+    from app.services.universal_search import universal_search
 
     sfx = uuid.uuid4().hex[:8]
     d = _unique_phone_digits()
@@ -1689,20 +1694,20 @@ def test_p1_4_no_invitation():
 
 
 def test_p1_4_pending_shows_time_remaining():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     sfx = uuid.uuid4().hex[:8]
     aid = _account_with_invitations(
-        sfx, {"expires_at": datetime.now(timezone.utc) + timedelta(hours=18)})
+        sfx, {"expires_at": datetime.now(UTC) + timedelta(hours=18)})
     state = _state_for(aid)
     assert state.startswith("Pending"), state
     assert "expires in" in state
 
 
 def test_p1_4_accepted():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sfx = uuid.uuid4().hex[:8]
     aid = _account_with_invitations(
         sfx, {"expires_at": now + timedelta(hours=5), "accepted_at": now})
@@ -1710,18 +1715,18 @@ def test_p1_4_accepted():
 
 
 def test_p1_4_expired():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     sfx = uuid.uuid4().hex[:8]
     aid = _account_with_invitations(
-        sfx, {"expires_at": datetime.now(timezone.utc) - timedelta(hours=2)})
+        sfx, {"expires_at": datetime.now(UTC) - timedelta(hours=2)})
     assert _state_for(aid) == "Expired"
 
 
 def test_p1_4_revoked():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sfx = uuid.uuid4().hex[:8]
     aid = _account_with_invitations(
         sfx, {"expires_at": now + timedelta(hours=5), "revoked_at": now})
@@ -1730,9 +1735,9 @@ def test_p1_4_revoked():
 
 def test_p1_4_the_latest_invitation_wins():
     """A re-invited client must show the NEW link's state, not the dead one."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sfx = uuid.uuid4().hex[:8]
     aid = _account_with_invitations(
         sfx,
@@ -1743,11 +1748,11 @@ def test_p1_4_the_latest_invitation_wins():
 
 
 def test_p1_4_no_token_hash_or_invitation_id_reaches_the_template():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     sfx = uuid.uuid4().hex[:8]
     aid = _account_with_invitations(
-        sfx, {"expires_at": datetime.now(timezone.utc) + timedelta(hours=6)})
+        sfx, {"expires_at": datetime.now(UTC) + timedelta(hours=6)})
     from app.routes.portal_admin import _accounts
     account = [a for a in _accounts() if a["id"] == aid][0]
     assert set(account) == {"id", "display_name", "email", "status", "mfa_enabled",
@@ -1758,10 +1763,10 @@ def test_p1_4_no_token_hash_or_invitation_id_reaches_the_template():
 
 
 def test_p1_4_the_column_is_rendered_and_escaped():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     sfx = uuid.uuid4().hex[:8]
-    _account_with_invitations(sfx, {"expires_at": datetime.now(timezone.utc) + timedelta(hours=6)})
+    _account_with_invitations(sfx, {"expires_at": datetime.now(UTC) + timedelta(hours=6)})
     html = _render_admin_home()
     assert "<th>Invitation</th>" in html
     assert "Pending" in html
