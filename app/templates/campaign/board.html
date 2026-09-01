@@ -4,7 +4,7 @@
 {% block crumb %}Campaigns{% endblock %}
 {% block content %}
 {{ ui.page_head("Campaigns", eyebrow="Business development", desc="Marketing campaigns and their performance.") }}
-<div class="row" style="gap:8px; margin:-6px 0 14px">
+<nav class="row tight subnav">
   {% if can_report %}<a class="rowlink" href="/campaigns/reports">Campaign reports →</a>{% endif %}
   <a class="rowlink" href="/business-development">Business development dashboard →</a>
 </div>

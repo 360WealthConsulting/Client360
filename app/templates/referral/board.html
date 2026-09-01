@@ -4,7 +4,7 @@
 {% block crumb %}Referral Sources{% endblock %}
 {% block content %}
 {{ ui.page_head("Referral Sources", eyebrow="Business development", desc="Referral partners and centers of influence.") }}
-<div class="row" style="gap:8px; margin:-6px 0 14px">{% if can_report %}<a class="rowlink" href="/referral-sources/reports">Referral reports →</a>{% endif %}</div>
+<nav class="row tight subnav">{% if can_report %}<a class="rowlink" href="/referral-sources/reports">Referral reports →</a>{% endif %}</div>
 <form method="get" class="card filterbar">
   <div class="field m0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
   <div class="field m0"><label for="status">Status</label>

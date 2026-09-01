@@ -215,7 +215,11 @@ table.data th[aria-sort="descending"]::after { content:" ↓"; opacity:1; color:
 .sev.low::before { background:var(--good); }
 
 /* alerts */
-.alert { display:flex; gap:12px; padding:12px 14px; border-radius:var(--radius); font-size:13.5px; border:1px solid var(--border); background:var(--surface); align-items:flex-start; }
+/* A default bottom margin: an alert is always followed by the content it is about,
+   and every call site was adding the same margin by hand. */
+.alert { display:flex; gap:12px; padding:12px 14px; border-radius:var(--radius); font-size:13.5px;
+  border:1px solid var(--border); background:var(--surface); align-items:flex-start;
+  margin:0 0 var(--s3); }
 .alert .ico { flex:none; margin-top:1px; }
 .alert b { display:block; margin-bottom:2px; }
 .alert p { margin:0; opacity:.92; }
@@ -1056,3 +1060,14 @@ form.stack > label:has(> input[type="checkbox"]) { display:flex; align-items:cen
 .grow-lg { flex:1; min-width:300px; }
 .nowrap { white-space:nowrap; }
 .semibold { font-weight:620; }
+/* A "details →" link at the foot of a stat tile. */
+.stat-link { display:inline-block; margin-top:6px; font-size:11.5px; font-weight:600;
+  color:var(--accent); text-decoration:none; }
+.stat-link:hover { text-decoration:underline; }
+.stat .v.muted-v { color:var(--muted); font-weight:500; }
+.row.end { align-items:flex-end; }
+/* A button sized for a table row, where `.btn.sm` (28px) still adds row height. */
+.btn.xs { height:24px; padding:0 9px; font-size:11.5px; }
+/* Page sub-navigation: a row of destination links directly under the page head. */
+.subnav { margin:-4px 0 var(--s4); }
+.subnav .rowlink { font-size:12.5px; }

@@ -6,7 +6,7 @@
 {{ ui.page_head("Campaign Reports", eyebrow="Business development", desc="ROI, conversion, and revenue attributed to campaigns across your book.") }}
 <p class="subtle result-count"><a class="rowlink" href="/campaigns">← Back to campaigns</a></p>
 
-<section class="stack" style="margin-bottom:20px">
+<section class="section">
   <h2 class="section-title">Overview</h2>
   <div class="card">
     <div class="detail-row"><span class="subtle">Total attributed revenue</span><strong>${{ "{:,.0f}".format(report.total_revenue) }}</strong></div>
@@ -14,7 +14,7 @@
   </div>
 </section>
 
-<section class="stack" style="margin-bottom:20px">
+<section class="section">
   <h2 class="section-title">Campaign performance</h2>
   <div class="table-wrap"><table class="data">
     <thead><tr><th>Campaign</th><th>Opps</th><th>Won</th><th>Revenue</th><th>ROI</th></tr></thead>
@@ -26,8 +26,8 @@
   </table></div>
 </section>
 
-<section class="stack" style="margin-bottom:20px">
+<section class="section">
   <h2 class="section-title">Revenue by marketing channel</h2>
-  <div class="card"><ul style="margin:0; padding-left:18px">{% for k, v in report.revenue_by_marketing_channel.items() %}<li>{{ k|replace("_"," ")|capitalize }}: ${{ "{:,.0f}".format(v) }}</li>{% endfor %}</ul></div>
+  <div class="card"><ul class="list-tight">{% for k, v in report.revenue_by_marketing_channel.items() %}<li>{{ k|replace("_"," ")|capitalize }}: ${{ "{:,.0f}".format(v) }}</li>{% endfor %}</ul></div>
 </section>
 {% endblock %}
