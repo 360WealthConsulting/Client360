@@ -13,7 +13,7 @@
 
 {% if result %}<div class="banner banner-{{ 'ok' if result == 'ok' else 'warn' }}" role="status">{{ message or 'Done.' }}</div>{% endif %}
 
-<section class="stat-grid" style="margin-bottom:14px">
+<section class="stat-grid mb-3">
   <article class="card"><span class="detail-label">Status</span><h2 style="font-size:18px">{{ (it.status or "")|replace("_"," ")|capitalize }}</h2></article>
   <article class="card"><span class="detail-label">Priority</span><h2 style="font-size:18px">{{ it.priority|capitalize }}</h2></article>
   <article class="card"><span class="detail-label">SLA</span><h2 style="font-size:18px"><span class="sla sla-{{ it.sla_state }}">{{ it.sla_state|replace("_"," ") }}</span></h2></article>

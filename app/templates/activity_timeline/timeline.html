@@ -9,16 +9,16 @@
 
 {# Filters + search resolve server-side (activity_timeline.service); the template renders. #}
 <form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
-  <div class="field" style="margin:0"><label for="q">Search</label>
+  <div class="field m0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="title, summary, actor"></div>
-  <div class="field" style="margin:0"><label for="source">Source</label>
+  <div class="field m0"><label for="source">Source</label>
     <select class="input" id="source" name="source">
       <option value="">All</option>
       {% for s in source_domains %}<option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>{% endfor %}
     </select></div>
-  <div class="field" style="margin:0"><label for="date_from">From</label>
+  <div class="field m0"><label for="date_from">From</label>
     <input class="input" id="date_from" name="date_from" type="date" value="{{ filters.date_from }}"></div>
-  <div class="field" style="margin:0"><label for="date_to">To</label>
+  <div class="field m0"><label for="date_to">To</label>
     <input class="input" id="date_to" name="date_to" type="date" value="{{ filters.date_to }}"></div>
   <input type="hidden" name="event_type" value="{{ filters.event_type }}">
   <div><button class="btn" type="submit">Apply</button>

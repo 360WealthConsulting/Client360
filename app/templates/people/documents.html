@@ -6,8 +6,8 @@
 {% call ui.page_head("Client documents", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
   <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
 {% endcall %}
-{% if uploaded %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Document uploaded successfully.</div></div>{% endif %}
-{% if archived %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Document archived.</div></div>{% endif %}
+{% if uploaded %}<div class="alert good mb-3"><span class="ico">✓</span><div>Document uploaded successfully.</div></div>{% endif %}
+{% if archived %}<div class="alert good mb-3"><span class="ico">✓</span><div>Document archived.</div></div>{% endif %}
 <div class="card" style="max-width:760px; margin-bottom:16px">
   <h3>Upload document</h3>
   <form method="post" enctype="multipart/form-data" action="/people/{{ person.id }}/documents">
@@ -27,7 +27,7 @@
   <div class="card">
     <h3 style="margin:0 0 4px; font-size:15px"><a class="rowlink" href="/documents/{{ document.id }}/download">{{ document.original_name }}</a></h3>
     <div class="subtle">{{ document.category or "Other" }} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.created_at }} · {{ document.uploaded_by or "Unknown user" }}</div>
-    {% if document.description %}<div style="margin-top:6px">{{ document.description }}</div>{% endif %}
+    {% if document.description %}<div class="mt-2">{{ document.description }}</div>{% endif %}
     <div class="row" style="margin-top:10px; gap:12px">
       <a class="btn ghost sm" href="/documents/{{ document.id }}/download">Download</a>
       <form method="post" action="/people/{{ person.id }}/documents/{{ document.id }}/archive"><button class="btn secondary sm" type="submit">Archive</button></form>
@@ -43,8 +43,8 @@
   <div class="card">
     <h3 style="margin:0 0 4px; font-size:15px">{{ document.name }}</h3>
     <div class="subtle">{{ document.mime_type or "Unknown type" }} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.modified_at_microsoft or "Date unavailable" }} · {{ document.match_method or "Matched" }}</div>
-    {% if document.parent_path %}<div class="subtle" style="margin-top:4px">{{ document.parent_path }}</div>{% endif %}
-    {% if document.web_url %}<div style="margin-top:8px"><a class="btn ghost sm" href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in SharePoint or OneDrive</a></div>{% endif %}
+    {% if document.parent_path %}<div class="subtle mt-1">{{ document.parent_path }}</div>{% endif %}
+    {% if document.web_url %}<div class="mt-2"><a class="btn ghost sm" href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in SharePoint or OneDrive</a></div>{% endif %}
   </div>
 {% else %}
   {% call ui.empty("No Microsoft documents", "No Microsoft-managed documents matched.") %}{% endcall %}

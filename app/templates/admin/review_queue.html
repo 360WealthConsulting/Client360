@@ -21,7 +21,7 @@
     <span class="subtle">{{ r.source_path or "—" }} · {{ r.extraction_class }}:{{ r.extraction_method }} · {{ r.confidence }}
       <a class="btn sm secondary" href="{{ r.view_url }}" target="_blank" rel="noopener">View ↗</a></span>
   </div>
-  {% if r.evidence_classes %}<div class="subtle" style="margin:2px 0">evidence: {{ r.evidence_classes | join(", ") }}</div>{% endif %}
+  {% if r.evidence_classes %}<div class="subtle tight">evidence: {{ r.evidence_classes | join(", ") }}</div>{% endif %}
   {% if r.evidence %}<ul class="subtle" style="margin:2px 0 6px 18px">{% for e in r.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
   {% if review and r.contradictions %}<div class="subtle" style="color:var(--warn, #b45309)">contradiction: {{ r.contradictions | join(", ") }}</div>{% endif %}
 

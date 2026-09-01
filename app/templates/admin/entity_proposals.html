@@ -12,7 +12,7 @@
 
 {% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
 
-<div class="subtle" style="margin-bottom:10px">{{ proposals|length }} pending proposal(s).</div>
+<div class="subtle mb-3">{{ proposals|length }} pending proposal(s).</div>
 
 {% for p in proposals %}
 <article class="card" style="padding:14px 16px; margin-bottom:14px">

@@ -386,7 +386,7 @@
         <a class="more" href="/workspace/meetings/{{ person.id }}">Prepare for meeting →</a>{% if 'timeline.read' in caps %}<a class="more" href="/people/{{ person.id }}/timeline">Activity timeline →</a>{% endif %}{% if 'annual_review.read' in caps %}<a class="more" href="/annual-review/{{ person.id }}">Annual review →</a>{% endif %}{% if 'business_owner.read' in caps %}<a class="more" href="/business-owner/{{ person.id }}">Business owner planning →</a>{% endif %}
       </span>
     </div>
-    <section class="stat-grid" style="margin-bottom:18px">
+    <section class="stat-grid mb-4">
       {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(client_snapshot.cash), "{:.1f}".format(client_snapshot.cash_percent) ~ "%") }}
       {{ wc.summary_card("Insurance", client_snapshot.insurance.policy_count ~ (" policy" if client_snapshot.insurance.policy_count == 1 else " policies"), "$" ~ "{:,.2f}".format(client_snapshot.insurance.total_face) ~ " coverage") }}
       {{ wc.summary_card("Tax engagements", client_snapshot.tax.active, "Active") }}

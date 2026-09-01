@@ -965,3 +965,62 @@ form.stack > label:has(> input[type="checkbox"]) { display:flex; align-items:cen
 /* `.warning` — used by three templates, defined nowhere. Same object as `.alert.warn`. */
 .warning { display:block; padding:11px 14px; border-radius:var(--radius); font-size:13.5px;
   background:var(--warn-soft); color:var(--warn); border:1px solid transparent; }
+
+/* ============================================================
+   SPACING + SHAPE UTILITIES (Phase 6)
+   The remaining CSP-dead inline styles are overwhelmingly ONE of a dozen shapes,
+   repeated hundreds of times: a margin nudge, a small type size, a justified row,
+   a tight list. Rather than lifting each occurrence into a page rule, they map
+   onto this small set, every value drawn from the existing --s / type tokens.
+
+   Prefer the component first — `.section` for a block's own rhythm, `.card-head`
+   for a card's title row, `.stack` for a run of siblings. These are for the
+   genuine one-off nudge that no component owns.
+   ============================================================ */
+
+/* margin scale, on the --s ladder */
+.m0 { margin:0 !important; }
+.mt-1 { margin-top:var(--s1); }   .mb-1 { margin-bottom:var(--s1); }
+.mt-2 { margin-top:var(--s2); }   .mb-2 { margin-bottom:var(--s2); }
+.mt-3 { margin-top:var(--s3); }   .mb-3 { margin-bottom:var(--s3); }
+.mt-4 { margin-top:var(--s4); }   .mb-4 { margin-bottom:var(--s4); }
+.mt-5 { margin-top:var(--s5); }   .mb-5 { margin-bottom:var(--s5); }
+
+/* type scale — the two sizes below `.subtle`'s 12px that templates kept asking for */
+.text-sm { font-size:12px; }
+.text-xs { font-size:11px; }
+.text-lg { font-size:15px; }
+/* A headline figure outside a `.stat` (scan results, counters). */
+.figure { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; line-height:1.15; display:block; }
+
+/* rows */
+.row.between { justify-content:space-between; }
+.row.wide { gap:var(--s3); }
+.row.tight { gap:var(--s2); }
+.inline { display:inline; }
+.scroll-x { overflow-x:auto; }
+
+/* A list inside a card: no browser margin, one indent step. */
+.list-tight { margin:0; padding-left:18px; }
+.list-tight li + li { margin-top:3px; }
+/* A list with no bullets at all. */
+.list-plain { margin:0; padding:0; list-style:none; }
+
+/* A card with the denser padding several screens were setting by hand. */
+.card.pad-sm { padding:12px 16px; }
+
+/* A bordered callout — an inline note stronger than `.subtle`, weaker than `.alert`.
+   Seven screens were drawing it by hand with a hardcoded 4px warn border. */
+.callout { padding:12px 15px; margin:0 0 var(--s3); border-radius:var(--radius);
+  border-left:3px solid var(--border-strong); background:var(--surface-2);
+  font-size:13px; color:var(--text-2); }
+.callout.warn { border-left-color:var(--warn); background:var(--warn-soft); color:var(--warn); }
+.callout.crit { border-left-color:var(--crit); background:var(--crit-soft); color:var(--crit); }
+.callout.info { border-left-color:var(--info); background:var(--info-soft); color:var(--info); }
+.callout > :first-child { margin-top:0; } .callout > :last-child { margin-bottom:0; }
+.mt-0 { margin-top:0; }  .mb-0 { margin-bottom:0; }
+/* A heading used as a figure/label inside a tile: tight vertical rhythm, not a page heading. */
+.tight { margin:2px 0; }
+/* A secondary link trailing a heading or label — smaller and lighter than the text it follows. */
+.link-sm { font-size:13px; font-weight:500; margin-left:8px; }

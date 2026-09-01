@@ -3,7 +3,7 @@
 {% block title %}Review Documents | Admin | 360Plus{% endblock %}
 {% block crumb %}Admin · Document Management · Review Documents{% endblock %}
 {% macro doc_table(rows, owner_col=True) %}
-<div style="overflow-x:auto">
+<div class="scroll-x">
 <table class="table">
   <thead><tr><th>ID</th><th>Filename</th><th>Type / Year</th><th>Source</th>{% if owner_col %}<th>Current owner</th>{% endif %}<th>Action</th></tr></thead>
   <tbody>
@@ -71,14 +71,14 @@
       {% if has_rec or candidates or household_candidates or org_candidates %}
       <div class="subtle" style="margin:8px 0 2px"><strong>Assign this document to:</strong></div>
       {% if has_rec %}
-        <div style="margin:2px 0">
+        <div class="tight">
           {{ cand_form(d.id, pr.proposed_entity_type, pr.proposed_entity_id, "Assign to " ~ (pr.proposed_entity_name or "") ~ " (#" ~ pr.proposed_entity_id ~ ")") }}
           <span style="color:var(--ok, #15803d); font-weight:600">✓ Recommended · {{ pr.confidence }} confidence</span>
         </div>
       {% endif %}
       {% for c in candidates %}
         {% if not (has_rec and pr.proposed_entity_type == "person" and c.id == pr.proposed_entity_id) %}
-        <div style="margin:2px 0">
+        <div class="tight">
           {{ cand_form(d.id, "person", c.id, "Assign to " ~ c.name ~ " (#" ~ c.id ~ ")") }}
           <span class="subtle">{{ c.designation }}{% if c.email %} · {{ c.email }}{% endif %}{% if c.phone %} · {{ c.phone }}{% endif %}{% if c.household_name %} · Household: {{ c.household_name }} (#{{ c.household_id }}){% endif %}
             <a href="{{ c.link }}" target="_blank" rel="noopener">record ↗</a></span>
@@ -87,12 +87,12 @@
       {% endfor %}
       {% for h in household_candidates %}
         {% if not (has_rec and pr.proposed_entity_type == "household" and h.id == pr.proposed_entity_id) %}
-        <div style="margin:2px 0">{{ cand_form(d.id, "household", h.id, "Assign to " ~ h.name ~ " (#" ~ h.id ~ ")") }}</div>
+        <div class="tight">{{ cand_form(d.id, "household", h.id, "Assign to " ~ h.name ~ " (#" ~ h.id ~ ")") }}</div>
         {% endif %}
       {% endfor %}
       {% for o in org_candidates %}
         {% if not (has_rec and pr.proposed_entity_type == "organization" and o.id == pr.proposed_entity_id) %}
-        <div style="margin:2px 0">{{ cand_form(d.id, "organization", o.id, "Assign to " ~ o.name ~ " (#" ~ o.id ~ ")") }}
+        <div class="tight">{{ cand_form(d.id, "organization", o.id, "Assign to " ~ o.name ~ " (#" ~ o.id ~ ")") }}
           <span class="subtle">{{ o.entity_type }}</span></div>
         {% endif %}
       {% endfor %}
@@ -122,7 +122,7 @@
 {% if eligible_docs %}
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
   <div style="font-weight:600; margin-bottom:6px">Bulk — assign ALL remaining eligible documents to one owner</div>
-  <div class="subtle" style="margin-bottom:6px">Only use this once you have verified every remaining eligible document belongs to the same owner. Preview shows the exact set before you confirm.</div>
+  <div class="subtle mb-2">Only use this once you have verified every remaining eligible document belongs to the same owner. Preview shows the exact set before you confirm.</div>
   {% for c in candidates %}
     <div class="row" style="gap:8px; align-items:center; margin:3px 0">
       <form method="post" action="/admin/documents/unassigned/resolve" style="display:inline-block">
@@ -152,7 +152,7 @@
 {% if already_owned_docs %}
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
   <div style="font-weight:600">ALREADY OWNED — WILL NOT BE CHANGED ({{ already_owned_docs|length }})</div>
-  <div class="subtle" style="margin-bottom:6px">Use these as context; folder resolution leaves them untouched.</div>
+  <div class="subtle mb-2">Use these as context; folder resolution leaves them untouched.</div>
   {{ doc_table(already_owned_docs) }}
 </article>
 {% endif %}

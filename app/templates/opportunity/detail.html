@@ -5,9 +5,9 @@
 {% block content %}
 {{ ui.page_head(o.title, eyebrow="Opportunity", desc=(o.primary_service_line or "") ~ ((" · " ~ o.source) if o.source else "")) }}
 <p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/opportunities">← Back to pipeline</a></p>
-{% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
+{% if request.query_params.get('error') %}<div class="alert warn mb-3"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
 
-<section class="stack" style="margin-bottom:20px">
+<section class="stack mb-4">
   <h2 class="section-title">Overview</h2>
   <div class="card">
     <div class="detail-row"><span class="subtle">Stage</span><strong>{{ o.stage.name if o.stage else "—" }}</strong></div>
@@ -25,34 +25,34 @@
 </section>
 
 {% if can_edit or can_assign or can_close %}
-<section class="stack" style="margin-bottom:20px">
+<section class="stack mb-4">
   <h2 class="section-title">Actions</h2>
   <div class="card" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px">
     {% if can_edit %}
     <form method="post" action="/opportunities/{{ o.id }}/stage">
       <div class="field"><label for="stage_id">Move to stage</label>
         <select class="input" id="stage_id" name="stage_id">{% for s in stages %}<option value="{{ s.id }}" {% if s.id == o.stage_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
-      <button class="btn secondary" type="submit" style="margin-top:8px">Change stage</button>
+      <button class="btn secondary mt-2" type="submit">Change stage</button>
     </form>{% endif %}
     {% if can_close %}
     <form method="post" action="/opportunities/{{ o.id }}/close">
       <div class="field"><label for="outcome">Close as</label>
         <select class="input" id="outcome" name="outcome"><option value="won">Won</option><option value="lost">Lost</option></select></div>
-      <input class="input" name="reason" placeholder="Win/loss reason" style="margin-top:8px">
-      <button class="btn secondary" type="submit" style="margin-top:8px">Close</button>
+      <input class="input mt-2" name="reason" placeholder="Win/loss reason">
+      <button class="btn secondary mt-2" type="submit">Close</button>
     </form>{% endif %}
     {% if can_edit %}
     <form method="post" action="/opportunities/{{ o.id }}/activities">
       <div class="field"><label for="activity_type">Log activity</label>
         <select class="input" id="activity_type" name="activity_type"><option value="call">Call</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="note">Note</option></select></div>
-      <input class="input" name="subject" placeholder="Subject" style="margin-top:8px">
-      <button class="btn secondary" type="submit" style="margin-top:8px">Log</button>
+      <input class="input mt-2" name="subject" placeholder="Subject">
+      <button class="btn secondary mt-2" type="submit">Log</button>
     </form>{% endif %}
   </div>
 </section>
 {% endif %}
 
-<section class="stack" style="margin-bottom:20px">
+<section class="stack mb-4">
   <h2 class="section-title">Activity history</h2>
   <div class="card">
     {% if o.activities %}
@@ -63,7 +63,7 @@
   </div>
 </section>
 
-<section class="stack" style="margin-bottom:20px">
+<section class="stack mb-4">
   <h2 class="section-title">Status history</h2>
   <div class="card">
     {% for e in o.events %}
@@ -73,9 +73,9 @@
 </section>
 
 {% if o.linked_work %}
-<section class="stack" style="margin-bottom:20px">
+<section class="stack mb-4">
   <h2 class="section-title">Linked advisor work</h2>
-  <div class="card"><ul style="margin:0; padding-left:18px">{% for w in o.linked_work %}<li><a class="rowlink" href="/advisor-work/{{ w.advisor_work_item_id }}">{{ w.recommendation_type|replace("_"," ")|capitalize }}</a> — {{ w.status|replace("_"," ") }}</li>{% endfor %}</ul></div>
+  <div class="card"><ul class="list-tight">{% for w in o.linked_work %}<li><a class="rowlink" href="/advisor-work/{{ w.advisor_work_item_id }}">{{ w.recommendation_type|replace("_"," ")|capitalize }}</a> — {{ w.status|replace("_"," ") }}</li>{% endfor %}</ul></div>
 </section>
 {% endif %}
 {% endblock %}

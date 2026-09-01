@@ -11,10 +11,10 @@
 <article class="card" style="padding:16px 18px; margin-bottom:12px">
   <div class="detail-row"><span class="subtle">Source folder</span><strong>{{ folder }}</strong></div>
 
-  <div style="margin-top:8px"><span class="subtle">PROPOSED OWNER</span>
+  <div class="mt-2"><span class="subtle">PROPOSED OWNER</span>
   {% if destination.kind == "person" %}
     <div><strong>{% if destination.is_business %}Business Contact{% else %}Person{% endif %} #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
-      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open record ↗</a></div>
+      <a class="btn sm secondary link-sm" href="{{ destination.link }}" target="_blank" rel="noopener">Open record ↗</a></div>
     <div class="subtle">
       {% if destination.contact_type %}contact_type: {{ destination.contact_type }} · {% endif %}
       {% if destination.email %}{{ destination.email }} · {% endif %}
@@ -23,25 +23,25 @@
     </div>
   {% elif destination.kind == "household" %}
     <div><strong>Household #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
-      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open household ↗</a></div>
+      <a class="btn sm secondary link-sm" href="{{ destination.link }}" target="_blank" rel="noopener">Open household ↗</a></div>
     <div class="subtle">Members: {% for m in destination.members %}{{ m }}{% if not loop.last %}, {% endif %}{% else %}(none listed){% endfor %}</div>
   {% elif destination.kind == "organization" %}
     <div><strong>Organization #{{ destination.id }} — {{ destination.name or "(name unavailable)" }}</strong>
-      <a class="btn sm secondary" href="{{ destination.link }}" target="_blank" rel="noopener" style="margin-left:8px">Open organization ↗</a></div>
+      <a class="btn sm secondary link-sm" href="{{ destination.link }}" target="_blank" rel="noopener">Open organization ↗</a></div>
     <div class="subtle">Entity type: {{ destination.entity_type or "—" }}</div>
   {% else %}
     <div><strong>{{ destination.kind }} #{{ destination.id }}</strong></div>
   {% endif %}
   </div>
 
-  <div class="detail-row" style="margin-top:8px"><span class="subtle">Documents to assign</span>
+  <div class="detail-row mt-2"><span class="subtle">Documents to assign</span>
     <strong>{{ preview.documents_affected }}</strong></div>
 </article>
 
 {% if affected_docs %}
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
   <div style="color:var(--ok, #15803d); font-weight:600; margin-bottom:6px">ELIGIBLE UNASSIGNED DOCUMENTS — will be assigned ({{ affected_docs|length }})</div>
-  <div style="overflow-x:auto">
+  <div class="scroll-x">
   <table class="table">
     <thead><tr><th>ID</th><th>Filename</th><th>Type / Year</th><th>Source folder</th><th>Current owner</th><th></th></tr></thead>
     <tbody>
@@ -65,8 +65,8 @@
 {% if already_owned_docs %}
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
   <div style="font-weight:600">ALREADY OWNED — WILL NOT BE CHANGED ({{ already_owned_docs|length }})</div>
-  <div class="subtle" style="margin-bottom:6px">These documents already have an owner, so folder resolution leaves them untouched.</div>
-  <div style="overflow-x:auto">
+  <div class="subtle mb-2">These documents already have an owner, so folder resolution leaves them untouched.</div>
+  <div class="scroll-x">
   <table class="table">
     <thead><tr><th>ID</th><th>Filename</th><th>Current owner</th><th></th></tr></thead>
     <tbody>
@@ -103,7 +103,7 @@
   <input type="hidden" name="entity_id" value="{{ entity_id }}">
   <input type="hidden" name="confirm" value="yes">
   <button class="btn" type="submit">Confirm — assign {{ preview.documents_affected }} document(s)</button>
-  <a class="btn secondary" href="/admin/documents/unassigned" style="margin-left:8px">Cancel</a>
+  <a class="btn secondary link-sm" href="/admin/documents/unassigned">Cancel</a>
 </form>
 {% else %}
 <p class="subtle">No eligible documents to assign for this destination (already linked, or only permanent exceptions remain).</p>

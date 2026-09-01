@@ -7,10 +7,10 @@
   <a class="btn secondary" href="/linkage/review">Back to queue</a>
 {% endcall %}
 
-{% if error %}<div class="alert bad" style="margin-bottom:14px"><span class="ico">!</span><div>{{ error }}</div></div>{% endif %}
+{% if error %}<div class="alert bad mb-3"><span class="ico">!</span><div>{{ error }}</div></div>{% endif %}
 
 {% if current_resolution %}
-<div class="alert {{ 'good' if reusable_resolution else '' }}" style="margin-bottom:14px">
+<div class="alert {{ 'good' if reusable_resolution else '' }} mb-3">
   <div>Current durable resolution: <b>{{ current_resolution.decision }}</b>
   {% if current_resolution.resulting_entity_id %} → {{ current_resolution.resulting_entity_type }} #{{ current_resolution.resulting_entity_id }}{% endif %}
   {% if reusable_resolution %}(reusable knowledge){% else %}(not reusable){% endif %}</div>
@@ -54,7 +54,7 @@
       </form>
     {% else %}
       {% macro candidate_form(kind, action, items) %}
-        <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="margin-bottom:10px">
+        <form class="mb-3" method="get" action="/linkage/review/{{ exception.id }}/confirm">
           <input type="hidden" name="action" value="{{ action }}">
           <b>Link existing {{ kind }}</b>
           {% if items %}
@@ -87,7 +87,7 @@
 
       <hr>
       {% for act, kind in [("create_person","person"),("create_household","household"),("create_business","business")] %}
-      <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="margin-bottom:8px">
+      <form class="mb-2" method="get" action="/linkage/review/{{ exception.id }}/confirm">
         <input type="hidden" name="action" value="{{ act }}">
         <b>Create {{ kind }}</b>
         <input type="text" name="name" value="{{ subject.display_name }}" placeholder="{{ kind }} name">
@@ -96,11 +96,11 @@
       {% endfor %}
 
       <hr>
-      <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="display:inline">
+      <form class="inline" method="get" action="/linkage/review/{{ exception.id }}/confirm">
         <input type="hidden" name="action" value="firm_material">
         <button class="btn secondary" type="submit">Mark Firm material</button>
       </form>
-      <form method="get" action="/linkage/review/{{ exception.id }}/confirm" style="display:inline">
+      <form class="inline" method="get" action="/linkage/review/{{ exception.id }}/confirm">
         <input type="hidden" name="action" value="defer">
         <button class="btn secondary" type="submit">Defer</button>
       </form>

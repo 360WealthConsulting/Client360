@@ -33,7 +33,7 @@
   {% if is_last_admin %}<p class="subtle">This is the final active administrator — deactivation is blocked.</p>{% endif %}
 
   <h3 style="margin:12px 0 6px">Correct email / map Microsoft identity</h3>
-  <form method="post" action="/admin/employees/{{ u.id }}/identity" class="stack" style="gap:8px">
+  <form method="post" action="/admin/employees/{{ u.id }}/identity" class="stack tight">
     <label class="field"><span>Work email</span><input class="input" type="email" name="email" value="{{ u.email }}"></label>
     <label class="field"><span>Entra subject/object id (optional — usually auto-linked at first sign-in)</span><input class="input" type="text" name="auth_subject" placeholder="leave blank to keep"></label>
     <button class="btn secondary" type="submit">Save identity</button>
@@ -60,7 +60,7 @@
         </span>
       </label>
     {% else %}{% call ui.empty("No assignable profiles") %}{% endcall %}{% endfor %}
-    <button class="btn" type="submit" style="margin-top:10px">Save access profiles</button>
+    <button class="btn mt-3" type="submit">Save access profiles</button>
   </form>
   <p class="subtle">You can only grant a profile whose capabilities you already hold. Changes are
     audited per profile; the final active administrator cannot lose the administrator profile.</p>
@@ -78,7 +78,7 @@
     </div>
     {% else %}<div>{% call ui.empty("No capabilities", "Assign a role to grant access.") %}{% endcall %}</div>{% endfor %}
   </div>
-  <div class="detail-row" style="margin-top:10px"><span>Record scope</span><strong>{{ "Firm-wide (record.read_all)" if d.record_scope.firm_wide else (d.record_scope.person_count ~ " reachable client record(s)") }}</strong></div>
+  <div class="detail-row mt-3"><span>Record scope</span><strong>{{ "Firm-wide (record.read_all)" if d.record_scope.firm_wide else (d.record_scope.person_count ~ " reachable client record(s)") }}</strong></div>
 </article>
 
 <article class="card">

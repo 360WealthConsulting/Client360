@@ -13,7 +13,7 @@
 {% endcall %}
 
 {% if saved %}
-<div class="alert good" style="margin-bottom:14px">
+<div class="alert good mb-3">
   <span class="ico">?</span>
   <div>Drake identity decision saved.</div>
 </div>
@@ -33,7 +33,7 @@
   {% endfor %}
 </div>
 
-<div class="stat-grid" style="margin-bottom:16px">
+<div class="stat-grid mb-4">
   {{ ui.stat("Drake identities", "{:,}".format(summary.total_identities or 0)) }}
   {{ ui.stat("Linked", "{:,}".format(summary.linked_identities or 0)) }}
   {{ ui.stat("Unresolved", "{:,}".format(summary.unresolved_identities or 0)) }}
@@ -41,7 +41,7 @@
   {{ ui.stat("Deferred", "{:,}".format(summary.deferred or 0)) }}
 </div>
 
-<div class="alert info" style="margin-bottom:16px">
+<div class="alert info mb-4">
   <span class="ico">?</span>
   <div>
     Approval creates permanent source links for every listed Drake year.
@@ -73,7 +73,7 @@
     {{ ui.badge(identity.status|capitalize, 'warn' if identity.status == 'pending' else 'muted') }}
   </div>
 
-  <div class="stack" style="margin-top:14px">
+  <div class="stack mt-4">
   {% for candidate in identity.candidates %}
     <div class="card" style="padding:12px; background:var(--surface-2, #f7f7f7)">
       <div class="row" style="justify-content:space-between; gap:14px; align-items:center">
@@ -84,7 +84,7 @@
             </a>
           </strong>
 
-          <div class="subtle" style="margin-top:4px">
+          <div class="subtle mt-1">
             {{ candidate.primary_email or "no email" }}
             ? {{ candidate.primary_phone or "no phone" }}
             {% if candidate.city or candidate.state %}
@@ -92,7 +92,7 @@
             {% endif %}
           </div>
 
-          <div class="subtle" style="margin-top:4px">
+          <div class="subtle mt-1">
             Evidence:
             {{ candidate.reasons|join(", ")|replace("_", " ") }}
           </div>
@@ -102,9 +102,9 @@
           {{ ui.badge(candidate.score ~ "%", 'good' if candidate.score >= 95 else 'warn') }}
 
           {% if identity.status in ['pending', 'deferred'] %}
-          <form method="post"
-                action="/matches/drake/{{ identity.identifier_hash }}/{{ candidate.person_id }}/approve"
-                style="margin-top:8px">
+          <form class="mt-2" method="post"
+        action="/matches/drake/{{ identity.identifier_hash }}/{{ candidate.person_id }}/approve"
+        >
             <button class="btn" type="submit">Approve this client</button>
           </form>
           {% endif %}

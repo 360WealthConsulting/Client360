@@ -17,7 +17,7 @@
     ELIGIBLE — clean HIGH, selectable for bulk confirm ({{ eligible_count }})</div>
   {% if eligible %}
   <form method="post" action="/admin/documents/high-confirm">
-    <div style="overflow-x:auto">
+    <div class="scroll-x">
     <table class="table">
       <thead><tr>
         <th><input type="checkbox" id="selall" checked onclick="for(const c of document.querySelectorAll('input[name=document_id]'))c.checked=this.checked"></th>
@@ -47,7 +47,7 @@
       <span><strong>I confirm</strong> assignment of the selected validated HIGH documents to their proposed owners.</span>
     </label>
     <button class="btn" type="submit">Confirm assignment of selected HIGH documents →</button>
-    <span class="subtle" style="margin-left:8px">Each selection is re-checked again on submit; nothing else is touched.</span>
+    <span class="subtle link-sm">Each selection is re-checked again on submit; nothing else is touched.</span>
   </form>
   {% else %}<div class="subtle">No clean HIGH proposals are eligible right now.</div>{% endif %}
 </article>
@@ -55,7 +55,7 @@
 {% if review %}
 <article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
   <div style="color:var(--warn, #b45309); font-weight:600">REVIEW REQUIRED — HIGH but a contradiction fired ({{ review_count }}) · NOT selectable</div>
-  <div style="overflow-x:auto">
+  <div class="scroll-x">
   <table class="table">
     <thead><tr><th>ID</th><th>Filename</th><th>Proposed owner</th><th>Contradictions</th><th></th></tr></thead>
     <tbody>
