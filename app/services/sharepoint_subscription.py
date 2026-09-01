@@ -131,6 +131,48 @@ def _parse_graph_time(raw: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+# Microsoft Graph ECHOES clientState back in the subscription object on create, GET and PATCH. It is a
+# SHARED SECRET: the webhook handler compares it to prove a notification really came from Graph, so
+# anything that leaks it lets a caller forge notifications. Management output is written to Task
+# Scheduler logs, terminals and CI transcripts, so the raw Graph payload must never be returned or
+# printed verbatim.
+#
+# This redacts at the SERVICE boundary rather than in the CLI, so every caller is safe by default and a
+# future caller cannot reintroduce the leak by forgetting to sanitise. Redaction is by exact field name
+# plus a substring sweep, so a field Graph adds later (an encryption key, a token) is caught rather than
+# published. Everything operationally useful — id, resource, notificationUrl, expirationDateTime,
+# changeType, applicationId — is preserved untouched.
+REDACTED = "***REDACTED***"
+
+_SECRET_FIELDS = frozenset({
+    "clientstate",                  # the webhook shared secret
+    "encryptioncertificate",        # rich-notification payload key material
+    "encryptioncertificateid",
+})
+
+_SECRET_SUBSTRINGS = ("secret", "token", "password", "credential", "privatekey", "clientstate")
+
+
+def _is_secret_key(key: str) -> bool:
+    lowered = str(key).lower()
+    return lowered in _SECRET_FIELDS or any(part in lowered for part in _SECRET_SUBSTRINGS)
+
+
+def redact_secrets(value: Any) -> Any:
+    """Recursively replace secret-bearing values with ``REDACTED``.
+
+    Structure-preserving: keys, ordering, and every non-secret value survive unchanged, so the result
+    is still a faithful description of the subscription — just not a usable one for forging
+    notifications. Only the VALUE is replaced; the key stays visible so an operator can see that a
+    secret field exists without learning its contents.
+    """
+    if isinstance(value, dict):
+        return {k: (REDACTED if _is_secret_key(k) else redact_secrets(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    return value
+
+
 def ensure_subscription() -> dict[str, Any]:
     existing = find_matching_subscription()
 
@@ -138,7 +180,7 @@ def ensure_subscription() -> dict[str, Any]:
         created = create_subscription()
         return {
             "action": "created",
-            "subscription": created,
+            "subscription": redact_secrets(created),
         }
 
     sub_id = str(existing.get("id") or "")
@@ -151,7 +193,7 @@ def ensure_subscription() -> dict[str, Any]:
         renewed = renew_subscription(sub_id)
         return {
             "action": "renewed",
-            "subscription": renewed,
+            "subscription": redact_secrets(renewed),
         }
 
     expires = _parse_graph_time(expires_raw)
@@ -161,12 +203,12 @@ def ensure_subscription() -> dict[str, Any]:
         renewed = renew_subscription(sub_id)
         return {
             "action": "renewed",
-            "subscription": renewed,
+            "subscription": redact_secrets(renewed),
         }
 
     return {
         "action": "unchanged",
-        "subscription": existing,
+        "subscription": redact_secrets(existing),
     }
 
 
