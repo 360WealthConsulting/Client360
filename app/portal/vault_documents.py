@@ -31,6 +31,10 @@ from app.portal.service import portal_scope
 from app.security.audit import write_audit_event
 from app.services.vault import service as vault
 from app.services.vault import storage
+from app.services.vault.naming import (
+    safe_vault_delivery_filename,
+    safe_vault_label,
+)
 
 # Vault status -> client-facing label (task vocabulary: Requested/Received/Under Review/Approved/
 # Rejected/Archived). "Requested" is modeled by portal_document_requests, not a vault status.
@@ -44,7 +48,7 @@ _DOWNLOADABLE = {"approved", "signed", "filed"}     # "Download approved documen
 def _client_view(row, *, downloads_enabled=True) -> dict:
     pending = row["uploaded_by_portal_account_id"] is not None and row["status"] in {"uploaded", "under_review"}
     return {
-        "id": row["id"], "display_name": row["display_name"], "category": row["category"],
+        "id": row["id"], "display_name": safe_vault_label(row), "category": row["category"],
         "document_type": row["document_type"], "status": row["status"],
         "client_status": _CLIENT_STATUS.get(row["status"], row["status"]),
         "pending_approval": pending, "file_size": row["file_size"], "version": row["current_version"],
@@ -101,6 +105,10 @@ def download_document(principal, document_id, *, request_id="portal", ip_address
     """Authorize + return (path, filename, mime) for an approved client-visible doc (or the client's
     own pending upload). Raises PermissionError otherwise. Audits the download.
 
+    ``filename`` is the SAFE delivery name (see :mod:`app.services.vault.naming`), never the raw
+    ``original_filename`` — it becomes the response's Content-Disposition and so the name the
+    browser saves. The bytes served and the stored row are unchanged.
+
     The firm-wide ``portal.documents.download_enabled`` gate is enforced here as well as at the request
     layer (``portal_gate``), so a non-HTTP caller cannot bypass the kill switch. It is checked BEFORE the
     document is resolved, so a disabled gate leaks neither existence nor storage key."""
@@ -117,7 +125,7 @@ def download_document(principal, document_id, *, request_id="portal", ip_address
     path = storage.resolve_path(doc["storage_key"])
     _portal_audit(action="portal.document.downloaded", document_id=document_id,
                   account_id=principal.account_id, request_id=request_id, ip_address=ip_address)
-    return path, doc["original_filename"], doc["mime_type"]
+    return path, safe_vault_delivery_filename(doc), doc["mime_type"]
 
 
 # --- client upload (pending employee approval) -------------------------------

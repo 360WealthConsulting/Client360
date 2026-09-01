@@ -25,6 +25,7 @@ from app.db import (
 )
 from app.security.authorization import record_in_scope
 from app.services.vault import storage
+from app.services.vault.naming import safe_vault_delivery_filename
 
 CATEGORIES = ("tax", "wealth", "accounting", "payroll", "benefits", "insurance", "compliance", "general")
 STATUSES = ("uploaded", "under_review", "approved", "rejected", "signed", "filed", "archived")
@@ -151,7 +152,11 @@ def list_documents(principal, *, person_id=None, household_id=None, category=Non
 
 def download_target(principal, document_id, *, actor_user_id=None, ip_address=None):
     """Authorize a download and return ``(path, filename, mime_type)`` for the current version.
-    Records a 'download' audit event."""
+    Records a 'download' audit event.
+
+    ``filename`` is the SAFE delivery name (see :mod:`app.services.vault.naming`), never the raw
+    ``original_filename`` — it becomes the response's Content-Disposition and so the name the
+    browser saves. The bytes served, ``storage_key`` and ``checksum_sha256`` are unchanged."""
     with engine.begin() as conn:
         doc = conn.execute(
             select(vault_documents).where(vault_documents.c.id == document_id)).mappings().first()
@@ -163,7 +168,7 @@ def download_target(principal, document_id, *, actor_user_id=None, ip_address=No
         record_audit(conn, document_id=document_id, user_id=actor_user_id,
                      action="download", ip_address=ip_address,
                      metadata={"version": doc["current_version"]})
-    return path, doc["original_filename"], doc["mime_type"]
+    return path, safe_vault_delivery_filename(doc), doc["mime_type"]
 
 
 # --- writes ------------------------------------------------------------------
