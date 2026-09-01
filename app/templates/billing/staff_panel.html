@@ -23,7 +23,7 @@
 {% for a in agreements %}
   <tr><td>{{ a.title }}</td><td>{{ a.status|title }}</td><td>{{ money(a.default_amount_cents) if a.default_amount_cents else '—' }}</td>
     <td style="display:flex;gap:.4rem;">
-      <form method="post" action="/billing/agreements/{{ a.id }}/status" style="margin:0;">
+      <form class="m0" method="post" action="/billing/agreements/{{ a.id }}/status">
         <input type="hidden" name="status" value="{{ 'ended' if a.status=='active' else 'active' }}">
         <button class="btn secondary" type="submit">{{ 'End' if a.status=='active' else 'Activate' }}</button></form>
       <form method="post" action="/billing/agreements/{{ a.id }}/schedules" style="margin:0;display:flex;gap:.3rem;">
@@ -42,8 +42,8 @@
 
 <h2 class="section-title" style="margin-top:1.5rem;">Invoices</h2>
 <div style="display:flex;gap:.6rem;margin-bottom:.5rem;">
-  <form method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/invoices" style="margin:0;"><button class="btn" type="submit">New draft invoice</button></form>
-  <form method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/generate" style="margin:0;"><button class="btn secondary" type="submit">Generate due invoices</button></form>
+  <form class="m0" method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/invoices"><button class="btn" type="submit">New draft invoice</button></form>
+  <form class="m0" method="post" action="/billing/{{ subject_type }}/{{ subject_id }}/generate"><button class="btn secondary" type="submit">Generate due invoices</button></form>
 </div>
 <table class="table"><thead><tr><th>Number</th><th>Status</th><th>Total</th><th>Balance</th><th>Due</th><th></th></tr></thead><tbody>
 {% for i in invoices %}

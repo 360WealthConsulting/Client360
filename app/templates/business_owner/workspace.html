@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_head("Business Owner Planning", eyebrow="Advisor workspace", desc="Planning opportunities, risks, obligations, and follow-up across " ~ (ws.person.full_name or ("client " ~ ws.person.id)) ~ "'s businesses. A read-first composition of existing domains — it does not calculate tax, design plans, or place insurance.") }}
 
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/people/{{ ws.person.id }}">← Back to client</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/people/{{ ws.person.id }}">← Back to client</a></p>
 
 {# ── 1. Owner & Household Snapshot ──────────────────────────────────────── #}
 <section class="stack mb-5">
@@ -59,8 +59,8 @@
   <div class="card mb-3">
     <h3 class="mt-0">{{ g.label }}</h3>
     {% for r in g.items %}
-      <div class="detail-row" style="align-items:flex-start">
-        <div style="flex:1"><strong>{{ r.title }}</strong> {{ ui.badge(r.priority.value|capitalize) }}<br><span class="subtle">{{ r.summary }}</span></div>
+      <div class="detail-row start">
+        <div class="grow"><strong>{{ r.title }}</strong> {{ ui.badge(r.priority.value|capitalize) }}<br><span class="subtle">{{ r.summary }}</span></div>
         {% if r.route %}<a class="rowlink" href="{{ r.route }}">Detail →</a>{% endif %}
       </div>
     {% endfor %}
@@ -122,10 +122,10 @@
   <h2 class="section-title">Recent activity <a class="rowlink link-sm" href="/people/{{ ws.person.id }}/timeline">View full timeline →</a></h2>
   <div class="card">
     {% for e in ws.activity.rows %}
-      <div class="detail-row" style="align-items:flex-start">
-        <div style="flex:1"><strong>{{ e.title }}</strong> {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}<br>
+      <div class="detail-row start">
+        <div class="grow"><strong>{{ e.title }}</strong> {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}<br>
           <span class="subtle">{% if e.redacted %}<em>Additional details are restricted.</em>{% else %}{{ e.summary }}{% endif %}</span></div>
-        <span class="subtle id-mono" style="white-space:nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
+        <span class="subtle id-mono nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
       </div>
     {% endfor %}
   </div>
@@ -139,7 +139,7 @@
   <div class="card">
     <div class="detail-row"><span class="subtle">Open opportunities</span><strong>{{ ws.opportunities.open_count }}</strong></div>
     {% set allopps = ws.opportunities.person + ws.opportunities.business %}
-    {% if allopps %}<ul style="margin:6px 0 0; padding-left:18px">{% for o in allopps %}<li><a class="rowlink" href="/opportunities/{{ o.id }}">{{ o.title }}</a> <span class="subtle">· {{ o.status }}</span></li>{% endfor %}</ul>
+    {% if allopps %}<ul class="list-tight mt-2">{% for o in allopps %}<li><a class="rowlink" href="/opportunities/{{ o.id }}">{{ o.title }}</a> <span class="subtle">· {{ o.status }}</span></li>{% endfor %}</ul>
     {% else %}<p class="subtle mt-2">No opportunities recorded.</p>{% endif %}
   </div>
 </section>

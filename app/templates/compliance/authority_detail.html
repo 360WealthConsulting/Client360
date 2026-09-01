@@ -52,9 +52,9 @@
   {% if a.status in ["active","suspended"] %}
   <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/supersede" style="padding:12px 16px; min-width:280px" onsubmit="return confirm('Supersede with a new active version? The prior record is retained as superseded.');">
     <input type="hidden" name="expected_status" value="{{ a.status }}">
-    <div class="field" style="margin:0 0 6px"><label>New scope (blank = carry forward)</label><input class="input" name="authority_scope" placeholder="rule ids / gate categories"></div>
-    <div class="field" style="margin:0 0 6px"><label>New effective date</label><input class="input" name="effective_date" type="date"></div>
-    <div class="field" style="margin:0 0 6px"><label>Reason / evidence</label><input class="input" name="reason" placeholder="reason"></div>
+    <div class="field mb-2"><label>New scope (blank = carry forward)</label><input class="input" name="authority_scope" placeholder="rule ids / gate categories"></div>
+    <div class="field mb-2"><label>New effective date</label><input class="input" name="effective_date" type="date"></div>
+    <div class="field mb-2"><label>Reason / evidence</label><input class="input" name="reason" placeholder="reason"></div>
     <button class="btn" type="submit">Supersede</button></form>
   {% endif %}
 </div>

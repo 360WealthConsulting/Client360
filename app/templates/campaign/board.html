@@ -8,14 +8,14 @@
   {% if can_report %}<a class="rowlink" href="/campaigns/reports">Campaign reports →</a>{% endif %}
   <a class="rowlink" href="/business-development">Business development dashboard →</a>
 </div>
-<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" class="card filterbar">
   <div class="field m0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
   <div class="field m0"><label for="status">Status</label>
     <select class="input" id="status" name="status"><option value="">All</option>
       {% for st in ["draft","active","paused","completed","archived"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
   <div><button class="btn" type="submit">Apply</button></div>
 </form>
-<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} campaign(s).</p>
+<p class="subtle result-count">{{ result.total }} campaign(s).</p>
 {% if result.rows %}
 <div class="table-wrap"><table class="data">
   <thead><tr><th>Campaign</th><th>Type</th><th>Status</th><th>Channel</th><th></th></tr></thead>
@@ -31,7 +31,7 @@
 <details class="card mt-4"><summary>New campaign</summary>
   <form class="mt-3" method="post" action="/campaigns">
     <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+    <div class="card-grid">
       <div class="field"><label for="campaign_type">Type</label><input class="input" id="campaign_type" name="campaign_type"></div>
       <div class="field"><label for="marketing_channel">Channel</label><input class="input" id="marketing_channel" name="marketing_channel"></div>
       <div class="field"><label for="start_date">Start</label><input class="input" id="start_date" name="start_date" type="date"></div>

@@ -4,7 +4,7 @@
 {% block crumb %}<a href="/operations">Operations</a> / {{ p.name }}{% endblock %}
 {% block content %}
 {{ ui.page_head(p.name, eyebrow=p.category|replace("_"," "), desc=(p.description or "")) }}
-<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
+<section class="card filterbar">
   <div><div class="subtle text-sm">Status</div>{{ ui.badge(p.status|replace("_"," ")|capitalize, 'good' if p.status in ['active','completed'] else '') }}</div>
   <div><div class="subtle text-sm">Health</div>{{ ui.badge(p.health|capitalize, 'good' if p.health == 'green' else ('warn' if p.health == 'yellow' else 'bad')) }}</div>
   <div><div class="subtle text-sm">Priority</div><div>{{ p.priority }}</div></div>

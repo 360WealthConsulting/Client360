@@ -60,19 +60,19 @@
     </tbody></table>
 
     {% for r in c.reconciliations %}
-    <div class="subtle" style="margin:4px 0">Reconciliation: stale #{{ r.stale_person_id }}
+    <div class="subtle tight">Reconciliation: stale #{{ r.stale_person_id }}
       ({{ r.stale_name }}) → canonical #{{ r.canonical_person_id }} ({{ r.canonical_name }})
       [{{ r.reason }}] — ownership is written to the canonical person only; the stale record is not
       modified.</div>
     {% endfor %}
 
     {% for h in c.household_associations %}
-    <div class="subtle" style="margin:4px 0">Household:
+    <div class="subtle tight">Household:
       <a href="/client/household/{{ h.household_id }}">{{ h.household_name }}</a>
       (#{{ h.household_id }}, document co-ownership {{ h.doc_coownership_count }})</div>
     {% endfor %}
 
-    {% for n in c.notes %}<div class="subtle" style="margin:4px 0">Note: {{ n }}</div>{% endfor %}
+    {% for n in c.notes %}<div class="subtle tight">Note: {{ n }}</div>{% endfor %}
 
     <form class="mt-2" method="post" action="/admin/business-resolution/{{ c.business_id }}/apply"
      >

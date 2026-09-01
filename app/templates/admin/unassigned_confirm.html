@@ -39,8 +39,8 @@
 </article>
 
 {% if affected_docs %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
-  <div style="color:var(--ok, #15803d); font-weight:600; margin-bottom:6px">ELIGIBLE UNASSIGNED DOCUMENTS — will be assigned ({{ affected_docs|length }})</div>
+<article class="card rail-good">
+  <div class="text-good mb-2">ELIGIBLE UNASSIGNED DOCUMENTS — will be assigned ({{ affected_docs|length }})</div>
   <div class="scroll-x">
   <table class="table">
     <thead><tr><th>ID</th><th>Filename</th><th>Type / Year</th><th>Source folder</th><th>Current owner</th><th></th></tr></thead>
@@ -63,8 +63,8 @@
 {% endif %}
 
 {% if already_owned_docs %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
-  <div style="font-weight:600">ALREADY OWNED — WILL NOT BE CHANGED ({{ already_owned_docs|length }})</div>
+<article class="card rail-neutral">
+  <div class="semibold">ALREADY OWNED — WILL NOT BE CHANGED ({{ already_owned_docs|length }})</div>
   <div class="subtle mb-2">These documents already have an owner, so folder resolution leaves them untouched.</div>
   <div class="scroll-x">
   <table class="table">
@@ -86,8 +86,8 @@
 {% endif %}
 
 {% if excluded_docs %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
-  <div style="color:var(--warn, #b45309); font-weight:600">PERMANENT REJECTS — WILL NOT BE CHANGED (EXCLUDED — WILL NOT BE ASSIGNED)</div>
+<article class="card rail-warn">
+  <div class="text-warn">PERMANENT REJECTS — WILL NOT BE CHANGED (EXCLUDED — WILL NOT BE ASSIGNED)</div>
   {% for d in excluded_docs %}
     <div class="detail-row"><span>#{{ d.id }} · {{ d.name }}</span>
       <span><a class="btn sm secondary" href="{{ d.view_url }}" target="_blank" rel="noopener">View ↗</a>

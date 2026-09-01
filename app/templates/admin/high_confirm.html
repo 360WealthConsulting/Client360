@@ -10,10 +10,10 @@
   <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
 {% endcall %}
 
-{% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">{{ notice }}</article>{% endif %}
+{% if notice %}<article class="card rail-warn">{{ notice }}</article>{% endif %}
 
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
-  <div style="color:var(--ok, #15803d); font-weight:600; margin-bottom:6px">
+<article class="card rail-good">
+  <div class="text-good mb-2">
     ELIGIBLE — clean HIGH, selectable for bulk confirm ({{ eligible_count }})</div>
   {% if eligible %}
   <form method="post" action="/admin/documents/high-confirm">
@@ -53,8 +53,8 @@
 </article>
 
 {% if review %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
-  <div style="color:var(--warn, #b45309); font-weight:600">REVIEW REQUIRED — HIGH but a contradiction fired ({{ review_count }}) · NOT selectable</div>
+<article class="card rail-warn">
+  <div class="text-warn">REVIEW REQUIRED — HIGH but a contradiction fired ({{ review_count }}) · NOT selectable</div>
   <div class="scroll-x">
   <table class="table">
     <thead><tr><th>ID</th><th>Filename</th><th>Proposed owner</th><th>Contradictions</th><th></th></tr></thead>

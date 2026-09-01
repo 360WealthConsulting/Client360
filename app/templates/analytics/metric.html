@@ -4,7 +4,7 @@
 {% block crumb %}{{ metric.label }}{% endblock %}
 {% block content %}
 {{ ui.page_head(metric.label, eyebrow="Metric", desc=metric.category|capitalize ~ " · " ~ metric.unit) }}
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/analytics">← Back to analytics</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/analytics">← Back to analytics</a></p>
 
 <section class="stack" style="margin-bottom:20px">
   <h2 class="section-title">Current value</h2>

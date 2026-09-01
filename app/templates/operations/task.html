@@ -4,7 +4,7 @@
 {% block crumb %}<a href="/operations">Operations</a> / {% if t.project_id %}<a href="/operations/projects/{{ t.project_id }}">Project</a> / {% endif %}{{ t.title }}{% endblock %}
 {% block content %}
 {{ ui.page_head(t.title, eyebrow="Operational task", desc=(t.description or "")) }}
-<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
+<section class="card filterbar">
   <div><div class="subtle text-sm">Status</div>{{ ui.badge(t.status|replace("_"," ")|capitalize, 'good' if t.status in ['active','completed'] else '') }}</div>
   <div><div class="subtle text-sm">Priority</div><div>{{ t.priority }}</div></div>
   <div><div class="subtle text-sm">Estimate</div><div>{{ t.estimated_minutes or "—" }} min</div></div>

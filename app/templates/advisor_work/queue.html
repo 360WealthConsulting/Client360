@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_head("Advisor Work", eyebrow="Work", desc="Operational work derived from Advisor Recommendations. Completing work records advisor activity only — it never changes or suppresses the underlying recommendation.") }}
 
-<form method="get" action="/advisor-work" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" action="/advisor-work" class="card filterbar">
   <div class="field" style="margin:0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="recommendation, rule, type"></div>
   <div class="field" style="margin:0"><label for="status">Status</label>

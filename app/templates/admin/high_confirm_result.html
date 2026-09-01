@@ -14,8 +14,8 @@
   {{ ui.stat("Failed", failed_count) }}
 </div>
 
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">
-  <div style="color:var(--ok, #15803d); font-weight:600">ASSIGNED ({{ assigned_count }})</div>
+<article class="card rail-good">
+  <div class="text-good">ASSIGNED ({{ assigned_count }})</div>
   {% if assigned %}
   <div class="scroll-x"><table class="table">
     <thead><tr><th>Document</th><th>Owner</th></tr></thead>
@@ -30,8 +30,8 @@
 </article>
 
 {% if skipped %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
-  <div style="font-weight:600">SKIPPED ({{ skipped_count }}) — left unchanged</div>
+<article class="card rail-neutral">
+  <div class="semibold">SKIPPED ({{ skipped_count }}) — left unchanged</div>
   <div class="scroll-x"><table class="table">
     <thead><tr><th>Document</th><th>Reason</th></tr></thead>
     <tbody>
@@ -44,8 +44,8 @@
 {% endif %}
 
 {% if failed %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
-  <div style="color:var(--warn, #b45309); font-weight:600">FAILED ({{ failed_count }}) — left unchanged</div>
+<article class="card rail-warn">
+  <div class="text-warn">FAILED ({{ failed_count }}) — left unchanged</div>
   <div class="scroll-x"><table class="table">
     <thead><tr><th>Document</th><th>Error</th></tr></thead>
     <tbody>

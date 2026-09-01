@@ -9,7 +9,7 @@
   {% if can_report %}<a class="rowlink" href="/opportunities/reports">Pipeline reports →</a>{% endif %}
 </div>
 
-<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" class="card filterbar">
   <div class="field m0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="title"></div>
   <div class="field m0"><label for="stage_id">Stage</label>
@@ -21,7 +21,7 @@
   <div><button class="btn" type="submit">Apply</button></div>
 </form>
 
-<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} opportunit{{ "y" if result.total == 1 else "ies" }}{% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+<p class="subtle result-count">{{ result.total }} opportunit{{ "y" if result.total == 1 else "ies" }}{% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
 
 {% if result.rows %}
 <div class="table-wrap"><table class="data">
@@ -46,7 +46,7 @@
   <summary>New opportunity</summary>
   <form class="mt-3" method="post" action="/opportunities">
     <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+    <div class="card-grid">
       <div class="field"><label for="person_id">Target person id</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
       <div class="field"><label for="organization_id">Target org id</label><input class="input" id="organization_id" name="organization_id" inputmode="numeric"></div>
       <div class="field"><label for="primary_service_line">Service line</label><input class="input" id="primary_service_line" name="primary_service_line"></div>

@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_head(d.business.name, eyebrow="Business", desc="Single-business planning detail. Factual and observational — no tax calculation, plan design, valuation, or insurance placement.") }}
 
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/business-owner/{{ d.person_id }}">← Back to business owner workspace</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/business-owner/{{ d.person_id }}">← Back to business owner workspace</a></p>
 {% if request.query_params.get('error') %}<div class="alert warn mb-3"><span class="ico">!</span><div>Invalid value: {{ request.query_params.get('error') }}</div></div>{% endif %}
 
 {# ── Business facts ─────────────────────────────────────────────────────── #}
@@ -74,7 +74,7 @@
   <h2 class="section-title">Owner compensation</h2>
   <div class="card">
     <p class="subtle">Owner compensation is not stored as structured data in the system. The following are shown as <strong>Not available</strong> rather than estimated or inferred:</p>
-    <ul style="margin:6px 0 0; padding-left:18px">
+    <ul class="list-tight mt-2">
       {% for comp in d.owner_compensation.components %}<li>{{ comp }}: <span class="subtle">Not available</span></li>{% endfor %}
     </ul>
   </div>

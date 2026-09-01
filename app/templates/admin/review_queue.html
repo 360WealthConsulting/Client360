@@ -22,7 +22,7 @@
       <a class="btn sm secondary" href="{{ r.view_url }}" target="_blank" rel="noopener">View ↗</a></span>
   </div>
   {% if r.evidence_classes %}<div class="subtle tight">evidence: {{ r.evidence_classes | join(", ") }}</div>{% endif %}
-  {% if r.evidence %}<ul class="subtle" style="margin:2px 0 6px 18px">{% for e in r.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  {% if r.evidence %}<ul class="subtle list-tight mb-2">{% for e in r.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
   {% if review and r.contradictions %}<div class="subtle" style="color:var(--warn, #b45309)">contradiction: {{ r.contradictions | join(", ") }}</div>{% endif %}
 
   {% if ambiguous %}
@@ -37,7 +37,7 @@
   {% endif %}
 
   {# Manual fallback — one clear control; reuses the existing per-document resolution route. #}
-  <form method="post" action="/admin/documents/review-queue/approve" class="row" style="gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center">
+  <form method="post" action="/admin/documents/review-queue/approve" class="row tight mt-2">
     <input type="hidden" name="document_id" value="{{ r.document_id }}">
     <input type="hidden" name="confirm" value="yes">
     <label class="subtle">Choose another owner:
@@ -58,20 +58,20 @@
   <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
 {% endcall %}
 
-{% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
+{% if notice %}<article class="card rail-good">{{ notice }}</article>{% endif %}
 
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+<article class="card rail-warn">
   <div style="font-weight:600; margin-bottom:6px">MEDIUM — proposed owner, explicit approval required ({{ medium_count }})</div>
   {% for r in medium %}{{ doc_row(r) }}{% else %}<div class="subtle">None.</div>{% endfor %}
 </article>
 
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--muted, #6b7280)">
+<article class="card rail-neutral">
   <div style="font-weight:600; margin-bottom:6px">AMBIGUOUS — multiple candidates, choose one ({{ ambiguous_count }})</div>
   {% for r in ambiguous %}{{ doc_row(r, ambiguous=True) }}{% else %}<div class="subtle">None.</div>{% endfor %}
 </article>
 
 {% if high_review %}
-<article class="card" style="padding:14px 16px; margin-bottom:12px; border-left:4px solid var(--warn, #b45309)">
+<article class="card rail-warn">
   <div style="color:var(--warn, #b45309); font-weight:600; margin-bottom:6px">HIGH — REVIEW REQUIRED (contradiction) · per-document only ({{ high_review_count }})</div>
   {% for r in high_review %}{{ doc_row(r, review=True) }}{% endfor %}
 </article>

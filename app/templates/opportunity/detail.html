@@ -4,7 +4,7 @@
 {% block crumb %}Opportunity{% endblock %}
 {% block content %}
 {{ ui.page_head(o.title, eyebrow="Opportunity", desc=(o.primary_service_line or "") ~ ((" · " ~ o.source) if o.source else "")) }}
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/opportunities">← Back to pipeline</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/opportunities">← Back to pipeline</a></p>
 {% if request.query_params.get('error') %}<div class="alert warn mb-3"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
 
 <section class="stack mb-4">
@@ -57,7 +57,7 @@
   <div class="card">
     {% if o.activities %}
     {% for a in o.activities %}
-    <div class="detail-row" style="align-items:flex-start"><div style="flex:1"><strong>{{ a.activity_type|capitalize }}</strong>{% if a.subject %} — {{ a.subject }}{% endif %}{% if a.timeline_event_id %} {{ ui.badge('M365 linked') }}{% endif %}<br><span class="subtle">{{ a.body or "" }}</span></div><span class="subtle id-mono">{{ a.activity_date | humandt }}</span></div>
+    <div class="detail-row start"><div class="grow"><strong>{{ a.activity_type|capitalize }}</strong>{% if a.subject %} — {{ a.subject }}{% endif %}{% if a.timeline_event_id %} {{ ui.badge('M365 linked') }}{% endif %}<br><span class="subtle">{{ a.body or "" }}</span></div><span class="subtle id-mono">{{ a.activity_date | humandt }}</span></div>
     {% endfor %}
     {% else %}<p class="subtle">No activities logged.</p>{% endif %}
   </div>

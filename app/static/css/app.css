@@ -1024,3 +1024,35 @@ form.stack > label:has(> input[type="checkbox"]) { display:flex; align-items:cen
 .tight { margin:2px 0; }
 /* A secondary link trailing a heading or label — smaller and lighter than the text it follows. */
 .link-sm { font-size:13px; font-weight:500; margin-left:8px; }
+
+/* ---- status rail on a card ------------------------------------------------
+   A card whose left edge carries a semantic colour — 21 uses across 7 screens,
+   each hand-drawn as a 4px `border-left` against `var(--ok)` / `var(--bg)`, two
+   tokens that do not exist, so they were falling back to hardcoded hex that
+   ignores the theme. Same left-rail device the active nav item, `.audience` and
+   `.signal` already use, at the system's 3px. */
+.card:is(.rail-good, .rail-warn, .rail-crit, .rail-neutral) {
+  border-left-width:3px; margin-bottom:var(--s3); }
+.card.rail-good    { border-left-color:var(--good); }
+.card.rail-warn    { border-left-color:var(--warn); }
+.card.rail-crit    { border-left-color:var(--crit); }
+.card.rail-neutral { border-left-color:var(--border-strong); }
+
+/* Semantic emphasis on a run of text — a status word inside a sentence or a
+   heading, where a `.badge` would be too heavy. */
+.text-good { color:var(--good); font-weight:620; }
+.text-warn { color:var(--warn); font-weight:620; }
+.text-crit { color:var(--crit); font-weight:620; }
+
+/* A responsive grid of equal cards — the auto-fill/200px shape five screens
+   were writing out by hand. `.cols-3` is the 260px sibling for wider content. */
+.card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr));
+  gap:var(--s3); align-items:start; }
+
+/* `.row` modifiers for the alignments templates kept setting inline. */
+.row.start { align-items:flex-start; }
+.row.grow > .grow { flex:1; min-width:0; }
+.grow { flex:1; min-width:0; }
+.grow-lg { flex:1; min-width:300px; }
+.nowrap { white-space:nowrap; }
+.semibold { font-weight:620; }

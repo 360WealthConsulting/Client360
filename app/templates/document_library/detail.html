@@ -4,7 +4,7 @@
 {% block crumb %}Document{% endblock %}
 {% block content %}
 {{ ui.page_head(d.original_name, eyebrow="Document", desc=((d.classification or "")|capitalize) ~ " · " ~ d.status|capitalize) }}
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/document-library">← Back to library</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/document-library">← Back to library</a></p>
 {% if request.query_params.get('error') %}<div class="alert warn mb-3"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
 <section class="stack mb-4"><h2 class="section-title">Metadata</h2>
   <div class="card">
@@ -18,7 +18,7 @@
 </section>
 {% if can_edit or can_approve or can_archive %}
 <section class="stack mb-4"><h2 class="section-title">Lifecycle</h2>
-  <div class="card" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+  <div class="card card-grid">
     <a class="btn secondary" href="/documents/{{ d.id }}/email">Email document</a>
     {% if can_approve %}<form method="post" action="/document-library/{{ d.id }}/approve"><button class="btn secondary" type="submit">Approve</button></form>{% endif %}
     {% if can_archive %}<form method="post" action="/document-library/{{ d.id }}/archive"><button class="btn secondary" type="submit">Archive</button></form>{% endif %}

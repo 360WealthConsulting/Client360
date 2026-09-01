@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_head("Annual Review", eyebrow="Advisor workspace", desc="What to review with " ~ (ws.person.full_name or ("client " ~ ws.person.id)) ~ " today. A read-first composition of existing 360Plus domains — it does not modify recommendations, work, timeline, compliance, or portfolio data.") }}
 
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/people/{{ ws.person.id }}">← Back to client</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/people/{{ ws.person.id }}">← Back to client</a></p>
 
 {% if request.query_params.get('error') %}<div class="alert warn mb-3"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
 
@@ -76,10 +76,10 @@
   {% elif ws.activity.rows %}
   <div class="card">
     {% for e in ws.activity.rows %}
-      <div class="detail-row" style="align-items:flex-start">
-        <div style="flex:1"><strong>{{ e.title }}</strong> {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}<br>
+      <div class="detail-row start">
+        <div class="grow"><strong>{{ e.title }}</strong> {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}<br>
           <span class="subtle">{% if e.redacted %}<em>Additional details are restricted.</em>{% else %}{{ e.summary }}{% endif %}</span></div>
-        <span class="subtle id-mono" style="white-space:nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
+        <span class="subtle id-mono nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
       </div>
     {% endfor %}
   </div>
@@ -98,7 +98,7 @@
     <div class="detail-row"><span class="subtle">Completed reviews</span><strong>{{ ws.compliance.completed }}</strong></div>
     {% if ws.compliance.assignments %}
     <div class="mt-3"><span class="subtle">Reviewer assignments</span>
-      <ul style="margin:6px 0 0; padding-left:18px">
+      <ul class="list-tight mt-2">
       {% for a in ws.compliance.assignments %}
         <li><a class="rowlink" href="/compliance/reviews/{{ a.review_id }}">Review {{ a.review_id }}</a> — {{ a.reviewer_name or a.reviewer_role or "unassigned" }} <span class="subtle">({{ a.status|replace("_"," ") }})</span></li>
       {% endfor %}
@@ -145,7 +145,7 @@
   <div class="card">
     <div class="detail-row"><span class="subtle">Open opportunities</span><strong>{{ ws.business_development.open|length }}</strong></div>
     {% if ws.business_development.open %}
-    <ul style="margin:6px 0 0; padding-left:18px">
+    <ul class="list-tight mt-2">
       {% for o in ws.business_development.open %}<li><a class="rowlink" href="/opportunities/{{ o.id }}">{{ o.title }}</a>{% if o.expected_revenue %} <span class="subtle">· ${{ "{:,.0f}".format(o.expected_revenue) }}</span>{% endif %}</li>{% endfor %}
     </ul>{% endif %}
     {% if ws.business_development.recent_wins %}<p class="subtle" style="margin:10px 0 2px">Recent wins</p><ul class="list-tight">{% for o in ws.business_development.recent_wins %}<li>{{ o.title }}</li>{% endfor %}</ul>{% endif %}

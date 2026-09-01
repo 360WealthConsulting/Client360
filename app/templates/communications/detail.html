@@ -4,7 +4,7 @@
 {% block crumb %}<a href="/communications">Communications</a> / {{ c.conversation.subject }}{% endblock %}
 {% block content %}
 {{ ui.page_head(c.conversation.subject, eyebrow="Conversation", desc=c.conversation.category ~ " · " ~ c.conversation.channel) }}
-<section class="card" style="margin-bottom:16px; display:flex; gap:18px; flex-wrap:wrap">
+<section class="card filterbar">
   <div><div class="subtle text-sm">Status</div>{{ ui.badge(c.conversation.status|capitalize, 'good' if c.conversation.status == 'open' else '') }}</div>
   <div><div class="subtle text-sm">Priority</div><div>{{ c.conversation.priority }}</div></div>
   <div><div class="subtle text-sm">Threads</div><div>{{ c.threads|length }}</div></div>

@@ -8,7 +8,7 @@
 <p class="subtle" style="margin:-6px 0 12px"><a class="rowlink" href="{{ back_url }}">← Back to {{ scope_label }}</a></p>
 
 {# Filters + search resolve server-side (activity_timeline.service); the template renders. #}
-<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" class="card filterbar">
   <div class="field m0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="title, summary, actor"></div>
   <div class="field m0"><label for="source">Source</label>
@@ -25,13 +25,13 @@
     {% if filters.q or filters.source or filters.date_from or filters.date_to %}<a class="btn subtle" href="?" style="margin-left:6px">Clear</a>{% endif %}</div>
 </form>
 
-<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} event(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+<p class="subtle result-count">{{ result.total }} event(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
 
 {% if result.rows %}
 <div class="card">
   {% for e in result.rows %}
-    <div class="detail-row" style="align-items:flex-start">
-      <div style="flex:1">
+    <div class="detail-row start">
+      <div class="grow">
         <strong>{% if e.source_url %}<a class="rowlink" href="{{ e.source_url }}">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}</strong>
         {{ ui.badge(e.source_domain|replace("_"," ")|capitalize) }}
         {% if e.status %}<span class="subtle" style="margin-left:4px">{{ e.status|replace("_"," ")|capitalize }}</span>{% endif %}
@@ -39,7 +39,7 @@
         <span class="subtle">{% if e.redacted %}<em>Additional details are restricted.</em>{% else %}{{ e.summary }}{% endif %}</span>
         {% if e.person_id or e.household_id %}<br><span class="subtle">{% if e.person_id %}Person {{ e.person_id }}{% endif %}{% if e.household_id %}{% if e.person_id %} · {% endif %}Household {{ e.household_id }}{% endif %}{% if e.actor_display_name %} · by {{ e.actor_display_name }}{% endif %}</span>{% endif %}
       </div>
-      <span class="subtle id-mono" style="white-space:nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
+      <span class="subtle id-mono nowrap">{{ e.occurred_at | humandt if e.occurred_at else "—" }}</span>
     </div>
   {% endfor %}
 </div>

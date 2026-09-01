@@ -10,7 +10,7 @@
   <a class="btn secondary" href="/admin/documents/unassigned">Back to worklist</a>
 {% endcall %}
 
-{% if notice %}<article class="card" style="padding:10px 12px; margin-bottom:12px; border-left:4px solid var(--ok, #15803d)">{{ notice }}</article>{% endif %}
+{% if notice %}<article class="card rail-good">{{ notice }}</article>{% endif %}
 
 <div class="subtle mb-3">{{ proposals|length }} pending proposal(s).</div>
 
@@ -23,11 +23,11 @@
       <a class="btn sm secondary" href="{{ p.view_url }}" target="_blank" rel="noopener">View ↗</a></span>
   </div>
 
-  <div style="margin:6px 0"><strong>Proposed:</strong>
+  <div class="tight"><strong>Proposed:</strong>
     <span class="tag">{{ p.entity_type | upper }}</span> — {{ p.primary_name }}
     {% if p.members %}<span class="subtle">(members: {{ p.members | join(", ") }})</span>{% endif %}
   </div>
-  <ul class="subtle" style="margin:2px 0 6px 18px">
+  <ul class="subtle list-tight mb-2">
     {% if p.evidence.names %}<li>names: {{ p.evidence.names | join(", ") }}</li>{% endif %}
     {% if p.evidence.business_name %}<li>business: {{ p.evidence.business_name }}</li>{% endif %}
     {% if p.evidence.emails %}<li>emails: {{ p.evidence.emails | join(", ") }}</li>{% endif %}
@@ -50,14 +50,14 @@
   {% else %}<div class="subtle" style="margin:6px 0 2px">No existing candidates found.</div>{% endif %}
 
   <div class="row" style="gap:14px; flex-wrap:wrap; align-items:flex-start; margin-top:10px">
-    <form method="post" action="/admin/documents/entity-proposals/approve" class="row" style="gap:8px; align-items:center">
+    <form method="post" action="/admin/documents/entity-proposals/approve" class="row tight">
       <input type="hidden" name="document_id" value="{{ p.document_id }}">
       <input type="hidden" name="entity_type" value="{{ p.entity_type }}">
       <label class="subtle row" style="gap:6px; align-items:center">
         <input type="checkbox" name="confirm" value="yes" required> confirm</label>
       <button class="btn" type="submit">Approve — create {{ p.entity_type }} “{{ p.primary_name }}” →</button>
     </form>
-    <form method="post" action="/admin/documents/entity-proposals/reject" class="row" style="gap:8px; align-items:center">
+    <form method="post" action="/admin/documents/entity-proposals/reject" class="row tight">
       <input type="hidden" name="document_id" value="{{ p.document_id }}">
       <input class="input" type="text" name="reason" placeholder="reason (optional)" style="max-width:180px">
       <button class="btn sm secondary" type="submit">Reject</button>

@@ -4,7 +4,7 @@
 {% block crumb %}Workflow{% endblock %}
 {% block content %}
 {{ ui.page_head(w.workflow.name, eyebrow="Workflow", desc=w.workflow.workflow_type ~ " · " ~ w.workflow.status|capitalize) }}
-<p class="subtle" style="margin:-6px 0 14px"><a class="rowlink" href="/workflow-automation">← Back to workflows</a></p>
+<p class="subtle result-count"><a class="rowlink" href="/workflow-automation">← Back to workflows</a></p>
 {% if request.query_params.get('error') %}<div class="alert warn" style="margin-bottom:14px"><span class="ico">!</span><div>{{ request.query_params.get('error') }}</div></div>{% endif %}
 {% if can_execute %}
 <section class="stack" style="margin-bottom:20px"><h2 class="section-title">Controls</h2>

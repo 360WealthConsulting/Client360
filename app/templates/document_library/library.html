@@ -4,7 +4,7 @@
 {% block crumb %}Document Library{% endblock %}
 {% block content %}
 {{ ui.page_head("Document Library", eyebrow="Knowledge repository", desc="The authoritative repository for client, compliance, tax, insurance, planning, and operational documents.") }}
-<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+<form method="get" class="card filterbar">
   <div class="field m0"><label for="q">Search</label><input class="input" id="q" name="q" value="{{ filters.q }}"></div>
   <div class="field m0"><label for="classification">Classification</label>
     <select class="input" id="classification" name="classification"><option value="">All</option>
@@ -14,7 +14,7 @@
       {% for st in ["draft","active","review","approved","superseded","archived"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
   <div><button class="btn" type="submit">Apply</button></div>
 </form>
-<p class="subtle" style="margin:-4px 0 10px">{{ result.total }} document(s).</p>
+<p class="subtle result-count">{{ result.total }} document(s).</p>
 {% if result.rows %}
 <div class="table-wrap"><table class="data">
   <thead><tr><th>Document</th><th>Classification</th><th>Status</th><th>Version</th><th></th></tr></thead>
@@ -29,7 +29,7 @@
 <details class="card mt-4"><summary>Register document</summary>
   <form class="mt-3" method="post" action="/document-library">
     <div class="field"><label for="original_name">Name</label><input class="input" id="original_name" name="original_name" required></div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px">
+    <div class="card-grid">
       <div class="field"><label for="person_id">Person id</label><input class="input" id="person_id" name="person_id" inputmode="numeric"></div>
       <div class="field"><label for="classification">Classification</label>
         <select class="input" id="classification" name="classification">{% for cl in ["client","compliance","tax","insurance","benefits","retirement","estate","investment","operations","marketing","legal","hr","internal"] %}<option value="{{ cl }}">{{ cl|capitalize }}</option>{% endfor %}</select></div>

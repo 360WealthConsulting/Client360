@@ -21,7 +21,7 @@
 <table class="table"><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Amount</th><th>Kind</th>{% if invoice.status=='draft' %}<th></th>{% endif %}</tr></thead><tbody>
 {% for l in invoice.line_items %}
   <tr><td>{{ l.description }}</td><td>{{ l.quantity }}</td><td>{{ money(l.unit_amount_cents) }}</td><td>{{ money(l.amount_cents) }}</td><td>{{ l.kind|title }}</td>
-    {% if invoice.status=='draft' %}<td><form method="post" action="/billing/invoices/{{ invoice.id }}/line-items/{{ l.id }}/remove" style="margin:0;"><button class="btn secondary" type="submit">Remove</button></form></td>{% endif %}</tr>
+    {% if invoice.status=='draft' %}<td><form class="m0" method="post" action="/billing/invoices/{{ invoice.id }}/line-items/{{ l.id }}/remove"><button class="btn secondary" type="submit">Remove</button></form></td>{% endif %}</tr>
 {% else %}<tr><td colspan="6" class="subtle">No line items.</td></tr>{% endfor %}
 </tbody></table>
 
