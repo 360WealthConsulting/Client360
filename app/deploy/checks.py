@@ -15,7 +15,7 @@ PRODUCTION_REQUIRED = ("DATABASE_URL", "SESSION_SECRET", "OIDC_ISSUER", "OIDC_CL
 RECOMMENDED = ("MICROSOFT_TOKEN_KEY", "MICROSOFT_TENANT_ID", "MICROSOFT_CLIENT_ID",
                "MICROSOFT_CLIENT_SECRET", "MICROSOFT_REDIRECT_URI", "ALLOWED_HOSTS",
                "TRUSTED_PROXY", "PUBLIC_STAFF_URL", "PUBLIC_PORTAL_URL", "LOG_DIR",
-               "VAULT_STORAGE_ROOT")
+               "VAULT_STORAGE_ROOT", "IMAGE_DERIVATIVE_ROOT")
 
 _DEV_SESSION_SECRET = "development-only-change-me"
 
@@ -42,6 +42,24 @@ def vault_storage_writable() -> tuple[bool, str | None]:
     try:
         from app.services.vault.storage import storage_root
         root = storage_root()                       # creates the dir if missing
+        marker = root / f".readiness-{uuid.uuid4().hex}"
+        marker.write_bytes(b"ok")
+        marker.unlink()
+        return True, str(root)
+    except Exception as exc:  # noqa: BLE001 — report, never raise into a probe
+        return False, str(exc)
+
+
+def image_derivative_storage_writable() -> tuple[bool, str | None]:
+    """True if the normalized-image derivative root resolves and is writable (probe write + delete).
+
+    Also enforces the production posture: ``derivative_root()`` refuses an unset or relative
+    ``IMAGE_DERIVATIVE_ROOT`` in production, because the development default is relative to the
+    service working directory and could place generated derivatives inside a deployed source tree.
+    Derivatives are generated files only — no original document is ever stored here."""
+    try:
+        from app.services.image_normalization import derivative_root
+        root = derivative_root()                    # creates the dir if missing; raises in prod if unset
         marker = root / f".readiness-{uuid.uuid4().hex}"
         marker.write_bytes(b"ok")
         marker.unlink()

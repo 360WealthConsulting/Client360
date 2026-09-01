@@ -107,13 +107,15 @@ def _write_env(directory: Path, secret: str) -> Path:
     env.write_text(
         "CLIENT360_ENVIRONMENT=production\nDATABASE_URL=postgresql://h/db\n"
         f"SESSION_SECRET={secret}\nOIDC_ISSUER=https://i\nOIDC_CLIENT_ID=c\n"
-        f"OIDC_CLIENT_SECRET={secret}\nVAULT_STORAGE_ROOT={directory / 'vault'}\n")
+        f"OIDC_CLIENT_SECRET={secret}\nVAULT_STORAGE_ROOT={directory / 'vault'}\n"
+        f"IMAGE_DERIVATIVE_ROOT={directory / 'derivatives'}\n")
     return env
 
 
 def _clear_config_env(monkeypatch):
     for var in ("CLIENT360_ENVIRONMENT", "DATABASE_URL", "SESSION_SECRET", "OIDC_ISSUER",
-                "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "VAULT_STORAGE_ROOT"):
+                "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "VAULT_STORAGE_ROOT",
+                "IMAGE_DERIVATIVE_ROOT"):
         monkeypatch.delenv(var, raising=False)
 
 

@@ -22,6 +22,7 @@ from app.services.identity import (
     list_identity_data,
     set_user_status,
 )
+from app.services.image_normalization import HEIF_EXTENSIONS
 from app.templating import render_error
 
 router = APIRouter(prefix="/admin", tags=["administration"])
@@ -115,7 +116,8 @@ def _owner_detail(conn, row):
 
 
 _EXCEL_EXTS = {"xlsx", "xlsm"}
-_HEIF_EXTS = {"heic", "heif"}
+# One definition of "this is a HEIF-family image", shared with the acceptance and normalization paths.
+_HEIF_EXTS = HEIF_EXTENSIONS
 
 
 def _view_url(document_id, name):

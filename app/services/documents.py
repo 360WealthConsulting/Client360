@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import uuid
 from pathlib import Path
 from typing import BinaryIO
@@ -107,6 +108,11 @@ def save_workspace_document(
     Filename safety: the stored name is a random hex plus a short sanitised suffix, and the directory
     is derived from the owner id, so nothing in the request can influence where bytes land or escape
     the document root. ``original_name`` is preserved verbatim as provenance.
+
+    A HEIC/HEIF upload is stored EXACTLY as uploaded — same bytes, same ``original_name``, same
+    ``content_type``, same SHA-256 — and is additionally queued for image normalization (see
+    :func:`_queue_image_normalization`), which produces a separate JPEG derivative for OCR, previews
+    and AI image inputs. The original is never replaced or re-encoded.
     """
     if owner_type not in OWNER_COLUMNS:
         raise ValueError(f"unknown owner_type {owner_type!r}")
@@ -156,11 +162,32 @@ def save_workspace_document(
                 .returning(documents.c.id)
             ).scalar_one()
 
+        _queue_image_normalization(document_id, original_name, content_type)
         return document_id
 
     except Exception:
         destination.unlink(missing_ok=True)
         raise
+
+
+def _queue_image_normalization(document_id: int, original_name: str, content_type: str | None) -> None:
+    """Record a PENDING normalization for an upload that needs a JPEG derivative (HEIC/HEIF today).
+
+    State only — no decode happens on the upload request, so an unusual image cannot slow or fail an
+    upload that has already been safely stored. The derivative itself is produced on first use by
+    ``document_derivatives.ensure_normalized_image``, which records the terminal state.
+
+    Never raises: the ORIGINAL is already durably stored and its row committed by this point, and a
+    provenance bookkeeping problem must not undo a successful upload."""
+    try:
+        from app.services.document_derivatives import mark_pending
+        from app.services.image_normalization import needs_normalization
+        if not needs_normalization(filename=original_name, content_type=content_type):
+            return
+        mark_pending(document_id, source_mime=content_type)
+    except Exception:  # noqa: BLE001 — bookkeeping only; the stored original is unaffected
+        logging.getLogger(__name__).warning(
+            "Could not queue image normalization for document %s", document_id)
 
 
 def get_person_documents(person_id: int):

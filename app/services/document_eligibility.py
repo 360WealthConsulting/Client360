@@ -100,5 +100,8 @@ _CONTENT_TYPES: frozenset[str] = frozenset({
     "application/rtf", "text/rtf",
     "text/plain", "text/csv", "text/markdown", "text/xml", "application/xml",
     "message/rfc822", "application/vnd.ms-outlook", "text/calendar",
-    "image/png", "image/jpeg", "image/gif", "image/tiff", "image/bmp", "image/heic",
+    # Both HEIF still types: an iPhone upload can be labelled either way, and a file whose NAME
+    # carries no extension must still be recognized as a document. The multi-frame ``*-sequence``
+    # types are deliberately absent — they are refused at acceptance, not analyzed.
+    "image/png", "image/jpeg", "image/gif", "image/tiff", "image/bmp", "image/heic", "image/heif",
 })

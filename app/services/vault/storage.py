@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import BinaryIO
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024                       # 50 MB
-ALLOWED_EXTENSIONS = frozenset({"pdf", "docx", "xlsx", "csv", "jpg", "jpeg", "png", "txt"})
+# ``heic``/``heif`` are accepted because iPhone photos arrive in that format everywhere clients and
+# staff upload. The ORIGINAL is stored exactly as uploaded; a normalized JPEG derivative for OCR,
+# previews and AI image inputs is produced separately (app.services.document_derivatives).
+ALLOWED_EXTENSIONS = frozenset({"pdf", "docx", "xlsx", "csv", "jpg", "jpeg", "png", "txt",
+                                "heic", "heif"})
 _KEY_RE = re.compile(r"^[0-9a-f]{2}/[0-9a-f]{32}\.[0-9a-z]{1,8}$")   # shard/uuid.ext — the only shape we accept
 
 # Leading-byte signatures for the binary allow-listed types. Used to reject files whose *content*
@@ -33,14 +37,25 @@ _MAGIC = {
     "xlsx": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
 }
 
+# HEIC/HEIF have no fixed leading signature — the format marker is an ISO-BMFF ``ftyp`` box whose
+# BRANDS identify it, so they are verified by the one content detector in image_normalization rather
+# than by a prefix table. That detector also refuses a multi-frame HEIF image sequence, so
+# ``image/heic-sequence`` is rejected at acceptance instead of being half-handled downstream.
+_HEIF_SNIFFED = frozenset({"heic", "heif"})
+
 
 def content_matches_extension(ext: str, header: bytes) -> bool:
     """True if ``header`` (the file's leading bytes) is consistent with the claimed ``ext``.
 
     Types without a reliable signature (csv, txt, or any not in ``_MAGIC``) are permitted. PDF may
     carry a few leading bytes before ``%PDF`` in the wild, so it is matched within the first 1 KB;
-    the strict binary formats must appear at offset 0."""
-    signatures = _MAGIC.get((ext or "").lower())
+    the strict binary formats must appear at offset 0. HEIC/HEIF are decided by their ISO-BMFF
+    ``ftyp`` brands (see ``_HEIF_SNIFFED``), which also rejects multi-frame image sequences."""
+    ext_lower = (ext or "").lower()
+    if ext_lower in _HEIF_SNIFFED:
+        from app.services.image_normalization import content_matches_heif
+        return content_matches_heif(header)
+    signatures = _MAGIC.get(ext_lower)
     if not signatures:
         return True
     if ext.lower() == "pdf":

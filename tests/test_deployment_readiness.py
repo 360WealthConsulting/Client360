@@ -67,11 +67,25 @@ def test_secret_values_are_not_present_in_output(monkeypatch, capsys):
     assert "SUPER-SECRET-XYZ" not in out and "OIDC-SECRET-XYZ" not in out
 
 
-def test_valid_production_configuration_passes(monkeypatch):
+def test_valid_production_configuration_passes(monkeypatch, tmp_path):
     _prod_env(monkeypatch, SESSION_SECRET="a-strong-session-secret", OIDC_ISSUER="https://issuer",
-              OIDC_CLIENT_ID="cid", OIDC_CLIENT_SECRET="csecret")
+              OIDC_CLIENT_ID="cid", OIDC_CLIENT_SECRET="csecret",
+              # Required in production: the development default is relative to the working directory
+              # and could place generated image derivatives inside a deployed source tree.
+              IMAGE_DERIVATIVE_ROOT=str(tmp_path / "derivatives"))
     result = config_check.validate_config()
     assert result["ok"] is True and result["fatal"] == []
+
+
+def test_production_without_an_image_derivative_root_is_fatal(monkeypatch):
+    """An otherwise-valid production configuration still fails: normalized image derivatives would
+    be written to a working-directory-relative path."""
+    _prod_env(monkeypatch, SESSION_SECRET="a-strong-session-secret", OIDC_ISSUER="https://issuer",
+              OIDC_CLIENT_ID="cid", OIDC_CLIENT_SECRET="csecret")
+    monkeypatch.delenv("IMAGE_DERIVATIVE_ROOT", raising=False)
+    result = config_check.validate_config()
+    assert result["ok"] is False
+    assert any("IMAGE_DERIVATIVE_ROOT" in f for f in result["fatal"])
 
 
 def test_dev_environment_does_not_require_production_secrets(monkeypatch):
@@ -91,7 +105,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "msgcap01"        # dedicated secure-Messages capabilities
+    assert migrate.target_head() == "docnorm01"       # normalized image derivatives (HEIC/HEIF)
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():
@@ -155,9 +169,11 @@ def test_config_check_cli_loads_env_file(tmp_path, monkeypatch):
     (tmp_path / "app" / ".env").write_text(
         "CLIENT360_ENVIRONMENT=production\nDATABASE_URL=postgresql://h/db\n"
         "SESSION_SECRET=a-strong-secret\nOIDC_ISSUER=https://i\nOIDC_CLIENT_ID=c\n"
-        f"OIDC_CLIENT_SECRET=s\nVAULT_STORAGE_ROOT={tmp_path / 'vault'}\n")
+        f"OIDC_CLIENT_SECRET=s\nVAULT_STORAGE_ROOT={tmp_path / 'vault'}\n"
+        f"IMAGE_DERIVATIVE_ROOT={tmp_path / 'derivatives'}\n")
     for var in ("CLIENT360_ENVIRONMENT", "DATABASE_URL", "SESSION_SECRET", "OIDC_ISSUER",
-                "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "VAULT_STORAGE_ROOT"):
+                "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "VAULT_STORAGE_ROOT",
+                "IMAGE_DERIVATIVE_ROOT"):
         monkeypatch.delenv(var, raising=False)
     assert config_check.main([]) == 0            # loads app/.env → valid production config → exit 0
     assert os.getenv("SESSION_SECRET") == "a-strong-secret"
