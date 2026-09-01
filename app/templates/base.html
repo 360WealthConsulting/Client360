@@ -36,10 +36,12 @@
 {# Document Management (unassigned-folder resolution worklist) is gated on the SAME capability the
    route enforces (client.write) — the migration cleanup queue lives here, not in a client's Documents tab. #}
 {% set can_docmgmt = 'client.write' in caps %}
-{# Secure client messaging. Gated on client.read alone — the SAME capability /admin/client-portal/
-   threads enforces — and deliberately NOT on firm_client: the inbox is record-scoped per thread,
-   so an advisor without record.read_all still sees the conversations they may service. #}
-{% set can_messages = 'client.read' in caps %}
+{# Secure client messaging. Gated on communications.message.read — the SAME capability
+   /admin/client-portal/threads enforces (msgcap01) — and deliberately NOT on firm_client: the inbox
+   is record-scoped per thread, so an advisor without record.read_all still sees the conversations
+   they may service. It was client.read, which eleven roles hold; those without the dedicated
+   capability were shown the link and then refused. #}
+{% set can_messages = 'communications.message.read' in caps %}
 {# Navigation groups. PRESENTATION ONLY: every href, match prefix and `show` capability below is
    byte-identical to what it was - the twelve original groups are consolidated into eight so the rail
    scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated.

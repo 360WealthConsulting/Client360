@@ -1,4 +1,4 @@
-"""Secure client MESSAGES is gated by client.read, not by identity.manage.
+"""Secure client MESSAGES is gated by a DEDICATED capability, not identity.manage and not client.read.
 
 `/admin/client-portal/threads` is staff client service that happens to live under `/admin`. The generic
 `^/admin` -> `identity.manage` middleware rule used to swallow it, so only the Administrator role could
@@ -6,12 +6,19 @@ open a surface whose own six handlers ask for `client.read` (GET) and `client.wr
 Service or Advisor employee - the people whose job IS answering clients - got a 403 on a link the
 sidebar advertised to them.
 
-A narrow carve-out on the `/threads` subtree fixes that. These tests pin all three halves of the
-contract, because each could regress on its own:
+A narrow carve-out on the `/threads` subtree fixes that, gated on `communications.message.read`
+(msgcap01). The obvious alternative - `client.read` - would also have opened Messages, but eleven roles
+hold it, including Accounting, Payroll, Reviewer and Read Only. Reading a client's correspondence is a
+narrower authority than reading their record, so it gets its own capability, and the `.read`->`.write`
+inference splits viewing from replying via `communications.message.write`.
 
-  1. authorized staff (client.read, no identity.manage) REACH Messages;
-  2. staff without client.read are DENIED;
-  3. every other `/admin/*` route - including the rest of `/admin/client-portal` - still demands
+These tests pin all four halves of the contract, because each could regress on its own:
+
+  1. holders of the message capability REACH Messages;
+  2. everyone else is DENIED - explicitly including a client.read holder, which is the exact
+     over-broad model this replaced;
+  3. viewing and replying are SEPARATELY gated;
+  4. every other `/admin/*` route - including the rest of `/admin/client-portal` - still demands
      identity.manage, so the carve-out never became a general `/admin` exemption.
 
 Runtime behaviour is driven through the real ``AuthenticationMiddleware.dispatch`` with a mocked
@@ -80,41 +87,63 @@ THREAD_WRITES = ("/admin/client-portal/threads/new", "/admin/client-portal/threa
                  "/admin/client-portal/threads/7/create-request")
 
 
+VIEWER = ("communications.message.read", "client.read")
+REPLIER = ("communications.message.read", "communications.message.write",
+           "client.read", "client.write")
+
+
 @pytest.mark.parametrize("path", THREAD_READS)
-def test_client_read_staff_can_open_messages_without_identity_manage(monkeypatch, path):
+def test_message_reader_can_open_messages_without_identity_manage(monkeypatch, path):
     """The regression this whole patch exists for: a Client Service employee reaches Messages."""
-    assert _status(monkeypatch, "GET", path, _principal("client.read")) == 200
+    assert _status(monkeypatch, "GET", path, _principal(*VIEWER)) == 200
 
 
 @pytest.mark.parametrize("path", THREAD_WRITES)
-def test_client_write_staff_can_act_on_a_thread_without_identity_manage(monkeypatch, path):
-    assert _status(monkeypatch, "POST", path, _principal("client.read", "client.write")) == 200
+def test_message_writer_can_act_on_a_thread_without_identity_manage(monkeypatch, path):
+    assert _status(monkeypatch, "POST", path, _principal(*REPLIER)) == 200
 
 
 def test_the_administrator_can_still_open_messages(monkeypatch):
-    """Broadening access must not cost the role that already had it."""
-    admin = _principal("client.read", "client.write", "identity.manage", "record.read_all")
+    """Changing the gate must not cost the role that already had access."""
+    admin = _principal(*REPLIER, "identity.manage", "record.read_all")
     assert _status(monkeypatch, "GET", "/admin/client-portal/threads", admin) == 200
 
 
-# --- 2. staff without client.read are denied ---------------------------------
+# --- 2. everyone else is denied ----------------------------------------------
 
 @pytest.mark.parametrize("path", THREAD_READS)
-def test_staff_without_client_read_cannot_open_messages(monkeypatch, path):
+def test_staff_without_the_message_capability_cannot_open_messages(monkeypatch, path):
     assert _status(monkeypatch, "GET", path, _principal("work.read", "task.read")) == 403
 
 
+def test_client_read_alone_does_not_open_messages(monkeypatch):
+    """The point of msgcap01. client.read is held by eleven roles - Accounting, Payroll, Reviewer
+    and Read Only among them - and reading a client's correspondence is a narrower authority than
+    reading their record. If this ever passes, the permission surface has silently widened back."""
+    assert _status(monkeypatch, "GET", "/admin/client-portal/threads",
+                   _principal("client.read")) == 403
+    assert _status(monkeypatch, "GET", "/admin/client-portal/threads",
+                   _principal("client.read", "client.write")) == 403
+
+
 def test_identity_manage_alone_does_not_open_messages(monkeypatch):
-    """The gate is genuinely client.read now - not "client.read OR the old admin capability"."""
+    """The gate is genuinely the dedicated capability - not "it OR the old admin capability"."""
     assert _status(monkeypatch, "GET", "/admin/client-portal/threads",
                    _principal("identity.manage")) == 403
 
 
-def test_read_only_staff_cannot_reply(monkeypatch):
-    """The .read->.write inference still separates viewing a conversation from writing into it."""
-    reader = _principal("client.read")
-    assert _status(monkeypatch, "GET", "/admin/client-portal/threads/7", reader) == 200
-    assert _status(monkeypatch, "POST", "/admin/client-portal/threads/7/reply", reader) == 403
+def test_a_viewer_cannot_reply(monkeypatch):
+    """View and reply are separately gated: the .read->.write inference lands on
+    communications.message.write, which a view-only role (Tax Staff) does not hold."""
+    viewer = _principal(*VIEWER)
+    assert _status(monkeypatch, "GET", "/admin/client-portal/threads/7", viewer) == 200
+    assert _status(monkeypatch, "POST", "/admin/client-portal/threads/7/reply", viewer) == 403
+
+
+def test_the_write_capability_alone_does_not_bypass_the_read_gate(monkeypatch):
+    """A malformed grant (write without read) must not open the door."""
+    assert _status(monkeypatch, "GET", "/admin/client-portal/threads",
+                   _principal("communications.message.write", "client.read")) == 403
 
 
 def test_an_unauthenticated_request_never_reaches_messages(monkeypatch):
@@ -165,9 +194,10 @@ def test_the_pre_existing_admin_carve_outs_are_undisturbed(path, cap):
 
 
 def test_the_carve_out_is_scoped_to_the_threads_subtree():
-    """A prefix one segment shorter would hand the whole client-portal admin surface to client.read."""
-    assert _required("/admin/client-portal/threads") == "client.read"
-    assert _required("/admin/client-portal/threads", "POST") == "client.write"
+    """A prefix one segment shorter would hand the whole client-portal admin surface to the
+    message capability."""
+    assert _required("/admin/client-portal/threads") == "communications.message.read"
+    assert _required("/admin/client-portal/threads", "POST") == "communications.message.write"
     assert _required("/admin/client-portal") == "identity.manage"
     assert _required("/admin") == "identity.manage"
 
@@ -183,14 +213,15 @@ def test_capability_and_record_scope_are_separate_layers():
 
 # --- navigation visibility ---------------------------------------------------
 
-def test_the_sidebar_already_offers_messages_on_client_read():
-    """A nav item gated more tightly than its route hides the surface from the very staff this
-    patch enables; gated more loosely it is shown-then-403. base.html has always gated Messages
-    on client.read - which this carve-out makes correct for the first time, so the sidebar needs
-    no change and must not drift to something narrower."""
+def test_the_sidebar_gates_messages_on_the_capability_the_route_enforces():
+    """A nav item gated more tightly than its route hides the surface from the staff this patch
+    enables; gated more loosely it is shown-then-403. The sidebar previously used client.read, so
+    the six roles that hold client.read without the message capability were shown the link and then
+    refused. It must track the route's real gate exactly."""
     import pathlib
     src = pathlib.Path("app/templates/base.html").read_text(encoding="utf-8")
-    assert "{% set can_messages = 'client.read' in caps %}" in src
+    assert "{% set can_messages = 'communications.message.read' in caps %}" in src
+    assert "{% set can_messages = 'client.read' in caps %}" not in src
     messages_item = next(line for line in src.splitlines()
                          if '"href": "/admin/client-portal/threads"' in line)
     assert '"show": can_messages' in messages_item

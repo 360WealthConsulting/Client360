@@ -80,15 +80,21 @@ RULES = (
     # create-client, diagnostics - is genuinely administrative and still requires
     # identity.manage from the rule below. Nothing about /admin in general changes.
     #
-    # It grants nothing the routes do not already enforce. All six /threads handlers declare
-    # their own capability (client.read on the two GETs, client.write on the four POSTs), and
-    # the ".read"->".write" inference below reproduces exactly that split. require_capability
-    # runs ON TOP of this rule, never instead of it.
+    # The capability is DEDICATED (msgcap01), not client.read. Gating on client.read would have
+    # made Messages reachable, but eleven roles hold it - including Accounting, Payroll, Reviewer
+    # and Read Only, who have no business reading a client's correspondence. Reading client
+    # messages is a narrower authority than reading a client record, so it has its own capability.
+    # The ".read"->".write" inference below turns every mutation into
+    # communications.message.write, which is granted to five roles rather than six - so viewing a
+    # conversation and replying to the client are separately gated. require_capability runs ON TOP
+    # of this rule, never instead of it, so the handlers' own client.read / client.write still
+    # apply and /threads/diagnostics keeps its stricter observability.audit.
     #
     # Record scope is untouched and still decides WHICH threads are visible:
-    # communication_hub.thread_in_staff_scope() runs per row, independent of capability.
+    # communication_hub.thread_in_staff_scope() runs per row, independent of capability. These
+    # capabilities gate the door, not the contents.
     # Placement matters exactly as it does for the workflow/tax carve-outs above.
-    (re.compile(r"^/admin/client-portal/threads"), "client.read"),
+    (re.compile(r"^/admin/client-portal/threads"), "communications.message.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
     (re.compile(r"^/admin/rule-catalog"), "audit.read"),
     (re.compile(r"^/admin/(roles|user-roles)"), "role.manage"),

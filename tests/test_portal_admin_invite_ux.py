@@ -77,10 +77,12 @@ def _principal(uid, caps=("client.read", "client.write", "record.read_all", "rec
     return Principal(uid, "staff@example.com", "Staff", frozenset(caps))
 
 
-def _render_admin_home():
+def _render_admin_home(caps=None):
     """The real rendered staff page, so template wiring is proven rather than assumed."""
     from app.routes.portal_admin import portal_admin_home
-    return portal_admin_home(_req(), principal=_principal(_staff_user())).body.decode("utf-8")
+    uid = _staff_user()
+    principal = _principal(uid, caps) if caps is not None else _principal(uid)
+    return portal_admin_home(_req(), principal=principal).body.decode("utf-8")
 
 
 def _req(session=None):
@@ -2224,14 +2226,22 @@ def test_a_non_numeric_person_id_is_refused_before_the_service_is_reached():
 
 def test_the_staff_navigation_exposes_messages():
     """It was previously reachable only by typing the URL."""
-    html = _render_admin_home()
+    html = _render_admin_home(caps=("client.read", "client.write", "record.read_all",
+                                    "record.write_all", "communications.message.read"))
     assert 'href="/admin/client-portal/threads"' in html, "Messages is missing from the sidebar"
     assert ">Messages" in html
 
 
+def test_the_messages_nav_item_is_hidden_without_the_message_capability():
+    """The gate moved from client.read to communications.message.read (msgcap01). Eleven roles hold
+    client.read; the six that lack the message capability were shown the link and then refused."""
+    html = _render_admin_home()          # client.read + record.*, but NOT the message capability
+    assert 'href="/admin/client-portal/threads"' not in html
+
+
 def test_the_messages_nav_item_is_gated_on_the_capability_the_route_enforces():
     base = open("app/templates/base.html", encoding="utf-8").read()
-    assert "{% set can_messages = 'client.read' in caps %}" in base
+    assert "{% set can_messages = 'communications.message.read' in caps %}" in base
     assert '"show": can_messages' in base
     # NOT firm_client: the inbox is record-scoped per thread, so record.read_all is not required.
     assert '"label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": firm_client' \

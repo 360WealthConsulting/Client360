@@ -138,5 +138,33 @@ EXISTING_PROFILES: dict[str, frozenset[str]] = {
     "compliance": frozenset({"audit.read", "compliance.review.read", "compliance.supervise"}),
 }
 
+# --- capabilities granted to library profiles AFTER the library was seeded ---------------------
+#
+# These cannot live in NEW_PROFILES. ``prodrolelib01`` reads NEW_PROFILES live and hard-fails on any
+# capability that is not yet in the catalogue AT ITS POINT IN HISTORY, so a profile may only
+# reference capabilities that already existed when the library was seeded. A capability introduced
+# by a later migration is therefore recorded here, next to the migration that creates and grants it,
+# and the library stays the single source of truth for what a profile ends up holding.
+#
+# Each entry is (capability -> {profile codes}) and MUST match the grants in the named migration
+# exactly; tests/test_production_role_library.py folds these into its exact-set assertion, so the
+# two cannot drift.
+#
+#   msgcap01 — secure client Messages. A dedicated read/write pair rather than reusing client.read,
+#   which eleven roles hold: reading a client's correspondence is a narrower authority than reading
+#   their record. tax_staff gets read only — a preparer needs the conversation for context, but
+#   replying to the client is the coordinator's job.
+POST_SEED_GRANTS: dict[str, frozenset[str]] = {
+    "client_service": frozenset({"communications.message.read", "communications.message.write"}),
+    "senior_tax": frozenset({"communications.message.read", "communications.message.write"}),
+    "tax_staff": frozenset({"communications.message.read"}),
+}
+
+
+def effective_capabilities(profile_code: str) -> frozenset[str]:
+    """Everything a NEW_PROFILES profile holds once post-seed migrations have run."""
+    return frozenset(NEW_PROFILES[profile_code][2]) | POST_SEED_GRANTS.get(profile_code, frozenset())
+
+
 # The full production library = the seven new profiles + the seven pre-existing ones.
 ALL_PROFILE_CODES: frozenset[str] = frozenset(NEW_PROFILES) | frozenset(EXISTING_PROFILES)
