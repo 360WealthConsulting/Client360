@@ -5,7 +5,7 @@ people / households / businesses, and returns a ranked proposed owner with a con
 supporting evidence. It proposes only — it never assigns, never writes, and never modifies a source file.
 
 Extraction by type (bounded; reuses existing infrastructure, no OCR engine required):
-  * Excel (.xlsx/.xlsm): openpyxl cell text (reuses app.routes.documents.read_workbook_preview).
+  * Excel (.xlsx/.xlsm): bounded openpyxl cell text.
   * PDF: native text layer via pypdf (no OCR of a text PDF); if the PDF has no text layer, fall back to
     any cached OCR text in the document_ocr table.
   * Images (incl. HEIC): cached OCR text from document_ocr if present; otherwise no content text
@@ -166,8 +166,12 @@ def _pdf_text(path):
 
 def _excel_text(path):
     try:
-        from app.routes.documents import read_workbook_preview
-        r = read_workbook_preview(path)
+        from app.services.workbook_preview import read_workbook_preview
+        r = read_workbook_preview(
+            path,
+            max_rows=_MAX_EXCEL_ROWS,
+            max_cols=200,
+        )
         if r.get("error"):
             return ""
         parts = []

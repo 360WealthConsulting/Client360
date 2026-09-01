@@ -15,6 +15,7 @@ from app.services.documents import (
 )
 from app.services.microsoft_documents import get_person_microsoft_documents
 from app.services.timeline import add_timeline_event
+from app.services.workbook_preview import read_workbook_preview
 from app.templating import render_error
 
 router = APIRouter()
@@ -192,49 +193,6 @@ def convert_image_to_jpeg(path):
         return None
 
 
-def _fmt_cell(value):
-    """Render a workbook cell value for read-only display (dates/numbers/text handled reasonably)."""
-    from datetime import date, datetime, time
-    if value is None:
-        return ""
-    if isinstance(value, datetime):
-        return value.date().isoformat() if value.time() == time(0, 0) else value.isoformat(sep=" ")
-    if isinstance(value, date):
-        return value.isoformat()
-    return str(value)
-
-
-def read_workbook_preview(path, sheet=""):
-    """Read a bounded, READ-ONLY preview of an .xlsx/.xlsm workbook. Never writes or converts the file.
-    Returns {sheetnames, active, rows, truncated_rows, truncated_cols} or {error} on failure."""
-    import openpyxl
-    try:
-        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    except Exception as exc:  # noqa: BLE001 — malformed/unreadable workbook: fail safely
-        return {"error": f"This workbook could not be opened for preview ({type(exc).__name__})."}
-    try:
-        sheetnames = list(wb.sheetnames)
-        active = sheet if sheet in sheetnames else (sheetnames[0] if sheetnames else None)
-        rows, truncated_rows, truncated_cols = [], False, False
-        if active is not None:
-            ws = wb[active]
-            for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
-                if r_idx >= _PREVIEW_MAX_ROWS:
-                    truncated_rows = True
-                    break
-                cells = []
-                for c_idx, val in enumerate(row):
-                    if c_idx >= _PREVIEW_MAX_COLS:
-                        truncated_cols = True
-                        break
-                    cells.append(_fmt_cell(val))
-                rows.append(cells)
-        return {"sheetnames": sheetnames, "active": active, "rows": rows,
-                "truncated_rows": truncated_rows, "truncated_cols": truncated_cols}
-    finally:
-        wb.close()
-
-
 @router.get("/documents/{document_id}/preview")
 def preview_document(document_id: int, request: Request, sheet: str = ""):
     """Read-only Client360 workbook preview for .xlsx/.xlsm documents, so an admin can inspect a
@@ -266,7 +224,12 @@ def preview_document(document_id: int, request: Request, sheet: str = ""):
         return templates.TemplateResponse(request=request, name="admin/workbook_preview.html",
                                           context={**ctx, "sheetnames": [], "rows": []})
 
-    result = read_workbook_preview(path, sheet=sheet)
+    result = read_workbook_preview(
+        path,
+        sheet=sheet,
+        max_rows=_PREVIEW_MAX_ROWS,
+        max_cols=_PREVIEW_MAX_COLS,
+    )
     return templates.TemplateResponse(request=request, name="admin/workbook_preview.html",
                                       context={**ctx, **result,
                                                "max_rows": _PREVIEW_MAX_ROWS, "max_cols": _PREVIEW_MAX_COLS})
