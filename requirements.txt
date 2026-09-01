@@ -52,3 +52,11 @@ pypdf==5.9.0
 pytesseract==0.3.13
 pdf2image==1.17.0
 httpx==0.28.1
+
+# Official OpenAI Python SDK, used ONLY by app/services/openai_provider.py (the single centralized
+# provider). Imported LAZILY there, so the app and the test suite still import cleanly on a host
+# without it — a missing SDK is reported as `sdk_missing`, never an ImportError at startup.
+# Requires Python >= 3.10; deliberately NOT added to requirements-py39.lock, which is the legacy
+# 3.9 lock. Brings in httpx2 + jiter transitively (httpx 0.28.1 above is a separate distribution
+# and is unaffected).
+openai==3.6.0

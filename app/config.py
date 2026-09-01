@@ -43,6 +43,22 @@ NON-SECRET unless marked SECRET:
                           permission Mail.Send ONLY, with admin consent, restricted to
                           PORTAL_EMAIL_SENDER through Exchange Online Application RBAC.
 
+OpenAI provider (Phase 1). One centralized server-side provider,
+:mod:`app.services.openai_provider`, is the only thing that may talk to OpenAI. It is OFF by
+default and nothing in the platform calls it yet.
+
+  OPENAI_ENABLED          "true" turns the provider on. Default false. With it off the provider
+                          answers "disabled" and makes NO network call, so a deployment that has
+                          not opted in behaves exactly as it did before.
+  OPENAI_MODEL            The model id every request uses, e.g. "gpt-5.6". No default and NO
+                          fallback: if it is unset the provider is "not_configured" and refuses
+                          rather than quietly substituting some other model.
+  OPENAI_API_KEY          SECRET. Read at call time by the provider and by nothing else — never
+                          by this module, never returned to a browser, never logged. Only its
+                          PRESENCE is observable here (:func:`openai_api_key_configured`).
+  OPENAI_TIMEOUT_SECONDS  Per-request timeout, clamped to 1-300. Default 30.
+  OPENAI_MAX_RETRIES      Bounded SDK retries for transient failures, clamped to 0-5. Default 2.
+
 """
 import logging
 import os
@@ -232,6 +248,69 @@ def runtime_worker_ttl_seconds() -> int:
     return max(30, _int_env("RUNTIME_WORKER_TTL_SECONDS", 120))
 
 
+# --- OpenAI provider (Phase 1) -----------------------------------------------
+# Read at call time (env, safe defaults), like every other toggle above, so operations can change
+# the posture without a code change and tests can exercise both. The provider is OFF by default:
+# the platform must behave identically until someone deliberately opts in.
+
+def openai_enabled() -> bool:
+    """Whether the centralized OpenAI provider may make network calls at all.
+
+    Default OFF (same posture as the outbox dispatcher / automation tick). With it off the
+    provider short-circuits to a "disabled" result before any client is built, so an absent or
+    half-finished configuration can never produce a surprise API call."""
+    return os.getenv("OPENAI_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def openai_model() -> str:
+    """The configured model id, or "" when unset.
+
+    There is deliberately NO default. A wrong-but-plausible fallback model would spend money and
+    return output nobody asked for; an unset model makes the provider refuse instead."""
+    return os.getenv("OPENAI_MODEL", "").strip()
+
+
+def openai_api_key_configured() -> bool:
+    """Whether OPENAI_API_KEY is present. PRESENCE ONLY — the value is never read here.
+
+    The key's value is read in exactly one place, app.services.openai_provider._api_key(), so the
+    credential has a single, auditable point of entry. This function exists so startup warnings and
+    diagnostics can say "configured / not configured" without touching the secret."""
+    return bool((os.getenv("OPENAI_API_KEY", "") or "").strip())
+
+
+def openai_timeout_seconds() -> float:
+    """Per-request wall-clock budget. Clamped to 1-300s so a typo cannot mean "wait forever"."""
+    try:
+        value = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+    except (TypeError, ValueError):
+        value = 30.0
+    return min(300.0, max(1.0, value))
+
+
+def openai_max_retries() -> int:
+    """Bounded retries for transient failures. Clamped to 0-5; retries are never unlimited."""
+    return min(5, max(0, _int_env("OPENAI_MAX_RETRIES", 2)))
+
+
+def _openai_warnings() -> list[str]:
+    """Warn when the provider is switched on but cannot actually call anything. Names only.
+
+    Silence when it is off: disabled is the normal, expected state in every environment that has
+    not adopted OpenAI, so only a HALF-configured provider is worth saying out loud."""
+    if not openai_enabled():
+        return []
+    missing = []
+    if not openai_api_key_configured():
+        missing.append("OPENAI_API_KEY")
+    if not openai_model():
+        missing.append("OPENAI_MODEL")
+    if not missing:
+        return []
+    return ["OPENAI_ENABLED is on but the OpenAI provider cannot make requests; missing "
+            f"{', '.join(missing)}. Every request will be refused as not_configured until it is set."]
+
+
 def is_production_now() -> bool:
     """Environment read at call time (not import), so tests exercise both postures."""
     return os.getenv("CLIENT360_ENVIRONMENT", "development").strip().lower() == "production"
@@ -290,6 +369,7 @@ def configuration_warnings() -> list[str]:
             "than build an OAuth redirect URI from the unvalidated Host header. Set it to the "
             "canonical external origin before enabling the portal.")
     warnings.extend(_portal_email_warnings())
+    warnings.extend(_openai_warnings())
     # No DATABASE_URL warning here: there is no built-in default. app/db.py and
     # app/database/schema.py both raise at import if it is unset, so the process
     # cannot reach startup validation without one. The warning this replaces
