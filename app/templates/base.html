@@ -99,6 +99,22 @@
   <aside class="app-sidebar">
     <input type="checkbox" id="c360-nav" class="nav-toggle" hidden>
     <a class="app-brand" href="/"><span class="mark" aria-hidden="true">3+</span><span class="name">360Plus</span></a>
+{# Active item: LONGEST matching prefix wins, so exactly one item lights up.
+   The per-item hit test below is character-for-character the previous one — the
+   only change is that when several items match, the most specific one is chosen
+   instead of all of them. Eleven pairs collide today (/work vs /work/team,
+   /work/workflows and /workspace; /tax vs its three children; /benefits,
+   /insurance and /exceptions vs their reporting pages), and on each of those
+   paths two nav items were highlighted at once. Every `match` value in `groups`
+   is unique, so the longest hit is unambiguous. Presentation only: no href,
+   capability gate or route is touched. #}
+    {% set ns = namespace(best=0) %}
+    {% for g in groups %}{% for it in g["items"] if it["show"] %}
+      {% set m = it["match"] %}
+      {% if ((path == '/') if m == '/' else (path == it["href"] or path.startswith(m))) and m|length > ns.best %}
+        {% set ns.best = m|length %}
+      {% endif %}
+    {% endfor %}{% endfor %}
     <nav class="app-nav" aria-label="Primary">
       {% for g in groups %}
         {% set visible = g["items"] | selectattr("show") | list %}
@@ -106,7 +122,8 @@
         <div class="nav-group">
           <div class="label">{{ g["label"] }}</div>
           {% for it in visible %}
-            {% set active = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
+            {% set hit = (path == '/') if it["match"] == '/' else (path == it["href"] or path.startswith(it["match"])) %}
+            {% set active = hit and it["match"]|length == ns.best %}
             <a class="nav-item{{ ' active' if active else '' }}" href="{{ it['href'] }}"{% if active %} aria-current="page"{% endif %}><span class="ico" aria-hidden="true">{{ it["ico"] }}</span>{{ it["label"] }}</a>
           {% endfor %}
         </div>

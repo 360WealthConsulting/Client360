@@ -31,3 +31,26 @@
   {% if caller %}{{ caller() }}{% endif %}
 </div>
 {% endmacro %}
+
+{# A card's title row with one optional link on the right. Use instead of nesting a
+   small <a> inside an <h2>: the inline font-size that used to shrink that link is
+   dropped by the CSP, so it rendered at heading size. #}
+{% macro card_head(title, more_href=None, more_label="View all →", level="h2") %}
+<div class="card-head">
+  <{{ level }}>{{ title }}</{{ level }}>
+  {% if more_href %}<a class="more" href="{{ more_href }}">{{ more_label }}</a>{% endif %}
+</div>
+{% endmacro %}
+
+{# One counter in a `.signal-bar`. `kind` carries severity (warn/crit/info) and is
+   applied only when the count is non-zero — a zero is good news on a triage
+   counter, so it recedes rather than shouting in red. #}
+{% macro signal(label, value, kind='', href=None) %}
+{%- set zero = (value in (0, None, "0", "")) -%}
+{%- set cls = "signal " ~ kind ~ (" is-zero" if zero else "") -%}
+{%- if href -%}
+<a class="{{ cls }}" href="{{ href }}"><span class="k">{{ label }}</span><span class="v">{{ value }}</span></a>
+{%- else -%}
+<div class="{{ cls }}"><span class="k">{{ label }}</span><span class="v">{{ value }}</span></div>
+{%- endif -%}
+{% endmacro %}

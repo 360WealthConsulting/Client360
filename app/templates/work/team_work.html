@@ -12,13 +12,15 @@
   {{ ui.stat("Utilization", (work.capacity.utilization_percent ~ "%")) }}
 </div>
 
-<div style="margin-top:16px">{% include "partials/exception_summary.html" %}</div>
+{# The partial now carries its own `.section` spacing; the wrapper here set that
+   margin with a style="" attribute, which the CSP drops. #}
+{% include "partials/exception_summary.html" %}
 
 <h2 class="section-title">Team priorities</h2>
 <div class="stack">
 {% for item in work['items'] %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:15px">{{ item.title }}</h3>
+    <h3 class="item-title">{{ item.title }}</h3>
     <div class="subtle">{{ item.entity_type.replace('_',' ') }} · {{ item.status.replace('_',' ') }} · {{ item.priority }}{% if item.due_date %} · {{ item.due_date }}{% endif %}</div>
   </div>
 {% else %}

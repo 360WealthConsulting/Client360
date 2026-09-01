@@ -6,31 +6,39 @@
 {% block content %}
 {% set h = home %}
 
-<header class="c360-hero">
-  <div>
-    <span class="detail-label">{{ h.today }} · {{ h.audience|capitalize }}</span>
-    <h1>Welcome, {{ h.greeting }}</h1>
-    <nav class="c360-actions" aria-label="Home actions">
-      {% if h.can.work_read %}<a class="btn sm" href="/work?view=my_work">My Work</a>{% endif %}
-      {% if h.can.client_read %}<a class="btn sm secondary" href="/people">Find a client</a>{% endif %}
-      {% if h.can.work_write %}<a class="btn sm" href="/work?view=my_work">Create work item</a>{% endif %}
-    </nav>
-  </div>
-</header>
+{# Every layout on this page previously depended on style="" attributes — `flex:1`,
+   `min-width`, `font-size`, `margin`. The CSP is `default-src 'self'` with no
+   'unsafe-inline', so the browser dropped all of them: the two-column work row and
+   the three-column portal panel were not laying out as written. They are real
+   classes now (see `.cols-2.even`, `.cols-3`, `.card-head`, `a.stat` in app.css). #}
 
-{# Summary cards — live counts, each deep-linking to the matching /work view. #}
-<section class="stat-grid" style="margin-bottom:16px">
+{# `.page-head` (app.css) rather than `.c360-hero` (client360.css): this page never
+   loaded client360.css, so the client-identity header it was borrowing had no styles
+   here at all. The action row moves into the header's own slot, on the right. #}
+{% call ui.page_head("Welcome, " ~ h.greeting, eyebrow=h.today ~ " · " ~ h.audience|capitalize) %}
+  {% if h.can.work_read %}<a class="btn sm" href="/work?view=my_work">My Work</a>{% endif %}
+  {% if h.can.client_read %}<a class="btn sm secondary" href="/people">Find a client</a>{% endif %}
+  {% if h.can.work_write %}<a class="btn sm secondary" href="/work?view=my_work">Create work item</a>{% endif %}
+{% endcall %}
+
+{# Summary cards — live counts, each deep-linking to the matching /work view.
+   `a.stat` gives the tile the design-system label/figure pair; as a bare <a class="card">
+   every line inside it inherited the global link colour and weight. #}
+<section class="stat-grid compact section" aria-label="Work summary">
   {% for c in h.cards %}
-  <a class="card" href="{{ c.href }}" style="text-decoration:none">
-    <span class="detail-label">{{ c.label }}</span>
-    <h2 style="font-size:26px">{{ '{:,}'.format(c.count) }}</h2>
+  <a class="stat" href="{{ c.href }}">
+    <span class="k">{{ c.label }}</span>
+    <span class="v">{{ '{:,}'.format(c.count) }}</span>
   </a>
   {% endfor %}
 </section>
 
+<div class="stack-lg">
+
 {# 1. Priority Work — critical, overdue, due-today, high; links to the work-item detail. #}
 <article class="card">
-  <h2 class="section-title">Priority work</h2>
+  {{ ui.card_head("Priority work", "/work?view=my_work", "Open my work →") }}
+  {% if h.priority_work %}
   <div class="table-wrap"><table class="data">
     <thead><tr><th>Priority</th><th>Work item</th><th>Client</th><th>Status</th><th>Due</th><th>Assignee</th></tr></thead>
     <tbody>
@@ -38,95 +46,118 @@
       <tr class="{% if it.overdue %}row-overdue{% endif %}">
         <td>{{ ui.badge(it.priority|capitalize, "warn" if it.priority in ("urgent","critical","high") else "") }}</td>
         <td><a class="rowlink" href="/work/{{ it.source_domain }}/{{ it.source_id }}">{{ it.title }}</a></td>
-        <td>{% if it.person_id %}<a href="/client/{{ it.person_id }}">{{ it.person_name or ("Person " ~ it.person_id) }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if it.person_id %}<a class="rowlink" href="/client/{{ it.person_id }}">{{ it.person_name or ("Person " ~ it.person_id) }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td><span class="subtle">{{ (it.status or "")|replace("_"," ")|capitalize }}</span></td>
-        <td>{% if it.due_at %}{{ it.due_at[:10] }}{% if it.overdue %} {{ ui.badge("Overdue","warn") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if it.due_at %}<span class="id-mono">{{ it.due_at[:10] }}</span>{% if it.overdue %} {{ ui.badge("Overdue","warn") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td>{{ it.assignee_name or ("#" ~ it.assignee_user_id if it.assignee_user_id else "Unassigned") }}</td>
       </tr>
-    {% else %}<tr><td colspan="6">{% call ui.empty("You're caught up", "No priority work right now.") %}{% endcall %}</td></tr>{% endfor %}
+    {% endfor %}
     </tbody></table></div>
+  {% else %}{% call ui.empty("You're caught up", "No priority work right now.") %}{% endcall %}{% endif %}
 </article>
 
-<div class="row" style="gap:14px; align-items:flex-start; flex-wrap:wrap">
+<div class="cols-2 even">
 {# 2. Waiting & Blocked #}
-<article class="card" style="flex:1; min-width:320px">
-  <h2 class="section-title">Waiting &amp; blocked <a class="subtle" href="/work?view=waiting" style="font-size:12px">view all →</a></h2>
+<article class="card">
+  {{ ui.card_head("Waiting & blocked", "/work?view=waiting") }}
+  {% if h.waiting %}
   <div class="table-wrap"><table class="data">
     <thead><tr><th>Work item</th><th>Client</th><th>Assignee</th><th>Due</th></tr></thead><tbody>
     {% for it in h.waiting %}
       <tr><td><a class="rowlink" href="/work/{{ it.source_domain }}/{{ it.source_id }}">{{ it.title }}</a></td>
-        <td>{% if it.person_id %}<a href="/client/{{ it.person_id }}">{{ it.person_name or it.person_id }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if it.person_id %}<a class="rowlink" href="/client/{{ it.person_id }}">{{ it.person_name or it.person_id }}</a>{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td>{{ it.assignee_name or ("#" ~ it.assignee_user_id if it.assignee_user_id else "—") }}</td>
-        <td>{{ it.due_at[:10] if it.due_at else "—" }}</td></tr>
-    {% else %}<tr><td colspan="4">{% call ui.empty("Nothing waiting") %}{% endcall %}</td></tr>{% endfor %}
+        <td><span class="id-mono">{{ it.due_at[:10] if it.due_at else "—" }}</span></td></tr>
+    {% endfor %}
     </tbody></table></div>
+  {% else %}{% call ui.empty("Nothing waiting") %}{% endcall %}{% endif %}
 </article>
 
 {# 3. Reviews requiring action #}
-<article class="card" style="flex:1; min-width:320px">
-  <h2 class="section-title">Reviews requiring action <a class="subtle" href="/work?view=reviews" style="font-size:12px">view all →</a></h2>
+<article class="card">
+  {{ ui.card_head("Reviews requiring action", "/work?view=reviews") }}
+  {% if h.reviews %}
   <div class="table-wrap"><table class="data">
     <thead><tr><th>Item</th><th>Type</th><th>Submitted</th></tr></thead><tbody>
     {% for r in h.reviews %}
       <tr><td><a class="rowlink" href="{{ r.href }}">{{ r.title }}</a></td>
-        <td>{{ r.review_type or "—" }}</td><td>{{ r.submitted_at[:10] if r.submitted_at else "—" }}</td></tr>
-    {% else %}<tr><td colspan="3">{% call ui.empty("No reviews are waiting for you") %}{% endcall %}</td></tr>{% endfor %}
+        <td>{{ r.review_type or "—" }}</td><td><span class="id-mono">{{ r.submitted_at[:10] if r.submitted_at else "—" }}</span></td></tr>
+    {% endfor %}
     </tbody></table></div>
+  {% else %}{% call ui.empty("No reviews are waiting for you") %}{% endcall %}{% endif %}
 </article>
 </div>
 
-{# 4. Client Portal activity #}
+{# 4. Client Portal activity — three peer panels; `.cols-3` collapses on its own. #}
 {% if h.can.portal %}
 <article class="card">
-  <h2 class="section-title">Client portal activity</h2>
-  <div class="row" style="gap:14px; flex-wrap:wrap; align-items:flex-start">
-    <div style="flex:1; min-width:280px">
-      <h3 style="margin:6px 0">Pending client uploads</h3>
+  {{ ui.card_head("Client portal activity") }}
+  <div class="cols-3">
+    <div>
+      {{ ui.card_head("Pending client uploads", level="h3") }}
+      {% if h.portal_activity.pending_uploads %}
       <div class="table-wrap"><table class="data"><thead><tr><th>Document</th><th>Client</th><th></th></tr></thead><tbody>
         {% for u in h.portal_activity.pending_uploads %}
           <tr><td>{{ u.display_name }}</td><td>{{ u.person_name or u.person_id }}</td>
             <td><a href="/client/{{ u.person_id }}?tab=vault">Review in Vault</a></td></tr>
-        {% else %}<tr><td colspan="3">{% call ui.empty("No pending uploads") %}{% endcall %}</td></tr>{% endfor %}
+        {% endfor %}
       </tbody></table></div>
+      {% else %}{% call ui.empty("No pending uploads") %}{% endcall %}{% endif %}
     </div>
-    <div style="flex:1; min-width:280px">
-      <h3 style="margin:6px 0">Open document requests</h3>
+    <div>
+      {{ ui.card_head("Open document requests", level="h3") }}
+      {% if h.portal_activity.open_requests %}
       <div class="table-wrap"><table class="data"><thead><tr><th>Request</th><th>Client</th><th>Due</th></tr></thead><tbody>
         {% for rq in h.portal_activity.open_requests %}
-          <tr><td>{{ rq.title }}</td><td>{{ rq.person_name or rq.person_id }}</td><td>{{ rq.due_date or "—" }}</td></tr>
-        {% else %}<tr><td colspan="3">{% call ui.empty("No open requests") %}{% endcall %}</td></tr>{% endfor %}
+          <tr><td>{{ rq.title }}</td><td>{{ rq.person_name or rq.person_id }}</td><td><span class="id-mono">{{ rq.due_date or "—" }}</span></td></tr>
+        {% endfor %}
       </tbody></table></div>
+      {% else %}{% call ui.empty("No open requests") %}{% endcall %}{% endif %}
     </div>
-    <div style="flex:1; min-width:280px">
-      <h3 style="margin:6px 0">Recent secure messages</h3>
+    <div>
+      {{ ui.card_head("Recent secure messages", level="h3") }}
+      {% if h.portal_activity.recent_messages %}
       <div class="table-wrap"><table class="data"><thead><tr><th>Message</th><th>Client</th></tr></thead><tbody>
         {% for m in h.portal_activity.recent_messages %}
-          <tr><td><a href="/client/{{ m.person_id }}">{{ (m.subject or m.body or "")[:48] }}</a></td><td>{{ m.person_name or m.person_id }}</td></tr>
-        {% else %}<tr><td colspan="2">{% call ui.empty("No recent portal submissions") %}{% endcall %}</td></tr>{% endfor %}
+          <tr><td><a class="rowlink" href="/client/{{ m.person_id }}">{{ (m.subject or m.body or "")[:48] }}</a></td><td>{{ m.person_name or m.person_id }}</td></tr>
+        {% endfor %}
       </tbody></table></div>
+      {% else %}{% call ui.empty("No recent portal submissions") %}{% endcall %}{% endif %}
     </div>
   </div>
 </article>
 {% endif %}
 
-{# 5. Recent client activity #}
+{# 5. Recent client activity — same feed component as the firm dashboard, so the two
+   overview surfaces read the same way. #}
 <article class="card">
-  <h2 class="section-title">Recent client activity</h2>
-  <div class="stack">
+  {{ ui.card_head("Recent client activity", "/activities") }}
+  {% if h.recent_activity %}
+  <div class="feed">
     {% for e in h.recent_activity %}
-      <div class="detail-row"><span>{% if e.person_id %}<a href="/client/{{ e.person_id }}">{{ e.title or e.event_type }}</a>{% else %}{{ e.title or e.event_type }}{% endif %}</span>
-        <strong class="subtle">{{ (e.event_type or "")|replace("_"," ") }} · {{ e.event_time[:10] if e.event_time else "" }}</strong></div>
-    {% else %}{% call ui.empty("No recent activity", "Recent client activity will appear here.") %}{% endcall %}{% endfor %}
+    <div class="feed-item">
+      <div class="node" aria-hidden="true"></div>
+      <div class="what">
+        {% if e.person_id %}<a href="/client/{{ e.person_id }}">{{ e.title or e.event_type }}</a>
+        {% else %}<strong>{{ e.title or e.event_type }}</strong>{% endif %}
+        <div class="meta"><span>{{ (e.event_type or "")|replace("_"," ")|capitalize }}</span></div>
+      </div>
+      <div class="when">{{ e.event_time[:10] if e.event_time else "—" }}</div>
+    </div>
+    {% endfor %}
   </div>
+  {% else %}{% call ui.empty("No recent activity", "Recent client activity will appear here.") %}{% endcall %}{% endif %}
 </article>
 
 {# 6. Quick actions #}
 {% if h.quick_actions %}
 <article class="card">
-  <h2 class="section-title">Quick actions</h2>
-  <nav class="c360-actions" aria-label="Quick actions">
-    {% for a in h.quick_actions %}<a class="btn sm" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
+  {{ ui.card_head("Quick actions") }}
+  <nav class="row" aria-label="Quick actions">
+    {% for a in h.quick_actions %}<a class="btn sm secondary" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
   </nav>
 </article>
 {% endif %}
+
+</div>
 {% endblock %}

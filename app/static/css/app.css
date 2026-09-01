@@ -127,6 +127,20 @@ body.c360 {
   .nav-toggle-btn { display:inline-flex; }
   .app-nav { display:none; }
   .nav-toggle:checked ~ .app-nav { display:block; }
+  /* The header packs six fixed-width items into a row that stops fitting well before
+     a phone width, and the user chip was being clipped off the right edge. The brand
+     bar directly above already says "360Plus", so the crumb keeps only the page name. */
+  .app-header { padding:0 var(--s4); gap:10px; }
+  .crumbs a, .crumbs .sep { display:none; }
+  .app-search { margin-left:0; min-width:0; }
+}
+@media (max-width:640px) {
+  /* Below this the name and role cannot fit beside a search field; the avatar still
+     carries identity and the chip keeps its title attribute. */
+  .user-chip .who { display:none; }
+  .user-chip { padding:4px; }
+  .app-content { padding:var(--s4) var(--s4) 40px; }
+  .page-head { align-items:flex-start; }
 }
 
 /* ============================================================
@@ -266,6 +280,169 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
 .err-card .rid { font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:16px; }
 .err-card .brand { display:inline-flex; align-items:center; gap:8px; margin-bottom:18px; }
 .err-card .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:800; font-size:12px; font-family:var(--font-mono); }
+
+/* ============================================================
+   OVERVIEW SURFACES + SHARED PRIMITIVES (Phase 2)
+   Everything here is presentation. It exists in a stylesheet — never in a
+   style="" attribute — because the CSP is `default-src 'self'` with no
+   'unsafe-inline', so an inline style is dropped by the browser exactly like
+   an inline <script>. Several layouts in this app were already relying on
+   attributes that never applied.
+   ============================================================ */
+
+/* ---- signal bar -----------------------------------------------------------
+   One segmented strip of counters, for a triage summary that should read as a
+   single instrument rather than six competing cards. The 1px grid gap over a
+   border-coloured ground draws every separator, so a wrapped row keeps its
+   rules on both axes without per-cell border bookkeeping. */
+.signal-bar { display:grid; grid-template-columns:repeat(auto-fit, minmax(148px,1fr));
+  gap:1px; background:var(--border); border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden; }
+.signal { display:flex; flex-direction:column; gap:3px; padding:11px 15px 12px;
+  background:var(--surface); color:inherit; text-decoration:none; position:relative;
+  transition:background .1s ease; }
+a.signal:hover { background:var(--surface-2); }
+.signal .k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.signal .v { font-family:var(--font-mono); font-size:23px; font-weight:600; line-height:1.1;
+  letter-spacing:-.025em; font-variant-numeric:tabular-nums; }
+/* A zero is good news on every one of these counters, so it recedes; a non-zero
+   count carries its severity colour and a top rail. Both states are set from the
+   SAME markup — the template adds `.is-zero` from the value it already renders. */
+.signal.is-zero .v { color:var(--muted); font-weight:500; }
+.signal:not(.is-zero) .v { color:var(--text); }
+.signal:not(.is-zero)::before { content:""; position:absolute; inset:0 0 auto 0; height:2px;
+  background:var(--accent); }
+.signal.warn:not(.is-zero) .v { color:var(--warn); }
+.signal.warn:not(.is-zero)::before { background:var(--warn); }
+.signal.crit:not(.is-zero) .v { color:var(--crit); }
+.signal.crit:not(.is-zero)::before { background:var(--crit); }
+.signal.info:not(.is-zero) .v { color:var(--info); }
+.signal.info:not(.is-zero)::before { background:var(--info); }
+
+/* ---- card header ----------------------------------------------------------
+   Title on the left, one optional escape hatch on the right. Replaces the
+   pattern of nesting a small link inside an <h2>, where the link inherited the
+   heading's size because the inline font-size was dropped. */
+.card-head { display:flex; align-items:baseline; justify-content:space-between;
+  gap:var(--s3); margin:0 0 var(--s3); }
+.card-head > :is(h2,h3) { margin:0; font-size:13.5px; font-weight:660; letter-spacing:0;
+  color:var(--text-2); }
+.card-head .more { font-size:12px; font-weight:600; color:var(--accent);
+  text-decoration:none; white-space:nowrap; flex:none; }
+.card-head .more:hover { text-decoration:underline; }
+
+/* ---- figure list ----------------------------------------------------------
+   Dense label/number rows. A four-integer summary in a side rail does not earn
+   four full cards; it earns four lines. */
+.figure-list { display:block; }
+.figure { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s3);
+  padding:9px 0; border-bottom:1px solid var(--border); }
+.figure:first-child { padding-top:0; }
+.figure:last-child { padding-bottom:0; border-bottom:0; }
+.figure .k { font-size:13px; color:var(--text-2); min-width:0; }
+.figure .v { font-family:var(--font-mono); font-size:15.5px; font-weight:620;
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em; flex:none; }
+.figure .v.muted-v { color:var(--muted); font-weight:500; }
+
+/* ---- activity feed --------------------------------------------------------
+   A timeline rail, the event, and its date — three columns so the dates align
+   into a readable edge instead of trailing each line at a different offset. */
+.feed { display:block; }
+.feed-item { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:0 var(--s3);
+  padding:11px 0; }
+.feed-item + .feed-item { border-top:1px solid var(--border); }
+.feed-item:first-child { padding-top:0; }
+.feed-item:last-child { padding-bottom:0; }
+.feed-item .node { position:relative; }
+.feed-item .node::before { content:""; position:absolute; left:3px; top:6px; width:7px; height:7px;
+  border-radius:50%; background:var(--surface-3); border:1.5px solid var(--border-strong); }
+.feed-item:first-child .node::before { background:var(--accent); border-color:var(--accent); }
+/* The connector is drawn downward from each dot and stops at the last row. */
+.feed-item:not(:last-child) .node::after { content:""; position:absolute; left:6.25px; top:16px;
+  bottom:-12px; width:1.5px; background:var(--border); }
+.feed-item .what { min-width:0; }
+.feed-item .what > a, .feed-item .what > strong { display:block; font-size:13.5px; font-weight:620;
+  color:var(--text); text-decoration:none; }
+.feed-item .what > a:hover { color:var(--accent); text-decoration:underline; }
+.feed-item .meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 7px; margin-top:2px;
+  font-size:11.5px; color:var(--muted); }
+.feed-item .meta .dot { opacity:.45; }
+.feed-item .note { margin:3px 0 0; font-size:12px; color:var(--text-2); }
+.feed-item .when { font-family:var(--font-mono); font-size:11.5px; color:var(--muted);
+  white-space:nowrap; text-align:right; padding-top:1px; }
+
+/* ---- key/value detail rows ------------------------------------------------
+   `.detail-row` and `.detail-label` are used by ~37 and ~19 templates, but were
+   only ever defined in workspace.css, which five of them load — everywhere else
+   they rendered as unstyled divs. Defining them here (app.css is loaded by every
+   base-extending screen) styles the rest without touching their markup.
+   workspace.css still loads AFTER this file on its five pages, so nothing there
+   changes. */
+.detail-row { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s3);
+  padding:7px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+.detail-row:last-child { border-bottom:0; padding-bottom:0; }
+.detail-row > :first-child { min-width:0; color:var(--text-2); }
+.detail-row > :last-child { text-align:right; }
+/* Several call sites wrap the left half in a <div style="flex:1"> that the CSP drops. */
+.detail-row > div { flex:1 1 auto; min-width:0; text-align:left; }
+.detail-row strong { font-weight:620; }
+/* Many call sites write the value as a bare text node next to the label, so it
+   becomes an anonymous flex item. Without this the label is the only shrinkable
+   box in the row and a long value (an email address) squeezes it to nothing. */
+.detail-row > .detail-label { flex:none; margin-bottom:0; }
+.detail-row { overflow-wrap:anywhere; }
+.detail-label { display:block; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; margin-bottom:3px; }
+
+/* ---- stat, as a link ------------------------------------------------------
+   `.stat` is a static tile; several screens wrap one in an <a>, where it picked
+   up the global link colour and weight for every line inside it. */
+a.stat { display:block; text-decoration:none; color:var(--text);
+  transition:background .1s ease, border-color .1s ease; }
+a.stat:hover { background:var(--surface-2); border-color:var(--border-strong); }
+a.stat .k, a.stat .detail-label { color:var(--muted); font-weight:700; }
+a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
+/* Call sites that put an <h2> where `.stat .v` belongs get the same treatment,
+   so the number reads as a figure rather than as a heading. */
+.stat > h2 { margin:5px 0 0; font-family:var(--font-mono); font-size:26px; font-weight:600;
+  letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.1; }
+
+/* ---- item title -----------------------------------------------------------
+   The title of a row or record inside a card. Distinct from `.card > h3`, which
+   is that card's own section heading and is deliberately small and muted — an
+   item title styled as a section heading reads as a label, not as the record.
+   The second selector outranks `.card > h3` (0,2,0 over 0,1,1). */
+.item-title, .card > .item-title { margin:0 0 3px; font-size:14.5px; font-weight:640;
+  letter-spacing:-.005em; color:var(--text); }
+
+/* ---- layout helpers -------------------------------------------------------
+   Column sets that collapse on their own, replacing `style="flex:1;min-width:Npx"`
+   on flex rows — which the CSP drops, leaving the children to size to content. */
+.cols-3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr));
+  gap:var(--s4); align-items:start; }
+.cols-2.even { grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); }
+.stack-lg { display:grid; gap:var(--s4); align-items:start; }
+/* `.stat-grid` stretches to fill, so a short row of tiles inflates each one. */
+.stat-grid.compact { grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; }
+.stat-grid.compact .stat { padding:11px 14px; }
+.stat-grid.compact .stat .v { font-size:21px; margin-top:4px; }
+
+/* An empty state inside a card is already inside a border, so the dashed box just
+   draws a second one around a message. Flatten it there and let the card hold the
+   frame; the standalone `.empty` on a bare page keeps its dashed outline. */
+.card .empty, .empty.flush { border:0; background:none; padding:26px 16px; }
+.card .empty .em-ico, .empty.flush .em-ico { width:32px; height:32px; border-radius:9px;
+  font-size:16px; margin-bottom:9px; }
+
+/* `table.data` carries min-width:520px so a wide firm-level table scrolls rather than
+   crushing its columns. In a narrow side-by-side panel that min-width is the reason the
+   panel scrolls at all, and these panels only ever hold two or three columns. */
+.cols-3 table.data, .cols-2 table.data { min-width:0; }
+/* At panel width the default 14px cell padding is most of the column, and a wrapped
+   ISO date reads as two half-dates. */
+.cols-3 table.data :is(th,td) { padding:8px 10px; }
+.id-mono { white-space:nowrap; }
 
 /* --- Client Portal administration: invite form ---------------------------
    These replace inline style attributes on admin/client_portal.html. The site CSP is
