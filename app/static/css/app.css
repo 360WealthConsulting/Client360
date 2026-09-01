@@ -296,11 +296,17 @@ h2.section-title { font-size:1.05rem; font-weight:640; letter-spacing:-.01em; ma
    border-coloured ground draws every separator, so a wrapped row keeps its
    rules on both axes without per-cell border bookkeeping. */
 .signal-bar { display:grid; grid-template-columns:repeat(auto-fit, minmax(148px,1fr));
-  gap:1px; background:var(--border); border:1px solid var(--border);
+  background:var(--surface); border:1px solid var(--border);
   border-radius:var(--radius); overflow:hidden; }
+/* Separators are drawn by each cell rather than by a 1px grid gap over a
+   border-coloured ground: when the cells wrap to a partial row, that ground shows
+   through the empty tracks as a grey block. A shadow leaves the empty area plain
+   surface, and `overflow:hidden` on the bar clips the lines the edge cells cast onto
+   its own border. Works for any number of cells at any wrap point. */
 .signal { display:flex; flex-direction:column; gap:3px; padding:11px 15px 12px;
   background:var(--surface); color:inherit; text-decoration:none; position:relative;
-  transition:background .1s ease; }
+  transition:background .1s ease;
+  box-shadow:1px 0 0 var(--border), 0 1px 0 var(--border); }
 a.signal:hover { background:var(--surface-2); }
 .signal .k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
   color:var(--muted); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -311,7 +317,11 @@ a.signal:hover { background:var(--surface-2); }
    SAME markup — the template adds `.is-zero` from the value it already renders. */
 .signal.is-zero .v { color:var(--muted); font-weight:500; }
 .signal:not(.is-zero) .v { color:var(--text); }
-.signal:not(.is-zero)::before { content:""; position:absolute; inset:0 0 auto 0; height:2px;
+/* The rail runs down the leading edge rather than across the top: when the bar wraps,
+   a top rail sits directly under the cell above and reads as that cell's underline. A
+   left rail belongs to its own cell at every wrap point, and echoes the same device on
+   `.src` badges and `.audience` bands. */
+.signal:not(.is-zero)::before { content:""; position:absolute; inset:0 auto 0 0; width:2px;
   background:var(--accent); }
 .signal.warn:not(.is-zero) .v { color:var(--warn); }
 .signal.warn:not(.is-zero)::before { background:var(--warn); }
@@ -416,6 +426,18 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 .item-title, .card > .item-title { margin:0 0 3px; font-size:14.5px; font-weight:640;
   letter-spacing:-.005em; color:var(--text); }
 
+/* ---- key/value grid -------------------------------------------------------
+   A `.detail-row` justifies its value to the far right, which is correct in a rail
+   and wrong across a 1,156px card: the label sits at one edge and six characters
+   of value at the other. This lays the same rows out in columns, so each pair stays
+   adjacent and a screen's width buys more facts rather than more gap. */
+.kv-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px,1fr));
+  gap:0 var(--s5); }
+/* Each column ends on its own hairline, so a short last column does not leave a
+   rule hanging under nothing. */
+.kv-grid > .detail-row:last-child { border-bottom:1px solid var(--border); }
+.kv-grid > .detail-row { padding:8px 0; }
+
 /* ---- layout helpers -------------------------------------------------------
    Column sets that collapse on their own, replacing `style="flex:1;min-width:Npx"`
    on flex rows — which the CSP drops, leaving the children to size to content. */
@@ -438,10 +460,12 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 /* `table.data` carries min-width:520px so a wide firm-level table scrolls rather than
    crushing its columns. In a narrow side-by-side panel that min-width is the reason the
    panel scrolls at all, and these panels only ever hold two or three columns. */
-.cols-3 table.data, .cols-2 table.data { min-width:0; }
+.cols-3 table.data, .cols-2 table.data, .workspace-grid table.data { min-width:0; }
 /* At panel width the default 14px cell padding is most of the column, and a wrapped
    ISO date reads as two half-dates. */
-.cols-3 table.data :is(th,td) { padding:8px 10px; }
+.cols-3 table.data :is(th,td), .workspace-grid table.data :is(th,td) { padding:8px 10px; }
+/* A currency column is the one thing that must never wrap mid-number. */
+.workspace-grid table.data .num { white-space:nowrap; }
 .id-mono { white-space:nowrap; }
 
 /* --- Client Portal administration: invite form ---------------------------
@@ -545,3 +569,118 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 /* Visually-hidden label that stays available to assistive technology. */
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+/* ============================================================
+   WORKSPACE PATTERN (Phase 3)
+   The identity header, action overflow, snapshot strip and audience band shared by
+   ALL FOUR person/household surfaces — /client/{id}, /client/household/{id},
+   /people/{id} and /households/{id}. Markup: components/workspace.html.
+
+   These live here rather than in client360.css because two of the four surfaces
+   load workspace.css instead, and the whole point of the pattern is that they stop
+   diverging. `.rowmenu` moved here from client360.css for the same reason: the
+   header's action overflow is the same disclosure the documents table row menu uses.
+   ============================================================ */
+
+/* ---- identity header ------------------------------------------------------
+   `.ws-id` takes `flex:1 1 320px` and `.ws-actions` takes `flex:0 0 auto`. That
+   pairing is the fix for the collapsed header: previously the identity had
+   `flex:1 1 0%` (a zero basis, so it only ever got the leftover) while eight action
+   buttons sized to their content and took 1009px of a 1156px row, leaving the
+   client's own name 81px to wrap in. With a real basis the identity holds its
+   ground and the actions wrap beneath it instead. */
+.ws-head { display:flex; align-items:flex-start; justify-content:space-between;
+  gap:var(--s3) var(--s4); flex-wrap:wrap; margin:0 0 var(--s3); }
+.ws-head .ws-id { display:flex; align-items:center; gap:var(--s3); flex:1 1 320px; min-width:0; }
+.ws-head .crest { width:40px; height:40px; flex:none; border-radius:10px; display:grid;
+  place-items:center; background:var(--accent-soft); color:var(--accent-ink);
+  font-family:var(--font-mono); font-size:14px; font-weight:700; letter-spacing:-.02em; }
+.ws-head .who { min-width:0; }
+.ws-head .kind { display:block; font-family:var(--font-mono); font-size:10px; font-weight:700;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--accent); }
+.ws-head h1 { margin:1px 0 0; font-size:21px; line-height:1.2; font-weight:670;
+  letter-spacing:-.02em; overflow-wrap:anywhere; }
+.ws-head .meta { display:flex; flex-wrap:wrap; align-items:center; gap:3px 8px;
+  margin:3px 0 0; font-size:12.5px; color:var(--muted); }
+.ws-head .meta a { color:var(--accent); text-decoration:none; font-weight:600; }
+.ws-head .meta a:hover { text-decoration:underline; }
+.ws-head .meta .dot { opacity:.45; }
+.ws-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; flex-wrap:wrap;
+  padding-top:2px; }
+/* The overflow trigger sits on the 28px button baseline rather than a table row's 26px. */
+.ws-more > summary { height:28px; min-width:28px; padding:0 7px; line-height:26px;
+  border-color:var(--border-strong); background:var(--surface); }
+.ws-more .menu { top:34px; }
+
+/* ---- header snapshot strip ------------------------------------------------
+   The snapshot figures were a row of six cards below the header — a second full band
+   of chrome before any content. As a `.signal-bar` they are one strip in the header. */
+.ws-snapshot { margin:0 0 var(--s4); }
+.ws-snapshot .signal .v { font-size:19px; }
+
+/* ---- audience band --------------------------------------------------------
+   Client-facing and internal threads are the two things in this product that must
+   never be confused. Before this the entire distinction was the grey word "internal"
+   in one heading. Colour, icon and a literal sentence, at the top of the panel the
+   writing happens in; the leading bar makes the two readable apart in peripheral
+   vision, before the sentence is read at all. */
+.audience { display:flex; align-items:flex-start; gap:9px; margin:0 0 var(--s3);
+  padding:9px 13px; border-radius:var(--radius); font-size:12.5px; line-height:1.45;
+  border-left:3px solid currentColor; }
+.audience .ico { flex:none; font-size:12px; line-height:1.5; }
+.audience b { font-weight:700; }
+.audience > span:last-child { font-weight:520; }
+.audience.client { background:var(--info-soft); color:var(--info); }
+.audience.internal { background:var(--warn-soft); color:var(--warn); }
+
+/* ---- panel composers ------------------------------------------------------
+   The note and task composers set their spacing with style="" attributes, which the
+   CSP drops. */
+.ws-composer { gap:var(--s2); margin-bottom:var(--s3); padding:var(--s3); }
+.ws-composer textarea.input { height:auto; min-height:60px; padding:9px 12px; line-height:1.5;
+  resize:vertical; }
+.ws-composer .row { gap:var(--s2); }
+.ws-composer-row { gap:var(--s2); flex-wrap:wrap; margin-bottom:var(--s3); }
+.ws-grow { flex:1 1 220px; min-width:0; }
+
+/* ---- overflow menu — pure CSS disclosure, no script and no inline handler ---
+   Moved from client360.css unchanged (Phase 3). `display:block` removes the UA
+   disclosure triangle in Chromium; `list-style` covers Firefox and the two
+   pseudo-elements cover WebKit and the modern spec. The visible glyph is the ⋯ span
+   in the markup. */
+.rowmenu { position:relative; display:inline-block; }
+.rowmenu > summary { display:block; list-style:none; list-style-type:none; cursor:pointer;
+  width:26px; height:26px; border-radius:6px; border:1px solid transparent;
+  color:var(--muted); font-size:15px; line-height:24px; text-align:center; }
+.rowmenu > summary::marker { content:""; }
+.rowmenu > summary::-webkit-details-marker { display:none; }
+.rowmenu > summary:hover { background:var(--surface-2); color:var(--text); border-color:var(--border); }
+.rowmenu[open] > summary { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
+/* A table scrolls horizontally, and overflow-x:auto forces overflow-y to a non-visible
+   value, so an absolutely positioned menu is CLIPPED by that scroll container. The
+   fallback below stays absolute (correct without JavaScript); documents.js promotes an
+   opened menu to .is-floating and sets fixed coordinates from the button's rect, which
+   escapes ancestor overflow entirely. Both states are out of flow, so neither can grow
+   a row. */
+.rowmenu .menu { position:absolute; right:0; top:32px; z-index:60; min-width:186px; padding:5px;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.rowmenu .menu.is-floating { position:fixed; right:auto; top:auto; z-index:1000; }
+.rowmenu .menu a, .rowmenu .menu button {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 10px;
+  border-radius:5px; border:0; background:none; color:var(--text); font:inherit; font-size:13px;
+  font-weight:550; text-decoration:none; cursor:pointer; height:auto; }
+.rowmenu .menu a:hover, .rowmenu .menu button:hover { background:var(--surface-2); }
+.rowmenu .menu .sep { height:1px; background:var(--border); margin:4px 2px; }
+.rowmenu .menu button.danger { color:var(--crit); }
+.rowmenu .menu button.danger:hover { background:var(--crit-soft); }
+.rowmenu .menu form { margin:0; }
+
+@media (max-width:640px) {
+  .ws-head .ws-id { flex-basis:100%; }
+  .ws-actions { width:100%; }
+}
+
+/* A card head whose right side carries several deep links rather than one. */
+.ws-links .more-links { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+  justify-content:flex-end; }

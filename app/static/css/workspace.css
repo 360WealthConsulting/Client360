@@ -38,10 +38,14 @@
     padding: 28px 40px;
 }
 
+/* The details column was minmax(240px, 0.8fr): the smallest weight AND the smallest
+   minimum, so on a 1,156px content column it resolved to exactly its 240px floor and
+   label/value pairs like "Preferred Name / Not available" wrapped onto two lines while
+   the centre column ran wide. Equal outer weights and a 300px floor stop that. */
 .workspace-grid {
     display: grid;
-    grid-template-columns: minmax(240px, 0.8fr) minmax(420px, 2fr) minmax(260px, 1fr);
-    gap: 22px;
+    grid-template-columns: minmax(300px, 1fr) minmax(400px, 1.8fr) minmax(280px, 1fr);
+    gap: 20px;
     align-items: start;
 }
 

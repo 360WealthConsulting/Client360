@@ -45,8 +45,10 @@
 {# One counter in a `.signal-bar`. `kind` carries severity (warn/crit/info) and is
    applied only when the count is non-zero — a zero is good news on a triage
    counter, so it recedes rather than shouting in red. #}
-{% macro signal(label, value, kind='', href=None) %}
-{%- set zero = (value in (0, None, "0", "")) -%}
+{% macro signal(label, value, kind='', href=None, zero=None) %}
+{#- `zero` overrides the emptiness test for a value the caller has already formatted
+    ("$0", "0 policies"), where the raw string is not itself falsy. -#}
+{%- set zero = zero if zero is not none else (value in (0, None, "0", "")) -%}
 {%- set cls = "signal " ~ kind ~ (" is-zero" if zero else "") -%}
 {%- if href -%}
 <a class="{{ cls }}" href="{{ href }}"><span class="k">{{ label }}</span><span class="v">{{ value }}</span></a>

@@ -194,7 +194,10 @@ def test_tabs_render(person):
         r.state.principal = _principal()
         r.state.request_id = "t"
         return r
-    for tab, needle in (("tasks", "Render task"), ("notes", "Notes"), ("audit", "Audit history"),
-                        ("timeline", "Timeline")):
+    # Needles are each panel's OWN heading. They used to be satisfied incidentally by the
+    # sub-tab strip, which title-cased the section key; Activity and Internal are single-
+    # section tabs in the Phase 3 model, so no strip renders and the panel must say it.
+    for tab, needle in (("tasks", "Render task"), ("notes", "Internal notes"), ("audit", "Audit history"),
+                        ("timeline", "Activity timeline")):
         html = client_workspace(_get(), person_id=person, tab=tab, principal=_principal()).body.decode()
         assert needle in html, tab

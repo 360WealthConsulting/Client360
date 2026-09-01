@@ -1,0 +1,72 @@
+{# Client360 workspace pattern (Phase 3).
+
+   The identity header, the audience band and the snapshot strip used by ALL FOUR
+   person/household surfaces:
+
+       /client/{id}            client360/workspace.html
+       /client/household/{id}  client360/household.html
+       /people/{id}            people/workspace.html
+       /households/{id}        households/profile.html
+
+   These four had three different header shapes between them. The macros here are
+   the one shape; everything they render is a Phase 1/2 primitive (.btn, .rowmenu,
+   .signal-bar, .detail-row), so this adds a pattern, not a second vocabulary.
+
+   Import with:  {% import "components/workspace.html" as wsx %}
+#}
+
+{# --- identity header ------------------------------------------------------
+   `kind`     eyebrow, e.g. "Person" / "Household"
+   `name`     display name; the crest is derived from it unless `crest` is given
+   `actions`  list of {href, label}; the first `visible` render as buttons and the
+              remainder fold into the overflow menu. This is the whole reason the
+              previous header collapsed: eight actions with `flex:0 1 auto` beside
+              an identity block with `flex:1 1 0%` left the identity 81px wide.
+   The caller body becomes the meta line under the name. #}
+{% macro identity_header(kind, name, actions=[], crest=None, visible=3) %}
+{%- set parts = (name or "?").split() -%}
+{%- set initials = crest if crest else ((parts[0][0] if parts else "?") ~ (parts[1][0] if parts|length > 1 else ""))|upper -%}
+{%- set shown = actions[:visible] -%}
+{%- set rest = actions[visible:] -%}
+<header class="ws-head">
+  <div class="ws-id">
+    <span class="crest" aria-hidden="true">{{ initials }}</span>
+    <div class="who">
+      <span class="kind">{{ kind }}</span>
+      <h1>{{ name }}</h1>
+      {% if caller %}<p class="meta">{{ caller() }}</p>{% endif %}
+    </div>
+  </div>
+  {% if actions %}
+  <nav class="ws-actions" aria-label="Quick actions">
+    {% for a in shown %}<a class="btn sm secondary" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
+    {% if rest %}
+    {# The same disclosure the documents table uses for its row actions — no script,
+       no inline handler, and it collapses the long tail of actions that was pushing
+       the client's own name out of the header. #}
+    <details class="rowmenu ws-more">
+      <summary title="More actions" aria-label="More actions">⋯</summary>
+      <div class="menu">
+        {% for a in rest %}<a href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </nav>
+  {% endif %}
+</header>
+{% endmacro %}
+
+{# --- audience band --------------------------------------------------------
+   Client-facing and internal threads are the two things in this product that must
+   never be confused. Before this the entire distinction was the grey word
+   "internal" in one heading. Colour, icon and a literal sentence, at the top of
+   the panel the writing happens in. #}
+{% macro audience(scope) %}
+{%- if scope == "client" -%}
+<p class="audience client"><span class="ico" aria-hidden="true">↗</span>
+  <span><b>Visible to the client.</b> Sent through the secure portal.</span></p>
+{%- else -%}
+<p class="audience internal"><span class="ico" aria-hidden="true">🔒</span>
+  <span><b>Staff only.</b> Never visible to the client.</span></p>
+{%- endif -%}
+{% endmacro %}
