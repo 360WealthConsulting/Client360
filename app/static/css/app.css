@@ -804,3 +804,13 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 .meter.is-full .meter-val { color:var(--good); }
 .meter.is-low progress::-webkit-progress-value { background:var(--warn); }
 .meter.is-low progress::-moz-progress-bar { background:var(--warn); }
+
+/* A `.section-title` nested directly inside a card is that card's OWN heading, not a
+   page section heading — but it was rendering at page-section scale with a 22px top
+   margin, so every card opened with an oversized title pushed away from its border.
+   42 of them across 9 templates, the client and household workspaces worst of all.
+   Matched to `.card-head` instead; the standalone `.section-title` between cards is
+   untouched. */
+.card > :is(h2,h3).section-title,
+.panel > :is(h2,h3).section-title {
+  margin:0 0 12px; font-size:13.5px; font-weight:660; letter-spacing:0; color:var(--text-2); }

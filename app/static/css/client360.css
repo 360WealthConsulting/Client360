@@ -287,3 +287,26 @@ table.data.docs-table td > .badge {
 .c360-tab--client::after { background:var(--info); }
 .c360-tab--internal::after { background:var(--warn); }
 
+
+/* ---- vault panel ----------------------------------------------------------
+   Seventeen style="" attributes lived here, every one of them dropped by the CSP
+   (`default-src 'self'`, no 'unsafe-inline') - so the upload form, the filter row
+   and the detail card had never actually laid out as written, and the "client
+   upload" pill was a hardcoded #fde that ignored the theme entirely. */
+.vault-head { margin-bottom:var(--s3); }
+.vault-upload { padding:14px 16px; margin-bottom:var(--s3); }
+.vault-fields { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr));
+  gap:var(--s3); align-items:end; }
+.vault-fields label { display:block; font-size:12.5px; font-weight:620; color:var(--text-2); }
+.vault-fields label input, .vault-fields label select { margin-top:4px; width:100%; }
+.vault-submit { margin-top:var(--s3); }
+.vault-filter { gap:var(--s2); flex-wrap:wrap; margin-bottom:var(--s3); }
+/* Filter widths as data attributes rather than inline styles, so the CSP keeps them. */
+.vault-filter .input[data-w="lg"] { max-width:200px; }
+.vault-filter .input[data-w="md"] { max-width:130px; }
+.vault-filter .input[data-w="sm"] { max-width:100px; }
+.vault-detail { margin-top:var(--s4); padding:14px 16px; }
+.vault-detail .id-mono { font-size:11px; word-break:break-all; }
+.vault-actions { gap:var(--s3); margin-top:var(--s2); }
+.vault-inline { display:inline; }
+h3.vault-sub { margin:var(--s3) 0 6px; font-size:13px; font-weight:640; color:var(--text-2); }
