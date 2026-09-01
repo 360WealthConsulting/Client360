@@ -4,17 +4,17 @@
 {% block crumb %}Automation{% endblock %}
 {% block content %}
 {{ ui.page_head("Enterprise Automation", eyebrow="Background execution", desc="Deterministic execution of scheduled jobs, recurring operations, and system tasks — orchestrating existing services, never duplicating business logic.") }}
-<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
-  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Enabled jobs</div><div style="font-size:22px; font-weight:700">{{ metrics.enabled_jobs }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Total jobs</div><div style="font-size:22px; font-weight:700">{{ metrics.jobs }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Runs</div><div style="font-size:22px; font-weight:700">{{ metrics.runs }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Succeeded</div><div style="font-size:22px; font-weight:700">{{ metrics.succeeded }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Failed / dead</div><div style="font-size:22px; font-weight:700">{{ metrics.failed }}</div></article>
+<section class="section"><h2 class="section-title">At a glance</h2>
+  <div class="stat-grid compact">
+    <div class="stat"><div class="k">Enabled jobs</div><div class="v">{{ metrics.enabled_jobs }}</div></div>
+    <div class="stat"><div class="k">Total jobs</div><div class="v">{{ metrics.jobs }}</div></div>
+    <div class="stat"><div class="k">Runs</div><div class="v">{{ metrics.runs }}</div></div>
+    <div class="stat"><div class="k">Succeeded</div><div class="v">{{ metrics.succeeded }}</div></div>
+    <div class="stat"><div class="k">Failed / dead</div><div class="v">{{ metrics.failed }}</div></div>
   </div>
 </section>
-<form method="get" class="card" style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
-  <div class="field" style="margin:0"><label for="status">Status</label>
+<form method="get" class="filterbar">
+  <div class="field"><label for="status">Status</label>
     <select class="input" id="status" name="status"><option value="">All</option>
       {% for st in ["enabled","disabled","paused"] %}<option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st|capitalize }}</option>{% endfor %}</select></div>
   <div><button class="btn" type="submit">Filter</button></div>
@@ -26,17 +26,17 @@
     <td><a class="rowlink" href="/automation/jobs/{{ j.id }}">Open →</a></td></tr>{% endfor %}</tbody></table></div>
 {% else %}{% call ui.empty("No jobs", "No automation jobs defined yet.") %}{% endcall %}{% endif %}
 {% if can_manage %}
-<details class="card" style="margin-top:16px"><summary style="cursor:pointer; font-weight:640">New job</summary>
-  <form method="post" action="/automation/jobs" style="margin-top:12px">
+<details class="card disclosure"><summary>New job</summary>
+  <form method="post" action="/automation/jobs" class="section">
     <div class="field"><label for="code">Code</label><input class="input" id="code" name="code" required></div>
     <div class="field"><label for="name">Name</label><input class="input" id="name" name="name" required></div>
     <div class="field"><label for="job_type">Job type</label>
       <select class="input" id="job_type" name="job_type">{% for jt in ["report_schedules_sweep","capture_analytics_snapshots","launch_workflow","workflow_sla_sweep","dispatch_notifications","dispatch_outbox","maintenance","custom"] %}<option value="{{ jt }}">{{ jt|replace("_"," ") }}</option>{% endfor %}</select></div>
-    <div style="margin-top:12px"><button class="btn" type="submit">Create</button></div>
+    <div class="section"><button class="btn" type="submit">Create</button></div>
   </form>
 </details>{% endif %}
 {% if workers %}
-<section class="stack" style="margin-top:18px"><h2 class="section-title">Workers</h2>
+<section class="section"><h2 class="section-title">Workers</h2>
   <div class="table-wrap"><table class="data"><thead><tr><th>Worker</th><th>Status</th><th>Last heartbeat</th></tr></thead>
     <tbody>{% for w in workers %}<tr><td>{{ w.code }}</td><td>{{ ui.badge(w.status|capitalize, 'good' if w.status == 'active' else '') }}</td><td>{{ w.last_heartbeat_at.strftime('%Y-%m-%d %H:%M') if w.last_heartbeat_at else '—' }}</td></tr>{% endfor %}</tbody></table></div>
 </section>{% endif %}

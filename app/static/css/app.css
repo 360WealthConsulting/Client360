@@ -509,7 +509,6 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
   color: var(--muted); }
 
 .thread-backnav { gap: 14px; }
-.c360-compose-summary { cursor: pointer; font-weight: 620; }
 .c360-compose { margin-top: 12px; }
 .c360-compose .field { margin-bottom: 0; }
 .c360-compose textarea.input { height: auto; min-height: 132px; padding: 10px 12px;
@@ -518,7 +517,6 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 .thread-meta { display: grid; gap: 2px; }
 .thread-meta-value { margin: 0; font-weight: 620; }
 .thread-header-action form { margin: 0; }
-.thread-section-summary { cursor: pointer; font-weight: 620; }
 .thread-form { margin-top: 12px; }
 .thread-control-grid { display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
@@ -901,3 +899,36 @@ table.table { border:1px solid var(--border); border-radius:var(--radius); overf
 .thread-reply-form:has(#reply-internal:checked) { border-color:var(--warn); }
 .thread-reply-form:has(#reply-internal:checked) .btn { background:var(--warn); }
 .thread-reply-form:has(#reply-internal:checked) .btn:hover { filter:brightness(.94); }
+
+/* ============================================================
+   PLATFORM-PAGE PRIMITIVES (Phase 6)
+   Extracted from the eighteen near-identical */overview.html screens, where the
+   same four shapes were repeated as inline styles the CSP drops. These are
+   primitives, not per-page rules: each one replaces a pattern that recurred
+   across many templates.
+   ============================================================ */
+
+/* A filter bar whose controls are label-over-input `.field`s rather than bare
+   controls: they align on their baseline, and `.field`'s own stacking margin would
+   otherwise fight the bar's gap. */
+.filterbar .field { margin:0; }
+.filterbar:has(.field) { align-items:flex-end; }
+
+/* A card that is a disclosure — "New meeting", "New dashboard", "Start a
+   conversation". One definition; the two page-scoped copies that predated it
+   (`.c360-compose-summary`, `.thread-section-summary`) now resolve here. */
+.disclosure { margin-top:var(--s4); }
+.disclosure > summary,
+.c360-compose-summary,
+.thread-section-summary { cursor:pointer; font-weight:620; font-size:13.5px;
+  color:var(--text-2); list-style:none; display:flex; align-items:center; gap:7px; }
+.disclosure > summary::-webkit-details-marker { display:none; }
+.disclosure > summary::marker { content:""; }
+.disclosure > summary::before { content:"+"; font-family:var(--font-mono); color:var(--accent);
+  font-weight:700; }
+.disclosure[open] > summary::before { content:"−"; }
+.disclosure[open] > summary { margin-bottom:var(--s3); }
+
+/* The "N results" line that sits directly under a filter bar and belongs to it. */
+.result-count { margin:-4px 0 var(--s3); font-size:12.5px; color:var(--muted);
+  font-variant-numeric:tabular-nums; }

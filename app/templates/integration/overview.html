@@ -4,13 +4,13 @@
 {% block crumb %}Integration{% endblock %}
 {% block content %}
 {{ ui.page_head("Enterprise Integration", eyebrow="Connectors · sync · webhooks · API", desc="Deterministic external-system connectivity metadata — providers, connectors, synchronization, webhooks, and API management. No provider secrets in plaintext; no external broker.") }}
-<section class="stack" style="margin-bottom:18px"><h2 class="section-title">At a glance</h2>
-  <div class="workspace-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px">
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Providers</div><div style="font-size:22px; font-weight:700">{{ metrics.providers }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Connected</div><div style="font-size:22px; font-weight:700">{{ metrics.connected_connectors }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Sync failures</div><div style="font-size:22px; font-weight:700">{{ metrics.sync_failures }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">Webhook failures</div><div style="font-size:22px; font-weight:700">{{ metrics.webhook_failures }}</div></article>
-    <article class="card" style="padding:12px"><div class="subtle" style="font-size:12px">API clients</div><div style="font-size:22px; font-weight:700">{{ metrics.active_api_clients }}</div></article>
+<section class="section"><h2 class="section-title">At a glance</h2>
+  <div class="stat-grid compact">
+    <div class="stat"><div class="k">Providers</div><div class="v">{{ metrics.providers }}</div></div>
+    <div class="stat"><div class="k">Connected</div><div class="v">{{ metrics.connected_connectors }}</div></div>
+    <div class="stat"><div class="k">Sync failures</div><div class="v">{{ metrics.sync_failures }}</div></div>
+    <div class="stat"><div class="k">Webhook failures</div><div class="v">{{ metrics.webhook_failures }}</div></div>
+    <div class="stat"><div class="k">API clients</div><div class="v">{{ metrics.active_api_clients }}</div></div>
   </div>
 </section>
 
@@ -23,7 +23,7 @@
 </section>
 
 {% if connectors %}
-<section class="stack" style="margin-top:18px"><h2 class="section-title">Connectors</h2>
+<section class="section"><h2 class="section-title">Connectors</h2>
   <div class="table-wrap"><table class="data"><thead><tr><th>Connector</th><th>Direction</th><th>Status</th></tr></thead>
     <tbody>{% for c in connectors %}<tr><td>{{ c.name }}</td><td>{{ c.direction }}</td>
       <td>{{ ui.badge(c.status|replace("_"," ")|capitalize, 'good' if c.status == 'connected' else ('bad' if c.status == 'error' else '')) }}</td></tr>{% endfor %}</tbody></table></div>
