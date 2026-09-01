@@ -365,11 +365,10 @@ def unassigned_documents(request: Request, q: str = "",
 
                 drake_unassigned.append({
                     "id": document_id,
-                    "name": (
-                        row["display_name"]
-                        or row["original_name"]
-                        or f"Document {document_id}"
-                    ),
+                    # Canonical helper -- one precedence rule, one safety gate. Inlining
+                    # "display_name or original_name" here duplicated that rule and bypassed the
+                    # sensitive-identifier check every other surface goes through.
+                    "name": _doc_display_name(row) or f"Document {document_id}",
                     "original_name": row["original_name"],
                     "notes": row["notes"],
                     "ocr_status": row["ocr_status"],
