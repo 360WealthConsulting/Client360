@@ -786,3 +786,21 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
   .qa-overflow .menu > .ov-messages, .qa-overflow .menu > .ov-chat { display:flex; }
   .qa-bar { padding-right:6px; margin-right:0; }
 }
+
+/* ---- readiness meter ------------------------------------------------------
+   A native <progress> so the fill can be set from an attribute: the CSP drops a
+   style="width:N%", which is how a div-based bar would normally be driven. Sized
+   to sit inside a dense table row without adding height. */
+.meter { display:inline-flex; align-items:center; gap:8px; }
+.meter progress { appearance:none; -webkit-appearance:none; width:74px; height:5px;
+  border:0; border-radius:3px; background:var(--surface-3); display:block; }
+.meter progress::-webkit-progress-bar { background:var(--surface-3); border-radius:3px; }
+.meter progress::-webkit-progress-value { background:var(--accent); border-radius:3px; }
+.meter progress::-moz-progress-bar { background:var(--accent); border-radius:3px; }
+.meter .meter-val { font-family:var(--font-mono); font-size:11.5px; color:var(--muted);
+  font-variant-numeric:tabular-nums; min-width:34px; }
+.meter.is-full progress::-webkit-progress-value { background:var(--good); }
+.meter.is-full progress::-moz-progress-bar { background:var(--good); }
+.meter.is-full .meter-val { color:var(--good); }
+.meter.is-low progress::-webkit-progress-value { background:var(--warn); }
+.meter.is-low progress::-moz-progress-bar { background:var(--warn); }

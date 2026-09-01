@@ -123,3 +123,8 @@
   margin:0 0 var(--s4); grid-template-columns:none; }
 .filters label { display:inline-flex; align-items:center; gap:6px; font-size:12.5px;
   color:var(--text-2); }
+
+/* A short breakdown (only non-zero statuses render) should pack from the left rather
+   than have one surviving tile stretch the full width of its card. */
+.stats-grid.pack { display:flex; flex-wrap:wrap; gap:10px; }
+.stats-grid.pack > .stat-card { flex:0 1 168px; }
