@@ -166,7 +166,10 @@ body.c360 {
 .btn.danger { background:var(--crit); color:#fff; }
 
 .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
-.card > h3 { margin:0 0 12px; font-size:13px; color:var(--text-2); font-weight:640; }
+/* A heading directly inside a card is that card's own title. `h3` was covered; `h2`
+   was not, so 77 of them across 51 templates rendered at the browser default 1.5em
+   bold - larger than the page's own h1 context and detached from the card. */
+.card > :is(h2,h3) { margin:0 0 12px; font-size:13px; color:var(--text-2); font-weight:640; }
 
 .stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; }
 .stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
@@ -1071,3 +1074,13 @@ form.stack > label:has(> input[type="checkbox"]) { display:flex; align-items:cen
 /* Page sub-navigation: a row of destination links directly under the page head. */
 .subnav { margin:-4px 0 var(--s4); }
 .subnav .rowlink { font-size:12.5px; }
+/* A count trailing a badge label. */
+.badge strong { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-weight:700;
+  margin-left:1px; }
+
+/* `.stat` written with `.label`/`.value` instead of `.k`/`.v` — 39 tiles across the six
+   insurance screens, none of which had any styling because neither selector exists.
+   Aliased rather than churning the markup; `.k`/`.v` remain the canonical names. */
+.stat > .label { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.stat > .value { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em;
+  margin-top:6px; font-variant-numeric:tabular-nums; overflow-wrap:break-word; }

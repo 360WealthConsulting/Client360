@@ -28,9 +28,11 @@
 <h2 class="section-title">Priorities</h2>
 <article class="card workspace-priorities">
   <div class="priority-counts">
-    <span class="priority-chip priority-high">🔴 High <strong>{{ ws.priorities.high }}</strong></span>
-    <span class="priority-chip priority-medium">🟡 Medium <strong>{{ ws.priorities.medium }}</strong></span>
-    <span class="priority-chip priority-low">🟢 Low <strong>{{ ws.priorities.low }}</strong></span>
+    {# Semantic tint + a tick, not colour emoji: 🔴/🟡/🟢 render as full-colour glyphs
+       that vary by platform and read as consumer chat, not a wealth-management console. #}
+    <span class="badge crit"><span class="tick"></span>High <strong>{{ ws.priorities.high }}</strong></span>
+    <span class="badge warn"><span class="tick"></span>Medium <strong>{{ ws.priorities.medium }}</strong></span>
+    <span class="badge good"><span class="tick"></span>Low <strong>{{ ws.priorities.low }}</strong></span>
   </div>
   {% if ws.priorities.entries %}
     <div class="priority-list">

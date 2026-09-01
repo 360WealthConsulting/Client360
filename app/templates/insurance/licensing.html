@@ -2,8 +2,10 @@
 {% block title %}Producer Licensing{% endblock %}
 {% block crumb %}<a href="/insurance">Insurance</a> / Licensing{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Producer Licensing &amp; CE</h1></div>
-
+<div class="page-head">
+  <div><p class="eyebrow">Insurance</p><h1>Producer Licensing &amp; CE</h1>
+  <p class="desc">Producer appointments, licence status, and continuing-education standing.</p></div>
+</div>
 <div class="stat-grid">
   <div class="stat"><div class="label">Licenses</div><div class="value">{{ report.license_count }}</div></div>
   <div class="stat"><div class="label">Expiring soon</div><div class="value">{{ report.licenses_expiring }}</div></div>
