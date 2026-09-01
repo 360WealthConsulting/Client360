@@ -35,6 +35,7 @@ from app.db import (
     tax_years,
 )
 from app.security.authorization import accessible_person_ids
+from app.services.document_naming import document_display_name
 
 # Result-type ranking (per the spec): exact matches first, then this order.
 _TYPE_ORDER = {"household": 1, "person": 2, "business": 3, "trust": 4, "estate": 5,
@@ -231,7 +232,8 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
             if year:
                 conds.append(documents.c.tags["tax_year"].astext == year)
             cls = document_classifications
-            stmt = (select(documents.c.id, documents.c.original_name, documents.c.person_id,
+            stmt = (select(documents.c.id, documents.c.original_name,
+                           documents.c.display_name, documents.c.person_id,
                            documents.c.household_id, documents.c.storage_provider,
                            documents.c.tags["tax_year"].astext.label("tax_year"),
                            documents.c.tags["source_system"].astext.label("source_system"),
@@ -248,7 +250,10 @@ def universal_search(principal, query: str, *, types=None, active_only: bool = F
                              else (f"/client/{r['person_id']}" if r["person_id"] else None))
                 dt = (r["doc_type"] or "").replace("_", " ") if r["doc_type"] else ""
                 subtitle = " · ".join(x for x in (dt, r["tax_year"] or "") if x)
-                rows.append({"kind": "document", "id": r["id"], "name": r["original_name"],
+                # original_name stays in the WHERE clause above so reconciliation and staff
+                # lookups by the source filename keep working; only the LABEL shown to the user goes
+                # through the safe display-name path.
+                rows.append({"kind": "document", "id": r["id"], "name": document_display_name(r),
                              "entity_type": "document", "household_id": r["household_id"],
                              "subtitle": subtitle,
                              "source": _doc_source(r), "quick_status": "archived" if r["archived"] else "",

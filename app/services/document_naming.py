@@ -23,6 +23,7 @@ import re
 from typing import NamedTuple
 
 from app.services.document_classification import classify_document
+from app.services.document_name_safety import is_safe, scrub
 
 #: Type code -> the human label used inside a display name.
 DISPLAY_LABELS = {
@@ -203,32 +204,119 @@ class TypeMatch(NamedTuple):
     matched_text: str | None = None
 
 
-def document_display_name(row) -> str:
-    """What staff should SEE for a document: the canonical ``display_name`` when it is set, otherwise
-    the original filename.
+def _has_content(text: str) -> bool:
+    """True when the text contains at least one alphanumeric character.
 
-    The fallback is the normal case, not an error — most documents never receive a display_name, and
-    a blank one behaves exactly like an absent one. This never hides ``original_name``: provenance and
-    detail views read that column directly, and the physical file is always located by
-    ``storage_path`` / ``storage_uri``, never by either name.
+    A display name of ``"..."`` or ``"///"`` is technically free of sensitive identifiers but names
+    nothing; such a value is skipped so the next candidate (normally ``original_name``) is used.
+    """
+    return any(c.isalnum() for c in text or "")
+
+
+def _is_meaningful(text: str) -> bool:
+    """True when what survived a scrub still NAMES something.
+
+    Requires at least three alphanumerics AND at least one letter: a residue of bare digits (a year,
+    a fragment of the identifier's neighbours) is not a name, and falling through to a constructed
+    ``year - type - owner`` label is strictly more informative than emitting it.
+    """
+    alnum = [c for c in (text or "") if c.isalnum()]
+    return len(alnum) >= 3 and any(c.isalpha() for c in alnum)
+
+
+def _row_get(row):
+    """Uniform accessor for a mapping row or an ORM object."""
+    return row.get if hasattr(row, "get") else (lambda k, d=None: getattr(row, k, d))
+
+
+def _constructed_label(row, owner=None) -> str | None:
+    """A label built ONLY from fields that cannot carry free text: year, document type, owner.
+
+    Used when neither the stored display name nor the original filename can be shown safely. These
+    fields are structured — a tax year, a mapped category, a resolved owner name — so the result is
+    safe by construction rather than by inspection.
+    """
+    get = _row_get(row)
+    year = None
+    tags = get("tags")
+    if isinstance(tags, dict):
+        raw = tags.get("tax_year") or tags.get("year")
+        if raw is not None and str(raw).strip().isdigit():
+            year = str(raw).strip()
+    if not year:
+        effective = get("effective_date")
+        year = str(effective.year) if hasattr(effective, "year") else None
+    category = (get("category") or "").strip().lower().replace(" ", "_")
+    label = type_label(_CATEGORY_TO_TYPE.get(category)) if category not in VAGUE_CATEGORIES else None
+    parts = [p for p in (year, label, sanitize(owner) if owner else None) if p]
+    return " - ".join(parts) if parts else None
+
+
+def safe_document_label(row, *, owner=None) -> str:
+    """The user-facing label for a document, guaranteed to carry no sensitive identifier.
+
+    Precedence, first safe result wins:
+
+    1. ``display_name`` when it is already safe,
+    2. ``display_name`` with sensitive spans scrubbed out, when something meaningful survives,
+    3. ``original_name`` under the same two rules,
+    4. a label constructed from structured fields (``year - type - owner``),
+    5. ``Document <id>``.
+
+    An UNSAFE original filename is never emitted — that is the point of step 4. A document with
+    neither a display name nor an original name returns "" (nothing recorded, nothing to protect).
+
+    This reads only; ``original_name``, ``stored_name``, ``storage_path``, ``storage_uri``,
+    ``sha256`` and ``tags`` are never modified, and the physical file is untouched.
     """
     if row is None:
         return ""
-    get = row.get if hasattr(row, "get") else (lambda k, d=None: getattr(row, k, d))
+    get = _row_get(row)
     display = (get("display_name") or "").strip()
-    return display or (get("original_name") or "").strip()
+    original = (get("original_name") or "").strip()
+    if not display and not original:
+        return ""
+    for candidate in (display, original):
+        if not candidate or not _has_content(candidate):
+            continue
+        if is_safe(candidate):
+            return candidate
+        # Scrub the STEM only. Scrubbing the whole filename can reduce "123-45-6789.pdf" to the bare
+        # extension "pdf", which is not a name -- it is what is left after the name was removed.
+        cleaned = scrub(strip_extension(candidate))
+        if cleaned and is_safe(cleaned) and _is_meaningful(cleaned):
+            return cleaned
+    built = _constructed_label(row, owner)
+    if built:
+        return built
+    doc_id = get("id")
+    return f"Document {doc_id}" if doc_id is not None else "Document"
+
+
+def document_display_name(row) -> str:
+    """What staff should SEE for a document: the canonical ``display_name`` when it is set and safe,
+    otherwise the original filename, otherwise a safely constructed label.
+
+    Falling back to ``original_name`` is the normal case, not an error — most documents never receive
+    a display_name. This never hides provenance: detail views read ``original_name`` directly, and the
+    physical file is always located by ``storage_path`` / ``storage_uri``, never by either name.
+
+    Since 0.13.0 the result is additionally gated by ``document_name_safety``, so a display name that
+    was written before that gate existed (or by any future writer) cannot surface an SSN, EIN,
+    account, routing, card, policy/member identifier or labelled date of birth to a user.
+    """
+    return safe_document_label(row)
 
 
 _UNSAFE_FILENAME = re.compile(r"[\x00-\x1f\x7f<>:\"/\\|?*]")
 
 
-def document_delivery_filename(row) -> str:
-    """The filename a document is DELIVERED under (download, and any future mail attachment).
+def document_delivery_filename(row, *, owner=None) -> str:
+    """The filename a document is DELIVERED under (download, and mail attachments).
 
-    ``display_name`` when set, otherwise ``original_name`` — the same precedence the UI uses — with
-    the original file's extension preserved. The extension is taken from ``original_name`` and
-    appended only when the delivered base does not already end with it, so it is never duplicated and
-    a display name that happens to end in a dotted word is not mistaken for a different file type.
+    The safe label from :func:`safe_document_label` with the original file's extension preserved. The
+    extension is taken from ``original_name`` and appended only when the delivered base does not
+    already end with it, so it is never duplicated.
 
     This changes the label on the response, nothing else: the bytes served, ``storage_path`` /
     ``storage_uri`` used to locate them, ``sha256``, ``stored_name`` and ``original_name`` are all
@@ -237,12 +325,18 @@ def document_delivery_filename(row) -> str:
     Hardened for header and path safety: control characters (including CR/LF), path separators and
     quoting characters are stripped, only the basename survives, and traversal segments cannot leak —
     so the delivered name can neither inject a response header nor describe a filesystem location.
+    Hardened for disclosure: the emitted base is re-checked and replaced with ``Document <id>`` if
+    anything sensitive would otherwise survive. A delivered name NEVER falls back to an unsafe
+    original filename.
     """
     if row is None:
         return ""
-    get = row.get if hasattr(row, "get") else (lambda k, d=None: getattr(row, k, d))
+    get = _row_get(row)
     original = (get("original_name") or "").strip()
-    base = (get("display_name") or "").strip() or original
+    doc_id = get("id")
+    fallback = f"Document {doc_id}" if doc_id is not None else "document"
+
+    base = safe_document_label(row, owner=owner)
     if not base:
         return ""
 
@@ -250,8 +344,10 @@ def document_delivery_filename(row) -> str:
     base = re.split(r"[\\/]", base)[-1]
     base = _UNSAFE_FILENAME.sub(" ", base)
     base = re.sub(r"\s+", " ", base).strip().strip(".").strip()
-    if not base or set(base) <= {"."}:
-        base = _UNSAFE_FILENAME.sub(" ", re.split(r"[\\/]", original)[-1]).strip() or "document"
+    # Final gate. Stripping characters cannot introduce an identifier, but the emitted name is
+    # re-checked so that "safe" is a property of what actually leaves the process, not an inference.
+    if not base or set(base) <= {"."} or not is_safe(base):
+        base = fallback
 
     ext = extension_of(original)
     if ext and not base.lower().endswith(ext.lower()):
@@ -438,6 +534,10 @@ def residual_qualifier(filename: str | None, *, year: int | None, type_code: str
     if is_scanner_filename(filename):
         return None
     residue = sanitize(strip_extension(filename))
+    # Remove sensitive identifiers -- label AND value together -- BEFORE any other processing, so a
+    # partially-stripped SSN or account number can never survive as "residual detail". Surrounding
+    # non-sensitive wording is preserved: "Acct 4471002983 Chase" keeps "Chase".
+    residue = scrub(residue)
     if not residue:
         return None
     # A trailing "(2)" / "- Copy" is filler by default. The preview re-attaches it via

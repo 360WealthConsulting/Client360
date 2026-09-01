@@ -33,6 +33,7 @@ from app.db import (
     people,
     relationship_entities,
 )
+from app.services import document_name_safety as safety
 from app.services.document_naming import (
     canonical_display_name,
     detect_foreign_person_token,
@@ -238,6 +239,7 @@ def build_preview(*, limit=None, examples=50) -> dict:
                 "type_source": type_source, "confidence": confidence, "year": year,
                 "qualifier": qualifier, "source_system": _source_system(row),
                 "collision": False, "version_markers": version_markers,
+                "redaction_hits": [],
                 "multi_form": multi_form, "ambiguous_year": ambiguous_year,
                 "instructions": instructions, "foreign_person": foreign_person,
                 "inconsistent_owner": inconsistent, "stem": stem,
@@ -256,6 +258,12 @@ def build_preview(*, limit=None, examples=50) -> dict:
         multi_form, version_markers = r["multi_form"], r["version_markers"]
         ambiguous_year, instructions = r["ambiguous_year"], r["instructions"]
         foreign_person = r["foreign_person"]
+        # FINAL safety scan, after candidate construction and after collision resolution -- the
+        # proposed name can still change in _resolve_collisions, so this is the last word on what
+        # a document could actually be named. Only the reason CODES are kept; the matched value is
+        # never returned by scan() and is never recorded anywhere.
+        redaction_hits = list(safety.scan(candidate))
+        r["redaction_hits"] = redaction_hits
         reasons = []
         if inconsistent:
             bucket = "SKIP"
@@ -269,6 +277,9 @@ def build_preview(*, limit=None, examples=50) -> dict:
         elif not candidate:
             bucket = "SKIP"
             reasons.append("no document type and no meaningful filename detail")
+        elif redaction_hits:
+            bucket = "REVIEW"
+            reasons.append(f"{safety.UNSAFE_REASON} [{', '.join(redaction_hits)}]")
         elif _original_already_clear(stem, candidate, year=year, type_code=type_code,
                                      entity=owner_name):
             bucket = "UNCHANGED"
@@ -330,6 +341,7 @@ def build_preview(*, limit=None, examples=50) -> dict:
         "by_document_type": dict(by_doc_type.most_common()),
         "by_source_system": dict(by_source.most_common()),
         "collisions": collisions,
+        "redaction_reviews": sum(1 for r in rows_out if r["redaction_hits"]),
         "examples": {"SAFE": sample("SAFE", examples), "REVIEW": sample("REVIEW", 25),
                      "UNCHANGED": sample("UNCHANGED", 25), "SKIP": sample("SKIP", 25)},
         "rows": rows_out,
