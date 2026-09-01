@@ -87,18 +87,35 @@ $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
 
 # Start on the next hour boundary, then repeat indefinitely.
 #
-# Indefinite repetition is [TimeSpan]::Zero, NOT [TimeSpan]::MaxValue. Task Scheduler's schema
-# defines a Repetition Duration of PT0S as "repeat indefinitely", and that is what Zero serializes
-# to. MaxValue instead serializes to P99999999DT23H59M59S, which is out of range for the Duration
-# element, so Register-ScheduledTask rejects the whole task XML:
-#     The task XML contains a value which is incorrectly formatted or out of range.
-#     (14,42):Duration:P99999999DT23H59M59S
-# That is a REGISTRATION-time failure — the task is never created at all, so automatic renewal
-# silently does not exist. (Observed in production installing this task on the 0.13.0 release.)
+# INDEFINITE REPETITION IS THE ABSENCE OF A DURATION -- do not pass -RepetitionDuration at all.
+#
+# Task Scheduler's schema declares Repetition/Duration as
+#     <xs:element name="Duration" minOccurs="0">
+#       <xs:restriction base="duration"><xs:minInclusive value="PT1M"/></xs:restriction>
+# and documents: "If no value is specified for the duration, then the pattern is repeated
+# indefinitely. The minimum value is one minute."
+#
+# So the element is OPTIONAL, and any value it does carry must be >= PT1M. That single rule is why
+# both previous attempts were rejected at registration with 0x80041318:
+#     [TimeSpan]::MaxValue -> P99999999DT23H59M59S  (above the range the service accepts)
+#     [TimeSpan]::Zero     -> PT0S                  (below the PT1M floor)
+# Omitting the parameter emits no Duration element at all, which is the documented way to say
+# "forever" and the only one that is not a value to be range-checked.
+#
+# [TimeSpan]::MaxValue was the Windows Server 2012 idiom, where the cmdlet REQUIRED interval and
+# duration together. On Windows 10 / Server 2016+ the interval stands alone and the duration is
+# omitted; that is the supported form here, and the guard below refuses the legacy platform loudly
+# rather than registering a task that silently never repeats.
+if ([Environment]::OSVersion.Version.Major -lt 10) {
+    throw ("Windows 10 / Server 2016 or later is required: on this platform " +
+           "New-ScheduledTaskTrigger cannot express indefinite repetition without an " +
+           "explicit repetition duration, and every value it would accept eventually " +
+           "stops the renewal.")
+}
+
 $startAt = (Get-Date).Date.AddHours((Get-Date).Hour + 1)
 $trigger = New-ScheduledTaskTrigger -Once -At $startAt `
-    -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) `
-    -RepetitionDuration ([TimeSpan]::Zero)
+    -RepetitionInterval (New-TimeSpan -Hours $IntervalHours)
 
 # IgnoreNew: never overlap runs. StartWhenAvailable: catch up a run missed while powered off.
 # A 10-minute limit is generous for one Graph call and stops a hung run blocking the next.

@@ -459,80 +459,157 @@ def test_action_parse_never_trips_strict_mode(tmp_path, lines):
     assert "has not been set" not in combined
 
 
-# --- 5. scheduled-task XML durations -----------------------------------------
+# --- 6. scheduled-task repetition duration -----------------------------------
 #
-# PRODUCTION DEFECT (observed installing the task on the 2ffbe4cd release): the trigger was built
-# with
+# PRODUCTION DEFECT, TWICE. Registering the renewal task was rejected by Task Scheduler on two
+# consecutive releases, each time with 0x80041318 ("The task XML contains a value which is
+# incorrectly formatted or out of range"):
 #
-#     -RepetitionDuration ([TimeSpan]::MaxValue)
+#     2ffbe4cd  -RepetitionDuration ([TimeSpan]::MaxValue)  ->  (14,42):Duration:P99999999DT23H59M59S
+#     93c624ef  -RepetitionDuration ([TimeSpan]::Zero)      ->  (14,26):Duration:PT0S
 #
-# [TimeSpan]::MaxValue serializes to the ISO-8601 duration P99999999DT23H59M59S, which is out of
-# range for Task Scheduler's Duration element, so Register-ScheduledTask rejected the ENTIRE task
-# XML:
+# ONE schema rule explains both. Task Scheduler declares the element as
 #
-#     The task XML contains a value which is incorrectly formatted or out of range.
-#     (14,42):Duration:P99999999DT23H59M59S
+#     <xs:element name="Duration" minOccurs="0">
+#       <xs:restriction base="duration"><xs:minInclusive value="PT1M"/></xs:restriction>
 #
-# This fails at REGISTRATION, so the task is never created — automatic renewal simply does not
-# exist, while the deploy log shows only one failed line. Task Scheduler's schema defines PT0S
-# ([TimeSpan]::Zero) as "repeat indefinitely", which is the intended semantic.
+# and documents "If no value is specified for the duration, then the pattern is repeated
+# indefinitely. The minimum value is one minute." MaxValue serializes ABOVE the accepted range;
+# Zero serializes BELOW the PT1M floor. Indefinite repetition is therefore the ABSENCE of the
+# element, not any value of it -- so the installer must not pass -RepetitionDuration at all.
+# ([TimeSpan]::MaxValue was the Server 2012 idiom, where the cmdlet required both parameters
+# together; Windows 10 / Server 2016+ accepts the interval alone.)
 #
-# These assertions are static (PowerShell cannot execute on CI or a developer Mac), so they pin the
-# SOURCE of the bad value rather than the emitted XML.
+# Both failures reached production because this value is validated only by the Windows service when
+# it parses the XML. These static checks pin the source; deploy/windows/Test-RenewalTaskRegistration
+# .ps1 is the Windows-side counterpart that actually registers a disposable task and inspects the
+# stored XML, which is the only place this class of defect can genuinely be caught.
+
+_VALIDATOR = _REPO / "deploy" / "windows" / "Test-RenewalTaskRegistration.ps1"
+
+# Every value that has been observed to be rejected, in both its PowerShell and serialized forms.
+REJECTED_DURATIONS = [
+    ("[TimeSpan]::MaxValue", "P99999999DT23H59M59S"),
+    ("[TimeSpan]::Zero", "PT0S"),
+]
+
 
 def _executable_lines(asset):
-    """``asset`` with comment lines removed.
+    """``asset`` with PowerShell comments removed - both ``#`` lines and ``<# ... #>`` blocks.
 
-    The defect commentary in these files names the bad value and its serialized form on purpose, so
-    the assertions below must look at executable code only or they would match the warning itself.
+    The defect commentary in these files quotes the rejected values on purpose, so the assertions
+    below must look at executable code only or they would match the warning itself.
     """
-    return "\n".join(ln for ln in asset.read_text(encoding="utf-8").splitlines()
-                      if not ln.lstrip().startswith("#"))
+    out, in_block = [], False
+    for line in asset.read_text(encoding="utf-8").splitlines():
+        stripped = line.lstrip()
+        if in_block:
+            if "#>" in line:
+                in_block = False
+            continue
+        if stripped.startswith("<#"):
+            if "#>" not in stripped[2:]:
+                in_block = True
+            continue
+        if stripped.startswith("#"):
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
-@pytest.mark.parametrize("asset", [_WRAPPER, _INSTALLER], ids=["wrapper", "installer"])
-def test_no_windows_asset_uses_an_out_of_range_timespan(asset):
-    """TimeSpan::MaxValue must never reach a scheduled-task duration again, in either asset."""
+def test_the_installer_passes_no_repetition_duration_at_all():
+    """Indefinite repetition is the ABSENCE of a Duration. Any value here is a value that can be
+    out of range, and both values tried so far were."""
+    code = _executable_lines(_INSTALLER)
+    assert "-RepetitionDuration" not in code, (
+        "the installer passes -RepetitionDuration; omit it entirely so no Duration element is "
+        "emitted, which is Task Scheduler's documented way to repeat indefinitely")
+
+
+def test_the_interval_still_stands_alone_on_the_trigger():
+    """Omitting the duration must not have taken the repetition with it — no interval, no renewal."""
+    code = _executable_lines(_INSTALLER)
+    assert re.search(r"-RepetitionInterval\s*\(New-TimeSpan\s+-Hours\s+\$IntervalHours\)", code), \
+        "the trigger no longer repeats on the IntervalHours cadence"
+
+
+@pytest.mark.parametrize("asset", [_WRAPPER, _INSTALLER, _VALIDATOR],
+                         ids=["wrapper", "installer", "validator"])
+@pytest.mark.parametrize("powershell,serialized", REJECTED_DURATIONS,
+                         ids=["MaxValue", "Zero"])
+def test_no_windows_asset_reintroduces_a_rejected_duration(asset, powershell, serialized):
+    """Neither rejected value may come back, in either its PowerShell or its serialized form."""
     code = _executable_lines(asset)
-    assert "TimeSpan]::MaxValue" not in code, (
-        f"{asset.name} passes TimeSpan::MaxValue to a task duration; it serializes to "
-        "P99999999DT23H59M59S and Register-ScheduledTask rejects the task XML")
-
-
-@pytest.mark.parametrize("asset", [_WRAPPER, _INSTALLER], ids=["wrapper", "installer"])
-def test_no_windows_asset_hard_codes_the_out_of_range_duration_literal(asset):
-    """The serialized form must not be smuggled in as a literal either."""
-    assert "P99999999" not in _executable_lines(asset)
-
-
-def test_repetition_repeats_indefinitely_via_pt0s():
-    """Indefinite repetition is TimeSpan::Zero (PT0S). Anything finite silently stops renewing."""
-    text = _installer_text()
-    match = re.search(r"-RepetitionDuration\s*\(([^)]*)\)", text)
-    assert match, "no -RepetitionDuration found on the trigger"
-    assert "TimeSpan]::Zero" in match.group(1), (
-        f"-RepetitionDuration is {match.group(1)!r}; expected [TimeSpan]::Zero so Task Scheduler "
-        "serializes PT0S and repeats indefinitely")
+    assert powershell not in code, (
+        f"{asset.name} uses {powershell}, which serializes to {serialized} and is rejected by "
+        "Task Scheduler with 0x80041318")
+    # The validator names the serialized forms inside string literals on purpose (it asserts their
+    # absence from the exported XML), so only the installer/wrapper are checked for those.
+    if asset is not _VALIDATOR:
+        assert serialized not in code, f"{asset.name} hard-codes the rejected duration {serialized}"
 
 
 def test_execution_time_limit_stays_bounded():
-    """The 10-minute cap is the hung-run guard and is NOT the field that caused the defect — fixing
-    the repetition duration must not turn the execution limit into an unlimited one."""
+    """The 10-minute cap is the hung-run guard and was never the cause of either rejection —
+    neither fix may quietly turn it into an unlimited limit."""
     text = _installer_text()
     match = re.search(r"-ExecutionTimeLimit\s*\(([^)]*)\)", text)
     assert match, "no -ExecutionTimeLimit found"
     limit = match.group(1)
     assert "New-TimeSpan" in limit and "TimeSpan]::Zero" not in limit, (
-        f"-ExecutionTimeLimit is {limit!r}; an unlimited (PT0S) limit lets a hung run block the next")
+        f"-ExecutionTimeLimit is {limit!r}; an unlimited limit lets a hung run block the next")
     assert int(re.search(r"-Minutes\s+(\d+)", limit).group(1)) <= 60
 
 
-def test_the_task_contract_is_unchanged_by_the_duration_fix():
-    """Everything the deployment depends on must survive this fix."""
+def test_the_installer_refuses_a_platform_that_cannot_express_indefinite_repetition():
+    """On Server 2012 the interval cannot stand alone. Fail loudly rather than register a task that
+    silently stops repeating."""
+    text = _installer_text()
+    guard = re.search(r"if \(\[Environment\]::OSVersion[^}]*\}", text, re.DOTALL)
+    assert guard, "no OS-version guard found"
+    assert "throw" in guard.group(0)
+
+
+def test_the_task_contract_survives_the_duration_fix():
+    """Everything the deployment depends on must be unchanged by this fix."""
     text = _installer_text()
     assert "'Client360 SharePoint Subscription Renewal'" in text
     assert "NT AUTHORITY\\SYSTEM" in text and "ServiceAccount" in text
     assert re.search(r"\$IntervalHours\s*=\s*4", text)
     assert "-StartWhenAvailable" in text
-    assert "Renew-SharePointSubscription.ps1" in text
     assert "MultipleInstances IgnoreNew" in text
+    assert "Renew-SharePointSubscription.ps1" in text
+
+
+# --- 7. the Windows-side registration test -----------------------------------
+
+def test_a_windows_registration_validator_exists():
+    """Static checks cannot catch a value only the Task Scheduler service validates. A Windows-side
+    test that actually registers the task is the only thing that can."""
+    assert _VALIDATOR.is_file(), f"missing {_VALIDATOR.name}"
+
+
+def test_the_validator_drives_the_real_installer():
+    """It must exercise the shipped installer, not a reconstructed copy of its trigger that would
+    drift away from the thing being deployed."""
+    text = _VALIDATOR.read_text(encoding="utf-8")
+    assert "Install-SharePointRenewalTask.ps1" in text
+    assert "New-ScheduledTaskTrigger" not in _executable_lines(_VALIDATOR), \
+        "the validator builds its own trigger; it must call the installer instead"
+
+
+def test_the_validator_inspects_the_stored_xml_for_both_rejected_durations():
+    text = _VALIDATOR.read_text(encoding="utf-8")
+    assert "Export-ScheduledTask" in text, "the validator must inspect the XML the service stored"
+    assert "P99999999" in text and "PT0S" in text, \
+        "the validator must assert both rejected durations are absent from the stored XML"
+    assert "Duration" in text
+
+
+def test_the_validator_cannot_touch_the_production_task():
+    """It registers and DELETES its task, so it must refuse the production name and clean up."""
+    text = _VALIDATOR.read_text(encoding="utf-8")
+    assert "Refusing to run against the production task name" in text
+    assert "SELFTEST" in text
+    assert "finally" in text and "Unregister-ScheduledTask" in text
+    assert "Disable-ScheduledTask" in text, "the disposable task must not be able to fire"
