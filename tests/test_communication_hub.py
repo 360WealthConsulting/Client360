@@ -17,10 +17,10 @@ from sqlalchemy import delete, func, insert, select
 
 from app.db import (
     audit_events,
-    people,
     client_feature_overrides,
     engine,
     firm_feature_controls,
+    people,
     portal_threads,
     users,
 )
@@ -534,8 +534,9 @@ def test_an_unknown_person_and_an_out_of_scope_person_are_refused_identically():
 
 
 def test_a_client_without_a_portal_account_is_explained_not_silently_onboarded():
-    from app.db import people
     from sqlalchemy import insert as _insert
+
+    from app.db import people
 
     staff = _staff_principal()
     with engine.begin() as c:
@@ -558,8 +559,9 @@ def test_a_client_without_a_portal_account_is_explained_not_silently_onboarded()
 
 
 def test_a_revoked_portal_client_cannot_be_messaged():
-    from app.db import portal_accounts
     from sqlalchemy import update as _update
+
+    from app.db import portal_accounts
 
     staff = _staff_principal()
     account_id, _, person_id, _ = seed_portal_account(staff.user_id)
@@ -641,8 +643,9 @@ def test_a_staff_initiated_thread_appears_in_the_staff_inbox_newest_first():
 
 
 def test_client_portal_status_reports_each_state_without_creating_anything():
-    from app.db import people, portal_accounts
     from sqlalchemy import insert as _insert
+
+    from app.db import people, portal_accounts
 
     staff = _staff_principal()
     active_account, _, active_person, _ = seed_portal_account(staff.user_id)
@@ -665,8 +668,9 @@ def test_client_portal_status_reports_each_state_without_creating_anything():
 def test_an_invited_but_never_activated_client_cannot_yet_be_messaged():
     """status='invited': the account exists but the client has never signed in, so there is nowhere
     for them to read it. Explained, not silently onboarded."""
-    from app.db import households, people, portal_accounts
     from sqlalchemy import insert as _insert
+
+    from app.db import households, people, portal_accounts
 
     staff = _staff_principal()
     sfx = uuid.uuid4().hex[:8]
@@ -693,8 +697,9 @@ def test_an_invited_but_never_activated_client_cannot_yet_be_messaged():
 
 def test_a_historical_revoked_account_does_not_block_the_current_active_one():
     """The schema permits several accounts per person; the CURRENT one decides."""
-    from app.db import portal_accounts
     from sqlalchemy import insert as _insert
+
+    from app.db import portal_accounts
 
     staff = _staff_principal()
     active_id, _, person_id, _ = seed_portal_account(staff.user_id)

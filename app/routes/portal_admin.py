@@ -9,14 +9,13 @@ impersonation: staff can preview an account's entitlements but cannot assume its
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from datetime import datetime, timezone
-
 from sqlalchemy import func, select
 
 from app.db import (
@@ -28,16 +27,18 @@ from app.db import (
 )
 from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
-from app.portal import invitation_handoff
-from app.portal import invite_targets
-from app.services import email_delivery, person_creation
-from app.portal import visibility
-from app.portal.service import (PortalAccountConflictError, invite_portal_account,
-                                portal_base_scope, staff_send_message)
+from app.portal import invitation_handoff, invite_targets, visibility
+from app.portal.service import (
+    PortalAccountConflictError,
+    invite_portal_account,
+    portal_base_scope,
+    staff_send_message,
+)
 from app.security.audit import write_audit_event
 from app.security.authorization import record_in_scope
 from app.security.dependencies import require_capability
 from app.security.models import Principal
+from app.services import email_delivery, person_creation
 from app.templating import wants_html
 
 router = APIRouter(prefix="/admin/client-portal", tags=["client-portal-admin"])
@@ -155,7 +156,7 @@ def _accounts():
     latest = (select(func.max(portal_invitations.c.id))
               .where(portal_invitations.c.portal_account_id == portal_accounts.c.id)
               .correlate(portal_accounts).scalar_subquery())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.connect() as connection:
         rows = connection.execute(
             select(portal_accounts.c.id, portal_accounts.c.display_name, portal_accounts.c.email,
@@ -427,7 +428,7 @@ def portal_admin_revoke(account_id: int, request: Request,
         if not record_in_scope(principal, "person", acct["person_id"], write=True):
             return _fail(403, "Person is outside your record scope")
         connection.execute(portal_accounts.update().where(portal_accounts.c.id == account_id).values(
-            status="revoked", updated_at=datetime.now(timezone.utc)))
+            status="revoked", updated_at=datetime.now(UTC)))
         closed = revoke_account_access(connection, account_id)
     _audit(request, principal, "portal.admin.revoked", account_id, closed)
     if wants_html(request):

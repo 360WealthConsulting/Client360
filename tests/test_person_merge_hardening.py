@@ -10,7 +10,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.db import engine, people, person_source_links, source_contacts, users
+from app.db import engine, people, source_contacts, users
 from app.services.person_merge import MergeBlocked, merge_people, preview_person_merge
 
 _TAG = "PMHARD"

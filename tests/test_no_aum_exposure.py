@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert
 
 from app.db import accounts, engine, households, people
 from app.security.models import Principal

@@ -14,9 +14,13 @@ import logging
 
 import pytest
 
-from app.observability.log_redaction import (REDACTED, SENSITIVE_PARAMS,
-                                             QueryStringRedactionFilter, install_log_redaction,
-                                             redact)
+from app.observability.log_redaction import (
+    REDACTED,
+    SENSITIVE_PARAMS,
+    QueryStringRedactionFilter,
+    install_log_redaction,
+    redact,
+)
 
 SECRET = "s3cr3t-LIVE-CREDENTIAL"
 
