@@ -43,6 +43,13 @@ DEFAULT_ENGINE = "client360-ocr"
 _TERMINAL_OK = "completed"
 
 
+# The single image-normalization seam: a HEIC/HEIF document is OCR'd from its JPEG derivative, and a
+# document that cannot produce one raises DerivativeUnavailable (see _ocr_source_path).
+from app.services.document_derivatives import (  # noqa: E402
+    DerivativeUnavailable,
+    ai_image_source,
+)
+
 # Re-exported from the db-free module so ``from app.services.document_ocr import OcrTimeout`` keeps working
 # while the extraction backend + subprocess worker import them without pulling in app.db.
 from app.services.ocr_exceptions import (  # noqa: E402,F401
@@ -158,6 +165,31 @@ def _local_path(row) -> Path | None:
     return None
 
 
+def _ocr_source_path(row, path):
+    """The image OCR should actually read for this document.
+
+    A HEIC/HEIF original is OCR'd from its NORMALIZED JPEG derivative (produced once and reused) rather
+    than decoded ad hoc here, so there is one conversion implementation rather than one per consumer.
+    Every other file type — PDF, JPEG, PNG, TIFF — is read exactly as before, byte for byte.
+
+    Degrades gracefully: in an environment where the ``document_derivatives`` table has not been
+    migrated yet, this falls back to the original path, which the OCR backend still decodes through
+    pillow-heif. A file that genuinely cannot be normalized raises ``DerivativeUnavailable``, which the
+    caller records as a truthful failure rather than reporting OCR success on unreadable bytes."""
+    from app.services.image_normalization import needs_normalization
+    if not needs_normalization(filename=row.get("original_name"),
+                               content_type=row.get("content_type")):
+        return path
+    try:
+        return ai_image_source(row["id"], row=row).path
+    except DerivativeUnavailable:
+        raise
+    except Exception as exc:  # noqa: BLE001 — derivative subsystem unavailable (e.g. un-migrated host)
+        _log.warning("Image derivative unavailable for doc=%s (%s); OCR reads the original",
+                     row.get("id"), type(exc).__name__)
+        return path
+
+
 def default_extractor(row, path):
     """Production extractor stub: delegates to a real engine when one is installed on the host.
 
@@ -204,7 +236,7 @@ def _candidates(conn, *, mode, document_ids, max_attempts, batch_size):
     """Select canonical documents to OCR for the given run mode (record-scope is enforced by the
     caller's document_ids when present; sweeps run firm-wide by design, like the source-sync jobs)."""
     cols = [documents.c.id, documents.c.original_name, documents.c.sha256,
-            documents.c.storage_uri, documents.c.storage_path,
+            documents.c.storage_uri, documents.c.storage_path, documents.c.content_type,
             document_ocr.c.status.label("ocr_state"), document_ocr.c.attempts,
             document_ocr.c.source_hash]
     stmt = (select(*cols).select_from(_candidate_join())
@@ -327,6 +359,20 @@ def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_
         return
 
     path = _local_path(row)
+    try:
+        path = _ocr_source_path(row, path)
+    except DerivativeUnavailable as exc:
+        # No readable image exists for this document. Recorded truthfully — retryable when the cause is
+        # a host problem (imaging libraries absent), terminal 'unsupported' when the FILE itself cannot
+        # yield an image (multi-frame HEIF, corrupt, spoofed extension). The original is untouched and
+        # still downloadable either way; OCR never claims success on bytes it could not read.
+        state = "failed" if exc.retryable else "unsupported"
+        _log.warning("OCR has no usable normalized image: doc=%s file=%s — recording %s",
+                     doc_id, name, state)
+        _write_state(doc_id, status=state, last_error=str(exc)[:2000], bump_attempt=exc.retryable)
+        summary["failed" if exc.retryable else "unsupported"] += 1
+        return
+
     started = _time.monotonic()
     try:
         if isolate:

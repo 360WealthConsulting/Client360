@@ -47,11 +47,21 @@ def validate_config() -> dict:
     if not vault_ok:
         (fatal if prod else warnings).append(f"Vault storage is not writable: {vault_detail}")
 
+    # Normalized-image derivatives (HEIC/HEIF -> JPEG). Fatal in production for the same reason the
+    # Vault root is: an unusable store silently degrades every downstream image consumer. In
+    # production this also fails when IMAGE_DERIVATIVE_ROOT is unset or relative, so a misconfigured
+    # host cannot write generated derivatives into the deployed source tree.
+    derivative_ok, derivative_detail = checks.image_derivative_storage_writable()
+    if not derivative_ok:
+        (fatal if prod else warnings).append(
+            f"Image derivative storage is not usable: {derivative_detail}")
+
     checks_map = {name: ("ok" if val else ("missing" if name in checks.PRODUCTION_REQUIRED and prod
                                             else "unset"))
                   for name, val in present.items()}
     checks_map["session_secret"] = "ok" if presence["session_secret_ok"] else "insecure"
     checks_map["vault_storage"] = "ok" if vault_ok else "error"
+    checks_map["image_derivative_storage"] = "ok" if derivative_ok else "error"
     checks_map["secure_cookies"] = "on" if presence["secure_cookies"] else "off"
 
     return {

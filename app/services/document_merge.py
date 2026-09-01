@@ -143,6 +143,11 @@ _STRATEGY: dict[str, str] = {
     "document_ocr": "singular",
     "document_classifications": "singular",
     "document_facts": "dedup_keyed",
+    # UNIQUE(document_id, kind): the normalized-image rendition of a document. Two documents that
+    # merge are the same content, so their derivatives are the same rendition of it — the duplicate's
+    # row is redundant, never a lost artifact (the derivative file itself is content-addressed and
+    # shared by both).
+    "document_derivatives": "dedup_keyed",
     "document_relationships": "dedup_keyed",
     "document_events": "reassign",
     "document_versions": "reassign",

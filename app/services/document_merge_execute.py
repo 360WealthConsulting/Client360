@@ -285,6 +285,7 @@ _DEDUP_KEYS = {
     "document_sources": (("source_system", "source_uri"), None),
     "document_facts": (("fact_type", "fact_value"), "is_current"),
     "document_relationships": (("entity_type", "entity_id"), None),
+    "document_derivatives": (("kind",), None),
 }
 
 #: UNIQUE(document_id): one row per document. A duplicate's row is dropped ONLY when it is
@@ -301,6 +302,7 @@ _SINGULAR = ("document_ocr", "document_classifications", "rm_document_status")
 _CONTENT_COLUMNS = {
     "document_ocr": ("text", "last_error"),
     "document_facts": ("fact_value",),
+    "document_derivatives": ("last_error",),
 }
 
 #: Columns excluded when comparing two singular rows for identity: the surrogate key, the FK being

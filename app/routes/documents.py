@@ -13,6 +13,7 @@ from app.services.documents import (
     get_person_documents,
     save_person_document,
 )
+from app.services.image_normalization import render_jpeg_bytes
 from app.services.microsoft_documents import get_person_microsoft_documents
 from app.services.timeline import add_timeline_event
 from app.services.workbook_preview import (
@@ -169,7 +170,6 @@ _PREVIEW_MAX_ROWS = PREVIEW_MAX_ROWS
 _PREVIEW_MAX_COLS = PREVIEW_MAX_COLS
 _PREVIEW_MAX_FILE_BYTES = 25 * 1024 * 1024
 
-_HEIF_EXTS = {"heic", "heif"}
 _IMAGE_PREVIEW_MAX_PX = 2000
 _IMAGE_PREVIEW_MAX_FILE_BYTES = 40 * 1024 * 1024
 
@@ -177,24 +177,13 @@ _IMAGE_PREVIEW_MAX_FILE_BYTES = 40 * 1024 * 1024
 def convert_image_to_jpeg(path):
     """Read an image (incl. HEIC/HEIF) and return a bounded JPEG (bytes) for browser display, or None if
     conversion is unavailable or fails. READ-ONLY: opens + downscales in memory, NEVER writes, converts,
-    or replaces the source file. Returns None on a missing image library, a decompression bomb, or any
-    read error, so the caller can fail safely."""
-    try:
-        import io
+    or replaces the source file. Returns None on a missing image library, a decompression bomb, a
+    multi-frame HEIF sequence, or any read error, so the caller can fail safely.
 
-        from PIL import Image
-        try:
-            import pillow_heif
-            pillow_heif.register_heif_opener()   # enable HEIC/HEIF decoding when the plugin is present
-        except Exception:                        # noqa: BLE001 — non-HEIF images still work via Pillow
-            pass
-        with Image.open(path) as im:
-            im.load()
-            im = im.convert("RGB")
-            im.thumbnail((_IMAGE_PREVIEW_MAX_PX, _IMAGE_PREVIEW_MAX_PX))
-            out = io.BytesIO()
-            im.save(out, format="JPEG", quality=85)
-            return out.getvalue()
+    The conversion itself is the ONE shared implementation in
+    :mod:`app.services.image_normalization` — the preview does not carry a second HEIC decoder."""
+    try:
+        return render_jpeg_bytes(path, max_px=_IMAGE_PREVIEW_MAX_PX)
     except Exception:  # noqa: BLE001 — library missing / unreadable / oversized: caller falls back
         return None
 

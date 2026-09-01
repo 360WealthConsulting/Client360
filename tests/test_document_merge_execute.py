@@ -497,6 +497,45 @@ def test_22_facts_are_preserved_and_redundant_current_facts_dedupe():
     assert len(rows) == 2
 
 
+def _derivative(d, *, kind="normalized_image", status="completed", source_hash=None,
+                derivative_hash=None, path=None):
+    with engine.begin() as c:
+        c.execute(text(
+            "INSERT INTO document_derivatives (document_id, kind, status, source_mime, source_hash,"
+            " derivative_mime, derivative_path, derivative_hash) VALUES"
+            " (:d,:k,:s,'image/heic',:sh,'image/jpeg',:p,:dh)"),
+            {"d": d, "k": kind, "s": status, "sh": source_hash,
+             "p": path or f"/deriv/{derivative_hash or 'x'}.jpg", "dh": derivative_hash})
+
+
+def test_22b_normalized_image_derivatives_transfer_to_the_survivor():
+    """A duplicate's derivative row is repointed, not dropped, when the survivor has none."""
+    sha, p, a, b = _safe_pair()
+    _derivative(b, source_hash=sha, derivative_hash="d" * 64, path="/deriv/dd.jpg")
+    _apply(sha)
+    with engine.begin() as c:
+        rows = c.execute(text("SELECT kind, derivative_hash FROM document_derivatives"
+                              " WHERE document_id = :i"), {"i": a}).fetchall()
+    assert [(r[0], r[1]) for r in rows] == [("normalized_image", "d" * 64)]
+
+
+def test_22c_a_colliding_derivative_kind_dedupes_to_one_row():
+    """Both documents carry the same rendition of the same content — one row survives, no duplicate.
+
+    The derivative FILE is content-addressed on the source sha, which the merge partition proves is
+    identical, so the two rows describe the same artifact and neither document loses anything."""
+    sha, p, a, b = _safe_pair()
+    _derivative(a, source_hash=sha, derivative_hash="e" * 64, path="/deriv/ee.jpg")
+    _derivative(b, source_hash=sha, derivative_hash="e" * 64, path="/deriv/ee.jpg")
+    _apply(sha)
+    with engine.begin() as c:
+        n = c.execute(text("SELECT count(*) FROM document_derivatives WHERE document_id = :i"),
+                      {"i": a}).scalar_one()
+        orphaned = c.execute(text("SELECT count(*) FROM document_derivatives WHERE document_id = :i"),
+                             {"i": b}).scalar_one()
+    assert n == 1 and orphaned == 0
+
+
 def test_18b_relationship_dedup_key_collision_is_handled_without_duplicates():
     sha, p, a, b = _safe_pair()
     org = _org(" REL")
@@ -1192,6 +1231,12 @@ _KNOWN_STRUCTURAL = {
     "document_classifications": {"doc_type", "classifier_version"},
     "document_sources": {"source_system", "source_uri", "source_path", "source_external_id"},
     "document_relationships": {"entity_type", "relationship_type"},
+    # Normalized image renditions: derivative kind/state, the source + derivative MIME types, the
+    # content-addressed derivative locator and the engine name. No document content — the only
+    # free-text column that can echo the upload (last_error, which names the original file) is
+    # declared in _CONTENT_COLUMNS instead.
+    "document_derivatives": {"kind", "status", "source_mime", "derivative_mime",
+                             "derivative_path", "engine"},
     # A disposable read-model projection: lifecycle/status labels, no document content.
     "rm_document_status": {"status", "classification", "last_event_type"},
 }
