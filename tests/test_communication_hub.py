@@ -1300,7 +1300,7 @@ def test_h10_the_thread_page_links_back_to_the_client_profile():
     html = _render_thread_page(staff, thread_id)
 
     assert f'href="/client/{person_id}"' in html, "no link back to the client profile"
-    assert "All secure messages" in html, "the link to the Hub was removed"
+    assert "All messages" in html, "the link to the Hub was removed"
 
 
 def test_h11_the_global_inbox_still_works_and_keeps_its_filters():

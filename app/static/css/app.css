@@ -814,3 +814,90 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 .card > :is(h2,h3).section-title,
 .panel > :is(h2,h3).section-title {
   margin:0 0 12px; font-size:13.5px; font-weight:660; letter-spacing:0; color:var(--text-2); }
+
+/* ---- lane cards -----------------------------------------------------------
+   A card that is entirely a link to one destination. The arrow is generated, so
+   the label never carries a literal "→" that a screen reader has to read out. */
+.lane { display:flex; flex-direction:column; gap:5px; text-decoration:none; color:inherit;
+  transition:background .1s ease, border-color .1s ease; }
+.lane:hover { background:var(--surface-2); border-color:var(--border-strong); }
+.lane .lane-label { font-size:13.5px; font-weight:660; color:var(--text);
+  display:flex; align-items:center; gap:6px; }
+.lane .lane-label::after { content:"→"; color:var(--accent); font-weight:700;
+  transition:transform .1s ease; }
+.lane:hover .lane-label::after { transform:translateX(2px); }
+.lane .lane-desc { font-size:12.5px; color:var(--muted); line-height:1.45; }
+
+/* ============================================================
+   UNDEFINED-CLASS ALIASES (Phase 5)
+   Three vocabularies that templates use but no loaded stylesheet defined, so the
+   markup rendered with NO styling at all on staff screens:
+
+     .table   — defined nowhere in the codebase.        12 templates
+     .banner  — only in work_queue.css, which base.html does not load.  14 templates
+     .pill    — only in portal.css, which the STAFF base does not load. 21 templates
+
+   Each is aliased to the design-system component it is the older name of. The
+   portal base loads main.css + portal.css only (never app.css), so `.pill` here
+   cannot collide with the client portal's own.
+   ============================================================ */
+
+/* `.table` == `table.data`. */
+table.table { width:100%; border-collapse:collapse; font-size:13.5px; }
+table.table th { text-align:left; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; padding:10px 14px; background:var(--surface-2);
+  border-bottom:1px solid var(--border); white-space:nowrap; }
+table.table td { padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
+table.table tr:last-child td { border-bottom:0; }
+table.table tbody tr:hover { background:var(--surface-2); }
+/* A bare `.table` is usually not wrapped, so it carries its own frame. */
+table.table { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.table-wrap > table.table { border:0; border-radius:0; }
+
+/* `.banner` == `.alert`. Both naming conventions are in use (`warn` / `banner-warn`,
+   `good` / `ok` / `banner-ok`, `err`), so all of them are mapped. */
+.banner { display:block; padding:11px 14px; border-radius:var(--radius); font-size:13.5px;
+  border:1px solid var(--border); background:var(--surface); color:var(--text);
+  margin:0 0 var(--s4); }
+.banner:is(.good, .ok, .banner-ok) { background:var(--good-soft); color:var(--good); border-color:transparent; }
+.banner:is(.warn, .banner-warn) { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+.banner:is(.err, .crit, .banner-err) { background:var(--crit-soft); color:var(--crit); border-color:transparent; }
+
+/* `.pill` == `.badge`, with the portal's four states on the semantic tokens. */
+.pill { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600;
+  padding:2px 9px; border-radius:999px; background:var(--surface-2); color:var(--text-2);
+  border:1px solid var(--border); white-space:nowrap; }
+.pill.ok { background:var(--good-soft); color:var(--good); border-color:transparent; }
+.pill.pending { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+.pill.review { background:var(--info-soft); color:var(--info); border-color:transparent; }
+.pill.stop { background:var(--crit-soft); color:var(--crit); border-color:transparent; }
+
+/* ---- Messages: thread list ------------------------------------------------
+   Filters read as filters, not as a row of primary buttons: seven `.btn`s in a
+   line all looked like actions, and the three groups (attention / status / topic)
+   were undifferentiated. */
+.msg-filters { display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin:0 0 var(--s4); }
+.msg-filter-group { display:flex; flex-wrap:wrap; gap:6px; }
+.msg-filter-sep { width:1px; align-self:stretch; min-height:22px; background:var(--border);
+  margin:0 4px; }
+/* An unread conversation is the one thing on this screen that needs finding. */
+.msg-table .unread-dot { display:block; width:7px; height:7px; border-radius:50%;
+  background:var(--accent); }
+.msg-table tr.is-unread td:nth-child(2) .rowlink { font-weight:700; }
+.msg-table td:first-child { width:22px; padding-right:0; }
+.msg-table .msg-open { text-align:right; white-space:nowrap; }
+
+/* ---- Messages: reply composer audience ------------------------------------
+   Only one of the two bands is ever shown, and which one follows the internal-note
+   checkbox through `:has()` - no script, and the warning cannot fall out of step
+   with the control. Without :has() support the client-facing band shows and the
+   checkbox still carries its own "not visible to the client" label, so the default
+   is the safe one either way. */
+.thread-reply-form .reply-audience-internal { display:none; }
+.thread-reply-form:has(#reply-internal:checked) .reply-audience-client { display:none; }
+.thread-reply-form:has(#reply-internal:checked) .reply-audience-internal { display:flex; }
+/* The whole composer follows, so the change is unmissable rather than a swapped line. */
+.thread-reply-form:has(#reply-internal:checked) { border-color:var(--warn); }
+.thread-reply-form:has(#reply-internal:checked) .btn { background:var(--warn); }
+.thread-reply-form:has(#reply-internal:checked) .btn:hover { filter:brightness(.94); }

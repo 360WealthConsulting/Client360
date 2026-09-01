@@ -1,14 +1,15 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
+{% import "components/workspace.html" as wsx %}
 {% block title %}{{ thread.subject }} | Secure Messages{% endblock %}
-{% block crumb %}Secure Messages{% endblock %}
+{% block crumb %}Messages{% endblock %}
 {% block content %}
 {# Layout only. Every form action, field name and value below is unchanged from the version this
    replaces — routing, assignment, request linking, resolve and reply all post exactly what they
    posted before. Styling reuses the staff conventions already in app.css: .card, .stat-grid,
    .field/.input, .cols-2, .row, .stack, .subtle, h2.section-title and the ui.badge macro. #}
 <p class="row thread-backnav">
-  <a href="/admin/client-portal/threads">&larr; All secure messages</a>
+  <a href="/admin/client-portal/threads">&larr; All messages</a>
   {% if thread.person_id %}
   <a class="rowlink" href="/client/{{ thread.person_id }}">{{ client_name or "Client profile" }} &rarr;</a>
   {% endif %}
@@ -136,7 +137,16 @@
 </div>
 
 <h2 class="section-title">Reply</h2>
+{# The one control on this page that changes WHO reads what. The composer states its
+   audience, and switches to the internal treatment the moment the box is ticked - the
+   toggle drives it through CSS `:has()`, so the warning is never out of step with the
+   checkbox and no script is involved. Same two audiences, same colours and same wording
+   as the bands on the client workspace and the Messages list. #}
 <form method="post" action="/admin/client-portal/threads/{{ thread.id }}/reply" class="card stack thread-reply-form">
+  <p class="audience client reply-audience-client"><span class="ico" aria-hidden="true">↗</span>
+    <span><b>This reply goes to the client.</b> They read it in their 360Plus portal.</span></p>
+  <p class="audience internal reply-audience-internal"><span class="ico" aria-hidden="true">🔒</span>
+    <span><b>Saving as an internal note.</b> Staff only — the client never sees this.</span></p>
   <div class="field">
     <label for="reply-body">Message</label>
     <textarea class="input" id="reply-body" name="body" rows="5" required></textarea>

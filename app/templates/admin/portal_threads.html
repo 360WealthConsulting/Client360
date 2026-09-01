@@ -1,11 +1,16 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
+{% import "components/workspace.html" as wsx %}
 {% block title %}Secure Messages | 360Plus{% endblock %}
-{% block crumb %}Secure Messages{% endblock %}
+{% block crumb %}Messages{% endblock %}
 {% block head %}<script src="/static/js/client_portal_admin.js" defer></script>{% endblock %}
 {% block content %}
-{% call ui.page_head("Communication Hub", eyebrow="Client Portal", desc="Conversations you are authorised to service. Filter by what needs attention; open one to read the full thread (incl. internal notes), reply, route, resolve, or link a request.") %}
-{% endcall %}
+{# MESSAGES — staff to CLIENT. The audience band is the same one the client workspace
+   panel carries, so the boundary against Team Chat (staff to staff) and Inbox (what
+   needs your attention) is stated on every surface, not just one. #}
+{{ ui.page_head("Messages", eyebrow="Client Portal",
+   desc="Secure conversations you are authorised to service. Open one to read the full thread (including internal notes), reply, route, resolve, or link a request.") }}
+{{ wsx.audience("client") }}
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
@@ -65,35 +70,48 @@
   </form>
 </details>
 
-<nav class="filters" style="margin-bottom:1rem;display:flex;gap:.4rem;flex-wrap:wrap;">
-  <a class="btn{{ ' secondary' if active_filter }}" href="/admin/client-portal/threads">All</a>
-  <a class="btn{{ '' if active_filter=='unread' else ' secondary' }}" href="?filter=unread">Unread</a>
-  <a class="btn{{ '' if active_filter=='mine' else ' secondary' }}" href="?filter=mine">Assigned to me</a>
-  <a class="btn{{ '' if active_filter=='unassigned' else ' secondary' }}" href="?filter=unassigned">Unassigned</a>
-  <a class="btn{{ '' if active_status=='open' else ' secondary' }}" href="?status=open">Open</a>
-  <a class="btn{{ '' if active_status=='resolved' else ' secondary' }}" href="?status=resolved">Resolved</a>
-  {% for tp in topics %}<a class="btn{{ '' if active_topic==tp else ' secondary' }}" href="?topic={{ tp }}">{{ tp|title }}</a>{% endfor %}
+<nav class="msg-filters" aria-label="Filter conversations">
+  <span class="msg-filter-group">
+    <a class="chip{{ '' if active_filter or active_status else ' active' }}" href="/admin/client-portal/threads">All</a>
+    <a class="chip{{ ' active' if active_filter=='unread' else '' }}" href="?filter=unread">Unread</a>
+    <a class="chip{{ ' active' if active_filter=='mine' else '' }}" href="?filter=mine">Assigned to me</a>
+    <a class="chip{{ ' active' if active_filter=='unassigned' else '' }}" href="?filter=unassigned">Unassigned</a>
+  </span>
+  <span class="msg-filter-sep" aria-hidden="true"></span>
+  <span class="msg-filter-group">
+    <a class="chip{{ ' active' if active_status=='open' else '' }}" href="?status=open">Open</a>
+    <a class="chip{{ ' active' if active_status=='resolved' else '' }}" href="?status=resolved">Resolved</a>
+  </span>
+  {% if topics %}
+  <span class="msg-filter-sep" aria-hidden="true"></span>
+  <span class="msg-filter-group">
+    {% for tp in topics %}<a class="chip{{ ' active' if active_topic==tp else '' }}" href="?topic={{ tp }}">{{ tp|title }}</a>{% endfor %}
+  </span>
+  {% endif %}
 </nav>
 
 {% if threads %}
-<table class="table">
-  <thead><tr><th></th><th>Subject</th><th>Client</th><th>Topic</th><th>Assigned</th><th>Status</th><th>Last activity</th><th></th></tr></thead>
+<div class="table-wrap"><table class="data msg-table">
+  <thead><tr>
+    <th><span class="sr-only">Unread</span></th><th>Subject</th><th>Client</th><th>Topic</th>
+    <th>Assigned</th><th>Status</th><th>Last activity</th><th></th>
+  </tr></thead>
   <tbody>
   {% for t in threads %}
-    <tr>
-      <td>{% if t.unread %}<span class="pill stop" title="Unread client message">●</span>{% endif %}</td>
-      <td>{{ t.subject }}</td>
+    <tr class="{{ 'is-unread' if t.unread else '' }}">
+      <td>{% if t.unread %}<span class="unread-dot" title="Unread client message"></span><span class="sr-only">Unread</span>{% endif %}</td>
+      <td><a class="rowlink" href="/admin/client-portal/threads/{{ t.id }}">{{ t.subject }}</a></td>
       <td>{{ t.full_name or '—' }}</td>
-      <td>{{ t.topic|title if t.topic else '—' }}</td>
-      <td>{{ 'Team' if t.assigned_team_id else ('User #' ~ t.assigned_user_id if t.assigned_user_id else 'Unassigned') }}</td>
-      <td>{{ t.status|title }}</td>
-      <td>{{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</td>
-      <td><a class="btn secondary" href="/admin/client-portal/threads/{{ t.id }}">Open</a></td>
+      <td>{% if t.topic %}<span class="badge">{{ t.topic|title }}</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
+      <td>{% if t.assigned_team_id %}Team{% elif t.assigned_user_id %}<span class="id-mono">#{{ t.assigned_user_id }}</span>{% else %}<span class="subtle">Unassigned</span>{% endif %}</td>
+      <td>{% if t.status == 'resolved' %}<span class="badge good">Resolved</span>{% else %}<span class="badge">{{ t.status|title }}</span>{% endif %}</td>
+      <td><span class="id-mono">{{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '—' }}</span></td>
+      <td class="msg-open"><a class="btn sm secondary" href="/admin/client-portal/threads/{{ t.id }}">Open</a></td>
     </tr>
   {% endfor %}
   </tbody>
-</table>
+</table></div>
 {% else %}
-<div class="card"><p>No conversations match this filter in your record scope.</p></div>
+{% call ui.empty("No conversations here", "Nothing matches this filter inside your record scope. Clear the filters, or start a conversation above.") %}{% endcall %}
 {% endif %}
 {% endblock %}
