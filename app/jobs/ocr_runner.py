@@ -110,6 +110,15 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
     from app.services import document_ocr
     totals = {"mode": mode, "batches": 0, "errors": 0, "status": "started",
               **{k: 0 for k in _ACCUM}}
+
+    if mode in ("retry", "reprocess") and not document_ids:
+        totals["status"] = "refused"
+        totals["error"] = (
+            f"{mode} requires explicit document_ids; "
+            "corpus-wide forced OCR/retry sweeps are disabled"
+        )
+        return totals
+
     if document_ids is not None:
         loop = False      # a targeted set is a single pass (ids are always re-selected otherwise)
 
@@ -196,37 +205,124 @@ def run_incremental(*, extractor=None, batch_size=50, actor_user_id=None) -> dic
                      actor_user_id=actor_user_id, request_id="ocr-incremental")
 
 
-def run_retry(*, extractor=None, batch_size=50, max_attempts=3, actor_user_id=None,
-              isolate=None, factory_ref=None) -> dict:
-    """Retry failed documents (attempts < max_attempts) — one batch per invocation."""
+def run_retry(*, document_ids=None, extractor=None, batch_size=50, max_attempts=3,
+              actor_user_id=None, isolate=None, factory_ref=None) -> dict:
+    """Explicitly retry selected failed documents.
+
+    Production safety rule: there is NO corpus-wide automatic retry.
+    Failed/timed-out/no-text documents belong in Review. Staff may
+    explicitly retry exact document IDs after inspection/correction.
+    """
+    ids = [int(i) for i in (document_ids or []) if i is not None]
+
+    if not ids:
+        return {
+            "mode": "retry",
+            "status": "refused",
+            "error": (
+                "retry requires explicit document_ids; "
+                "automatic corpus-wide OCR retries are disabled"
+            ),
+            "candidates": 0,
+            "completed": 0,
+            "failed": 0,
+            "timed_out": 0,
+            "skipped": 0,
+            "unsupported": 0,
+            "encrypted": 0,
+            "chars_extracted": 0,
+            "errors": 0,
+            "batches": 0,
+        }
+
     from app.services import document_ocr
+
     if isolate is None:
         isolate = _isolation_enabled() if extractor is None else (factory_ref is not None)
+
     if extractor is None:
         try:
             from app.services.ocr_backend import build_production_extractor
             extractor = build_production_extractor()
         except OcrBackendUnavailable as exc:
-            return {"mode": "retry", "status": "backend_unavailable", "error": str(exc)}
+            return {
+                "mode": "retry",
+                "status": "backend_unavailable",
+                "error": str(exc),
+            }
+
         if isolate and factory_ref is None:
             factory_ref = _PRODUCTION_FACTORY
+
     with _advisory_lock() as acquired:
         if not acquired:
-            return {"mode": "retry", "status": "locked"}
-        s = document_ocr.run_ocr(mode="retry", extractor=extractor, batch_size=batch_size,
-                                 max_attempts=max_attempts, actor_user_id=actor_user_id,
-                                 request_id="ocr-retry",
-                                 isolate=bool(isolate and factory_ref), factory_ref=factory_ref)
-    s["status"] = "completed_with_errors" if s["errors"] else "completed"
+            return {
+                "mode": "retry",
+                "status": "locked",
+            }
+
+        s = document_ocr.run_ocr(
+            mode="retry",
+            document_ids=ids,
+            extractor=extractor,
+            batch_size=batch_size,
+            max_attempts=max_attempts,
+            actor_user_id=actor_user_id,
+            request_id="ocr-retry-explicit",
+            isolate=bool(isolate and factory_ref),
+            factory_ref=factory_ref,
+        )
+
+    s["status"] = (
+        "completed_with_errors"
+        if s["errors"]
+        else "completed"
+    )
+
     return s
 
 
 def run_reprocess(*, document_ids=None, extractor=None, batch_size=50, actor_user_id=None) -> dict:
-    """Force re-OCR. With ``document_ids`` it re-OCRs exactly those (even completed, unchanged); without,
-    it sweeps content-changed / not-yet-completed documents firm-wide."""
-    return run_sweep("reprocess", document_ids=document_ids, extractor=extractor,
-                     batch_size=batch_size, loop=document_ids is None,
-                     actor_user_id=actor_user_id, request_id="ocr-reprocess")
+    """Force re-OCR of an EXPLICIT document set only.
+
+    Production safety rule: reprocess is never a corpus sweep. A bulk
+    import belongs in initial/incremental mode, where each document is
+    attempted once and terminal failures move to review.
+
+    Reprocessing requires explicit document IDs so an operator command,
+    scheduled task, or wrapper bug cannot repeatedly rescan the corpus.
+    """
+    ids = [int(i) for i in (document_ids or []) if i is not None]
+
+    if not ids:
+        return {
+            "mode": "reprocess",
+            "status": "refused",
+            "error": (
+                "reprocess requires explicit document_ids; "
+                "firm-wide forced OCR sweeps are disabled"
+            ),
+            "candidates": 0,
+            "completed": 0,
+            "failed": 0,
+            "timed_out": 0,
+            "skipped": 0,
+            "unsupported": 0,
+            "encrypted": 0,
+            "chars_extracted": 0,
+            "errors": 0,
+            "batches": 0,
+        }
+
+    return run_sweep(
+        "reprocess",
+        document_ids=ids,
+        extractor=extractor,
+        batch_size=batch_size,
+        loop=False,
+        actor_user_id=actor_user_id,
+        request_id="ocr-reprocess",
+    )
 
 
 def main(argv=None):
@@ -238,7 +334,8 @@ def main(argv=None):
     p.add_argument("--batch-size", type=int, default=50)
     p.add_argument("--max-attempts", type=int, default=3)
     p.add_argument("--document-id", type=int, action="append", dest="document_ids",
-                   help="Restrict to specific canonical document id(s); repeatable (reprocess mode).")
+                   help="Exact canonical document id to retry/reprocess; repeatable. "
+                        "Required for retry and reprocess.")
     p.add_argument("--status", action="store_true",
                    help="Read-only: print the current OCR run status/heartbeat and exit. Never starts a "
                         "run and never modifies the status file.")
@@ -255,7 +352,11 @@ def main(argv=None):
             status_argv += ["--stale-seconds", str(args.stale_seconds)]
         return ocr_status.main(status_argv)
     if args.mode == "retry":
-        result = run_retry(batch_size=args.batch_size, max_attempts=args.max_attempts)
+        result = run_retry(
+            document_ids=args.document_ids,
+            batch_size=args.batch_size,
+            max_attempts=args.max_attempts,
+        )
     elif args.mode == "reprocess":
         result = run_reprocess(document_ids=args.document_ids, batch_size=args.batch_size)
     elif args.mode == "initial":

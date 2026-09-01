@@ -50,7 +50,7 @@ import requests
 from sqlalchemy import select
 
 # --- reuse existing auth + Graph constants/helpers (no new auth, no duplication) ---------
-from app.db import engine, microsoft_accounts
+from app.db import documents, engine, metadata, microsoft_accounts
 from app.jobs.microsoft_document_sync import (
     GRAPH_BASE_URL,
     _identity_email,  # uploader-email extraction (ownership metadata)
@@ -174,6 +174,113 @@ def _load_connected_account():
     return account
 
 
+def _load_existing_sharepoint_fastpath() -> dict[str, dict]:
+    """Return canonical SharePoint items safe to skip downloading.
+
+    Eligibility is deliberately fail-closed:
+      * stable source_external_id exists;
+      * size + modified metadata exist;
+      * source_hash exists;
+      * duplicate rows agree on size + modified + hash;
+      * at least one linked canonical document has a real local file.
+
+    Anything incomplete, conflicting, changed, or missing local storage
+    falls through to the normal Graph download path.
+    """
+    document_sources = metadata.tables["document_sources"]
+    grouped: dict[str, list[dict]] = {}
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                document_sources.c.source_external_id,
+                document_sources.c.source_hash,
+                document_sources.c.metadata,
+                documents.c.storage_uri,
+            )
+            .select_from(
+                document_sources.join(
+                    documents,
+                    documents.c.id == document_sources.c.document_id,
+                )
+            )
+            .where(
+                document_sources.c.source_system == SOURCE_SYSTEM,
+                document_sources.c.source_external_id.is_not(None),
+                document_sources.c.source_external_id != "",
+                documents.c.status != "deleted",
+            )
+        ).mappings()
+
+        for row in rows:
+            item_id = str(row["source_external_id"] or "").strip()
+            if not item_id:
+                continue
+
+            source_metadata = row["metadata"] or {}
+
+            if not isinstance(source_metadata, dict):
+                grouped.setdefault(item_id, []).append({"valid": False})
+                continue
+
+            try:
+                size = int(source_metadata.get("size"))
+            except (TypeError, ValueError):
+                grouped.setdefault(item_id, []).append({"valid": False})
+                continue
+
+            modified = source_metadata.get("modified")
+            source_hash = str(row["source_hash"] or "").strip()
+
+            if modified in (None, "") or not source_hash:
+                grouped.setdefault(item_id, []).append({"valid": False})
+                continue
+
+            storage_uri = str(row["storage_uri"] or "").strip()
+
+            grouped.setdefault(item_id, []).append(
+                {
+                    "valid": True,
+                    "size": size,
+                    "modified": str(modified),
+                    "sha256": source_hash,
+                    "local_ok": bool(
+                        storage_uri and Path(storage_uri).is_file()
+                    ),
+                }
+            )
+
+    fastpath: dict[str, dict] = {}
+
+    for item_id, candidates in grouped.items():
+        if not candidates:
+            continue
+
+        if any(not c.get("valid") for c in candidates):
+            continue
+
+        signatures = {
+            (c["size"], c["modified"], c["sha256"])
+            for c in candidates
+        }
+
+        if len(signatures) != 1:
+            continue
+
+        if not any(c["local_ok"] for c in candidates):
+            continue
+
+        size, modified, sha256 = next(iter(signatures))
+
+        fastpath[item_id] = {
+            "size": size,
+            "modified": modified,
+            "sha256": sha256,
+        }
+
+    return fastpath
+
+
 def _acquire_token(account) -> str:
     """Acquire a Graph token via the existing MSAL cache. Any failure here is a reconnect
     condition (there is no valid credential to start the run)."""
@@ -184,10 +291,56 @@ def _acquire_token(account) -> str:
             f"Microsoft 365 must be reconnected before staging: {exc}") from exc
 
 
+
+class _GraphTokenSession:
+    """Mutable bearer-token holder for long-running SharePoint traversals.
+
+    The initial token and every refresh use the canonical MSAL cache path.
+    A refresh reloads the account row first so any newly persisted MSAL
+    cache state is used.  Callers that still pass a plain string retain
+    the existing fail-closed 401 behavior.
+    """
+
+    def __init__(self, account):
+        self._account = account
+        self._token = _acquire_token(account)
+
+    def current(self) -> str:
+        return self._token
+
+    def refresh(self) -> str:
+        self._account = _load_connected_account()
+        self._token = _acquire_token(self._account)
+        return self._token
+
+
 # --- Graph access with retry (auth token comes from the existing MSAL cache) --------------
 
-def _auth_header(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+def _token_value(token) -> str:
+    if isinstance(token, _GraphTokenSession):
+        return token.current()
+    return str(token)
+
+
+def _refresh_token_after_401(token, *, context: str) -> bool:
+    """Refresh only managed long-run sessions. Plain tokens still fail closed."""
+    if not isinstance(token, _GraphTokenSession):
+        return False
+
+    logger.warning(
+        "Microsoft Graph returned 401 during %s; "
+        "reacquiring bearer token through the canonical MSAL cache",
+        context,
+    )
+    token.refresh()
+    return True
+
+
+def _auth_header(token) -> dict:
+    return {
+        "Authorization": f"Bearer {_token_value(token)}",
+        "Accept": "application/json",
+    }
 
 
 def _sleep_for_retry(response, attempt: int) -> None:
@@ -202,31 +355,68 @@ def _sleep_for_retry(response, attempt: int) -> None:
     time.sleep(delay)
 
 
-def _graph_get_json(url: str, token: str, params=None) -> dict:
-    """GET a Graph JSON resource with retry on 429/5xx/network. A 401 aborts the run."""
+def _graph_get_json(url: str, token, params=None) -> dict:
+    """GET a Graph JSON resource.
+
+    429/5xx/network failures use the existing bounded retry policy.
+    For a managed long-running token session only, the first 401 causes
+    one canonical MSAL refresh and an immediate retry.  A second 401
+    still fails closed with ReconnectRequired.
+    """
     last_exc = None
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
+    attempt = 1
+    auth_refreshed = False
+
+    while attempt <= _MAX_ATTEMPTS:
         try:
-            resp = requests.get(url, headers=_auth_header(token), params=params, timeout=_REQUEST_TIMEOUT)
-        except requests.RequestException as exc:  # network-level
+            resp = requests.get(
+                url,
+                headers=_auth_header(token),
+                params=params,
+                timeout=_REQUEST_TIMEOUT,
+            )
+        except requests.RequestException as exc:
             last_exc = exc
             if attempt < _MAX_ATTEMPTS:
-                _sleep_for_retry(None, attempt); continue
-            raise RuntimeError(f"Graph request failed after {attempt} attempts: {url} ({exc})") from exc
+                _sleep_for_retry(None, attempt)
+                attempt += 1
+                continue
+            raise RuntimeError(
+                f"Graph request failed after {attempt} attempts: {url} ({exc})"
+            ) from exc
+
         if resp.status_code == 401:
+            if (
+                not auth_refreshed
+                and _refresh_token_after_401(token, context="Graph request")
+            ):
+                auth_refreshed = True
+                continue
+
             raise ReconnectRequired(
                 "Microsoft Graph returned 401 (token rejected). Reconnect Microsoft 365 "
-                "(/microsoft365/connect) and re-run staging.")
+                "(/microsoft365/connect) and re-run staging."
+            )
+
         if resp.status_code == 429 or resp.status_code >= 500:
             last_exc = RuntimeError(f"HTTP {resp.status_code}")
             if attempt < _MAX_ATTEMPTS:
-                _sleep_for_retry(resp, attempt); continue
+                _sleep_for_retry(resp, attempt)
+                attempt += 1
+                continue
+
         try:
             resp.raise_for_status()
         except requests.HTTPError as exc:
-            raise RuntimeError(f"Graph error {resp.status_code} for {url}: {resp.text[:300]}") from exc
+            raise RuntimeError(
+                f"Graph error {resp.status_code} for {url}: {resp.text[:300]}"
+            ) from exc
+
         return resp.json()
-    raise RuntimeError(f"Graph request exhausted retries: {url} ({last_exc})")
+
+    raise RuntimeError(
+        f"Graph request exhausted retries: {url} ({last_exc})"
+    )
 
 
 def _graph_list(url: str, token: str) -> list[dict]:
@@ -239,44 +429,88 @@ def _graph_list(url: str, token: str) -> list[dict]:
     return items
 
 
-def _graph_download(drive_id: str, item_id: str, token: str, dest: Path) -> tuple[int, str]:
+def _graph_download(drive_id: str, item_id: str, token, dest: Path) -> tuple[int, str]:
     """Stream an item's content to ``dest``, returning (bytes_written, sha256_hex).
 
-    Uses GET /drives/{drive}/items/{item}/content — Graph 302-redirects to a short-lived
-    pre-authorized download URL; ``requests`` strips Authorization on the cross-host hop.
-    A 401 aborts the run (ReconnectRequired); transient failures retry."""
+    Uses GET /drives/{drive}/items/{item}/content.  For a managed
+    long-running token session, one 401 triggers a canonical MSAL token
+    refresh and retries the same item.  A second 401 still fails closed.
+    """
     url = f"{GRAPH_BASE_URL}/drives/{drive_id}/items/{item_id}/content"
     last_exc = None
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
+    attempt = 1
+    auth_refreshed = False
+
+    while attempt <= _MAX_ATTEMPTS:
         try:
-            with requests.get(url, headers=_auth_header(token), stream=True,
-                              allow_redirects=True, timeout=_REQUEST_TIMEOUT) as resp:
+            with requests.get(
+                url,
+                headers=_auth_header(token),
+                stream=True,
+                allow_redirects=True,
+                timeout=_REQUEST_TIMEOUT,
+            ) as resp:
+
                 if resp.status_code == 401:
+                    if (
+                        not auth_refreshed
+                        and _refresh_token_after_401(
+                            token,
+                            context=f"download item {item_id}",
+                        )
+                    ):
+                        auth_refreshed = True
+                        continue
+
                     raise ReconnectRequired(
                         "Microsoft Graph returned 401 (token rejected) during download. "
-                        "Reconnect Microsoft 365 (/microsoft365/connect) and re-run staging.")
+                        "Reconnect Microsoft 365 (/microsoft365/connect) and re-run staging."
+                    )
+
                 if resp.status_code == 429 or resp.status_code >= 500:
                     last_exc = RuntimeError(f"HTTP {resp.status_code}")
                     if attempt < _MAX_ATTEMPTS:
-                        _sleep_for_retry(resp, attempt); continue
+                        _sleep_for_retry(resp, attempt)
+                        attempt += 1
+                        continue
+
                 resp.raise_for_status()
+
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_suffix(dest.suffix + ".part")
+
                 sha = hashlib.sha256()
                 size = 0
+
                 with open(tmp, "wb") as fh:
                     for chunk in resp.iter_content(chunk_size=1 << 20):
                         if not chunk:
                             continue
-                        fh.write(chunk); sha.update(chunk); size += len(chunk)
-                tmp.replace(dest)                       # atomic finalize
+                        fh.write(chunk)
+                        sha.update(chunk)
+                        size += len(chunk)
+
+                tmp.replace(dest)
                 return size, sha.hexdigest()
+
+        except ReconnectRequired:
+            raise
+
         except requests.RequestException as exc:
             last_exc = exc
+
             if attempt < _MAX_ATTEMPTS:
-                _sleep_for_retry(None, attempt); continue
-            raise RuntimeError(f"Download failed for item {item_id}: {exc}") from exc
-    raise RuntimeError(f"Download exhausted retries for item {item_id}: {last_exc}")
+                _sleep_for_retry(None, attempt)
+                attempt += 1
+                continue
+
+            raise RuntimeError(
+                f"Download failed for item {item_id}: {exc}"
+            ) from exc
+
+    raise RuntimeError(
+        f"Download exhausted retries for item {item_id}: {last_exc}"
+    )
 
 
 # --- enumeration + walk ------------------------------------------------------------------
@@ -333,10 +567,77 @@ def _client_folder_hint(folder_path: str) -> str | None:
     return top or None
 
 
+_STAGE_MAX_TEMP_PATH = 240
+
+
+def _bounded_staged_filename(
+    parent: Path,
+    item_id: str,
+    name: str,
+    *,
+    max_temp_path: int = _STAGE_MAX_TEMP_PATH,
+) -> str:
+    """Build a stable staging filename whose download ``.part`` path
+    remains below the conservative Windows path limit.
+
+    Preserve the SharePoint item id and original extension.  When the
+    original filename would make the temporary download path too long,
+    truncate the stem and append a deterministic hash so different long
+    SharePoint filenames cannot collapse to the same local name.
+    """
+    safe_id = _safe_name(item_id)
+    safe_name = _safe_name(name)
+
+    prefix = f"{safe_id}__"
+    candidate = prefix + safe_name
+
+    if len(str(parent / (candidate + ".part"))) <= max_temp_path:
+        return candidate
+
+    suffix = Path(safe_name).suffix
+    stem = safe_name[:-len(suffix)] if suffix else safe_name
+
+    digest = hashlib.sha256(
+        safe_name.encode("utf-8", errors="replace")
+    ).hexdigest()[:12]
+
+    # Length available for the stem after accounting for:
+    # parent + slash + item-id prefix + hyphen + hash + extension + .part
+    fixed_length = (
+        len(str(parent))
+        + 1
+        + len(prefix)
+        + 1
+        + len(digest)
+        + len(suffix)
+        + len(".part")
+    )
+
+    available = max_temp_path - fixed_length
+
+    if available < 1:
+        raise OSError(
+            f"SharePoint staging parent path leaves no room for a bounded filename: {parent}"
+        )
+
+    return f"{prefix}{stem[:available]}-{digest}{suffix}"
+
+
 def _staged_path(staging_root: Path, site_id: str, drive_id: str, item_id: str, name: str) -> Path:
     # item_id keeps the path unique + stable across runs (duplicate prevention).
-    return (staging_root / _safe_name(site_id) / _safe_name(drive_id)
-            / f"{_safe_name(item_id)}__{_safe_name(name)}")
+    parent = (
+        staging_root
+        / _safe_name(site_id)
+        / _safe_name(drive_id)
+    )
+
+    filename = _bounded_staged_filename(
+        parent,
+        item_id,
+        name,
+    )
+
+    return parent / filename
 
 
 def _load_state(staging_root: Path) -> dict:
@@ -420,11 +721,21 @@ def stage_sharepoint_content(*, site_ids=None, staging_root=None, manifest_path=
     summary.manifest_path = str(manifest_file)
 
     account = _load_connected_account()
-    token = _acquire_token(account)                      # existing MSAL cache + silent refresh
+    # Long full traversals may outlive one bearer token.  Keep a mutable
+    # session so a Graph 401 can silently refresh through the canonical
+    # encrypted MSAL cache without restarting the crawl.
+    token = _GraphTokenSession(account)
     state = {} if dry_run else _load_state(staging)
+    existing_fastpath = _load_existing_sharepoint_fastpath()
     manifest: list[dict] = []
 
-    logger.info("Staging SharePoint content: sites=%s staging=%s dry_run=%s", ids, staging, dry_run)
+    logger.info(
+        "Staging SharePoint content: sites=%s staging=%s dry_run=%s canonical_fastpath=%d",
+        ids,
+        staging,
+        dry_run,
+        len(existing_fastpath),
+    )
 
     try:
         for site_id in ids:
@@ -443,9 +754,19 @@ def stage_sharepoint_content(*, site_ids=None, staging_root=None, manifest_path=
                 summary.drives += 1
                 try:
                     for item in walk_drive(drive_id, token, summary):
-                        _stage_one(item, site_id=site_id, drive_id=drive_id, drive_name=drive_name,
-                                   staging=staging, token=token, state=state, dry_run=dry_run,
-                                   manifest=manifest, summary=summary)
+                        _stage_one(
+                            item,
+                            site_id=site_id,
+                            drive_id=drive_id,
+                            drive_name=drive_name,
+                            staging=staging,
+                            token=token,
+                            state=state,
+                            dry_run=dry_run,
+                            manifest=manifest,
+                            summary=summary,
+                            existing_fastpath=existing_fastpath,
+                        )
                 except RuntimeError as exc:
                     summary.errors.append(f"drive {drive_name} ({drive_id}): {exc}")
                     logger.error("Drive %s walk failed: %s", drive_id, exc)
@@ -478,8 +799,20 @@ def stage_sharepoint_content(*, site_ids=None, staging_root=None, manifest_path=
     return manifest, summary.as_record()
 
 
-def _stage_one(item, *, site_id, drive_id, drive_name, staging, token, state, dry_run,
-               manifest, summary):
+def _stage_one(
+    item,
+    *,
+    site_id,
+    drive_id,
+    drive_name,
+    staging,
+    token,
+    state,
+    dry_run,
+    manifest,
+    summary,
+    existing_fastpath=None,
+):
     item_id = str(item.get("id") or "")
     name = item.get("name") or ""
     if not item_id or not name:
@@ -499,6 +832,37 @@ def _stage_one(item, *, site_id, drive_id, drive_name, staging, token, state, dr
             item, site_id=site_id, drive_id=drive_id, drive_name=drive_name,
             local_path=prior.get("local_path", str(dest)),
             sha256=prior.get("sha256"), size=prior.get("size")))
+        return
+
+    canonical_prior = (existing_fastpath or {}).get(item_id)
+
+    try:
+        normalized_size_hint = (
+            int(size_hint)
+            if size_hint is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        normalized_size_hint = None
+
+    if (
+        canonical_prior
+        and normalized_size_hint == canonical_prior.get("size")
+        and str(modified or "") == canonical_prior.get("modified")
+    ):
+        summary.skipped_unchanged += 1
+
+        manifest.append(
+            _manifest_item(
+                item,
+                site_id=site_id,
+                drive_id=drive_id,
+                drive_name=drive_name,
+                local_path=None,
+                sha256=canonical_prior.get("sha256"),
+                size=normalized_size_hint,
+            )
+        )
         return
 
     if dry_run:

@@ -13,20 +13,28 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import insert, select, update
 
-from app.db import (engine, households, people, portal_accounts, portal_email_verifications,
-                    portal_invitations, portal_sessions)
+from app.db import (
+    engine,
+    households,
+    people,
+    portal_accounts,
+    portal_email_verifications,
+    portal_invitations,
+    portal_sessions,
+)
 from app.portal import email_auth
-from app.portal.service import (INVITATION_TTL_HOURS, create_portal_session, invite_portal_account,
-                                resolve_portal_session)
-from app.security.models import Principal
+from app.portal.service import (
+    INVITATION_TTL_HOURS,
+    invite_portal_account,
+    resolve_portal_session,
+)
 from tests._portal_util import seed_staff_user
-
 
 # --- harness ------------------------------------------------------------------------------
 
@@ -88,7 +96,7 @@ def _age_challenge(account_id, minutes):
             .order_by(portal_email_verifications.c.id.desc()).limit(1)).scalars().one()
         c.execute(update(portal_email_verifications)
                   .where(portal_email_verifications.c.id == newest)
-                  .values(expires_at=datetime.now(timezone.utc) - timedelta(minutes=minutes)))
+                  .values(expires_at=datetime.now(UTC) - timedelta(minutes=minutes)))
 
 
 def _clear_cooldown(account_id):
@@ -96,7 +104,7 @@ def _clear_cooldown(account_id):
     with engine.begin() as c:
         c.execute(update(portal_email_verifications)
                   .where(portal_email_verifications.c.portal_account_id == account_id)
-                  .values(created_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+                  .values(created_at=datetime.now(UTC) - timedelta(minutes=1)))
 
 
 def _activate(client, sent):
@@ -115,7 +123,7 @@ def test_a_new_invitation_expires_in_seven_days():
     with engine.connect() as c:
         expires = c.execute(select(portal_invitations.c.expires_at).where(
             portal_invitations.c.portal_account_id == account_id)).scalars().one()
-    remaining = expires - datetime.now(timezone.utc)
+    remaining = expires - datetime.now(UTC)
     assert timedelta(days=6, hours=23) < remaining <= timedelta(days=7)
 
 
@@ -138,7 +146,7 @@ def test_an_existing_invitation_keeps_its_original_expiry():
     with engine.connect() as c:
         expires = c.execute(select(portal_invitations.c.expires_at).where(
             portal_invitations.c.portal_account_id == account_id)).scalars().one()
-    assert expires - datetime.now(timezone.utc) < timedelta(days=4)
+    assert expires - datetime.now(UTC) < timedelta(days=4)
 
 
 # --- activation ---------------------------------------------------------------------------

@@ -209,3 +209,215 @@ def test_source_embeds_no_secrets_or_absolute_paths():
     assert not re.search(r"client_secret\s*=\s*['\"][^'\"]+['\"]", _SRC)
     assert not re.search(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", _SRC)
     assert "Bearer ey" not in _SRC
+def test_graph_get_json_managed_session_refreshes_on_401(monkeypatch):
+    monkeypatch.setattr(
+        spc,
+        "_acquire_token",
+        lambda account: account["token"],
+    )
+    monkeypatch.setattr(
+        spc,
+        "_load_connected_account",
+        lambda: {"id": 1, "token": "fresh"},
+    )
+
+    session = spc._GraphTokenSession({"id": 1, "token": "stale"})
+    calls = []
+
+    def _get(url, headers=None, params=None, timeout=None, **kwargs):
+        calls.append(headers["Authorization"])
+
+        if headers["Authorization"] == "Bearer stale":
+            return FakeResp(status_code=401)
+
+        if headers["Authorization"] == "Bearer fresh":
+            return FakeResp(
+                status_code=200,
+                json_data={"value": [{"id": "ok"}]},
+            )
+
+        raise AssertionError(headers["Authorization"])
+
+    monkeypatch.setattr(spc.requests, "get", _get)
+
+    result = spc._graph_get_json(
+        "https://graph.example/test",
+        session,
+    )
+
+    assert result == {"value": [{"id": "ok"}]}
+    assert calls == ["Bearer stale", "Bearer fresh"]
+    assert session.current() == "fresh"
+
+
+def test_download_managed_session_refreshes_on_401(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        spc,
+        "_acquire_token",
+        lambda account: account["token"],
+    )
+    monkeypatch.setattr(
+        spc,
+        "_load_connected_account",
+        lambda: {"id": 1, "token": "fresh"},
+    )
+
+    session = spc._GraphTokenSession({"id": 1, "token": "stale"})
+    calls = []
+    body = b"refreshed sharepoint download"
+
+    def _get(url, headers=None, **kwargs):
+        calls.append(headers["Authorization"])
+
+        if headers["Authorization"] == "Bearer stale":
+            return FakeResp(status_code=401)
+
+        if headers["Authorization"] == "Bearer fresh":
+            return FakeResp(status_code=200, content=body)
+
+        raise AssertionError(headers["Authorization"])
+
+    monkeypatch.setattr(spc.requests, "get", _get)
+
+    dest = tmp_path / "refreshed.bin"
+
+    size, sha = spc._graph_download(
+        "drive1",
+        "item1",
+        session,
+        dest,
+    )
+
+    assert calls == ["Bearer stale", "Bearer fresh"]
+    assert size == len(body)
+    assert sha == hashlib.sha256(body).hexdigest()
+    assert dest.read_bytes() == body
+    assert session.current() == "fresh"
+
+
+def test_managed_session_second_401_still_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        spc,
+        "_acquire_token",
+        lambda account: account["token"],
+    )
+    monkeypatch.setattr(
+        spc,
+        "_load_connected_account",
+        lambda: {"id": 1, "token": "still-bad"},
+    )
+
+    session = spc._GraphTokenSession({"id": 1, "token": "stale"})
+    calls = {"n": 0}
+
+    def _get(url, **kwargs):
+        calls["n"] += 1
+        return FakeResp(status_code=401)
+
+    monkeypatch.setattr(spc.requests, "get", _get)
+
+    with pytest.raises(spc.ReconnectRequired):
+        spc._graph_get_json(
+            "https://graph.example/test",
+            session,
+        )
+
+    assert calls["n"] == 2
+
+def test_canonical_metadata_fastpath_skips_graph_download(monkeypatch, tmp_path):
+    item = {
+        "id": "canonical-i1",
+        "name": "already-canonical.pdf",
+        "size": 4242,
+        "lastModifiedDateTime": "2026-08-30T12:34:56Z",
+        "file": {"mimeType": "application/pdf"},
+    }
+
+    monkeypatch.setattr(
+        spc,
+        "_graph_download",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("unchanged canonical item must not download")
+        ),
+    )
+
+    summary = spc.StagingSummary(dry_run=False)
+    manifest = []
+
+    spc._stage_one(
+        item,
+        site_id="s1",
+        drive_id="d1",
+        drive_name="Documents",
+        staging=tmp_path,
+        token="tok",
+        state={},
+        dry_run=False,
+        manifest=manifest,
+        summary=summary,
+        existing_fastpath={
+            "canonical-i1": {
+                "size": 4242,
+                "modified": "2026-08-30T12:34:56Z",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+
+    assert summary.skipped_unchanged == 1
+    assert summary.files_downloaded == 0
+    assert len(manifest) == 1
+    assert manifest[0]["local_path"] is None
+    assert manifest[0]["sha256"] == "a" * 64
+    assert manifest[0]["size"] == 4242
+
+
+def test_canonical_metadata_fastpath_changed_item_still_downloads(monkeypatch, tmp_path):
+    item = {
+        "id": "changed-i1",
+        "name": "changed.pdf",
+        "size": 5000,
+        "lastModifiedDateTime": "2026-08-31T01:02:03Z",
+        "file": {"mimeType": "application/pdf"},
+    }
+
+    calls = {"n": 0}
+
+    def fake_download(drive_id, item_id, token, dest):
+        calls["n"] += 1
+        return 5000, "b" * 64
+
+    monkeypatch.setattr(
+        spc,
+        "_graph_download",
+        fake_download,
+    )
+
+    summary = spc.StagingSummary(dry_run=False)
+    manifest = []
+
+    spc._stage_one(
+        item,
+        site_id="s1",
+        drive_id="d1",
+        drive_name="Documents",
+        staging=tmp_path,
+        token="tok",
+        state={},
+        dry_run=False,
+        manifest=manifest,
+        summary=summary,
+        existing_fastpath={
+            "changed-i1": {
+                "size": 4242,
+                "modified": "2026-08-30T12:34:56Z",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+
+    assert calls["n"] == 1
+    assert summary.skipped_unchanged == 0
+    assert summary.files_downloaded == 1
+    assert len(manifest) == 1
+    assert manifest[0]["sha256"] == "b" * 64

@@ -51,3 +51,4 @@ pypdf==5.9.0
 # binaries must also be installed on the host (verify with: python -m app.services.ocr_backend --preflight).
 pytesseract==0.3.13
 pdf2image==1.17.0
+httpx==0.28.1

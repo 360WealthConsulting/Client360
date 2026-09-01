@@ -15,6 +15,8 @@ clicked, and only if the document is still unowned.
 """
 from __future__ import annotations
 
+from sqlalchemy import text
+
 from app.db import engine
 from app.security.audit import write_audit_event
 from app.services.document_high_validation import (
@@ -31,18 +33,224 @@ def _row_with_candidates(conn, did, proposal, contradictions, idx, candidates):
     return row
 
 
+def _ocr_review_rows(conn, *, limit=None):
+    """Return terminal OCR/extraction exceptions for still-unassigned docs.
+
+    These rows are intentionally NOT OCR candidates anymore. They are a
+    finite human-review queue:
+      - skipped + no_readable_text
+      - unsupported + password_required/encrypted
+      - failed
+      - timed_out
+      - historical completed rows with zero extracted characters
+
+    No ownership is changed here.
+    """
+    sql = """
+        SELECT
+            d.id AS document_id,
+            d.original_name AS filename,
+            COALESCE(ds.source_path, d.storage_uri) AS source_path,
+            d.ocr_status,
+            o.status AS detail_status,
+            GREATEST(COALESCE(o.char_count, 0), COALESCE(LENGTH(o.text), 0)) AS char_count,
+            o.engine,
+            o.last_error
+        FROM documents d
+        LEFT JOIN document_ocr o
+          ON o.document_id = d.id
+        LEFT JOIN LATERAL (
+            SELECT source_path
+            FROM document_sources x
+            WHERE x.document_id = d.id
+            ORDER BY x.id
+            LIMIT 1
+        ) ds ON TRUE
+        WHERE d.deleted_at IS NULL
+          AND d.person_id IS NULL
+          AND d.household_id IS NULL
+          AND d.organization_id IS NULL
+          AND (
+                d.ocr_status IN ('failed', 'timed_out', 'unsupported', 'skipped')
+                OR (
+                    d.ocr_status = 'completed'
+                    AND GREATEST(COALESCE(o.char_count, 0), COALESCE(LENGTH(o.text), 0)) = 0
+                )
+          )
+        ORDER BY d.id
+    """
+
+    params = {}
+
+    if limit is not None:
+        sql += " LIMIT :limit"
+        params["limit"] = int(limit)
+
+    rows = []
+
+    for r in conn.execute(text(sql), params).mappings():
+        last_error = (r["last_error"] or "").strip()
+        status = (r["ocr_status"] or r["detail_status"] or "").strip().lower()
+        chars = int(r["char_count"] or 0)
+
+        if "password_required" in last_error or "encrypted" in last_error.lower():
+            reason = "password_required"
+            explanation = "Encrypted/password-protected document requires staff review."
+        elif status == "timed_out":
+            reason = "ocr_timed_out"
+            explanation = "OCR timed out; document was moved to review instead of retried automatically."
+        elif status == "failed":
+            reason = "ocr_failed"
+            explanation = "OCR failed; document was moved to review instead of retried automatically."
+        elif status == "skipped" or chars == 0:
+            reason = "no_readable_text"
+            explanation = "OCR completed but produced no readable text."
+        else:
+            reason = "ocr_review"
+            explanation = "Document requires OCR/extraction review."
+
+        evidence = [explanation]
+
+        if last_error:
+            evidence.append(last_error[:500])
+
+        rows.append({
+            "document_id": int(r["document_id"]),
+            "filename": r["filename"],
+            "source_path": r["source_path"],
+            "extraction_class": "ocr",
+            "extraction_method": r["engine"] or status or "unknown",
+            "confidence": "REVIEW",
+            "evidence_classes": [reason],
+            "evidence": evidence,
+            "contradictions": [],
+            "candidates": [],
+            "review_reason": reason,
+        })
+
+    return rows
+
+
+def _unresolved_review_row(conn, document_id, proposal=None, *, reason="unresolved"):
+    """Build a review row for a still-unassigned document that automatic
+    analysis could not safely resolve.
+
+    This is the catch-all stage of the document sweep. Nothing is dropped:
+    if automation cannot assign it, staff can see it in Review.
+    """
+    row = conn.execute(
+        text("""
+            SELECT
+                d.id,
+                d.original_name,
+                d.storage_uri,
+                (
+                    SELECT ds.source_path
+                    FROM document_sources ds
+                    WHERE ds.document_id = d.id
+                    ORDER BY ds.id
+                    LIMIT 1
+                ) AS source_path
+            FROM documents d
+            WHERE d.id = :document_id
+        """),
+        {"document_id": int(document_id)},
+    ).mappings().one()
+
+    proposal = proposal or {}
+
+    confidence = str(
+        proposal.get("confidence") or "NO_MATCH"
+    ).upper()
+
+    evidence = list(
+        proposal.get("evidence") or []
+    )
+
+    candidates = []
+
+    proposed_id = proposal.get(
+        "proposed_entity_id"
+    )
+
+    proposed_type = proposal.get(
+        "proposed_entity_type"
+    )
+
+    proposed_name = proposal.get(
+        "proposed_entity_name"
+    )
+
+    if proposed_id and proposed_type:
+        candidates.append({
+            "type": proposed_type,
+            "id": proposed_id,
+            "name": proposed_name,
+        })
+
+    if reason == "high_unconfirmed":
+        explanation = (
+            "HIGH proposal exists but was not automatically assigned; "
+            "explicit review is required."
+        )
+    elif reason == "low_confidence":
+        explanation = (
+            "Automatic ownership evidence was insufficient for a safe assignment."
+        )
+    else:
+        explanation = (
+            "No defensible automatic owner proposal was produced."
+        )
+
+    evidence.insert(0, explanation)
+
+    return {
+        "document_id": int(row["id"]),
+        "filename": row["original_name"],
+        "source_path": row["source_path"] or row["storage_uri"],
+        "extraction_class": "analysis",
+        "extraction_method": "existing-content",
+        "confidence": confidence,
+        "evidence_classes": [reason],
+        "evidence": evidence,
+        "contradictions": [],
+        "candidates": candidates,
+        "review_reason": reason,
+    }
+
+
 def review_queue(*, limit=None, include_high_review=True, ocr=False):
-    """READ-ONLY. Returns {medium:[row], ambiguous:[row], high_review:[row], *_count}. Each row has
+    """READ-ONLY. Returns proposal-review buckets plus terminal OCR-review rows. Each row has
     document_id, filename, source_path, extraction method/class, confidence, evidence, and `candidates`
     (a list of {type,id,name}). MEDIUM: one prominent proposed candidate. AMBIGUOUS: all defensible
     candidates, no default. high_review: HIGH proposals a contradiction sent to review. Writes nothing."""
-    medium, ambiguous, high_review = [], [], []
+    medium, ambiguous, high_review, unresolved = [], [], [], []
     with engine.connect() as conn:
+        ocr_review = _ocr_review_rows(conn, limit=limit)
+        ocr_review_ids = {
+            int(row["document_id"])
+            for row in ocr_review
+        }
+
         ids = _unassigned_ids(conn, limit=limit)
         idx = build_match_indexes(conn)
         for did in ids:
+            # Terminal OCR exceptions have already been swept into the
+            # explicit review bucket. Do not re-run owner extraction or
+            # OCR analysis for them during every review-page refresh.
+            if int(did) in ocr_review_ids:
+                continue
+
             proposal = propose_document_owner(did, conn=conn, idx=idx, with_text=True, ocr=ocr)
             if not proposal.get("eligible"):
+                unresolved.append(
+                    _unresolved_review_row(
+                        conn,
+                        did,
+                        proposal,
+                        reason="no_match",
+                    )
+                )
                 continue
             text = proposal.pop("text", "")
             conf = proposal.get("confidence")
@@ -62,9 +270,43 @@ def review_queue(*, limit=None, include_high_review=True, ocr=False):
                              "id": proposal.get("proposed_entity_id"),
                              "name": proposal.get("proposed_entity_name")}]
                     high_review.append(_row_with_candidates(conn, did, proposal, contradictions, idx, cand))
-    return {"medium": medium, "ambiguous": ambiguous, "high_review": high_review,
-            "medium_count": len(medium), "ambiguous_count": len(ambiguous),
-            "high_review_count": len(high_review)}
+                else:
+                    unresolved.append(
+                        _unresolved_review_row(
+                            conn,
+                            did,
+                            proposal,
+                            reason="high_unconfirmed",
+                        )
+                    )
+            else:
+                unresolved.append(
+                    _unresolved_review_row(
+                        conn,
+                        did,
+                        proposal,
+                        reason="low_confidence",
+                    )
+                )
+    return {
+        "medium": medium,
+        "ambiguous": ambiguous,
+        "high_review": high_review,
+        "ocr_review": ocr_review,
+        "unresolved": unresolved,
+        "medium_count": len(medium),
+        "ambiguous_count": len(ambiguous),
+        "high_review_count": len(high_review),
+        "ocr_review_count": len(ocr_review),
+        "unresolved_count": len(unresolved),
+        "review_total_count": (
+            len(medium)
+            + len(ambiguous)
+            + len(high_review)
+            + len(ocr_review)
+            + len(unresolved)
+        ),
+    }
 
 
 def approve_ownership(document_id, entity_type, entity_id, *, principal, request_id=None):

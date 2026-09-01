@@ -245,18 +245,155 @@ def _entity_search(q, limit=15):
 @router.get("/documents/unassigned")
 def unassigned_documents(request: Request, q: str = "",
                          principal: Principal = Depends(require_capability("client.write"))):
-    """Admin -> Document Management -> Unassigned Documents: fast human-resolution worklist for the
-    remaining unresolved TaxDome folders. Groups unresolved documents by source folder, shows samples +
-    candidate people/households with distinguishing info, and lets an admin search the database by name.
-    A folder-level decision assigns all eligible documents in one audited operation (POST
-    /admin/documents/unassigned/resolve, preview -> confirm). Reuses the existing resolve service;
-    the six permanent V2 rejects are never assigned."""
+    """Unified human-resolution worklist for genuinely unassigned documents.
+
+    Existing TaxDome folder-level resolution remains unchanged. Drake documents
+    are surfaced individually because their canonical registration intentionally
+    preserved them as unassigned rather than guessing an owner.
+
+    This route is READ-ONLY. Ownership changes still flow through the existing
+    preview -> confirm resolve-document endpoint.
+    """
+    from sqlalchemy import exists
+
+    from app.db import documents, metadata
     from app.services.households import unresolved_taxdome_folders
-    folders = _folder_samples_and_candidates(unresolved_taxdome_folders(limit=200))
-    return templates.TemplateResponse(request=request, name="admin/unassigned_documents.html",
-        context={"principal": principal, "unassigned": folders, "q": q,
-                 "search": _entity_search(q), "ok": request.query_params.get("ok"),
-                 "err": request.query_params.get("err")})
+    from app.services.document_owner_proposal import (
+        PERMANENT_REJECT_DOCUMENT_IDS,
+        build_match_indexes,
+        propose_document_owner,
+    )
+
+    folders = _folder_samples_and_candidates(
+        unresolved_taxdome_folders(limit=200)
+    )
+
+    drake_unassigned = []
+    ds = metadata.tables.get("document_sources")
+
+    if ds is not None:
+        with engine.connect() as conn:
+            stmt = (
+                select(
+                    documents.c.id,
+                    documents.c.original_name,
+                    documents.c.display_name,
+                    documents.c.notes,
+                    documents.c.ocr_status,
+                    documents.c.created_at,
+                )
+                .where(
+                    documents.c.person_id.is_(None),
+                    documents.c.household_id.is_(None),
+                    documents.c.organization_id.is_(None),
+                    documents.c.status != "deleted",
+                    documents.c.archived.is_(False),
+                    exists(
+                        select(1).where(
+                            ds.c.document_id == documents.c.id,
+                            ds.c.source_system == "Drake",
+                        )
+                    ),
+                )
+                .order_by(documents.c.id)
+                .limit(500)
+            )
+
+            rows = conn.execute(stmt).mappings().all()
+
+            ids = [
+                int(row["id"])
+                for row in rows
+                if int(row["id"]) not in PERMANENT_REJECT_DOCUMENT_IDS
+            ]
+
+            proposal_idx = build_match_indexes(conn)
+            proposal_map = {}
+
+            for document_id in ids:
+                try:
+                    proposal_map[document_id] = propose_document_owner(
+                        document_id,
+                        conn=conn,
+                        idx=proposal_idx,
+                        with_text=False,
+                        ocr=False,
+                    )
+                except Exception:
+                    proposal_map[document_id] = {
+                        "eligible": True,
+                        "confidence": "ERROR",
+                        "proposed_entity_type": None,
+                        "proposed_entity_id": None,
+                        "proposed_entity_name": None,
+                        "evidence": [],
+                        "best_candidates": [],
+                        "analysis_unavailable": True,
+                    }
+
+            source_map = {}
+
+            if ids:
+                source_rows = conn.execute(
+                    select(
+                        ds.c.document_id,
+                        ds.c.source_external_id,
+                        ds.c.source_path,
+                        ds.c.metadata,
+                    )
+                    .where(
+                        ds.c.document_id.in_(ids),
+                        ds.c.source_system == "Drake",
+                    )
+                    .order_by(ds.c.document_id, ds.c.id)
+                ).mappings().all()
+
+                for src in source_rows:
+                    source_map.setdefault(
+                        int(src["document_id"]),
+                        dict(src),
+                    )
+
+            for row in rows:
+                document_id = int(row["id"])
+
+                if document_id in PERMANENT_REJECT_DOCUMENT_IDS:
+                    continue
+
+                src = source_map.get(document_id, {})
+                meta = src.get("metadata") or {}
+
+                drake_unassigned.append({
+                    "id": document_id,
+                    "name": (
+                        row["display_name"]
+                        or row["original_name"]
+                        or f"Document {document_id}"
+                    ),
+                    "original_name": row["original_name"],
+                    "notes": row["notes"],
+                    "ocr_status": row["ocr_status"],
+                    "drake_client_id": src.get("source_external_id"),
+                    "source_path": src.get("source_path"),
+                    "source_metadata": meta,
+                    "view_url": f"/documents/{document_id}/download?inline=1",
+                    "download_url": f"/documents/{document_id}/download",
+                    "proposal": proposal_map.get(document_id),
+                })
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/unassigned_documents.html",
+        context={
+            "principal": principal,
+            "unassigned": folders,
+            "drake_unassigned": drake_unassigned,
+            "q": q,
+            "search": _entity_search(q),
+            "ok": request.query_params.get("ok"),
+            "err": request.query_params.get("err"),
+        },
+    )
 
 
 def _folder_candidates(conn, folder):

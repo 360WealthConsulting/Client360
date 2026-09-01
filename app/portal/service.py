@@ -1,18 +1,39 @@
+import hashlib
+import secrets
+import uuid
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta, timezone
-import hashlib, secrets, uuid
+from datetime import UTC, date, datetime, timedelta
+
 from sqlalchemy import and_, func, or_, select
 
-from app.db import (documents, document_versions, engine, people, portal_access_grants,
-    portal_accounts, portal_auth_tokens, portal_devices, portal_document_requests,
-    portal_invitations, portal_message_attachments, portal_message_receipts,
-    portal_messages, portal_notifications, portal_sessions, portal_thread_participants,
-    portal_threads, timeline_events, workflow_instances, workflow_steps)
+from app.db import (
+    document_versions,
+    documents,
+    engine,
+    people,
+    portal_access_grants,
+    portal_accounts,
+    portal_auth_tokens,
+    portal_devices,
+    portal_document_requests,
+    portal_invitations,
+    portal_message_attachments,
+    portal_message_receipts,
+    portal_messages,
+    portal_notifications,
+    portal_sessions,
+    portal_thread_participants,
+    portal_threads,
+    timeline_events,
+    workflow_instances,
+    workflow_steps,
+)
 from app.portal.gate import gate
 from app.portal.providers import NOTIFICATION_PROVIDERS
 from app.security.audit import write_audit_event
 from app.services.timeline import add_timeline_event
 from app.services.workflow_automation import complete_step
+
 
 @dataclass(frozen=True)
 class PortalPrincipal:
@@ -30,7 +51,7 @@ def grant_today() -> date:
     the evening window where UTC has rolled over but local time has not, a grant created moments
     earlier had ``effective_date`` one day in the future and the account was denied its own access
     until local midnight. Use this everywhere a grant date is compared."""
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _active_grant():
@@ -57,7 +78,7 @@ def revoke_account_access(connection, account_id, *, now=None):
     Both the staff revoke route and a re-invitation call this, so the two paths cannot drift apart —
     a revoke that forgot sessions, or a re-invite that left the old invitation live, is the class of
     bug this function exists to make impossible."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     today = now.date()
     invitations = connection.execute(portal_invitations.update().where(
         portal_invitations.c.portal_account_id == account_id,
@@ -112,7 +133,7 @@ def invite_portal_account(*, person_id, household_id, email, display_name, acces
     duplicated, and ``auth_subject`` is set to NULL (Postgres permits many NULLs under a UNIQUE
     index) rather than reassigned."""
     normalized = email.strip().lower(); raw = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc); today = now.date()
+    now = datetime.now(UTC); today = now.date()
     # Employer portal accounts (organization_id set) keep the HR-contact person on the grant
     # so they can use the existing person-scoped secure messages/documents, and add the
     # organization scope used for the employer "Action Needed" surface.
@@ -172,7 +193,7 @@ def invite_portal_account(*, person_id, household_id, email, display_name, acces
     return account_id, raw
 
 def accept_invitation(token, auth_subject, mfa_verified):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         invitation = connection.execute(select(portal_invitations).where(portal_invitations.c.token_hash == _hash(token), portal_invitations.c.accepted_at.is_(None), portal_invitations.c.revoked_at.is_(None), portal_invitations.c.expires_at > now).with_for_update()).mappings().one_or_none()
         if not invitation: raise ValueError("Invitation is invalid or expired")
@@ -194,7 +215,7 @@ def accept_invitation_row(connection, invitation_id, *, now=None, auth_method="e
     Deliberately connection-scoped: consuming the code and accepting the invitation must commit
     together, or a client could spend a code against an invitation that was revoked microseconds
     earlier. Returns the account id, or None when the invitation is no longer usable."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     invitation = connection.execute(select(portal_invitations).where(
         portal_invitations.c.id == invitation_id,
         portal_invitations.c.accepted_at.is_(None),
@@ -214,14 +235,14 @@ def accept_invitation_row(connection, invitation_id, *, now=None, auth_method="e
     return invitation["portal_account_id"]
 
 def request_password_reset(email, expires_minutes=30):
-    raw = secrets.token_urlsafe(32); now = datetime.now(timezone.utc)
+    raw = secrets.token_urlsafe(32); now = datetime.now(UTC)
     with engine.begin() as connection:
         account_id = connection.scalar(select(portal_accounts.c.id).where(portal_accounts.c.normalized_email == email.strip().lower(), portal_accounts.c.status == "active"))
         if account_id: connection.execute(portal_auth_tokens.insert().values(portal_account_id=account_id, token_type="password_reset", token_hash=_hash(raw), expires_at=now+timedelta(minutes=expires_minutes)))
     return raw if account_id else None
 
 def consume_password_reset(token):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         row = connection.execute(select(portal_auth_tokens).where(portal_auth_tokens.c.token_hash == _hash(token), portal_auth_tokens.c.token_type == "password_reset", portal_auth_tokens.c.used_at.is_(None), portal_auth_tokens.c.expires_at > now).with_for_update()).mappings().one_or_none()
         if not row: raise ValueError("Reset token is invalid or expired")
@@ -258,7 +279,7 @@ def sign_in_with_subject(auth_subject, mfa_verified):
 
 
 def create_portal_session(account_id, *, device_fingerprint, device_name=None, ip_address=None, user_agent=None, hours=8):
-    raw = secrets.token_urlsafe(32); fingerprint = _hash(device_fingerprint); now = datetime.now(timezone.utc)
+    raw = secrets.token_urlsafe(32); fingerprint = _hash(device_fingerprint); now = datetime.now(UTC)
     with engine.begin() as connection:
         account = connection.execute(select(portal_accounts).where(portal_accounts.c.id == account_id, portal_accounts.c.status == "active")).mappings().one_or_none()
         if not account or (account["mfa_required"] and not account["mfa_enabled"]): raise ValueError("Portal account is not ready for sign-in")
@@ -272,7 +293,7 @@ def create_portal_session(account_id, *, device_fingerprint, device_name=None, i
 
 def resolve_portal_session(raw):
     if not raw: return None
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         row = connection.execute(select(portal_sessions.c.id.label("session_id"), portal_accounts.c.id.label("portal_account_id"), portal_accounts.c.person_id, portal_accounts.c.email, portal_accounts.c.display_name).join(portal_accounts, portal_accounts.c.id == portal_sessions.c.portal_account_id).where(portal_sessions.c.session_hash == _hash(raw), portal_sessions.c.revoked_at.is_(None), portal_sessions.c.expires_at > now, portal_accounts.c.status == "active")).mappings().one_or_none()
         if not row: return None
@@ -281,7 +302,7 @@ def resolve_portal_session(raw):
 
 def revoke_portal_session(raw):
     if raw:
-        with engine.begin() as connection: connection.execute(portal_sessions.update().where(portal_sessions.c.session_hash == _hash(raw)).values(revoked_at=datetime.now(timezone.utc)))
+        with engine.begin() as connection: connection.execute(portal_sessions.update().where(portal_sessions.c.session_hash == _hash(raw)).values(revoked_at=datetime.now(UTC)))
 
 def portal_base_scope(account_id):
     """RELATIONSHIP/IDENTITY scope only — every active grant contributes, no permission filter.
@@ -349,7 +370,7 @@ def require_scope(principal, *, person_id=None, household_id=None, permission=No
 
 def create_thread(principal, *, household_id, person_id, subject, body, topic=None, organization_id=None):
     require_scope(principal, person_id=person_id, household_id=household_id, permission="messages")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         thread_id = connection.execute(portal_threads.insert().values(household_id=household_id, person_id=person_id, subject=subject, topic=topic, organization_id=organization_id, created_by_portal_account_id=principal.account_id, last_client_message_at=now, updated_at=now).returning(portal_threads.c.id)).scalar_one()
         connection.execute(portal_thread_participants.insert().values(thread_id=thread_id, portal_account_id=principal.account_id, participant_role="client"))
@@ -369,7 +390,7 @@ def send_message(principal, thread_id, body, attachment_document_ids=None):
             if owner not in scope["person_ids"]: raise PermissionError("Attachment is outside portal access scope")
             connection.execute(portal_message_attachments.insert().values(message_id=message_id, document_id=document_id))
         # Relationship-owned activity marker: a client reply makes the thread unread for staff.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         connection.execute(portal_threads.update().where(portal_threads.c.id == thread_id).values(last_client_message_at=now, updated_at=now))
     add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure portal message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     # Service-level audit for the client reply, symmetric with create_thread (opening message) and
@@ -387,7 +408,7 @@ def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachm
         # A client-visible staff reply is the "last staff response" + makes the thread unread for the
         # client; an internal note is staff-only and never changes the client-facing markers.
         if not internal_note:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             connection.execute(portal_threads.update().where(portal_threads.c.id == thread_id).values(last_staff_message_at=now, updated_at=now))
     if not internal_note:
         add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure staff message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
@@ -418,7 +439,7 @@ def create_document_request(*, person_id, household_id, title, requested_by_user
     return request_id
 
 def confirm_request_upload(principal, request_id, document_id):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         request = connection.execute(select(portal_document_requests).where(portal_document_requests.c.id == request_id).with_for_update()).mappings().one_or_none()
         if not request: raise ValueError("Document request not found")
@@ -437,7 +458,7 @@ def confirm_request_upload(principal, request_id, document_id):
     return version
 
 def approve_request_upload(request_id, *, approved_by_user_id, approved=True):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with engine.begin() as connection:
         request = connection.execute(select(portal_document_requests).where(portal_document_requests.c.id == request_id).with_for_update()).mappings().one_or_none()
         if not request or request["status"] != "uploaded": raise ValueError("Uploaded document request not found")
@@ -669,7 +690,7 @@ def notify_employer(account_id, *, title, body, entity_type=None, entity_id=None
 
 def dashboard(principal):
     # Identity bootstrap: each panel below re-resolves under its own grant permission.
-    scope = portal_base_scope(principal.account_id); now = datetime.now(timezone.utc)
+    scope = portal_base_scope(principal.account_id); now = datetime.now(UTC)
     # Narrow endpoints (/documents, /requests, /tasks, /notifications, /messages)
     # reuse the single-purpose function they need instead of computing the whole
     # dashboard (RC8/RC9). Output is unchanged.

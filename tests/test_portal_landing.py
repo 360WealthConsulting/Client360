@@ -60,9 +60,9 @@ def test_get_portal_is_registered_exactly_once():
     assert sorted(matches[0].methods) == ["GET"]
 
 
-def test_route_count_is_1185():  # +5 client email one-time-code sign-in (POST /portal/login, GET /portal/activate, GET+POST /portal/verify, POST /portal/verify/resend)  # -2 removed client Microsoft auth (/portal/auth/start, /portal/auth/callback)  # +1 staff-initiated secure message (POST /admin/client-portal/threads/new)
+def test_route_count_is_1186():  # +5 client email one-time-code sign-in (POST /portal/login, GET /portal/activate, GET+POST /portal/verify, POST /portal/verify/resend)  # -2 removed client Microsoft auth (/portal/auth/start, /portal/auth/callback)  # +1 staff-initiated secure message (POST /admin/client-portal/threads/new)
     from app.main import app
-    assert len(app.routes) == 1185  # +2 external IdP portal auth (start + callback)  # +1 staff client-search for the portal invite form (GET /admin/client-portal/client-search)  # +1 staff Add New Client creation (POST /admin/client-portal/create-client)  # +5 client email one-time-code sign-in (POST /portal/login, GET /portal/activate, GET+POST /portal/verify, POST /portal/verify/resend)  # -2 removed client Microsoft auth (/portal/auth/start, /portal/auth/callback)  # +1 staff-initiated secure message (POST /admin/client-portal/threads/new)
+    assert len(app.routes) == 1186  # +2 external IdP portal auth (start + callback)  # +1 staff client-search for the portal invite form (GET /admin/client-portal/client-search)  # +1 staff Add New Client creation (POST /admin/client-portal/create-client)  # +5 client email one-time-code sign-in (POST /portal/login, GET /portal/activate, GET+POST /portal/verify, POST /portal/verify/resend)  # -2 removed client Microsoft auth (/portal/auth/start, /portal/auth/callback)  # +1 staff-initiated secure message (POST /admin/client-portal/threads/new)  # +1 SharePoint change-notification webhook (POST /api/microsoft/sharepoint/webhook)
 
 
 def test_no_portal_dashboard_route_was_added():

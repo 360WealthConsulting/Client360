@@ -11,17 +11,29 @@ These tests pin the whole cycle, including that it can be repeated.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import insert, select
 
-from app.db import (engine, households, people, portal_access_grants, portal_accounts,
-                    portal_invitations, portal_sessions)
-from app.portal.service import (PortalAccountConflictError, accept_invitation,
-                                create_portal_session, invite_portal_account,
-                                resolve_portal_session, sign_in_with_subject)
+from app.db import (
+    engine,
+    households,
+    people,
+    portal_access_grants,
+    portal_accounts,
+    portal_invitations,
+    portal_sessions,
+)
+from app.portal.service import (
+    PortalAccountConflictError,
+    accept_invitation,
+    create_portal_session,
+    invite_portal_account,
+    resolve_portal_session,
+    sign_in_with_subject,
+)
 from app.security.models import Principal
 from tests._portal_util import seed_staff_user
 
@@ -196,7 +208,7 @@ def test_a_re_invitation_issues_a_fresh_token_and_keeps_the_old_one_dead():
     assert invitations[0]["revoked_at"] is not None
     assert invitations[1]["revoked_at"] is None and invitations[1]["accepted_at"] is None
     assert invitations[1]["token_hash"] != invitations[0]["token_hash"]
-    assert invitations[1]["expires_at"] > datetime.now(timezone.utc)
+    assert invitations[1]["expires_at"] > datetime.now(UTC)
 
     with pytest.raises(ValueError):
         accept_invitation(first_token, f"microsoft:{client.sfx}", True)

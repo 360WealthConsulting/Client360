@@ -110,6 +110,7 @@ from app.routes.runtime_cluster import router as runtime_cluster_router
 from app.routes.scheduling import router as scheduling_router
 from app.routes.search import router as search_router
 from app.routes.security import router as security_router
+from app.routes.sharepoint_webhook import router as sharepoint_webhook_router
 from app.routes.security_operations import router as security_operations_router
 from app.routes.session import router as session_router
 from app.routes.source import router as source_router
@@ -218,6 +219,7 @@ app.include_router(automation_router)
 app.include_router(governance_router)
 app.include_router(integration_router)
 app.include_router(security_router)
+app.include_router(sharepoint_webhook_router)
 app.include_router(observability_router)
 app.include_router(configuration_router)
 app.include_router(runtime_router)

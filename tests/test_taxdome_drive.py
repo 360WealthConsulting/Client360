@@ -12,9 +12,8 @@ import os
 from pathlib import Path, PurePosixPath
 
 import pytest
-from starlette.requests import Request
-
 from sqlalchemy import text as sa_text
+from starlette.requests import Request
 
 from app.db import documents, engine, households, people
 from app.demo import taxdome_drive as page

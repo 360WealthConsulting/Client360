@@ -97,7 +97,7 @@ def _audit(did, action):
 
 def test_medium_shows_direct_proposed_candidate(tmp_path):
     pid = _person(f"Zephyrina {_A}")                       # name in index, NO email -> name-only MEDIUM
-    did = _doc(tmp_path, f"2021 Form 1040 for Zephyrina {_A}\n")
+    did = _doc(tmp_path, f"2021 Year-End Statement for Zephyrina {_A}\n")
     q = rq.review_queue()
     row = _find(q["medium"], did)
     assert row and len(row["candidates"]) == 1 and row["candidates"][0]["id"] == pid
@@ -116,7 +116,7 @@ def test_ambiguous_shows_multiple_candidates_no_default(tmp_path):
 def test_view_url_uses_existing_authorized_route(tmp_path):
     from app.routes.admin import _view_url
     pid = _person(f"Viewy {_A}")  # noqa: F841 — seeds the MEDIUM match
-    did = _doc(tmp_path, f"2020 Form 1040 for Viewy {_A}\n")
+    did = _doc(tmp_path, f"2020 Year-End Statement for Viewy {_A}\n")
     row = _find(rq.review_queue()["medium"], did)
     # the route attaches this exact authorized URL (same helper /admin/documents/unassigned/review uses)
     assert _view_url(did, row["filename"]).startswith("/documents/")

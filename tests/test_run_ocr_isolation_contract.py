@@ -115,9 +115,18 @@ def test_extract_text_is_isolated_by_default(monkeypatch):
     assert captured["document_ids"] == [4242] and captured["mode"] == "reprocess"
 
 
-def test_extract_text_propagates_backend_unavailable_not_silent_stub():
-    # In CI no OCR backend is installed: the default path must surface the real backend error (proving it
+def test_extract_text_propagates_backend_unavailable_not_silent_stub(monkeypatch):
+    # With no reachable OCR engine the default path must surface the real backend error (proving it
     # attempts the production/isolated path), never silently run run_ocr's always-raising default_extractor.
+    # Driven by the ENGINE probe, not by the absence of the Python wrappers: requirements.txt installs
+    # those everywhere, so their absence stopped being a meaningful condition. extract_text() performs the
+    # availability check in-process before isolation, so this is deterministic on any host.
+    import pytesseract
+
+    def _boom():
+        raise OSError("tesseract is not installed or it's not in your PATH")
+
+    monkeypatch.setattr(pytesseract, "get_tesseract_version", _boom)
     with pytest.raises(OcrBackendUnavailable):
         doc_ocr.extract_text(_doc("needsEngine.pdf"))
 
