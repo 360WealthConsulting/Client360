@@ -27,8 +27,16 @@ def _iso_z(value: datetime) -> str:
 
 
 def _headers() -> dict[str, str]:
-    from app.services.microsoft_identity import get_microsoft_access_token
-    token = get_microsoft_access_token()
+    from app.services.microsoft_identity import connected_accounts, get_microsoft_access_token
+
+    accounts = connected_accounts()
+    if len(accounts) != 1:
+        raise RuntimeError(
+            "SharePoint subscription management requires exactly one connected "
+            f"Microsoft 365 account; found {len(accounts)}."
+        )
+
+    token = get_microsoft_access_token(accounts[0])
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
