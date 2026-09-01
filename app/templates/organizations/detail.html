@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ org.name }} | 360Plus{% endblock %}
+{% block title %}{{ org.name }} | 360Plus{% endblock %}{% block crumb %}{{ org.name }}{% endblock %}
 {% block content %}
 <div class="page-header"><div>
   <p class="eyebrow">Employer Operations · {{ (org.entity_type or 'organization')|title }}</p>

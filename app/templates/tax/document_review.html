@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Tax Document Review | 360Plus{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Tax Document Review | 360Plus{% endblock %}{% block crumb %}Document review{% endblock %}{% block content %}
 <div class="page-header"><div><p class="eyebrow">Tax Production</p><h1>Document match review</h1><p class="muted">Documents awaiting a human match decision. Ambiguous and low-confidence matches are never auto-assigned.</p></div></div>
 <div class="stats-grid"><div class="stat-card"><span>Awaiting review</span><strong>{{ data.count }}</strong></div></div>
 <section class="panel"><h2>Review queue</h2><div class="table-wrap"><table><thead><tr><th>Link</th><th>Document</th><th>Return</th><th>Source</th><th>Confidence</th><th>Status</th></tr></thead><tbody>
