@@ -42,7 +42,15 @@
 {% set can_messages = 'client.read' in caps %}
 {# Navigation groups. PRESENTATION ONLY: every href, match prefix and `show` capability below is
    byte-identical to what it was - the twelve original groups are consolidated into eight so the rail
-   scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated. #}
+   scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated.
+
+   Wealth > Dashboard is gated on the capability its ROUTE enforces rather than on firm_client.
+   /wealth requires portfolio.firm_metrics, which no role holds by design - migration
+   b4f1a207c9d3 revoked it firm-wide and tests/test_dashboard_firm_metrics_authz.py asserts
+   holders == [] - so every user who could see that link received a 403 on it. The item now
+   hides for everyone and reappears on its own if the capability is ever granted. Visibility
+   only: no capability, grant, role or route authorization changes. (Jinja comments cannot sit
+   inside the `{% set %}` literal below, so the note lives here.) #}
 {% set groups = [
   {"label": "Overview", "items": [
     {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p},
@@ -68,7 +76,7 @@
     {"href": "/tax/returns", "label": "Returns", "match": "/tax/returns", "ico": "◇", "show": 'tax.read' in caps},
     {"href": "/tax/documents", "label": "Documents", "match": "/tax/documents", "ico": "◇", "show": 'tax.read' in caps}]},
   {"label": "Wealth", "items": [
-    {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": firm_client},
+    {"href": "/wealth", "label": "Dashboard", "match": "/wealth", "ico": "▦", "show": 'portfolio.firm_metrics' in caps},
     {"href": "/portfolio", "label": "Portfolio", "match": "/portfolio", "ico": "▤", "show": firm_client}]},
   {"label": "Benefits & Insurance", "items": [
     {"href": "/organizations", "label": "Organizations", "match": "/organizations", "ico": "⬢", "show": can_org},
