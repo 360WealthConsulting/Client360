@@ -139,9 +139,15 @@ def test_staff_reply_denied_without_record_scope():
 
 
 def test_staff_reply_route_is_capability_gated():
+    """Gated on the DEDICATED Messages capabilities (msgcap01), not client.read/client.write: eleven
+    roles hold those, and reading a client's correspondence is a narrower authority than reading
+    their record. Viewing and replying stay separately gated."""
     src = inspect.getsource(portal_admin_thread_reply)
-    assert 'require_capability("client.write")' in src
-    assert 'require_capability("client.read")' in inspect.getsource(portal_admin_thread)
+    assert 'require_capability("communications.message.write")' in src
+    assert 'require_capability("communications.message.read")' in inspect.getsource(portal_admin_thread)
+    # The old over-broad gate must not linger on either handler.
+    assert 'require_capability("client.write")' not in src
+    assert 'require_capability("client.read")' not in inspect.getsource(portal_admin_thread)
 
 
 def test_staff_reply_is_audited():

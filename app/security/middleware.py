@@ -70,6 +70,26 @@ RULES = (
     (re.compile(r"^/workspace"), "client.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
+    # Secure client Messages (staff Communication Hub). The Hub is client SERVICE that happens to
+    # live under /admin, so the generic "^/admin" -> identity.manage rule below swallowed it and only
+    # the administrator could open it. This carve-out is the narrowest prefix that makes Messages
+    # usable; every other /admin/client-portal route - invitations, revocation, create-client and
+    # /admin/client-portal/diagnostics - is genuinely administrative and still requires
+    # identity.manage. No role gains identity.manage and nothing about /admin in general changes.
+    #
+    # The capability is DEDICATED (msgcap01), never client.read: eleven roles hold client.read,
+    # including Accounting, Payroll, Reviewer and Read Only, who have no business reading a client's
+    # correspondence. Reading client messages is a narrower authority than reading a client record.
+    #
+    # The ".read"->".write" inference below turns every mutation under this prefix into
+    # communications.message.write (five roles, not six), so viewing a conversation and replying to
+    # the client are separately gated. require_capability runs ON TOP of this rule, never instead of
+    # it, and each handler declares the same capability explicitly - middleware read authority can
+    # never substitute for a handler's write requirement.
+    #
+    # Record scope is a SEPARATE layer and is untouched: communication_hub.thread_in_staff_scope()
+    # runs per row, so these capabilities gate the door, not the contents.
+    (re.compile(r"^/admin/client-portal/threads"), "communications.message.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
     (re.compile(r"^/admin/rule-catalog"), "audit.read"),
     (re.compile(r"^/admin/(roles|user-roles)"), "role.manage"),

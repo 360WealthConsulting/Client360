@@ -481,7 +481,7 @@ def _load_thread(thread_id):
 
 
 @router.get("/threads", response_class=HTMLResponse)
-def portal_admin_threads(request: Request, principal: Principal = Depends(require_capability("client.read"))):
+def portal_admin_threads(request: Request, principal: Principal = Depends(require_capability("communications.message.read"))):
     """Communication hub work-queue: conversations the staff member can service, filterable by unread /
     assigned-to-me / unassigned / topic / status (record-scoped)."""
     q = request.query_params
@@ -501,7 +501,7 @@ def portal_admin_start_thread(
         request: Request,
         person_id: str = Form(default=""), subject: str = Form(default=""),
         body: str = Form(default=""), topic: str = Form(default=""),
-        principal: Principal = Depends(require_capability("client.write"))):
+        principal: Principal = Depends(require_capability("communications.message.write"))):
     """Staff open a conversation with a client they are authorised to service.
 
     ``client.write`` and not ``client.read``: starting a conversation writes to the client's record,
@@ -527,7 +527,7 @@ def portal_admin_start_thread(
 
 @router.get("/threads/{thread_id}", response_class=HTMLResponse)
 def portal_admin_thread(thread_id: int, request: Request,
-                        principal: Principal = Depends(require_capability("client.read"))):
+                        principal: Principal = Depends(require_capability("communications.message.read"))):
     thread = _load_thread(thread_id)
     if not thread or not hub.thread_in_staff_scope(principal, thread):
         raise HTTPException(404, "Thread not found")           # out-of-scope never discloses existence
@@ -550,7 +550,7 @@ def portal_admin_thread(thread_id: int, request: Request,
 @router.post("/threads/{thread_id}/reply")
 def portal_admin_thread_reply(thread_id: int, request: Request, body: str = Form(...),
                               internal_note: str | None = Form(None),
-                              principal: Principal = Depends(require_capability("client.write"))):
+                              principal: Principal = Depends(require_capability("communications.message.write"))):
     """Staff reply (or internal note) into a thread. Requires client.write AND write record scope on
     the thread. Delegates to the existing ``staff_send_message`` service (audited)."""
     _guard_thread_write(principal, thread_id)
@@ -596,7 +596,7 @@ def _opt_int(value):
 def portal_admin_thread_assign(thread_id: int, request: Request,
                                assigned_user_id: str | None = Form(None),
                                assigned_team_id: str | None = Form(None), topic: str | None = Form(None),
-                               principal: Principal = Depends(require_capability("client.write"))):
+                               principal: Principal = Depends(require_capability("communications.message.write"))):
     """Reassign / route a conversation and/or set its topic from the employee/team selectors (audited
     prev→new). client.write + record scope; only valid, selectable users/teams are accepted server-side;
     an empty selection is the valid Unassigned state."""
@@ -612,7 +612,7 @@ def portal_admin_thread_assign(thread_id: int, request: Request,
 
 @router.post("/threads/{thread_id}/resolve")
 def portal_admin_thread_resolve(thread_id: int, request: Request, action: str = Form("resolve"),
-                                principal: Principal = Depends(require_capability("client.write"))):
+                                principal: Principal = Depends(require_capability("communications.message.write"))):
     """Resolve or reopen a conversation (audited). client.write + record scope."""
     _guard_thread_write(principal, thread_id)
     hub.set_thread_state(principal.user_id, thread_id, resolved=(action == "resolve"),
@@ -622,7 +622,7 @@ def portal_admin_thread_resolve(thread_id: int, request: Request, action: str = 
 
 @router.post("/threads/{thread_id}/link-request")
 def portal_admin_thread_link_request(thread_id: int, request: Request, request_ref: int = Form(...),
-                                     principal: Principal = Depends(require_capability("client.write"))):
+                                     principal: Principal = Depends(require_capability("communications.message.write"))):
     """Link an existing document request to this conversation (same client only). client.write + scope."""
     _guard_thread_write(principal, thread_id)
     try:
@@ -637,7 +637,7 @@ def portal_admin_thread_link_request(thread_id: int, request: Request, request_r
 @router.post("/threads/{thread_id}/create-request")
 def portal_admin_thread_create_request(thread_id: int, request: Request, title: str = Form(...),
                                        description: str | None = Form(None),
-                                       principal: Principal = Depends(require_capability("client.write"))):
+                                       principal: Principal = Depends(require_capability("communications.message.write"))):
     """Turn a conversation into an actionable document request (linked back). client.write + scope."""
     _guard_thread_write(principal, thread_id)
     if not (title or "").strip():

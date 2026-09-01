@@ -126,6 +126,38 @@ NEW_PROFILES: dict[str, tuple[str, str, frozenset[str]]] = {
     ),
 }
 
+# --- capabilities granted to library profiles AFTER the library was seeded ---------------------
+#
+# These cannot live in NEW_PROFILES. ``prodrolelib01`` reads NEW_PROFILES live and hard-fails on any
+# capability that is not yet in the catalogue AT ITS POINT IN HISTORY, so a profile may only
+# reference capabilities that already existed when the library was seeded. A capability introduced
+# by a later migration is therefore recorded here, next to the migration that creates and grants it,
+# and the library stays the single source of truth for what a profile ends up holding.
+#
+# This mechanism is strictly ADDITIVE: ``effective_capabilities()`` unions it onto the seeded set, so
+# an entry here can never remove or mutate a baseline grant. Each entry is (profile -> capabilities)
+# and MUST match the grants in the named migration exactly; tests/test_production_role_library.py
+# folds these into its EXACT-set assertion, so the two cannot drift.
+#
+#   msgcap01 — secure client Messages. A dedicated read/write pair rather than reusing client.read,
+#   which eleven roles hold: reading a client's correspondence is a narrower authority than reading
+#   their record. tax_staff gets read only — a preparer needs the conversation for context, but
+#   replying to the client is the coordinator's job.
+POST_SEED_GRANTS: dict[str, frozenset[str]] = {
+    "client_service": frozenset({"communications.message.read", "communications.message.write"}),
+    "senior_tax": frozenset({"communications.message.read", "communications.message.write"}),
+    "tax_staff": frozenset({"communications.message.read"}),
+}
+
+
+def effective_capabilities(profile_code: str) -> frozenset[str]:
+    """Everything a NEW_PROFILES profile holds once post-seed migrations have run.
+
+    Additive by construction: the seeded set is never removed from, only unioned onto.
+    """
+    return frozenset(NEW_PROFILES[profile_code][2]) | POST_SEED_GRANTS.get(profile_code, frozenset())
+
+
 # Profiles that already existed before this library (verified, not re-seeded here). Value is a small
 # set of capabilities each MUST contain — used only as a smoke assertion in tests.
 EXISTING_PROFILES: dict[str, frozenset[str]] = {

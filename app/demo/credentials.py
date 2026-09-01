@@ -66,6 +66,11 @@ TAX_PREPARER_ROLE = {
         "tax.read", "tax.write", "tax.intake.read", "tax.intake.write",
         "tax.document.review", "tax.review",
         "client.read", "work.read",
+        # Secure client Messages - READ only, mirroring the production tax_staff profile (msgcap01).
+        # Deliberately NOT communications.message.write: a preparer reads the conversation for
+        # context; replying to the client is the coordinator's job. Demo-only - tax_preparer is not
+        # in the production role catalogue and this grants nothing to any production principal.
+        "communications.message.read",
     ],
 }
 

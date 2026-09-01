@@ -77,10 +77,12 @@ def _principal(uid, caps=("client.read", "client.write", "record.read_all", "rec
     return Principal(uid, "staff@example.com", "Staff", frozenset(caps))
 
 
-def _render_admin_home():
+def _render_admin_home(caps=None):
     """The real rendered staff page, so template wiring is proven rather than assumed."""
     from app.routes.portal_admin import portal_admin_home
-    return portal_admin_home(_req(), principal=_principal(_staff_user())).body.decode("utf-8")
+    principal = (_principal(_staff_user(), caps=caps) if caps is not None
+                 else _principal(_staff_user()))
+    return portal_admin_home(_req(), principal=principal).body.decode("utf-8")
 
 
 def _req(session=None):
@@ -2178,7 +2180,10 @@ def test_the_staff_start_thread_route_requires_write_capability():
 
     from app.routes import portal_admin
     src = inspect.getsource(portal_admin.portal_admin_start_thread)
-    assert 'require_capability("client.write")' in src, "starting a conversation is a write"
+    assert 'require_capability("communications.message.write")' in src, (
+        "starting a conversation is a Messages write (msgcap01), not a generic client.write")
+    assert 'require_capability("client.write")' not in src, (
+        "the old client.write gate would let eleven roles start client conversations")
     assert "hub.staff_start_thread(" in src, "the route does not delegate to the audited service"
     for direct in ("portal_threads.insert", "portal_messages.insert"):
         assert direct not in src, f"the route writes {direct} directly"
@@ -2228,15 +2233,24 @@ def test_a_non_numeric_person_id_is_refused_before_the_service_is_reached():
 
 
 def test_the_staff_navigation_exposes_messages():
-    """It was previously reachable only by typing the URL."""
-    html = _render_admin_home()
+    """It was previously reachable only by typing the URL. Shown to a holder of the Messages read
+    capability - the same capability the route enforces."""
+    html = _render_admin_home(caps=("communications.message.read", "record.read_all"))
     assert 'href="/admin/client-portal/threads"' in html, "Messages is missing from the sidebar"
     assert ">Messages" in html
 
 
+def test_the_staff_navigation_hides_messages_without_the_capability():
+    """The drift this repair fixes: client.read holders were shown a link they could not open."""
+    html = _render_admin_home(caps=("client.read", "client.write", "record.read_all"))
+    assert 'href="/admin/client-portal/threads"' not in html, (
+        "Messages is advertised to a role that cannot open it")
+
+
 def test_the_messages_nav_item_is_gated_on_the_capability_the_route_enforces():
     base = open("app/templates/base.html", encoding="utf-8").read()
-    assert "{% set can_messages = 'client.read' in caps %}" in base
+    assert "{% set can_messages = 'communications.message.read' in caps %}" in base
+    assert "'client.read' in caps %}" not in base.split("can_messages")[1][:80]
     assert '"show": can_messages' in base
     # NOT firm_client: the inbox is record-scoped per thread, so record.read_all is not required.
     assert '"label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": firm_client' \

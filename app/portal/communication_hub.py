@@ -235,9 +235,35 @@ def linked_requests(thread_id) -> list[dict]:
 
 # --- staff work-queue (reuses record scope; NOT a separate CRM inbox) --------
 
+# The Communication Hub columns (commhub01) are read through app.db's REFLECTED metadata, so on a
+# database that has not been migrated to commhub01 they are simply absent and the first attribute
+# access raises a bare ``AttributeError: topic`` from deep inside SQLAlchemy - a 500 with a stack
+# trace and no indication that the real problem is a pending migration. This mirrors the tolerant
+# bind app/db.py already uses for person_merge_history and resolution_knowledge: detect the missing
+# schema and refuse CLEARLY. It is READ-ONLY - it inspects the reflected column set and raises. It
+# performs no migration, no DDL, no write of any kind, and it is not a fallback path: it swallows
+# nothing, the query below is unchanged, and any other error still propagates.
+_HUB_THREAD_COLUMNS = ("topic", "organization_id", "assigned_user_id", "assigned_team_id",
+                       "last_client_message_at", "last_staff_message_at", "staff_last_read_at")
+
+
+class CommunicationHubSchemaError(RuntimeError):
+    """The Communication Hub columns are missing: the database predates migration commhub01."""
+
+
+def _require_hub_schema() -> None:
+    missing = [n for n in _HUB_THREAD_COLUMNS if n not in portal_threads.c]
+    if missing:
+        raise CommunicationHubSchemaError(
+            "portal_threads is missing " + ", ".join(missing) + ". This database predates migration "
+            "'commhub01' (Communication Hub). Run `alembic upgrade head` against it; secure messaging "
+            "cannot be served until then.")
+
+
 def staff_inbox(principal, *, unread=False, assigned_to_me=False, unassigned=False, topic=None,
                 status=None, limit=100) -> list[dict]:
     """Conversations the staff member can service, with unread + last-activity + assignment, filtered."""
+    _require_hub_schema()
     with engine.connect() as c:
         rows = c.execute(
             select(portal_threads.c.id, portal_threads.c.subject, portal_threads.c.topic,

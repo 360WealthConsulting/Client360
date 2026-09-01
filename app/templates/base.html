@@ -39,7 +39,7 @@
 {# Secure client messaging. Gated on client.read alone — the SAME capability /admin/client-portal/
    threads enforces — and deliberately NOT on firm_client: the inbox is record-scoped per thread,
    so an advisor without record.read_all still sees the conversations they may service. #}
-{% set can_messages = 'client.read' in caps %}
+{% set can_messages = 'communications.message.read' in caps %}
 {# Navigation groups. PRESENTATION ONLY: every href, match prefix and `show` capability below is
    byte-identical to what it was - the twelve original groups are consolidated into eight so the rail
    scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated. #}

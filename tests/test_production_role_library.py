@@ -18,6 +18,8 @@ from app.security.role_library import (
     EXISTING_PROFILES,
     FORBIDDEN_FOR_NEW_PROFILES,
     NEW_PROFILES,
+    POST_SEED_GRANTS,
+    effective_capabilities,
 )
 
 
@@ -66,7 +68,7 @@ def test_all_fourteen_profiles_exist_and_active():
 
 @pytest.mark.parametrize("code", sorted(NEW_PROFILES))
 def test_new_profile_has_exactly_its_intended_capabilities(code):
-    expected = set(NEW_PROFILES[code][2])
+    expected = set(effective_capabilities(code))
     assert _role_caps(code) == expected, code
     # Every referenced capability is a real catalogue entry (no typos / invented caps).
     with engine.connect() as c:
@@ -96,22 +98,22 @@ def test_advisor_has_firm_wide_read_but_not_firm_wide_write():
 def test_effective_permissions_are_union_jessica(make_user):
     # Jessica = Accounting + Payroll + Tax Staff
     uid = make_user(["accounting", "payroll", "tax_staff"])
-    expected = (set(NEW_PROFILES["accounting"][2]) | set(NEW_PROFILES["payroll"][2])
-                | set(NEW_PROFILES["tax_staff"][2]))
+    expected = (set(effective_capabilities("accounting")) | set(effective_capabilities("payroll"))
+                | set(effective_capabilities("tax_staff")))
     assert resolve_capabilities(uid) == expected
 
 
 def test_effective_permissions_are_union_lauren(make_user):
     # Lauren = Senior Tax + Client Service
     uid = make_user(["senior_tax", "client_service"])
-    expected = set(NEW_PROFILES["senior_tax"][2]) | set(NEW_PROFILES["client_service"][2])
+    expected = set(effective_capabilities("senior_tax")) | set(effective_capabilities("client_service"))
     assert resolve_capabilities(uid) == expected
 
 
 def test_single_profile_resolves_to_that_profile(make_user):
     # Sarah = Tax Staff (single profile still works — backward compatible)
     uid = make_user(["tax_staff"])
-    assert resolve_capabilities(uid) == set(NEW_PROFILES["tax_staff"][2])
+    assert resolve_capabilities(uid) == set(effective_capabilities("tax_staff"))
 
 
 def test_adding_a_profile_only_adds_capabilities(make_user):
@@ -181,3 +183,51 @@ def test_multi_profile_union_never_reaches_administrator(make_user):
         caps = resolve_capabilities(uid)
         assert not (caps & ADMINISTRATOR_ONLY), combo
         assert "identity.manage" not in caps and "record.read_all" not in caps
+
+
+# --- the post-seed grant escape hatch (msgcap01) --------------------------------------------------
+#
+# Capabilities created AFTER the library was seeded cannot live in NEW_PROFILES: prodrolelib01 reads
+# NEW_PROFILES live and hard-fails on any capability missing from the catalogue at its point in
+# history, so a fresh migration from scratch would die on "references unknown capabilities". They are
+# recorded in POST_SEED_GRANTS instead. That hatch has to stay narrow, or it becomes a way to grant a
+# profile anything without the exact-set assertion noticing.
+
+def test_post_seed_grants_only_extend_real_profiles():
+    for profile in POST_SEED_GRANTS:
+        assert profile in NEW_PROFILES, f"{profile} is not a library profile"
+
+
+def test_post_seed_grants_never_restate_a_seeded_capability():
+    """A capability already in NEW_PROFILES must not also appear here — that would hide a duplicate
+    grant and make the two sources disagree about where a capability comes from."""
+    for profile, granted in POST_SEED_GRANTS.items():
+        overlap = granted & set(NEW_PROFILES[profile][2])
+        assert overlap == set(), f"{profile} restates seeded capabilities: {sorted(overlap)}"
+
+
+def test_post_seed_grants_respect_the_new_profile_ceiling():
+    """The hatch is bound by the same ceiling as the library: no profile may acquire an
+    administrator-only or otherwise forbidden capability through it."""
+    for profile, granted in POST_SEED_GRANTS.items():
+        assert granted & FORBIDDEN_FOR_NEW_PROFILES == set(), profile
+        assert granted & ADMINISTRATOR_ONLY == set(), profile
+
+
+def test_post_seed_grants_are_additive_and_cannot_remove_a_baseline_capability():
+    """effective_capabilities() is a union: it can only ever ADD. A post-seed entry must never be able
+    to remove or mutate a capability the profile was seeded with."""
+    for profile in NEW_PROFILES:
+        seeded = set(NEW_PROFILES[profile][2])
+        effective = set(effective_capabilities(profile))
+        assert seeded <= effective, f"{profile} lost a seeded capability"
+        assert effective - seeded == set(POST_SEED_GRANTS.get(profile, set())), profile
+
+
+def test_post_seed_grants_reference_real_catalogue_capabilities():
+    """No typos / invented capabilities — every code must exist in the seeded catalogue."""
+    with engine.connect() as c:
+        known = {r[0] for r in c.execute(select(capabilities.c.code))}
+    for profile, granted in POST_SEED_GRANTS.items():
+        unknown = granted - known
+        assert unknown == set(), f"{profile} references unknown capabilities: {sorted(unknown)}"
