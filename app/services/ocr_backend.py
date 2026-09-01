@@ -9,7 +9,8 @@ Strategy (honest, no wasted work):
   text layer (image-only / scanned) fall back to rendering that page + Tesseract OCR.
 - Images (PNG / JPG / JPEG / TIFF): Tesseract OCR. TIFF may be multi-page (each frame is a page).
 - Reports page count, engine name + Tesseract version, and clear errors: ``OcrBackendUnavailable`` when
-  the engine/libraries are not installed, and ordinary exceptions for a genuine extraction failure.
+  the libraries are not installed OR the Tesseract executable is not reachable, and ordinary
+  exceptions for a genuine extraction failure.
 
 The heavy dependencies (pypdf, pytesseract, pdf2image + Poppler, Pillow) are imported LAZILY so this
 module — and the whole app — imports cleanly on hosts (and in CI) that do not have them. The extraction
@@ -229,6 +230,18 @@ def production_deps() -> OcrDeps:
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
     poppler_path = os.getenv("POPPLER_PATH") or None
+
+    # Importing the wrappers proves NOTHING about the engine: pytesseract and pdf2image are pure-Python
+    # shims over the Tesseract and Poppler EXECUTABLES, and requirements.txt installs the wrappers on
+    # every host (and in CI). A host with the wrappers but no binaries has no OCR backend at all, so it
+    # must fail HERE with the typed error — the caller then records a truthful, retryable
+    # 'OCR backend unavailable' state — instead of being declared healthy and failing per-document deep
+    # inside extraction (where a missing engine is indistinguishable from a corrupt file). This is the
+    # same probe preflight() already performs, so the health check and the real factory cannot disagree.
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception as exc:  # noqa: BLE001 — any failure to reach the engine means no usable backend
+        raise OcrBackendUnavailable(f"Tesseract engine not reachable: {exc}") from exc
 
     def pdf_page_texts(p: Path) -> list[str]:
         reader = pypdf.PdfReader(str(p))

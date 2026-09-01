@@ -28,7 +28,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
@@ -72,7 +72,7 @@ class RateLimited(EmailAuthError):
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _secret() -> bytes:
@@ -88,7 +88,7 @@ def _code_hash(account_id: int, code: str) -> str:
     Keyed, so a stolen database cannot be brute-forced offline against a six-digit space without also
     stealing the server secret. Account-bound, so a code observed for one account cannot be tested
     against another — cross-account reuse fails at the hash, not at a check someone might forget."""
-    message = f"{int(account_id)}:{code}".encode("utf-8")
+    message = f"{int(account_id)}:{code}".encode()
     return hmac.new(_secret(), message, hashlib.sha256).hexdigest()
 
 
@@ -136,7 +136,7 @@ def _issue(connection, account, *, purpose, invitation_id, now):
         raise RateLimited(GENERIC_SENT_MESSAGE)
     if newest is not None:
         if newest.tzinfo is None:
-            newest = newest.replace(tzinfo=timezone.utc)
+            newest = newest.replace(tzinfo=UTC)
         if (now - newest).total_seconds() < RESEND_COOLDOWN_SECONDS:
             raise RateLimited(GENERIC_SENT_MESSAGE)
 

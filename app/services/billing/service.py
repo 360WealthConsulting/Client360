@@ -568,7 +568,7 @@ def client_invoice_detail(principal, invoice_id) -> dict | None:
         return None
     balance, paid = invoice_balance(invoice_id)
     view = _client_invoice_view(inv, balance=balance, paid=paid)
-    view["line_items"] = [_client_line_item_view(l) for l in staff["line_items"]]
+    view["line_items"] = [_client_line_item_view(line) for line in staff["line_items"]]
     view["payments"] = [_client_payment_view(p) for p in staff["payments"]]
     return view
 

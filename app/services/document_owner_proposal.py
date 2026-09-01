@@ -5,7 +5,7 @@ people / households / businesses, and returns a ranked proposed owner with a con
 supporting evidence. It proposes only — it never assigns, never writes, and never modifies a source file.
 
 Extraction by type (bounded; reuses existing infrastructure, no OCR engine required):
-  * Excel (.xlsx/.xlsm): openpyxl cell text (reuses app.routes.documents.read_workbook_preview).
+  * Excel (.xlsx/.xlsm): bounded openpyxl cell text.
   * PDF: native text layer via pypdf (no OCR of a text PDF); if the PDF has no text layer, fall back to
     any cached OCR text in the document_ocr table.
   * Images (incl. HEIC): cached OCR text from document_ocr if present; otherwise no content text
@@ -26,9 +26,9 @@ from sqlalchemy import select
 
 from app.db import (
     documents,
-    metadata,
     engine,
     households,
+    metadata,
     people,
     person_source_links,
     relationship_entities,
@@ -166,8 +166,12 @@ def _pdf_text(path):
 
 def _excel_text(path):
     try:
-        from app.routes.documents import read_workbook_preview
-        r = read_workbook_preview(path)
+        from app.services.workbook_preview import PREVIEW_MAX_COLS, read_workbook_preview
+        r = read_workbook_preview(
+            path,
+            max_rows=_MAX_EXCEL_ROWS,
+            max_cols=PREVIEW_MAX_COLS,
+        )
         if r.get("error"):
             return ""
         parts = []
@@ -506,8 +510,12 @@ def analyze_identity(text, filename, folder, idx, *, tax_document=False):
 
     # Tax documents routinely contain preparer / ERO / accounting-firm identity.
     # Treat contact identifiers as corroboration only on these documents.
+    # NOTE: a bare "internal revenue service" mention is deliberately NOT a marker. It appears on every
+    # IRS-adjacent INFORMATIONAL form (1095-A, 1098, 1099) — documents that carry no preparer, ERO,
+    # spouse or signer name, and so none of the role ambiguity this gate exists to guard against. Gating
+    # on it suppressed a strong labeled recipient name on exactly those forms. The markers below are
+    # specific to an actual tax RETURN or to preparer/ERO identity, which is the real risk.
     tax_markers = (
-        "internal revenue service",
         "form 1040",
         "form 1040x",
         "form 1120",

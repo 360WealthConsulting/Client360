@@ -147,12 +147,40 @@ def test_missing_file_raises(tmp_path):
         ex(_row(f"{_TAG} gone.pdf", tmp_path / "nope.pdf"), None)
 
 
-def test_backend_unavailable_when_libs_missing():
-    # CI has no OCR libraries installed, so the production backend must report unavailable cleanly.
+def _no_engine(monkeypatch):
+    """Force the Tesseract ENGINE probe to fail, leaving the Python wrappers importable.
+
+    This is the real production hazard and the exact CI shape: requirements.txt installs pytesseract /
+    pdf2image / Pillow on every host, but they are only shims over the Tesseract and Poppler EXECUTABLES.
+    Asserting on the absence of the Python packages (as these tests once did) is not a contract at all —
+    it silently stopped testing anything the moment the wrappers were added to requirements.txt. Driving
+    the engine probe makes the outcome identical on a bare CI runner and on a developer Mac with
+    Tesseract installed."""
+    import pytesseract
+
+    def _boom():
+        raise OSError("tesseract is not installed or it's not in your PATH")
+
+    monkeypatch.setattr(pytesseract, "get_tesseract_version", _boom)
+
+
+def test_backend_unavailable_when_engine_missing(monkeypatch):
+    # Wrappers importable, engine unreachable -> unavailable cleanly, with the typed error.
+    _no_engine(monkeypatch)
     with pytest.raises(OcrBackendUnavailable):
         build_production_extractor()
     r = preflight()
     assert r["ok"] is False and r["errors"]                  # honest health check, not a crash
+
+
+def test_backend_available_when_engine_is_reachable(monkeypatch):
+    # The mirror image: wrappers AND a reachable engine -> a usable backend, no false alarm. Together
+    # with the test above this pins BOTH directions, so the check can neither regress to "always
+    # available" (the bug) nor over-correct to "never available".
+    import pytesseract
+    monkeypatch.setattr(pytesseract, "get_tesseract_version", lambda: "5.3.4")
+    assert build_production_extractor() is not None
+    assert preflight()["engine"] == "tesseract 5.3.4"
 
 
 # --- end-to-end through run_ocr ---------------------------------------------
@@ -333,11 +361,14 @@ def test_finalize_is_idempotent(tmp_path):
 # OcrBackendUnavailable and returned "" WITHOUT writing any document_ocr row, so scanned/image documents
 # were left stateless and later mislabeled. They must instead be recorded failed (retryable).
 
-def test_live_ocr_records_failed_state_when_backend_unavailable(tmp_path):
+def test_live_ocr_records_failed_state_when_backend_unavailable(tmp_path, monkeypatch):
     from app.services.document_owner_proposal import _live_ocr
+    _no_engine(monkeypatch)                                    # deterministic: no reachable engine
     did = _doc(tmp_path, f"{_TAG} scan.png", sha="p" * 64)      # image genuinely needs OCR
     with engine.connect() as conn:
-        text = _live_ocr(conn, did)                            # CI has no OCR engine -> build fails
+        # The availability check runs in-process BEFORE any subprocess isolation, so the patch above
+        # governs the outcome on every host.
+        text = _live_ocr(conn, did)
     assert text == ""                                          # still fails safe (ingestion not blocked)
     row = _ocr(did)
     assert row is not None and row["status"] == "failed"       # NOT silently stateless

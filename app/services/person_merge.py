@@ -348,8 +348,12 @@ def _resolve_source_link_collisions(conn, survivor_id, duplicate_id):
     for row in rows:
         by_contact.setdefault(row["source_contact_id"], []).append(dict(row))
     for contact_id, links in by_contact.items():
-        survivor_link = next((l for l in links if l["person_id"] == survivor_id), None)
-        duplicate_link = next((l for l in links if l["person_id"] == duplicate_id), None)
+        survivor_link = next(
+            (link for link in links if link["person_id"] == survivor_id), None
+        )
+        duplicate_link = next(
+            (link for link in links if link["person_id"] == duplicate_id), None
+        )
         if survivor_link is None or duplicate_link is None:
             continue
         winner = min((survivor_link, duplicate_link), key=_link_rank)

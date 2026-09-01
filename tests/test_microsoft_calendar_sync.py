@@ -1,7 +1,17 @@
+import uuid
+from datetime import datetime
+
+import pytest
+from sqlalchemy import select
+
+from app.db import engine, microsoft_unmatched_calendar_attendees
 from app.jobs.microsoft_calendar_sync import (
     build_person_email_index,
+    build_timeline_metadata,
     calendar_external_id,
+    event_participants,
     process_calendar_events,
+    queue_unmatched_calendar_attendee,
 )
 
 
@@ -158,17 +168,6 @@ def test_cancelled_events_are_not_published_or_queued():
 # chaining `.get("joinUrl")` onto it raised AttributeError — which failed the whole calendar sync,
 # not just that one event. Both metadata builders read this field, so both are covered here.
 
-import uuid
-
-import pytest
-from sqlalchemy import select
-
-from app.db import engine, microsoft_unmatched_calendar_attendees
-from app.jobs.microsoft_calendar_sync import (
-    build_timeline_metadata,
-    queue_unmatched_calendar_attendee,
-)
-
 #: The four shapes Graph actually sends, and the join URL each must produce.
 ONLINE_MEETING_CASES = [
     pytest.param({}, None, id="key-absent"),
@@ -251,10 +250,6 @@ def test_both_online_meeting_reads_are_null_safe_in_source():
 # "location": null with the key present, so a `{}` default never applies and the chained .get()
 # raises AttributeError — taking down the whole sync, not one field. A null "attendees" is the
 # same bug one type over: iterating None raises TypeError.
-
-from datetime import datetime
-
-from app.jobs.microsoft_calendar_sync import event_participants
 
 #: The four shapes every nullable nested object must survive.
 NESTED_SHAPES = [

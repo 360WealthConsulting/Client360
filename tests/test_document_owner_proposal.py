@@ -92,8 +92,35 @@ def test_name_plus_address_zip_is_high():
 
 
 def test_exact_full_name_alone_is_medium():
-    r = analyze_identity("2021 Form 1040 for Jennifer Suplita", "f.pdf", "F", _idx())
+    # Deliberately NOT a tax return: this asserts the name-alone tier, and a tax-return document has its
+    # own stricter rule (see test_name_alone_on_a_tax_return_is_never_an_owner).
+    r = analyze_identity("2021 Year-End Statement for Jennifer Suplita", "f.pdf", "F", _idx())
     assert r["confidence"] == "MEDIUM" and r["proposed_entity_id"] == 2421   # name alone never HIGH
+
+
+def test_name_alone_on_a_tax_return_is_never_an_owner():
+    # The owner-safety rule (b817a19): on an actual return the taxpayer, spouse, preparer, ERO,
+    # representative and signer names can all appear, so a bare name match must NEVER propose an owner.
+    r = analyze_identity("Form 1040 U.S. Individual Income Tax Return\nJennifer Suplita",
+                         "f.pdf", "F", _idx())
+    assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
+    # Still surfaced for human review at LOW — gated, not discarded.
+    assert [c["person_id"] for c in r["best_candidates"]] == [2421]
+    assert r["best_candidates"][0]["confidence"] == "LOW"
+
+
+def test_preparer_identity_markers_gate_a_name_only_match():
+    # Preparer/ERO markers gate the document even with no "Form 1040" heading present.
+    r = analyze_identity("Paid Preparer Use Only   PTIN P00123456\nPrepared for Jennifer Suplita",
+                         "f.pdf", "F", _idx())
+    assert r["confidence"] == "NO_MATCH" and r["proposed_entity_id"] is None
+
+
+def test_tax_return_name_plus_strong_identifier_is_still_high():
+    # The gate downgrades name-ALONE; a corroborating identifier still resolves an owner on a return.
+    r = analyze_identity("Form 1040 U.S. Individual Income Tax Return\nJennifer Suplita  jl@x.com",
+                         "f.pdf", "F", _idx())
+    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 2421
 
 
 def test_first_last_matches_name_with_middle():
@@ -187,6 +214,15 @@ def test_lowercase_pdf_name_becomes_candidate_and_folder_does_not_override():
     r = analyze_identity(_PROD_1095A, "Form1095a_2021.pdf", "Adrianna Hardy", _idx())
     assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", 7430, "MEDIUM")
     assert any("MARY HARDY" in e for e in r["evidence"])          # detected despite lowercase text
+
+
+def test_irs_mention_on_an_informational_form_does_not_gate_the_owner():
+    # A 1095-A is a Marketplace INFORMATIONAL form: it names the IRS but has no preparer, ERO, spouse or
+    # signer, so the role ambiguity the tax gate guards against does not exist. A strong labeled
+    # recipient name must still produce the intended MEDIUM candidate. Guards the marker narrowing.
+    assert "internal revenue service" in dop._norm(_PROD_1095A)     # the IRS mention is still present
+    r = analyze_identity(_PROD_1095A, "Form1095a_2021.pdf", "Adrianna Hardy", _idx())
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", 7430, "MEDIUM")
 
 
 def test_lowercase_pdf_name_plus_matching_address_is_high():

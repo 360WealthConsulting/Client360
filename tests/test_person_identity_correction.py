@@ -131,7 +131,6 @@ def test_an_unknown_person_raises_the_same_error_as_the_contact_service():
 
 
 def test_an_actor_is_required():
-    actor = _actor()
     pid = _person(full_name=None)
     with pytest.raises(ValueError, match="actor_user_id"):
         correct_person_identity(pid, full_name="Dana Halloway", actor_user_id=None)

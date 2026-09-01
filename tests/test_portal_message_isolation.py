@@ -25,11 +25,16 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
-from app.db import (engine, portal_access_grants, portal_accounts, portal_messages,
-                    portal_threads)
+from app.db import engine, portal_access_grants, portal_accounts, portal_messages, portal_threads
 from app.portal import communication_hub as hub
-from app.portal.service import (client_threads, create_thread, list_messages, mark_read,
-                                send_message, staff_send_message)
+from app.portal.service import (
+    client_threads,
+    create_thread,
+    list_messages,
+    mark_read,
+    send_message,
+    staff_send_message,
+)
 from tests._portal_util import seed_portal_account, seed_staff_user
 
 pytestmark = pytest.mark.usefixtures("portal_messaging_on")
@@ -210,8 +215,11 @@ def test_a7b_an_end_date_of_today_is_inclusive_and_keeps_the_grant_live_that_day
 def test_a8_a_revoked_portal_account_can_no_longer_obtain_a_session_at_all():
     """The immediate control. Three independent conditions in resolve_portal_session must hold:
     a live session row, an unexpired one, and an ACTIVE account."""
-    from app.portal.service import (create_portal_session, resolve_portal_session,
-                                    revoke_account_access)
+    from app.portal.service import (
+        create_portal_session,
+        resolve_portal_session,
+        revoke_account_access,
+    )
 
     staff = seed_staff_user()
     a = _client(staff)
@@ -405,7 +413,11 @@ def test_b7_a_client_cannot_choose_the_visibility_of_what_they_send():
     from app.routes import portal as portal_routes
 
     for model in ("class ThreadCreate", "class MessageCreate"):
-        line = [l for l in inspect.getsource(portal_routes).splitlines() if l.startswith(model)][0]
+        line = [
+            source_line
+            for source_line in inspect.getsource(portal_routes).splitlines()
+            if source_line.startswith(model)
+        ][0]
         assert "visibility" not in line, f"{model} accepts a visibility field"
         assert "sender" not in line, f"{model} accepts a sender field"
     for fn in (service.create_thread, service.send_message):
@@ -520,7 +532,11 @@ def test_d3_the_rule_is_defined_exactly_once():
 def test_d4_neither_thread_view_uses_an_inline_style_on_the_message_body():
     """An inline style attribute is CSP-blocked, which is what broke the staff view."""
     for tpl in (CLIENT_THREAD_TPL, STAFF_THREAD_TPL):
-        body_line = [l for l in _read(tpl).splitlines() if "{{ m.body }}" in l][0]
+        body_line = [
+            source_line
+            for source_line in _read(tpl).splitlines()
+            if "{{ m.body }}" in source_line
+        ][0]
         assert "style=" not in body_line, f"{tpl} styles the body inline"
         assert "white-space" not in body_line
 
