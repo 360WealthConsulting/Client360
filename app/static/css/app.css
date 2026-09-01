@@ -171,7 +171,12 @@ body.c360 {
 .stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; }
 .stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
 .stat .k { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
-.stat .v { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em; margin-top:6px; font-variant-numeric:tabular-nums; word-break:break-word; }
+/* `overflow-wrap`, not `word-break:break-word`: the latter splits a run of digits at any
+   character, so a currency figure rendered as `$184,500.` / `00` across two lines. This
+   breaks only where there is a real opportunity, and the compact track below is sized to
+   fit a formatted currency value without needing one. */
+.stat .v { font-family:var(--font-mono); font-size:26px; font-weight:600; letter-spacing:-.02em;
+  margin-top:6px; font-variant-numeric:tabular-nums; overflow-wrap:break-word; }
 .stat .delta { font-family:var(--font-mono); font-size:11.5px; margin-top:4px; }
 .delta.up { color:var(--good); } .delta.down { color:var(--crit); } .delta.flat { color:var(--muted); }
 
@@ -448,7 +453,7 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 .cols-2.even { grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); }
 .stack-lg { display:grid; gap:var(--s4); align-items:start; }
 /* `.stat-grid` stretches to fill, so a short row of tiles inflates each one. */
-.stat-grid.compact { grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; }
+.stat-grid.compact { grid-template-columns:repeat(auto-fit, minmax(168px,1fr)); gap:10px; }
 .stat-grid.compact .stat { padding:11px 14px; }
 .stat-grid.compact .stat .v { font-size:21px; margin-top:4px; }
 
@@ -932,3 +937,31 @@ table.table { border:1px solid var(--border); border-radius:var(--radius); overf
 /* The "N results" line that sits directly under a filter bar and belongs to it. */
 .result-count { margin:-4px 0 var(--s3); font-size:12.5px; color:var(--muted);
   font-variant-numeric:tabular-nums; }
+
+/* ---- profile / definition list --------------------------------------------
+   `<dl>` is the right element for a record profile and was styled nowhere, so it
+   rendered as a browser-default indented list. Two columns, matching `.kv-grid`'s
+   label/value rhythm. */
+.kv-list { display:grid; grid-template-columns:minmax(120px,max-content) 1fr;
+  gap:0 var(--s4); margin:0; }
+.kv-list dt { padding:8px 0; font-size:13px; color:var(--text-2);
+  border-bottom:1px solid var(--border); }
+.kv-list dd { padding:8px 0; margin:0; font-size:13.5px; font-weight:620; color:var(--text);
+  border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
+.kv-list > :is(dt,dd):nth-last-child(-n+2) { border-bottom:0; }
+@media (max-width:520px) { .kv-list { grid-template-columns:1fr; gap:0; }
+  .kv-list dt { padding-bottom:0; border-bottom:0; } }
+
+/* ---- stacked label forms --------------------------------------------------
+   `<label>Caption <input></label>` inside a `.stack` form — six templates. The
+   caption and its control were running together on one line at body size. */
+form.stack > label { display:grid; gap:4px; font-size:12.5px; font-weight:620;
+  color:var(--text-2); }
+form.stack > label > :is(input,select,textarea) { font-weight:400; }
+/* A checkbox label is the exception: the control belongs beside its caption. */
+form.stack > label:has(> input[type="checkbox"]) { display:flex; align-items:center; gap:8px;
+  font-weight:520; }
+
+/* `.warning` — used by three templates, defined nowhere. Same object as `.alert.warn`. */
+.warning { display:block; padding:11px 14px; border-radius:var(--radius); font-size:13.5px;
+  background:var(--warn-soft); color:var(--warn); border:1px solid transparent; }
