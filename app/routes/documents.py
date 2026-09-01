@@ -15,7 +15,11 @@ from app.services.documents import (
 )
 from app.services.microsoft_documents import get_person_microsoft_documents
 from app.services.timeline import add_timeline_event
-from app.services.workbook_preview import read_workbook_preview
+from app.services.workbook_preview import (
+    PREVIEW_MAX_COLS,
+    PREVIEW_MAX_ROWS,
+    read_workbook_preview,
+)
 from app.templating import render_error
 
 router = APIRouter()
@@ -159,8 +163,10 @@ def download_document(document_id: int, request: Request, inline: bool = False):
 
 
 _EXCEL_EXTS = {"xlsx", "xlsm"}          # openpyxl reads these; legacy .xls is not supported here
-_PREVIEW_MAX_ROWS = 200
-_PREVIEW_MAX_COLS = 30
+# Aliases of the preview helper's own bounds — one source of truth, so the route and the helper
+# can never drift apart.
+_PREVIEW_MAX_ROWS = PREVIEW_MAX_ROWS
+_PREVIEW_MAX_COLS = PREVIEW_MAX_COLS
 _PREVIEW_MAX_FILE_BYTES = 25 * 1024 * 1024
 
 _HEIF_EXTS = {"heic", "heif"}

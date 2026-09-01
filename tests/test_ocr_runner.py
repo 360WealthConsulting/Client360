@@ -83,9 +83,19 @@ def test_retry_runs_one_batch_and_recovers():
     ids = _docs(2)
     ocr_runner.run_sweep("initial", extractor=_boom, batch_size=10)   # both fail
     assert all(_status(i) == "failed" for i in ids)
-    r = ocr_runner.run_retry(extractor=_ok(), batch_size=10)
+    # Retry targets EXPLICIT ids: there is no corpus-wide automatic retry (see the refusal test below).
+    r = ocr_runner.run_retry(document_ids=ids, extractor=_ok(), batch_size=10)
     assert r["status"] == "completed" and r["completed"] == 2
     assert all(_status(i) == "completed" for i in ids)
+
+
+def test_retry_without_explicit_ids_is_refused():
+    # Production safety rule: a corpus-wide retry sweep is refused outright, never silently attempted.
+    ids = _docs(2)
+    ocr_runner.run_sweep("initial", extractor=_boom, batch_size=10)
+    r = ocr_runner.run_retry(extractor=_ok(), batch_size=10)
+    assert r["status"] == "refused" and r["completed"] == 0
+    assert all(_status(i) == "failed" for i in ids)                   # untouched
 
 
 def test_reprocess_forces_reextraction():

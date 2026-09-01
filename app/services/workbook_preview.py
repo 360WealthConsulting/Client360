@@ -2,6 +2,12 @@
 
 from datetime import date, datetime, time
 
+# Default preview bounds. These are the contract every caller inherited when this helper lived in
+# app.routes.documents; they stay the defaults here so extracting the module cannot silently change
+# what a preview reads. A caller may narrow them per call, but must never be REQUIRED to supply them.
+PREVIEW_MAX_ROWS = 200
+PREVIEW_MAX_COLS = 30
+
 
 def _fmt_cell(value):
     """Render a workbook cell value for read-only display."""
@@ -14,7 +20,7 @@ def _fmt_cell(value):
     return str(value)
 
 
-def read_workbook_preview(path, sheet="", *, max_rows, max_cols):
+def read_workbook_preview(path, sheet="", *, max_rows=PREVIEW_MAX_ROWS, max_cols=PREVIEW_MAX_COLS):
     """Read a bounded, read-only preview of an .xlsx/.xlsm workbook."""
     import openpyxl
 
