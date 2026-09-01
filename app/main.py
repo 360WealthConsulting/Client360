@@ -178,6 +178,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# Stylesheet URLs carry ?v=<asset digest> so a deploy can never serve new HTML against a
+# browser's cached copy of the old CSS. base.html is rendered by whichever templates
+# instance the handling route owns, and most route modules construct their own, so the
+# global is installed on all of them here — after every router above has been imported.
+from app.templating import install_globals_on_all_templates  # noqa: E402
+
+install_globals_on_all_templates()
 # (D.28) RuntimeContextMiddleware registered BEFORE AuthenticationMiddleware so it runs INNER (after
 # auth) in the request path — request.state.principal is available when it resolves the context.
 app.add_middleware(RuntimeContextMiddleware)

@@ -5,10 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}360Plus{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/main.css">
-  <link rel="stylesheet" href="/static/css/work.css">
-  <link rel="stylesheet" href="/static/css/tax.css">
-  <link rel="stylesheet" href="/static/css/app.css">
+  {# ?v=<asset digest> — deterministic, computed once from the asset bytes themselves
+     (app/templating.py::_asset_version), so it is identical across workers and changes if
+     and only if an asset changes. Without it a deploy serves new HTML to a browser holding
+     a cached copy of the old CSS, which renders the redesigned pages unreadable. #}
+  <link rel="stylesheet" href="/static/css/main.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/work.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/tax.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 {% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
@@ -33,9 +37,21 @@
 {# Administrator-only: employee & access management. Derived from the SAME capability the routes
    enforce (identity.manage) — visibility never grants access. #}
 {% set can_admin = 'identity.manage' in caps %}
-{# Document Management (unassigned-folder resolution worklist) is gated on the SAME capability the
-   route enforces (client.write) — the migration cleanup queue lives here, not in a client's Documents tab. #}
-{% set can_docmgmt = 'client.write' in caps %}
+{# Review Inbox and Unassigned Documents. Both live under /admin and are administrative BY
+   DESIGN, not by accident of URL: admin_review_inbox's own docstring records "Under /admin
+   (the identity.manage middleware gate applies)", and the unassigned-documents worklist
+   describes itself as "Admin -> Document Management ... lets an admin search the database".
+   That is the opposite of Messages, whose seventeen handlers all declared client.read /
+   client.write and only sat under /admin because of the path it was given.
+
+   So the NAV is corrected to the real requirement rather than the routes being carved out —
+   widening authorization to make a nav item work would invent access the model never
+   intended. Each gate is identity.manage AND the capability that route's own
+   require_capability declares: client.read for the read-only inbox, client.write for the
+   resolution worklist. Previously both were `client.write` alone, so every advisor and
+   operations user was shown two links that answered 403. #}
+{% set can_review_inbox = can_admin and ('client.read' in caps) %}
+{% set can_docmgmt = can_admin and ('client.write' in caps) %}
 {# Secure client messaging. Gated on communications.message.read — the SAME capability
    /admin/client-portal/threads enforces (msgcap01) — and deliberately NOT on firm_client: the inbox
    is record-scoped per thread, so an advisor without record.read_all still sees the conversations
@@ -91,7 +107,7 @@
   {"label": "Oversight", "items": [
     {"href": "/exceptions", "label": "Exceptions", "match": "/exceptions", "ico": "⚑", "show": can_exc},
     {"href": "/exceptions/reporting", "label": "Exception Reporting", "match": "/exceptions/reporting", "ico": "▥", "show": can_exc},
-    {"href": "/admin/review", "label": "Review Inbox", "match": "/admin/review", "ico": "☑", "show": can_docmgmt},
+    {"href": "/admin/review", "label": "Review Inbox", "match": "/admin/review", "ico": "☑", "show": can_review_inbox},
     {"href": "/admin/documents/unassigned", "label": "Unassigned Documents", "match": "/admin/documents/unassigned", "ico": "❏", "show": can_docmgmt},
     {"href": "/compliance/reviews", "label": "Compliance Reviews", "match": "/compliance/reviews", "ico": "✓", "show": 'compliance.review.read' in caps},
     {"href": "/compliance/authorities", "label": "Reviewer Authorities", "match": "/compliance/authorities", "ico": "◆", "show": 'compliance.authority.read' in caps},

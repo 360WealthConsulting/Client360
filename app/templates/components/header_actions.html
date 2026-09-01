@@ -61,7 +61,7 @@
    "show": p},
   {"key": "messages", "href": "/admin/client-portal/threads",  "label": "Messages",
    "hint": "Messages — secure client conversations",
-   "show": can_admin and ('client.read' in caps)},
+   "show": 'communications.message.read' in caps},
   {"key": "work",     "href": "/work",                         "label": "My work",
    "hint": "My work — assigned to you",
    "show": 'work.read' in caps},
@@ -76,7 +76,7 @@
   {"href": "/admin/client-portal",     "label": "Client & portal invitation",
    "show": can_admin},
   {"href": "/admin/client-portal/threads", "label": "Secure client message",
-   "show": can_admin and ('client.read' in caps)},
+   "show": 'communications.message.write' in caps},
   {"href": "/compliance/authorities/new",  "label": "Reviewer authority",
    "show": 'compliance.authority.manage' in caps},
 ] %}

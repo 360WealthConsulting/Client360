@@ -5,10 +5,70 @@ users get styled error pages while API/JSON clients keep the existing JSON
 bodies. Error responses fall back to JSON for anything that isn't an HTML
 navigation.
 """
+import hashlib
+import os
+import pathlib
+import sys
 from datetime import datetime
 
-from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
+from fastapi.templating import Jinja2Templates
+
+_STATIC_ROOT = pathlib.Path(__file__).resolve().parent / "static"
+
+
+def _asset_version() -> str:
+    """A stable identifier for the currently deployed front-end assets.
+
+    Deterministic by construction: a digest of the stylesheet and script bytes
+    themselves, so it is identical for identical assets on every worker and every
+    host, and changes if and only if an asset changes. Never per-request — a random
+    or timestamped value would defeat caching entirely rather than version it.
+
+    ``CLIENT360_ASSET_VERSION`` overrides it where a deployment already has a build
+    identifier it would rather stamp (a release tag or commit sha).
+    """
+    override = os.getenv("CLIENT360_ASSET_VERSION")
+    if override:
+        return override
+    digest = hashlib.sha256()
+    for sub in ("css", "js"):
+        directory = _STATIC_ROOT / sub
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob(f"*.{sub}")):
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
+#: Computed once at import. Referenced by base.html as ``?v={{ asset_version }}`` so a
+#: deploy can never serve new HTML against a browser's cached copy of the old stylesheet.
+ASSET_VERSION = _asset_version()
+
+
+def install_template_globals(instance: Jinja2Templates) -> None:
+    """Install the globals every rendered page needs, on one templates instance."""
+    instance.env.globals["asset_version"] = ASSET_VERSION
+
+
+def install_globals_on_all_templates() -> int:
+    """Install those globals on every ``Jinja2Templates`` already constructed.
+
+    base.html is rendered by whichever instance the handling route owns, and 63 route
+    modules construct their own rather than importing the shared one here — so setting
+    a global on this module's instance alone would version the stylesheet URL on some
+    pages and not others. Called once from ``app.main`` after every router is imported,
+    this reaches all of them. Returns the count for the startup check.
+    """
+    seen, count = set(), 0
+    for module in list(sys.modules.values()):
+        instance = getattr(module, "templates", None)
+        if isinstance(instance, Jinja2Templates) and id(instance) not in seen:
+            seen.add(id(instance))
+            install_template_globals(instance)
+            count += 1
+    return count
 
 
 def human_datetime(value):
@@ -30,6 +90,7 @@ def human_datetime(value):
 def install_filters(instance: Jinja2Templates) -> None:
     """Register Client360's shared Jinja filters on a Jinja2Templates instance."""
     instance.env.filters["humandt"] = human_datetime
+    install_template_globals(instance)
 
 
 templates = Jinja2Templates(directory="app/templates")

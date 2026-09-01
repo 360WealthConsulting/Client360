@@ -79,6 +79,7 @@ def _tax_return_for(person_id, tag):
     The engagement's firm/office/year and the return's type/jurisdiction are NOT NULL, so
     the fixtures already seeded by the migrations are reused rather than inventing more."""
     from sqlalchemy import select as _select
+
     from app.db import filing_jurisdictions, tax_firms, tax_offices, tax_return_types, tax_years
     with engine.begin() as c:
         firm = c.scalar(_select(tax_firms.c.id).limit(1))

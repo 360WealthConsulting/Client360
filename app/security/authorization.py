@@ -15,7 +15,8 @@ never imports FastAPI so it stays usable from any layer.
 """
 from datetime import date
 
-from sqlalchemy import and_, false as sql_false, or_, select
+from sqlalchemy import and_, or_, select
+from sqlalchemy import false as sql_false
 
 from app.db import engine, people, record_assignments, team_memberships
 from app.security.policy import has_record_scope
