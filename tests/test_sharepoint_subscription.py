@@ -46,3 +46,44 @@ def test_ensure_leaves_healthy_subscription(monkeypatch):
     )
     result = sub.ensure_subscription()
     assert result["action"] == "unchanged"
+
+def test_headers_uses_single_connected_account(monkeypatch):
+    import app.services.microsoft_identity as identity
+
+    account = {"id": 123}
+    seen = {}
+
+    monkeypatch.setattr(identity, "connected_accounts", lambda: [account])
+
+    def fake_token(value):
+        seen["account"] = value
+        return "test-token"
+
+    monkeypatch.setattr(identity, "get_microsoft_access_token", fake_token)
+
+    headers = sub._headers()
+
+    assert seen["account"] is account
+    assert headers["Authorization"] == "Bearer test-token"
+
+
+def test_headers_rejects_no_connected_accounts(monkeypatch):
+    import app.services.microsoft_identity as identity
+
+    monkeypatch.setattr(identity, "connected_accounts", lambda: [])
+
+    with pytest.raises(RuntimeError, match="exactly one connected"):
+        sub._headers()
+
+
+def test_headers_rejects_multiple_connected_accounts(monkeypatch):
+    import app.services.microsoft_identity as identity
+
+    monkeypatch.setattr(
+        identity,
+        "connected_accounts",
+        lambda: [{"id": 1}, {"id": 2}],
+    )
+
+    with pytest.raises(RuntimeError, match="found 2"):
+        sub._headers()
