@@ -69,6 +69,26 @@ RULES = (
     (re.compile(r"^/workspace"), "client.read"),
     (re.compile(r"^/workflows|^/api/v1/workflows"), "work.read"),
     (re.compile(r"^/work|^/api/v1/work"), "work.read"),
+    # Secure client MESSAGING (the Communication Hub work-queue and thread pages) is staff
+    # client service, not administration - it only lives under /admin because of the URL it
+    # was given. The generic "^/admin" rule below demanded identity.manage, which only the
+    # Administrator role holds, so a Client Service or Advisor employee whose entire job is
+    # answering clients got a 403 on a link the sidebar advertised to them.
+    #
+    # This carve-out is deliberately the NARROWEST that makes Messages usable: the /threads
+    # subtree only. Every other /admin/client-portal route - invitations, account revocation,
+    # create-client, diagnostics - is genuinely administrative and still requires
+    # identity.manage from the rule below. Nothing about /admin in general changes.
+    #
+    # It grants nothing the routes do not already enforce. All six /threads handlers declare
+    # their own capability (client.read on the two GETs, client.write on the four POSTs), and
+    # the ".read"->".write" inference below reproduces exactly that split. require_capability
+    # runs ON TOP of this rule, never instead of it.
+    #
+    # Record scope is untouched and still decides WHICH threads are visible:
+    # communication_hub.thread_in_staff_scope() runs per row, independent of capability.
+    # Placement matters exactly as it does for the workflow/tax carve-outs above.
+    (re.compile(r"^/admin/client-portal/threads"), "client.read"),
     (re.compile(r"^/admin/audit"), "audit.read"),
     (re.compile(r"^/admin/rule-catalog"), "audit.read"),
     (re.compile(r"^/admin/(roles|user-roles)"), "role.manage"),
