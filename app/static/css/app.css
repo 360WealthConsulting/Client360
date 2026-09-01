@@ -104,7 +104,9 @@ body.c360 {
 .crumbs a:hover { color:var(--text); }
 .crumbs .sep { opacity:.5; }
 .crumbs b { color:var(--text); font-weight:620; }
-.app-search { margin-left:6px; flex:1; max-width:380px; position:relative; }
+/* `min-width` is the guard that keeps the quick-access bar from starving the search:
+   without a floor, `flex:1` lets it shrink toward nothing as controls are added. */
+.app-search { margin-left:6px; flex:1 1 220px; min-width:150px; max-width:380px; position:relative; }
 .app-search input { width:100%; height:34px; border:1px solid var(--border); background:var(--surface-2); border-radius:7px; padding:0 12px 0 32px; color:var(--text); font:inherit; font-size:13px; }
 .app-search input::placeholder { color:var(--muted); }
 .app-search .mag { position:absolute; left:11px; top:8px; color:var(--muted); pointer-events:none; }
@@ -684,3 +686,103 @@ a.stat .v, a.stat > h2 { color:var(--text); font-weight:600; }
 /* A card head whose right side carries several deep links rather than one. */
 .ws-links .more-links { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
   justify-content:flex-end; }
+
+/* ============================================================
+   GLOBAL QUICK-ACCESS BAR (Phase 4)
+   The right side of the application header. Markup:
+   components/header_actions.html.
+   ============================================================ */
+
+/* `flex:none` matters: the bar must never take width from the search field or the
+   user chip. The search keeps a floor of its own (see `.app-search` below) so the two
+   cannot squeeze each other. */
+.qa-bar { display:flex; align-items:center; gap:2px; flex:none; }
+/* A hairline against the user chip, so the actions read as one group rather than as
+   loose icons drifting toward the avatar. */
+.qa-bar { padding-right:10px; margin-right:2px; border-right:1px solid var(--border); }
+
+.qa-btn { position:relative; width:34px; height:34px; flex:none; border-radius:7px;
+  border:1px solid transparent; background:none; color:var(--muted);
+  display:grid; place-items:center; cursor:pointer; text-decoration:none;
+  transition:background .1s ease, color .1s ease; }
+.qa-btn:hover { background:var(--surface-2); color:var(--text); }
+.qa-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.qa-ico { display:block; }
+
+/* Active: a tinted ground plus a short underline. Restrained on purpose — the header
+   is chrome, and a filled accent button here would outrank the page's own primary
+   action. */
+.qa-btn.active { background:var(--accent-soft); color:var(--accent-ink); }
+.qa-btn.active::after { content:""; position:absolute; left:9px; right:9px; bottom:3px;
+  height:2px; border-radius:2px; background:var(--accent); }
+
+/* No route exists for this control yet. Non-interactive and visibly inert: not a link,
+   not focusable, no hover response — it cannot be mistaken for something that works. */
+.qa-btn.is-unavailable { color:var(--border-strong); cursor:default; }
+.qa-btn.is-unavailable:hover { background:none; color:var(--border-strong); }
+
+/* Badge. Nothing renders this today (no count reaches the shared header); it is here so
+   that wiring a real one later needs no new styling and no new decisions. Small, and
+   reserved for "needs attention" — a zero never renders at all. */
+.qa-badge { position:absolute; top:2px; right:2px; min-width:15px; height:15px; padding:0 4px;
+  border-radius:8px; background:var(--crit); color:#fff; font-family:var(--font-mono);
+  font-size:9.5px; font-weight:700; line-height:15px; text-align:center;
+  border:1.5px solid var(--surface); font-variant-numeric:tabular-nums; }
+.qa-btn.qa-inbox .qa-badge { background:var(--accent); }
+.qa-btn.qa-messages .qa-badge, .qa-btn.qa-chat .qa-badge { background:var(--info); }
+
+/* ---- disclosure menus (quick create + overflow) ---------------------------
+   `.rowmenu` is the row-scale disclosure; these sit on the 34px header baseline and
+   drop from the header's bottom edge, so they carry their own box. */
+.qa-menu { position:relative; }
+.qa-menu > summary { display:grid; list-style:none; }
+.qa-menu > summary::marker { content:""; }
+.qa-menu > summary::-webkit-details-marker { display:none; }
+.qa-menu[open] > summary { background:var(--surface-2); color:var(--text); }
+.qa-menu .menu { position:absolute; right:0; top:40px; z-index:60; min-width:232px; padding:6px;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
+.qa-menu .menu .menu-label { margin:4px 8px 3px; font-size:10px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
+/* No `display` here on purpose: this rule is (0,3,1) and would outrank the overflow
+   list's default-hidden rule below, leaking every item into the menu at every width. */
+.qa-menu .menu a, .qa-menu .menu > span:not(.sep) {
+  align-items:center; gap:9px; padding:7px 9px; border-radius:5px;
+  color:var(--text); font-size:13px; font-weight:550; text-decoration:none; }
+.qa-create .menu > a { display:flex; }
+.qa-menu .menu a:hover { background:var(--surface-2); }
+.qa-menu .menu a .qa-ico { color:var(--muted); flex:none; }
+/* No `display` for the same specificity reason as the item rule above; the tier that
+   reveals the create group turns it on. */
+.qa-menu .menu .sep { height:1px; background:var(--border); margin:5px 2px; padding:0; }
+.qa-menu .menu .is-unavailable { color:var(--muted); }
+.qa-menu .menu .is-unavailable em { margin-left:auto; font-style:normal; font-size:10.5px;
+  color:var(--muted); opacity:.8; }
+
+/* ---- priority+ overflow ----------------------------------------------------
+   Each collapsible control is in the bar AND in the overflow list. Only one copy is
+   ever displayed: `display:none` removes the other from the accessibility tree as well,
+   so nothing is announced twice. Items fold in reverse priority order — Quick Create
+   first, Inbox last — and the bar never wraps. */
+.qa-overflow { display:none; }
+.qa-overflow .menu > * { display:none; }
+
+@media (max-width:1280px) {   /* fold: Quick Create */
+  .qa-create { display:none; }
+  .qa-overflow { display:block; }
+  .qa-overflow .menu > .ov-create { display:flex; }
+  .qa-overflow .menu > .menu-label, .qa-overflow .menu > .sep { display:block; }
+}
+@media (max-width:1120px) {   /* + Alerts */
+  .qa-bar > .qa-alerts { display:none; }
+  .qa-overflow .menu > .ov-alerts { display:flex; }
+}
+@media (max-width:1000px) {   /* + My work */
+  .qa-bar > .qa-work { display:none; }
+  .qa-overflow .menu > .ov-work { display:flex; }
+}
+@media (max-width:900px) {    /* + Messages and Team chat; Inbox alone survives */
+  .qa-bar > .qa-messages, .qa-bar > .qa-chat { display:none; }
+  .qa-overflow .menu > .ov-messages, .qa-overflow .menu > .ov-chat { display:flex; }
+  .qa-bar { padding-right:6px; margin-right:0; }
+}

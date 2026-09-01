@@ -141,7 +141,9 @@
         <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search people, households, and organizations">
       </form>
       <div class="spacer"></div>
-      {% if can_exc %}<a class="icon-btn" href="/exceptions" title="Exceptions" aria-label="Exceptions"><span aria-hidden="true">⚑</span></a>{% endif %}
+      {# Global quick-access bar. The lone Exceptions flag that used to sit here is now
+         the "Alerts" control inside it, on the same href and the same capability. #}
+      {% include "components/header_actions.html" %}
       {% if p %}
       <div class="user-chip" title="{{ p.email }}">
         <span class="avatar">{% set parts = (p.display_name or '?').split() %}{{ (parts[0][0] ~ (parts[1][0] if parts|length > 1 else '')) | upper }}</span>
