@@ -144,10 +144,17 @@
     <header class="app-header">
       <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" role="button" tabindex="0" aria-controls="c360-nav" aria-expanded="false" aria-label="Toggle navigation">☰</label>
       <div class="crumbs"><a href="/">360Plus</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
+      {# Gated on what /search actually enforces. The route needs client.read from the RULES
+         map AND record.read_all, because `search` is in FIRM_WIDE_COLLECTION — together that
+         is exactly `firm_client`. The box used to render for every signed-in staff member,
+         so Operations and Tax Prep were handed a search field that answered 403. Visibility
+         only: /search authorization is untouched. #}
+      {% if firm_client %}
       <form class="app-search" method="get" action="/search" role="search">
         <span class="mag" aria-hidden="true">⌕</span>
         <input name="q" type="search" placeholder="Search people, households, organizations…" aria-label="Search people, households, and organizations">
       </form>
+      {% endif %}
       <div class="spacer"></div>
       {# Global quick-access bar. The lone Exceptions flag that used to sit here is now
          the "Alerts" control inside it, on the same href and the same capability. #}

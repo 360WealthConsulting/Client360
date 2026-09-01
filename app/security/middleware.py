@@ -424,14 +424,20 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         record_match = RECORD_PATH.match(request.url.path)
         if record_match:
             entity_type = "person" if record_match.group(1) == "people" else "household"
+            # `record_in_scope` rather than `has_record_scope` directly: it applies the SAME
+            # direct-assignment check first, then — for a READ of a person/household only —
+            # the work-derived path (assignment to that client's task / tax return /
+            # exception / workflow instance). Using it here keeps /people/{id} and
+            # /client/{id} on one answer; they were diverging, since the client route
+            # already resolves through record_in_scope.
+            from app.security.authorization import record_in_scope
             with engine.connect() as connection:
-                allowed = has_record_scope(
-                    connection,
+                allowed = record_in_scope(
                     principal,
                     entity_type,
                     int(record_match.group(2)),
-                    record_assignments=record_assignments,
                     write=request.method not in {"GET", "HEAD", "OPTIONS"},
+                    connection=connection,
                 )
             if not allowed:
                 return _denied(

@@ -45,20 +45,98 @@ def team_ids(connection, principal):
     )
 
 
+#: Work records that BELONG to exactly one client. An active assignment on one of these
+#: is an instruction to do that client's work, so it carries READ scope on the client the
+#: work belongs to — otherwise a preparer assigned a tax return cannot open the client
+#: whose return it is, which is the state this resolves.
+#:
+#: Each entry maps an assignment ``entity_type`` to the table holding that record and the
+#: columns naming its owner. ``tax_return`` is the one indirection: the return names an
+#: engagement, and the engagement names the client.
+#:
+#: DELIBERATELY NARROW. This is read-only (see ``record_in_scope``), it resolves only the
+#: person/household the assigned record itself names, and it adds no new bypass: a
+#: principal with no assignments still sees nothing, and every other client remains
+#: invisible. Assignment to a client record itself (``CLIENT_ENTITY_TYPES``) stays the only
+#: route to write scope.
+_WORK_ANCHORS = (
+    ("task", "tasks", None),
+    ("exception", "exceptions", None),
+    ("workflow_instance", "workflow_instances", None),
+    ("tax_return", "tax_engagement_returns", "tax_engagements"),
+)
+
+
+def _work_derived_scope(connection, principal, entity_type, entity_id):
+    """True when the principal is assigned to a work record owned by this client.
+
+    Read-only, and only for person/household. Returns False for everything else so the
+    direct-assignment answer stands.
+    """
+    if entity_type not in CLIENT_ENTITY_TYPES:
+        return False
+    owner_col = "person_id" if entity_type == "person" else "household_id"
+    from app.db import (
+        exceptions,
+        tasks,
+        tax_engagement_returns,
+        tax_engagements,
+        workflow_instances,
+    )
+    tables = {"tasks": tasks, "exceptions": exceptions,
+              "workflow_instances": workflow_instances,
+              "tax_engagement_returns": tax_engagement_returns,
+              "tax_engagements": tax_engagements}
+    for assignment_type, record_table, via in _WORK_ANCHORS:
+        record = tables[record_table]
+        if via is None:
+            if owner_col not in record.c:
+                continue
+            owned = select(record.c.id).where(record.c[owner_col] == entity_id)
+        else:
+            parent = tables[via]
+            if owner_col not in parent.c:
+                continue
+            owned = (
+                select(record.c.id)
+                .select_from(record.join(parent, parent.c.id == record.c.tax_engagement_id))
+                .where(parent.c[owner_col] == entity_id)
+            )
+        hit = connection.scalar(
+            select(record_assignments.c.id).where(
+                record_assignments.c.user_id == principal.user_id,
+                record_assignments.c.entity_type == assignment_type,
+                record_assignments.c.entity_id.in_(owned),
+                _active(record_assignments),
+            ).limit(1)
+        )
+        if hit is not None:
+            return True
+    return False
+
+
 def record_in_scope(principal, entity_type, entity_id, *, write=False, connection=None):
-    """Canonical record-scope check. Delegates to :func:`has_record_scope`."""
+    """Canonical record-scope check. Delegates to :func:`has_record_scope`.
+
+    A direct assignment (or a ``record.*_all`` bypass) answers first and is unchanged.
+    Only when that says no, and only for a READ of a person/household, does the
+    work-derived path below apply — see ``_WORK_ANCHORS``.
+    """
     if entity_id is None:
         return False
+
+    def _check(conn):
+        if has_record_scope(conn, principal, entity_type, entity_id,
+                            record_assignments=record_assignments, write=write):
+            return True
+        if write:
+            return False
+        return _work_derived_scope(conn, principal, entity_type, entity_id)
+
     if connection is not None:
-        return has_record_scope(
-            connection, principal, entity_type, entity_id,
-            record_assignments=record_assignments, write=write,
-        )
+        return _check(connection)
     with engine.connect() as conn:
-        return has_record_scope(
-            conn, principal, entity_type, entity_id,
-            record_assignments=record_assignments, write=write,
-        )
+        return _check(conn)
 
 
 def organization_in_scope(principal, organization_id, *, write=False, connection=None):
