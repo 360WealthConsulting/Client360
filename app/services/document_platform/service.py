@@ -106,6 +106,80 @@ def _scope_clause(principal, c):
     return or_(*conds)
 
 
+def visible_documents_clause(principal, c):
+    """The record-scope restriction for ``principal``, or None for firm-wide readers.
+
+    The public name for ``_scope_clause``. Consumers that build their own document query (the MCP
+    adapter re-checks its search hits this way) must reuse THIS boundary rather than reconstruct it,
+    so there is exactly one definition of which documents a principal may see.
+    """
+    return _scope_clause(principal, c)
+
+
+def client_anchor_clause(c, *, person_id=None, household_id=None):
+    """Restrict to the documents of ONE client — the person/household union.
+
+    "A client's documents" is not one column. A person's paperwork is anchored three ways: directly
+    on the person, on the household they belong to (a joint return, a family trust deed), and via an
+    explicit ``document_relationships`` link. Asking for a person and getting only ``person_id``
+    matches is the bug this exists to prevent — it silently hides the joint return from whoever asks
+    about either spouse.
+
+    Symmetric by design:
+      person_id     -> that person + their household + every relationship link to either
+      household_id  -> that household + all its member people + every relationship link to any
+
+    Returns a SQLAlchemy clause, or None when neither anchor is given. This is a CONTENT filter and
+    carries no authority of its own: callers must still AND it with ``_scope_clause``, which is what
+    decides whether the caller may see any of it.
+    """
+    if person_id is None and household_id is None:
+        return None
+    person_ids, household_ids = set(), set()
+    if person_id is not None:
+        person_ids.add(int(person_id))
+        hh = c.scalar(select(people.c.household_id).where(people.c.id == int(person_id)))
+        if hh:
+            household_ids.add(hh)
+    if household_id is not None:
+        household_ids.add(int(household_id))
+        person_ids |= set(c.scalars(
+            select(people.c.id).where(people.c.household_id == int(household_id))))
+    conds = []
+    if person_ids:
+        conds.append(documents.c.person_id.in_(tuple(person_ids)))
+    if household_ids:
+        conds.append(documents.c.household_id.in_(tuple(household_ids)))
+    rel_conds = []
+    if person_ids:
+        rel_conds.append(and_(document_relationships.c.entity_type == "person",
+                              document_relationships.c.entity_id.in_(tuple(person_ids))))
+    if household_ids:
+        rel_conds.append(and_(document_relationships.c.entity_type == "household",
+                              document_relationships.c.entity_id.in_(tuple(household_ids))))
+    if rel_conds:
+        conds.append(documents.c.id.in_(
+            select(document_relationships.c.document_id).where(or_(*rel_conds))))
+    return or_(*conds) if conds else None
+
+
+def tax_year_clause(tax_year):
+    """Match a document's tax year, which lives in the ``tags`` JSONB under ``tax_year`` or ``year``.
+
+    Both keys are read because the ingestion pipelines write both and the Documents tab already
+    reads both (``client360.sections.enrich_documents``); honouring only one would drop rows the UI
+    shows. ``tags`` is JSONB that is sometimes an object and sometimes an array — Postgres' ``->>``
+    yields NULL on an array rather than erroring, so this is safe on every row shape.
+    """
+    if tax_year is None:
+        return None
+    value = str(tax_year).strip()
+    if not value:
+        return None
+    return or_(documents.c.tags["tax_year"].astext == value,
+               documents.c.tags["year"].astext == value)
+
+
 # --- CRUD --------------------------------------------------------------------
 
 def create_document(principal, *, original_name, actor_user_id, person_id=None, household_id=None,
@@ -172,10 +246,32 @@ def get_document(principal, document_id: int) -> dict | None:
 
 
 def list_documents(principal, *, classification=None, status=None, folder_id=None, search=None,
-                   page=1, page_size=50) -> dict:
-    """Scoped, paginated document list. Soft-deleted documents are excluded through the canonical
-    ``lifecycle.active_documents_clause`` and cannot be re-included by any argument — passing
-    ``status="deleted"`` yields an empty page rather than the deleted rows."""
+                   person_id=None, household_id=None, subcategory=None, tax_year=None,
+                   category_any=None, name_any=None, page=1, page_size=50) -> dict:
+    """Scoped, paginated document list.
+
+    Soft-deleted documents are excluded through the canonical ``lifecycle.active_documents_clause``
+    and cannot be re-included by any argument — passing ``status="deleted"`` yields an empty page
+    rather than the deleted rows, for the MCP adapter's filters below exactly as for every other
+    caller.
+
+    ``person_id`` / ``household_id`` narrow to one client's person+household union
+    (``client_anchor_clause``); ``tax_year``, ``subcategory`` and ``category_any`` narrow within
+    that. All are optional and additive — omitting them reproduces the pre-existing library
+    behaviour exactly.
+
+    ``category_any`` matches EITHER ``classification`` or the older free-text ``category`` column,
+    unlike ``classification`` which matches only the former. Documents carry a category in one column
+    or the other depending on when and by which pipeline they were written, so a consumer that
+    displays "category" as ``classification or category`` — the Documents tab does, and so does the
+    MCP adapter — needs a filter that agrees with what it shows. Filtering on ``classification``
+    alone would silently omit legacy rows the same caller can see listed.
+
+    ``name_any`` is the same principle for names: it matches ``display_name`` OR ``original_name``,
+    where ``search`` matches only the latter. A caller that shows the canonical display name (again,
+    the Documents tab and the MCP adapter) must be able to filter by the name it just showed —
+    otherwise searching for a document by the label on screen finds nothing.
+    """
     page = max(1, int(page or 1))
     page_size = min(200, max(1, int(page_size or 50)))
     with engine.connect() as c:
@@ -191,6 +287,21 @@ def list_documents(principal, *, classification=None, status=None, folder_id=Non
             conds.append(documents.c.folder_id == folder_id)
         if search:
             conds.append(documents.c.original_name.ilike(f"%{search.strip()}%"))
+        anchor = client_anchor_clause(c, person_id=person_id, household_id=household_id)
+        if anchor is not None:
+            conds.append(anchor)
+        if subcategory:
+            conds.append(documents.c.subcategory == subcategory)
+        if category_any:
+            conds.append(or_(documents.c.classification == category_any,
+                             documents.c.category == category_any))
+        if name_any:
+            like = f"%{str(name_any).strip()}%"
+            conds.append(or_(documents.c.display_name.ilike(like),
+                             documents.c.original_name.ilike(like)))
+        year_clause = tax_year_clause(tax_year)
+        if year_clause is not None:
+            conds.append(year_clause)
         where = and_(*conds)
         total = c.scalar(select(func.count()).select_from(documents).where(where))
         rows = [dict(r) for r in c.execute(

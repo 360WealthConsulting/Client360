@@ -34,7 +34,14 @@ PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/readiness", "/auth/login"
     "/api/v1/portal/auth/invitations/accept", "/api/v1/portal/auth/password-reset/request",
     "/api/v1/portal/auth/password-reset/consume", "/api/portal/login",
     # Client email one-time-code sign-in: reached BEFORE a portal session exists.
-    "/portal/activate", "/portal/verify", "/portal/verify/resend"})
+    "/portal/activate", "/portal/verify", "/portal/verify/resend",
+    # Read-only MCP interface for assistant clients (app/routes/mcp.py). Machine callers authenticate
+    # with an ``Authorization: Bearer`` MCP token, not a staff session cookie, so the session
+    # middleware must not intercept them — the same arrangement the SharePoint webhook above uses.
+    # "Public" here means "no session cookie required": the route itself authenticates every request
+    # (app.mcp.auth.authenticate) and denies by default, and the endpoint 404s entirely unless
+    # CLIENT360_MCP_ENABLED is set. Honouring no ambient credential, it is not CSRF-reachable.
+    "/mcp"})
 RULES = (
     # Approval / review decisions use dedicated segregation-of-duty capabilities
     # (work.approve, tax.review). These carve-outs must precede the generic

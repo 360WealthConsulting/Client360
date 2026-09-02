@@ -46,6 +46,11 @@ vault_document_versions = metadata.tables["vault_document_versions"]
 vault_document_links = metadata.tables["vault_document_links"]
 vault_document_audit_events = metadata.tables["vault_document_audit_events"]
 
+# ChatGPT/MCP read-only interface (migration mcp01). Tolerant bind like the MDM-1 tables above: an
+# environment that has not applied mcp01 yet imports cleanly, and app/mcp/tokens.py checks for None
+# and fails CLOSED (every MCP request is denied) rather than KeyError-ing at import.
+mcp_access_tokens = metadata.tables.get("mcp_access_tokens")
+
 microsoft_drives = metadata.tables["microsoft_drives"]
 microsoft_documents = metadata.tables["microsoft_documents"]
 microsoft_document_matching_rules = metadata.tables[

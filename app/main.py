@@ -73,6 +73,7 @@ from app.routes.knowledge_management import router as knowledge_management_route
 from app.routes.lead_import import router as lead_import_router
 from app.routes.linkage_review import router as linkage_review_router
 from app.routes.matches import router as matches_router
+from app.routes.mcp import router as mcp_router
 from app.routes.microsoft365 import router as microsoft365_router
 from app.routes.microsoft365_calendar import (
     router as microsoft365_calendar_router,
@@ -239,6 +240,10 @@ app.include_router(insurance_router)
 app.include_router(search_router)
 app.include_router(source_router)
 app.include_router(matches_router)
+# Read-only MCP interface for assistant clients. Mounted unconditionally so the route exists to be
+# tested, but every request 404s unless CLIENT360_MCP_ENABLED is set and 401s without a valid MCP
+# bearer token — mounting it grants nothing on its own. See docs/mcp/README.md.
+app.include_router(mcp_router)
 app.include_router(identity_review_router)
 app.include_router(linkage_review_router)
 app.include_router(people_router)
