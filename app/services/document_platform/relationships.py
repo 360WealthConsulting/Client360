@@ -79,7 +79,11 @@ def documents_for_entity(principal, entity_type: str, entity_id: int, *, limit=1
         if not conds:
             return []
         from sqlalchemy import or_
+        # Soft-delete is marked by BOTH ``status='deleted'`` and ``deleted_at`` (document_platform
+        # .service.soft_delete writes them together; restore clears both). Checking only ``status``
+        # leaks rows where one marker was written without the other, so both are required here.
         rows = c.execute(select(documents).where(and_(
-            or_(*conds), documents.c.status != "deleted")).order_by(documents.c.id.desc())
+            or_(*conds), documents.c.status != "deleted", documents.c.deleted_at.is_(None)))
+            .order_by(documents.c.id.desc())
             .limit(limit)).mappings().all()
     return [dict(r) for r in rows]

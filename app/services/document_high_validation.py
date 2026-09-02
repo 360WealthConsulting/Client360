@@ -18,6 +18,8 @@ Contradiction classes (each excludes the document from bulk eligibility):
   household_person_conflict    a person is proposed but a household (2+ co-members) is also present (or vice-versa)
   organization_person_conflict a person and a canonical business both appear (or vice-versa)
   folder_identity_conflict     the source folder confidently names a DIFFERENT canonical person
+  weak_shared_evidence_only    the ONLY evidence is a phone and/or address/ZIP match — attributes the
+                               whole client base shares with the firm, so they cannot identify an owner
 """
 from __future__ import annotations
 
@@ -42,8 +44,26 @@ from app.services.document_owner_proposal import (
 CONTRADICTION_CLASSES = (
     "placeholder_candidate", "foreign_strong_identifier", "multiple_strong_identities",
     "multiple_named_identities", "household_person_conflict", "organization_person_conflict",
-    "folder_identity_conflict",
+    "folder_identity_conflict", "weak_shared_evidence_only",
 )
+
+#: Evidence classes that IDENTIFY an owner on their own. Everything outside this set is
+#: corroboration: it can strengthen an identification that another signal already made, but it can
+#: never be the whole basis for one.
+IDENTIFYING_EVIDENCE_CLASSES = frozenset({"name", "email", "business_name", "household_members",
+                                          "label"})
+
+#: Evidence classes that are FIRM-LEVEL in practice and therefore cannot identify an owner:
+#:
+#: * ``phone``   — the production audit found 2,157 documents proposed at HIGH to a single person
+#:                 whose recorded number is the firm's own switchboard. It appears on the firm's
+#:                 letterhead, so every scanned document carrying that letterhead matched it.
+#: * ``address`` — the firm's address (and its ZIP) likewise appears on letterhead and correspondence,
+#:                 and clients cluster in a handful of local ZIPs.
+#:
+#: These stay fully available as CORROBORATION and remain visible in the proposal's evidence list;
+#: they simply cannot carry an automatic write by themselves.
+WEAK_SHARED_EVIDENCE_CLASSES = frozenset({"phone", "address"})
 
 
 def _unassigned_ids(conn, limit=None):
@@ -166,12 +186,31 @@ def _evidence_classes(evidence):
     return sorted(classes)
 
 
+def has_only_weak_shared_evidence(proposal) -> bool:
+    """True when the proposal's ONLY positive evidence is phone and/or address/ZIP.
+
+    A phone number or a ZIP shared with the firm identifies the FIRM, not the client: the production
+    audit traced 2,157 HIGH proposals to one person because the firm's switchboard number is recorded
+    on their record and printed on every letterhead. Such a proposal may still be reviewed and
+    confirmed by a person — it just may never be written automatically.
+    """
+    classes = set(_evidence_classes(proposal.get("evidence") or []))
+    if not classes:
+        return True                                   # no positive evidence at all is not identification
+    return not (classes & IDENTIFYING_EVIDENCE_CLASSES)
+
+
 def _contradictions(proposal, text, folder, idx):
     ptype, pid = proposal.get("proposed_entity_type"), proposal.get("proposed_entity_id")
     sig, households, orgs = _doc_signals(text, idx)
     strong_pids = {p for p, s in sig.items() if s & {"email", "phone"}}
     named_pids = {p for p, s in sig.items() if "name" in s}
     out = []
+
+    # Applies to every proposed entity type: evidence that only the firm's own phone/address supports
+    # is not an identification, whoever it points at.
+    if has_only_weak_shared_evidence(proposal):
+        out.append("weak_shared_evidence_only")
 
     if ptype == "person":
         info = idx["pid"].get(pid, {})

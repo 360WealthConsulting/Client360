@@ -233,18 +233,27 @@ def enrich_documents(rows):
     from collections import Counter
 
     from app.services.document_naming import document_display_name
+    from app.services.document_tax_year import infer_tax_year, source_path_for
     sha_counts = Counter(r.get("sha256") for r in rows if r.get("sha256"))
     docs = []
     for r in rows:
         tags = r.get("tags") or {}
         sha = r.get("sha256")
+        # Tax year: the recorded tag when it exists, otherwise DERIVED read-only from the filename and
+        # the source folder path (document_tax_year). Nothing is written — the row carries
+        # ``tax_year_inferred`` so the UI can label a derived year as derived.
+        year = infer_tax_year(r)
         docs.append({
             # Canonical display_name when set, else the original filename (document_naming).
             "id": r["id"], "name": document_display_name(r) or f"Document {r['id']}",
             "original_name": r.get("original_name"),
             "document_type": tags.get("document_type") or r.get("subcategory"),
             "category": r.get("category") or tags.get("category"),
-            "tax_year": tags.get("tax_year") or tags.get("year"),
+            "tax_year": (tags.get("tax_year") or tags.get("year")
+                         or (year.year if year.is_proposed else None)),
+            "tax_year_inferred": not (tags.get("tax_year") or tags.get("year")) and year.is_proposed,
+            "tax_year_confidence": year.confidence,
+            "tax_year_evidence": year.evidence,
             "owner_label": _owner_label(r), "provenance": r.get("provenance"),
             "person_id": r.get("person_id"), "household_id": r.get("household_id"),
             "organization_id": r.get("organization_id"),
@@ -256,8 +265,14 @@ def enrich_documents(rows):
             "duplicate_count": sha_counts.get(sha, 0) if sha else 0,
             "version_count": r.get("current_version") or 1,
             "created_at": r.get("created_at"), "updated_at": r.get("updated_at"),
+            # The date staff care about is the document's own date at the source, not the row's
+            # ingest/update time (every migrated document shares one ingest date, which reads as
+            # meaningless in a Modified column). Both are captured at ingestion; prefer the source.
+            "source_modified_at": tags.get("source_modified") or tags.get("file_modified"),
+            "source_created_at": tags.get("source_created") or tags.get("file_created"),
             "taxdome_folder": tags.get("taxdome_folder"),
             "source_path": tags.get("source_path"),
+            "source_folder": source_path_for(r).rsplit("/", 1)[0] if "/" in source_path_for(r) else None,
             "sha256": sha,
             "source_kind": "canonical",
             "download_url": f"/documents/{r['id']}/download",
@@ -275,6 +290,10 @@ def _vault_row(d):
         "id": d["id"], "name": d.get("display_name") or f"Vault document {d['id']}",
         "document_type": d.get("document_type"), "category": d.get("category"),
         "tax_year": created.year if created else None,
+        "tax_year_inferred": False, "tax_year_confidence": "recorded", "tax_year_evidence": [],
+        "source_modified_at": None, "source_created_at": None, "source_folder": None,
+        "version_family_key": None, "version_family_size": 1, "is_current_version": True,
+        "superseded_by": None, "needs_version_review": False, "version_review_reason": None,
         "owner_label": "Client Vault", "provenance": "vault",
         "person_id": None, "household_id": None, "organization_id": None,
         "source": "Vault", "source_kind": "vault",
@@ -396,6 +415,10 @@ def _attach_classification(docs):
         else:
             d["classified_type"] = None
             d["classification_confidence"] = None
+        # Last resort for the Type column and its filter: the stored category. Without this a row
+        # with a category but no classified type renders as "—" and is unreachable by the type facet.
+        if not d.get("document_type") and d.get("category"):
+            d["document_type"] = str(d["category"]).replace("_", " ")
         d["fact_count"] = n_facts
         d["extraction_status"] = ("extracted" if n_facts else ("classified" if c else "pending"))
         # Plain-language extraction summary for staff.
@@ -420,6 +443,94 @@ def _attach_source_refs(docs):
     return docs
 
 
+def _attach_version_family(docs):
+    """Group canonical rows that are the SAME source file re-ingested, so successive versions do not
+    read as unexplained duplicates.
+
+    The grouping key is the source system's own item identity (``source_external_id`` — the SharePoint
+    item id), never the filename. That distinction matters: two different files legitimately share a
+    name (``Signed 8879s.pdf`` exists once per tax year, under different SharePoint items), and
+    collapsing those would hide a real document. Only rows the SOURCE says are the same file group.
+
+    The newest row in a family is current; the rest are marked superseded and are collapsed behind a
+    disclosure in the UI rather than hidden — history stays reachable. Nothing is written or deleted;
+    this is presentation only, and ingestion semantics are untouched.
+    """
+    families: dict[tuple, list[dict]] = {}
+    for d in docs:
+        key = None
+        for src in (d.get("sources") or []):
+            if src.get("source_external_id"):
+                key = (src["source_system"], src["source_external_id"])
+                break
+        d["version_family_key"] = key
+        if key is not None:
+            families.setdefault(key, []).append(d)
+
+    def _recency(d):
+        return (str(d.get("source_modified_at") or ""), str(d.get("created_at") or ""), d.get("id") or 0)
+
+    for d in docs:                      # a row with no source identity stands alone
+        d.setdefault("version_family_size", 1)
+        d.setdefault("is_current_version", True)
+        d.setdefault("superseded_by", None)
+    for members in families.values():
+        if len(members) < 2:
+            continue
+        ordered = sorted(members, key=_recency, reverse=True)
+        current = ordered[0]
+        for rank, d in enumerate(ordered):
+            d["version_family_size"] = len(members)
+            d["is_current_version"] = d is current
+            d["superseded_by"] = None if d is current else current["id"]
+            d["version_ordinal"] = len(members) - rank      # newest gets the highest ordinal
+
+    # Look-alikes that source identity CANNOT resolve: same filename, but different source items (or
+    # no source identity at all). These are NOT grouped and NOT deduplicated — two files may
+    # legitimately share a name ("Signed 8879s.pdf" exists once per tax year), and a differing size or
+    # hash proves they are different documents. They are flagged so the presentation issue reaches a
+    # person instead of being silently resolved by a filename rule.
+    by_name: dict[str, list[dict]] = {}
+    for d in docs:
+        name = (d.get("original_name") or "").strip().lower()
+        if name:
+            by_name.setdefault(name, []).append(d)
+    for name, members in by_name.items():
+        if len(members) < 2 or len({id(m) for m in members}) < 2:
+            continue
+        if len({m.get("version_family_key") for m in members}) == 1 and \
+                members[0].get("version_family_key") is not None:
+            continue                       # already one resolved family — nothing to review
+        sizes = {m.get("size_bytes") for m in members}
+        shas = {m.get("sha256") for m in members if m.get("sha256")}
+        if len(shas) > 1 or len(sizes) > 1:
+            reason = "same filename, different content — both retained"
+        else:
+            reason = "same filename and size, no source identity to tell them apart"
+        for m in members:
+            m["needs_version_review"] = True
+            m["version_review_reason"] = reason
+    for d in docs:
+        d.setdefault("needs_version_review", False)
+        d.setdefault("version_review_reason", None)
+
+    # Keep a family together: its earlier versions follow the current row, so expanding the family
+    # reveals them in place instead of somewhere else in the list.
+    grouped, emitted = [], set()
+    for d in docs:
+        if id(d) in emitted:
+            continue
+        grouped.append(d)
+        emitted.add(id(d))
+        key = d.get("version_family_key")
+        if key is not None and d.get("is_current_version") and d.get("version_family_size", 1) > 1:
+            for member in sorted(families.get(key, []), key=_recency, reverse=True):
+                if id(member) not in emitted:
+                    grouped.append(member)
+                    emitted.add(id(member))
+    return grouped
+
+
 def documents(principal, ctx):
     """The client's unified canonical document list — the Documents tab's operating center. One row per
     canonical document (ADR-072), scoped to this client's ownership (ADR-073). Each row carries its
@@ -427,7 +538,20 @@ def documents(principal, ctx):
     from app.services.document_platform.relationships import documents_for_entity
     et, eid = ctx["entity_type"], ctx["entity_id"]
     rows = documents_for_entity(principal, et, eid, limit=200)
-    canonical = _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows))))
+    # A person's Documents tab must ALSO show their household's documents. Joint filings — a couple's
+    # 1040, the household's estate and insurance papers — are anchored at the household, so scoping
+    # this tab to ``person_id`` alone leaves it empty for exactly the clients who have the most
+    # documents. This mirrors the rule the person documents page has always applied
+    # (services.documents.get_person_documents): person OR household, deduped by document id.
+    if et == "person" and ctx.get("household_id"):
+        seen = {r["id"] for r in rows}
+        for r in documents_for_entity(principal, "household", ctx["household_id"], limit=200):
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                r["provenance"] = "household"
+                rows.append(r)
+    canonical = _attach_version_family(
+        _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows)))))
     # Merge the client's linked Vault documents into the ONE Documents tab (Vault permissions/audit stay
     # in the Vault service; canonical rows keep their pipeline). Person tab = vault links to this person.
     vault = _vault_rows(principal, person_ids=[eid] if et == "person" else (),

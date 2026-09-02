@@ -190,6 +190,21 @@ def _queue_image_normalization(document_id: int, original_name: str, content_typ
             "Could not queue image normalization for document %s", document_id)
 
 
+#: A document is VISIBLE to a client-facing surface unless it has been soft-deleted.
+#:
+#: The canonical delete semantics live in ``document_platform.service``: :func:`soft_delete` sets
+#: ``status='deleted'`` AND stamps ``deleted_at``; :func:`restore` clears both. ``archived`` is a
+#: SEPARATE, older lifecycle flag (a document can be archived without being deleted), so it stays an
+#: independent filter rather than being folded into this one.
+#:
+#: Both columns are checked, not just ``status``. They are written together by the service, but a
+#: document that carries either marker must never render on a client surface, so the stricter
+#: predicate is the safe one: any row that looks deleted by either measure is suppressed.
+def _not_deleted():
+    """SQL predicate: the document has not been soft-deleted."""
+    return and_(documents.c.status != "deleted", documents.c.deleted_at.is_(None))
+
+
 def get_person_documents(person_id: int):
     with engine.connect() as connection:
         # Include the person's own documents AND documents linked to their household, so household
@@ -203,7 +218,7 @@ def get_person_documents(person_id: int):
         rows = connection.execute(
             select(documents)
             .where(
-                and_(scope, documents.c.archived.is_(False)),
+                and_(scope, documents.c.archived.is_(False), _not_deleted()),
             )
             .order_by(
                 documents.c.created_at.desc(),
@@ -211,23 +226,44 @@ def get_person_documents(person_id: int):
             )
         ).mappings().all()
 
-    return [
-        {
-            **dict(row),
-            "name": row["original_name"],
+    # ``name`` is what the page SHOWS: the canonical display name when one is set and safe, else the
+    # original filename (document_naming.document_display_name — the single naming layer, not a second
+    # one). ``original_name`` stays on every row, so provenance is still available to the detail view.
+    from app.services.document_naming import document_display_name
+    from app.services.document_tax_year import infer_tax_year
+
+    out = []
+    for row in rows:
+        record = dict(row)
+        year = infer_tax_year(record)
+        out.append({
+            **record,
+            "name": document_display_name(record) or row["original_name"],
             "path": row["storage_path"],
             "size": row["size_bytes"],
-        }
-        for row in rows
-    ]
+            # Derived for display only — never written. See document_tax_year.
+            "tax_year": year.year if year.is_proposed else None,
+            "tax_year_inferred": year.is_proposed,
+        })
+    return out
 
 
-def get_document(document_id: int):
+def get_document(document_id: int, *, include_deleted: bool = False):
+    """One document row, or None.
+
+    Soft-deleted documents are suppressed by DEFAULT so that every delivery entry point (download,
+    spreadsheet preview, image preview) fails closed: a document the firm has deleted must not be
+    retrievable from a client-facing URL just because the id is still guessable.
+
+    ``include_deleted=True`` is the explicit opt-in for an admin/recovery surface that intends to
+    show or restore deleted documents. It must never be set from a client-facing route.
+    """
+    condition = documents.c.id == document_id
+    if not include_deleted:
+        condition = and_(condition, _not_deleted())
     with engine.connect() as connection:
         return connection.execute(
-            select(documents).where(
-                documents.c.id == document_id
-            )
+            select(documents).where(condition)
         ).mappings().one_or_none()
 
 

@@ -14,6 +14,10 @@ CLASSIFIER_VERSION = "rules-v1"
 # The fixed document vocabulary (Phase 6A spec).
 DOC_TYPES = (
     "1040", "1041", "1065", "1120", "1120S", "W-2", "1099", "1095-A", "8879", "K-1",
+    # Added alongside the originals. Every one already had a display label in
+    # ``document_naming.DISPLAY_LABELS``, so the classifier was the narrower half of an existing
+    # vocabulary — this closes the gap rather than inventing categories.
+    "SSA-1099", "1098", "1098-E", "1098-T", "1095-B", "1095-C", "5498", "2553", "8824",
     "brokerage_statement", "bank_statement", "irs_notice", "state_notice",
     "drivers_license", "passport", "organizer", "engagement_letter", "insurance_policy",
     "benefits_enrollment", "trust_document", "estate_document", "financial_statement", "unknown",
@@ -29,13 +33,28 @@ _RULES: list[tuple[str, list[str], float]] = [
     ("1120", [r"\bform\s*1120\b", r"u\.?s\.? corporation income tax return"], 0.9),
     ("1065", [r"\bform\s*1065\b", r"u\.?s\.? return of partnership income"], 0.9),
     ("1041", [r"\bform\s*1041\b", r"u\.?s\.? income tax return for estates and trusts"], 0.9),
-    ("K-1", [r"\bschedule\s*k-?1\b", r"\bk-1\b", r"partner'?s share of income"], 0.88),
+    ("K-1", [r"\bschedule\s*k-?1\b", r"\bk-?1\b", r"partner'?s share of income"], 0.88),
     ("1040", [r"\bform\s*1040\b", r"\b1040\b", r"u\.?s\.? individual income tax return"], 0.9),
     ("W-2", [r"\bw-?2\b", r"wage and tax statement"], 0.9),
     ("1095-A", [r"\b1095-?a\b", r"health insurance marketplace statement"], 0.9),
-    ("8879", [r"\b8879\b", r"e-?file signature authorization", r"irs e-file signature"], 0.88),
-    ("1099", [r"\b1099-?(?:int|div|b|misc|nec|r|g|k)?\b", r"\bform\s*1099\b"], 0.85),
-    ("irs_notice", [r"internal revenue service", r"\birs\b.*notice", r"notice\s*(?:cp|ltr)\s*\d+"], 0.8),
+    ("8879", [r"\b8879[-\s_]?s?\b", r"e-?file signature authorization",
+              r"irs e-file signature"], 0.88),
+    # SSA-1099 must precede the generic 1099 rule, or "SSA-1099" classifies as a plain 1099.
+    ("SSA-1099", [r"\bssa-?1099\b", r"social security benefit statement"], 0.9),
+    ("1099", [r"\b1099-?(?:int|div|b|misc|nec|r|g|k|s|q|sa|oid|patr)?\b", r"\bform\s*1099\b"], 0.85),
+    # -E and -T precede bare 1098 for the same reason.
+    ("1098-E", [r"\b1098-?e\b", r"student loan interest statement"], 0.9),
+    ("1098-T", [r"\b1098-?t\b", r"tuition statement"], 0.9),
+    ("1098", [r"\b1098\b", r"mortgage interest statement"], 0.88),
+    ("1095-B", [r"\b1095-?b\b", r"health coverage statement"], 0.9),
+    ("1095-C", [r"\b1095-?c\b", r"employer-provided health insurance offer"], 0.9),
+    ("5498", [r"\b5498(?:-sa)?\b", r"ira contribution information"], 0.9),
+    ("2553", [r"\b2553\b", r"election by a small business corporation"], 0.9),
+    ("8824", [r"\b8824\b", r"like-kind exchange"], 0.9),
+    ("irs_notice", [r"internal revenue service", r"\birs\b.*notice",
+                    r"notice\s*(?:cp|ltr)\s*\d+",
+                    # A bare CP/LTR notice number is how these commonly arrive as a filename.
+                    r"\b(?:cp|ltr)-?\d{2,4}\b"], 0.8),
     ("state_notice", [r"(?:department|dept)\.? of revenue", r"franchise tax board",
                       r"state.*tax.*notice"], 0.75),
     ("engagement_letter", [r"engagement letter", r"terms of engagement"], 0.85),

@@ -272,6 +272,7 @@ def _documents(principal, ctx):
         _attach_classification,
         _attach_ocr,
         _attach_source_refs,
+        _attach_version_family,
         _merge_documents,
         _vault_rows,
         documents_view_model,
@@ -286,7 +287,8 @@ def _documents(principal, ctx):
             seen.add(d["id"])
             d["provenance"] = et
             rows.append(d)
-    canonical = _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows))))
+    canonical = _attach_version_family(
+        _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows)))))
     # Merge Vault documents linked to the household or any current member (Vault permissions/audit stay in
     # the Vault service). Deduped against canonical by checksum where deterministically possible.
     vault = _vault_rows(principal, person_ids=ctx["member_ids"], household_id=ctx["household_id"])

@@ -466,25 +466,40 @@
       {# Every filterable value is mirrored into one data attribute so the client-side filter never
          has to parse rendered markup. #}
       <tr data-doc-row
+          {% if not d.is_current_version %}data-superseded="1" hidden{% endif %}
+          {% if d.version_family_size and d.version_family_size > 1 %}data-family="{{ d.superseded_by or d.id }}"{% endif %}
           data-name="{{ d.name|lower }}"
           data-type="{{ d.document_type or '' }}"
           data-year="{{ d.tax_year or '' }}"
           data-source="{{ (d.source_systems or []) | join(' ') }}"
-          data-haystack="{{ (d.name ~ ' ' ~ (d.document_type or '') ~ ' ' ~ (d.tax_year or '') ~ ' ' ~ ((d.source_systems or []) | join(' ')) ~ ' ' ~ (d.owner_label or ''))|lower }}">
+          data-haystack="{{ (d.name ~ ' ' ~ (d.original_name or '') ~ ' ' ~ (d.document_type or '') ~ ' ' ~ (d.category or '') ~ ' ' ~ (d.tax_year or '') ~ ' ' ~ ((d.source_systems or []) | join(' ')) ~ ' ' ~ (d.owner_label or ''))|lower }}">
         <td>
           <span class="docs-name">
             <a href="{{ d.download_url }}" title="{{ d.name }}">{{ d.name }}</a>
             <span class="docs-sub">
               <span>{{ d.owner_label }}</span>
               {% if d.version_count and d.version_count > 1 %}<span class="dot" aria-hidden="true">·</span><span>v{{ d.version_count }}</span>{% endif %}
+              {% if d.version_family_size and d.version_family_size > 1 %}
+                <span class="dot" aria-hidden="true">·</span>
+                {% if d.is_current_version %}
+                  <button class="linkish" type="button" data-docs-versions="{{ d.id }}"
+                          title="This file has been re-synced from its source; earlier copies are kept">
+                    latest of {{ d.version_family_size }}</button>
+                {% else %}
+                  <span title="Superseded by document {{ d.superseded_by }}">earlier version</span>
+                {% endif %}
+              {% endif %}
               {% if d.is_duplicate %}<span class="dot" aria-hidden="true">·</span><span title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}
+              {% if d.needs_version_review %}<span class="dot" aria-hidden="true">·</span><span title="{{ d.version_review_reason }}">⚑ needs review</span>{% endif %}
             </span>
           </span>
         </td>
         <td>
           <span class="docs-typeline">
             <span class="docs-type" title="{{ d.document_type or 'Unclassified' }}">{{ d.document_type or "—" }}</span>
-            {% if d.tax_year %}<span class="docs-year">{{ d.tax_year }}</span>{% endif %}
+            {% if d.tax_year %}<span class="docs-year{{ ' docs-year-inferred' if d.tax_year_inferred else '' }}"
+                  {% if d.tax_year_inferred %}title="Tax year derived from the filename and folder ({{ d.tax_year_confidence }} confidence): {{ (d.tax_year_evidence or []) | join('; ') }}. Not yet saved to the document."{% endif %}
+                  >{{ d.tax_year }}{% if d.tax_year_inferred %}<span aria-hidden="true">*</span><span class="sr-only"> (derived, not saved)</span>{% endif %}</span>{% endif %}
           </span>
           {% if d.classification_confidence is not none or d.extraction_label %}
           <span class="docs-sub">
@@ -524,7 +539,13 @@
           </span>
         </td>
         <td>{% if d.review_status %}<span class="badge">{{ d.review_status|replace("_"," ") }}</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
-        <td class="docs-when">{{ d.updated_at.strftime("%Y-%m-%d") if d.updated_at else "—" }}</td>
+        {# The document's date AT THE SOURCE when captured, else the row's update time. Every migrated
+           document shares one ingest timestamp, which reads as meaningless in a Modified column. #}
+        <td class="docs-when">
+          {%- if d.source_modified_at %}{{ d.source_modified_at|string|truncate(10, true, "") }}
+          {%- elif d.updated_at %}{{ d.updated_at.strftime("%Y-%m-%d") }}
+          {%- else %}—{% endif -%}
+        </td>
         <td class="docs-actions">
           {# Overflow menu — a pure-CSS disclosure. The destructive action keeps its own POST form
              and confirm field exactly as before; it is simply no longer a permanent red button on

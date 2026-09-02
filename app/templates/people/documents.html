@@ -25,8 +25,9 @@
 <div class="stack">
 {% for document in documents %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:15px"><a class="rowlink" href="/documents/{{ document.id }}/download">{{ document.original_name }}</a></h3>
-    <div class="subtle">{{ document.category or "Other" }} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.created_at }} · {{ document.uploaded_by or "Unknown user" }}</div>
+    <h3 style="margin:0 0 4px; font-size:15px"><a class="rowlink" href="/documents/{{ document.id }}/download">{{ document.name }}</a></h3>
+    <div class="subtle">{{ document.category or "Other" }}{% if document.tax_year %} · {{ document.tax_year }}{% if document.tax_year_inferred %}<span title="Derived from the filename and folder; not saved">*</span>{% endif %}{% endif %} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.created_at }} · {{ document.uploaded_by or "Unknown user" }}</div>
+    {% if document.name != document.original_name %}<div class="subtle" style="font-size:12px">{{ document.original_name }}</div>{% endif %}
     {% if document.description %}<div class="mt-2">{{ document.description }}</div>{% endif %}
     <div class="row" style="margin-top:10px; gap:12px">
       <a class="btn ghost sm" href="/documents/{{ document.id }}/download">Download</a>

@@ -18,7 +18,17 @@
     var rows = Array.prototype.slice.call(table.querySelectorAll("[data-doc-row]"));
     var search = toolbar.querySelector("[data-docs-search]");
     var facets = Array.prototype.slice.call(toolbar.querySelectorAll("[data-docs-facet]"));
-    var total = rows.length;
+
+    /* Earlier versions of the same source file are collapsed under their current row. They are
+       hidden server-side too (the `hidden` attribute in the markup), so the collapse survives with
+       JavaScript off; this only adds the ability to expand a family. A superseded row still has to
+       pass the active filters to appear, so expanding never re-introduces a filtered-out row. */
+    var expanded = {};
+    function superseded(row) { return row.getAttribute("data-superseded") === "1"; }
+    function family(row) { return row.getAttribute("data-family") || ""; }
+
+    /* The count reflects what staff are looking at: current documents, not their history. */
+    var total = rows.filter(function (r) { return !superseded(r); }).length;
 
     function apply() {
       var q = (search && search.value || "").trim().toLowerCase();
@@ -35,8 +45,9 @@
           var srcs = (row.getAttribute("data-source") || "").split(" ");
           if (srcs.indexOf(want.source) === -1) { ok = false; }
         }
+        if (ok && superseded(row) && !expanded[family(row)]) { ok = false; }
         row.hidden = !ok;
-        if (ok) { shown += 1; }
+        if (ok && !superseded(row)) { shown += 1; }
       });
 
       if (count) {
@@ -50,6 +61,19 @@
 
     if (search) { search.addEventListener("input", apply); }
     facets.forEach(function (f) { f.addEventListener("change", apply); });
+
+    /* "latest of N" expands that document's earlier versions in place. */
+    Array.prototype.slice.call(root.querySelectorAll("[data-docs-versions]"))
+      .forEach(function (btn) {
+        btn.setAttribute("aria-expanded", "false");
+        btn.addEventListener("click", function () {
+          var key = btn.getAttribute("data-docs-versions");
+          expanded[key] = !expanded[key];
+          btn.setAttribute("aria-expanded", expanded[key] ? "true" : "false");
+          apply();
+        });
+      });
+
     apply();
   }
 
