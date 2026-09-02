@@ -125,6 +125,17 @@
                 {% if d.original_name and d.original_name != d.name %}
                   <span class="docrow-file" title="{{ d.original_name }}">{{ d.original_name }}</span>
                 {% endif %}
+                {# Earlier copies of the SAME source file are collapsed into this row rather than
+                   listed separately, so the row says so — a count that is not explained reads as
+                   missing documents. A look-alike that source identity could NOT resolve is the
+                   opposite case: both rows are kept, and flagged for a human to settle. #}
+                {% if d.version_family_size and d.version_family_size > 1 %}
+                  <span class="docrow-note"
+                        title="This file has been re-synced from its source; earlier copies are kept and reachable from History">latest of {{ d.version_family_size }}</span>
+                {% elif d.needs_version_review %}
+                  <span class="docrow-note docrow-note--flag"
+                        title="{{ d.version_review_reason }}">⚑ needs review</span>
+                {% endif %}
               </span>
             </span>
           </td>

@@ -169,6 +169,28 @@ def _size_label(size_bytes) -> str:
     return f"{n} B"
 
 
+def _as_datetime(value):
+    """A datetime for a value that may already be one, an ISO-8601 string, or nothing.
+
+    Always timezone-aware, because `sort_date` mixes these with database timestamps and comparing an
+    aware datetime with a naive one raises. A source timestamp that carries no offset is read as UTC,
+    which is what the ingestion writes.
+
+    Returns None for anything unparseable rather than raising: a malformed source timestamp must
+    cost the row its Date cell, never the whole screen.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
 def shape_row(row, *, member_names, household_name):
     """One document row in the shape the screen renders. Adds derived presentation fields to the
     row it was given and returns a NEW dict — the caller's row object is never mutated."""
@@ -190,17 +212,28 @@ def shape_row(row, *, member_names, household_name):
         type_basis = match.source if type_code else None
 
     # --- year: the tag when filed, else the year in the filename.
+    #
+    # ``row["tax_year"]`` is NOT proof the year was filed. The Documents-tab enrichment
+    # (client360.sections._attach_classification) already runs document_tax_year.infer_tax_year and
+    # puts its PROPOSAL in that key, flagged by ``tax_year_inferred``. Reading the key alone would
+    # present every inferred year as a recorded fact — the one thing that inference layer exists to
+    # avoid — so the flag decides, and only falls back to this module's own derivation for callers
+    # that did not enrich (the screen is also built directly from client_documents rows).
     tags = row.get("tags") if isinstance(row.get("tags"), dict) else {}
     stored_year = row.get("tax_year") or tags.get("tax_year") or tags.get("year")
     if stored_year:
-        year, year_derived = str(stored_year), False
+        year, year_derived = str(stored_year), bool(row.get("tax_year_inferred"))
     else:
         derived = extract_year(original)
         year, year_derived = (str(derived) if derived else None), derived is not None
 
     tab, tab_basis = _tab_for(row, type_code)
     kind = _file_kind(row)
-    when = row.get("updated_at") or row.get("created_at")
+    # The date staff care about is the document's date AT THE SOURCE. Every migrated document shares
+    # one ingest timestamp, so ``updated_at`` reads as meaningless in a Date column. The source date
+    # arrives from the enrichment as an ISO-8601 STRING, so it is parsed rather than assumed to be a
+    # datetime — mixing the two would raise the moment the rows are sorted by date.
+    when = _as_datetime(row.get("source_modified_at") or row.get("source_created_at"))         or row.get("updated_at") or row.get("created_at")
 
     return {
         **row,
@@ -271,6 +304,13 @@ def build(rows, *, member_names=None, household_name=None, q=None, tab="all", ye
     member_names = member_names or {}
     q = (q or "").strip().lower() or None
     tab = normalize_tab(tab)
+    # Superseded rows do not get their own line. When ONE source file has been re-synced, the
+    # enrichment (client360.sections._attach_version_family) marks the earlier copies
+    # ``is_current_version = False``; listing them beside the latest would show the same document
+    # three times and make every count wrong. Grouping is by SOURCE IDENTITY only, never by
+    # filename, so two documents that merely share a name are both current and both listed here.
+    # A row that was never enriched carries no flag and is treated as current, never dropped.
+    rows = [r for r in rows if r.get("is_current_version", True) is not False]
     shaped = [shape_row(r, member_names=member_names, household_name=household_name) for r in rows]
 
     # Tab counts are computed against every OTHER active filter, so the number on a tab is what
