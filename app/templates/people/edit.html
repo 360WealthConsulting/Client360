@@ -6,19 +6,19 @@
 {% call ui.page_head("Edit client details", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
   <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
 {% endcall %}
-<p class="subtle" style="margin-top:-6px; max-width:640px">Correct this client's contact and address details. Changes are audited and added to the timeline. Name changes are handled separately.</p>
-<form method="post" action="/people/{{ person.id }}/edit" style="max-width:640px">
+<p class="subtle u-mt--6px u-maxw-640px">Correct this client's contact and address details. Changes are audited and added to the timeline. Name changes are handled separately.</p>
+<form method="post" action="/people/{{ person.id }}/edit" class="u-maxw-640px">
   <div class="field"><label>Preferred name</label><input class="input" name="preferred_name" value="{{ person.preferred_name or '' }}"></div>
   <div class="field"><label>Email</label><input class="input" type="email" name="primary_email" value="{{ person.primary_email or '' }}"></div>
   <div class="field"><label>Phone</label><input class="input" name="primary_phone" value="{{ person.primary_phone or '' }}"></div>
   <div class="field"><label>Address line 1</label><input class="input" name="address_line_1" value="{{ person.address_line_1 or '' }}"></div>
   <div class="field"><label>Address line 2</label><input class="input" name="address_line_2" value="{{ person.address_line_2 or '' }}"></div>
-  <div class="row" style="gap:10px; flex-wrap:wrap">
+  <div class="row u-gap-10px u-wrap">
     <div class="field"><label>City</label><input class="input" name="city" value="{{ person.city or '' }}"></div>
     <div class="field"><label>State</label><input class="input" name="state" value="{{ person.state or '' }}"></div>
     <div class="field"><label>Postal code</label><input class="input" name="postal_code" value="{{ person.postal_code or '' }}"></div>
   </div>
-  <div style="margin-top:14px; display:flex; gap:10px">
+  <div class="u-mt-14px u-flex u-gap-10px">
     <button class="btn" type="submit">Save changes</button>
     <a class="btn secondary" href="/people/{{ person.id }}">Cancel</a>
   </div>

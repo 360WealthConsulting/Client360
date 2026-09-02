@@ -34,7 +34,7 @@
       {% for r in w.data.rows[:5] %}
         <div class="detail-row">
           <span>{% if r.link %}<a href="{{ r.link }}">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %}</span>
-          <strong class="subtle">{% if r.event_time %}{{ r.event_time.strftime("%-I:%M %p") }}{% elif r.relative_time %}{{ r.relative_time }}{% endif %}</strong>
+          <strong class="subtle">{% if r.event_time %}{{ r.event_time | datefmt("%-I:%M %p") }}{% elif r.relative_time %}{{ r.relative_time }}{% endif %}</strong>
         </div>
       {% endfor %}
       </div>

@@ -4,7 +4,7 @@
 {% block crumb %}Admin · Document Management · Context Review{% endblock %}
 
 {% macro row(r, likely=False) %}
-<div class="card" style="padding:10px 12px; margin-bottom:10px; background:var(--bg, #fafafa)">
+<div class="card c-p-10px-12px u-mb-10px c-bg-bg">
   <div class="detail-row">
     <span><strong>#{{ r.document_id }}</strong> ·
       <a href="{{ r.view_url }}" target="_blank" rel="noopener">{{ r.filename }}</a></span>
@@ -20,13 +20,13 @@
     <li>context evidence: {{ r.evidence }}</li>
     <li>folder mapping: {{ r.folder_mapping }}</li>
     {% if r.supporting_documents %}<li>supported by resolved documents: {{ r.supporting_documents | join(", ") }}</li>{% endif %}
-    {% if r.contradicting_evidence %}<li style="color:var(--warn, #b45309)">contradiction: {{ r.contradicting_evidence }}</li>{% endif %}
+    {% if r.contradicting_evidence %}<li class="c-fg-warn">contradiction: {{ r.contradicting_evidence }}</li>{% endif %}
   </ul>
   <form method="post" action="/admin/documents/context-review/approve" class="row tight">
     <input type="hidden" name="document_id" value="{{ r.document_id }}">
     <input type="hidden" name="entity_type" value="{{ r.proposed_owner_type }}">
     <input type="hidden" name="entity_id" value="{{ r.proposed_owner_id }}">
-    <label class="subtle row" style="gap:6px; align-items:center"><input type="checkbox" name="confirm" value="yes" required> confirm</label>
+    <label class="subtle row u-gap-6px u-items-center"><input type="checkbox" name="confirm" value="yes" required> confirm</label>
     <button class="btn {% if likely %}sm secondary{% endif %}" type="submit">Approve → {{ r.proposed_owner_name or (r.proposed_owner_type ~ " #" ~ r.proposed_owner_id) }}</button>
   </form>
 </div>
@@ -49,7 +49,7 @@
 </article>
 
 <article class="card rail-warn">
-  <div style="color:var(--warn, #b45309); font-weight:600; margin-bottom:6px">CONTEXT_LIKELY — lower confidence, explicit approval only ({{ likely_count }})</div>
+  <div class="c-fg-warn u-fw-600 u-mb-6px">CONTEXT_LIKELY — lower confidence, explicit approval only ({{ likely_count }})</div>
   {% for r in context_likely %}{{ row(r, likely=True) }}{% else %}<div class="subtle">None.</div>{% endfor %}
 </article>
 {% endblock %}

@@ -148,7 +148,7 @@
     <p class="subtle mt-0">These are advisor/client-reported planning facts recorded by this workspace. Statuses use a controlled vocabulary. This is not legal validation of any agreement.</p>
     {% if can_plan %}
     <form method="post" action="/business-owner/{{ d.person_id }}/business/{{ d.business.business_id }}/planning">
-      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px">
+      <div class="u-grid c-gtc-repeat-auto-fill-minmax-240px-1fr u-gap-12px">
         {% for field, label in [("succession_plan_status","Succession plan"), ("buy_sell_status","Buy-sell agreement"), ("continuity_plan_status","Continuity plan"), ("key_person_risk_status","Key-person risk")] %}
         <div class="field"><label for="{{ field }}">{{ label }}</label>
           <select class="input" id="{{ field }}" name="{{ field }}">

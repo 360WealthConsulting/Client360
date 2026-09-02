@@ -2,6 +2,7 @@
 {% import "components/ui.html" as ui %}
 {% block title %}Firm Dashboard | 360Plus{% endblock %}
 {% block crumb %}Firm dashboard{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/directory.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
 {{ ui.page_head("Firm dashboard", eyebrow="Overview", desc="360 Wealth Consulting operating overview.") }}
 
@@ -20,12 +21,40 @@
     {% if show_firm_metrics %}
     <section class="card">
       {{ ui.card_head("Book of business") }}
+      {# Two different kinds of zero live in this grid, and they are treated differently.
+
+         A zero AGGREGATE (no cash waiting, no largest household/position) carries no
+         information — it is either genuinely nothing or simply unmeasured — so the tile is
+         omitted rather than printed as "$0" or an em-dash.
+
+         A zero EXCEPTION COUNT is the opposite: "Missing beneficiaries 0" is a real
+         operational all-clear and staff need to see it was checked. Those tiles stay, but
+         render as a CLEAR state rather than a big mono zero, so the grid never reads as a
+         row of nothing. #}
       <div class="stat-grid compact">
-        {{ ui.stat("Cash waiting to invest", "${:,.0f}".format(dashboard.cash_waiting or 0)) }}
-        {{ ui.stat("Largest household", dashboard.largest_household.name if dashboard.largest_household else "—") }}
-        {{ ui.stat("Largest position", dashboard.largest_position.symbol if dashboard.largest_position else "—") }}
-        {{ ui.stat("Missing beneficiaries", dashboard.missing_beneficiaries, delta="needs review" if dashboard.missing_beneficiaries else "clear", trend="down" if dashboard.missing_beneficiaries else "up") }}
-        {{ ui.stat("Accounts without reviews", dashboard.accounts_without_reviews, delta="follow up" if dashboard.accounts_without_reviews else "clear", trend="down" if dashboard.accounts_without_reviews else "up") }}
+        {% if dashboard.cash_waiting %}
+          {{ ui.stat("Cash waiting to invest", "${:,.0f}".format(dashboard.cash_waiting)) }}
+        {% endif %}
+        {% if dashboard.largest_household %}
+          {{ ui.stat("Largest household", dashboard.largest_household.name) }}
+        {% endif %}
+        {% if dashboard.largest_position %}
+          {{ ui.stat("Largest position", dashboard.largest_position.symbol) }}
+        {% endif %}
+
+        {% for label, count, action in [
+             ("Missing beneficiaries", dashboard.missing_beneficiaries, "needs review"),
+             ("Accounts without reviews", dashboard.accounts_without_reviews, "follow up")] %}
+          {% if count %}
+            <div class="stat"><div class="k">{{ label }}</div>
+              <div class="v">{{ "{:,}".format(count) }}</div>
+              <div class="delta down">{{ action }}</div></div>
+          {% else %}
+            <div class="stat is-clear"><div class="k">{{ label }}</div>
+              <div class="v">Clear</div>
+              <div class="delta up">none outstanding</div></div>
+          {% endif %}
+        {% endfor %}
       </div>
     </section>
     {% endif %}
@@ -59,13 +88,23 @@
 
   </div>
 
+  {# "Canonical people" is the data model's word for a deduplicated person record, not a
+     word staff use — the People directory already dropped it. Accounts and Open tasks are
+     omitted at zero: an empty count here is the absence of a record, and the previous
+     half-measure (a `muted-v` grey zero) still spent a row saying nothing. People and
+     Households always render, because on a firm dashboard those two ARE the book. #}
+  {% set records = [("People", dashboard.people or 0, true),
+                    ("Households", dashboard.households or 0, true),
+                    ("Accounts", dashboard.accounts or 0, false),
+                    ("Open tasks", dashboard.open_tasks or 0, false)] %}
   <aside class="card">
     {{ ui.card_head("Records") }}
     <div class="figure-list">
-      <div class="figure"><span class="k">Canonical people</span><span class="v">{{ "{:,}".format(dashboard.people or 0) }}</span></div>
-      <div class="figure"><span class="k">Households</span><span class="v">{{ "{:,}".format(dashboard.households or 0) }}</span></div>
-      <div class="figure"><span class="k">Accounts</span><span class="v">{{ "{:,}".format(dashboard.accounts or 0) }}</span></div>
-      <div class="figure"><span class="k">Open tasks</span><span class="v{{ '' if dashboard.open_tasks else ' muted-v' }}">{{ "{:,}".format(dashboard.open_tasks or 0) }}</span></div>
+      {% for label, value, always in records %}
+        {% if value or always %}
+        <div class="figure"><span class="k">{{ label }}</span><span class="v">{{ "{:,}".format(value) }}</span></div>
+        {% endif %}
+      {% endfor %}
     </div>
   </aside>
 </div>

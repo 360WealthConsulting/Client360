@@ -1,27 +1,54 @@
 {# Firm exception triage, as one segmented instrument rather than six competing cards.
-   PRESENTATION ONLY: the same six numbers off the same `exception_summary.summary`,
-   and the same single link to /exceptions/reporting. No counter is a link, because
-   none of them mapped to a filter this partial could construct without guessing at
-   the console's query contract.
+   PRESENTATION ONLY: the same numbers off the same `exception_summary.summary`, and the
+   same single link to /exceptions/reporting. No counter is a link, because none of them
+   mapped to a filter this partial could construct without guessing at the console's query
+   contract.
 
-   Severity is applied only to a NON-ZERO count (see `.signal` in app.css): on every
-   one of these counters a zero is the good outcome, so a wall of red zeroes would
-   be exactly backwards. #}
+   Severity is applied only to a NON-ZERO count (see `.signal` in app.css): on every one of
+   these counters a zero is the good outcome, so a wall of red zeroes would be exactly
+   backwards.
+
+   ZERO-SUPPRESSION (shared rule, all three consumers — Dashboard, Tax, Team Work):
+   a counter reading 0 is the ABSENCE of an exception, not a finding. Six zero tiles filled
+   a band of every host page with the news that nothing is wrong, pushing the actual work
+   below the fold. So:
+     * every counter zero  -> the section is omitted entirely;
+     * some counters zero  -> only the non-zero ones render, because a "Blocker 0" beside a
+                              real "Breached 3" dilutes the one number that matters.
+   "Open exceptions" is kept whenever ANY counter is non-zero even if the open count itself
+   is 0, because it is the denominator the others are read against.
+
+   This is a rule about presenting an absence, applied in the one place all three consumers
+   share, so no host template needs its own conditional and none can drift. #}
 {% if exception_summary %}
 {% import "components/ui.html" as _ui %}
 {% set s = exception_summary.summary %}
+
+{# Ordered as the strip has always rendered; each entry carries its severity. #}
+{% set counters = [
+  ("Open exceptions", s.open, ""),
+  ("Blocker", s.blocker, "crit"),
+  ("At risk", s.at_risk, "warn"),
+  ("Breached", s.breached, "crit"),
+  ("Unassigned", s.unassigned, "info"),
+  ("Compliance", s.compliance, "info"),
+] %}
+{% set present = counters | rejectattr(1, "none") | selectattr(1) | list %}
+
+{% if present %}
 <section class="section" aria-label="Exception summary">
   <div class="card-head">
     <h2>Exceptions</h2>
     <a class="more" href="/exceptions/reporting">Open exception reporting →</a>
   </div>
   <div class="signal-bar">
-    {{ _ui.signal("Open exceptions", s.open) }}
-    {{ _ui.signal("Blocker", s.blocker, "crit") }}
-    {{ _ui.signal("At risk", s.at_risk, "warn") }}
-    {{ _ui.signal("Breached", s.breached, "crit") }}
-    {{ _ui.signal("Unassigned", s.unassigned, "info") }}
-    {{ _ui.signal("Compliance", s.compliance, "info") }}
+    {% for label, value, kind in counters %}
+      {# The open count anchors the row; the rest appear only when they carry a finding. #}
+      {% if value or label == "Open exceptions" %}
+        {{ _ui.signal(label, value, kind) }}
+      {% endif %}
+    {% endfor %}
   </div>
 </section>
+{% endif %}
 {% endif %}

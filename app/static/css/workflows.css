@@ -1,0 +1,42 @@
+/* ==================================================================================
+   360Plus — Workflows (module layer)
+   ----------------------------------------------------------------------------------
+   The five classes that replace the six inline `style=""` attributes these two templates
+   carried. The CSP this app sends is:
+
+       default-src 'self'; frame-ancestors 'none'; base-uri 'self'
+
+   With no `style-src` and no `'unsafe-inline'`, `style-src-attr` falls back to
+   `default-src`, so inline style ATTRIBUTES are blocked by the browser. The declarations
+   were therefore never applied — the version badge never moved to the right edge, template
+   headings kept their default margins, and the step separators never drew. Six source
+   attributes, ~52 rendered occurrences (they sit inside `{% for %}` loops).
+
+   Presentation only. No workflow logic, route or capability is touched, and the two
+   generic utilities below are named so other modules can reuse them rather than reaching
+   for another inline style.
+   ================================================================================== */
+
+/* --- generic utilities (deliberately not workflow-specific) ---------------------- */
+
+/* `.row` (app.css) is a centred flex row; this is the "push the ends apart" variant that
+   six templates were each spelling inline. */
+.row--split { justify-content:space-between; }
+
+/* Columns that should top-align rather than stretch to equal height. */
+.align-start { align-items:start; }
+
+/* --- workflow-local ------------------------------------------------------------- */
+
+.wf-title { margin:0; font-size:15px; }
+
+/* The two description lines under a template's name. */
+.wf-meta { margin-top:4px; }
+
+/* A step row in the workflow detail list. The separator used to be a Jinja
+   `{% if not loop.last %}` writing an inline border; `:not(:last-child)` says the same
+   thing in CSS, survives the policy, and removes a branch from the template. */
+.wf-steprow:not(:last-child) {
+  border-bottom:1px solid var(--border);
+  padding-bottom:8px;
+}

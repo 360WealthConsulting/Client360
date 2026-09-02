@@ -91,7 +91,7 @@
       </colgroup>
       <thead><tr>
         <th>Document</th><th>Type</th><th>Year</th><th>Related To</th>
-        <th>Date</th><th>Source</th><th class="docs-actions">Actions</th>
+        <th aria-sort="descending">Date <span class="dw-sort" aria-hidden="true">↓</span></th><th>Source</th><th class="docs-actions">Actions</th>
       </tr></thead>
       <tbody>
       {% for d in screen.rows %}
@@ -251,6 +251,22 @@
            {% if screen.page >= screen.pages %}aria-disabled="true"{% endif %} aria-label="Next page">›</a>
       </nav>
       {% endif %}
+      <form class="dw-perpage-form" method="get" action="{{ base }}">
+        <input type="hidden" name="tab" value="documents">
+        <input type="hidden" name="dtab" value="{{ screen.filters.tab }}">
+        {% if screen.filters.q %}<input type="hidden" name="dq" value="{{ screen.filters.q }}">{% endif %}
+        {% if screen.filters.year %}<input type="hidden" name="dyear" value="{{ screen.filters.year }}">{% endif %}
+        {% if screen.filters.type %}<input type="hidden" name="dtype" value="{{ screen.filters.type }}">{% endif %}
+        {% if screen.filters.related %}<input type="hidden" name="related" value="{{ screen.filters.related }}">{% endif %}
+        {% if screen.filters.needs_review %}<input type="hidden" name="review" value="1">{% endif %}
+        <label class="sr-only" for="doc-per">Documents per page</label>
+        <select class="dw-perpage" id="doc-per" name="per" data-autosubmit>
+          {% for n in [25, 50, 100] %}
+            <option value="{{ n }}" {{ 'selected' if screen.page_size == n else '' }}>{{ n }} / page</option>
+          {% endfor %}
+        </select>
+        <noscript><button class="btn sm secondary" type="submit">Set</button></noscript>
+      </form>
     </footer>
     {% endif %}
   </article>

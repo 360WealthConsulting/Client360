@@ -8,12 +8,12 @@
 {% endcall %}
 {% if created %}<div class="alert good mb-3"><span class="ico">✓</span><div>Task created successfully.</div></div>{% endif %}
 {% if completed %}<div class="alert good mb-3"><span class="ico">✓</span><div>Task marked complete.</div></div>{% endif %}
-<div class="card" style="max-width:760px; margin-bottom:16px">
+<div class="card u-maxw-760px u-mb-16px">
   <h3>Create task</h3>
   <form method="post" action="/people/{{ person.id }}/tasks">
     <input type="hidden" name="idempotency_key" value="{{ form_token }}">
     <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
-    <div class="field"><label for="description">Description</label><textarea class="input" id="description" name="description" style="height:auto; min-height:100px; padding:11px"></textarea></div>
+    <div class="field"><label for="description">Description</label><textarea class="input u-h-auto u-minh-100px u-p-11px" id="description" name="description"></textarea></div>
     <div class="field"><label for="priority">Priority</label>
       <select class="input" id="priority" name="priority"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
     <div class="field"><label for="assigned_to_user_id">Assign to</label>
@@ -30,7 +30,7 @@
 {% for task in tasks %}
   <div class="card" {% if task.status == 'complete' %}style="opacity:.65"{% endif %}>
     <div class="row between">
-      <h3 style="margin:0; font-size:15px">{{ task.title }}</h3>
+      <h3 class="u-m-0 u-fs-15px">{{ task.title }}</h3>
       {% if task.status == 'complete' %}{{ ui.badge('Complete','good') }}{% else %}{{ ui.badge(task.priority) }}{% endif %}
     </div>
     {% if task.description %}<div class="mt-2">{{ task.description }}</div>{% endif %}

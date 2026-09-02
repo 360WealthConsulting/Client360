@@ -6,8 +6,8 @@
 {% call ui.page_head("Client activities", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
   <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
 {% endcall %}
-{% if created %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Activity added successfully.</div></div>{% endif %}
-<div class="card" style="max-width:760px; margin-bottom:16px">
+{% if created %}<div class="alert good u-mb-14px"><span class="ico">✓</span><div>Activity added successfully.</div></div>{% endif %}
+<div class="card u-maxw-760px u-mb-16px">
   <h3>Add activity</h3>
   <form method="post" action="/people/{{ person.id }}/activities">
     <div class="field"><label for="activity_type">Type</label>
@@ -15,7 +15,7 @@
         <option value="note">Note</option><option value="phone_call">Phone Call</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="document">Document</option><option value="account">Account Activity</option><option value="tax">Tax Activity</option><option value="other">Other</option>
       </select></div>
     <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
-    <div class="field"><label for="details">Details</label><textarea class="input" id="details" name="details" style="height:auto; min-height:110px; padding:11px"></textarea></div>
+    <div class="field"><label for="details">Details</label><textarea class="input u-h-auto u-minh-110px u-p-11px" id="details" name="details"></textarea></div>
     <div class="field"><label for="occurred_at">Occurred at</label><input class="input" id="occurred_at" name="occurred_at" type="datetime-local"></div>
     <div class="field"><label for="created_by">Created by</label><input class="input" id="created_by" name="created_by" placeholder="Michael, Lauren, Sarah, Jessica"></div>
     <button class="btn" type="submit">Add activity</button>
@@ -25,9 +25,9 @@
 <div class="stack">
 {% for activity in activities %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:15px">{{ activity.title }}</h3>
+    <h3 class="c-m-0-0-4px u-fs-15px">{{ activity.title }}</h3>
     <div class="subtle">{{ activity.activity_type.replace("_"," ").title() }} · {{ activity.occurred_at }} · {{ activity.created_by or "Unknown user" }}</div>
-    {% if activity.details %}<div style="margin-top:6px">{{ activity.details }}</div>{% endif %}
+    {% if activity.details %}<div class="u-mt-6px">{{ activity.details }}</div>{% endif %}
   </div>
 {% else %}
   {% call ui.empty("No activities", "No activities found for this person.") %}{% endcall %}

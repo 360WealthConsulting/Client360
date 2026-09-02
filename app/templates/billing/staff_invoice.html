@@ -10,7 +10,7 @@
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
-<div class="card" style="display:flex;gap:1.5rem;flex-wrap:wrap;">
+<div class="card u-flex u-gap-1p5rem u-wrap">
   <span><b>Status:</b> {{ invoice.effective_status|replace('_',' ')|title }}</span>
   <span><b>Issued:</b> {{ invoice.issue_date or '—' }}</span>
   <span><b>Due:</b> {{ invoice.due_date or '—' }}</span>
@@ -26,26 +26,26 @@
 </tbody></table>
 
 {% if invoice.status=='draft' %}
-<form method="post" action="/billing/invoices/{{ invoice.id }}/line-items" class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+<form method="post" action="/billing/invoices/{{ invoice.id }}/line-items" class="card u-flex u-gap-10px u-wrap u-items-end">
   <label>Description<input name="description" required></label>
   <label>Amount<input name="amount" placeholder="$100.00" required></label>
-  <label>Qty<input name="quantity" type="number" value="1" min="1" style="width:70px;"></label>
+  <label>Qty<input name="quantity" type="number" value="1" min="1" class="u-w-70px"></label>
   <label>Kind<select name="kind">{% for kd in line_kinds %}<option value="{{ kd }}">{{ kd|title }}</option>{% endfor %}</select></label>
   <button class="btn" type="submit">Add line</button>
 </form>
-<form method="post" action="/billing/invoices/{{ invoice.id }}/issue" style="display:inline-flex;gap:8px;align-items:end;margin-top:.5rem;">
+<form method="post" action="/billing/invoices/{{ invoice.id }}/issue" class="u-inline-flex u-gap-8px u-items-end u-mt-p5rem">
   <label>Due date<input name="due_date" type="date"></label>
   <button class="btn" type="submit">Issue invoice</button>
 </form>
 {% endif %}
 
 {% if invoice.status in ('draft','issued') %}
-<form method="post" action="/billing/invoices/{{ invoice.id }}/void" style="display:inline;margin-top:.5rem;"><button class="btn secondary" type="submit">Void invoice</button></form>
+<form method="post" action="/billing/invoices/{{ invoice.id }}/void" class="u-inline u-mt-p5rem"><button class="btn secondary" type="submit">Void invoice</button></form>
 {% endif %}
 
 {% if invoice.status=='issued' %}
-<h2 class="section-title" style="margin-top:1.25rem;">Record payment</h2>
-<form method="post" action="/billing/invoices/{{ invoice.id }}/payments" class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+<h2 class="section-title u-mt-1p25rem">Record payment</h2>
+<form method="post" action="/billing/invoices/{{ invoice.id }}/payments" class="card u-flex u-gap-10px u-wrap u-items-end">
   <label>Amount<input name="amount" placeholder="{{ money(invoice.balance_cents) }}" required></label>
   <label>Method<select name="method"><option value="manual">Manual</option><option value="check">Check</option><option value="ach">ACH</option><option value="card">Card</option></select></label>
   <label>External ref<input name="external_ref" placeholder="processor id (optional)"></label>
@@ -53,7 +53,7 @@
 </form>
 {% endif %}
 
-<h2 class="section-title" style="margin-top:1.25rem;">Payments</h2>
+<h2 class="section-title u-mt-1p25rem">Payments</h2>
 <table class="table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Ref</th></tr></thead><tbody>
 {% for p in invoice.payments %}<tr><td>{{ p.received_on }}</td><td>{{ money(p.amount_cents) }}</td><td>{{ p.method|title }}</td><td class="subtle">{{ p.external_ref or '—' }}</td></tr>
 {% else %}<tr><td colspan="4" class="subtle">No payments.</td></tr>{% endfor %}

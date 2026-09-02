@@ -4,7 +4,7 @@
 {% block crumb %}Admin · Document Management · Review Queue{% endblock %}
 
 {% macro approve_btn(doc_id, cand, primary=False) %}
-  <form method="post" action="/admin/documents/review-queue/approve" style="display:inline-block; margin:2px 4px 2px 0">
+  <form method="post" action="/admin/documents/review-queue/approve" class="u-inline-block c-m-2px-4px-2px-0">
     <input type="hidden" name="document_id" value="{{ doc_id }}">
     <input type="hidden" name="entity_type" value="{{ cand.type }}">
     <input type="hidden" name="entity_id" value="{{ cand.id }}">
@@ -14,7 +14,7 @@
 {% endmacro %}
 
 {% macro doc_row(r, ambiguous=False, review=False) %}
-<div class="card" style="padding:10px 12px; margin-bottom:10px; background:var(--bg, #fafafa)">
+<div class="card c-p-10px-12px u-mb-10px c-bg-bg">
   <div class="detail-row">
     <span><strong>#{{ r.document_id }}</strong> ·
       <a href="{{ r.view_url }}" target="_blank" rel="noopener">{{ r.filename }}</a></span>
@@ -23,15 +23,15 @@
   </div>
   {% if r.evidence_classes %}<div class="subtle tight">evidence: {{ r.evidence_classes | join(", ") }}</div>{% endif %}
   {% if r.evidence %}<ul class="subtle list-tight mb-2">{% for e in r.evidence[:5] %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
-  {% if review and r.contradictions %}<div class="subtle" style="color:var(--warn, #b45309)">contradiction: {{ r.contradictions | join(", ") }}</div>{% endif %}
+  {% if review and r.contradictions %}<div class="subtle c-fg-warn">contradiction: {{ r.contradictions | join(", ") }}</div>{% endif %}
 
   {% if ambiguous %}
-    <div class="subtle" style="margin:4px 0 2px">Choose the correct owner (no default — explicit choice required):</div>
+    <div class="subtle c-m-4px-0-2px">Choose the correct owner (no default — explicit choice required):</div>
     {% if r.candidates %}{% for c in r.candidates %}{{ approve_btn(r.document_id, c) }}{% endfor %}
     {% else %}<span class="subtle">No defensible candidates — use “Choose another owner”.</span>{% endif %}
   {% else %}
     {% if r.candidates and r.candidates[0].id %}
-      <div class="subtle" style="margin:4px 0 2px">Proposed owner:</div>
+      <div class="subtle c-m-4px-0-2px">Proposed owner:</div>
       {{ approve_btn(r.document_id, r.candidates[0], primary=(not review)) }}
     {% endif %}
   {% endif %}
@@ -44,7 +44,7 @@
       <select name="entity_type" class="input">
         <option value="person">Person</option><option value="household">Household</option><option value="organization">Organization</option>
       </select></label>
-    <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:110px" required></label>
+    <label class="subtle">ID <input class="input u-maxw-110px" type="number" name="entity_id" min="1" required></label>
     <button class="btn sm secondary" type="submit">Approve → chosen ID</button>
   </form>
 </div>
@@ -62,10 +62,10 @@
 
 {% if ocr_review %}
 <article class="card rail-warn">
-  <div style="font-weight:600; margin-bottom:6px">
+  <div class="u-fw-600 u-mb-6px">
     OCR / EXTRACTION REVIEW — terminal exceptions ({{ ocr_review_count }})
   </div>
-  <div class="subtle" style="margin-bottom:8px">
+  <div class="subtle u-mb-8px">
     These documents were swept out of automatic processing. They will not be automatically OCR'd again.
     Review the source document and choose an owner manually when appropriate.
   </div>
@@ -77,10 +77,10 @@
 
 {% if unresolved %}
 <article class="card rail-neutral">
-  <div style="font-weight:600; margin-bottom:6px">
+  <div class="u-fw-600 u-mb-6px">
     UNRESOLVED / NO SAFE AUTO-MATCH ({{ unresolved_count }})
   </div>
-  <div class="subtle" style="margin-bottom:8px">
+  <div class="subtle u-mb-8px">
     Automation finished with these documents but did not have enough defensible evidence to file them automatically.
     They stay here for staff review and are not repeatedly rescanned.
   </div>
@@ -91,18 +91,18 @@
 {% endif %}
 
 <article class="card rail-warn">
-  <div style="font-weight:600; margin-bottom:6px">MEDIUM — proposed owner, explicit approval required ({{ medium_count }})</div>
+  <div class="u-fw-600 u-mb-6px">MEDIUM — proposed owner, explicit approval required ({{ medium_count }})</div>
   {% for r in medium %}{{ doc_row(r) }}{% else %}<div class="subtle">None.</div>{% endfor %}
 </article>
 
 <article class="card rail-neutral">
-  <div style="font-weight:600; margin-bottom:6px">AMBIGUOUS — multiple candidates, choose one ({{ ambiguous_count }})</div>
+  <div class="u-fw-600 u-mb-6px">AMBIGUOUS — multiple candidates, choose one ({{ ambiguous_count }})</div>
   {% for r in ambiguous %}{{ doc_row(r, ambiguous=True) }}{% else %}<div class="subtle">None.</div>{% endfor %}
 </article>
 
 {% if high_review %}
 <article class="card rail-warn">
-  <div style="color:var(--warn, #b45309); font-weight:600; margin-bottom:6px">HIGH — REVIEW REQUIRED (contradiction) · per-document only ({{ high_review_count }})</div>
+  <div class="c-fg-warn u-fw-600 u-mb-6px">HIGH — REVIEW REQUIRED (contradiction) · per-document only ({{ high_review_count }})</div>
   {% for r in high_review %}{{ doc_row(r, review=True) }}{% endfor %}
 </article>
 {% endif %}

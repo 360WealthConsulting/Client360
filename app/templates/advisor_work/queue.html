@@ -6,15 +6,15 @@
 {{ ui.page_head("Advisor Work", eyebrow="Work", desc="Operational work derived from Advisor Recommendations. Completing work records advisor activity only — it never changes or suppresses the underlying recommendation.") }}
 
 <form method="get" action="/advisor-work" class="card filterbar">
-  <div class="field" style="margin:0"><label for="q">Search</label>
+  <div class="field u-m-0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="recommendation, rule, type"></div>
-  <div class="field" style="margin:0"><label for="status">Status</label>
+  <div class="field u-m-0"><label for="status">Status</label>
     <select class="input" id="status" name="status">
       <option value="">All</option>
       {% for s in ["new","assigned","in_progress","waiting","completed","cancelled","archived"] %}
         <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>{% endfor %}
     </select></div>
-  <div class="field" style="margin:0"><label for="priority">Priority</label>
+  <div class="field u-m-0"><label for="priority">Priority</label>
     <select class="input" id="priority" name="priority">
       <option value="">All</option>
       {% for p in ["critical","high","medium","low","informational"] %}
@@ -22,10 +22,10 @@
     </select></div>
   <input type="hidden" name="sort" value="{{ filters.sort }}">
   <div><button class="btn" type="submit">Apply</button>
-    {% if filters.q or filters.status or filters.priority %}<a class="btn subtle" href="/advisor-work" style="margin-left:6px">Clear</a>{% endif %}</div>
+    {% if filters.q or filters.status or filters.priority %}<a class="btn subtle u-ml-6px" href="/advisor-work">Clear</a>{% endif %}</div>
 </form>
 
-<p class="subtle" style="margin:-6px 0 10px">{{ result.total }} item(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+<p class="subtle c-m-6px-0-10px">{{ result.total }} item(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
 
 {% if result.rows %}
 <div class="table-wrap"><table class="data">
@@ -49,7 +49,7 @@
   </tbody>
 </table></div>
 {% if result.pages > 1 %}
-<div class="row" style="gap:8px; margin-top:10px">
+<div class="row u-gap-8px u-mt-10px">
   {% if result.page > 1 %}<a class="btn subtle" href="/advisor-work?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&priority={{ filters.priority|urlencode }}&page={{ result.page - 1 }}">← Prev</a>{% endif %}
   {% if result.page < result.pages %}<a class="btn subtle" href="/advisor-work?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&priority={{ filters.priority|urlencode }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
 </div>

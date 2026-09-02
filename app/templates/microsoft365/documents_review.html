@@ -7,12 +7,12 @@
 <div class="stack">
 {% for document in documents %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:16px">{{ document.name }}</h3>
+    <h3 class="c-m-0-0-4px u-fs-16px">{{ document.name }}</h3>
     <div class="subtle">{{ document.parent_path or "Root folder" }}</div>
-    <div class="subtle" style="margin-top:4px">{{ document.mime_type or "Unknown type" }} · {{ document.size_bytes }} bytes · {{ document.modified_at_microsoft or "Date unavailable" }}</div>
-    <div class="row" style="margin-top:14px; gap:10px">
-      <form class="row" style="gap:8px" method="post" onsubmit="this.action='/microsoft365/documents-review/{{ document.id }}/match/'+this.person_id.value;return Boolean(this.person_id.value);">
-        <select class="input" name="person_id" required style="height:32px">
+    <div class="subtle u-mt-4px">{{ document.mime_type or "Unknown type" }} · {{ document.size_bytes }} bytes · {{ document.modified_at_microsoft or "Date unavailable" }}</div>
+    <div class="row u-mt-14px u-gap-10px">
+      <form class="row u-gap-8px" method="post" onsubmit="this.action='/microsoft365/documents-review/{{ document.id }}/match/'+this.person_id.value;return Boolean(this.person_id.value);">
+        <select class="input u-h-32px" name="person_id" required>
           <option value="">Select client...</option>
           {% for person in people %}<option value="{{ person.id }}">{{ person.full_name or ("Person " ~ person.id) }}{% if person.primary_email %} — {{ person.primary_email }}{% endif %}</option>{% endfor %}
         </select>

@@ -53,11 +53,39 @@ _AREA_RULES = [
 ]
 
 
+#: Prefixes whose title-cased form is not the right display name.
+_AREA_NAMES = {"ms365": "Microsoft 365", "crm": "CRM", "ai": "AI Assist",
+               "kpi": "KPI", "sla": "SLA", "rbac": "Access Control"}
+
+
 def _area(code: str) -> str:
+    """The business area a capability belongs to, for display grouping only.
+
+    The rules above name the areas that span several prefixes (Documents/Vault covers both
+    `documents.` and five `vault.` codes). Anything they do not claim falls back to the
+    capability's OWN prefix rather than to "Other": there are 47 distinct prefixes and only
+    ten rules, so "Other" was collecting 179 of the administrator's 186 capabilities into a
+    single unreadable column. The prefix is the capability's own declared domain — using it
+    invents no meaning, it just stops discarding the one the code already carries.
+    """
     for name, rule in _AREA_RULES:
         if rule(code):
             return name
-    return "Other"
+    prefix = code.split(".", 1)[0]
+    return _AREA_NAMES.get(prefix, prefix.replace("_", " ").title())
+
+
+def capability_catalog() -> dict:
+    """`{code: {"description", "sensitive"}}` for every capability the platform defines.
+
+    Read-only lookup so an administration screen can show the description the row already
+    carries instead of a bare identifier. It grants nothing and changes no semantics.
+    """
+    with engine.connect() as conn:
+        return {r["code"]: {"description": r["description"], "sensitive": bool(r["sensitive"])}
+                for r in conn.execute(
+                    select(capabilities.c.code, capabilities.c.description,
+                           capabilities.c.sensitive)).mappings()}
 
 
 def group_capabilities(codes) -> dict:

@@ -14,7 +14,7 @@
     <input class="input" id="reviewer_role" name="reviewer_role" required placeholder="e.g. chief_compliance_officer"></div>
   <div class="field"><label for="authority_scope">Authority scope</label>
     <input class="input" id="authority_scope" name="authority_scope" required placeholder="governed rule ids and/or policy-gate categories, space/comma separated (e.g. RULE-BENEFICIARY-DESIGNATION-PRESENT COMPLIANCE_REQUIRED)">
-    <p class="subtle" style="margin-top:4px">An empty or ambiguous scope never confers unrestricted authority. Authority is never inferred from role alone.</p></div>
+    <p class="subtle u-mt-4px">An empty or ambiguous scope never confers unrestricted authority. Authority is never inferred from role alone.</p></div>
   <div class="field"><label for="effective_date">Effective date</label>
     <input class="input" id="effective_date" name="effective_date" type="date" required></div>
   <div class="field"><label for="expiration_date">Expiration date (optional)</label>
@@ -22,8 +22,8 @@
   <div class="field"><label for="source_reference">Source reference</label>
     <input class="input" id="source_reference" name="source_reference" required placeholder="controlled reference: licensing/registration/appointment/supervisory/internal doc"></div>
   <div class="field"><label for="evidence_description">Evidence description</label>
-    <textarea class="input" id="evidence_description" name="evidence_description" required style="min-height:70px" placeholder="factual description of the supporting evidence"></textarea></div>
-  <div style="margin-top:10px"><button class="btn" type="submit">Create draft</button>
-    <a class="btn subtle" href="/compliance/authorities" style="margin-left:6px">Cancel</a></div>
+    <textarea class="input u-minh-70px" id="evidence_description" name="evidence_description" required placeholder="factual description of the supporting evidence"></textarea></div>
+  <div class="u-mt-10px"><button class="btn" type="submit">Create draft</button>
+    <a class="btn subtle u-ml-6px" href="/compliance/authorities">Cancel</a></div>
 </form>
 {% endblock %}

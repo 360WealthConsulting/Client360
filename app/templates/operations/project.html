@@ -10,7 +10,7 @@
   <div><div class="subtle text-sm">Priority</div><div>{{ p.priority }}</div></div>
   <div><div class="subtle text-sm">Phases</div><div>{{ p.phases|length }}</div></div>
   <div><div class="subtle text-sm">Tasks</div><div>{{ p.tasks|length }}</div></div>
-  {% if can_manage and p.status not in ['completed','cancelled','archived'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+  {% if can_manage and p.status not in ['completed','cancelled','archived'] %}<div class="u-ml-auto u-flex u-gap-8px u-items-center u-wrap">
     <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="active"><button class="btn btn-ghost" type="submit">Activate</button></form>
     <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="on_hold"><button class="btn btn-ghost" type="submit">Hold</button></form>
     <form method="post" action="/operations/projects/{{ p.id }}/status"><input type="hidden" name="status" value="completed"><button class="btn btn-ghost" type="submit">Complete</button></form>

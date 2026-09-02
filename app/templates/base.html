@@ -13,6 +13,15 @@
   <link rel="stylesheet" href="/static/css/work.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/css/tax.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+  {# The shared 360Plus staff shell: navy sidebar, global top bar, canvas and the
+     common button/input/card/table/badge vocabulary. Loaded after app.css so it
+     governs the chrome for every staff module; module sheets load after it in
+     {% block head %} and keep their own layout. #}
+  <link rel="stylesheet" href="/static/css/shell360.css?v={{ asset_version }}">
+  {# CSP-safe layout utilities. The policy blocks inline style attributes, so the formatting
+     497 of them expressed never rendered; these classes carry the same declarations. Loaded
+     last so a utility can settle a conflict, which is what an inline style used to do. #}
+  <link rel="stylesheet" href="/static/css/utilities.css?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 {% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
@@ -119,7 +128,7 @@
     {"href": "/admin/invitations", "label": "Invitations", "match": "/admin/invitations", "ico": "✉", "show": can_admin},
     {"href": "/admin/audit", "label": "Access Audit", "match": "/admin/audit", "ico": "▦", "show": can_admin or 'audit.read' in caps}]}
 ] %}
-<body class="c360">
+<body class="c360{% block body_class %}{% endblock %}">
 <a class="skip-link" href="#main">Skip to content</a>
 <div class="app-shell">
   <aside class="app-sidebar">
@@ -155,6 +164,7 @@
         </div>
         {% endif %}
       {% endfor %}
+      {% block nav_extra %}{% endblock %}
     </nav>
   </aside>
 

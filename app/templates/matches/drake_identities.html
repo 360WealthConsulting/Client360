@@ -52,10 +52,10 @@
 {% if identities %}
 <div class="stack">
 {% for identity in identities %}
-<article class="card" style="padding:16px">
-  <div class="row" style="justify-content:space-between; gap:14px; align-items:flex-start">
+<article class="card u-p-16px">
+  <div class="row u-justify-between u-gap-14px u-items-start">
     <div>
-      <h2 style="margin:0 0 5px; font-size:17px">
+      <h2 class="c-m-0-0-5px u-fs-17px">
         {{ identity.taxpayer_name or identity.spouse_name or "Unnamed Drake identity" }}
       </h2>
 
@@ -63,7 +63,7 @@
       <div class="subtle">Also appears as {{ identity.spouse_name }}</div>
       {% endif %}
 
-      <div class="subtle" style="margin-top:5px">
+      <div class="subtle u-mt-5px">
         Drake years:
         <strong>{{ identity.first_year }}?{{ identity.last_year }}</strong>
         ? {{ identity.return_count }} source record{{ "" if identity.return_count == 1 else "s" }}
@@ -75,8 +75,8 @@
 
   <div class="stack mt-4">
   {% for candidate in identity.candidates %}
-    <div class="card" style="padding:12px; background:var(--surface-2, #f7f7f7)">
-      <div class="row" style="justify-content:space-between; gap:14px; align-items:center">
+    <div class="card u-p-12px c-bg-surface-2">
+      <div class="row u-justify-between u-gap-14px u-items-center">
         <div>
           <strong>
             <a href="/client/{{ candidate.person_id }}">
@@ -98,7 +98,7 @@
           </div>
         </div>
 
-        <div style="text-align:right">
+        <div class="u-text-right">
           {{ ui.badge(candidate.score ~ "%", 'good' if candidate.score >= 95 else 'warn') }}
 
           {% if identity.status in ['pending', 'deferred'] %}
@@ -115,7 +115,7 @@
   </div>
 
   {% if identity.status in ['pending', 'deferred'] %}
-  <div class="row" style="gap:10px; margin-top:14px">
+  <div class="row u-gap-10px u-mt-14px">
     <form method="post"
           action="/matches/drake/{{ identity.identifier_hash }}/reject">
       <button class="btn danger" type="submit">None of these clients</button>

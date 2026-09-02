@@ -4,6 +4,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.templating import format_datetime
 from app.db import engine, timeline_events
 
 EVENT_DISPLAY = {
@@ -126,10 +127,12 @@ def _relative_time(value):
     if days < 7:
         return f"{days} days ago"
 
+    # `%-d` is a glibc extension the Microsoft C runtime rejects; format_datetime spells it
+    # portably so a relative timestamp reads the same on both platforms.
     if value.year == now.year:
-        return value.strftime("%b %-d")
+        return format_datetime(value, "%b %-d")
 
-    return value.strftime("%b %-d, %Y")
+    return format_datetime(value, "%b %-d, %Y")
 
 
 def _decorate_event(row):

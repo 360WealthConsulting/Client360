@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.db import (
     accounts,
@@ -14,11 +14,11 @@ from app.db import (
 )
 from app.security.authorization import accessible_person_ids
 from app.services import advisor_work
-from app.services.advisor_ai import build_advisor_recommendations
+from app.services.advisor_ai import build_advisor_recommendations, planning_recommendations
 from app.services.advisor_intelligence import get_client_signals, group_signals
 from app.services.advisor_workspace import get_client_snapshot
 from app.services.calendar import get_person_calendar_events
-from app.services.client_alerts import build_client_alerts
+from app.services.client_alerts import actionable_alerts, build_client_alerts
 from app.services.client_summary import get_client_summary
 from app.services.documents import get_person_documents
 from app.services.microsoft_documents import get_person_microsoft_documents
@@ -39,7 +39,18 @@ templates.env.globals["signal_groups"] = group_signals
 
 
 @router.get("/people")
-def people_directory(request: Request):
+def people_directory(request: Request, q: str | None = None, state: str | None = None,
+                     status: str = "", hh: str = "", sort: str = "name"):
+    """The staff People workspace: the firm's client directory.
+
+    Filtering is deliberately limited to columns `people` actually carries — name/email/phone
+    text, `state`, `active`, and whether the person is attached to a household. No CRM concept
+    the schema cannot answer (lifecycle stage, owner, last-contacted) is offered, because a
+    filter that cannot be honoured is worse than one that is absent.
+
+    Household context comes from the existing `people.household_id` anchor, so a person's
+    household reads the same here as it does on their workspace.
+    """
     source_count = func.count(
         func.distinct(person_source_links.c.source_contact_id)
     ).label("source_count")
@@ -52,15 +63,21 @@ def people_directory(request: Request):
         select(
             people.c.id,
             people.c.full_name,
+            people.c.preferred_name,
             people.c.primary_email,
             people.c.primary_phone,
             people.c.city,
             people.c.state,
+            people.c.contact_type,
+            people.c.active,
+            people.c.household_id,
+            households.c.name.label("household_name"),
             source_count,
             account_count,
         )
         .select_from(
             people
+            .outerjoin(households, households.c.id == people.c.household_id)
             .outerjoin(
                 person_source_links,
                 person_source_links.c.person_id == people.c.id,
@@ -73,25 +90,70 @@ def people_directory(request: Request):
         .group_by(
             people.c.id,
             people.c.full_name,
+            people.c.preferred_name,
             people.c.primary_email,
             people.c.primary_phone,
             people.c.city,
             people.c.state,
-        )
-        .order_by(
-            people.c.last_name,
-            people.c.first_name,
-            people.c.id,
+            people.c.contact_type,
+            people.c.active,
+            people.c.household_id,
+            households.c.name,
         )
     )
 
+    # --- filters, each one backed by a real column -------------------------------------
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        statement = statement.where(or_(
+            people.c.full_name.ilike(like),
+            people.c.preferred_name.ilike(like),
+            people.c.primary_email.ilike(like),
+            people.c.primary_phone.ilike(like),
+        ))
+    chosen_state = (state or "").strip()
+    if chosen_state:
+        statement = statement.where(people.c.state == chosen_state)
+    if status == "active":
+        statement = statement.where(people.c.active.is_(True))
+    elif status == "inactive":
+        statement = statement.where(people.c.active.is_not(True))
+    if hh == "with":
+        statement = statement.where(people.c.household_id.is_not(None))
+    elif hh == "without":
+        statement = statement.where(people.c.household_id.is_(None))
+
+    orders = {
+        "name": (people.c.last_name, people.c.first_name, people.c.id),
+        "recent": (people.c.created_at.desc().nullslast(), people.c.id.desc()),
+        "location": (people.c.state.nullslast(), people.c.city.nullslast(), people.c.last_name),
+    }
+    statement = statement.order_by(*orders.get(sort, orders["name"]))
+
     with engine.connect() as connection:
         rows = connection.execute(statement).mappings().all()
+        total = connection.execute(
+            select(func.count()).select_from(people)
+        ).scalar_one()
+        # The state list is the states that EXIST, so the filter can never offer an empty result.
+        states = [r[0] for r in connection.execute(
+            select(people.c.state).where(people.c.state.is_not(None))
+            .distinct().order_by(people.c.state)
+        )]
 
     return templates.TemplateResponse(
         request=request,
         name="people/directory.html",
-        context={"rows": [dict(r) for r in rows], "count": len(rows)},
+        context={
+            "rows": [dict(r) for r in rows],
+            "count": len(rows),
+            "total": total,
+            "states": states,
+            "filters": {"q": term, "state": chosen_state, "status": status,
+                        "hh": hh, "sort": sort},
+            "filtered": bool(term or chosen_state or status or hh),
+        },
     )
 
 
@@ -234,6 +296,11 @@ def person_profile(
     client_summary = get_client_summary(person_id)
     portfolio = get_person_portfolio(person_id)
     client_alerts = build_client_alerts(client_summary)
+    # The profile's Open Work card shows work, so it takes the actionable subset. "No recorded
+    # contact" / "No client documents" / "No open tasks" report an ABSENCE of data and are not
+    # work; rendered as three alert rows they buried anything real. The full list is unchanged
+    # for every other consumer.
+    actionable_client_alerts = actionable_alerts(client_alerts)
     relationship_graph = build_relationship_graph(person_id)
     person_households = get_person_households(person_id)
     advisor_recommendations = build_advisor_recommendations(
@@ -241,6 +308,10 @@ def person_profile(
         relationship_graph=relationship_graph,
         portfolio=portfolio,
     )
+    # Planning findings only. The three that fire purely because a field is empty are a
+    # data-completeness checklist, not advice, and under the "Advisor Recommendations" heading
+    # they borrow the authority of the real ones (Roth conversion, concentrated position).
+    planning_recs = planning_recommendations(advisor_recommendations)
     # Client 360 summary (Phase D.2): a factual per-domain relationship snapshot,
     # composed read-only from existing person-keyed services. This route is already
     # RECORD_PATH record-scoped, so composing this person's own domain data is safe.
@@ -279,6 +350,8 @@ def person_profile(
             "upcoming_meetings": upcoming_meetings,
             "client_summary": client_summary,
             "client_alerts": client_alerts,
+            "actionable_client_alerts": actionable_client_alerts,
+            "planning_recommendations": planning_recs,
             "advisor_recommendations": advisor_recommendations,
             "relationship_graph": relationship_graph,
             "relationship_types": relationship_type_rows,

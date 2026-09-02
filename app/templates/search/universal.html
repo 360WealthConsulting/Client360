@@ -5,16 +5,16 @@
 {% block content %}
 {% call ui.page_head("Universal search", eyebrow="360Plus", desc="Search once — open the client. People, households, businesses, trusts, estates, documents, and tax returns.") %}{% endcall %}
 
-<form method="get" action="/search" class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone, EIN, account #, policy #, document, tax year…" style="flex:1; min-width:280px" autofocus>
+<form method="get" action="/search" class="row u-gap-8px u-wrap u-mb-12px">
+  <input class="input u-flexv-1 u-minw-280px" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone, EIN, account #, policy #, document, tax year…" autofocus>
   <select class="input" name="kind">
     <option value="">All types</option>
     {% for k,label in [("person","People"),("household","Households"),("business","Businesses"),("trust","Trusts"),("estate","Estates"),("document","Documents"),("tax_return","Tax returns")] %}
       <option value="{{ k }}" {{ 'selected' if kind == k }}>{{ label }}</option>
     {% endfor %}
   </select>
-  <label class="subtle" style="display:flex;align-items:center;gap:5px"><input type="checkbox" name="active" value="true" {{ 'checked' if active }}> Active only</label>
-  <label class="subtle" style="display:flex;align-items:center;gap:5px"><input type="checkbox" name="archived" value="true" {{ 'checked' if archived }}> Include archived</label>
+  <label class="subtle u-flex u-items-center u-gap-5px"><input type="checkbox" name="active" value="true" {{ 'checked' if active }}> Active only</label>
+  <label class="subtle u-flex u-items-center u-gap-5px"><input type="checkbox" name="archived" value="true" {{ 'checked' if archived }}> Include archived</label>
   <button class="btn" type="submit">Search</button>
 </form>
 

@@ -1,0 +1,81 @@
+/* ==================================================================================
+   360Plus — Roles & Access (module layer)
+   ----------------------------------------------------------------------------------
+   Built on the locked shell's tokens. Nothing here changes what a role grants; it is the
+   presentation of a read-only administration screen that previously rendered 179 raw
+   capability identifiers as an unreadable column of chips.
+   ================================================================================== */
+
+.ap-index { margin-bottom:var(--s-gap-4); }
+.ap-areas { color:var(--s-mut); font-size:12px; }
+.ap-sens-count {
+  display:inline-block; min-width:22px; padding:2px 8px; border-radius:999px;
+  background:var(--s-warn-soft); color:var(--s-warn);
+  font-size:11.5px; font-weight:700; text-align:center;
+}
+
+/* --- one collapsible card per role ------------------------------------------------ */
+
+.ap-role {
+  background:var(--s-card); border:1px solid var(--s-line);
+  border-radius:var(--s-r-lg); box-shadow:var(--s-shadow);
+  margin-bottom:var(--s-gap-2);
+}
+.ap-role > summary {
+  list-style:none; cursor:pointer;
+  display:flex; align-items:baseline; gap:var(--s-gap-2); flex-wrap:wrap;
+  padding:13px 16px;
+}
+.ap-role > summary::-webkit-details-marker { display:none; }
+.ap-role > summary:hover { background:#FAFBFD; }
+.ap-role[open] > summary { border-bottom:1px solid var(--s-line-2); }
+.ap-rolename { font-size:14.5px; font-weight:700; color:var(--s-ink); }
+.ap-rolemeta { color:var(--s-mut); font-size:12.5px; }
+
+.ap-body { padding:14px 16px 16px; }
+.ap-desc { margin:0 0 var(--s-gap-3); color:var(--s-mut); font-size:13px; }
+
+/* --- capability areas -------------------------------------------------------------- */
+
+.ap-area { margin:0 0 var(--s-gap-3); }
+.ap-area h3 {
+  display:flex; align-items:center; gap:8px;
+  margin:0 0 8px; font-size:11.5px; font-weight:700;
+  letter-spacing:.05em; text-transform:uppercase; color:var(--s-mut);
+}
+.ap-areacount {
+  min-width:20px; padding:1px 7px; border-radius:999px;
+  background:var(--s-line-2); color:var(--s-ink-2);
+  font-size:10.5px; font-weight:700; text-align:center; text-transform:none; letter-spacing:0;
+}
+
+/* Two columns of capabilities: the description leads, the identifier sits under it. A
+   capability is a sentence plus a code, not a chip — the chip form is what made 179 of
+   them unreadable. */
+.ap-caps {
+  list-style:none; margin:0; padding:0;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(268px, 1fr));
+  gap:1px; background:var(--s-line-2);
+  border:1px solid var(--s-line-2); border-radius:var(--s-r);
+  overflow:hidden;
+}
+.ap-cap { background:var(--s-card); padding:8px 11px; }
+.ap-caplabel {
+  display:block; color:var(--s-ink-2); font-size:13px; line-height:1.35;
+}
+.ap-capcode {
+  display:block; margin-top:2px;
+  font-family:var(--s-mono); font-size:11px; color:var(--s-mut);
+}
+/* `sensitive` is a stored flag on the capability row, surfaced rather than inferred. */
+.ap-cap.is-sensitive { background:linear-gradient(0deg, var(--s-warn-soft) 0%, var(--s-card) 70%); }
+.ap-sens {
+  display:inline-block; margin-left:6px; padding:0 6px; border-radius:999px;
+  background:var(--s-warn-soft); color:var(--s-warn);
+  font-family:inherit; font-size:10px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.04em;
+}
+
+@media (max-width:720px) {
+  .ap-caps { grid-template-columns:1fr; }
+}

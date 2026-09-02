@@ -1,39 +1,136 @@
+{# The staff Households workspace.
+
+   The permanent "Create household" panel that used to occupy the left half of this screen is
+   now a disclosure behind the primary action — the SAME pattern the Documents workspace uses
+   for upload. It posts to the existing `POST /households` handler: no new route, no new
+   backend workflow, and the creation form itself is unchanged.
+
+   Same shared directory vocabulary as People, so the two read as one product. #}
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% block title %}Households | 360Plus{% endblock %}
 {% block crumb %}Households{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/directory.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
-{{ ui.page_head("Households", eyebrow="Clients", desc="360Plus household relationships.") }}
 
-<div class="cols-2 aside-left" style="align-items:start">
-  <div class="card">
-    <h3>Create household</h3>
+<div class="page-head">
+  <div>
+    <h1>Households</h1>
+    <p class="page-sub">
+      {% if filtered %}{{ "{:,}".format(count) }} of {{ "{:,}".format(total) }} households
+      {% else %}{{ "{:,}".format(total) }} household{{ "s" if total != 1 else "" }}{% endif %}
+    </p>
+  </div>
+</div>
+
+{# The primary action opens the existing creation form in place. `open` when a filter is not
+   active keeps it closed by default — the directory is what staff came for. #}
+<details class="dir-create" id="new-household">
+  <summary role="button">+ New Household</summary>
+  <div class="dir-createbody">
+    <p class="hint">A household groups clients so shared documents, tasks and portfolios roll
+      up in one place. Members are added from the household's own screen after it exists.</p>
     <form method="post" action="/households">
-      <div class="field"><label for="name">Household name</label><input class="input" id="name" name="name" required></div>
-      <div class="field"><label for="city">City</label><input class="input" id="city" name="city"></div>
-      <div class="field"><label for="state">State</label><input class="input" id="state" name="state"></div>
-      <button class="btn" type="submit">Create household</button>
+      <div class="dir-creategrid">
+        <div class="field"><label for="name">Household name</label>
+          <input class="input" id="name" name="name" required></div>
+        <div class="field"><label for="city">City</label>
+          <input class="input" id="city" name="city"></div>
+        <div class="field"><label for="state">State</label>
+          <input class="input" id="state" name="state"></div>
+      </div>
+      <button class="btn primary" type="submit">Create household</button>
     </form>
   </div>
-  <div>
-    {% if households %}
-    <div class="table-wrap">
-      <table class="data">
-        <thead><tr><th>Household</th><th>Location</th><th class="num">Members</th></tr></thead>
-        <tbody>
-        {% for household in households %}
-          <tr>
-            <td><a class="rowlink" href="/households/{{ household.id }}">{{ household.name }}</a></td>
-            <td>{{ household.city or "" }}{% if household.city and household.state %}, {% endif %}{{ household.state or "" }}</td>
-            <td class="num">{{ household.member_count }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+</details>
+
+<form class="dir-toolbar" method="get" action="/households" role="search">
+  <div class="dir-search">
+    <span class="mag" aria-hidden="true">⌕</span>
+    <label class="sr-only" for="h-q">Search households</label>
+    <input class="input" id="h-q" type="search" name="q" value="{{ filters.q }}"
+           placeholder="Search household name…">
+  </div>
+
+  {% if states|length > 1 %}
+  <label class="sr-only" for="h-state">State</label>
+  <select class="input" id="h-state" name="state" data-autosubmit>
+    <option value="">State: All</option>
+    {% for st in states %}
+      <option value="{{ st }}" {{ 'selected' if filters.state == st else '' }}>{{ st }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+
+  <label class="sr-only" for="h-sort">Sort</label>
+  <select class="input" id="h-sort" name="sort" data-autosubmit>
+    <option value="name" {{ 'selected' if filters.sort == 'name' else '' }}>Sort: Name</option>
+    <option value="members" {{ 'selected' if filters.sort == 'members' else '' }}>Sort: Most members</option>
+    <option value="recent" {{ 'selected' if filters.sort == 'recent' else '' }}>Sort: Recently added</option>
+  </select>
+
+  <button class="btn secondary" type="submit">Apply</button>
+  {% if filtered %}<a class="dir-clear" href="/households">Clear</a>{% endif %}
+  <span class="dir-shown">{{ "{:,}".format(count) }} shown</span>
+</form>
+
+{% if households %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr>
+      <th>Household</th><th>Members</th><th>Location</th>
+      <th>Size</th><th class="dir-actions-col">Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for household in households %}
+      <tr>
+        <td>
+          <span class="dir-ident">
+            <span class="dir-avatar dir-avatar--hh" aria-hidden="true">⌂</span>
+            <span class="dir-idtext">
+              <a class="dir-name" href="/households/{{ household.id }}"
+                 title="{{ household.name }}">{{ household.name }}</a>
+            </span>
+          </span>
+        </td>
+        <td>
+          {# The primary member leads; the rest are summarised rather than listed, so a large
+             household does not overrun the row. #}
+          {% if household.members %}
+            <span class="dir-members" title="{{ household.members|join(', ') }}">
+              {{ household.members[0] }}{% if household.members|length > 1 %}
+                <span class="subtle">+{{ household.members|length - 1 }} more</span>{% endif %}
+            </span>
+          {% else %}<span class="dir-none">No members yet</span>{% endif %}
+        </td>
+        <td>
+          {% set loc = [household.city, household.state]|select|join(", ") %}
+          {% if loc %}{{ loc }}{% else %}<span class="dir-none">—</span>{% endif %}
+        </td>
+        <td>
+          {% if household.member_count %}<span class="dir-n">{{ household.member_count }}</span>
+          {% else %}<span class="dir-none">—</span>{% endif %}
+        </td>
+        <td class="dir-actions-col"><a class="dir-open" href="/households/{{ household.id }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="table-wrap">
+  <div class="dir-empty">
+    <span class="em" aria-hidden="true">{{ "⌕" if filtered else "❏" }}</span>
+    {% if filtered %}
+      <h3>No households match these filters</h3>
+      <p>{{ "{:,}".format(total) }} household{{ "s" if total != 1 else "" }} on file. Try a
+         different search term or clear the filters.</p>
     {% else %}
-    {% call ui.empty("No households yet", "Create the first household to start grouping clients.") %}{% endcall %}
+      <h3>No households yet</h3>
+      <p>Create the first household to start grouping clients, or they will appear here as
+         imports assign them.</p>
     {% endif %}
   </div>
 </div>
+{% endif %}
 {% endblock %}

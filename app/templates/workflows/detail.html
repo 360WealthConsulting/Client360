@@ -2,14 +2,18 @@
 {% import "components/ui.html" as ui %}
 {% block title %}{{ data.workflow.name }} | 360Plus{% endblock %}
 {% block crumb %}{{ data.workflow.name }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/workflows.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
 {{ ui.page_head(data.workflow.name, eyebrow="Workflow", desc=("Status: " ~ data.workflow.status|title ~ " · Template version " ~ data.workflow.template_version)) }}
-<div class="cols-2" style="align-items:start">
+<div class="cols-2 align-start">
   <div class="card">
     <h3>Steps</h3>
     <div class="stack">
     {% for step in data.steps %}
-      <div class="row" style="justify-content:space-between; {% if not loop.last %}border-bottom:1px solid var(--border); padding-bottom:8px;{% endif %}">
+      {# The separator was a Jinja conditional writing an inline border the CSP then dropped.
+         `:not(:last-child)` expresses "every row but the last" in CSS, so the rule survives
+         the policy AND the template loses a branch it never needed. #}
+      <div class="row row--split wf-steprow">
         <span>{{ step.name }}</span>
         <span class="badge">{{ step.status|title }}{% if step.sla_due_at %} · SLA {{ step.sla_due_at }}{% endif %}</span>
       </div>

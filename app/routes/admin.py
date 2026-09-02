@@ -785,8 +785,11 @@ def employee_set_roles(user_id: int, request: Request, role_ids: list[int] = For
 
 @router.get("/access-profiles")
 def access_profiles(request: Request, principal: Principal = Depends(require_capability("identity.manage"))):
+    # The capability catalog supplies the description each row already carries, so the screen
+    # can name a capability instead of printing its identifier. Read-only; grants nothing.
     return templates.TemplateResponse(request=request, name="admin/access_profiles.html", context={
-        "principal": principal, "profiles": ea.access_profiles()})
+        "principal": principal, "profiles": ea.access_profiles(),
+        "catalog": ea.capability_catalog()})
 
 
 @router.get("/invitations")

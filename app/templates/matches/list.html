@@ -13,7 +13,7 @@
   <a class="chip {{ 'active' if status == s else '' }}" href="/matches?status={{ s }}">{{ labels[s] }}</a>
   {% endfor %}
 </div>
-<div class="stat-grid" style="margin-bottom:16px">
+<div class="stat-grid u-mb-16px">
   {{ ui.stat("Total groups", "{:,}".format(summary.total)) }}
   {{ ui.stat("Approved", "{:,}".format(summary.approved)) }}
   {{ ui.stat("Not duplicates", "{:,}".format(summary.rejected)) }}
@@ -21,22 +21,22 @@
   {{ ui.stat("Remaining", "{:,}".format(summary.remaining)) }}
   {{ ui.stat("Progress", "{:.1f}%".format(summary.completion_percent)) }}
 </div>
-<div class="alert info" style="margin-bottom:16px"><span class="ico">ℹ</span><div>Review decisions are saved. Client records are not merged or changed by this page.</div></div>
+<div class="alert info u-mb-16px"><span class="ico">ℹ</span><div>Review decisions are saved. Client records are not merged or changed by this page.</div></div>
 {% if groups %}
 <div class="stack">
 {% for g in groups %}
   <div class="card">
-    <div class="row" style="justify-content:space-between">
+    <div class="row u-justify-between">
       <a class="rowlink" href="/matches/{{ g.group_number }}">Review group {{ g.group_number }}</a>
       {% set kind = {'approved':'good','rejected':'crit','skipped':'','pending':'warn'}[g.decision] %}
       {{ ui.badge(g.status_label, kind) }}
     </div>
-    <div class="subtle" style="margin-top:8px"><b>Names:</b> {{ g.names or '—' }}</div>
+    <div class="subtle u-mt-8px"><b>Names:</b> {{ g.names or '—' }}</div>
     <div class="subtle"><b>Sources:</b> {{ g.sources or '—' }}</div>
     <div class="subtle"><b>Email:</b> {{ g.email or '—' }}</div>
     <div class="subtle"><b>Phone:</b> {{ g.phone or '—' }}</div>
     <div class="subtle"><b>Reason for review:</b> {{ g.review_reason or '—' }}</div>
-    <div class="subtle" style="margin-top:4px"><b>Source records:</b>
+    <div class="subtle u-mt-4px"><b>Source records:</b>
       {% for rid in g.record_ids %}<a class="rowlink" href="/source/{{ rid }}">Record {{ rid }}</a>{% if not loop.last %} · {% endif %}{% else %}—{% endfor %}
     </div>
   </div>

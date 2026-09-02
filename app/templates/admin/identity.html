@@ -23,17 +23,17 @@
     </tbody>
   </table>
 </div>
-<div class="cols-2" style="align-items:start; margin-top:16px">
+<div class="cols-2 u-items-start u-mt-16px">
   <div class="card">
     <h3>Teams</h3>
     <div class="stack">
-    {% for team in identity.teams %}<div class="row" style="justify-content:space-between"><span>{{ team.name }}</span>{% if team.active %}{{ ui.badge('Active','good') }}{% else %}{{ ui.badge('Inactive') }}{% endif %}</div>{% endfor %}
+    {% for team in identity.teams %}<div class="row u-justify-between"><span>{{ team.name }}</span>{% if team.active %}{{ ui.badge('Active','good') }}{% else %}{{ ui.badge('Inactive') }}{% endif %}</div>{% endfor %}
     </div>
   </div>
   <div class="card">
     <h3>Roles</h3>
     <div class="stack">
-    {% for role in identity.roles %}<div><b style="font-size:13px">{{ role.name }}</b><div class="subtle">{{ role.description or "Capability-composed role" }}</div></div>{% endfor %}
+    {% for role in identity.roles %}<div><b class="u-fs-13px">{{ role.name }}</b><div class="subtle">{{ role.description or "Capability-composed role" }}</div></div>{% endfor %}
     </div>
   </div>
 </div>

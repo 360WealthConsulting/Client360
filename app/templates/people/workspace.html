@@ -4,41 +4,98 @@
 {% import "components/intelligence.html" as intel %}
 {% block title %}{{ person.full_name or ("Person " ~ person.id) }} | 360Plus{% endblock %}
 {% block crumb %}{{ person.full_name or ("Person " ~ person.id) }}{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/css/workspace.css">{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/workspace.css">
+<link rel="stylesheet" href="/static/css/client_profile.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
-{# Phase 3: the same identity header the Client 360 and Household 360 workspaces use.
-   This page had its own `.page-head` shape and a `.quick-actions` row whose layout was
-   set entirely by a style="" attribute the CSP drops. Every link, label and gate below
-   is the one that was here before. #}
-{% set _actions = [
-  {"href": "/people/" ~ person.id ~ "/notes?log=call#logform",    "label": "Log Call"},
-  {"href": "/people/" ~ person.id ~ "/notes?log=email#logform",   "label": "Log Email"},
-  {"href": "/people/" ~ person.id ~ "/notes?log=meeting#logform", "label": "Log Meeting"},
-  {"href": "/people/" ~ person.id ~ "/edit",                      "label": "Edit details"},
-] %}
-{% call wsx.identity_header("Client", person.full_name or ("Person " ~ person.id), _actions) %}
-  {% if person.primary_phone %}<a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a>
-    <span class="dot" aria-hidden="true">·</span>{% endif %}
-  {% if person.primary_email %}<a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a>
-    <span class="dot" aria-hidden="true">·</span>{% endif %}
-  {% if person.city or person.state %}<span>{{ [person.city, person.state]|select|join(", ") }}</span>
-    <span class="dot" aria-hidden="true">·</span>{% endif %}
-  <span>Record #{{ person.id }}</span>
-  <span class="dot" aria-hidden="true">·</span>
-  <span>{{ "Active" if person.active else "Inactive" }}</span>
-{% endcall %}
-{% if saved %}<div class="alert good section"><span class="ico">✓</span><div>Client details updated.</div></div>{% endif %}
+{# The client identity header. Every value shown is a column this person actually carries;
+   nothing is filled in to make the header look complete. The three log actions and "Edit
+   details" are the SAME links and the same destinations the previous header carried — only
+   their arrangement changed, with the rarely-used ones behind a "More actions" disclosure. #}
+{% set _display = person.full_name or ("Person " ~ person.id) %}
+{% set _parts = _display.split() %}
+<div class="cp-head">
+  <span class="cp-avatar" aria-hidden="true">{{ ((_parts[0][0] if _parts else "?") ~ (_parts[1][0] if _parts|length > 1 else ""))|upper }}</span>
 
-<nav class="tabs">
-  <a class="tab {{ 'active' if active_tab == 'overview' else '' }}" href="/people/{{ person.id }}?tab=overview">Overview</a>
-  <a class="tab {{ 'active' if active_tab == 'timeline' else '' }}" href="/people/{{ person.id }}?tab=timeline">Timeline</a>
-  <a class="tab {{ 'active' if active_tab == 'tasks' else '' }}" href="/people/{{ person.id }}?tab=tasks">Tasks</a>
-  <a class="tab {{ 'active' if active_tab == 'documents' else '' }}" href="/people/{{ person.id }}?tab=documents">Documents</a>
-  <a class="tab {{ 'active' if active_tab == 'notes' else '' }}" href="/people/{{ person.id }}?tab=notes">Notes</a>
-  <a class="tab {{ 'active' if active_tab == 'activities' else '' }}" href="/people/{{ person.id }}?tab=activities">Activities</a>
-  <a class="tab {{ 'active' if active_tab == 'calendar' else '' }}" href="/people/{{ person.id }}?tab=calendar">Calendar</a>
-  <a class="tab {{ 'active' if active_tab == 'relationships' else '' }}" href="/people/{{ person.id }}?tab=relationships">Relationships</a>
-  <a class="tab {{ 'active' if active_tab == 'portfolio' else '' }}" href="/people/{{ person.id }}?tab=portfolio">Portfolio</a>
+  <div class="cp-idblock">
+    <p class="cp-eyebrow">Client</p>
+    <h1 class="cp-name">{{ _display }}{% if person.preferred_name and person.preferred_name != person.full_name %}
+      <span class="cp-pref">&ldquo;{{ person.preferred_name }}&rdquo;</span>{% endif %}</h1>
+
+    {# WHO: household, record id, status. The household is a link, never merged into this
+       person's identity — they remain separate records. #}
+    <p class="cp-idline">
+      {% if household %}
+        <span aria-hidden="true">&#8962;</span>
+        <a href="/households/{{ household.id }}">{{ household.name }}</a>
+        <span class="dot" aria-hidden="true">&middot;</span>
+      {% endif %}
+      <span class="rec">Record #{{ person.id }}</span>
+      <span class="dot" aria-hidden="true">&middot;</span>
+      <span class="cp-status{{ '' if person.active else ' cp-status--off' }}">{{ "Active" if person.active else "Inactive" }}</span>
+    </p>
+
+    {# HOW TO REACH THEM: only the channels the record actually holds. #}
+    {% if person.primary_email or person.primary_phone or person.city or person.state %}
+    <p class="cp-contactline">
+      {% if person.primary_email %}<span class="ico" aria-hidden="true">&#9993;</span><a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a>{% endif %}
+      {% if person.primary_email and person.primary_phone %}<span class="dot" aria-hidden="true">&middot;</span>{% endif %}
+      {% if person.primary_phone %}<span class="ico" aria-hidden="true">&#9742;</span><a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a>{% endif %}
+      {% set _loc = [person.city, person.state]|select|join(", ") %}
+      {% if _loc and (person.primary_email or person.primary_phone) %}<span class="dot" aria-hidden="true">&middot;</span>{% endif %}
+      {% if _loc %}<span class="ico" aria-hidden="true">&#9678;</span><span>{{ _loc }}</span>{% endif %}
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="cp-actions">
+    <a class="btn" href="/people/{{ person.id }}/notes?log=call#logform">Log Call</a>
+    <a class="btn" href="/people/{{ person.id }}/notes?log=email#logform">Log Email</a>
+    <a class="btn" href="/people/{{ person.id }}/notes?log=meeting#logform">Log Meeting</a>
+    <details class="cp-more">
+      <summary role="button" aria-label="More actions" title="More actions"><span aria-hidden="true">&hellip;</span></summary>
+      <div class="menu">
+        <a href="/people/{{ person.id }}/edit">Edit details</a>
+        <a href="/workspace/meetings/{{ person.id }}">Prepare for meeting</a>
+        {% if 'timeline.read' in caps %}<a href="/people/{{ person.id }}/timeline">Activity timeline</a>{% endif %}
+        {% if 'annual_review.read' in caps %}<a href="/annual-review/{{ person.id }}">Annual review</a>{% endif %}
+        {% if 'business_owner.read' in caps %}<a href="/business-owner/{{ person.id }}">Business owner planning</a>{% endif %}
+      </div>
+    </details>
+  </div>
+</div>
+
+{% if saved %}<div class="alert good section"><span class="ico">&#10003;</span><div>Client details updated.</div></div>{% endif %}
+
+{# Profile navigation. Every destination the previous strip carried is preserved on the
+   same URL; only the treatment changed. Documents is the ONE exception and it is
+   deliberate: it points at the approved Documents workspace rather than this page's older
+   inline list. The old ?tab=documents URL still resolves for anyone holding a link. #}
+{% set _tabs = [
+  ("overview",      "Overview",      None),
+  ("timeline",      "Timeline",      None),
+  ("tasks",         "Tasks",         open_tasks|length),
+  ("notes",         "Notes",         None),
+  ("activities",    "Activities",    None),
+  ("calendar",      "Calendar",      None),
+  ("relationships", "Relationships", None),
+  ("portfolio",     "Portfolio",     None),
+] %}
+<nav class="cp-tabs" aria-label="Client sections">
+  {% for key, label, count in _tabs %}
+    {% if key == "timeline" %}
+      {# Documents sits between Timeline and Tasks, as it did before. #}
+      <a class="cp-tab{{ ' active' if active_tab == 'timeline' else '' }}"
+         href="/people/{{ person.id }}?tab=timeline"
+         {% if active_tab == 'timeline' %}aria-current="page"{% endif %}>Timeline</a>
+      <a class="cp-tab{{ ' active' if active_tab == 'documents' else '' }}"
+         href="/client/{{ person.id }}?tab=documents"
+         {% if active_tab == 'documents' %}aria-current="page"{% endif %}>Documents <span class="out" aria-hidden="true">&#8599;</span></a>
+    {% else %}
+      <a class="cp-tab{{ ' active' if active_tab == key else '' }}"
+         href="/people/{{ person.id }}?tab={{ key }}"
+         {% if active_tab == key %}aria-current="page"{% endif %}>{{ label }}{% if count %} <span class="n">{{ count }}</span>{% endif %}</a>
+    {% endif %}
+  {% endfor %}
 </nav>
 
 <div class="workspace-body">
@@ -377,268 +434,304 @@
 
     {% else %}
 
-    {# Client 360 summary (Phase D.2): a factual per-domain relationship snapshot,
-       shown side by side and NEVER summed into a single composite figure (the
-       units are not comparable). Read-only composition of existing services. #}
-    <div class="card-head ws-links">
-      <h2>Client 360</h2>
-      <span class="more-links">
-        <a class="more" href="/workspace/meetings/{{ person.id }}">Prepare for meeting →</a>{% if 'timeline.read' in caps %}<a class="more" href="/people/{{ person.id }}/timeline">Activity timeline →</a>{% endif %}{% if 'annual_review.read' in caps %}<a class="more" href="/annual-review/{{ person.id }}">Annual review →</a>{% endif %}{% if 'business_owner.read' in caps %}<a class="more" href="/business-owner/{{ person.id }}">Business owner planning →</a>{% endif %}
-      </span>
+    {# ---- OVERVIEW ------------------------------------------------------------------
+       The staff dashboard for one client, ordered the way the work is: who they are, what
+       is open, what happened, what is on file, who they belong to. Advisor findings appear
+       only when there are findings.
+
+       The governing rule is that the page gets SMALLER when there is less data. A card, a
+       tile or a row renders only when it carries information — absence is not reported back
+       to staff as content, because a screen explaining what four subsystems do not contain
+       is longer and less useful than one that simply omits them. #}
+
+    {# Contextual destinations that used to sit in a header strip. #}
+    <div class="cp-links">
+      <a href="/workspace/meetings/{{ person.id }}">Prepare for meeting &rarr;</a>
+      {% if 'timeline.read' in caps %}<a href="/people/{{ person.id }}/timeline">Activity timeline &rarr;</a>{% endif %}
+      {% if 'annual_review.read' in caps %}<a href="/annual-review/{{ person.id }}">Annual review &rarr;</a>{% endif %}
+      {% if 'business_owner.read' in caps %}<a href="/business-owner/{{ person.id }}">Business owner planning &rarr;</a>{% endif %}
     </div>
-    <section class="stat-grid mb-4">
-      {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(client_snapshot.cash), "{:.1f}".format(client_snapshot.cash_percent) ~ "%") }}
-      {{ wc.summary_card("Insurance", client_snapshot.insurance.policy_count ~ (" policy" if client_snapshot.insurance.policy_count == 1 else " policies"), "$" ~ "{:,.2f}".format(client_snapshot.insurance.total_face) ~ " coverage") }}
-      {{ wc.summary_card("Tax engagements", client_snapshot.tax.active, "Active") }}
-      {{ wc.summary_card("Open exceptions", client_snapshot.open_exceptions, "Needs attention") }}
-      {{ wc.summary_card("Open tasks", client_snapshot.open_tasks, "Meeting agenda") }}
+
+    {# Advisor Intelligence renders ONLY when there are signals. With none it is omitted
+       entirely — the absence of intelligence does not need page space. #}
+    {% if advisor_signals %}
+    <section class="cp-card cp-mb">
+      <header><h2>Advisor Intelligence</h2></header>
+      <div class="cp-body">
+        {{ intel.signals_panel(advisor_signals, compact=True, work_index=advisor_work_index, work_person_id=person.id) }}
+      </div>
     </section>
+    {% endif %}
 
-    {# Advisor Intelligence (Phase D.5C): deterministic, factual signals + opportunities
-       for this client. Reuses get_client_signals (never generated in-template). #}
-    <h2 class="section-title">Advisor Intelligence</h2>
-    <section class="card section">
-      {{ intel.signals_panel(advisor_signals, compact=True, work_index=advisor_work_index, work_person_id=person.id) }}
+    {# ---- Client 360 ---------------------------------------------------------------
+       One tile per domain that HAS a figure. Domains holding nothing are simply absent:
+       neither a $0 tile nor a sentence naming them. Attention counters (exceptions,
+       overdue tasks) appear only when non-zero, because nothing to attend to needs no
+       tile. If no domain has a figure, the whole section is omitted. #}
+    {% set _tiles = [] %}
+    {% if client_snapshot.cash %}
+      {% set _ = _tiles.append(("Cash", "${:,.0f}".format(client_snapshot.cash|float),
+                                ("{:.1f}".format(client_snapshot.cash_percent|float) ~ "% of portfolio") if client_snapshot.cash_percent else None, "")) %}
+    {% endif %}
+    {% if portfolio and portfolio.get("total_value") %}
+      {% set _ = _tiles.append(("Portfolio", "${:,.0f}".format(portfolio.get("total_value")|float),
+                                (portfolio.get("account_count")|string ~ " accounts") if portfolio.get("account_count") else None, "")) %}
+    {% endif %}
+    {% if client_snapshot.insurance.policy_count %}
+      {% set _ = _tiles.append(("Insurance", client_snapshot.insurance.policy_count|string ~ (" policy" if client_snapshot.insurance.policy_count == 1 else " policies"),
+                                ("${:,.0f}".format(client_snapshot.insurance.total_face|float) ~ " coverage") if client_snapshot.insurance.total_face else None, "")) %}
+    {% endif %}
+    {% if client_snapshot.tax.active %}
+      {% set _ = _tiles.append(("Tax engagements", client_snapshot.tax.active|string, "Active", "")) %}
+    {% endif %}
+    {% if client_snapshot.open_exceptions %}
+      {% set _ = _tiles.append(("Open exceptions", client_snapshot.open_exceptions|string, "Needs attention", " cp-stat--crit")) %}
+    {% endif %}
+    {% if client_snapshot.open_tasks %}
+      {% set _ = _tiles.append(("Open tasks", client_snapshot.open_tasks|string, "On the agenda", "")) %}
+    {% endif %}
+    {% if client_summary.overdue_task_count %}
+      {% set _ = _tiles.append(("Overdue tasks", client_summary.overdue_task_count|string, "Past due", " cp-stat--warn")) %}
+    {% endif %}
+
+    {% if _tiles %}
+    <h2 class="cp-seclabel">Client 360</h2>
+    <section class="cp-stats cp-mb" aria-label="Client financial and planning summary">
+      {% for k, v, sub, mod in _tiles %}
+        <div class="cp-stat{{ mod }}">
+          <span class="k">{{ k }}</span>
+          <span class="v">{{ v }}</span>
+          {% if sub %}<span class="s">{{ sub }}</span>{% endif %}
+        </div>
+      {% endfor %}
     </section>
+    {% endif %}
 
-    <div class="workspace-grid">
+    <div class="cp-grid">
 
-        <aside class="stack">
-            <section class="card">
-                <h2 class="section-title">Client Details</h2>
+      {# ---------------------------------------------------------------- main column #}
+      <div class="cp-col">
 
-                <div class="detail-row">
-                    <span class="detail-label">Email</span>
-                    {{ person.primary_email or "Not available" }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Phone</span>
-                    {{ person.primary_phone or "Not available" }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Preferred Name</span>
-                    {{ person.preferred_name or "Not available" }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Birth Date</span>
-                    {{ person.birth_date or "Not available" }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Contact Type</span>
-                    {{ person.contact_type or "Not available" }}
-                </div>
-            </section>
-
-            <section class="card">
-                <h2 class="section-title">Household</h2>
-
-                {% if household %}
-                <a href="/households/{{ household.id }}">
-                    {{ household.name }}
-                </a>
-                {% else %}
-                <div class="empty-state">Not assigned</div>
-                {% endif %}
-            </section>
-
-            <section class="card">
-                <h2 class="section-title">Accounts</h2>
-
-                {% for account in accounts %}
-                <div class="detail-row">
-                    <strong>
-                        {{ account.account_name or account.custodian }}
-                    </strong>
-
-                    <div class="empty-state">
-                        {{ account.registration_type or "Registration unavailable" }}
-                        ·
-                        {{ account.status or "Status unavailable" }}
-                    </div>
-
-                    {% if account.total_value is not none %}
-                    <div>
-                        ${{ "{:,.2f}".format(account.total_value) }}
-                    </div>
-                    {% endif %}
-                </div>
-                {% else %}
-                <div class="empty-state">No accounts linked.</div>
-                {% endfor %}
-            </section>
-        </aside>
-
-        <section class="workspace-center stack">
-            <section>
-                <h2>Upcoming Meetings</h2>
-                {% for meeting in upcoming_meetings %}
-                <article class="card meeting-card compact-meeting">
-                    <div class="meeting-date">{{ meeting.event_time }}</div>
-                    <strong>{{ meeting.title }}</strong>
-                    {% if meeting.event_metadata.location %}
-                    <div class="timeline-meta">{{ meeting.event_metadata.location }}</div>
-                    {% endif %}
-                </article>
-                {% else %}
-                <div class="card empty-state">No upcoming meetings.</div>
-                {% endfor %}
-                <p><a href="/people/{{ person.id }}?tab=calendar">View calendar →</a></p>
-            </section>
-
-            <section>
-                <h2>Recent Activity</h2>
-
-                {% for event in timeline_events[:8] %}
-                <article class="card timeline-event">
-                    <strong>{{ event.title }}</strong>
-
-                    {% if event.summary %}
-                    <p>{{ event.summary }}</p>
-                    {% endif %}
-
-                    <div class="timeline-meta">
-                        {{ event.event_type.replace("_", " ").title() }}
-                        ·
-                        {{ event.source }}
-                        ·
-                        {{ event.relative_time }}
-                    </div>
-                </article>
-                {% else %}
-                <div class="card empty-state">
-                    No timeline events found.
-                </div>
-                {% endfor %}
-
-                <p>
-                    <a href="/people/{{ person.id }}?tab=timeline">
-                        View complete timeline →
-                    </a>
-                </p>
-            </section>
+        {# ---- OPEN WORK: actionable items only. `actionable_client_alerts` has already
+           dropped the data-completeness alerts in the route, so this card cannot fill up
+           with three rows reporting that nothing has been recorded yet. #}
+        <section class="cp-card">
+          <header>
+            <h2>Open Work</h2>
+            <a class="more" href="/people/{{ person.id }}?tab=tasks">All tasks &rarr;</a>
+          </header>
+          {% if open_tasks or actionable_client_alerts %}
+          <div class="cp-list">
+            {% for task in open_tasks %}
+              {% set _p = (task.priority or "")|lower %}
+              <div class="cp-item">
+                <span class="cp-dot{{ ' cp-dot--crit' if _p in ["urgent", "critical", "high"] else (' cp-dot--warn' if _p == "medium" else '') }}" aria-hidden="true"></span>
+                <span class="cp-itext">
+                  <a class="t" href="/people/{{ person.id }}/tasks">{{ task.title }}</a>
+                  <span class="m">
+                    {%- if task.priority %}{{ task.priority|title }}{% endif %}
+                    {%- if task.assignee_name %} &middot; {{ task.assignee_name }}{% endif %}
+                  </span>
+                </span>
+                <span class="when">{% if task.due_date %}Due {{ task.due_date | humandt }}{% else %}<span class="cp-none">No due date</span>{% endif %}</span>
+              </div>
+            {% endfor %}
+            {% for alert in actionable_client_alerts %}
+              <div class="cp-item">
+                <span class="cp-dot cp-dot--{{ 'crit' if alert.level in ["critical", "high", "danger"] else 'warn' }}" aria-hidden="true"></span>
+                <span class="cp-itext">
+                  <span class="t">{{ alert.title }}</span>
+                  <span class="m">{{ alert.message }}</span>
+                </span>
+              </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="cp-empty">No open work.</p>
+          {% endif %}
         </section>
 
-        <aside class="stack">
-            <section class="card">
-                <h2 class="section-title">Open Tasks</h2>
+        <section class="cp-card">
+          <header>
+            <h2>Recent Activity</h2>
+            <a class="more" href="/people/{{ person.id }}?tab=timeline">Full timeline &rarr;</a>
+          </header>
+          {% if timeline_events %}
+          <div class="cp-list">
+            {% for event in timeline_events[:8] %}
+              <div class="cp-item">
+                <span class="cp-dot cp-dot--ok" aria-hidden="true"></span>
+                <span class="cp-itext">
+                  <span class="t">{{ event.title }}</span>
+                  <span class="m">
+                    {{ event.event_type.replace("_", " ").title() }}{% if event.source %} &middot; {{ event.source }}{% endif %}
+                    {%- if event.summary %} &middot; {{ event.summary }}{% endif %}
+                  </span>
+                </span>
+                <span class="when">{{ event.relative_time }}</span>
+              </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="cp-empty">No recorded activity yet.</p>
+          {% endif %}
+        </section>
 
-                {% for task in open_tasks %}
-                <div class="detail-row">
-                    <a href="/people/{{ person.id }}/tasks">
-                        {{ task.title }}
-                    </a>
+        {# ---- RECENT DOCUMENTS. The count in the header comes from the SAME scope as the
+           rows below it and as the "no documents" alert — see services.documents
+           person_documents_clause. They cannot disagree. #}
+        {% if documents or microsoft_documents %}
+        <section class="cp-card">
+          <header>
+            <h2>Recent Documents</h2>
+            {% if client_summary.document_count %}<span class="cp-count">{{ client_summary.document_count }}</span>{% endif %}
+            <a class="more" href="/client/{{ person.id }}?tab=documents">Open Documents &rarr;</a>
+          </header>
+          <div class="cp-list">
+            {% for document in documents[:5] %}
+              <div class="cp-item">
+                <span class="cp-itext">
+                  <a class="t" href="/documents/{{ document.id }}/download">{{ document.original_name }}</a>
+                  <span class="m">{{ document.category or "Uncategorised" }}</span>
+                </span>
+              </div>
+            {% endfor %}
+            {% for document in microsoft_documents[:3] %}
+              <div class="cp-item">
+                <span class="cp-itext">
+                  {% if document.web_url %}<a class="t" href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">{{ document.name }}</a>
+                  {% else %}<span class="t">{{ document.name }}</span>{% endif %}
+                  <span class="m">Microsoft 365 &middot; {{ document.match_method or "Matched" }}</span>
+                </span>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+        {% endif %}
 
-                    <div class="empty-state">
-                        {{ task.priority.title() }}
-                        ·
-                        Due {{ (task.due_date | humandt) or "not set" }}
-                    </div>
-                </div>
-                {% else %}
-                <div class="empty-state">No open tasks.</div>
-                {% endfor %}
-            </section>
+        {# Planning findings only — the data-completeness prompts were filtered out in the
+           route, so this card is absent unless there is something to advise. #}
+        {% if planning_recommendations %}
+        <section class="cp-card">
+          <header><h2>Advisor Recommendations</h2></header>
+          <div class="cp-list">
+            {% for recommendation in planning_recommendations %}
+              <div class="cp-item">
+                <span class="cp-dot" aria-hidden="true"></span>
+                <span class="cp-itext"><span class="t">{{ recommendation }}</span></span>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+        {% endif %}
+      </div>
 
-            <section class="card">
-                <h2 class="section-title">Recent Documents</h2>
+      {# ------------------------------------------------------------------ side rail #}
+      <div class="cp-col">
 
-                {% for document in documents %}
-                <div class="detail-row">
-                    <a href="/documents/{{ document.id }}/download">
-                        {{ document.original_name }}
-                    </a>
+        <section class="cp-card">
+          <header><h2>Client Snapshot</h2></header>
+          <div class="cp-body">
+            <dl class="cp-facts">
+              <dt>Household</dt>
+              <dd>{% if household %}<a href="/households/{{ household.id }}">{{ household.name }}</a>
+                  {% else %}<span class="cp-none">Not assigned</span>{% endif %}</dd>
 
-                    <div class="empty-state">
-                        {{ document.category or "Other" }}
-                    </div>
-                </div>
-                {% else %}
-                <div class="empty-state">No documents uploaded.</div>
-                {% endfor %}
+              {# Contact rows appear only when populated. When the record holds NO contact
+                 channel at all, one honest line replaces three em-dashes. #}
+              {% set _loc2 = [person.city, person.state]|select|join(", ") %}
+              {% if person.primary_email or person.primary_phone or _loc2 %}
+                {% if person.primary_email %}
+                  <dt>Email</dt><dd><a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a></dd>{% endif %}
+                {% if person.primary_phone %}
+                  <dt>Phone</dt><dd><a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a></dd>{% endif %}
+                {% if _loc2 %}<dt>Location</dt><dd>{{ _loc2 }}</dd>{% endif %}
+              {% else %}
+                <dt>Contact</dt><dd><span class="cp-none">Not recorded</span></dd>
+              {% endif %}
 
-                {% for document in microsoft_documents[:5] %}
-                <div class="detail-row">
-                    {% if document.web_url %}<a href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">{{ document.name }}</a>{% else %}<strong>{{ document.name }}</strong>{% endif %}
-                    <div class="empty-state">Microsoft 365 · {{ document.match_method or "Matched" }}</div>
-                </div>
-                {% endfor %}
-            </section>
+              {% if person.preferred_name and person.preferred_name != person.full_name %}
+                <dt>Preferred</dt><dd>{{ person.preferred_name }}</dd>{% endif %}
+              {% if person.birth_date %}<dt>Birth date</dt><dd>{{ person.birth_date }}</dd>{% endif %}
+              {% if person.contact_type %}<dt>Type</dt><dd>{{ person.contact_type|replace("_"," ")|title }}</dd>{% endif %}
 
-            <section class="card">
-                <h2 class="section-title">Client Summary</h2>
+              {# Last contact is shown only when there IS one; "no recorded contact" is
+                 already the Recent Activity empty state and does not need saying twice. #}
+              {% if client_summary.days_since_last_contact is not none %}
+                <dt>Last contact</dt>
+                <dd>{{ client_summary.days_since_last_contact }} day{{ "" if client_summary.days_since_last_contact == 1 else "s" }} ago</dd>
+              {% endif %}
+            </dl>
+          </div>
+        </section>
 
-                <div class="detail-row">
-                    <span class="detail-label">Open Tasks</span>
-                    {{ client_summary.open_task_count }}
-                </div>
+        {# Household membership as context. The household stays a separate record reached by
+           link — the two identities are never merged. #}
+        {% if person_households %}
+        <section class="cp-card">
+          <header>
+            <h2>Households</h2>
+            <a class="more" href="/people/{{ person.id }}?tab=relationships">Manage &rarr;</a>
+          </header>
+          <div class="cp-list">
+            {% for hh in person_households %}
+              <div class="cp-item">
+                <span class="cp-itext">
+                  <a class="t" href="/households/{{ hh.household_id or hh.id }}">{{ hh.household_name or hh.name or ("Household " ~ (hh.household_id or hh.id)) }}</a>
+                  {% if hh.relationship_type %}<span class="m">{{ hh.relationship_type|replace("_"," ")|title }}</span>{% endif %}
+                </span>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+        {% endif %}
 
-                <div class="detail-row">
-                    <span class="detail-label">Overdue Tasks</span>
-                    {{ client_summary.overdue_task_count }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Documents</span>
-                    {{ client_summary.document_count }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Activities</span>
-                    {{ client_summary.activity_count }}
-                </div>
-
-                <div class="detail-row">
-                    <span class="detail-label">Last Contact</span>
-
-                    {% if client_summary.days_since_last_contact is not none %}
-                        {{ client_summary.days_since_last_contact }} day{{ "" if client_summary.days_since_last_contact == 1 else "s" }} ago
-                    {% else %}
-                        No recorded contact
-                    {% endif %}
-                </div>
-
-                {% if client_summary.last_event_title %}
-                <div class="detail-row">
-                    <span class="detail-label">Latest Event</span>
-                    {{ client_summary.last_event_title }}
-                </div>
+        {% if accounts %}
+        <section class="cp-card">
+          <header>
+            <h2>Accounts</h2>
+            <a class="more" href="/people/{{ person.id }}?tab=portfolio">Portfolio &rarr;</a>
+          </header>
+          <div class="cp-list">
+            {% for account in accounts %}
+              <div class="cp-item">
+                <span class="cp-itext">
+                  <span class="t">{{ account.account_name or account.custodian }}</span>
+                  <span class="m">
+                    {%- if account.registration_type %}{{ account.registration_type }}{% endif %}
+                    {%- if account.registration_type and account.status %} &middot; {% endif %}
+                    {%- if account.status %}{{ account.status }}{% endif %}
+                  </span>
+                </span>
+                {% if account.total_value is not none %}
+                  <span class="when">${{ "{:,.0f}".format(account.total_value|float) }}</span>
                 {% endif %}
-            </section>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+        {% endif %}
 
-            <section class="card">
-                <h2 class="section-title">Alerts</h2>
-
-                {% for alert in client_alerts %}
-                <div class="client-alert client-alert-{{ alert.level }}">
-                    <strong>{{ alert.title }}</strong>
-                    <div>{{ alert.message }}</div>
-                </div>
-                {% else %}
-                <div class="empty-state">
-                    No client alerts.
-                </div>
-                {% endfor %}
-            </section>
-
-            <section class="card">
-                <h2 class="section-title">Advisor Recommendations</h2>
-
-                {% for recommendation in advisor_recommendations %}
-                <div class="client-alert client-alert-info">
-                    {{ recommendation }}
-                </div>
-                {% else %}
-                <div class="empty-state">
-                    No recommendations available.
-                </div>
-                {% endfor %}
-            </section>
-        </aside>
-
+        {% if upcoming_meetings %}
+        <section class="cp-card">
+          <header>
+            <h2>Upcoming Meetings</h2>
+            <a class="more" href="/people/{{ person.id }}?tab=calendar">Calendar &rarr;</a>
+          </header>
+          <div class="cp-list">
+            {% for meeting in upcoming_meetings %}
+              <div class="cp-item">
+                <span class="cp-itext">
+                  <span class="t">{{ meeting.title }}</span>
+                  {% if meeting.event_metadata.location %}<span class="m">{{ meeting.event_metadata.location }}</span>{% endif %}
+                </span>
+                <span class="when">{{ meeting.event_time }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+        {% endif %}
+      </div>
     </div>
 
     {% endif %}

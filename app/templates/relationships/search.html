@@ -5,11 +5,11 @@
 {% block content %}
 {{ ui.page_head("Relationship search", eyebrow="Clients", desc="Find clients by family, professional, business, estate, and household connections.") }}
 <form class="filterbar" method="get">
-  <select class="input" name="relationship_type" style="height:30px">
+  <select class="input u-h-30px" name="relationship_type">
     <option value="">Any relationship</option>
     {% for type in types %}<option value="{{ type.code }}" {{ "selected" if relationship_type == type.code else "" }}>{{ type.name }}</option>{% endfor %}
   </select>
-  <input class="input" name="related_name" value="{{ related_name }}" placeholder="Related person or entity name" style="height:30px">
+  <input class="input u-h-30px" name="related_name" value="{{ related_name }}" placeholder="Related person or entity name">
   <button class="btn sm" type="submit">Search</button>
 </form>
 {% if results %}

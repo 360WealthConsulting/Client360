@@ -10,17 +10,17 @@
   <b>Current decision: {{ decision_label }}</b>
   <p class="mt-2">Names: {{ group.names or '—' }} · Sources: {{ group.source_systems or '—' }} · Reason for review: {{ group.review_reason or '—' }}</p>
 </div></div>
-<div class="row" style="margin-bottom:20px; gap:12px">
+<div class="row u-mb-20px u-gap-12px">
   <form method="post" action="/matches/{{ group_number }}/decision/approved"><button class="btn" type="submit">Approve match</button></form>
   <form method="post" action="/matches/{{ group_number }}/decision/rejected"><button class="btn danger" type="submit">Not a duplicate</button></form>
   <form method="post" action="/matches/{{ group_number }}/decision/skipped"><button class="btn secondary" type="submit">Skip</button></form>
 </div>
-<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+<div class="stat-grid c-gtc-repeat-auto-fit-minmax-320px-1fr">
 {% for record in records %}
   {% set addr = [record.address_line_1, record.address_line_2, record.city, record.state, record.postal_code]|select|join(", ") %}
   <div class="card">
     <div class="row between">
-      <h3 style="margin:0; font-size:15px">{{ record.source_system or '—' }}</h3>
+      <h3 class="u-m-0 u-fs-15px">{{ record.source_system or '—' }}</h3>
       <a class="rowlink" href="/source/{{ record.id }}">Open source</a>
     </div>
     <div class="stack mt-3">

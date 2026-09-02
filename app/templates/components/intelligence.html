@@ -26,7 +26,7 @@
        the `signal_groups` Jinja global); the template only renders. #}
     {% for group, rows in signal_groups(signals) %}
       {% if rows %}
-        <h3 class="detail-label" style="margin:12px 0 4px">{{ group }}</h3>
+        <h3 class="detail-label c-m-12px-0-4px">{{ group }}</h3>
         {% if group == "Advisor Recommendations" %}
           <div class="table-wrap"><table class="data">
             <thead><tr>
@@ -42,7 +42,7 @@
                 <td>{{ _gate(s) }}</td>
                 <td class="subtle">{{ s.recommendation.governing_rule }}</td>
                 <td class="subtle">{{ s.recommendation.rule_version }}</td>
-                <td>{{ ui.badge(s.recommendation.approval_status | replace("_", " ") | capitalize) }}</td>{% if work_index is not none %}<td>{% set wk = work_index.get(s.id) %}{% if wk %}<a class="rowlink" href="/advisor-work/{{ wk.id }}">Work exists →</a>{% else %}<form method="post" action="/advisor-work" style="margin:0"><input type="hidden" name="person_id" value="{{ work_person_id }}"><input type="hidden" name="recommendation_id" value="{{ s.id }}"><button class="btn" type="submit" style="padding:2px 8px; font-size:12px">Create work</button></form>{% endif %}</td>{% endif %}
+                <td>{{ ui.badge(s.recommendation.approval_status | replace("_", " ") | capitalize) }}</td>{% if work_index is not none %}<td>{% set wk = work_index.get(s.id) %}{% if wk %}<a class="rowlink" href="/advisor-work/{{ wk.id }}">Work exists →</a>{% else %}<form method="post" action="/advisor-work" class="u-m-0"><input type="hidden" name="person_id" value="{{ work_person_id }}"><input type="hidden" name="recommendation_id" value="{{ s.id }}"><button class="btn c-p-2px-8px u-fs-12px" type="submit">Create work</button></form>{% endif %}</td>{% endif %}
               </tr>
             {% endfor %}
             </tbody>

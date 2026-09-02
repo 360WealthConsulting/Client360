@@ -6,6 +6,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from sqlalchemy import select
+
+from app.db import engine, households, people, users
+from app.services.work_queue.dispatch import ASSIGN_ENTITY
 from app.security.audit import audit_denied
 from app.security.dependencies import require_capability
 from app.security.models import Principal
@@ -184,8 +188,108 @@ def work_diagnostics(principal: Principal = Depends(require_capability("observab
 
 
 @router.get("/work/team")
-def team_work(request: Request, principal: Principal = Depends(require_capability("capacity.read"))):
-    return templates.TemplateResponse(request=request, name="work/team_work.html", context={"work": dashboard(principal), "principal": principal, "exception_summary": dashboard_summary(principal, audience="operations")})
+def team_work(request: Request, q: str | None = None, status: str = "", priority: str = "",
+              work_type: str = "", waiting: str = "", sla: str = "", assigned: str = "",
+              sort: str = "priority",
+              principal: Principal = Depends(require_capability("capacity.read"))):
+    """Team Work — the authorized team queue.
+
+    The DATA is unchanged: the same ``dashboard(principal)`` composition, the same
+    ``capacity.read`` gate, the same items in the same scope. What changed is that the page
+    renders them as a queue instead of one card per item — at 145 items the card list showed
+    every row as an identical "title / type / status / priority" block with no client, no
+    assignee and no due date, which is unusable at real volume.
+
+    Filtering and sorting happen HERE, over the composed list, rather than in the service:
+    the service returns the principal's authorized set, and narrowing a list you are already
+    allowed to see cannot widen it. Every filter maps to a field the item actually carries.
+
+    Person, household and assignee NAMES are resolved in one bulk read each, for the ids the
+    items already carry — the item shape has ids only, and a per-row lookup would be 145
+    queries. No id is looked up that was not already in the authorized payload.
+    """
+    data = dashboard(principal)
+    items = list(data["items"])
+
+    term = (q or "").strip().lower()
+    if term:
+        items = [i for i in items
+                 if term in (i.get("title") or "").lower()
+                 or term in (i.get("workflow_name") or "").lower()]
+    if status:
+        items = [i for i in items if (i.get("status") or "") == status]
+    if priority:
+        items = [i for i in items if (i.get("priority") or "") == priority]
+    if work_type:
+        items = [i for i in items if (i.get("work_type") or "") == work_type]
+    if waiting:
+        items = [i for i in items if (i.get("waiting_on") or "") == waiting]
+    if sla:
+        items = [i for i in items if (i.get("sla_risk") or {}).get("level") == sla]
+    if assigned == "unassigned":
+        items = [i for i in items if not i.get("assigned_user_id")]
+    elif assigned == "mine":
+        items = [i for i in items if i.get("assigned_user_id") == principal.user_id]
+
+    today = date.today()
+    _RANK = {"breached": 0, "critical": 1, "warning": 2, "none": 3}
+    if sort == "due":
+        items.sort(key=lambda i: (i.get("due_date") is None, i.get("due_date") or today))
+    elif sort == "sla":
+        items.sort(key=lambda i: _RANK.get((i.get("sla_risk") or {}).get("level"), 9))
+    elif sort == "title":
+        items.sort(key=lambda i: (i.get("title") or "").lower())
+    else:
+        items.sort(key=lambda i: -(i.get("priority_score") or 0))
+
+    # --- name resolution, one read per entity kind ------------------------------------
+    person_ids = {i["person_id"] for i in items if i.get("person_id")}
+    household_ids = {i["household_id"] for i in items if i.get("household_id")}
+    user_ids = {i["assigned_user_id"] for i in items if i.get("assigned_user_id")}
+    names, hh_names, user_names = {}, {}, {}
+    with engine.connect() as connection:
+        if person_ids:
+            names = {r["id"]: r["full_name"] for r in connection.execute(
+                select(people.c.id, people.c.full_name)
+                .where(people.c.id.in_(person_ids))).mappings()}
+        if household_ids:
+            hh_names = {r["id"]: r["name"] for r in connection.execute(
+                select(households.c.id, households.c.name)
+                .where(households.c.id.in_(household_ids))).mappings()}
+        if user_ids:
+            user_names = {r["id"]: r["display_name"] for r in connection.execute(
+                select(users.c.id, users.c.display_name)
+                .where(users.c.id.in_(user_ids))).mappings()}
+
+    # The unified detail screen is addressed by the QUEUE's source_domain, which is not the
+    # item's entity_type: a workflow step is entity_type "workflow_step" but lives under the
+    # "workflow" domain (work_queue.adapters). Inverting the authoritative ASSIGN_ENTITY map
+    # keeps that correspondence in one place — building the href from entity_type directly
+    # produced /work/workflow_step/5, which 404s.
+    _DOMAIN_FOR_ENTITY = {entity: domain for domain, entity in ASSIGN_ENTITY.items()}
+    for item in items:
+        domain = _DOMAIN_FOR_ENTITY.get(item.get("entity_type"))
+        item["detail_href"] = f"/work/{domain}/{item['id']}" if domain else None
+
+    facets = {
+        "status": sorted({i["status"] for i in data["items"] if i.get("status")}),
+        "priority": sorted({i["priority"] for i in data["items"] if i.get("priority")}),
+        "work_type": sorted({i["work_type"] for i in data["items"] if i.get("work_type")}),
+        "waiting": sorted({i["waiting_on"] for i in data["items"] if i.get("waiting_on")}),
+        "sla": [lvl for lvl in ("breached", "critical", "warning")
+                if any((i.get("sla_risk") or {}).get("level") == lvl for i in data["items"])],
+    }
+    return templates.TemplateResponse(request=request, name="work/team_work.html", context={
+        "work": data, "items": items, "principal": principal,
+        "exception_summary": dashboard_summary(principal, audience="operations"),
+        "person_names": names, "household_names": hh_names, "user_names": user_names,
+        "facets": facets, "today": today,
+        "filters": {"q": term, "status": status, "priority": priority, "work_type": work_type,
+                    "waiting": waiting, "sla": sla, "assigned": assigned, "sort": sort},
+        "filtered": bool(term or status or priority or work_type or waiting or sla or assigned),
+        "total": len(data["items"]),
+        "can_act": principal.can("work.write"),
+    })
 
 
 @router.get("/work/queues/{code}")

@@ -1,0 +1,211 @@
+/* ==================================================================================
+   360Plus — staff directory workspaces (People, Households)
+   ----------------------------------------------------------------------------------
+   ONE vocabulary shared by both directories, so People and Households are members of
+   the same product rather than two bespoke designs. Loaded by both templates.
+
+   Everything here builds on the LOCKED shared shell (`shell360.css`): the tokens,
+   buttons, inputs, cards, tables and badges come from there and are not redefined.
+   This file adds only what a directory workspace needs on top — the filter toolbar,
+   the identity cell, the creation disclosure and the empty-value treatment.
+
+   Presentation only: no route, capability gate or query is expressed here.
+   ================================================================================== */
+
+/* ------------------------------------------------------------------ toolbar ----- */
+
+.dir-toolbar {
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  margin:0 0 var(--s-gap-3);
+}
+.dir-search { position:relative; flex:0 0 auto; }
+.dir-search .mag {
+  position:absolute; left:12px; top:50%; transform:translateY(-50%);
+  color:var(--s-mut); font-size:14px; pointer-events:none;
+}
+.dir-search .input { width:290px; padding-left:33px; }
+.dir-toolbar select.input { min-width:132px; padding-right:30px; }
+.dir-clear { color:var(--s-blue); font-size:13px; font-weight:600; text-decoration:none; }
+.dir-clear:hover { text-decoration:underline; }
+/* Result counter sits at the far end so the toolbar reads left-to-right as
+   "narrow the set → how many are left". */
+.dir-shown { margin-left:auto; color:var(--s-mut); font-size:13px; }
+
+/* --------------------------------------------------------------- identity ------ */
+
+.dir-ident { display:flex; align-items:center; gap:11px; min-width:0; }
+.dir-avatar {
+  width:32px; height:32px; flex:0 0 32px;
+  border-radius:50%; display:grid; place-items:center;
+  background:var(--s-blue-soft); color:var(--s-blue-2);
+  font-size:11.5px; font-weight:700; letter-spacing:.02em;
+}
+.dir-avatar--hh { border-radius:9px; background:#EEF2FF; color:#4338CA; font-size:15px; }
+.dir-idtext { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.dir-name {
+  color:var(--s-ink); font-weight:600; font-size:13.5px; text-decoration:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.dir-name:hover { color:var(--s-blue); }
+.dir-sub {
+  color:var(--s-mut); font-size:12px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* Household context / member lists — a link when it resolves, quiet text when not. */
+.dir-ctx { display:inline-flex; align-items:center; gap:6px; min-width:0; }
+.dir-ctx .ico { color:var(--s-mut); font-size:12px; }
+.dir-ctx a { color:var(--s-ink-2); text-decoration:none; }
+.dir-ctx a:hover { color:var(--s-blue); text-decoration:underline; }
+.dir-members { color:var(--s-ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+
+/* An absent value is a dash, never a zero — a screen of zeros reads as real data. */
+.dir-none { color:#C3C9D4; }
+
+/* A count is shown only when it is non-zero; the chip makes it scannable. */
+.dir-n {
+  display:inline-block; min-width:22px; padding:2px 8px; border-radius:999px;
+  background:var(--s-line-2); color:var(--s-ink-2);
+  font-size:11.5px; font-weight:700; text-align:center;
+}
+
+.dir-tag {
+  display:inline-block; padding:2px 8px; border-radius:var(--s-r-sm);
+  background:var(--s-line-2); color:var(--s-ink-2);
+  font-size:11px; font-weight:600; text-transform:capitalize;
+}
+.dir-tag--inactive { background:var(--s-line-2); color:var(--s-mut); }
+
+.dir-open {
+  color:var(--s-blue); font-weight:600; font-size:13px;
+  text-decoration:none; padding:5px 8px; border-radius:var(--s-r-sm);
+}
+.dir-open:hover { background:var(--s-blue-soft); }
+.dir-actions-col { text-align:right; white-space:nowrap; }
+
+/* The name cell is the row's identity, so it stays ink; qualified with `table.data`
+   to outrank the shared table's link colour without resorting to !important. */
+table.data .dir-name { color:var(--s-ink); }
+table.data .dir-name:hover { color:var(--s-blue); }
+
+/* --------------------------------------------------------------- creation ------ */
+/* The primary action opens a disclosure holding the EXISTING creation form — the same
+   pattern the Documents workspace uses for upload. No new route, no new workflow. */
+
+.dir-create { margin:0 0 var(--s-gap-3); }
+.dir-create > summary {
+  list-style:none; cursor:pointer;
+  display:inline-flex; align-items:center; gap:7px;
+  height:40px; padding:0 15px;
+  border:1px solid var(--s-blue); border-radius:var(--s-r);
+  background:var(--s-blue); color:#fff;
+  font-size:var(--s-fs-body); font-weight:600;
+  box-shadow:0 1px 2px rgba(37,99,235,.35);
+}
+.dir-create > summary::-webkit-details-marker { display:none; }
+.dir-create > summary:hover { background:var(--s-blue-2); border-color:var(--s-blue-2); }
+.dir-create[open] > summary { background:var(--s-card); color:var(--s-ink-2); border-color:var(--s-line); box-shadow:var(--s-shadow); }
+.dir-create .dir-createbody {
+  margin-top:var(--s-gap-2); padding:var(--s-gap-3);
+  border:1px solid var(--s-line); border-radius:var(--s-r-lg);
+  background:var(--s-card); box-shadow:var(--s-shadow);
+  max-width:640px;
+}
+.dir-create .dir-creategrid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:var(--s-gap-2); margin-bottom:var(--s-gap-2);
+}
+.dir-create .dir-createbody .hint {
+  margin:0 0 var(--s-gap-2); color:var(--s-mut); font-size:var(--s-fs-sm);
+}
+
+/* ------------------------------------------------------------- empty state ------ */
+
+.dir-empty { padding:52px 20px; text-align:center; color:var(--s-mut); }
+.dir-empty .em { font-size:26px; display:block; margin-bottom:10px; opacity:.5; }
+.dir-empty h3 { margin:0 0 6px; font-size:15px; color:var(--s-ink); font-weight:600; }
+.dir-empty p { margin:0; font-size:13px; max-width:430px; margin-inline:auto; }
+
+/* -------------------------------------------------------------- responsive ------ */
+
+@media (max-width:900px) {
+  .dir-search .input { width:100%; }
+  .dir-search { flex:1 1 100%; }
+  .dir-shown { margin-left:0; }
+}
+
+/* ---------------------------------------------------- queue stats & SLA (Team Work) --- */
+/* The directory vocabulary extended for a work queue. Same tokens, same table treatment —
+   Team Work is a directory of work items, so it does not get its own visual system. */
+
+.dir-stats {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
+  gap:1px; background:var(--s-line);
+  border:1px solid var(--s-line); border-radius:var(--s-r-lg);
+  overflow:hidden; margin:0 0 var(--s-gap-3);
+}
+.dir-stat { background:var(--s-card); padding:13px 16px; }
+.dir-stat .k {
+  display:block; color:var(--s-mut);
+  font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+}
+.dir-stat .v {
+  display:block; margin-top:3px; color:var(--s-ink);
+  font-size:20px; font-weight:700; letter-spacing:-.01em;
+}
+.dir-stat .s { display:block; margin-top:1px; color:var(--s-mut); font-size:12px; }
+.dir-stat--warn .v { color:var(--s-warn); }
+.dir-stat--crit .v { color:var(--s-err); }
+
+/* SLA state — colour AND word, never colour alone. */
+.tw-sla {
+  display:inline-block; padding:2px 8px; border-radius:var(--s-r-sm);
+  font-size:11px; font-weight:600;
+  background:var(--s-line-2); color:var(--s-ink-2);
+}
+.tw-sla--warning  { background:var(--s-warn-soft); color:var(--s-warn); }
+.tw-sla--critical { background:var(--s-err-soft); color:var(--s-err); }
+.tw-sla--breached { background:var(--s-err); color:#fff; }
+
+.tw-pri--high { background:var(--s-err-soft); color:var(--s-err); }
+.tw-nowrap { white-space:nowrap; }
+.tw-waiting { display:block; margin-bottom:2px; }
+
+/* Intake empty state — the same quiet treatment the directories use, reachable from the
+   tax templates which do not load a directory-specific sheet of their own. */
+.intake-empty { padding:40px 20px; text-align:center; color:var(--s-mut); }
+.intake-empty .intake-empty-title {
+  margin:0 0 6px; color:var(--s-ink); font-size:15px; font-weight:600;
+}
+.intake-empty p { margin:0 auto; max-width:460px; font-size:13px; }
+
+/* An all-clear exception tile. A zero here is a real operational result ("nothing is
+   missing"), not an absent value, so it reads as a positive state rather than a big mono
+   zero — the word carries the meaning and the green underline confirms it. */
+.stat.is-clear .v {
+  font-family:inherit; font-size:17px; font-weight:600; color:var(--s-ok);
+  letter-spacing:normal;
+}
+.stat.is-clear { border-color:#CDE9D5; background:linear-gradient(0deg, var(--s-ok-soft) 0%, var(--s-card) 62%); }
+
+/* Records rail label/value rows (Firm dashboard).
+   `app.css` defines `.figure` TWICE: a label/value row at line 363 (display:flex,
+   space-between) and a big-number metric at line 1001 (display:block, 26px mono). The later
+   one wins for both consumers, so the dashboard's rows collapsed and rendered as "People292"
+   with the label and value butted together — only `justify-content` survived, which does
+   nothing on a block.
+
+   Scoping to `.figure-list` restores the intended row without editing app.css: the analytics
+   metric card uses a bare `.figure` and never a `.figure-list`, so it keeps the 26px
+   treatment it wants. The real fix is to give the two components distinct names in app.css;
+   that is a shared-stylesheet change and is reported rather than made here. */
+.figure-list .figure {
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:var(--s-gap-2);
+  font-family:inherit; font-size:inherit; font-weight:inherit; letter-spacing:normal;
+}
+.figure-list .figure .k { font-size:13px; color:var(--s-mut); min-width:0; }
+.figure-list .figure .v {
+  font-family:var(--s-mono); font-size:15.5px; font-weight:650;
+  font-variant-numeric:tabular-nums; color:var(--s-ink); flex:none;
+}

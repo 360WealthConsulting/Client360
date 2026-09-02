@@ -1,6 +1,24 @@
 from typing import Any, Mapping, Optional
 
 
+#: Recommendations that fire purely because a FIELD IS EMPTY, not because the client's situation
+#: presents an opportunity. They are a data-completeness checklist: useful on an onboarding or
+#: data-quality surface, misleading under the heading "Advisor Recommendations" on a client
+#: profile, where they sit beside genuine planning findings such as a Roth conversion or a
+#: concentrated position and borrow their authority. Surfaces that want planning findings call
+#: :func:`planning_recommendations`; the full list is unchanged for everyone else.
+DATA_COMPLETENESS_RECOMMENDATIONS = frozenset({
+    "Request important client documents.",
+    "Record the first client interaction.",
+    "Record the client's CPA relationship.",
+})
+
+
+def planning_recommendations(recommendations):
+    """The subset that reflects the client's situation rather than an unfilled field."""
+    return [r for r in recommendations if r not in DATA_COMPLETENESS_RECOMMENDATIONS]
+
+
 def build_advisor_recommendations(
     summary: Mapping[str, Any],
     relationship_graph: Optional[Mapping[str, Any]] = None,

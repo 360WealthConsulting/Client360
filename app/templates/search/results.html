@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_head("Search", eyebrow="Overview", desc="Search imported client and prospect records.") }}
 <form class="filterbar" method="get" action="/search">
-  <input class="input" type="text" name="q" value="{{ q }}" placeholder="Name, email, phone, or city" minlength="2" required style="min-width:320px; height:32px">
+  <input class="input u-minw-320px u-h-32px" type="text" name="q" value="{{ q }}" placeholder="Name, email, phone, or city" minlength="2" required>
   <button class="btn sm" type="submit">Search</button>
   <span class="grow"></span>
   <span class="subtle">{{ "{:,}".format(count) }} result(s)</span>

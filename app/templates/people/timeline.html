@@ -10,9 +10,9 @@
 {% for event in events %}
   <div class="card">
     <span class="badge info">{{ event.event_type.replace("_"," ").title() }}</span>
-    <h3 style="margin:8px 0 4px; font-size:15px">{{ event.title }}</h3>
+    <h3 class="c-m-8px-0-4px u-fs-15px">{{ event.title }}</h3>
     {% if event.summary %}<div class="subtle">{{ event.summary }}</div>{% endif %}
-    <div class="subtle" style="margin-top:6px"><span class="id-mono">{{ event.event_time }}</span> · {{ event.source }}</div>
+    <div class="subtle u-mt-6px"><span class="id-mono">{{ event.event_time }}</span> · {{ event.source }}</div>
   </div>
 {% else %}
   {% call ui.empty("No timeline events") %}{% endcall %}

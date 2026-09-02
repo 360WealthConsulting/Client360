@@ -10,6 +10,7 @@ from app.db import (
     tasks,
     timeline_events,
 )
+from app.services.documents import count_person_documents
 
 
 def _days_since(value: Optional[datetime]) -> Optional[int]:
@@ -55,14 +56,12 @@ def get_client_summary(person_id: int) -> Dict[str, Any]:
             )
         ).scalar_one()
 
-        recent_document_count = connection.execute(
-            select(func.count())
-            .select_from(documents)
-            .where(
-                documents.c.person_id == person_id,
-                documents.c.archived.is_(False),
-            )
-        ).scalar_one()
+        # The client's document count must be the SAME scope the client's document LIST uses,
+        # or the profile contradicts itself. This counted only person-anchored rows and omitted
+        # the soft-delete check, so a client whose documents hang off their household reported
+        # zero while the page listed them — and the "No client documents" alert fired on top.
+        # `count_person_documents` is the shared definition; see services.documents.
+        recent_document_count = count_person_documents(person_id, connection)
 
         latest_event = connection.execute(
             select(

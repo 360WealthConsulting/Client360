@@ -9,30 +9,30 @@
 {% endcall %}
 
 {% if error %}
-<article class="card" style="padding:16px 18px">
+<article class="card c-p-16px-18px">
   <div class="subtle">{{ error }}</div>
-  <p style="margin-top:10px"><a class="btn" href="{{ download_url }}">Download original file</a></p>
+  <p class="u-mt-10px"><a class="btn" href="{{ download_url }}">Download original file</a></p>
 </article>
 {% else %}
 
 {% if sheetnames and sheetnames|length > 1 %}
-<div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:8px">
+<div class="row u-gap-6px u-wrap u-mb-8px">
   {% for s in sheetnames %}
     <a class="btn sm {% if s == active %}{% else %}secondary{% endif %}"
        href="/documents/{{ document_id }}/preview?sheet={{ s | urlencode }}">{{ s }}</a>
   {% endfor %}
 </div>
 {% elif sheetnames %}
-<div class="subtle" style="margin-bottom:8px">Worksheet: {{ active }}</div>
+<div class="subtle u-mb-8px">Worksheet: {{ active }}</div>
 {% endif %}
 
 {% if rows %}
-<div style="overflow:auto; max-height:75vh; border:1px solid var(--border, #e5e7eb)">
-  <table class="table" style="font-variant-numeric: tabular-nums; white-space:nowrap">
+<div class="c-ov-auto c-maxhei-75vh c-bd-1px-solid-border">
+  <table class="table c-fontva-tabular-nums u-nowrap-text">
     <tbody>
     {% for row in rows %}
       <tr>
-        <td class="subtle" style="position:sticky; left:0; background:var(--card, #fff)">{{ loop.index }}</td>
+        <td class="subtle c-pos-sticky c-left-0 c-bg-card">{{ loop.index }}</td>
         {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
       </tr>
     {% endfor %}
@@ -40,13 +40,13 @@
   </table>
 </div>
 {% if truncated_rows or truncated_cols %}
-<p class="subtle" style="margin-top:8px">
+<p class="subtle u-mt-8px">
   Preview truncated for performance{% if truncated_rows %} — showing the first {{ max_rows }} rows{% endif %}{% if truncated_cols %}{% if truncated_rows %} and{% else %} — showing{% endif %} the first {{ max_cols }} columns{% endif %}.
   <a href="{{ download_url }}">Download</a> the full workbook to see everything.
 </p>
 {% endif %}
 {% else %}
-<article class="card" style="padding:16px 18px"><div class="subtle">This worksheet has no data to preview.</div></article>
+<article class="card c-p-16px-18px"><div class="subtle">This worksheet has no data to preview.</div></article>
 {% endif %}
 
 {% endif %}

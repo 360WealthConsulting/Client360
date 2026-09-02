@@ -10,7 +10,7 @@
   <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back to review</a>
 {% endcall %}
 
-<article class="card" style="padding:16px 18px; max-width:760px">
+<article class="card c-p-16px-18px u-maxw-760px">
   {% if doc %}
   <div class="detail-row"><span class="subtle">Document</span>
     <strong>#{{ doc.id }} · {{ doc.name }}</strong></div>
@@ -53,10 +53,10 @@
     <a class="btn secondary link-sm" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Cancel</a>
   </form>
   {% elif preview.reason == "already_owned" %}
-  <p class="subtle" style="margin-top:14px; color:var(--muted, #6b7280)">This document is already owned and will not be changed.</p>
+  <p class="subtle u-mt-14px c-fg-muted">This document is already owned and will not be changed.</p>
   <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
   {% elif preview.reason == "permanent_reject" %}
-  <p class="subtle" style="margin-top:14px; color:var(--warn, #b45309)">This is a protected permanent-reject document and cannot be assigned.</p>
+  <p class="subtle u-mt-14px c-fg-warn">This is a protected permanent-reject document and cannot be assigned.</p>
   <a class="btn secondary" href="/admin/documents/unassigned/review?folder={{ folder | urlencode }}">Back</a>
   {% else %}
   <p class="subtle mt-4">This document is no longer eligible for assignment.</p>

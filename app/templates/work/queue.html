@@ -8,7 +8,7 @@
 <div class="stack">
 {% for item in data['items'] %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:15px">{{ item.title }}</h3>
+    <h3 class="c-m-0-0-4px u-fs-15px">{{ item.title }}</h3>
     <div class="subtle">{{ item.entity_type.replace('_',' ') }} · {{ item.status.replace('_',' ') }} · {{ item.priority }}{% if item.due_date %} · Due {{ item.due_date }}{% endif %}</div>
   </div>
 {% else %}

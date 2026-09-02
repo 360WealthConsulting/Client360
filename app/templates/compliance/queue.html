@@ -6,15 +6,15 @@
 {{ ui.page_head("Compliance Reviews", eyebrow="Compliance", desc="Human-controlled review of governed Advisor Recommendations. This queue records review decisions — it is not an electronic signature or regulatory certification.") }}
 
 <form method="get" action="/compliance/reviews" class="card filterbar">
-  <div class="field" style="margin:0"><label for="q">Search</label>
+  <div class="field u-m-0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="recommendation, rule, type"></div>
-  <div class="field" style="margin:0"><label for="status">Status</label>
+  <div class="field u-m-0"><label for="status">Status</label>
     <select class="input" id="status" name="status">
       <option value="">All</option>
       {% for s in ["pending_assignment","pending_review","blocked_pending_authorized_reviewer","approved","approved_with_conditions","returned","declined","superseded","closed"] %}
         <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace("_"," ")|capitalize }}</option>{% endfor %}
     </select></div>
-  <div class="field" style="margin:0"><label for="gate">Policy gate</label>
+  <div class="field u-m-0"><label for="gate">Policy gate</label>
     <select class="input" id="gate" name="gate">
       <option value="">All</option>
       {% for g in ["none","compliance_required","license_required","suitability_required"] %}
@@ -22,10 +22,10 @@
     </select></div>
   <input type="hidden" name="sort" value="{{ filters.sort }}">
   <div><button class="btn" type="submit">Apply</button>
-    {% if filters.q or filters.status or filters.gate %}<a class="btn subtle" href="/compliance/reviews" style="margin-left:6px">Clear</a>{% endif %}</div>
+    {% if filters.q or filters.status or filters.gate %}<a class="btn subtle u-ml-6px" href="/compliance/reviews">Clear</a>{% endif %}</div>
 </form>
 
-<p class="subtle" style="margin:-6px 0 10px">{{ result.total }} review(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
+<p class="subtle c-m-6px-0-10px">{{ result.total }} review(s){% if result.pages > 1 %} · page {{ result.page }} of {{ result.pages }}{% endif %}.</p>
 
 {% if result.rows %}
 <div class="table-wrap"><table class="data">
@@ -50,7 +50,7 @@
 </table></div>
 
 {% if result.pages > 1 %}
-<div class="row" style="gap:8px; margin-top:10px">
+<div class="row u-gap-8px u-mt-10px">
   {% if result.page > 1 %}<a class="btn subtle" href="/compliance/reviews?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&gate={{ filters.gate|urlencode }}&page={{ result.page - 1 }}">← Prev</a>{% endif %}
   {% if result.page < result.pages %}<a class="btn subtle" href="/compliance/reviews?q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&gate={{ filters.gate|urlencode }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
 </div>

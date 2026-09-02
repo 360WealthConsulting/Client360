@@ -8,15 +8,15 @@
 {% endcall %}
 {% if uploaded %}<div class="alert good mb-3"><span class="ico">✓</span><div>Document uploaded successfully.</div></div>{% endif %}
 {% if archived %}<div class="alert good mb-3"><span class="ico">✓</span><div>Document archived.</div></div>{% endif %}
-<div class="card" style="max-width:760px; margin-bottom:16px">
+<div class="card u-maxw-760px u-mb-16px">
   <h3>Upload document</h3>
   <form method="post" enctype="multipart/form-data" action="/people/{{ person.id }}/documents">
-    <div class="field"><label for="file">File</label><input class="input" id="file" name="file" type="file" required style="height:auto; padding:9px"></div>
+    <div class="field"><label for="file">File</label><input class="input u-h-auto u-p-9px" id="file" name="file" type="file" required></div>
     <div class="field"><label for="category">Category</label>
       <select class="input" id="category" name="category">
         <option value="tax_return">Tax Return</option><option value="investment_statement">Investment Statement</option><option value="estate">Estate Planning</option><option value="insurance">Insurance</option><option value="compliance">Compliance</option><option value="agreement">Agreement</option><option value="meeting_note">Meeting Note</option><option value="other" selected>Other</option>
       </select></div>
-    <div class="field"><label for="description">Description</label><textarea class="input" id="description" name="description" style="height:auto; min-height:90px; padding:11px"></textarea></div>
+    <div class="field"><label for="description">Description</label><textarea class="input u-h-auto u-minh-90px u-p-11px" id="description" name="description"></textarea></div>
     <div class="field"><label for="uploaded_by">Uploaded by</label><input class="input" id="uploaded_by" name="uploaded_by" placeholder="Michael, Lauren, Sarah, Jessica"></div>
     <button class="btn" type="submit">Upload document</button>
   </form>
@@ -25,11 +25,11 @@
 <div class="stack">
 {% for document in documents %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:15px"><a class="rowlink" href="/documents/{{ document.id }}/download">{{ document.name }}</a></h3>
+    <h3 class="c-m-0-0-4px u-fs-15px"><a class="rowlink" href="/documents/{{ document.id }}/download">{{ document.name }}</a></h3>
     <div class="subtle">{{ document.category or "Other" }}{% if document.tax_year %} · {{ document.tax_year }}{% if document.tax_year_inferred %}<span title="Derived from the filename and folder; not saved">*</span>{% endif %}{% endif %} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.created_at }} · {{ document.uploaded_by or "Unknown user" }}</div>
-    {% if document.name != document.original_name %}<div class="subtle" style="font-size:12px">{{ document.original_name }}</div>{% endif %}
+    {% if document.name != document.original_name %}<div class="subtle u-fs-12px">{{ document.original_name }}</div>{% endif %}
     {% if document.description %}<div class="mt-2">{{ document.description }}</div>{% endif %}
-    <div class="row" style="margin-top:10px; gap:12px">
+    <div class="row u-mt-10px u-gap-12px">
       <a class="btn ghost sm" href="/documents/{{ document.id }}/download">Download</a>
       <form method="post" action="/people/{{ person.id }}/documents/{{ document.id }}/archive"><button class="btn secondary sm" type="submit">Archive</button></form>
     </div>
@@ -42,7 +42,7 @@
 <div class="stack">
 {% for document in microsoft_documents %}
   <div class="card">
-    <h3 style="margin:0 0 4px; font-size:15px">{{ document.name }}</h3>
+    <h3 class="c-m-0-0-4px u-fs-15px">{{ document.name }}</h3>
     <div class="subtle">{{ document.mime_type or "Unknown type" }} · {{ "{:,.1f}".format(document.size_bytes / 1024) }} KB · {{ document.modified_at_microsoft or "Date unavailable" }} · {{ document.match_method or "Matched" }}</div>
     {% if document.parent_path %}<div class="subtle mt-1">{{ document.parent_path }}</div>{% endif %}
     {% if document.web_url %}<div class="mt-2"><a class="btn ghost sm" href="{{ document.web_url }}" target="_blank" rel="noopener noreferrer">Open in SharePoint or OneDrive</a></div>{% endif %}

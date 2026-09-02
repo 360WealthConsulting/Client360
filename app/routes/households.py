@@ -22,9 +22,17 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/households", response_class=HTMLResponse)
-def household_directory(request: Request):
+def household_directory(request: Request, q: str | None = None, state: str | None = None,
+                        sort: str = "name"):
+    """The staff Households workspace.
+
+    Filtering stays inside what `households` actually stores — the name and the address
+    columns — plus the member count the relationship table can answer. Member NAMES come
+    from the same `household_relationships` join the profile uses, with `is_primary`
+    ordering first, so the row shows who the household actually is.
+    """
     member_count = func.count(
-        household_relationships.c.person_id
+        func.distinct(household_relationships.c.person_id)
     ).label("member_count")
 
     statement = (
@@ -48,13 +56,52 @@ def household_directory(request: Request):
             households.c.city,
             households.c.state,
         )
-        .order_by(households.c.name)
     )
 
+    term = (q or "").strip()
+    if term:
+        statement = statement.where(households.c.name.ilike(f"%{term}%"))
+    chosen_state = (state or "").strip()
+    if chosen_state:
+        statement = statement.where(households.c.state == chosen_state)
+
+    if sort == "members":
+        statement = statement.order_by(member_count.desc(), households.c.name)
+    elif sort == "recent":
+        statement = statement.order_by(households.c.created_at.desc().nullslast(), households.c.id.desc())
+    else:
+        statement = statement.order_by(households.c.name)
+
     with engine.connect() as connection:
-        household_rows = connection.execute(
-            statement
-        ).mappings().all()
+        household_rows = [dict(r) for r in connection.execute(statement).mappings().all()]
+
+        total = connection.execute(
+            select(func.count()).select_from(households)
+        ).scalar_one()
+        states = [r[0] for r in connection.execute(
+            select(households.c.state).where(households.c.state.is_not(None))
+            .distinct().order_by(households.c.state)
+        )]
+
+        # Member names for the rows on screen only — the primary member first, so the row
+        # reads as the household rather than as an arbitrary person.
+        ids = [h["id"] for h in household_rows]
+        members: dict[int, list[str]] = {}
+        if ids:
+            for r in connection.execute(
+                select(household_relationships.c.household_id,
+                       people.c.full_name,
+                       household_relationships.c.is_primary)
+                .select_from(household_relationships.join(
+                    people, people.c.id == household_relationships.c.person_id))
+                .where(household_relationships.c.household_id.in_(ids))
+                .order_by(household_relationships.c.is_primary.desc().nullslast(),
+                          people.c.last_name, people.c.first_name)
+            ).mappings():
+                if r["full_name"]:
+                    members.setdefault(r["household_id"], []).append(r["full_name"])
+        for h in household_rows:
+            h["members"] = members.get(h["id"], [])
 
     return templates.TemplateResponse(
         request=request,
@@ -62,6 +109,11 @@ def household_directory(request: Request):
         context={
             "households": household_rows,
             "created": request.query_params.get("created") == "1",
+            "total": total,
+            "count": len(household_rows),
+            "states": states,
+            "filters": {"q": term, "state": chosen_state, "sort": sort},
+            "filtered": bool(term or chosen_state),
         },
     )
 

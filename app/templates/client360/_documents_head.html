@@ -1,0 +1,42 @@
+{# Documents workspace header — the approved design's client identity band.
+
+   Shared by the person and household workspaces so the two Documents surfaces cannot drift,
+   exactly like `_documents_screen.html` below it. Expects the enclosing template's context:
+     ws          the workspace view model (display_name, entity_type, entity_id)
+     hdr         `sec.header` — household id, primary advisor, status
+     base        this client's workspace URL
+     principal   for the upload gate
+
+   Presentation only. Every value shown is one the header view model already carried; the
+   actions are the same links and the same capability gate as before. #}
+
+<div class="dw-clienthead">
+  <span class="dw-avatar" aria-hidden="true">{{ "⚭" if ws.entity_type == "household" else "◍" }}</span>
+
+  <div class="dw-titleblock">
+    <h1>{{ ws.display_name }}</h1>
+    <p class="dw-meta">
+      {% if hdr.household_id %}<span>Household ID: {{ hdr.household_id }}</span>{% endif %}
+      {# Advisor and status render only when the record carries them — an unassigned client
+         shows nothing here rather than a placeholder. #}
+      {% if hdr.primary_advisor %}
+        <span class="chev" aria-hidden="true">›</span>
+        <span>Primary Advisor:
+          <strong>{{ hdr.primary_advisor.name }}</strong>{% if hdr.primary_advisor.role %} <span class="subtle">({{ hdr.primary_advisor.role }})</span>{% endif %}
+        </span>
+      {% endif %}
+      {% if hdr.status %}
+        <span class="statusbadge statusbadge--{{ hdr.status|lower }}">{{ hdr.status }}</span>
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="dw-actions">
+    {# The Documents workspace hides the client section strip, so this is the way back to the
+       rest of the client record. It is the workspace URL the tabs already pointed at. #}
+    <a class="dw-btn" href="{{ base }}">Client Profile <span aria-hidden="true">↗</span></a>
+    {% if principal and principal.can("documents.edit") %}
+      <a class="dw-btn dw-btn--primary" href="#doc-upload">+ Upload Document</a>
+    {% endif %}
+  </div>
+</div>

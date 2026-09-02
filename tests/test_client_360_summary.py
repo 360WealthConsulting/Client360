@@ -136,8 +136,15 @@ def test_person_overview_renders_client_360_section():
         body = person_profile(req, pid, tab="overview").body.decode()
         assert "Client 360" in body
         assert "AUM" not in body            # AUM is exposed to nobody
-        for label in ("Insurance", "Tax engagements", "Open exceptions", "Open tasks"):
-            assert label in body
+        # A domain that HAS a figure is rendered: this person carries one policy.
+        assert "Insurance" in body
+        # A domain that holds nothing is OMITTED rather than printed as a zero tile. This
+        # replaced the previous contract, which required all four labels always and so
+        # guaranteed a row of "0 / 0 / 0" on every sparse client — the wall of zeros the
+        # profile redesign exists to remove. The invariants that matter are unchanged:
+        # the section renders, AUM is never exposed, and no recommendation text leaks in.
+        assert "Tax engagements" not in body    # zero -> no tile
+        assert "Open exceptions" not in body    # zero -> no tile
         # No advisor-intelligence recommendation strings in the snapshot itself.
         assert "Roth" not in body and "cross-sell" not in body.lower()
     finally:

@@ -11,9 +11,9 @@
 {% if ok %}<div class="banner ok">{{ ok }}</div>{% endif %}
 {% if err %}<div class="banner err">{{ err }}</div>{% endif %}
 
-<section class="card" style="padding:14px 16px; margin-bottom:14px">
+<section class="card c-p-14px-16px u-mb-14px">
   <form method="get" action="/admin/documents/unassigned" class="row tight">
-    <input class="input" type="search" name="q" value="{{ q or '' }}" placeholder="Search client or business" style="min-width:320px">
+    <input class="input u-minw-320px" type="search" name="q" value="{{ q or '' }}" placeholder="Search client or business">
     <button class="btn" type="submit">Search</button>
   </form>
 
@@ -26,10 +26,10 @@
 </section>
 
 {% if drake_unassigned %}
-<section style="margin-top:18px; margin-bottom:22px">
-  <div class="row" style="justify-content:space-between; align-items:end; gap:12px; flex-wrap:wrap">
+<section class="u-mt-18px u-mb-22px">
+  <div class="row u-justify-between u-items-end u-gap-12px u-wrap">
     <div>
-      <h3 style="margin:0">Drake documents awaiting filing</h3>
+      <h3 class="u-m-0">Drake documents awaiting filing</h3>
       <div class="subtle">
         {{ drake_unassigned | length }} document{% if drake_unassigned|length != 1 %}s{% endif %}
         safely stored and OCR processed, but not yet assigned to a person, household, or organization.
@@ -38,18 +38,18 @@
   </div>
 
   {% for d in drake_unassigned %}
-  <article class="card" style="padding:14px 16px; margin-top:10px">
+  <article class="card c-p-14px-16px u-mt-10px">
     <div class="detail-row">
       <div>
         <strong>#{{ d.id }} · {{ d.name }}</strong>
-        <div class="subtle" style="margin-top:3px">
+        <div class="subtle u-mt-3px">
           Source: Drake
           {% if d.drake_client_id %} · Drake ID {{ d.drake_client_id }}{% endif %}
           {% if d.ocr_status %} · OCR {{ d.ocr_status }}{% endif %}
         </div>
       </div>
 
-      <div class="row" style="gap:6px">
+      <div class="row u-gap-6px">
         <a class="btn sm secondary"
            href="{{ d.view_url }}"
            target="_blank"
@@ -63,14 +63,18 @@
     {% if d.proposal %}
       {% set pc = d.proposal.confidence or "NO_MATCH" %}
 
-      <div style="margin-top:10px; padding:10px 12px; border:1px solid #d8dee8; border-radius:8px;">
-        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+      <div class="u-mt-10px c-p-10px-12px c-bd-1px-solid-d8dee8 c-rad-8px">
+        {# The bucket drove nothing visually: HIGH and HOLD rendered as identical bold text, so
+           a reviewer scanning the queue could not see which documents actually have a proposal.
+           It is a badge now — colour AND word, never colour alone. The value is unchanged; this
+           is how the existing bucket is displayed, not how it is decided. #}
+        <div class="row u-gap-8px u-items-center u-wrap">
           <strong>360Plus owner analysis:</strong>
-          <strong>{{ pc }}</strong>
+          <span class="ud-conf ud-conf--{{ pc | lower }}">{{ pc }}</span>
         </div>
 
         {% if d.proposal.proposed_entity_name %}
-          <div style="margin-top:5px;">
+          <div class="u-mt-5px">
             Proposed {{ d.proposal.proposed_entity_type }}:
             <strong>{{ d.proposal.proposed_entity_name }}</strong>
             (#{{ d.proposal.proposed_entity_id }})
@@ -78,7 +82,7 @@
         {% endif %}
 
         {% if d.proposal.evidence %}
-          <div class="subtle" style="margin-top:5px;">
+          <div class="subtle u-mt-5px">
             {% for e in d.proposal.evidence %}
               <div>{{ e }}</div>
             {% endfor %}
@@ -86,7 +90,7 @@
         {% endif %}
 
         {% if d.proposal.best_candidates %}
-          <div class="subtle" style="margin-top:5px;">
+          <div class="subtle u-mt-5px">
             Possible matches:
             {% for c in d.proposal.best_candidates %}
               {{ c.name }} (#{{ c.person_id }}){% if not loop.last %} · {% endif %}
@@ -95,64 +99,48 @@
         {% endif %}
 
         {% if d.proposal.analysis_unavailable %}
-          <div class="subtle" style="margin-top:5px;">
+          <div class="subtle u-mt-5px">
             Analysis unavailable for this document.
           </div>
         {% endif %}
 
         {% if d.id == 121628 %}
-          <div style="margin-top:7px; font-weight:700;">
+          <div class="u-mt-7px u-fw-700">
             FROZEN IDENTITY-REVIEW CASE — do not file from the automated proposal alone.
           </div>
         {% endif %}
 
-        <div class="subtle" style="margin-top:6px;">
+        <div class="subtle u-mt-6px">
           Guidance only. No ownership change occurs until a filing destination is selected and confirmed.
         </div>
       </div>
     {% endif %}
 
-    <details style="margin-top:7px">
-      <summary class="subtle" style="cursor:pointer">Document details</summary>
+    <details class="u-mt-7px">
+      <summary class="subtle u-pointer">Document details</summary>
 
       {% if d.notes %}
-        <div class="subtle" style="margin-top:5px">{{ d.notes }}</div>
+        <div class="subtle u-mt-5px">{{ d.notes }}</div>
       {% endif %}
 
       {% if d.source_path %}
-        <div class="subtle" style="margin-top:3px">
+        <div class="subtle u-mt-3px">
           Original source: {{ d.source_path }}
         </div>
       {% endif %}
     </details>
 
     {% if q and search %}
-      <div style="margin-top:12px">
-        <strong style="font-size:0.92rem">
+      <div class="u-mt-12px">
+        <strong class="u-fs-0p92rem">
           File this document to:
         </strong>
 
-        <div class="row"
-             style="gap:7px; flex-wrap:wrap; margin-top:7px">
+        <div class="row u-gap-7px u-wrap u-mt-7px">
 
             {% for p in search.people %}
           <form method="post"
-                action="/admin/documents/unassigned/resolve-document"
-                style="
-                    display:inline-flex;
-                    flex-direction:column;
-                    align-items:flex-start;
-                    justify-content:center;
-                    vertical-align:top;
-                    gap:2px;
-                    min-width:180px;
-                    max-width:260px;
-                    margin:4px 6px 4px 0;
-                    padding:9px 12px;
-                    border:1px solid #d8dee8;
-                    border-radius:8px;
-                    background:#fff;
-                ">
+                action="/admin/documents/unassigned/resolve-document" class="u-inline-flex c-fd-column u-items-start u-justify-center c-va-top u-gap-2px u-minw-180px u-maxw-260px c-m-4px-6px-4px-0 c-p-9px-12px c-bd-1px-solid-d8dee8 c-rad-8px c-bg-fff">
 
             <input type="hidden"
                    name="document_id"
@@ -170,59 +158,31 @@
                    name="entity_id"
                    value="{{ p.id }}">
 
-            <div style="
-                font-weight:700;
-                line-height:1.25;
-                overflow-wrap:anywhere;
-            ">
+            <div class="u-fw-700 u-lh-1p25 c-owrap-anywhere">
               {{ p.full_name }}
             </div>
 
             {% if p.primary_email %}
-            <div class="subtle"
-                 style="
-                     font-size:12px;
-                     line-height:1.25;
-                     overflow-wrap:anywhere;
-                 ">
+            <div class="subtle u-fs-12px u-lh-1p25 c-owrap-anywhere">
               {{ p.primary_email }}
             </div>
             {% endif %}
 
-            <button class="btn sm"
-                    type="submit"
-                    style="
-                        width:auto !important;
-                        max-width:none !important;
-                        min-width:0 !important;
-                        margin-top:5px;
-                        white-space:nowrap !important;
-                    ">
+            <button class="btn sm c-w-auto-i c-maxw-none-i c-minw-0-i u-mt-5px c-ws-nowrap-i"
+                    type="submit">
               File here &#8594;
             </button>
           </form>
         {% endfor %}
 
           {% for h in search.households %}
-          <div style="
-              display:flex;
-              align-items:center;
-              justify-content:space-between;
-              gap:16px;
-              width:100%;
-              padding:9px 10px;
-              margin:6px 0;
-              border:1px solid #d8dee8;
-              border-radius:8px;
-              background:#fff;
-          ">
-            <div style="min-width:0; flex:1 1 auto;">
+          <div class="u-flex u-items-center u-justify-between u-gap-16px u-w-100pct c-p-9px-10px c-m-6px-0 c-bd-1px-solid-d8dee8 c-rad-8px c-bg-fff">
+            <div class="u-minw-0 u-flexv-1-1-auto">
               </div>
 
-            <div style="flex:0 0 auto;">
+            <div class="u-flexv-0-0-auto">
               <form method="post"
-                  action="/admin/documents/unassigned/resolve-document"
-                  style="display:inline">
+                  action="/admin/documents/unassigned/resolve-document" class="u-inline">
 
               <input type="hidden"
                      name="document_id"
@@ -240,33 +200,21 @@
                      name="entity_id"
                      value="{{ h.id }}">
 
-              <button class="btn sm secondary" type="submit" style="width:auto !important;max-width:none !important;min-width:0 !important;white-space:nowrap !important;overflow:visible !important;text-overflow:clip !important;display:inline-block !important;padding-left:12px !important;padding-right:12px !important;">{{ h.name }} — File here →</button>
+              <button class="btn sm secondary c-w-auto-i c-maxw-none-i c-minw-0-i c-ws-nowrap-i c-ov-visible-i c-tov-clip-i c-d-inline-block-i c-pl-12px-i c-pr-12px-i" type="submit">{{ h.name }} — File here →</button>
             </form>
             </div>
           </div>
         {% endfor %}
 
           {% for o in search.organizations %}
-          <div style="
-              display:flex;
-              align-items:center;
-              justify-content:space-between;
-              gap:16px;
-              width:100%;
-              padding:9px 10px;
-              margin:6px 0;
-              border:1px solid #d8dee8;
-              border-radius:8px;
-              background:#fff;
-          ">
-            <div style="min-width:0; flex:1 1 auto;">
-              <div class="subtle" style="margin-top:2px;">Organization</div>
+          <div class="u-flex u-items-center u-justify-between u-gap-16px u-w-100pct c-p-9px-10px c-m-6px-0 c-bd-1px-solid-d8dee8 c-rad-8px c-bg-fff">
+            <div class="u-minw-0 u-flexv-1-1-auto">
+              <div class="subtle u-mt-2px">Organization</div>
             </div>
 
-            <div style="flex:0 0 auto;">
+            <div class="u-flexv-0-0-auto">
               <form method="post"
-                  action="/admin/documents/unassigned/resolve-document"
-                  style="display:inline">
+                  action="/admin/documents/unassigned/resolve-document" class="u-inline">
 
               <input type="hidden"
                      name="document_id"
@@ -284,7 +232,7 @@
                      name="entity_id"
                      value="{{ o.id }}">
 
-              <button class="btn sm secondary" type="submit" style="width:auto !important;max-width:none !important;min-width:0 !important;white-space:nowrap !important;overflow:visible !important;text-overflow:clip !important;display:inline-block !important;padding-left:12px !important;padding-right:12px !important;">{{ o.name }} — File here →</button>
+              <button class="btn sm secondary c-w-auto-i c-maxw-none-i c-minw-0-i c-ws-nowrap-i c-ov-visible-i c-tov-clip-i c-d-inline-block-i c-pl-12px-i c-pr-12px-i" type="submit">{{ o.name }} — File here →</button>
             </form>
             </div>
           </div>
@@ -293,11 +241,11 @@
         </div>
 
         {% if not search.people and not search.households and not search.organizations %}
-          <div class="subtle" style="margin-top:6px">
+          <div class="subtle u-mt-6px">
             No matching filing destination. Try another client or business name.
           </div>
         {% else %}
-          <div class="subtle" style="margin-top:6px">
+          <div class="subtle u-mt-6px">
             Nothing changes until you confirm on the next screen.
           </div>
         {% endif %}
@@ -305,7 +253,7 @@
 
     {% else %}
 
-      <div class="subtle" style="margin-top:10px">
+      <div class="subtle u-mt-10px">
         Search for the client or business above to choose where this document belongs.
       </div>
 
@@ -314,7 +262,7 @@
   {% endfor %}
 </section>
 {% else %}
-<section class="card" style="padding:14px 16px; margin-top:18px; margin-bottom:22px">
+<section class="card c-p-14px-16px u-mt-18px u-mb-22px">
   <strong>Drake filing queue clear</strong>
   <div class="subtle">No unassigned Drake documents remain.</div>
 </section>
@@ -324,9 +272,9 @@
 {% set non_actionable = unassigned | rejectattr('eligible') | list %}
 
 {% if actionable %}
-<h3 style="margin:14px 0 6px">Folders with eligible unassigned documents</h3>
+<h3 class="c-m-14px-0-6px">Folders with eligible unassigned documents</h3>
 {% for u in actionable %}
-<article class="card" style="padding:14px 16px; margin-bottom:10px">
+<article class="card c-p-14px-16px u-mb-10px">
   <div class="detail-row"><strong>{{ u.folder }}</strong>
     <span class="subtle">{{ u.docs_in_folder }} in folder · <strong>{{ u.eligible }} eligible unassigned</strong> · {{ u.already_owned }} already owned{% if u.reject %} · {{ u.reject }} protected{% endif %}</span></div>
   {% if u.sample_documents %}<p class="subtle tight">Eligible samples: {% for s in u.sample_documents %}{{ s }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
@@ -337,8 +285,8 @@
   <div class="tight">
     <div class="subtle">Suggested clients (Preview only — nothing changes until you confirm):</div>
     {% for c in u.candidates %}
-      <div class="row" style="gap:8px; align-items:center; margin:3px 0">
-        <form method="post" action="/admin/documents/unassigned/resolve" style="display:inline-block">
+      <div class="row u-gap-8px u-items-center c-m-3px-0">
+        <form method="post" action="/admin/documents/unassigned/resolve" class="u-inline-block">
           <input type="hidden" name="folder" value="{{ u.folder }}">
           <input type="hidden" name="entity_type" value="person">
           <input type="hidden" name="entity_id" value="{{ c.id }}">
@@ -360,7 +308,7 @@
         <option value="organization">Organization</option>
       </select>
     </label>
-    <label class="subtle">ID <input class="input" type="number" name="entity_id" min="1" style="max-width:120px" required></label>
+    <label class="subtle">ID <input class="input u-maxw-120px" type="number" name="entity_id" min="1" required></label>
     <button class="btn sm secondary" type="submit">Preview →</button>
     <span class="subtle">nothing changes until you confirm on the next screen</span>
   </form>
@@ -369,10 +317,10 @@
 {% endif %}
 
 {% if non_actionable %}
-<h3 style="margin:18px 0 6px">Folders with no eligible unassigned documents</h3>
+<h3 class="c-m-18px-0-6px">Folders with no eligible unassigned documents</h3>
 <p class="subtle mb-2">These appeared in the queue but every document is already owned or protected — nothing here can be assigned. Shown for diagnosis.</p>
 {% for u in non_actionable %}
-<article class="card" style="padding:12px 16px; margin-bottom:8px; border-left:4px solid var(--muted, #6b7280)">
+<article class="card c-p-12px-16px u-mb-8px c-bdl-4px-solid-muted">
   <div class="detail-row"><strong>{{ u.folder }}</strong>
     <span class="subtle">{{ u.docs_in_folder }} in folder · <strong>0 eligible unassigned</strong> · {{ u.already_owned }} already owned{% if u.reject %} · {{ u.reject }} protected{% endif %} · 0 to assign</span></div>
   <div class="subtle">No eligible unassigned documents — this folder is not actionable.

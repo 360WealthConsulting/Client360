@@ -1,29 +1,96 @@
+{# Roles & Access — the role profiles and what each one grants.
+
+   This screen used to print raw capability identifiers as bare chips, with 179 of the
+   administrator's 186 landing in a single "Other" column. Nothing here changes what a role
+   grants: the same profiles, the same capability codes, the same capability-ceiling rules.
+   What changed is that each capability is now shown by the DESCRIPTION its own row already
+   carries, with the identifier kept as secondary text because staff administering access do
+   refer to it, and the areas come from the capability's own declared prefix.
+
+   No capability meaning is invented anywhere on this page — every label is a stored value.
+   Assignment still happens on an employee's page; this screen remains read-only. #}
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% block title %}Roles & Access | Administration | 360Plus{% endblock %}
+{% block title %}Roles &amp; Access | Administration | 360Plus{% endblock %}
 {% block crumb %}Roles &amp; Access{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/directory.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/css/access_profiles.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
-{% call ui.page_head("Roles & Access", eyebrow="Administration", desc="The existing role profiles and the capabilities each grants, grouped by business area. Assignment happens on an employee's page and is capability-ceiling governed.") %}
-  <a class="btn sm secondary" href="/admin/employees">← Employees</a>
+
+{% call ui.page_head("Roles & Access", eyebrow="Administration",
+     desc="What each role profile grants. Assignment happens on an employee's page and is capability-ceiling governed.") %}
+  <a class="btn secondary" href="/admin/employees">&larr; Employees</a>
 {% endcall %}
 
-<div class="stack">
-{% for p in profiles %}
-<article class="card">
-  <div class="row" style="justify-content:space-between; align-items:baseline; flex-wrap:wrap">
-    <h2 class="section-title" style="margin:0">{{ p.name }} <span class="subtle">({{ p.code }})</span></h2>
-    <span class="subtle">{{ p.assigned_employees }} employee(s) · {{ p.capability_count }} capabilities{{ " · system role" if p.system_role else "" }}</span>
-  </div>
-  {% if p.description %}<p class="subtle">{{ p.description }}</p>{% endif %}
-  <div class="row" style="gap:14px; flex-wrap:wrap; margin-top:6px">
-    {% for area, caps in p.capabilities.items() %}
-    <div style="flex:1; min-width:200px">
-      <h3 style="margin:4px 0; font-size:13px">{{ area }}</h3>
-      <div class="stack">{% for c in caps %}<span class="pill">{{ c }}</span>{% endfor %}</div>
-    </div>
-    {% else %}<span class="subtle">No capabilities.</span>{% endfor %}
-  </div>
-</article>
-{% endfor %}
+{# A scannable index first: the whole point of the screen is comparing roles, which was
+   impossible when each one unrolled into a wall of chips. #}
+<div class="table-wrap ap-index">
+  <table class="data">
+    <thead><tr>
+      <th>Role</th><th>Employees</th><th>Capabilities</th><th>Sensitive</th><th>Areas</th>
+    </tr></thead>
+    <tbody>
+    {% for p in profiles %}
+      <tr>
+        <td>
+          <a class="dir-name" href="#role-{{ p.code }}">{{ p.name }}</a>
+          <span class="dir-sub">{{ p.code }}{{ " · system role" if p.system_role else "" }}</span>
+        </td>
+        <td>{% if p.assigned_employees %}<span class="dir-n">{{ p.assigned_employees }}</span>
+            {% else %}<span class="dir-none">None</span>{% endif %}</td>
+        <td><span class="dir-n">{{ p.capability_count }}</span></td>
+        <td>
+          {% set sensitive_count = [] %}
+          {% for area, caps in p.capabilities.items() %}{% for c in caps %}
+            {% if catalog.get(c, {}).get("sensitive") %}{% set _ = sensitive_count.append(c) %}{% endif %}
+          {% endfor %}{% endfor %}
+          {% if sensitive_count %}<span class="ap-sens-count">{{ sensitive_count | length }}</span>
+          {% else %}<span class="dir-none">&mdash;</span>{% endif %}
+        </td>
+        <td class="ap-areas">{{ p.capabilities.keys() | list | sort | join(" · ") }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
+
+{# Then the detail, one collapsible card per role, so 186 capabilities are reachable without
+   being unavoidable. #}
+{% for p in profiles %}
+<details class="cp-card ap-role" id="role-{{ p.code }}">
+  <summary>
+    <span class="ap-rolename">{{ p.name }}</span>
+    <span class="ap-rolemeta">
+      {{ p.code }}
+      {%- if p.system_role %} &middot; system role{% endif %}
+      &middot; {{ p.capability_count }} capabilit{{ "y" if p.capability_count == 1 else "ies" }}
+      &middot; {{ p.assigned_employees }} employee{{ "" if p.assigned_employees == 1 else "s" }}
+    </span>
+  </summary>
+
+  <div class="ap-body">
+    {% if p.description %}<p class="ap-desc">{{ p.description }}</p>{% endif %}
+
+    {% for area, caps in p.capabilities.items() | sort %}
+    <section class="ap-area">
+      <h3>{{ area }} <span class="ap-areacount">{{ caps | length }}</span></h3>
+      <ul class="ap-caps">
+        {% for c in caps %}
+          {% set meta = catalog.get(c) or {} %}
+          <li class="ap-cap{{ ' is-sensitive' if meta.sensitive else '' }}">
+            {# The description is the stored one; the identifier stays visible because access
+               administration is done against the code. #}
+            <span class="ap-caplabel">{{ meta.description or c }}</span>
+            <span class="ap-capcode">{{ c }}{% if meta.sensitive %}
+              <span class="ap-sens" title="Marked sensitive in the capability registry">sensitive</span>{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% else %}
+      <p class="subtle">This role grants no capabilities.</p>
+    {% endfor %}
+  </div>
+</details>
+{% endfor %}
 {% endblock %}

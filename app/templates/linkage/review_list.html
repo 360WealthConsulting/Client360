@@ -7,11 +7,11 @@
   <a class="btn secondary" href="/linkage/review?status={{ 'all' if status == 'open' else 'open' }}">{{ 'Show open only' if status == 'all' else 'Show all' }}</a>
 {% endcall %}
 
-{% if resolved %}<div class="alert good" style="margin-bottom:14px"><span class="ico">✓</span><div>Resolved exception #{{ resolved }}.{% if result %} {{ result }}{% endif %}</div></div>{% endif %}
-{% if result and not resolved %}<div class="alert" style="margin-bottom:14px"><div>{{ result }}</div></div>{% endif %}
+{% if resolved %}<div class="alert good u-mb-14px"><span class="ico">✓</span><div>Resolved exception #{{ resolved }}.{% if result %} {{ result }}{% endif %}</div></div>{% endif %}
+{% if result and not resolved %}<div class="alert u-mb-14px"><div>{{ result }}</div></div>{% endif %}
 
 {% if rows %}
-<div style="overflow-x:auto">
+<div class="c-ovx-auto">
 <table class="table">
   <thead><tr>
     <th>Folder</th><th>Source</th><th>Docs</th><th>Confidence</th><th>Suggested</th>
@@ -36,7 +36,7 @@
   </tbody>
 </table>
 </div>
-<p class="muted" style="margin-top:10px">{{ rows|length }} item(s).</p>
+<p class="muted u-mt-10px">{{ rows|length }} item(s).</p>
 {% else %}
 {{ ui.empty("Nothing to review", "No linkage subjects in this view.") }}
 {% endif %}

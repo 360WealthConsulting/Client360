@@ -12,13 +12,13 @@
 
 <article class="card">
   <h2 class="section-title">Invite / add an employee</h2>
-  <form method="post" action="/admin/employees/invite" class="stack" style="gap:8px; max-width:520px">
+  <form method="post" action="/admin/employees/invite" class="stack u-gap-8px u-maxw-520px">
     <label class="field"><span>Exact Microsoft work email</span><input class="input" type="email" name="email" required placeholder="name@firm.example"></label>
     <label class="field"><span>Display name</span><input class="input" type="text" name="display_name" required></label>
-    <fieldset class="field" style="border:1px solid var(--hairline, #e5e7eb); border-radius:8px; padding:10px">
+    <fieldset class="field c-bd-1px-solid-hairline c-rad-8px u-p-10px">
       <legend class="subtle">Access profiles (select one or more — effective access is their union)</legend>
       {% for p in profiles %}
-        <label style="display:flex; gap:8px; align-items:baseline; padding:4px 0">
+        <label class="u-flex u-gap-8px u-items-baseline c-p-4px-0">
           <input type="checkbox" name="role_ids" value="{{ p.id }}">
           <span><strong>{{ p.name }}</strong> <span class="subtle">({{ p.code }}) · {{ p.capability_count }} capabilities</span></span>
         </label>

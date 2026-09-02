@@ -32,7 +32,7 @@
 
 {% if (can_assign or can_update) and w.status not in ["completed","cancelled","archived"] %}
 <h2 class="section-title">Manage</h2>
-<div class="row" style="gap:12px; flex-wrap:wrap">
+<div class="row u-gap-12px u-wrap">
   {% if can_assign %}
   <form class="card pad-sm" method="post" action="/advisor-work/{{ w.id }}/assign">
     <input type="hidden" name="expected_status" value="{{ w.status }}">
@@ -42,7 +42,7 @@
   {% if can_update %}
   {% if w.status in ["new","assigned","waiting"] %}<form class="card pad-sm" method="post" action="/advisor-work/{{ w.id }}/start"><input type="hidden" name="expected_status" value="{{ w.status }}"><button class="btn" type="submit">Start</button></form>{% endif %}
   {% if w.status in ["assigned","in_progress"] %}<form class="card pad-sm" method="post" action="/advisor-work/{{ w.id }}/wait"><input type="hidden" name="expected_status" value="{{ w.status }}"><button class="btn" type="submit">Waiting</button></form>{% endif %}
-  <form class="card" method="post" action="/advisor-work/{{ w.id }}/complete" style="padding:12px 16px; min-width:240px" onsubmit="return confirm('Mark this work complete? This records advisor activity only and does not change the recommendation.');">
+  <form class="card c-p-12px-16px u-minw-240px" method="post" action="/advisor-work/{{ w.id }}/complete" onsubmit="return confirm('Mark this work complete? This records advisor activity only and does not change the recommendation.');">
     <input type="hidden" name="expected_status" value="{{ w.status }}">
     <div class="field mb-2"><label>Completion notes</label><input class="input" name="completion_notes" placeholder="what was done"></div>
     <button class="btn" type="submit">Complete</button></form>

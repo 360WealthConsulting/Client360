@@ -7,8 +7,8 @@
     desc="A read-only view of this image. The original file is unchanged.") %}
   <a class="btn secondary" href="{{ download_url }}">Download original</a>
 {% endcall %}
-<article class="card" style="padding:16px 18px">
+<article class="card c-p-16px-18px">
   <div class="subtle">{{ error or "This image cannot be previewed in the browser." }}</div>
-  <p style="margin-top:10px"><a class="btn" href="{{ download_url }}">Download original file</a></p>
+  <p class="u-mt-10px"><a class="btn" href="{{ download_url }}">Download original file</a></p>
 </article>
 {% endblock %}

@@ -4,10 +4,12 @@
 {% block crumb %}{{ entity.name }}{% endblock %}
 {% block content %}
 {{ ui.page_head(entity.name, eyebrow=entity.entity_type.replace("_"," ").title()) }}
-<div class="card" style="max-width:900px">
+<div class="card u-maxw-900px">
   <h3>Record details</h3>
   {% for key, value in entity.details.items() %}
-  <div class="row" style="justify-content:space-between; gap:16px; {% if not loop.last %}border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:8px;{% endif %}">
+  {# `:not(:last-child)` says "every row but the last" in CSS, so the separator survives the
+     CSP and the template loses a loop conditional it never needed. #}
+  <div class="row u-justify-between u-gap-16px c-sep-row">
     <span class="subtle">{{ key.replace("_"," ").title() }}</span><span>{{ value }}</span>
   </div>
   {% else %}

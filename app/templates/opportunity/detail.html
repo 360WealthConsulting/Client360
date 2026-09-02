@@ -27,7 +27,7 @@
 {% if can_edit or can_assign or can_close %}
 <section class="stack mb-4">
   <h2 class="section-title">Actions</h2>
-  <div class="card" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px">
+  <div class="card u-grid c-gtc-repeat-auto-fill-minmax-260px-1fr u-gap-16px">
     {% if can_edit %}
     <form method="post" action="/opportunities/{{ o.id }}/stage">
       <div class="field"><label for="stage_id">Move to stage</label>

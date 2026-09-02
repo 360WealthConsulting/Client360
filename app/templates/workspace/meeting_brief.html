@@ -11,12 +11,12 @@
 {# Read-only, factual one-screen meeting-preparation brief (Phase D.3). All data is
    composed from existing authoritative person-keyed services. No recommendations,
    no historical change — current values only. #}
-<div class="row" style="gap:12px; flex-wrap:wrap; margin-bottom:18px">
+<div class="row u-gap-12px u-wrap u-mb-18px">
   <article class="card pad-sm">
     <span class="detail-label">Meeting</span>
     {% if b.meeting_event %}
       <h3 class="tight">{{ b.meeting_event.title }}</h3>
-      <p class="subtle">{{ b.meeting_event.event_time.strftime("%A, %b %-d · %-I:%M %p") if b.meeting_event.event_time else "" }}</p>
+      <p class="subtle">{{ b.meeting_event.event_time | datefmt("%A, %b %-d · %-I:%M %p") if b.meeting_event.event_time else "" }}</p>
     {% else %}
       <h3 class="tight">General preparation</h3>
       <p class="subtle">No specific meeting selected</p>
@@ -30,7 +30,7 @@
 </div>
 
 <h2 class="section-title">Client 360 — current values</h2>
-<p class="subtle" style="margin:-6px 0 10px">Current values, side by side — not historical change and not a composite total.</p>
+<p class="subtle c-m-6px-0-10px">Current values, side by side — not historical change and not a composite total.</p>
 <section class="stat-grid mb-4">
   {{ wc.summary_card("Cash", "$" ~ "{:,.2f}".format(b.snapshot.cash), "{:.1f}".format(b.snapshot.cash_percent) ~ "%") }}
   {{ wc.summary_card("Insurance", b.snapshot.insurance.policy_count ~ (" policy" if b.snapshot.insurance.policy_count == 1 else " policies"), "$" ~ "{:,.2f}".format(b.snapshot.insurance.total_face) ~ " coverage") }}
@@ -56,7 +56,7 @@
     {% for t in b.open_tasks %}
       <tr>
         <td><a class="rowlink" href="/people/{{ b.person.id }}?tab=tasks">{{ t.title }}</a></td>
-        <td>{% if t.due_date %}{{ t.due_date.strftime("%b %-d") }}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if t.due_date %}{{ t.due_date | datefmt("%b %-d") }}{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td><span class="subtle">{{ (t.status or "open")|capitalize }}</span></td>
       </tr>
     {% endfor %}
@@ -93,7 +93,7 @@
       <tr>
         <td><a class="rowlink" href="/people/{{ b.person.id }}?tab=portfolio">{{ r.account_name or r.account_number }}</a></td>
         <td>{{ r.custodian }}</td>
-        <td>{% if r.last_review_date %}{{ r.last_review_date.strftime("%b %-d, %Y") }}{% else %}{{ ui.badge("Never reviewed") }}{% endif %}</td>
+        <td>{% if r.last_review_date %}{{ r.last_review_date | datefmt("%b %-d, %Y") }}{% else %}{{ ui.badge("Never reviewed") }}{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -114,7 +114,7 @@
 <article class="card">
   {% if b.notes %}
   {% for n in b.notes %}
-    <div class="detail-row"><span>{{ (n.note_type or "note")|replace("_", " ")|capitalize }}{% if n.direction %} · {{ n.direction }}{% endif %} — {{ n.body|truncate(120) }}</span><strong class="subtle">{{ n.created_at.strftime("%b %-d") if n.created_at else "" }}</strong></div>
+    <div class="detail-row"><span>{{ (n.note_type or "note")|replace("_", " ")|capitalize }}{% if n.direction %} · {{ n.direction }}{% endif %} — {{ n.body|truncate(120) }}</span><strong class="subtle">{{ n.created_at | datefmt("%b %-d") if n.created_at else "" }}</strong></div>
   {% endfor %}
   {% else %}{% call ui.empty("No notes yet", "No notes or communications recorded.") %}{% endcall %}{% endif %}
 </article>

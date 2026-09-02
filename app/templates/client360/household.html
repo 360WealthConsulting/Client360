@@ -4,8 +4,34 @@
 {% block title %}{{ ws.display_name }} · Household 360 | 360Plus{% endblock %}
 {% block crumb %}{{ ws.display_name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">
+<link rel="stylesheet" href="/static/css/documents_workspace.css">
 <script src="/static/js/documents.js" defer></script>
 <script src="/static/js/documents_screen.js" defer></script>{% endblock %}
+{% block body_class %}{{ " docsui" if active_tab == "documents" else "" }}{% endblock %}
+{% block nav_extra %}
+{# Documents sub-navigation — the approved design's expanded Documents group. Rendered only on
+   the Documents tab, and ONLY with entries that are real filtered views of this client's
+   documents screen. Nothing here invents a route or a feature: both links are the same
+   `?tab=documents` surface with the filters the screen already supports. #}
+{% if active_tab == "documents" %}
+  {% set navbase = ("/client/household/" ~ ws.entity_id) if ws.entity_type == "household" else ("/client/" ~ ws.entity_id) %}
+  {% set dsec = (ws.sections or {}).get("documents") or {} %}
+  {% set dscreen = dsec.get("screen") or {} %}
+  {% set nreview = dscreen.get("needs_review_count") %}
+  <div class="nav-group dw-navgroup">
+    <div class="label">Documents</div>
+    <div class="nav-subnav">
+      <a class="{{ 'on' if not dscreen.get('filters', {}).get('needs_review') else '' }}"
+         href="{{ navbase }}?tab=documents&amp;dtab=all">All Documents</a>
+      <a class="{{ 'on' if dscreen.get('filters', {}).get('needs_review') else '' }}"
+         href="{{ navbase }}?tab=documents&amp;dtab=all&amp;review=1">
+        Inbox / Needs Review
+        {% if nreview %}<span class="n">{{ nreview }}</span>{% endif %}
+      </a>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}
 {% block content %}
 {% set s = ws.snapshot %}
 {% set base = "/client/household/" ~ ws.entity_id %}
@@ -148,27 +174,7 @@
      deduped by canonical document id. Renders the SAME `_documents_screen.html` partial as the
      person workspace — one documents surface, not two. #}
   {% set hdr = sec.header or {} %}
-  <div class="docs-head">
-    <div>
-      <h2 class="section-title">Documents</h2>
-      <p class="docs-meta">
-        {% if hdr.household_id %}<span>Household ID: {{ hdr.household_id }}</span>{% endif %}
-        {% if hdr.primary_advisor %}
-          <span class="dot" aria-hidden="true">·</span>
-          <span>Primary Advisor: <strong>{{ hdr.primary_advisor.name }}</strong>{% if hdr.primary_advisor.role %} <span class="subtle">({{ hdr.primary_advisor.role }})</span>{% endif %}</span>
-        {% endif %}
-        {% if hdr.status %}
-          <span class="dot" aria-hidden="true">·</span>
-          <span class="statusbadge statusbadge--{{ hdr.status|lower }}">{{ hdr.status }}</span>
-        {% endif %}
-      </p>
-    </div>
-    <div class="docs-head-actions">
-      {% if principal and principal.can("documents.edit") %}
-        <a class="btn primary" href="#doc-upload">+ Upload Document</a>
-      {% endif %}
-    </div>
-  </div>
+  {% include "client360/_documents_head.html" %}
 
 {% if principal and principal.can("documents.edit") %}
   <details class="docs-upload" id="doc-upload">

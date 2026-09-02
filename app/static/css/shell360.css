@@ -1,0 +1,399 @@
+/* ==================================================================================
+   360Plus — shared staff application shell & design tokens
+   ----------------------------------------------------------------------------------
+   ONE shell for every staff module. Loaded from base.html for all 178 base-extending
+   templates, after app.css so it governs the chrome while app.css keeps supplying the
+   component internals each module already relies on.
+
+   Scope discipline:
+     * This file styles the SHELL (sidebar, top bar, canvas) and the COMMON vocabulary
+       (buttons, inputs, cards, tables, badges, empty states, page headers).
+     * It does NOT restructure any module's content. Nothing here changes a route, a
+       capability gate, a query or a view model.
+     * Module-specific layout stays in that module's own sheet. Documents keeps
+       documents_workspace.css for its table, filters and drawer only.
+
+   The visual language is the approved Documents design target, promoted from a
+   Documents-only skin to the shared product chrome.
+   ================================================================================== */
+
+/* ------------------------------------------------------------------- tokens ----- */
+
+:root {
+  /* Navy sidebar */
+  --s-nav:#101B36;
+  --s-nav-2:#1B2950;
+  --s-nav-ink:#C7D2E4;
+  --s-nav-dim:#8A99B8;
+
+  /* Primary action */
+  --s-blue:#2563EB;
+  --s-blue-2:#1D4ED8;
+  --s-blue-soft:#EFF4FF;
+
+  /* Neutral surfaces */
+  --s-page:#F7F8FA;
+  --s-card:#FFFFFF;
+  --s-line:#E5E7EB;
+  --s-line-2:#EDF0F4;
+  --s-ink:#111827;
+  --s-ink-2:#374151;
+  --s-mut:#6B7280;
+
+  /* State */
+  --s-ok:#15803D;      --s-ok-soft:#DCFCE7;
+  --s-warn:#B45309;    --s-warn-soft:#FEF3C7;
+  --s-err:#B42318;     --s-err-soft:#FEE2E2;
+  --s-info:#0369A1;    --s-info-soft:#E0F2FE;
+  --s-red:#EF4444;
+  --s-star:#F59E0B;
+
+  /* Radii + elevation */
+  --s-r-sm:6px; --s-r:9px; --s-r-lg:12px;
+  --s-shadow:0 1px 2px rgba(16,27,54,.05);
+  --s-shadow-lg:0 8px 28px rgba(16,27,54,.10);
+
+  /* Spacing rhythm */
+  --s-gap-1:6px; --s-gap-2:10px; --s-gap-3:16px; --s-gap-4:22px; --s-gap-5:30px;
+
+  /* Typography */
+  --s-font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --s-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --s-fs-1:26px;   /* page title      */
+  --s-fs-2:18px;   /* section title   */
+  --s-fs-3:15px;   /* card heading    */
+  --s-fs-body:13.5px;
+  --s-fs-sm:12.5px;
+  --s-fs-xs:11.5px;
+}
+
+body.c360 {
+  background:var(--s-page);
+  color:var(--s-ink);
+  font-family:var(--s-font);
+  font-size:var(--s-fs-body);
+}
+
+/* ------------------------------------------------------------------ sidebar ----- */
+
+body.c360 .app-sidebar {
+  background:var(--s-nav);
+  border-right:0;
+  color:var(--s-nav-ink);
+}
+
+body.c360 .app-brand {
+  display:flex; align-items:center; gap:10px;
+  padding:18px 16px 14px;
+  color:#fff; text-decoration:none;
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+body.c360 .app-brand .mark {
+  width:38px; height:38px; border-radius:50%;
+  display:grid; place-items:center;
+  background:linear-gradient(150deg,#3B82F6,#1D4ED8);
+  color:#fff; font-weight:700; font-size:12px; letter-spacing:.02em;
+  box-shadow:0 0 0 3px rgba(59,130,246,.18);
+}
+body.c360 .app-brand .name {
+  font-size:19px; font-weight:700; letter-spacing:-.01em; line-height:1.05;
+}
+/* The product lockup: 360Plus over Client360. Rendered from CSS so the shared brand
+   markup in base.html is not forked. */
+body.c360 .app-brand .name::after {
+  content:"Client360";
+  display:block; font-size:11px; font-weight:500;
+  color:var(--s-nav-dim); letter-spacing:.01em;
+}
+
+body.c360 .app-nav { padding:10px 10px 24px; }
+body.c360 .app-nav .nav-group { margin:0 0 2px; }
+body.c360 .app-nav .nav-group .label {
+  color:var(--s-nav-dim);
+  font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+  padding:14px 10px 6px;
+}
+body.c360 .app-nav .nav-item {
+  display:flex; align-items:center; gap:11px;
+  padding:9px 11px; margin:1px 0;
+  border-radius:8px; border:0;
+  color:var(--s-nav-ink); font-size:var(--s-fs-body); font-weight:500;
+  text-decoration:none;
+  transition:background .12s ease, color .12s ease;
+}
+body.c360 .app-nav .nav-item .ico { width:17px; text-align:center; opacity:.72; font-size:13px; }
+body.c360 .app-nav .nav-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+body.c360 .app-nav .nav-item.active {
+  background:var(--s-blue); color:#fff; font-weight:600;
+  box-shadow:0 1px 2px rgba(37,99,235,.45);
+}
+body.c360 .app-nav .nav-item.active .ico { opacity:1; }
+
+/* Nested navigation — the shared treatment for any module that needs sub-entries. */
+body.c360 .nav-subnav {
+  margin:2px 0 2px 4px; padding-left:8px;
+  border-left:1px solid rgba(255,255,255,.10);
+}
+body.c360 .nav-subnav a {
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:7px 10px; margin:1px 0; border-radius:7px;
+  color:var(--s-nav-ink); font-size:13px; text-decoration:none;
+}
+body.c360 .nav-subnav a:hover { background:rgba(255,255,255,.06); color:#fff; }
+body.c360 .nav-subnav a.on { background:var(--s-nav-2); color:#fff; font-weight:600; }
+body.c360 .nav-subnav .n {
+  min-width:20px; padding:1px 6px; border-radius:999px;
+  background:var(--s-red); color:#fff;
+  font-size:10.5px; font-weight:700; text-align:center;
+}
+
+/* ------------------------------------------------------------------ top bar ----- */
+
+body.c360 .app-header {
+  background:var(--s-card);
+  border-bottom:1px solid var(--s-line);
+  height:64px; gap:14px; padding:0 22px;
+}
+body.c360 .app-header .crumbs { font-size:14px; color:var(--s-mut); }
+body.c360 .app-header .crumbs a { color:var(--s-mut); text-decoration:none; }
+body.c360 .app-header .crumbs a:hover { color:var(--s-blue); }
+body.c360 .app-header .crumbs b { color:var(--s-ink); font-weight:600; }
+body.c360 .app-header .crumbs .sep { color:#C3C9D4; margin:0 7px; }
+
+body.c360 .app-search { margin-left:auto; position:relative; }
+body.c360 .app-search input {
+  width:330px; height:38px;
+  border:1px solid var(--s-line); border-radius:var(--s-r);
+  background:var(--s-card); font-size:var(--s-fs-body); padding-left:32px;
+}
+body.c360 .app-search input:focus {
+  border-color:var(--s-blue); box-shadow:0 0 0 3px rgba(37,99,235,.13); outline:0;
+}
+body.c360 .app-header .icon-btn { color:var(--s-mut); border-radius:var(--s-r-sm); }
+body.c360 .app-header .icon-btn:hover { color:var(--s-ink); background:var(--s-line-2); }
+body.c360 .user-chip .avatar { background:var(--s-blue); color:#fff; }
+body.c360 .user-chip .who b { color:var(--s-ink); }
+body.c360 .user-chip .who span { color:var(--s-mut); }
+
+/* ------------------------------------------------------------------- canvas ----- */
+
+body.c360 .app-content {
+  background:var(--s-page);
+  padding:var(--s-gap-4) var(--s-gap-5) 40px;
+  max-width:none;                       /* full working width, as the target shows */
+}
+
+/* ------------------------------------------------------------- page headers ----- */
+/* The shared page-header pattern: title, context line, actions. `.page-head` is the
+   general form; `.dw-clienthead` is the entity/client form Documents already renders,
+   and both share this treatment so the two never drift. */
+
+body.c360 .page-head,
+body.c360 .dw-clienthead {
+  display:flex; align-items:flex-start; gap:var(--s-gap-3);
+  margin:0 0 var(--s-gap-4);
+}
+body.c360 .page-head .dw-avatar,
+body.c360 .dw-clienthead .dw-avatar {
+  width:46px; height:46px; flex:0 0 46px;
+  border-radius:var(--s-r-lg); display:grid; place-items:center;
+  background:var(--s-blue-soft); color:var(--s-blue-2); font-size:20px;
+}
+body.c360 .page-head h1,
+body.c360 .dw-clienthead h1 {
+  margin:0 0 6px; font-size:var(--s-fs-1); font-weight:700;
+  letter-spacing:-.02em; color:var(--s-ink); line-height:1.15;
+}
+body.c360 .page-head .page-sub,
+body.c360 .page-head .dw-meta,
+body.c360 .dw-clienthead .dw-meta {
+  display:flex; align-items:center; flex-wrap:wrap; gap:9px;
+  margin:0; font-size:var(--s-fs-body); color:var(--s-mut);
+}
+body.c360 .page-head .dw-meta a,
+body.c360 .dw-clienthead .dw-meta a { color:var(--s-blue); text-decoration:none; font-weight:500; }
+body.c360 .dw-clienthead .dw-meta a:hover { text-decoration:underline; }
+body.c360 .dw-clienthead .dw-meta .chev { color:#C3C9D4; }
+body.c360 .dw-clienthead .dw-meta strong { color:var(--s-ink-2); font-weight:600; }
+body.c360 .page-head .page-actions,
+body.c360 .dw-clienthead .dw-actions {
+  margin-left:auto; display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+}
+
+/* Section titles inside a page. */
+body.c360 .section-title {
+  font-size:var(--s-fs-2); font-weight:700; color:var(--s-ink);
+  letter-spacing:-.01em; margin:0 0 var(--s-gap-2);
+}
+
+/* ------------------------------------------------------------------ buttons ----- */
+
+body.c360 .btn,
+body.c360 .dw-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  height:40px; padding:0 15px;
+  border:1px solid var(--s-line); border-radius:var(--s-r);
+  background:var(--s-card); color:var(--s-ink-2);
+  font-size:var(--s-fs-body); font-weight:600; text-decoration:none;
+  box-shadow:var(--s-shadow); cursor:pointer;
+  transition:border-color .12s ease, background .12s ease;
+}
+body.c360 .btn:hover,
+body.c360 .dw-btn:hover { background:#FAFBFC; border-color:#D3D9E2; }
+body.c360 .btn.primary,
+body.c360 .dw-btn--primary {
+  background:var(--s-blue); border-color:var(--s-blue); color:#fff;
+  box-shadow:0 1px 2px rgba(37,99,235,.35);
+}
+body.c360 .btn.primary:hover,
+body.c360 .dw-btn--primary:hover { background:var(--s-blue-2); border-color:var(--s-blue-2); }
+body.c360 .btn.secondary { background:var(--s-card); color:var(--s-ink-2); }
+body.c360 .btn.sm { height:34px; padding:0 12px; font-size:var(--s-fs-sm); }
+body.c360 .btn.danger, body.c360 button.danger {
+  color:var(--s-err); border-color:#F3D3CF; background:var(--s-card);
+}
+body.c360 .btn[disabled], body.c360 .btn.off { opacity:.5; pointer-events:none; }
+
+/* ------------------------------------------------------------------- inputs ----- */
+
+body.c360 .input,
+body.c360 input[type="text"], body.c360 input[type="search"],
+body.c360 input[type="email"], body.c360 input[type="number"],
+body.c360 input[type="date"], body.c360 select, body.c360 textarea {
+  height:40px; border:1px solid var(--s-line); border-radius:var(--s-r);
+  background:var(--s-card); color:var(--s-ink-2);
+  font-size:var(--s-fs-body); font-family:inherit; padding:0 12px;
+  box-shadow:var(--s-shadow);
+}
+body.c360 textarea { height:auto; padding:10px 12px; }
+body.c360 .input:focus,
+body.c360 input:focus, body.c360 select:focus, body.c360 textarea:focus {
+  border-color:var(--s-blue); box-shadow:0 0 0 3px rgba(37,99,235,.13); outline:0;
+}
+body.c360 label { color:var(--s-ink-2); font-size:var(--s-fs-sm); font-weight:600; }
+body.c360 .field { display:flex; flex-direction:column; gap:5px; margin-bottom:var(--s-gap-2); }
+
+/* -------------------------------------------------------------------- cards ----- */
+
+body.c360 .card {
+  background:var(--s-card);
+  border:1px solid var(--s-line);
+  border-radius:var(--s-r-lg);
+  box-shadow:var(--s-shadow);
+}
+body.c360 .card.section { padding:var(--s-gap-3); margin-bottom:var(--s-gap-3); }
+body.c360 .card h2, body.c360 .card h3 { color:var(--s-ink); letter-spacing:-.01em; }
+body.c360 .detail-row {
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s-gap-2);
+  padding:10px 0; border-bottom:1px solid var(--s-line-2);
+}
+body.c360 .detail-row:last-child { border-bottom:0; }
+
+/* Signal / KPI strip — kept, restyled to the shared card language. */
+body.c360 .signal-bar {
+  display:flex; flex-wrap:wrap; gap:1px;
+  background:var(--s-line); border:1px solid var(--s-line);
+  border-radius:var(--s-r-lg); overflow:hidden; margin-bottom:var(--s-gap-4);
+}
+body.c360 .signal-bar > * {
+  flex:1 1 150px; background:var(--s-card); padding:13px 16px;
+}
+body.c360 .signal-bar .k, body.c360 .signal-bar .lbl {
+  display:block; color:var(--s-mut);
+  font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+}
+body.c360 .signal-bar .v, body.c360 .signal-bar strong {
+  display:block; color:var(--s-ink); font-size:20px; font-weight:700; letter-spacing:-.01em;
+}
+
+/* ------------------------------------------------------------------- tables ----- */
+
+body.c360 .table-wrap {
+  background:var(--s-card); border:1px solid var(--s-line);
+  border-radius:var(--s-r-lg); box-shadow:var(--s-shadow); overflow:hidden;
+}
+body.c360 table.data { width:100%; border-collapse:separate; border-spacing:0; font-size:var(--s-fs-body); }
+body.c360 table.data thead th {
+  background:#FBFCFD; border-bottom:1px solid var(--s-line);
+  padding:11px 14px; text-align:left;
+  color:var(--s-mut); font-size:var(--s-fs-xs); font-weight:700;
+  letter-spacing:.05em; text-transform:uppercase; white-space:nowrap;
+}
+body.c360 table.data tbody td {
+  padding:12px 14px; border-bottom:1px solid var(--s-line-2);
+  color:var(--s-ink-2); vertical-align:middle;
+}
+body.c360 table.data tbody tr:last-child td { border-bottom:0; }
+body.c360 table.data tbody tr:hover { background:#FAFBFD; }
+body.c360 table.data a { color:var(--s-blue); text-decoration:none; }
+body.c360 table.data a:hover { text-decoration:underline; }
+
+/* ------------------------------------------------------- badges & statuses ----- */
+
+body.c360 .pill, body.c360 .badge, body.c360 .chip {
+  display:inline-block; padding:3px 9px; border-radius:var(--s-r-sm);
+  background:var(--s-line-2); color:var(--s-ink-2);
+  font-size:var(--s-fs-xs); font-weight:600; border:0;
+}
+body.c360 .statusbadge {
+  display:inline-flex; align-items:center;
+  padding:2px 10px; border-radius:999px;
+  background:var(--s-ok-soft); color:var(--s-ok);
+  font-size:var(--s-fs-xs); font-weight:600; border:0;
+}
+body.c360 .ok, body.c360 .good, body.c360 .pill--ok { background:var(--s-ok-soft); color:var(--s-ok); }
+body.c360 .warn, body.c360 .pill--warn { background:var(--s-warn-soft); color:var(--s-warn); }
+body.c360 .crit, body.c360 .danger-pill, body.c360 .pill--crit { background:var(--s-err-soft); color:var(--s-err); }
+body.c360 .info, body.c360 .pill--info { background:var(--s-info-soft); color:var(--s-info); }
+body.c360 .subtle { color:var(--s-mut); }
+body.c360 .mono { font-family:var(--s-mono); font-size:var(--s-fs-sm); }
+
+/* -------------------------------------------------------------- empty states ---- */
+
+body.c360 .empty, body.c360 .empty-state {
+  padding:44px 20px; text-align:center; color:var(--s-mut); font-size:var(--s-fs-body);
+}
+body.c360 .empty h3, body.c360 .empty-state h3 {
+  margin:0 0 6px; font-size:var(--s-fs-3); color:var(--s-ink); font-weight:600;
+}
+
+/* -------------------------------------------------------------- disclosures ----- */
+
+body.c360 details.rowmenu > summary { list-style:none; cursor:pointer; }
+body.c360 details.rowmenu > summary::-webkit-details-marker { display:none; }
+body.c360 details.rowmenu .menu {
+  border:1px solid var(--s-line); border-radius:var(--s-r);
+  background:var(--s-card); box-shadow:var(--s-shadow-lg); padding:5px;
+}
+body.c360 details.rowmenu .menu a,
+body.c360 details.rowmenu .menu button {
+  display:block; width:100%; text-align:left;
+  padding:8px 11px; border-radius:var(--s-r-sm); border:0; background:transparent;
+  color:var(--s-ink-2); font-size:13px; text-decoration:none; cursor:pointer;
+}
+body.c360 details.rowmenu .menu a:hover,
+body.c360 details.rowmenu .menu button:hover { background:var(--s-line-2); }
+
+/* -------------------------------------------------------------- responsive ------ */
+
+@media (max-width:980px) {
+  body.c360 .app-content { padding:var(--s-gap-3) 16px 32px; }
+  body.c360 .page-head, body.c360 .dw-clienthead { flex-wrap:wrap; }
+  body.c360 .page-head .page-actions,
+  body.c360 .dw-clienthead .dw-actions { margin-left:0; width:100%; }
+  body.c360 .app-search input { width:100%; min-width:0; }
+}
+
+/* The existing `ui.page_head` macro emits .eyebrow / .desc / .row — style what the
+   178 base-extending templates already render rather than changing the macro's
+   markup, so every module picks up the shared header treatment for free. */
+body.c360 .page-head .eyebrow {
+  margin:0 0 4px; color:var(--s-mut);
+  font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+}
+body.c360 .page-head .desc {
+  margin:6px 0 0; color:var(--s-mut); font-size:var(--s-fs-body);
+}
+body.c360 .page-head .row {
+  margin-left:auto; display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+}

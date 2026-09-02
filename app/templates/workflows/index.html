@@ -2,6 +2,7 @@
 {% import "components/ui.html" as ui %}
 {% block title %}Workflows | 360Plus{% endblock %}
 {% block crumb %}Workflows{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/workflows.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
 {{ ui.page_head("Workflow automation", eyebrow="Work", desc="Versioned firm processes and operational controls.") }}
 <div class="stat-grid">
@@ -13,12 +14,15 @@
 <div class="stack">
 {% for template in templates %}
   <div class="card">
-    <div class="row" style="justify-content:space-between">
-      <h3 style="margin:0; font-size:15px">{{ template.name }}</h3>
+    {# The CSP is `default-src 'self'` with no 'unsafe-inline', so style="" attributes are
+       dropped by the browser: the version badge never moved to the right edge and the
+       heading kept its default margins. These are classes now, in workflows.css. #}
+    <div class="row row--split">
+      <h3 class="wf-title">{{ template.name }}</h3>
       <span class="badge info">v{{ template.version }}</span>
     </div>
-    <div class="subtle" style="margin-top:4px">{{ template.category|replace('_',' ')|title }}</div>
-    <div class="subtle" style="margin-top:4px">{{ template.description or 'Standardized firm workflow with independent review.' }}</div>
+    <div class="subtle wf-meta">{{ template.category|replace('_',' ')|title }}</div>
+    <div class="subtle wf-meta">{{ template.description or 'Standardized firm workflow with independent review.' }}</div>
   </div>
 {% else %}
   {% call ui.empty("No published templates") %}{% endcall %}

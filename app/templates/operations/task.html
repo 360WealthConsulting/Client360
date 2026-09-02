@@ -9,7 +9,7 @@
   <div><div class="subtle text-sm">Priority</div><div>{{ t.priority }}</div></div>
   <div><div class="subtle text-sm">Estimate</div><div>{{ t.estimated_minutes or "—" }} min</div></div>
   <div><div class="subtle text-sm">Due</div><div>{{ t.due_date or "—" }}</div></div>
-  {% if can_manage and t.status not in ['completed','cancelled','archived'] %}<div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+  {% if can_manage and t.status not in ['completed','cancelled','archived'] %}<div class="u-ml-auto u-flex u-gap-8px u-items-center u-wrap">
     <form method="post" action="/operations/items/{{ t.id }}/status"><input type="hidden" name="status" value="active"><button class="btn btn-ghost" type="submit">Start</button></form>
     <form method="post" action="/operations/items/{{ t.id }}/status"><input type="hidden" name="status" value="blocked"><button class="btn btn-ghost" type="submit">Block</button></form>
     <form method="post" action="/operations/items/{{ t.id }}/status"><input type="hidden" name="status" value="completed"><button class="btn btn-ghost" type="submit">Complete</button></form>
@@ -32,7 +32,7 @@
 </section>{% endif %}
 
 {% if t.comments %}<section class="stack"><h2 class="section-title">Comments</h2>
-  {% for cm in t.comments %}<article class="card mb-2"><p style="white-space:pre-wrap; margin:0">{{ cm.body }}</p></article>{% endfor %}
+  {% for cm in t.comments %}<article class="card mb-2"><p class="u-prewrap u-m-0">{{ cm.body }}</p></article>{% endfor %}
 </section>{% endif %}
 
 {% if can_manage %}

@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import BinaryIO
 
-from sqlalchemy import and_, insert, or_, select, update
+from sqlalchemy import and_, func, insert, or_, select, update
 
 from app.db import documents, engine, people
 from app.services.document_platform.lifecycle import active_documents_clause
@@ -212,23 +212,50 @@ def _not_deleted():
     return active_documents_clause()
 
 
+def person_documents_clause(connection, person_id: int):
+    """The ONE definition of "the documents that belong to this person's client surface".
+
+    A person's paperwork is anchored two ways: on the person, and on the household they belong
+    to (the joint return, the family organiser). Both are theirs to see, so both are in scope.
+    Archived AND soft-deleted rows are excluded — the same safety pair every client surface uses.
+
+    This exists because the scope used to be spelled out separately in each caller, and they
+    drifted: client_summary counted ONLY person-anchored rows and omitted the deleted check,
+    so a client whose documents all hang off the household reported zero documents while the very
+    same page listed them, and a soft-deleted document would have been counted. Anything that
+    needs to know whether this client has documents — a list, a count, an alert — must ask here.
+    """
+    household_id = connection.execute(
+        select(people.c.household_id).where(people.c.id == person_id)
+    ).scalar_one_or_none()
+    scope = documents.c.person_id == person_id
+    if household_id is not None:
+        scope = or_(scope, documents.c.household_id == household_id)
+    return and_(scope, documents.c.archived.is_(False), _not_deleted())
+
+
+def count_person_documents(person_id: int, connection=None) -> int:
+    """How many documents this client actually has, on exactly the scope the list uses.
+
+    Takes an optional open connection so a caller already inside one (client_summary) does
+    not open a second.
+    """
+    def _run(conn):
+        return conn.execute(
+            select(func.count()).select_from(documents)
+            .where(person_documents_clause(conn, person_id))
+        ).scalar_one()
+    if connection is not None:
+        return _run(connection)
+    with engine.connect() as conn:
+        return _run(conn)
+
+
 def get_person_documents(person_id: int):
     with engine.connect() as connection:
-        # Include the person's own documents AND documents linked to their household, so household
-        # documents (e.g. joint tax returns, estate documents) are visible to every household member.
-        household_id = connection.execute(
-            select(people.c.household_id).where(people.c.id == person_id)
-        ).scalar_one_or_none()
-        scope = documents.c.person_id == person_id
-        if household_id is not None:
-            scope = or_(scope, documents.c.household_id == household_id)
         rows = connection.execute(
             select(documents)
-            .where(
-                # Archived AND soft-deleted are both excluded. This filtered on `archived` alone,
-                # so every soft-deleted document stayed on the person's document list.
-                and_(scope, documents.c.archived.is_(False), _not_deleted()),
-            )
+            .where(person_documents_clause(connection, person_id))
             .order_by(
                 documents.c.created_at.desc(),
                 documents.c.id.desc(),

@@ -6,9 +6,9 @@
 {{ ui.page_head("My Work", eyebrow="Work", desc=(principal.display_name ~ " · prioritized daily operating queue") if principal else "Prioritized daily operating queue") }}
 
 <form class="filterbar" method="get">
-  <input class="input" name="priority" placeholder="Priority" value="{{ filters.get('priority','') }}" style="height:30px; max-width:140px">
-  <input class="input" name="status" placeholder="Status" value="{{ filters.get('status','') }}" style="height:30px; max-width:140px">
-  <input class="input" type="date" name="due_before" value="{{ filters.get('due_before','') }}" style="height:30px">
+  <input class="input u-h-30px u-maxw-140px" name="priority" placeholder="Priority" value="{{ filters.get('priority','') }}">
+  <input class="input u-h-30px u-maxw-140px" name="status" placeholder="Status" value="{{ filters.get('status','') }}">
+  <input class="input u-h-30px" type="date" name="due_before" value="{{ filters.get('due_before','') }}">
   <button class="btn sm" type="submit">Filter</button>
   <a class="chip" href="/work">Clear</a>
 </form>
@@ -35,17 +35,17 @@
           <span class="badge">{{ item.entity_type.replace('_',' ') }}</span>
           <span class="sev {{ 'critical' if item.priority in ['urgent','high'] else ('medium' if item.priority == 'medium' else 'low') }}">{{ item.priority }}</span>
         </div>
-        <h3 style="margin:8px 0 4px; font-size:15px">{{ item.title }}</h3>
+        <h3 class="c-m-8px-0-4px u-fs-15px">{{ item.title }}</h3>
         <div class="subtle">{{ item.status.replace('_',' ') }}{% if item.due_date %} · Due {{ item.due_date }}{% endif %}</div>
-        <div class="subtle" style="margin-top:2px">Priority score {{ item.priority_score }} · SLA {{ item.sla_risk.level }}</div>
+        <div class="subtle u-mt-2px">Priority score {{ item.priority_score }} · SLA {{ item.sla_risk.level }}</div>
         {% if principal and principal.can('work.write') %}
         <details class="mt-3">
-          <summary style="cursor:pointer; color:var(--accent); font-size:13px; font-weight:620">Assign</summary>
+          <summary class="u-pointer c-fg-accent u-fs-13px c-fwt-620">Assign</summary>
           <form class="row mt-2" method="post" action="/work/assignments/{{ item.entity_type }}/{{ item.entity_id }}">
-            <select class="input" name="assignment_role" style="height:32px"><option>secondary</option><option>primary</option><option>supervisor</option><option>owner</option></select>
-            <input class="input" name="user_id" inputmode="numeric" placeholder="User ID" style="height:32px; max-width:110px">
-            <input class="input" name="team_id" inputmode="numeric" placeholder="Team ID" style="height:32px; max-width:110px">
-            <input class="input" name="reason" placeholder="Reason" style="height:32px">
+            <select class="input u-h-32px" name="assignment_role"><option>secondary</option><option>primary</option><option>supervisor</option><option>owner</option></select>
+            <input class="input u-h-32px u-maxw-110px" name="user_id" inputmode="numeric" placeholder="User ID">
+            <input class="input u-h-32px u-maxw-110px" name="team_id" inputmode="numeric" placeholder="Team ID">
+            <input class="input u-h-32px" name="reason" placeholder="Reason">
             <button class="btn sm" type="submit">Assign</button>
           </form>
         </details>
@@ -60,7 +60,7 @@
     <h2 class="section-title">Queues</h2>
     <div class="stack">
     {% for queue in work.queues %}
-      <a class="card row" style="justify-content:space-between; text-decoration:none; color:var(--text)" href="/work/queues/{{ queue.code }}"><span>{{ queue.name }}</span><span class="badge info">{{ queue.count }}</span></a>
+      <a class="card row u-justify-between u-no-underline c-fg-text" href="/work/queues/{{ queue.code }}"><span>{{ queue.name }}</span><span class="badge info">{{ queue.count }}</span></a>
     {% else %}
       {% call ui.empty("No active queues") %}{% endcall %}
     {% endfor %}

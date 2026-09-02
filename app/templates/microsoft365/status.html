@@ -4,7 +4,7 @@
 {% block crumb %}Microsoft 365{% endblock %}
 {% block content %}
 {{ ui.page_head("Microsoft 365 integration", eyebrow="Microsoft 365", desc="360Plus connector status.") }}
-<div class="card" style="max-width:900px">
+<div class="card u-maxw-900px">
   <div class="alert {{ 'good' if configured else 'warn' }} mb-4"><span class="ico">{{ '✓' if configured else '⚠' }}</span><div><b>{{ status_label }}</b><p class="mt-1">{{ message }}</p></div></div>
   <div class="stack">
     <div class="row between wide"><span class="subtle">Tenant ID</span><span class="id-mono">{{ tenant_id }}</span></div>
@@ -13,7 +13,7 @@
   </div>
   <p class="subtle mt-3">Client secrets are never displayed on this page.</p>
 </div>
-<div class="card" style="max-width:900px; margin-top:16px">
+<div class="card u-maxw-900px u-mt-16px">
   <h3>Sync health</h3>
   {% if sync %}
   <div class="stack">

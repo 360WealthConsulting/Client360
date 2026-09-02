@@ -1,0 +1,275 @@
+/* ==================================================================================
+   360Plus — CSP-safe layout utilities
+   ----------------------------------------------------------------------------------
+   The application sends:
+
+       Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'self'
+
+   With no `style-src` and no `'unsafe-inline'`, `style-src-attr` inherits from
+   `default-src`, so every inline `style=""` ATTRIBUTE is blocked by the browser. 497 of
+   them had accumulated across 94 templates, which means that formatting had never
+   rendered — headings kept default margins, flex rows never split, right-aligned figures
+   sat left. This file is the replacement vocabulary.
+
+   IT IS NOT A DESIGN SYSTEM. Every class here is a single declaration transcribed from a
+   style attribute that already existed in a template, at exactly the value it already
+   used — a 6px margin stays 6px. No value was normalised, invented, or rounded to a
+   scale, because the goal is to make the intended formatting finally apply, not to
+   redesign anything. The 360Plus tokens in shell360.css remain the design system; these
+   are plumbing beneath it.
+
+   Composite shorthands (`margin: a b c`), colours, and anything carrying `!important`
+   are deliberately NOT here — those are one-offs and live as component-scoped classes in
+   the owning module's stylesheet instead.
+
+   New code should reach for a design-system class first and only then a utility.
+   ================================================================================== */
+
+/* --- display --- */
+.u-block { display:block; }
+.u-flex { display:flex; }
+.u-flexv-0-0-auto { flex:0 0 auto; }
+.u-flexv-1 { flex:1; }
+.u-flexv-1-1-260px { flex:1 1 260px; }
+.u-flexv-1-1-auto { flex:1 1 auto; }
+.u-fs-0p92rem { font-size:0.92rem; }
+.u-fs-12px { font-size:12px; }
+.u-fs-13px { font-size:13px; }
+.u-fs-14px { font-size:14px; }
+.u-fs-15px { font-size:15px; }
+.u-fs-16px { font-size:16px; }
+.u-fs-17px { font-size:17px; }
+.u-fs-1p1em { font-size:1.1em; }
+.u-fs-20px { font-size:20px; }
+.u-fs-26px { font-size:26px; }
+.u-fw-500 { font-weight:500; }
+.u-fw-600 { font-weight:600; }
+.u-fw-640 { font-weight:640; }
+.u-fw-700 { font-weight:700; }
+.u-gap-10px { gap:10px; }
+.u-gap-12px { gap:12px; }
+.u-gap-14px { gap:14px; }
+.u-gap-16px { gap:16px; }
+.u-gap-18px { gap:18px; }
+.u-gap-1p5rem { gap:1.5rem; }
+.u-gap-1rem { gap:1rem; }
+.u-gap-2px { gap:2px; }
+.u-gap-5px { gap:5px; }
+.u-gap-6px { gap:6px; }
+.u-gap-6px-16px { gap:6px 16px; }
+.u-gap-7px { gap:7px; }
+.u-gap-8px { gap:8px; }
+.u-gap-p3rem { gap:.3rem; }
+.u-gap-p4rem { gap:.4rem; }
+.u-gap-p6rem { gap:.6rem; }
+.u-grid { display:grid; }
+.u-h-30px { height:30px; }
+.u-h-32px { height:32px; }
+.u-h-auto { height:auto; }
+.u-inline { display:inline; }
+.u-inline-block { display:inline-block; }
+.u-inline-flex { display:inline-flex; }
+.u-items-baseline { align-items:baseline; }
+.u-items-center { align-items:center; }
+.u-items-end { align-items:end; }
+.u-items-start { align-items:flex-start; }
+.u-justify-between { justify-content:space-between; }
+.u-justify-center { justify-content:center; }
+.u-lh-1p25 { line-height:1.25; }
+.u-lh-1p5 { line-height:1.5; }
+.u-m-0 { margin:0; }
+.u-maxw-110px { max-width:110px; }
+.u-maxw-120px { max-width:120px; }
+.u-maxw-140px { max-width:140px; }
+.u-maxw-180px { max-width:180px; }
+.u-maxw-260px { max-width:260px; }
+.u-maxw-280px { max-width:280px; }
+.u-maxw-520px { max-width:520px; }
+.u-maxw-640px { max-width:640px; }
+.u-maxw-760px { max-width:760px; }
+.u-maxw-900px { max-width:900px; }
+.u-mb-10px { margin-bottom:10px; }
+.u-mb-12px { margin-bottom:12px; }
+.u-mb-14px { margin-bottom:14px; }
+.u-mb-16px { margin-bottom:16px; }
+.u-mb-18px { margin-bottom:18px; }
+.u-mb-1rem { margin-bottom:1rem; }
+.u-mb-20px { margin-bottom:20px; }
+.u-mb-22px { margin-bottom:22px; }
+.u-mb-26px { margin-bottom:26px; }
+.u-mb-6px { margin-bottom:6px; }
+.u-mb-8px { margin-bottom:8px; }
+.u-mb-p5rem { margin-bottom:.5rem; }
+.u-minh-100px { min-height:100px; }
+.u-minh-110px { min-height:110px; }
+.u-minh-200px { min-height:200px; }
+.u-minh-50px { min-height:50px; }
+.u-minh-60px { min-height:60px; }
+.u-minh-70px { min-height:70px; }
+.u-minh-90px { min-height:90px; }
+.u-minw-0 { min-width:0; }
+.u-minw-140px { min-width:140px; }
+.u-minw-180px { min-width:180px; }
+.u-minw-200px { min-width:200px; }
+.u-minw-220px { min-width:220px; }
+.u-minw-240px { min-width:240px; }
+.u-minw-280px { min-width:280px; }
+.u-minw-320px { min-width:320px; }
+.u-ml-4px { margin-left:4px; }
+.u-ml-6px { margin-left:6px; }
+.u-ml-auto { margin-left:auto; }
+.u-mt--6px { margin-top:-6px; }
+.u-mt-10px { margin-top:10px; }
+.u-mt-12px { margin-top:12px; }
+.u-mt-14px { margin-top:14px; }
+.u-mt-16px { margin-top:16px; }
+.u-mt-18px { margin-top:18px; }
+.u-mt-1p25rem { margin-top:1.25rem; }
+.u-mt-1p5rem { margin-top:1.5rem; }
+.u-mt-1rem { margin-top:1rem; }
+.u-mt-2px { margin-top:2px; }
+.u-mt-3px { margin-top:3px; }
+.u-mt-4px { margin-top:4px; }
+.u-mt-5px { margin-top:5px; }
+.u-mt-6px { margin-top:6px; }
+.u-mt-7px { margin-top:7px; }
+.u-mt-8px { margin-top:8px; }
+.u-mt-p5rem { margin-top:.5rem; }
+.u-no-underline { text-decoration:none; }
+.u-nowrap-text { white-space:nowrap; }
+.u-p-10px { padding:10px; }
+.u-p-11px { padding:11px; }
+.u-p-12px { padding:12px; }
+.u-p-14px { padding:14px; }
+.u-p-16px { padding:16px; }
+.u-p-9px { padding:9px; }
+.u-pointer { cursor:pointer; }
+.u-prewrap { white-space:pre-wrap; }
+.u-text-right { text-align:right; }
+.u-w-100pct { width:100%; }
+.u-w-220px { width:220px; }
+.u-w-70px { width:70px; }
+.u-wrap { flex-wrap:wrap; }
+
+/* ==================================================================================
+   Component-style declarations
+   ----------------------------------------------------------------------------------
+   The declarations a utility SCALE should not absorb: composite shorthands, colours,
+   borders, grid templates, and `!important` overrides. Each was transcribed verbatim
+   from an inline style attribute the CSP was dropping, so the value is unchanged; the
+   name is derived from the declaration, which means two templates that used the same
+   declaration now share one class instead of inventing two.
+
+   These are a migration artefact, not a design vocabulary. As each module is properly
+   restyled they should be folded into that module's own stylesheet and deleted here.
+   ================================================================================== */
+
+.c-bd-1px-solid-border { border:1px solid var(--border, #e5e7eb); }
+.c-bd-1px-solid-d8dee8 { border:1px solid #d8dee8; }
+.c-bd-1px-solid-hairline { border:1px solid var(--hairline, #e5e7eb); }
+.c-bdb-1px-solid-hairline { border-bottom:1px solid var(--hairline, #e5e7eb); }
+.c-bdl-4px-solid-muted { border-left:4px solid var(--muted, #6b7280); }
+.c-bg-bg { background:var(--bg, #fafafa); }
+.c-bg-card { background:var(--card, #fff); }
+.c-bg-fff { background:#fff; }
+.c-bg-surface-2 { background:var(--surface-2, #f7f7f7); }
+.c-d-inline-block-i { display:inline-block !important; }
+.c-fd-column { flex-direction:column; }
+.c-fg-accent { color:var(--accent); }
+.c-fg-inherit { color:inherit; }
+.c-fg-muted { color:var(--muted, #6b7280); }
+.c-fg-ok { color:var(--ok, #15803d); }
+.c-fg-text { color:var(--text); }
+.c-fg-text-2 { color:var(--text-2); }
+.c-fg-warn { color:var(--warn, #b45309); }
+.c-fontva-tabular-nums { font-variant-numeric:tabular-nums; }
+.c-fwt-620 { font-weight:620; }
+.c-gtc-1fr-1fr { grid-template-columns:1fr 1fr; }
+.c-gtc-repeat-auto-fill-minmax-220px-1fr { grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+.c-gtc-repeat-auto-fill-minmax-240px-1fr { grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
+.c-gtc-repeat-auto-fill-minmax-260px-1fr { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+.c-gtc-repeat-auto-fit-minmax-320px-1fr { grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+.c-left-0 { left:0; }
+.c-m-0-0-10px { margin:0 0 10px; }
+.c-m-0-0-4px { margin:0 0 4px; }
+.c-m-0-0-5px { margin:0 0 5px; }
+.c-m-10px-0 { margin:10px 0; }
+.c-m-10px-0-2px { margin:10px 0 2px; }
+.c-m-10px-0-4px { margin:10px 0 4px; }
+.c-m-12px-0-4px { margin:12px 0 4px; }
+.c-m-12px-0-6px { margin:12px 0 6px; }
+.c-m-12px-0-8px { margin:12px 0 8px; }
+.c-m-14px-0-6px { margin:14px 0 6px; }
+.c-m-18px-0-6px { margin:18px 0 6px; }
+.c-m-1rem-0-p5rem { margin:1rem 0 .5rem; }
+.c-m-2px-0 { margin:2px 0; }
+.c-m-2px-4px-2px-0 { margin:2px 4px 2px 0; }
+.c-m-3px-0 { margin:3px 0; }
+.c-m-4px-0 { margin:4px 0; }
+.c-m-4px-0-0 { margin:4px 0 0; }
+.c-m-4px-0-0-18px { margin:4px 0 0 18px; }
+.c-m-4px-0-2px { margin:4px 0 2px; }
+.c-m-4px-0-2px-18px { margin:4px 0 2px 18px; }
+.c-m-4px-6px-4px-0 { margin:4px 6px 4px 0; }
+.c-m-6px-0 { margin:6px 0; }
+.c-m-6px-0-0 { margin:6px 0 0; }
+.c-m-6px-0-10px { margin:-6px 0 10px; }
+.c-m-6px-0-12px { margin:-6px 0 12px; }
+.c-m-6px-0-14px { margin:-6px 0 14px; }
+.c-m-6px-0-2px { margin:6px 0 2px; }
+.c-m-6px-0-4px { margin:6px 0 4px; }
+.c-m-8px-0 { margin:8px 0; }
+.c-m-8px-0-0 { margin:8px 0 0; }
+.c-m-8px-0-2px { margin:8px 0 2px; }
+.c-m-8px-0-4px { margin:8px 0 4px; }
+.c-maxhei-75vh { max-height:75vh; }
+.c-maxw-none-i { max-width:none !important; }
+.c-minw-0-i { min-width:0 !important; }
+.c-ov-auto { overflow:auto; }
+.c-ov-visible-i { overflow:visible !important; }
+.c-ovx-auto { overflow-x:auto; }
+.c-owrap-anywhere { overflow-wrap:anywhere; }
+.c-p-10px-12px { padding:10px 12px; }
+.c-p-12px-16px { padding:12px 16px; }
+.c-p-14px-16px { padding:14px 16px; }
+.c-p-16px-18px { padding:16px 18px; }
+.c-p-2px-8px { padding:2px 8px; }
+.c-p-4px-0 { padding:4px 0; }
+.c-p-8px-4px { padding:8px 4px; }
+.c-p-9px-10px { padding:9px 10px; }
+.c-p-9px-12px { padding:9px 12px; }
+.c-pl-12px-i { padding-left:12px !important; }
+.c-pl-16px { padding-left:16px; }
+.c-pl-18px { padding-left:18px; }
+.c-pos-sticky { position:sticky; }
+.c-pr-12px-i { padding-right:12px !important; }
+.c-rad-8px { border-radius:8px; }
+.c-resize-vertical { resize:vertical; }
+.c-tov-clip-i { text-overflow:clip !important; }
+.c-va-top { vertical-align:top; }
+.c-w-auto-i { width:auto !important; }
+.c-ws-nowrap-i { white-space:nowrap !important; }
+
+/* Two conditional inline styles that a Jinja `{% if %}` used to write. Both are states, so
+   they are classes; the separator becomes a structural selector and drops the conditional. */
+.c-proposal { padding:8px 10px; margin:6px 0; border-left:4px solid var(--warn, #b45309); }
+.c-proposal--high { border-left-color:var(--ok, #15803d); }
+.c-sep-row:not(:last-child) {
+  border-bottom:1px solid var(--border);
+  padding-bottom:8px; margin-bottom:8px;
+}
+
+/* Unassigned-documents review: the owner-analysis bucket as a state badge. A reviewer
+   triages this queue by confidence, and HIGH vs HOLD previously looked identical. Colour
+   AND word — the label always carries the meaning on its own. */
+.ud-conf {
+  display:inline-block; padding:2px 9px; border-radius:999px;
+  font-size:11.5px; font-weight:700; letter-spacing:.03em;
+  background:var(--s-line-2, #edf0f4); color:var(--s-ink-2, #374151);
+}
+.ud-conf--high { background:var(--s-ok-soft, #dcfce7); color:var(--s-ok, #15803d); }
+.ud-conf--medium { background:var(--s-info-soft, #e0f2fe); color:var(--s-info, #0369a1); }
+.ud-conf--hold,
+.ud-conf--ambiguous { background:var(--s-warn-soft, #fef3c7); color:var(--s-warn, #b45309); }
+.ud-conf--no_match { background:var(--s-line-2, #edf0f4); color:var(--s-mut, #6b7280); }
+.ud-conf--error { background:var(--s-err-soft, #fee2e2); color:var(--s-err, #b42318); }

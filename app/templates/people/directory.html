@@ -1,28 +1,154 @@
+{# The staff People workspace — the firm's client directory.
+
+   Same product vocabulary as the Documents workspace (shared shell, shared directory
+   components), without pretending to be a document screen. Every control here maps to a
+   column `people` actually carries; nothing invents CRM data the schema cannot answer.
+
+   Opening a person continues to use the existing person workflow at /people/{id}. #}
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% block title %}People | 360Plus{% endblock %}
 {% block crumb %}People{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/directory.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
-{{ ui.page_head("Canonical people", eyebrow="Clients", desc=("{:,}".format(count) ~ " unified client records")) }}
+
+<div class="page-head">
+  <div>
+    <h1>People</h1>
+    <p class="page-sub">
+      {% if filtered %}{{ "{:,}".format(count) }} of {{ "{:,}".format(total) }} client records
+      {% else %}{{ "{:,}".format(total) }} client record{{ "s" if total != 1 else "" }}{% endif %}
+    </p>
+  </div>
+  {# Client creation is owned by `person_creation.create_client`, whose staff-facing form lives
+     on the Client Portal admin screen. This links to that existing workflow rather than adding
+     a second creation path — there is exactly one place a canonical client is made. #}
+  {# Resolve the principal exactly as base.html does: this route renders without an explicit
+     `principal` in its context, so reading it off request.state is what actually works.
+     Visibility only — /admin/client-portal enforces client.write itself. #}
+  {% set _p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}
+  {% if _p and _p.can("client.write") %}
+  <div class="page-actions">
+    <a class="btn primary" href="/admin/client-portal">+ New Person</a>
+  </div>
+  {% endif %}
+</div>
+
+<form class="dir-toolbar" method="get" action="/people" role="search">
+  <div class="dir-search">
+    <span class="mag" aria-hidden="true">⌕</span>
+    <label class="sr-only" for="p-q">Search people</label>
+    <input class="input" id="p-q" type="search" name="q" value="{{ filters.q }}"
+           placeholder="Search name, email or phone…">
+  </div>
+
+  <label class="sr-only" for="p-hh">Household</label>
+  <select class="input" id="p-hh" name="hh" data-autosubmit>
+    <option value="">Household: All</option>
+    <option value="with" {{ 'selected' if filters.hh == 'with' else '' }}>In a household</option>
+    <option value="without" {{ 'selected' if filters.hh == 'without' else '' }}>No household</option>
+  </select>
+
+  {# Offered only when the data has more than one state to choose between. #}
+  {% if states|length > 1 %}
+  <label class="sr-only" for="p-state">State</label>
+  <select class="input" id="p-state" name="state" data-autosubmit>
+    <option value="">State: All</option>
+    {% for st in states %}
+      <option value="{{ st }}" {{ 'selected' if filters.state == st else '' }}>{{ st }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+
+  <label class="sr-only" for="p-status">Status</label>
+  <select class="input" id="p-status" name="status" data-autosubmit>
+    <option value="">Status: All</option>
+    <option value="active" {{ 'selected' if filters.status == 'active' else '' }}>Active</option>
+    <option value="inactive" {{ 'selected' if filters.status == 'inactive' else '' }}>Inactive</option>
+  </select>
+
+  <label class="sr-only" for="p-sort">Sort</label>
+  <select class="input" id="p-sort" name="sort" data-autosubmit>
+    <option value="name" {{ 'selected' if filters.sort == 'name' else '' }}>Sort: Name</option>
+    <option value="recent" {{ 'selected' if filters.sort == 'recent' else '' }}>Sort: Recently added</option>
+    <option value="location" {{ 'selected' if filters.sort == 'location' else '' }}>Sort: Location</option>
+  </select>
+
+  <button class="btn secondary" type="submit">Apply</button>
+  {% if filtered %}<a class="dir-clear" href="/people">Clear</a>{% endif %}
+  <span class="dir-shown">{{ "{:,}".format(count) }} shown</span>
+</form>
+
 {% if rows %}
 <div class="table-wrap">
   <table class="data">
-    <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Location</th><th class="num">Sources</th><th class="num">Accounts</th></tr></thead>
+    <thead><tr>
+      <th>Name</th><th>Household</th><th>Email</th><th>Phone</th>
+      <th>Location</th><th>Records</th><th class="dir-actions-col">Actions</th>
+    </tr></thead>
     <tbody>
     {% for row in rows %}
+      {% set display = row.full_name or ("Person " ~ row.id) %}
+      {% set parts = display.split() %}
       <tr>
-        <td><a class="rowlink" href="/people/{{ row.id }}">{{ row.full_name or ("Person " ~ row.id) }}</a></td>
-        <td>{{ row.primary_email or "" }}</td>
-        <td>{{ row.primary_phone or "" }}</td>
-        <td>{{ [row.city, row.state]|select|join(", ") }}</td>
-        <td class="num">{{ row.source_count }}</td>
-        <td class="num">{{ row.account_count }}</td>
+        <td>
+          <span class="dir-ident">
+            <span class="dir-avatar" aria-hidden="true">{{ ((parts[0][0] if parts else "?") ~ (parts[1][0] if parts|length > 1 else ""))|upper }}</span>
+            <span class="dir-idtext">
+              <a class="dir-name" href="/people/{{ row.id }}" title="{{ display }}">{{ display }}</a>
+              {# The secondary line carries only what the record really holds: a preferred name
+                 that differs from the legal one, the contact type, and an inactive marker. #}
+              {% set bits = [] %}
+              {% if row.preferred_name and row.preferred_name != row.full_name %}{% set _ = bits.append('"' ~ row.preferred_name ~ '"') %}{% endif %}
+              {% if row.contact_type %}{% set _ = bits.append(row.contact_type|replace("_"," ")|title) %}{% endif %}
+              {% if not row.active %}{% set _ = bits.append("Inactive") %}{% endif %}
+              {% if bits %}<span class="dir-sub">{{ bits|join(" · ") }}</span>{% endif %}
+            </span>
+          </span>
+        </td>
+        <td>
+          {% if row.household_id %}
+            <span class="dir-ctx"><span class="ico" aria-hidden="true">⌂</span>
+              <a href="/households/{{ row.household_id }}">{{ row.household_name or ("Household " ~ row.household_id) }}</a>
+            </span>
+          {% else %}<span class="dir-none">—</span>{% endif %}
+        </td>
+        <td>{% if row.primary_email %}{{ row.primary_email }}{% else %}<span class="dir-none">—</span>{% endif %}</td>
+        <td>{% if row.primary_phone %}{{ row.primary_phone }}{% else %}<span class="dir-none">—</span>{% endif %}</td>
+        <td>
+          {% set loc = [row.city, row.state]|select|join(", ") %}
+          {% if loc %}{{ loc }}{% else %}<span class="dir-none">—</span>{% endif %}
+        </td>
+        <td>
+          {# Counts appear ONLY when non-zero. A column of zeros reads as real data and buries
+             the rows that actually carry linked sources or accounts. #}
+          {% set marks = [] %}
+          {% if row.source_count %}{% set _ = marks.append(("Sources", row.source_count)) %}{% endif %}
+          {% if row.account_count %}{% set _ = marks.append(("Accounts", row.account_count)) %}{% endif %}
+          {% if marks %}
+            {% for label, n in marks %}<span class="dir-n" title="{{ label }}">{{ n }}</span> {% endfor %}
+          {% else %}<span class="dir-none">—</span>{% endif %}
+        </td>
+        <td class="dir-actions-col"><a class="dir-open" href="/people/{{ row.id }}">Open</a></td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-{% call ui.empty("No people", "No canonical people found.") %}{% endcall %}
+<div class="table-wrap">
+  <div class="dir-empty">
+    <span class="em" aria-hidden="true">{{ "⌕" if filtered else "❏" }}</span>
+    {% if filtered %}
+      <h3>No people match these filters</h3>
+      <p>{{ "{:,}".format(total) }} client record{{ "s" if total != 1 else "" }} in the firm's
+         file. Try a different search term or clear the filters.</p>
+    {% else %}
+      <h3>No people yet</h3>
+      <p>Clients appear here as they are created or arrive from an import. There are no
+         records in this environment yet.</p>
+    {% endif %}
+  </div>
+</div>
 {% endif %}
 {% endblock %}

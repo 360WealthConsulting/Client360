@@ -8,29 +8,29 @@
 {# Read-only governance view. Search + filter + sort are GET query params resolved in
    Python (compliance.rule_catalog); this template only renders. No action controls. #}
 <form method="get" action="/admin/rule-catalog" class="card filterbar">
-  <div class="field" style="margin:0"><label for="q">Search</label>
+  <div class="field u-m-0"><label for="q">Search</label>
     <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="rule, title, description, governing rule"></div>
-  <div class="field" style="margin:0"><label for="category">Category</label>
+  <div class="field u-m-0"><label for="category">Category</label>
     <select class="input" id="category" name="category">
       <option value="">All</option>
       {% for c in categories %}<option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c|capitalize }}</option>{% endfor %}
     </select></div>
-  <div class="field" style="margin:0"><label for="gate">Policy gate</label>
+  <div class="field u-m-0"><label for="gate">Policy gate</label>
     <select class="input" id="gate" name="gate">
       <option value="">All</option>
       {% for g in gates %}<option value="{{ g }}" {% if filters.gate == g %}selected{% endif %}>{{ g|replace("_", " ")|capitalize }}</option>{% endfor %}
     </select></div>
-  <div class="field" style="margin:0"><label for="status">Approval</label>
+  <div class="field u-m-0"><label for="status">Approval</label>
     <select class="input" id="status" name="status">
       <option value="">All</option>
       {% for s in statuses %}<option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace("_", " ")|capitalize }}</option>{% endfor %}
     </select></div>
   <input type="hidden" name="sort" value="{{ filters.sort }}">
   <div><button class="btn" type="submit">Apply</button>
-    {% if filters.q or filters.category or filters.gate or filters.status %}<a class="btn subtle" href="/admin/rule-catalog" style="margin-left:6px">Clear</a>{% endif %}</div>
+    {% if filters.q or filters.category or filters.gate or filters.status %}<a class="btn subtle u-ml-6px" href="/admin/rule-catalog">Clear</a>{% endif %}</div>
 </form>
 
-<p class="subtle" style="margin:-6px 0 10px">{{ rules|length }} of {{ total }} rule(s).</p>
+<p class="subtle c-m-6px-0-10px">{{ rules|length }} of {{ total }} rule(s).</p>
 
 {% macro sortlink(key, label) %}
   {% set is_active = filters.sort == key %}

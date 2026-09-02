@@ -7,13 +7,13 @@
 <div class="stack">
 {% for activity in activities %}
   <div class="card">
-    <div class="row" style="justify-content:space-between">
+    <div class="row u-justify-between">
       <span class="badge">{{ activity.activity_type.replace("_"," ").title() }}</span>
       <span class="id-mono">{{ activity.occurred_at }}</span>
     </div>
-    <h3 style="margin:8px 0 4px; font-size:15px">{{ activity.title }}</h3>
+    <h3 class="c-m-8px-0-4px u-fs-15px">{{ activity.title }}</h3>
     <div class="subtle"><a class="rowlink" href="/people/{{ activity.person_id }}">{{ activity.person_name }}</a> · {{ activity.created_by or "Unknown user" }}</div>
-    {% if activity.details %}<div class="subtle" style="margin-top:4px">{{ activity.details }}</div>{% endif %}
+    {% if activity.details %}<div class="subtle u-mt-4px">{{ activity.details }}</div>{% endif %}
   </div>
 {% else %}
   {% call ui.empty("No activity", "Client activity across the firm will appear here.") %}{% endcall %}

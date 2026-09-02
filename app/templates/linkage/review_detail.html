@@ -17,8 +17,8 @@
 </div>
 {% endif %}
 
-<div class="grid" style="gap:16px; grid-template-columns:1fr 1fr">
-  <article class="card" style="padding:14px 16px">
+<div class="grid u-gap-16px c-gtc-1fr-1fr">
+  <article class="card c-p-14px-16px">
     <h3>Evidence</h3>
     <p><b>Confidence:</b> {{ evidence.confidence }} · <b>Disposition:</b> {{ evidence.disposition }}</p>
     <p><b>Match reason:</b> {{ evidence.match_reason or "—" }}</p>
@@ -41,7 +41,7 @@
     </details>
   </article>
 
-  <article class="card" style="padding:14px 16px">
+  <article class="card c-p-14px-16px">
     <h3>Resolve</h3>
     {% if not can_write %}
       <p class="muted">You have read-only access. Resolution controls require the <code>exception.write</code> capability.</p>
@@ -59,7 +59,7 @@
           <b>Link existing {{ kind }}</b>
           {% if items %}
             {% for it in items %}
-              <label style="display:block">
+              <label class="u-block">
                 <input type="radio" name="target_entity_id" value="{{ it.id if it.id is defined else (it.person_id or it.household_id or it.entity_id) }}" required>
                 {{ it.label if it.label is defined else (it.full_name or it.name) }}
                 {% if it.basis is defined %}<span class="muted">— {{ it.basis }}{% if not it.deterministic %} (not deterministic){% endif %}</span>{% endif %}
@@ -74,7 +74,7 @@
       {{ candidate_form("household", "link_household", evidence.household_candidates if search_type != "household" else (evidence.household_candidates + (search_results or []))) }}
       {{ candidate_form("business", "link_business", evidence.business_candidates if search_type != "business" else (evidence.business_candidates + (search_results or []))) }}
 
-      <form method="get" action="/linkage/review/{{ exception.id }}" style="margin:8px 0">
+      <form method="get" action="/linkage/review/{{ exception.id }}" class="c-m-8px-0">
         <b>Search canonical entity</b>
         <select name="search_type">
           <option value="person" {{ 'selected' if search_type=='person' }}>person</option>

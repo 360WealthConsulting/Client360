@@ -6,11 +6,11 @@
 {% call ui.page_head(record.full_name or "Source record", eyebrow="Source Record") %}
   <a class="btn secondary" href="/search">Back to search</a>
 {% endcall %}
-<div class="table-wrap" style="max-width:900px">
+<div class="table-wrap u-maxw-900px">
   <table class="data">
     <tbody>
     {% for key, value in record.items() %}
-      <tr><td style="width:220px"><b>{{ key }}</b></td><td>{{ value if (value is not none and value != '') else '—' }}</td></tr>
+      <tr><td class="u-w-220px"><b>{{ key }}</b></td><td>{{ value if (value is not none and value != '') else '—' }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

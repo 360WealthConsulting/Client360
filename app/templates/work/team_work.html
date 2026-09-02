@@ -1,30 +1,184 @@
+{# Team Work — the authorized team queue.
+
+   Modelled on the Unified Work Queue (work/queue_unified.html) rather than inventing a second
+   interaction model for the same work-item domain: stat tiles, a filter toolbar over real
+   fields, and one table row per item. The previous page rendered ~145 identical cards reading
+   "title / type / status / priority", which carried no client, assignee, due date or action.
+
+   Every column maps to a field the item actually carries. Where a value is genuinely absent it
+   shows an em-dash — nothing is invented to fill a cell, and no count is shown that is not
+   operationally meaningful.
+
+   Data, scope and capability are unchanged: the same dashboard(principal) payload behind the
+   same capacity.read gate. #}
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% block title %}Team Work | 360Plus{% endblock %}
 {% block crumb %}Team Work{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/directory.css?v={{ asset_version }}">{% endblock %}
 {% block content %}
-{{ ui.page_head("Team Work", eyebrow="Work", desc="Authorized workload, capacity, SLA, and bottleneck view.") }}
 
-<div class="stat-grid">
-  {{ ui.stat("Open items", work.capacity.open_items) }}
-  {{ ui.stat("Committed", (work.capacity.committed_minutes ~ "m")) }}
-  {{ ui.stat("Remaining", (work.capacity.remaining_minutes ~ "m")) }}
-  {{ ui.stat("Utilization", (work.capacity.utilization_percent ~ "%")) }}
+<div class="page-head">
+  <div>
+    <h1>Team Work</h1>
+    <p class="page-sub">
+      {% if filtered %}{{ "{:,}".format(items|length) }} of {{ "{:,}".format(total) }} authorized items
+      {% else %}{{ "{:,}".format(total) }} authorized item{{ "s" if total != 1 else "" }}{% endif %}
+    </p>
+  </div>
 </div>
 
-{# The partial now carries its own `.section` spacing; the wrapper here set that
-   margin with a style="" attribute, which the CSP drops. #}
+{# ---- stat summary. Only the counters that describe something ACTIONABLE, and each only
+   when it is non-zero: a row of "Overdue 0 · At risk 0 · Unassigned 0" is not a status
+   report, it is four tiles saying nothing. Utilization is kept whenever capacity carries a
+   figure, because an over-committed team is exactly what this page exists to surface. #}
+{% set overdue = work.overdue_items | length %}
+{% set at_risk = work.sla_risks | length %}
+{% set unassigned = items | rejectattr("assigned_user_id") | list | length %}
+{% set tiles = [] %}
+{% if total %}{% set _ = tiles.append(("Open items", "{:,}".format(total), None, "")) %}{% endif %}
+{% if overdue %}{% set _ = tiles.append(("Overdue", overdue|string, "Past due", " dir-stat--crit")) %}{% endif %}
+{% if at_risk %}{% set _ = tiles.append(("SLA at risk", at_risk|string, "Breach approaching", " dir-stat--warn")) %}{% endif %}
+{% if unassigned %}{% set _ = tiles.append(("Unassigned", unassigned|string, "No owner", " dir-stat--warn")) %}{% endif %}
+{# Utilization is deliberately NOT shown here. `work_intelligence.capacity_metrics` divides
+   the sum of open-item estimated_minutes by a hard-coded 480 — one 8-hour PERSON-day — so on a
+   TEAM page the numerator is the whole team's backlog and the denominator is one person's day.
+   It read 243.8% at 40 items and 8731.2% at 1,377, and `over_capacity` is therefore always
+   true. The service calculation is UNCHANGED and still available to its other callers; only
+   the misleading presentation is withheld, until a real team-capacity denominator
+   (headcount x working minutes) exists to divide by. #}
+
+{% if tiles %}
+<section class="dir-stats" aria-label="Team work summary">
+  {% for k, v, sub, mod in tiles %}
+    <div class="dir-stat{{ mod }}">
+      <span class="k">{{ k }}</span><span class="v">{{ v }}</span>
+      {% if sub %}<span class="s">{{ sub }}</span>{% endif %}
+    </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% include "partials/exception_summary.html" %}
 
-<h2 class="section-title">Team priorities</h2>
-<div class="stack">
-{% for item in work['items'] %}
-  <div class="card">
-    <h3 class="item-title">{{ item.title }}</h3>
-    <div class="subtle">{{ item.entity_type.replace('_',' ') }} · {{ item.status.replace('_',' ') }} · {{ item.priority }}{% if item.due_date %} · {{ item.due_date }}{% endif %}</div>
+{# ---- filter toolbar. Each control is populated from the values PRESENT in this
+   principal's authorized set, so a filter can never offer an empty result. #}
+<form class="dir-toolbar" method="get" action="/work/team" role="search">
+  <div class="dir-search">
+    <span class="mag" aria-hidden="true">&#8981;</span>
+    <label class="sr-only" for="tw-q">Search team work</label>
+    <input class="input" id="tw-q" type="search" name="q" value="{{ filters.q }}"
+           placeholder="Search item or workflow&hellip;">
   </div>
-{% else %}
-  {% call ui.empty("No team work", "No authorized team work is available.") %}{% endcall %}
-{% endfor %}
+
+  {% for key, label, options in [
+      ("status", "Status", facets.status),
+      ("priority", "Priority", facets.priority),
+      ("work_type", "Type", facets.work_type),
+      ("waiting", "Waiting on", facets.waiting),
+      ("sla", "SLA", facets.sla)] %}
+    {% if options | length > 1 or (options | length == 1 and filters[key]) %}
+    <label class="sr-only" for="tw-{{ key }}">{{ label }}</label>
+    <select class="input" id="tw-{{ key }}" name="{{ key }}" data-autosubmit>
+      <option value="">{{ label }}: All</option>
+      {% for o in options %}
+        <option value="{{ o }}" {{ 'selected' if filters[key] == o else '' }}>{{ o|replace("_"," ")|capitalize }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+  {% endfor %}
+
+  <label class="sr-only" for="tw-assigned">Ownership</label>
+  <select class="input" id="tw-assigned" name="assigned" data-autosubmit>
+    <option value="">Owner: All</option>
+    <option value="unassigned" {{ 'selected' if filters.assigned == 'unassigned' else '' }}>Unassigned</option>
+    <option value="mine" {{ 'selected' if filters.assigned == 'mine' else '' }}>Assigned to me</option>
+  </select>
+
+  <label class="sr-only" for="tw-sort">Sort</label>
+  <select class="input" id="tw-sort" name="sort" data-autosubmit>
+    <option value="priority" {{ 'selected' if filters.sort == 'priority' else '' }}>Sort: Priority</option>
+    <option value="sla" {{ 'selected' if filters.sort == 'sla' else '' }}>Sort: SLA risk</option>
+    <option value="due" {{ 'selected' if filters.sort == 'due' else '' }}>Sort: Due date</option>
+    <option value="title" {{ 'selected' if filters.sort == 'title' else '' }}>Sort: Item</option>
+  </select>
+
+  <button class="btn secondary" type="submit">Apply</button>
+  {% if filtered %}<a class="dir-clear" href="/work/team">Clear</a>{% endif %}
+  <span class="dir-shown">{{ "{:,}".format(items|length) }} shown</span>
+</form>
+
+{% if items %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr>
+      <th>Item</th><th>Type</th><th>Status</th><th>Priority</th><th>SLA</th>
+      <th>Due</th><th>Client</th><th>Assignee</th><th class="dir-actions-col">Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for it in items %}
+      {% set level = (it.sla_risk or {}).get("level") or "none" %}
+      <tr>
+        <td>
+          <span class="dir-idtext">
+            <span class="dir-name">{{ it.title }}</span>
+            {# The workflow a step belongs to is what distinguishes 145 rows that share a
+               title; without it every "Authorize filing" row read identically. #}
+            {% if it.workflow_name %}<span class="dir-sub">{{ it.workflow_name }}</span>{% endif %}
+          </span>
+        </td>
+        <td><span class="dir-tag">{{ (it.work_type or it.entity_type or "")|replace("_"," ") }}</span></td>
+        <td><span class="subtle">{{ (it.status or "")|replace("_"," ")|capitalize }}</span></td>
+        <td>
+          {% set p = (it.priority or "")|lower %}
+          <span class="dir-tag{{ ' tw-pri--high' if p in ['urgent','critical','high'] else '' }}">{{ (it.priority or "—")|capitalize }}</span>
+        </td>
+        <td>
+          {% if level != "none" %}<span class="tw-sla tw-sla--{{ level }}">{{ level|capitalize }}</span>
+          {% else %}<span class="dir-none">&mdash;</span>{% endif %}
+        </td>
+        <td class="tw-nowrap">
+          {% if it.due_date %}{{ it.due_date }}{% if it.due_date < today %} <span class="dir-tag tw-pri--high">Overdue</span>{% endif %}
+          {% else %}<span class="dir-none">&mdash;</span>{% endif %}
+        </td>
+        <td>
+          {# Person first, else the household the work is filed under. Both are links to the
+             record itself, so the queue is one click from the client. #}
+          {% if it.person_id %}
+            <a href="/people/{{ it.person_id }}">{{ person_names.get(it.person_id) or ("Person " ~ it.person_id) }}</a>
+          {% elif it.household_id %}
+            <a href="/households/{{ it.household_id }}">{{ household_names.get(it.household_id) or ("Household " ~ it.household_id) }}</a>
+          {% else %}<span class="dir-none">&mdash;</span>{% endif %}
+        </td>
+        <td>
+          {% if it.assigned_user_id %}{{ user_names.get(it.assigned_user_id) or ("#" ~ it.assigned_user_id) }}
+          {% else %}<span class="dir-none">Unassigned</span>{% endif %}
+        </td>
+        <td class="dir-actions-col">
+          {% if it.waiting_on %}<span class="dir-sub tw-waiting">Waiting: {{ it.waiting_on }}</span>{% endif %}
+          {# Only rendered when the item's domain has a detail screen, so the queue never
+             offers a link that 404s. #}
+          {% if it.detail_href %}<a class="dir-open" href="{{ it.detail_href }}">Open</a>
+          {% else %}<span class="dir-none">&mdash;</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
+{% else %}
+<div class="table-wrap">
+  <div class="dir-empty">
+    <span class="em" aria-hidden="true">{{ "&#8981;" | safe if filtered else "&#10063;" | safe }}</span>
+    {% if filtered %}
+      <h3>No team work matches these filters</h3>
+      <p>{{ "{:,}".format(total) }} authorized item{{ "s" if total != 1 else "" }} in scope.
+         Try a different search term or clear the filters.</p>
+    {% else %}
+      <h3>No team work</h3>
+      <p>No authorized team work is available.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% endblock %}

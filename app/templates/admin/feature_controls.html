@@ -10,7 +10,7 @@
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
 {% for product in ["core", "wealth", "business"] %}
-<h2 class="section-title" style="margin-top:1rem;">{{ product|title }}</h2>
+<h2 class="section-title u-mt-1rem">{{ product|title }}</h2>
 <table class="table">
   <thead><tr><th>Feature</th><th>Current state</th><th>Default</th><th>Change</th></tr></thead>
   <tbody>
@@ -20,7 +20,7 @@
       <td><span class="pill {{ 'stop' if f.state in ('disabled','internal_only') else ('pending' if f.state=='beta' else 'ok') }}">{{ f.state.replace('_',' ')|title }}</span></td>
       <td class="subtle">{{ f.default.replace('_',' ')|title }}</td>
       <td>
-        <form method="post" action="/admin/feature-controls" style="display:flex;gap:.3rem;">
+        <form method="post" action="/admin/feature-controls" class="u-flex u-gap-p3rem">
           <input type="hidden" name="feature_key" value="{{ f.feature }}">
           <select name="state">
             {% for s in states %}<option value="{{ s }}"{% if f.state == s %} selected{% endif %}>{{ s.replace('_',' ')|title }}</option>{% endfor %}

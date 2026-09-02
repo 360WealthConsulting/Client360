@@ -12,28 +12,50 @@
    healthy+fresh, else fall back to the authoritative scoped read. No writes, no business logic. #}
 <header class="workspace-hero">
   <h1>{{ ws.greeting }}, {{ ws.display_name }}</h1>
-  <p class="subtle">{{ ws.date.strftime("%A, %B %-d, %Y") }} · <a href="/workspace/assist">Advisor Assist ✨ (review required)</a></p>
+  <p class="subtle">{{ ws.date | datefmt("%A, %B %-d, %Y") }} · <a href="/workspace/assist">Advisor Assist ✨ (review required)</a></p>
 </header>
 
+{# A tile reading 0 reports the ABSENCE of work in that domain, not a figure worth a card.
+   Six of them filled the first band of the day's screen with the news that there is nothing
+   to do, pushing Priorities below the fold. Each tile renders only when its domain has
+   something today; when none do, the band is omitted and Priorities leads — which is what
+   this page is for. Non-zero tiles are unchanged. #}
+{% set today_tiles = [
+  ("Appointments", ws.today.appointments),
+  ("Compliance", ws.today.compliance),
+  ("Tax returns", ws.today.tax),
+  ("Insurance", ws.today.insurance),
+  ("Benefits", ws.today.benefits),
+  ("Exceptions", ws.today.exceptions),
+] | selectattr(1) | list %}
+{% if today_tiles %}
 <h2 class="section-title">Today</h2>
 <section class="stat-grid workspace-today">
-  <article class="card"><span class="detail-label">Appointments</span><h2>{{ ws.today.appointments }}</h2></article>
-  <article class="card"><span class="detail-label">Compliance</span><h2>{{ ws.today.compliance }}</h2></article>
-  <article class="card"><span class="detail-label">Tax returns</span><h2>{{ ws.today.tax }}</h2></article>
-  <article class="card"><span class="detail-label">Insurance</span><h2>{{ ws.today.insurance }}</h2></article>
-  <article class="card"><span class="detail-label">Benefits</span><h2>{{ ws.today.benefits }}</h2></article>
-  <article class="card"><span class="detail-label">Exceptions</span><h2>{{ ws.today.exceptions }}</h2></article>
+  {% for label, value in today_tiles %}
+  <article class="card"><span class="detail-label">{{ label }}</span><h2>{{ value }}</h2></article>
+  {% endfor %}
 </section>
+{% endif %}
 
 <h2 class="section-title">Priorities</h2>
 <article class="card workspace-priorities">
+  {# Semantic tint + a tick, not colour emoji: 🔴/🟡/🟢 render as full-colour glyphs
+     that vary by platform and read as consumer chat, not a wealth-management console.
+     A band is shown only for a priority that HAS items: "High 0 · Medium 0 · Low 0" is
+     three badges asserting nothing, and the honest "Nothing urgent" state below already
+     says it once. #}
+  {% set priority_counts = [
+    ("High", ws.priorities.high, "crit"),
+    ("Medium", ws.priorities.medium, "warn"),
+    ("Low", ws.priorities.low, "good"),
+  ] | selectattr(1) | list %}
+  {% if priority_counts %}
   <div class="priority-counts">
-    {# Semantic tint + a tick, not colour emoji: 🔴/🟡/🟢 render as full-colour glyphs
-       that vary by platform and read as consumer chat, not a wealth-management console. #}
-    <span class="badge crit"><span class="tick"></span>High <strong>{{ ws.priorities.high }}</strong></span>
-    <span class="badge warn"><span class="tick"></span>Medium <strong>{{ ws.priorities.medium }}</strong></span>
-    <span class="badge good"><span class="tick"></span>Low <strong>{{ ws.priorities.low }}</strong></span>
+    {% for label, value, kind in priority_counts %}
+      <span class="badge {{ kind }}"><span class="tick"></span>{{ label }} <strong>{{ value }}</strong></span>
+    {% endfor %}
   </div>
+  {% endif %}
   {% if ws.priorities.entries %}
     <div class="priority-list">
     {% for it in ws.priorities.entries %}
@@ -48,12 +70,12 @@
 </article>
 
 <div class="workspace-toolbar">
-  <h2 class="section-title" style="margin:0">Your Workspace</h2>
+  <h2 class="section-title u-m-0">Your Workspace</h2>
   {% if ws.can_personalize %}
     {% if customize %}
       <span class="workspace-tools">
         <a class="btn-small" href="/workspace">Done</a>
-        <form method="post" action="/workspace/reset" style="display:inline">
+        <form method="post" action="/workspace/reset" class="u-inline">
           <button type="submit" class="btn-small" title="Reset to defaults">Reset layout</button>
         </form>
       </span>
@@ -76,7 +98,7 @@
       {% for pr in ws.presets %}
         <span class="preset-item {% if pr.id == ws.active_preset_id %}preset-active{% endif %}">
           {{ pr.name }}{% if pr.is_favorite %} ★{% endif %}
-          <form method="post" action="/workspace/presets" style="display:inline">
+          <form method="post" action="/workspace/presets" class="u-inline">
             <input type="hidden" name="preset_id" value="{{ pr.id }}">
             <button type="submit" name="action" value="apply" class="btn-link">Apply</button>
             <button type="submit" name="action" value="delete" class="btn-link">Delete</button>
@@ -89,7 +111,7 @@
     <div class="hidden-widgets">
       <span class="detail-label">Hidden:</span>
       {% for hw in ws.hidden_widgets %}
-        <form method="post" action="/workspace/customize" style="display:inline">
+        <form method="post" action="/workspace/customize" class="u-inline">
           <input type="hidden" name="key" value="{{ hw.key }}">
           <button type="submit" name="action" value="show" class="btn-link">+ {{ hw.title }}</button>
         </form>
@@ -127,7 +149,7 @@
 <article class="card">
   {% if d.meetings %}
   {% for m in d.meetings %}
-    <div class="detail-row"><span>{{ m.event_time.strftime("%-I:%M %p") if m.event_time else "" }} · {% if m.link %}<a href="{{ m.link }}">{{ m.title }}</a>{% else %}{{ m.title }}{% endif %}</span><strong class="subtle">{{ m.display_label }}</strong></div>
+    <div class="detail-row"><span>{{ m.event_time | datefmt("%-I:%M %p") if m.event_time else "" }} · {% if m.link %}<a href="{{ m.link }}">{{ m.title }}</a>{% else %}{{ m.title }}{% endif %}</span><strong class="subtle">{{ m.display_label }}</strong></div>
   {% endfor %}
   {% else %}{% call ui.empty("No meetings today", "Nothing on the calendar for your clients today.") %}{% endcall %}{% endif %}
 </article>
@@ -142,7 +164,7 @@
       <tr>
         <td>{% if r.link %}<a class="rowlink" href="{{ r.link }}">{{ r.account_name or r.account_number }}</a>{% else %}{{ r.account_name or r.account_number }}{% endif %}</td>
         <td>{{ r.custodian }}</td>
-        <td>{% if r.last_review_date %}{{ r.last_review_date.strftime("%b %-d, %Y") }}{% else %}{{ ui.badge("Never reviewed") }}{% endif %}</td>
+        <td>{% if r.last_review_date %}{{ r.last_review_date | datefmt("%b %-d, %Y") }}{% else %}{{ ui.badge("Never reviewed") }}{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -159,7 +181,7 @@
     {% for t in d.tasks %}
       <tr>
         <td><a class="rowlink" href="{{ t.link }}">{{ t.title }}</a></td>
-        <td>{% if t.due_date %}{{ t.due_date.strftime("%b %-d") }}{% if t.due_date < d.today %} {{ ui.badge("Overdue") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if t.due_date %}{{ t.due_date | datefmt("%b %-d") }}{% if t.due_date < d.today %} {{ ui.badge("Overdue") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
         <td><span class="subtle">{{ (t.status or "open")|capitalize }}</span></td>
       </tr>
     {% endfor %}
@@ -179,7 +201,7 @@
         <td><a class="rowlink" href="{{ e.link }}">{{ e.title or e.code }}</a></td>
         <td>{{ e.domain }}</td>
         <td>{% if e.severity %}{{ ui.badge(e.severity|capitalize) }}{% else %}<span class="subtle">—</span>{% endif %}</td>
-        <td>{% if e.due_date %}{{ e.due_date.strftime("%b %-d") }}{% if e.due_date < d.today %} {{ ui.badge("Overdue") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+        <td>{% if e.due_date %}{{ e.due_date | datefmt("%b %-d") }}{% if e.due_date < d.today %} {{ ui.badge("Overdue") }}{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

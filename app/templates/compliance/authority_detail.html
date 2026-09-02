@@ -32,7 +32,7 @@
 
 {% if can_manage %}
 <h2 class="section-title">Administer</h2>
-<div class="row" style="gap:12px; flex-wrap:wrap">
+<div class="row u-gap-12px u-wrap">
   {% if a.status == "draft" %}
   <form class="card pad-sm" method="post" action="/compliance/authorities/{{ a.id }}/activate" onsubmit="return confirm('Activate this authority? It will confer approval authority for its scope once effective.');">
     <input type="hidden" name="expected_status" value="{{ a.status }}"><button class="btn" type="submit">Activate</button></form>
@@ -50,7 +50,7 @@
     <input type="hidden" name="expected_status" value="{{ a.status }}"><input class="input mb-2" name="reason" placeholder="reason (required)"><button class="btn" type="submit">Revoke</button></form>
   {% endif %}
   {% if a.status in ["active","suspended"] %}
-  <form class="card" method="post" action="/compliance/authorities/{{ a.id }}/supersede" style="padding:12px 16px; min-width:280px" onsubmit="return confirm('Supersede with a new active version? The prior record is retained as superseded.');">
+  <form class="card c-p-12px-16px u-minw-280px" method="post" action="/compliance/authorities/{{ a.id }}/supersede" onsubmit="return confirm('Supersede with a new active version? The prior record is retained as superseded.');">
     <input type="hidden" name="expected_status" value="{{ a.status }}">
     <div class="field mb-2"><label>New scope (blank = carry forward)</label><input class="input" name="authority_scope" placeholder="rule ids / gate categories"></div>
     <div class="field mb-2"><label>New effective date</label><input class="input" name="effective_date" type="date"></div>

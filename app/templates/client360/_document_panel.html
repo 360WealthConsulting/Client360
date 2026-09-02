@@ -88,7 +88,12 @@
         {% if d.type_confidence is not none %}
         <dt>Confidence</dt>
         <dd class="conf-row">
-          <span class="conf" title="Confidence in this document type">Type {{ (d.type_confidence * 100)|round|int }}%</span>
+          {# Severity follows the score, so a weak classification never reads as a confident one.
+             Still exactly ONE score: the type confidence the pipeline produced. No owner or year
+             percentage is manufactured to fill the row. #}
+          {% set _c = (d.type_confidence * 100)|round|int %}
+          <span class="conf{{ ' conf--low' if _c < 60 else (' conf--mid' if _c < 85 else '') }}"
+                title="Confidence in this document type">Type {{ _c }}%</span>
           <span class="subtle">{{ ("derived from the " ~ (d.type_basis or "filename")|replace("_", " ")) if d.type_derived else "classified" }}</span>
         </dd>
         {% endif %}
