@@ -149,7 +149,12 @@
             {# A derived year gets a dotted underline rather than an appended glyph: an extra
                character beside the number reads as a typo, an underline reads as a note. #}
             {% if d.year %}
-              {% if d.year_derived %}<span class="derived" title="Read from the filename — not a filed value">{{ d.year }}</span>
+              {% if d.year_derived %}
+                {# The enrichment records WHICH evidence produced the year — the filename, the source
+                   folder, or both. Saying "read from the filename" for a folder-only year is a false
+                   statement about provenance, so the real evidence is shown when it is carried. #}
+                <span class="derived"
+                      title="{% if d.tax_year_evidence %}Derived, {{ d.tax_year_confidence }} evidence: {{ d.tax_year_evidence | join('; ') }}. Not saved to the document.{% else %}Read from the filename — not a filed value{% endif %}">{{ d.year }}</span>
               {% else %}{{ d.year }}{% endif %}
             {% else %}<span class="subtle">—</span>{% endif %}
           </td>
