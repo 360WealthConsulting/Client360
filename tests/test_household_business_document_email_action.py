@@ -122,10 +122,13 @@ def _render_business(principal, business_id):
 
 
 def _actions_cell(html, document_id):
-    row = re.search(rf'<tr>(?:(?!</tr>).)*?/documents/{document_id}/download.*?</tr>', html, re.S)
+    # `<tr[^>]*>` because the Documents screen puts data-* attributes on the row. The business
+    # workspace still emits a bare <tr>, and both are matched by the same pattern.
+    row = re.search(rf'<tr[^>]*>(?:(?!</tr>).)*?/documents/{document_id}/download.*?</tr>',
+                    html, re.S)
     assert row, f"row for document {document_id} not found"
     cells = re.findall(r"<td[^>]*>(.*?)</td>", row.group(0), re.S)
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", cells[-1])).strip()
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cells[-1])).replace("…", "").strip()
 
 
 # --------------------------------------------------------------------- household
@@ -136,8 +139,11 @@ def test_household_canonical_document_shows_email_for_a_sender():
         did = _doc(c, f"1040 {tag}.pdf", household_id=hid,
                    display_name="2024 - Form 1040 - Steinman Household")
     html = _render_household(SENDER, hid)
-    assert _actions_cell(html, did) == "Open · Email"
-    assert f'<a href="/documents/{did}/email">Email</a>' in html
+    cell = _actions_cell(html, did)
+    # Open stays the direct control; everything else sits behind the overflow menu, Email included.
+    assert cell.startswith("Open")
+    assert "Email" in cell
+    assert f'<a href="/documents/{did}/email">Email' in html
 
 
 def test_household_email_link_points_at_the_existing_route():
@@ -157,18 +163,25 @@ def test_household_without_communications_send_has_no_email():
         did = _doc(c, f"doc {tag}.pdf", household_id=hid)
     html = _render_household(NO_SEND, hid)
     assert f"/documents/{did}/email" not in html
-    assert _actions_cell(html, did) == "Open"                     # Open preserved
+    cell = _actions_cell(html, did)
+    assert cell.startswith("Open")                                # Open preserved
+    assert "Email" not in cell
     assert f'href="/documents/{did}/download"' in html            # download preserved
 
 
-def test_household_filename_link_and_open_are_unchanged():
+def test_household_filename_opens_the_document_and_download_stays_reachable():
+    """The filename anchor now opens the preview drawer rather than downloading immediately — the
+    Documents screen selects a document instead of leaving the page. Download is still one click
+    away in the row menu, and the display name is still what is shown."""
     tag = _tag()
     with engine.begin() as c:
         hid, _ = _household(c, tag)
         did = _doc(c, f"w2 {tag}.pdf", household_id=hid, display_name="2025 - W-2 - Adam Steinman")
     html = _render_household(SENDER, hid)
-    assert f'<a href="/documents/{did}/download">2025 - W-2 - Adam Steinman</a>' in html
-    assert f'<a href="/documents/{did}/download">Open</a>' in html
+    assert re.search(
+        rf'<a class="docrow-name" href="/client/household/{hid}/documents/{did}/panel\?panel=preview"'
+        rf'[^>]*>\s*2025 - W-2 - Adam Steinman\s*</a>', html), "name opens the preview panel"
+    assert f'<a href="/documents/{did}/download">Download</a>' in html
 
 
 # --------------------------------------------------------------------- business
@@ -231,7 +244,9 @@ def test_a_non_canonical_row_never_receives_a_canonical_email_link():
         hid, _ = _household(c, tag)
         canonical = _doc(c, f"canonical {tag}.pdf", household_id=hid)
     ws = get_workspace(SENDER, household_id=hid)
-    rows = ws["sections"]["documents"]["documents"]
+    # The Documents screen renders `screen.rows`, so the vault row is injected there — beside the
+    # real canonical row it has to be told apart from, on the same rendered page.
+    rows = ws["sections"]["documents"]["screen"]["rows"]
     template_row = dict(rows[0])
     rows.append({**template_row, "id": 999_001, "name": "Vault document 999001",
                  "source_kind": "vault", "source": "Vault", "sources": [],
@@ -248,10 +263,23 @@ def test_a_non_canonical_row_never_receives_a_canonical_email_link():
 
 
 def test_templates_gate_on_both_canonical_and_capability():
-    for path in ("app/templates/client360/household.html", "app/templates/business/workspace.html"):
-        tpl = open(path).read()
-        assert 'd.source_kind == "canonical" and principal and principal.can("communications.send")' \
-            in tpl, path
+    # The person and household Documents surfaces share one partial, so they cannot gate this
+    # differently; `is_canonical` is that partial's alias for the same source_kind test. The
+    # business workspace still carries its own copy of the gate.
+    #
+    # encoding= is explicit: these templates contain em-dashes that the Windows default codec
+    # cannot decode at all.
+    for path, gate in (
+        ("app/templates/client360/_documents_screen.html",
+         'is_canonical and principal and principal.can("communications.send")'),
+        ("app/templates/business/workspace.html",
+         'd.source_kind == "canonical" and principal and principal.can("communications.send")'),
+    ):
+        tpl = open(path, encoding="utf-8").read()
+        assert gate in tpl, path
+
+    partial = open("app/templates/client360/_documents_screen.html", encoding="utf-8").read()
+    assert '{% set is_canonical = d.source_kind == "canonical" %}' in partial
 
 
 # --------------------------------------------------------------------- no writes
@@ -267,7 +295,10 @@ def test_rendering_mutates_nothing():
         with engine.connect() as c:
             rows = sorted(c.execute(select(documents).where(
                 documents.c.id.in_([hdoc, bdoc]))).mappings(), key=lambda r: r["id"])
-            return [dict(r) for r in rows], c.scalar(select(func.count()).select_from(documents))
+            # Only the fixture rows: a bare COUNT(*) over `documents` makes this test fail
+            # whenever anything else is writing to the same database, which says nothing about
+            # whether RENDERING wrote anything.
+            return [dict(r) for r in rows]
 
     before = snapshot()
     for principal in (SENDER, NO_SEND):

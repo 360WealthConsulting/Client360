@@ -534,29 +534,98 @@ def _attach_version_family(docs):
 def documents(principal, ctx):
     """The client's unified canonical document list — the Documents tab's operating center. One row per
     canonical document (ADR-072), scoped to this client's ownership (ADR-073). Each row carries its
-    source references (TaxDome / Drake / …) — one canonical document, many sources."""
-    from app.services.document_platform.relationships import documents_for_entity
+    source references (TaxDome / Drake / …) — one canonical document, many sources.
+
+    Reads through ``client_documents`` rather than ``documents_for_entity``: a person's documents are
+    the person+household union, so the joint return and the household's organizers appear on either
+    spouse's screen instead of only the handful anchored directly on them. Each row keeps its real
+    anchor, so nothing is re-attributed — see ``client_documents``.
+    """
+    from app.services.document_platform.relationships import client_documents
     et, eid = ctx["entity_type"], ctx["entity_id"]
-    rows = documents_for_entity(principal, et, eid, limit=200)
-    # A person's Documents tab must ALSO show their household's documents. Joint filings — a couple's
-    # 1040, the household's estate and insurance papers — are anchored at the household, so scoping
-    # this tab to ``person_id`` alone leaves it empty for exactly the clients who have the most
-    # documents. This mirrors the rule the person documents page has always applied
-    # (services.documents.get_person_documents): person OR household, deduped by document id.
-    if et == "person" and ctx.get("household_id"):
-        seen = {r["id"] for r in rows}
-        for r in documents_for_entity(principal, "household", ctx["household_id"], limit=200):
-            if r["id"] not in seen:
-                seen.add(r["id"])
-                r["provenance"] = "household"
-                rows.append(r)
+    # ``client_documents`` is the person+household union in one read — it supersedes the manual
+    # second pass this used to make over the household, and is symmetric for either entity type.
+    rows = client_documents(principal, et, eid, limit=500)
+    # ``_attach_version_family`` stays in the chain: re-synced copies of one source file are grouped
+    # by source identity, never by filename.
     canonical = _attach_version_family(
         _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows)))))
     # Merge the client's linked Vault documents into the ONE Documents tab (Vault permissions/audit stay
     # in the Vault service; canonical rows keep their pipeline). Person tab = vault links to this person.
     vault = _vault_rows(principal, person_ids=[eid] if et == "person" else (),
                         household_id=eid if et == "household" else None)
-    return documents_view_model(_merge_documents(canonical, vault))
+    merged = _merge_documents(canonical, vault)
+    # person_row_display_name is the ONE person-label implementation; the raw full_name column is
+    # not it (it carries import artefacts the display layer already knows how to strip).
+    from app.services.person_names import person_row_display_name
+    member_names = {m["id"]: person_row_display_name(m)
+                    for m in (ctx.get("members") or []) if m.get("id")}
+    if et == "person" and ctx.get("subject"):
+        member_names.setdefault(eid, person_row_display_name(ctx["subject"]))
+    return {**documents_view_model(merged),
+            "header": _documents_header(ctx),
+            "screen": _documents_screen(merged, ctx, member_names)}
+
+
+def _documents_header(ctx):
+    """The Documents-screen header facts: household id, status, and the assigned primary advisor.
+
+    Each is rendered ONLY when it really exists. There is no advisor assignment for most clients
+    today (``record_assignments`` is empty for them), and the screen shows nothing rather than a
+    placeholder name — an invented advisor on a client file is worse than a missing one.
+
+    Status is the ``people.active`` flag. For a household — which has no status column of its own —
+    it means "at least one active member", and it is READ, not assumed: the member rows the
+    workspace already carries do not include ``active``, so defaulting it would have produced a
+    badge that said "Active" for every household including the closed ones.
+    """
+    from sqlalchemy import func, select
+
+    from app.db import engine, people, record_assignments, users
+    et, eid = ctx["entity_type"], ctx["entity_id"]
+
+    if et == "person":
+        active = (ctx.get("subject") or {}).get("active")
+        status = None if active is None else ("Active" if active else "Inactive")
+    else:
+        with engine.connect() as c:
+            counts = c.execute(select(func.count()).select_from(people).where(
+                people.c.household_id == eid)).scalar_one()
+            live = c.execute(select(func.count()).select_from(people).where(
+                people.c.household_id == eid, people.c.active.is_(True))).scalar_one()
+        status = None if not counts else ("Active" if live else "Inactive")
+
+    advisor = None
+    try:
+        with engine.connect() as c:
+            row = c.execute(
+                select(users.c.display_name, users.c.email, record_assignments.c.assignment_type)
+                .select_from(record_assignments.join(users, users.c.id == record_assignments.c.user_id))
+                .where(record_assignments.c.entity_type == et,
+                       record_assignments.c.entity_id == eid,
+                       record_assignments.c.inactive_date.is_(None))
+                .order_by(record_assignments.c.id).limit(1)).mappings().first()
+        if row:
+            advisor = {"name": row["display_name"] or row["email"],
+                       "role": (row["assignment_type"] or "").replace("_", " ").title() or None}
+    except Exception:      # noqa: BLE001 — the header must never break the Documents screen
+        advisor = None
+
+    return {"household_id": ctx.get("household_id"), "status": status,
+            "primary_advisor": advisor}
+
+
+def _documents_screen(docs, ctx, member_names):
+    """The staff Documents SCREEN view model (tabs, filters, pagination, drawer fields) over the rows
+    the tab already assembled. Presentation only — it re-reads nothing and writes nothing."""
+    from app.services.client360 import documents_screen
+    view = ctx.get("documents_view") or {}
+    return documents_screen.build(
+        docs, member_names=member_names, household_name=ctx.get("household_name"),
+        q=view.get("q"), tab=view.get("tab"), year=view.get("year"),
+        type_code=view.get("type"), related=view.get("related"),
+        needs_review=bool(view.get("needs_review")),
+        page=view.get("page") or 1, page_size=view.get("page_size") or 25)
 
 
 def _scope(ctx):

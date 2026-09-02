@@ -318,3 +318,201 @@ table.data.docs-table td > .badge {
 .vault-actions { gap:var(--s3); margin-top:var(--s2); }
 .vault-inline { display:inline; }
 h3.vault-sub { margin:var(--s3) 0 6px; font-size:13px; font-weight:640; color:var(--text-2); }
+
+/* ---- Documents screen (staff) ----------------------------------------------
+   The client Documents surface: category tabs, a filter bar, the document grid and a right-side
+   preview drawer. Every colour is an existing token; nothing here introduces a second palette.
+
+   The drawer is a GRID COLUMN, not an overlay. An overlay would cover the table the user is
+   scanning, and on a 1440px staff screen there is room for both — so selecting a document narrows
+   the table instead of hiding it. Below 1100px there is not room, and the drawer becomes a
+   full-width panel under the table (see the media query at the end). */
+.docscreen { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s4); align-items:start; }
+.docscreen:has([data-docdrawer]:not([hidden])) { grid-template-columns:minmax(0,1fr) 380px; }
+.docscreen-main { min-width:0; }
+
+/* header meta strip */
+.docs-meta { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
+  margin:3px 0 0; font-size:12.5px; color:var(--muted); }
+.docs-meta .dot { opacity:.45; }
+.docs-head-actions { display:flex; gap:var(--s2); align-items:center; }
+.statusbadge { display:inline-flex; align-items:center; padding:1px 9px; border-radius:999px;
+  font-size:11px; font-weight:670; letter-spacing:.01em;
+  background:var(--surface-3); color:var(--text-2); }
+.statusbadge--active { background:var(--good-soft); color:var(--good); }
+.statusbadge--inactive { background:var(--surface-3); color:var(--muted); }
+
+/* category tabs — the same underline idiom as the workspace section nav, one level in */
+.doctabs { display:flex; flex-wrap:wrap; gap:2px; margin:0 0 var(--s3);
+  border-bottom:1px solid var(--border); }
+.doctab { position:relative; display:inline-flex; align-items:center; gap:7px;
+  padding:8px 13px 9px; text-decoration:none; color:var(--muted);
+  font-size:13.5px; font-weight:600; line-height:1.2; white-space:nowrap; }
+.doctab:hover { color:var(--text); }
+.doctab.active { color:var(--accent-ink); font-weight:680; }
+.doctab.active::after { content:""; position:absolute; left:10px; right:10px; bottom:-1px;
+  height:2px; background:var(--accent); border-radius:2px 2px 0 0; }
+.doctab .ico { font-size:12px; opacity:.75; }
+.doctab .n { font-family:var(--font-mono); font-size:11px; font-variant-numeric:tabular-nums;
+  padding:1px 6px; border-radius:999px; background:var(--surface-3); color:var(--text-2); }
+.doctab.active .n { background:var(--accent-soft); color:var(--accent-ink); }
+
+/* filter bar — one 32px baseline, matching .docs-toolbar */
+.docfilters { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2);
+  padding:10px var(--s3); margin:0 0 var(--s3);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); }
+.docfilters-search { position:relative; flex:1 1 220px; min-width:180px; max-width:340px; }
+.docfilters-search .mag { position:absolute; left:10px; top:0; height:32px; display:flex;
+  align-items:center; color:var(--muted); pointer-events:none; font-size:13px; }
+.docfilters-search input { width:100%; height:32px; padding-left:29px; font-size:13px; }
+.docfilters select.input { height:32px; font-size:13px; padding:0 26px 0 10px;
+  min-width:120px; max-width:190px; }
+.docfilters .btn.sm { height:32px; }
+.docchip { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 11px;
+  border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2);
+  color:var(--text-2); font-size:12.5px; font-weight:620; text-decoration:none; white-space:nowrap; }
+.docchip:hover { border-color:var(--border-strong); color:var(--text); }
+.docchip.on { background:var(--accent-soft); color:var(--accent-ink); border-color:transparent; }
+.docchip .n { font-family:var(--font-mono); font-size:11px; font-variant-numeric:tabular-nums;
+  padding:1px 6px; border-radius:999px; background:var(--warn-soft); color:var(--warn); }
+/* A zero worklist is shown as zero, in a neutral tint — never hidden, never tinted as an alert. */
+.docchip .n.zero { background:var(--surface-3); color:var(--muted); }
+.docclear { font-size:12.5px; font-weight:600; color:var(--accent); text-decoration:none;
+  margin-left:auto; white-space:nowrap; }
+.docclear:hover { text-decoration:underline; }
+
+/* grid */
+table.data.docscreen-grid { width:100%; min-width:820px; table-layout:fixed; }
+.docscreen-grid col.col-name   { width:auto; }
+.docscreen-grid col.col-type   { width:126px; }
+.docscreen-grid col.col-year   { width:66px; }
+.docscreen-grid col.col-rel    { width:132px; }
+.docscreen-grid col.col-date   { width:106px; }
+.docscreen-grid col.col-source { width:116px; }
+.docscreen-grid col.col-act    { width:96px; }
+.docscreen-grid td { vertical-align:middle; }
+.docscreen-grid tbody tr:hover { background:var(--surface-2); }
+/* The selected row keeps a visible anchor while the drawer is open, so it is obvious WHICH
+   document the panel is describing. */
+.docscreen-grid tbody tr.is-selected { background:var(--accent-soft); }
+.docscreen-grid tbody tr.is-selected td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
+
+.docrow { display:flex; align-items:center; gap:9px; min-width:0; }
+.docrow-text { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.docrow-name { color:var(--text); font-weight:640; font-size:13.5px; text-decoration:none;
+  line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.docrow-name:hover { color:var(--accent); text-decoration:underline; }
+/* The original filename is provenance, not identity: one line, muted, always second. */
+.docrow-file { font-size:11px; color:var(--muted); line-height:1.3;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* file-type icon — a text glyph, so no icon font or sprite is needed and it prints */
+.fileicon { flex:none; display:inline-flex; align-items:center; justify-content:center;
+  width:26px; height:30px; border-radius:5px; font-family:var(--font-mono); font-size:8.5px;
+  font-weight:700; letter-spacing:.02em; background:var(--surface-3); color:var(--text-2);
+  border:1px solid var(--border); }
+.fileicon--pdf   { background:var(--danger-soft, #fee2e2); color:var(--danger, #b91c1c); }
+.fileicon--sheet { background:var(--good-soft);  color:var(--good); }
+.fileicon--doc   { background:var(--info-soft);  color:var(--info); }
+.fileicon--image { background:var(--accent-soft); color:var(--accent-ink); }
+.fileicon--mail  { background:var(--warn-soft);  color:var(--warn); }
+
+/* type pill, tinted by the category tab the document falls in */
+.pill { display:inline-flex; align-items:center; padding:2px 9px; border-radius:5px;
+  font-size:11.5px; font-weight:660; white-space:nowrap; max-width:100%;
+  overflow:hidden; text-overflow:ellipsis;
+  background:var(--surface-3); color:var(--text-2); border:1px solid transparent; }
+.pill--tax         { background:var(--accent-soft); color:var(--accent-ink); }
+.pill--investments { background:var(--info-soft);   color:var(--info); }
+.pill--insurance   { background:var(--good-soft);   color:var(--good); }
+.pill--estate      { background:var(--warn-soft);   color:var(--warn); }
+.pill--business    { background:var(--surface-3);   color:var(--text-2); }
+/* An inferred type is dashed: staff can see at a glance which labels were read off the filename
+   and which were actually filed. Colour alone would not carry that. */
+.pill--inferred { border-style:dashed; border-color:currentColor; opacity:.9; }
+.inferred { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+  font-size:10px; font-weight:680; text-transform:uppercase; letter-spacing:.04em;
+  background:var(--surface-3); color:var(--muted); border:1px dashed var(--border-strong); }
+
+.relto { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);
+  min-width:0; max-width:100%; }
+.relto .ico { flex:none; color:var(--muted); font-size:11px; }
+/* The clamp lives on the LABEL, not the flex row: text-overflow needs a block box of its own. */
+.relto .lbl { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.relto--household { font-weight:620; }
+
+/* A value read off the filename rather than filed. Dotted underline + title, so it is visibly a
+   note about the value instead of an extra character stuck to it. */
+.derived { border-bottom:1px dotted var(--border-strong); cursor:help; }
+
+/* pager */
+.docpager { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  gap:var(--s3); padding:10px var(--s3); border-top:1px solid var(--border); }
+.docpager-count { font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.docpager-pages { display:flex; align-items:center; gap:3px; }
+.docpager-pages .pg { display:inline-flex; align-items:center; justify-content:center;
+  min-width:28px; height:28px; padding:0 7px; border-radius:6px; text-decoration:none;
+  font-size:12.5px; font-weight:620; color:var(--text-2); border:1px solid transparent; }
+.docpager-pages .pg:hover { background:var(--surface-2); color:var(--text); }
+.docpager-pages .pg.on { background:var(--accent); color:#fff; }
+.docpager-pages .pg.off { opacity:.35; pointer-events:none; }
+.docpager-pages .pg.gap { pointer-events:none; color:var(--muted); }
+
+/* ---- preview drawer -------------------------------------------------------- */
+.docdrawer { position:sticky; top:var(--s3); align-self:start; max-height:calc(100vh - 90px);
+  overflow:auto; background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius-lg); }
+.docpanel-head { display:flex; align-items:center; gap:9px; padding:var(--s3);
+  border-bottom:1px solid var(--border); }
+.docpanel-head h2 { flex:1; min-width:0; margin:0; font-size:14.5px; font-weight:660;
+  line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.docpanel-close { flex:none; width:26px; height:26px; border-radius:6px; border:1px solid transparent;
+  background:none; color:var(--muted); font-size:17px; line-height:1; cursor:pointer; }
+.docpanel-close:hover { background:var(--surface-2); color:var(--text); }
+
+.docpanel-tabs { display:flex; gap:2px; padding:0 var(--s3); border-bottom:1px solid var(--border); }
+.docpanel-tab { position:relative; padding:8px 11px 9px; font-size:12.5px; font-weight:620;
+  color:var(--muted); text-decoration:none; }
+.docpanel-tab:hover { color:var(--text); }
+.docpanel-tab.active { color:var(--accent-ink); }
+.docpanel-tab.active::after { content:""; position:absolute; left:8px; right:8px; bottom:-1px;
+  height:2px; background:var(--accent); border-radius:2px 2px 0 0; }
+
+.docpanel-body { padding:var(--s3); }
+.docpanel-preview { border:1px solid var(--border); border-radius:var(--radius);
+  background:var(--surface-2); overflow:hidden; }
+.docpanel-preview iframe { display:block; width:100%; height:320px; border:0; background:#fff; }
+.docpanel-nopreview { padding:var(--s5) var(--s3); text-align:center; border:1px dashed var(--border);
+  border-radius:var(--radius); color:var(--muted); }
+.docpanel-nopreview span { display:block; font-size:22px; opacity:.5; margin-bottom:6px; }
+.docpanel-nopreview p { margin:0; font-size:12.5px; }
+.docpanel-actions { display:flex; flex-direction:column; gap:7px; margin:var(--s3) 0; }
+.docpanel-actions .btn { justify-content:center; width:100%; text-align:center; }
+
+.docpanel-section { margin-top:var(--s4); }
+.docpanel-section h3 { margin:0 0 7px; font-size:12px; font-weight:680; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--muted); }
+.docpanel-facts { display:grid; grid-template-columns:auto 1fr; gap:6px var(--s3); margin:0;
+  font-size:12.5px; align-items:baseline; }
+.docpanel-facts dt { color:var(--muted); white-space:nowrap; }
+.docpanel-facts dd { margin:0; color:var(--text); min-width:0; overflow-wrap:anywhere; }
+.docpanel-facts dd.mono { font-family:var(--font-mono); font-size:11.5px; color:var(--text-2); }
+.conf-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.conf { font-family:var(--font-mono); font-size:11px; font-variant-numeric:tabular-nums;
+  padding:1px 6px; border-radius:4px; background:var(--good-soft); color:var(--good); }
+
+.docpanel-empty p { margin:0 0 6px; font-size:12.5px; }
+.docpanel-history { list-style:none; margin:0; padding:0; display:flex; flex-direction:column;
+  gap:9px; }
+.docpanel-history li { display:flex; flex-wrap:wrap; align-items:baseline; gap:7px;
+  font-size:12.5px; padding-left:11px; border-left:2px solid var(--border); }
+.docpanel-history .ev { font-weight:640; color:var(--text); }
+.docpanel-history p { flex-basis:100%; margin:2px 0 0; }
+
+/* Below 1100px the two-column split stops being readable, so the drawer becomes a full-width
+   panel under the table rather than a 380px column squeezing the grid. */
+@media (max-width: 1100px) {
+  .docscreen:has([data-docdrawer]:not([hidden])) { grid-template-columns:minmax(0,1fr); }
+  .docdrawer { position:static; max-height:none; }
+  .docpanel-preview iframe { height:420px; }
+}

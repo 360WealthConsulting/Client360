@@ -1,0 +1,249 @@
+{# The staff Client/Household Documents screen.
+
+   Shared by the person workspace and the household workspace so there is ONE documents surface,
+   not two that drift. Expects exactly three variables:
+     screen      the `documents_screen.build` view model (rows, tabs, facets, pagination)
+     base        this client's workspace URL, e.g. /client/3824 or /client/household/1
+     panel_base  the prefix the drawer fragment hangs off (the same URL as `base` today; kept
+                 separate so a surface can point the drawer elsewhere without rewriting the links)
+   The page header and the upload disclosure belong to the parent template, not here.
+
+   Every control is a real GET form or link against `base`, so filtering, paging and opening a
+   document all work with JavaScript disabled. documents_screen.js upgrades row selection into the
+   side drawer; it adds no behaviour that is otherwise unreachable. #}
+
+<div class="docscreen" data-docscreen>
+<div class="docscreen-main">
+
+  {# ---- category tabs ------------------------------------------------------------------------
+     Counts respect every OTHER active filter, so the number on a tab is what clicking it shows. #}
+  <nav class="doctabs" aria-label="Document categories">
+    {% for t in screen.tabs %}
+      <a class="doctab{{ ' active' if t.active else '' }}"
+         href="{{ base }}?tab=documents&amp;dtab={{ t.key }}{{ screen.query_keep }}"
+         {% if t.active %}aria-current="page"{% endif %}>
+        <span class="ico" aria-hidden="true">{{ t.icon }}</span>{{ t.label }}
+        {% if t.count %}<span class="n">{{ t.count }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
+  {# ---- controls -----------------------------------------------------------------------------
+     One GET form: submitting any control re-runs the whole filter set server-side. `tab` and
+     `dtab` ride along as hidden inputs so narrowing never drops the category the user is in. #}
+  <form class="docfilters" method="get" action="{{ base }}" role="search">
+    <input type="hidden" name="tab" value="documents">
+    <input type="hidden" name="dtab" value="{{ screen.filters.tab }}">
+
+    <div class="docfilters-search">
+      <span class="mag" aria-hidden="true">⌕</span>
+      <label class="sr-only" for="doc-q">Search documents</label>
+      <input class="input" id="doc-q" type="search" name="dq" value="{{ screen.filters.q }}"
+             placeholder="Search documents…">
+    </div>
+
+    <label class="sr-only" for="doc-year">Year</label>
+    <select class="input" id="doc-year" name="dyear" data-autosubmit>
+      <option value="">Year: All</option>
+      {% for y in screen.years %}
+        <option value="{{ y }}" {{ 'selected' if screen.filters.year == y else '' }}>{{ y }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="sr-only" for="doc-type">Type</label>
+    <select class="input" id="doc-type" name="dtype" data-autosubmit>
+      <option value="">Type: All</option>
+      {% for code, label in screen.types %}
+        <option value="{{ code }}" {{ 'selected' if screen.filters.type == code else '' }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="sr-only" for="doc-related">Related To</label>
+    <select class="input" id="doc-related" name="related" data-autosubmit>
+      <option value="">Related To: All</option>
+      {% for o in screen.related_options %}
+        <option value="{{ o.key }}" {{ 'selected' if screen.filters.related == o.key else '' }}>{{ o.label }}</option>
+      {% endfor %}
+    </select>
+
+    <button class="btn sm secondary" type="submit">Apply</button>
+
+    {# Needs Review is a toggle, not a dropdown: it is a worklist, and its count is the number of
+       documents actually carrying an unsettled review_status — 0 is shown as 0, never hidden. #}
+    <a class="docchip{{ ' on' if screen.filters.needs_review else '' }}"
+       href="{{ base }}?tab=documents&amp;dtab={{ screen.filters.tab }}{{ screen.query_keep_no_review }}{{ '' if screen.filters.needs_review else '&amp;review=1' }}">
+      <span aria-hidden="true">⚑</span> Needs Review
+      <span class="n{{ ' zero' if not screen.needs_review_count else '' }}">{{ screen.needs_review_count }}</span>
+    </a>
+
+    {% if screen.filters.q or screen.filters.year or screen.filters.type or screen.filters.related or screen.filters.needs_review %}
+      <a class="docclear" href="{{ base }}?tab=documents&amp;dtab={{ screen.filters.tab }}">Clear filters</a>
+    {% endif %}
+  </form>
+
+  {# ---- table --------------------------------------------------------------------------------- #}
+  <article class="card table-wrap docscreen-table">
+    <div class="table-scroll">
+    <table class="data docs-table docscreen-grid">
+      <colgroup>
+        <col class="col-name"><col class="col-type"><col class="col-year"><col class="col-rel">
+        <col class="col-date"><col class="col-source"><col class="col-act">
+      </colgroup>
+      <thead><tr>
+        <th>Document</th><th>Type</th><th>Year</th><th>Related To</th>
+        <th>Date</th><th>Source</th><th class="docs-actions">Actions</th>
+      </tr></thead>
+      <tbody>
+      {% for d in screen.rows %}
+        {# The panel is a read of the CURRENT client's set, so it hangs off this workspace. The
+           delete action is anchored to the document's OWN owner: document_delete._owns refuses a
+           household document removed through a person route, and rightly so.
+
+           `is_canonical` gates BOTH. A merged Vault row carries a vault_documents id, which is a
+           different id space: addressing /documents/{that id}/ would open, download or delete an
+           unrelated canonical document that merely shares the number. Vault rows therefore keep
+           their own `download_url` and get no drawer. #}
+        {% set is_canonical = d.source_kind == "canonical" %}
+        {% set panel_url = (panel_base ~ "/documents/" ~ d.id ~ "/panel") if is_canonical else None %}
+        {% set delete_url = ("/client/household/" ~ d.household_id) if d.household_id
+             else (("/business/" ~ d.organization_id) if d.organization_id
+             else (("/client/" ~ d.person_id) if d.person_id else None)) %}
+        <tr data-doc-row data-doc-id="{{ d.id }}"{% if panel_url %} data-panel-url="{{ panel_url }}"{% endif %}>
+          {# The staff-facing display name leads; the original filename is the secondary line.
+             Raw source internals (storage path, SHA, Graph/SharePoint ids) are never here — they
+             live in the drawer's Provenance block. #}
+          <td>
+            <span class="docrow">
+              <span class="fileicon fileicon--{{ d.file_kind }}" aria-hidden="true">{{ d.file_glyph }}</span>
+              <span class="docrow-text">
+                {% if panel_url %}
+                  <a class="docrow-name" href="{{ panel_url }}?panel=preview"
+                     data-doc-open title="{{ d.name }}">{{ d.name }}</a>
+                {% else %}
+                  <a class="docrow-name" href="{{ d.download_url }}" title="{{ d.name }}">{{ d.name }}</a>
+                {% endif %}
+                {% if d.original_name and d.original_name != d.name %}
+                  <span class="docrow-file" title="{{ d.original_name }}">{{ d.original_name }}</span>
+                {% endif %}
+              </span>
+            </span>
+          </td>
+          <td>
+            {% if d.type_text %}
+              <span class="pill pill--{{ d.tab }}{{ ' pill--inferred' if d.type_derived else '' }}"
+                    {% if d.type_derived %}title="Read from the filename — not a filed value"{% endif %}>{{ d.type_text }}</span>
+            {% else %}<span class="subtle">—</span>{% endif %}
+          </td>
+          <td class="docs-when">
+            {# A derived year gets a dotted underline rather than an appended glyph: an extra
+               character beside the number reads as a typo, an underline reads as a note. #}
+            {% if d.year %}
+              {% if d.year_derived %}<span class="derived" title="Read from the filename — not a filed value">{{ d.year }}</span>
+              {% else %}{{ d.year }}{% endif %}
+            {% else %}<span class="subtle">—</span>{% endif %}
+          </td>
+          <td>
+            {# The label is wrapped so text-overflow has a block to clamp: as a bare text node in
+               a flex row it cannot ellipsize, and a long client name overruns the Date column. #}
+            <span class="relto relto--{{ d.related_to.kind }}" title="{{ d.related_to.label }}">
+              <span class="ico" aria-hidden="true">{{ "⌂" if d.related_to.kind == "household" else "☖" if d.related_to.kind == "organization" else "◍" }}</span>
+              <span class="lbl">{{ d.related_to.label }}</span>
+            </span>
+          </td>
+          <td class="docs-when">{{ d.date_label }}</td>
+          <td>
+            {% if d.sources %}
+              {% for src in d.sources %}
+                {% set slug = (src.source_system or '')|lower|replace(' ','')|replace('drive','') %}
+                <span class="src src-{{ slug }}{{ ' src-unavailable' if not src.available else '' }}"
+                      title="{{ src.source_path or src.source_uri or src.source_system }}">{{ src.source_system }}</span>
+              {% endfor %}
+            {% else %}<span class="src">{{ d.source or "Upload" }}</span>{% endif %}
+          </td>
+          <td class="docs-actions">
+            <span class="docs-actionbar">
+              {% if panel_url %}
+                <a class="act-open" href="{{ panel_url }}?panel=preview" data-doc-open>Open</a>
+              {% else %}
+                <a class="act-open" href="{{ d.download_url }}">Open</a>
+              {% endif %}
+              <details class="rowmenu">
+                <summary title="More actions" aria-label="More actions for {{ d.name }}" role="button"><span aria-hidden="true">⋯</span></summary>
+                <div class="menu">
+                  <a href="{{ d.download_url }}">Download</a>
+                  {% if panel_url %}
+                    <a href="{{ d.download_url }}?inline=1" target="_blank" rel="noopener">Open in new tab</a>
+                    <a href="{{ panel_url }}?panel=details">Details</a>
+                    <a href="{{ panel_url }}?panel=history">History</a>
+                  {% endif %}
+                  {% if is_canonical and principal and principal.can("communications.send") %}
+                    <a href="/documents/{{ d.id }}/email">Email…</a>
+                  {% endif %}
+                  {% if is_canonical and delete_url and principal and principal.can("documents.delete") %}
+                    <span class="sep" aria-hidden="true"></span>
+                    <form method="post" action="{{ delete_url }}/documents/{{ d.id }}/delete">
+                      <input type="hidden" name="confirm" value="yes">
+                      <button class="danger" type="submit" title="Remove this document from the workspace">Delete</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </details>
+            </span>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">
+          <div class="docs-empty">
+            <span class="em" aria-hidden="true">{{ "⌕" if screen.total_all else "❏" }}</span>
+            {% if screen.total_all %}
+              <h3>No documents match these filters</h3>
+              <p>{{ screen.total_all }} document{{ "s" if screen.total_all != 1 else "" }} in this
+                 client's file. Try a different search term or clear the filters.</p>
+            {% else %}
+              <h3>No documents yet</h3>
+              <p>Documents appear here automatically as they arrive from Drake, TaxDome and
+                 SharePoint, or you can upload one directly.</p>
+            {% endif %}
+          </div>
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    {% if screen.total %}
+    <footer class="docpager">
+      <span class="docpager-count">
+        Showing {{ screen.range_start }} to {{ screen.range_end }} of {{ screen.total }} documents
+        {%- if screen.total != screen.total_all %} <span class="subtle">(filtered from {{ screen.total_all }})</span>{% endif %}
+      </span>
+      {% if screen.pages > 1 %}
+      <nav class="docpager-pages" aria-label="Document pages">
+        <a class="pg{{ ' off' if screen.page <= 1 else '' }}"
+           href="{{ base }}?tab=documents&amp;dtab={{ screen.filters.tab }}{{ screen.query_keep }}&amp;dpage={{ screen.page - 1 }}"
+           {% if screen.page <= 1 %}aria-disabled="true"{% endif %} aria-label="Previous page">‹</a>
+        {% for p in screen.page_numbers %}
+          {% if p == 0 %}<span class="pg gap">…</span>
+          {% else %}
+            <a class="pg{{ ' on' if p == screen.page else '' }}"
+               href="{{ base }}?tab=documents&amp;dtab={{ screen.filters.tab }}{{ screen.query_keep }}&amp;dpage={{ p }}"
+               {% if p == screen.page %}aria-current="page"{% endif %}>{{ p }}</a>
+          {% endif %}
+        {% endfor %}
+        <a class="pg{{ ' off' if screen.page >= screen.pages else '' }}"
+           href="{{ base }}?tab=documents&amp;dtab={{ screen.filters.tab }}{{ screen.query_keep }}&amp;dpage={{ screen.page + 1 }}"
+           {% if screen.page >= screen.pages %}aria-disabled="true"{% endif %} aria-label="Next page">›</a>
+      </nav>
+      {% endif %}
+    </footer>
+    {% endif %}
+  </article>
+</div>
+
+{# ---- preview drawer ---------------------------------------------------------------------------
+   Empty until a row is selected. documents_screen.js fetches the panel fragment into it; without
+   script the row links navigate to that same fragment as its own page. #}
+<aside class="docdrawer" data-docdrawer hidden aria-label="Document preview">
+  <div data-docdrawer-body></div>
+</aside>
+</div>

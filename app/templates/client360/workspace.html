@@ -4,7 +4,8 @@
 {% block title %}{{ ws.display_name }} · Client 360 | 360Plus{% endblock %}
 {% block crumb %}{{ ws.display_name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">
-<script src="/static/js/documents.js" defer></script>{% endblock %}
+<script src="/static/js/documents.js" defer></script>
+<script src="/static/js/documents_screen.js" defer></script>{% endblock %}
 {% block content %}
 {% set s = ws.snapshot %}
 {% set base = ("/client/household/" ~ ws.entity_id) if ws.entity_type == "household" else ("/client/" ~ ws.entity_id) %}
@@ -392,19 +393,35 @@
 
 {% elif active_tab == "documents" %}
   {# The firm's document operating center for this client: ONE canonical document list (ADR-072),
-     scoped by ownership (ADR-073). Phase 1 redesign is PRESENTATION ONLY — every field rendered
-     below already existed on `sec.documents`, every action posts to the same route with the same
-     payload, and nothing new is requested from the server. #}
+     scoped by ownership (ADR-073). The screen itself is the shared `_documents_screen.html`
+     partial so the person and household surfaces cannot drift apart. #}
+  {% set hdr = sec.header or {} %}
   <div class="docs-head">
     <div>
       <h2 class="section-title">Documents</h2>
-      <p>One record per document; provider copies attach as sources — never duplicated. Text
-        capture and document details run automatically after a document arrives.</p>
+      <p class="docs-meta">
+        {% if hdr.household_id %}<span>Household ID: {{ hdr.household_id }}</span>{% endif %}
+        {# Advisor and status are rendered only when the record actually carries them — an
+           unassigned client shows nothing here rather than a placeholder. #}
+        {% if hdr.primary_advisor %}
+          <span class="dot" aria-hidden="true">·</span>
+          <span>Primary Advisor: <strong>{{ hdr.primary_advisor.name }}</strong>{% if hdr.primary_advisor.role %} <span class="subtle">({{ hdr.primary_advisor.role }})</span>{% endif %}</span>
+        {% endif %}
+        {% if hdr.status %}
+          <span class="dot" aria-hidden="true">·</span>
+          <span class="statusbadge statusbadge--{{ hdr.status|lower }}">{{ hdr.status }}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="docs-head-actions">
+      {% if principal and principal.can("documents.edit") %}
+        <a class="btn primary" href="#doc-upload">+ Upload Document</a>
+      {% endif %}
     </div>
   </div>
 
 {% if principal and principal.can("documents.edit") %}
-  <details class="docs-upload">
+  <details class="docs-upload" id="doc-upload">
     <summary>Upload a document</summary>
     <form method="post" action="/client/{{ ws.entity_id }}/documents/upload"
           enctype="multipart/form-data" class="body">
@@ -417,180 +434,9 @@
   </details>
 {% endif %}
 
-{% if sec.documents %}
-  {# Client-side narrowing over the rows already rendered. No query parameter, no request. #}
-  <div class="docs-toolbar" data-docs-toolbar>
-    <div class="search">
-      <span class="mag" aria-hidden="true">⌕</span>
-      <input class="input" type="search" id="docs-q" data-docs-search
-             placeholder="Filter by name, type, year or source…"
-             aria-label="Filter documents on this page">
-    </div>
-    <label class="sr-only" for="docs-type">Type</label>
-    <select class="input" id="docs-type" data-docs-facet="type">
-      <option value="">All types</option>
-      {% for t in sec.documents | map(attribute="document_type") | select | unique | sort %}
-        <option value="{{ t }}">{{ t }}</option>
-      {% endfor %}
-    </select>
-    <label class="sr-only" for="docs-year">Tax year</label>
-    <select class="input" id="docs-year" data-docs-facet="year">
-      <option value="">All years</option>
-      {% for y in sec.documents | map(attribute="tax_year") | select | unique | sort(reverse=true) %}
-        <option value="{{ y }}">{{ y }}</option>
-      {% endfor %}
-    </select>
-    <label class="sr-only" for="docs-source">Source</label>
-    <select class="input" id="docs-source" data-docs-facet="source">
-      <option value="">All sources</option>
-      {% for sname in sec.documents | map(attribute="source_systems") | select | sum(start=[]) | unique | sort %}
-        <option value="{{ sname }}">{{ sname }}</option>
-      {% endfor %}
-    </select>
-    <span class="count" data-docs-count><b>{{ sec.documents | length }}</b> documents</span>
-  </div>
-{% endif %}
-
-  <article class="card table-wrap">
-    <div class="table-scroll">
-    <table class="data docs-table" data-docs-table>
-    <colgroup>
-      <col class="col-name"><col class="col-type"><col class="col-source"><col class="col-text">
-      <col class="col-review"><col class="col-when"><col class="col-act">
-    </colgroup>
-    <thead><tr>
-      <th>Document</th><th>Type &amp; year</th><th>Source</th><th>Text</th>
-      <th>Review</th><th>Modified</th><th class="docs-actions">Actions</th>
-    </tr></thead><tbody>
-    {% for d in sec.documents %}
-      {# Every filterable value is mirrored into one data attribute so the client-side filter never
-         has to parse rendered markup. #}
-      <tr data-doc-row
-          {% if not d.is_current_version %}data-superseded="1" hidden{% endif %}
-          {% if d.version_family_size and d.version_family_size > 1 %}data-family="{{ d.superseded_by or d.id }}"{% endif %}
-          data-name="{{ d.name|lower }}"
-          data-type="{{ d.document_type or '' }}"
-          data-year="{{ d.tax_year or '' }}"
-          data-source="{{ (d.source_systems or []) | join(' ') }}"
-          data-haystack="{{ (d.name ~ ' ' ~ (d.original_name or '') ~ ' ' ~ (d.document_type or '') ~ ' ' ~ (d.category or '') ~ ' ' ~ (d.tax_year or '') ~ ' ' ~ ((d.source_systems or []) | join(' ')) ~ ' ' ~ (d.owner_label or ''))|lower }}">
-        <td>
-          <span class="docs-name">
-            <a href="{{ d.download_url }}" title="{{ d.name }}">{{ d.name }}</a>
-            <span class="docs-sub">
-              <span>{{ d.owner_label }}</span>
-              {% if d.version_count and d.version_count > 1 %}<span class="dot" aria-hidden="true">·</span><span>v{{ d.version_count }}</span>{% endif %}
-              {% if d.version_family_size and d.version_family_size > 1 %}
-                <span class="dot" aria-hidden="true">·</span>
-                {% if d.is_current_version %}
-                  <button class="linkish" type="button" data-docs-versions="{{ d.id }}"
-                          title="This file has been re-synced from its source; earlier copies are kept">
-                    latest of {{ d.version_family_size }}</button>
-                {% else %}
-                  <span title="Superseded by document {{ d.superseded_by }}">earlier version</span>
-                {% endif %}
-              {% endif %}
-              {% if d.is_duplicate %}<span class="dot" aria-hidden="true">·</span><span title="Shares a SHA-256 with {{ d.duplicate_count }} documents">⧉ possible duplicate ({{ d.duplicate_count }})</span>{% endif %}
-              {% if d.needs_version_review %}<span class="dot" aria-hidden="true">·</span><span title="{{ d.version_review_reason }}">⚑ needs review</span>{% endif %}
-            </span>
-          </span>
-        </td>
-        <td>
-          <span class="docs-typeline">
-            <span class="docs-type" title="{{ d.document_type or 'Unclassified' }}">{{ d.document_type or "—" }}</span>
-            {% if d.tax_year %}<span class="docs-year{{ ' docs-year-inferred' if d.tax_year_inferred else '' }}"
-                  {% if d.tax_year_inferred %}title="Tax year derived from the filename and folder ({{ d.tax_year_confidence }} confidence): {{ (d.tax_year_evidence or []) | join('; ') }}. Not yet saved to the document."{% endif %}
-                  >{{ d.tax_year }}{% if d.tax_year_inferred %}<span aria-hidden="true">*</span><span class="sr-only"> (derived, not saved)</span>{% endif %}</span>{% endif %}
-          </span>
-          {% if d.classification_confidence is not none or d.extraction_label %}
-          <span class="docs-sub">
-            {% if d.classification_confidence is not none %}<span title="How confident we are in the document type">{{ (d.classification_confidence * 100)|round|int }}% match</span>{% endif %}
-            {% if d.classification_confidence is not none and d.extraction_label %}<span class="dot" aria-hidden="true">·</span>{% endif %}
-            {% if d.extraction_label %}<span title="Details read from the document">🧠 {{ d.extraction_label }}</span>{% endif %}
-          </span>
-          {% endif %}
-        </td>
-        {# Source references (ADR-072). An external (http) source_uri still links out to the
-           originating system; the tint is derived from the source system name, so a new source
-           needs no UI change — it simply falls back to the neutral badge. #}
-        <td>
-          <span class="docs-cell-stack">
-          {% if d.sources %}
-            {% for src in d.sources %}
-              {% set slug = (src.source_system or '')|lower|replace(' ','')|replace('drive','') %}
-              {% set cls = 'src src-' ~ slug ~ (' src-unavailable' if not src.available else '') %}
-              {% if src.source_uri and src.source_uri.startswith("http") %}
-                <a class="{{ cls }}" href="{{ src.source_uri }}" target="_blank" rel="noopener" title="View source in {{ src.source_system }}">{{ src.source_system }}</a>
-              {% else %}
-                <span class="{{ cls }}" title="{{ src.source_path or src.source_uri or src.source_system }}">{{ src.source_system }}</span>
-              {% endif %}
-            {% endfor %}
-          {% elif d.source_systems %}
-            {% for sname in d.source_systems %}<span class="src src-{{ sname|lower|replace(' ','')|replace('drive','') }}">{{ sname }}</span>{% endfor %}
-          {% else %}<span class="src">{{ d.source }}</span>{% endif %}
-          </span>
-        </td>
-        {# OCR enriches the canonical document (ADR-072): real status, honestly pending where the
-           capture has not run. Never fabricated. #}
-        <td>
-          <span class="docs-cell-stack">
-            <span class="badge{{ ' good' if d.searchable_text else '' }}"{% if d.ocr_engine %} title="Captured by {{ d.ocr_engine }}"{% endif %}>{{ d.ocr_label }}</span>
-            {% if d.searchable_text %}<span class="subtle" title="This document's text can be found in search">🔍 Searchable</span>{% endif %}
-            {% if d.ocr_completed_at %}<span class="docs-when">{{ d.ocr_completed_at.strftime("%b %d, %Y") }}</span>{% endif %}
-          </span>
-        </td>
-        <td>{% if d.review_status %}<span class="badge">{{ d.review_status|replace("_"," ") }}</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
-        {# The document's date AT THE SOURCE when captured, else the row's update time. Every migrated
-           document shares one ingest timestamp, which reads as meaningless in a Modified column. #}
-        <td class="docs-when">
-          {%- if d.source_modified_at %}{{ d.source_modified_at|string|truncate(10, true, "") }}
-          {%- elif d.updated_at %}{{ d.updated_at.strftime("%Y-%m-%d") }}
-          {%- else %}—{% endif -%}
-        </td>
-        <td class="docs-actions">
-          {# Overflow menu — a pure-CSS disclosure. The destructive action keeps its own POST form
-             and confirm field exactly as before; it is simply no longer a permanent red button on
-             every row. #}
-          <span class="docs-actionbar">
-          <a class="act-open" href="{{ d.download_url }}" title="Open {{ d.name }}">Open</a>
-          <details class="rowmenu">
-            <summary title="More actions" aria-label="More actions for {{ d.name }}" role="button"><span aria-hidden="true">⋯</span></summary>
-            <div class="menu">
-              <a href="{{ d.download_url }}">Open</a>
-              {% if d.source_kind == "canonical" and principal and principal.can("communications.send") %}
-                <a href="/documents/{{ d.id }}/email">Email…</a>
-              {% endif %}
-              {% if d.is_duplicate %}<a href="{{ base }}?tab=documents&amp;dup={{ d.sha256 }}">Compare duplicates</a>{% endif %}
-              {% if d.source_path %}<a href="{{ d.download_url }}" title="{{ d.source_path }}">Source location</a>{% endif %}
-              {% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %}
-                <span class="sep" aria-hidden="true"></span>
-                <form method="post" action="/client/{{ ws.entity_id }}/documents/{{ d.id }}/delete">
-                  <input type="hidden" name="confirm" value="yes">
-                  <button class="danger" type="submit" title="Remove this document from the workspace">Delete</button>
-                </form>
-              {% endif %}
-            </div>
-          </details>
-          </span>
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="7">
-        <div class="docs-empty">
-          <span class="em" aria-hidden="true">❏</span>
-          <h3>No documents yet</h3>
-          <p>Documents appear here automatically as they arrive from Drake, TaxDome and SharePoint,
-             or you can upload one directly.</p>
-        </div>
-      </td></tr>
-    {% endfor %}
-    </tbody></table>
-    </div>
-    <div class="docs-empty docs-noresult" data-docs-noresult hidden>
-      <span class="em" aria-hidden="true">⌕</span>
-      <h3>No documents match this filter</h3>
-      <p>Try a different search term, or clear the type, year and source filters.</p>
-    </div>
-  </article>
+  {% with screen = sec.screen, panel_base = base %}
+    {% include "client360/_documents_screen.html" %}
+  {% endwith %}
 
 {% elif active_tab == "vault" %}
   <div class="card-head vault-head">

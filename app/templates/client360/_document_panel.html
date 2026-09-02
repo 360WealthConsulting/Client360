@@ -1,0 +1,173 @@
+{# Documents-screen preview drawer for ONE document.
+
+   Rendered standalone by /client/{id}/documents/{doc}/panel and injected into the drawer by
+   documents_screen.js. It is a FRAGMENT with no {% extends %}, so the same markup works in both
+   places; the drawer supplies the surrounding chrome.
+
+   Every value here is a real column, a real tag, or a `documents_screen` derivation that says so.
+   Nothing is filled in to make the panel look complete. #}
+<div class="docpanel" data-docpanel data-doc-id="{{ d.id }}">
+  <header class="docpanel-head">
+    <span class="fileicon fileicon--{{ d.file_kind }}" aria-hidden="true">{{ d.file_glyph }}</span>
+    <h2 title="{{ d.name }}">{{ d.name }}</h2>
+    <button type="button" class="docpanel-close" data-docpanel-close
+            aria-label="Close document panel">×</button>
+  </header>
+
+  {# Panel tabs. Real links, so the panel works as a page without script; the drawer intercepts
+     them and swaps the fragment in place. #}
+  {% set panel_base = "/client/household/" ~ d.household_id ~ "/documents/" ~ d.id ~ "/panel"
+       if d.related_to.kind == "household" and d.household_id
+       else "/client/" ~ (d.person_id or 0) ~ "/documents/" ~ d.id ~ "/panel" %}
+  <nav class="docpanel-tabs" aria-label="Document panel sections">
+    {% for key, label in [("preview", "Preview"), ("details", "Details"), ("history", "History")] %}
+      <a class="docpanel-tab{{ ' active' if panel_tab == key else '' }}"
+         href="{{ panel_base }}?panel={{ key }}" data-docpanel-tab="{{ key }}"
+         {% if panel_tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="docpanel-body">
+
+  {% if panel_tab == "preview" %}
+    {% if can_preview %}
+      {# ?inline=1 on the EXISTING download route — the drawer adds no second file-serving path,
+         so authorization, the resolved storage path and the delivery filename are unchanged. #}
+      <div class="docpanel-preview">
+        <iframe src="/documents/{{ d.id }}/download?inline=1" title="Preview of {{ d.name }}"
+                loading="lazy"></iframe>
+      </div>
+    {% else %}
+      <div class="docpanel-nopreview">
+        <span aria-hidden="true">◫</span>
+        <p>This file type cannot be previewed in the browser. Download it to open it.</p>
+      </div>
+    {% endif %}
+
+    <div class="docpanel-actions">
+      <a class="btn primary" href="/documents/{{ d.id }}/download">Download</a>
+      {% if can_preview %}
+        <a class="btn secondary" href="/documents/{{ d.id }}/download?inline=1"
+           target="_blank" rel="noopener">Open in New Tab ↗</a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if panel_tab in ("preview", "details") %}
+    <section class="docpanel-section">
+      <h3>Filing Information</h3>
+      <dl class="docpanel-facts">
+        <dt>Type</dt>
+        <dd>
+          {% if d.type_text %}{{ d.type_text }}
+            {% if d.type_derived %}<span class="inferred" title="Read from the filename — not a filed value">inferred</span>{% endif %}
+          {% else %}<span class="subtle">Not identified</span>{% endif %}
+        </dd>
+
+        <dt>Year</dt>
+        <dd>
+          {% if d.year %}{{ d.year }}
+            {% if d.year_derived %}<span class="inferred" title="Read from the filename — not a filed value">inferred</span>{% endif %}
+          {% else %}<span class="subtle">—</span>{% endif %}
+        </dd>
+
+        <dt>Related To</dt>
+        <dd>{{ d.related_to.label }} <span class="subtle">({{ d.related_to.kind }})</span></dd>
+
+        <dt>Category</dt>
+        <dd>
+          {% if d.classification %}{{ d.classification|replace("_", " ")|title }}
+          {% else %}<span class="subtle">Not filed</span>{% endif %}
+        </dd>
+
+        {# Confidence is shown ONLY for values that were actually inferred, and only for the ones
+           the naming layer really scores. There is no "client confidence" here: the owner is a
+           stored anchor column, not a guess, so scoring it would be theatre. #}
+        {% if d.type_derived and d.type_confidence is not none %}
+        <dt>Confidence</dt>
+        <dd class="conf-row">
+          <span class="conf" title="Confidence in the derived document type">Type {{ (d.type_confidence * 100)|round|int }}%</span>
+          {% if d.type_basis %}<span class="subtle">from {{ d.type_basis|replace("_", " ") }}</span>{% endif %}
+        </dd>
+        {% endif %}
+      </dl>
+    </section>
+
+    <section class="docpanel-section">
+      <h3>Source Information</h3>
+      <dl class="docpanel-facts">
+        <dt>Source</dt>
+        <dd>
+          {% if d.sources %}
+            {% for src in d.sources %}<span class="src src-{{ (src.source_system or '')|lower|replace(' ','')|replace('drive','') }}">{{ src.source_system }}</span>{% endfor %}
+          {% else %}<span class="src">{{ d.source or "Upload" }}</span>{% endif %}
+        </dd>
+        <dt>Added</dt>
+        <dd>{{ d.created_at.strftime("%b %d, %Y at %I:%M %p") if d.created_at else "—" }}</dd>
+        <dt>Modified</dt>
+        <dd>{{ d.updated_at.strftime("%b %d, %Y at %I:%M %p") if d.updated_at else "—" }}</dd>
+        <dt>File Size</dt>
+        <dd>{{ d.size_label }}</dd>
+      </dl>
+    </section>
+  {% endif %}
+
+  {% if panel_tab == "details" %}
+    {# Provenance. Deliberately LAST and visually secondary: the original filename and the source
+       path are how staff verify a document, but they are not what identifies it. #}
+    <section class="docpanel-section">
+      <h3>Provenance</h3>
+      <dl class="docpanel-facts">
+        <dt>Original filename</dt>
+        <dd class="mono">{{ d.original_name or "—" }}</dd>
+        <dt>Text capture</dt>
+        <dd>{{ d.ocr_label or "Not processed" }}</dd>
+        <dt>Record</dt>
+        <dd class="mono">Document #{{ d.id }}</dd>
+      </dl>
+    </section>
+  {% endif %}
+
+  {% if panel_tab == "history" %}
+    <section class="docpanel-section">
+      <h3>History</h3>
+      {% if history.empty %}
+        {# Honest empty state. The tables are real and populated for documents registered through
+           the document platform; documents that arrived through a bulk source sync were never
+           written through it, so they genuinely have no recorded events. #}
+        <div class="docpanel-empty">
+          <p>No recorded history for this document.</p>
+          <p class="subtle">History is recorded from the point a document is registered through
+            Client360. Documents synced in bulk from TaxDome, Drake or SharePoint carry no earlier
+            events, and none are invented here.</p>
+        </div>
+      {% else %}
+        <ol class="docpanel-history">
+          {% for e in history.events %}
+            <li>
+              <span class="ev">{{ e.event_type|replace("_", " ")|title }}</span>
+              {% if e.from_status or e.to_status %}
+                <span class="subtle">{{ e.from_status or "—" }} → {{ e.to_status or "—" }}</span>
+              {% endif %}
+              <span class="docs-when">{{ e.occurred_at.strftime("%b %d, %Y") if e.occurred_at else "" }}</span>
+              {% if e.note %}<p class="subtle">{{ e.note }}</p>{% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+        {% if history.versions %}
+          <h3>Versions</h3>
+          <ol class="docpanel-history">
+            {% for v in history.versions %}
+              <li>
+                <span class="ev">Version {{ v.version_number }}{{ " (current)" if v.is_current else "" }}</span>
+                <span class="docs-when">{{ v.created_at.strftime("%b %d, %Y") if v.created_at else "" }}</span>
+              </li>
+            {% endfor %}
+          </ol>
+        {% endif %}
+      {% endif %}
+    </section>
+  {% endif %}
+
+  </div>
+</div>

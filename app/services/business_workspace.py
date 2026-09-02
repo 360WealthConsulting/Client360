@@ -21,6 +21,7 @@ from app.db import (
     relationships,
 )
 from app.services.document_naming import document_display_name
+from app.services.document_platform.lifecycle import active_documents_clause
 from app.services.person_names import person_display_name
 
 _ENTITY_KINDS = ("business", "trust", "estate", "organization")
@@ -118,12 +119,12 @@ def get_business_workspace(business_id: int) -> dict | None:
         docs = c.execute(
             select(documents.c.id, documents.c.original_name, documents.c.display_name,
                    documents.c.household_id, documents.c.person_id, documents.c.created_at)
-            .where(documents.c.organization_id == business_id, documents.c.status != "deleted")
+            .where(documents.c.organization_id == business_id, active_documents_clause())
             .order_by(documents.c.created_at.desc()).limit(200)
         ).mappings().all()
         doc_total = c.scalar(select(func.count()).select_from(documents)
                              .where(documents.c.organization_id == business_id,
-                                    documents.c.status != "deleted")) or 0
+                                    active_documents_clause())) or 0
         for d in docs:
             if d["household_id"]:
                 related_household_ids.add(d["household_id"])

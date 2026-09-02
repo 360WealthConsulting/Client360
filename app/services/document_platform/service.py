@@ -33,6 +33,7 @@ from app.security.authorization import (
     record_in_scope,
 )
 from app.services.document_naming import document_display_name
+from app.services.document_platform.lifecycle import active_documents_clause
 from app.services.timeline import add_timeline_event
 
 CLASSIFICATIONS = frozenset({"client", "compliance", "tax", "insurance", "benefits", "retirement",
@@ -172,11 +173,14 @@ def get_document(principal, document_id: int) -> dict | None:
 
 def list_documents(principal, *, classification=None, status=None, folder_id=None, search=None,
                    page=1, page_size=50) -> dict:
+    """Scoped, paginated document list. Soft-deleted documents are excluded through the canonical
+    ``lifecycle.active_documents_clause`` and cannot be re-included by any argument — passing
+    ``status="deleted"`` yields an empty page rather than the deleted rows."""
     page = max(1, int(page or 1))
     page_size = min(200, max(1, int(page_size or 50)))
     with engine.connect() as c:
         scope = _scope_clause(principal, c)
-        conds = [documents.c.status != "deleted"]
+        conds = [active_documents_clause()]
         if scope is not None:
             conds.append(scope)
         if classification:

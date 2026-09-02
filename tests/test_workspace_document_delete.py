@@ -275,13 +275,31 @@ def test_routes_are_post_only_and_capability_gated():
 
 # --------------------------------------------------------------------- UI gating
 def test_delete_action_is_canonical_only_and_capability_gated():
-    gate = 'd.source_kind == "canonical" and principal and principal.can("documents.delete")'
-    for path in ("app/templates/client360/workspace.html",
-                 "app/templates/client360/household.html",
-                 "app/templates/business/workspace.html"):
-        tpl = open(path).read()
+    # The client Documents screen moved into one shared partial, so the person and household
+    # surfaces cannot gate this differently; the business workspace still carries its own copy.
+    # `is_canonical` is the partial's local alias for the same `source_kind == "canonical"` test.
+    #
+    # encoding= is explicit: these templates contain em-dashes, and open() with the Windows
+    # default codec cannot read them at all.
+    for path, gate in (
+        ("app/templates/client360/_documents_screen.html",
+         'is_canonical and delete_url and principal and principal.can("documents.delete")'),
+        ("app/templates/business/workspace.html",
+         'd.source_kind == "canonical" and principal and principal.can("documents.delete")'),
+    ):
+        tpl = open(path, encoding="utf-8").read()
         assert gate in tpl, path
         assert 'name="confirm" value="yes"' in tpl, path    # server-side confirmation, not JS
+
+    # The client surfaces must not have grown a second, ungated delete of their own.
+    for path in ("app/templates/client360/workspace.html",
+                 "app/templates/client360/household.html"):
+        tpl = open(path, encoding="utf-8").read()
+        assert "/delete" not in tpl, path
+
+    # And `is_canonical` really is that test, not a looser one.
+    partial = open("app/templates/client360/_documents_screen.html", encoding="utf-8").read()
+    assert '{% set is_canonical = d.source_kind == "canonical" %}' in partial
 
 
 def test_vault_row_gets_no_canonical_delete_form(tmp_path):
@@ -297,7 +315,10 @@ def test_vault_row_gets_no_canonical_delete_form(tmp_path):
         _, hid, _ = _owners(c, tag)
         canonical = _doc(c, tmp_path, f"canonical {tag}.pdf", household_id=hid)
     ws = get_workspace(REMOVER, household_id=hid)
-    rows = ws["sections"]["documents"]["documents"]
+    section = ws["sections"]["documents"]
+    # The screen renders `screen.rows` (shaped + paginated), so the vault row is injected THERE —
+    # beside the real canonical row it has to be distinguished from on the same page.
+    rows = section["screen"]["rows"]
     assert rows, "expected the canonical document to be listed"
     rows.append({**dict(rows[0]), "id": 999_001, "name": "Vault doc", "source_kind": "vault",
                  "source": "Vault", "sources": [], "is_duplicate": False,
@@ -311,6 +332,12 @@ def test_vault_row_gets_no_canonical_delete_form(tmp_path):
     assert "/documents/999001/delete" not in html            # vault id NEVER deleted
     assert "/api/vault/documents/999001/download" in html     # its own download preserved
     assert f"/documents/{canonical}/delete" in html           # canonical sibling still removable
+    # The same id-space confusion applies to every canonical /documents/{id} route, not just
+    # delete: the drawer and the canonical download must not be addressed with a vault id either.
+    # Matched on the href BOUNDARY -- "/documents/999001/download" is a substring of the vault
+    # row's own legitimate "/api/vault/documents/999001/download".
+    assert 'href="/documents/999001/' not in html
+    assert "/documents/999001/panel" not in html
 
 
 # --------------------------------------------------------------------- no side effects

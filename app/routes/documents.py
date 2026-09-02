@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.db import engine, people
 from app.services.document_naming import document_delivery_filename
+from app.services.document_platform.lifecycle import is_active
 from app.services.documents import (
     archive_document,
     get_document,
@@ -126,11 +127,22 @@ def _is_inline_viewable(content_type: str | None, name: str | None) -> bool:
                    "heic", "heif"}
 
 
+def _unavailable(document) -> bool:
+    """Whether a document must NOT be served to a user, for the three /documents/{id} readers.
+
+    Archived OR soft-deleted. The archived half is the pre-existing rule; the soft-deleted half is
+    the canonical ``lifecycle.is_active`` and is what stops a deleted document from remaining
+    downloadable by direct URL after it has disappeared from every listing. Both collapse to the
+    same 404 — a deleted document must not be distinguishable from one that never existed.
+    """
+    return document is None or bool(document["archived"]) or not is_active(document)
+
+
 @router.get("/documents/{document_id}/download")
 def download_document(document_id: int, request: Request, inline: bool = False):
     document = get_document(document_id)
 
-    if document is None or document["archived"]:
+    if _unavailable(document):
         return render_error(request, 404,
                             detail="This document is no longer available. It may have been archived.")
 
@@ -195,7 +207,7 @@ def preview_document(document_id: int, request: Request, sheet: str = ""):
     enforces the same document-scope rules on this ``/documents/{id}`` path (including the admin
     unassigned-document exception). Never modifies the source file, metadata, or ownership."""
     document = get_document(document_id)
-    if document is None or document["archived"]:
+    if _unavailable(document):
         return render_error(request, 404,
                             detail="This document is no longer available. It may have been archived.")
     name = document["original_name"] or ""
@@ -240,7 +252,7 @@ def image_preview_document(document_id: int, request: Request):
     Download available."""
     from fastapi.responses import Response
     document = get_document(document_id)
-    if document is None or document["archived"]:
+    if _unavailable(document):
         return render_error(request, 404,
                             detail="This document is no longer available. It may have been archived.")
     if document["storage_uri"] and Path(document["storage_uri"]).is_absolute():

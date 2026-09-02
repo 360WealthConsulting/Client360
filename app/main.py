@@ -47,6 +47,7 @@ from app.routes.data_governance_intelligence import router as data_governance_in
 from app.routes.dev_auth import dev_auth_enabled
 from app.routes.dev_auth import router as dev_auth_router
 from app.routes.document_delete import router as document_delete_router
+from app.routes.document_panel import router as document_panel_router
 from app.routes.document_email import router as document_email_router
 from app.routes.document_intelligence import router as document_intelligence_router
 from app.routes.document_library import router as document_library_router
@@ -300,6 +301,7 @@ app.include_router(practice_management_router)
 app.include_router(document_email_router)
 app.include_router(document_upload_router)
 app.include_router(document_delete_router)
+app.include_router(document_panel_router)
 app.include_router(document_intelligence_router)
 app.include_router(automation_orchestration_router)
 app.include_router(data_governance_router)

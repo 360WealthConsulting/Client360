@@ -67,7 +67,7 @@ HOUSEHOLD_SECTIONS = (
 GRAPH_DEPTH = 1   # each member's relationship graph is one-hop; the household adds a membership hop.
 
 
-def get_household_workspace(principal, household_id, *, page=1):
+def get_household_workspace(principal, household_id, *, page=1, documents_view=None):
     """Compose the Household 360 workspace. Returns None if the household is out of record scope."""
     household_id = int(household_id)
     if not record_in_scope(principal, "household", household_id):
@@ -75,6 +75,7 @@ def get_household_workspace(principal, household_id, *, page=1):
     ctx = _context(principal, household_id, page)
     if ctx is None:
         return None
+    ctx["documents_view"] = documents_view
 
     built, timings, suppressed = {}, {}, []
     for key, cap in HOUSEHOLD_SECTIONS:
@@ -273,27 +274,36 @@ def _documents(principal, ctx):
         _attach_ocr,
         _attach_source_refs,
         _attach_version_family,
+        _documents_header,
+        _documents_screen,
         _merge_documents,
         _vault_rows,
         documents_view_model,
         enrich_documents,
     )
-    from app.services.document_platform.relationships import documents_for_entity
-    seen, rows = set(), []
-    for et, eid in [("household", ctx["household_id"])] + [("person", p) for p in ctx["member_ids"]]:
-        for d in _safe(lambda e=et, i=eid: documents_for_entity(principal, e, i, limit=50), []):
-            if d["id"] in seen:
-                continue
-            seen.add(d["id"])
-            d["provenance"] = et
-            rows.append(d)
+    from app.services.document_platform.relationships import client_documents
+    # ONE union read for the whole household (members included) rather than a per-member loop with a
+    # 50-row cap each, which silently truncated large households and made the total depend on how
+    # the roster happened to be ordered.
+    rows = _safe(lambda: client_documents(principal, "household", ctx["household_id"], limit=500), [])
+    for d in rows:
+        d["provenance"] = d.get("anchor") or "household"
+    # ``_attach_version_family`` stays in the chain: successive syncs of one source file are grouped
+    # by source identity, never by filename, and the screen must not present them as separate
+    # documents just because the union read replaced the per-member loop.
     canonical = _attach_version_family(
         _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents(rows)))))
     # Merge Vault documents linked to the household or any current member (Vault permissions/audit stay in
     # the Vault service). Deduped against canonical by checksum where deterministically possible.
     vault = _vault_rows(principal, person_ids=ctx["member_ids"], household_id=ctx["household_id"])
     merged = _merge_documents(canonical, vault)
-    return {**documents_view_model(merged), "deduped_by": "document_id + checksum", "count": len(merged)}
+    member_names = {m["id"]: person_row_display_name(m) for m in ctx.get("members") or []
+                    if m.get("id")}
+    return {**documents_view_model(merged), "deduped_by": "document_id + checksum",
+            "count": len(merged),
+            "header": _documents_header({**ctx, "entity_type": "household",
+                                         "entity_id": ctx["household_id"]}),
+            "screen": _documents_screen(merged, ctx, member_names)}
 
 
 def _meetings(principal, ctx):

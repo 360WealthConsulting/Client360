@@ -123,17 +123,22 @@ def test_email_action_sits_between_open_and_source():
         assert cell.index("Email") < cell.index("Source location")
 
 
-def test_filename_link_still_points_at_the_download_url():
+def test_filename_opens_the_preview_panel_and_download_stays_reachable():
+    """The filename anchor now SELECTS the document — it opens the preview drawer instead of
+    downloading and leaving the page, which is the whole point of the Documents screen. Download
+    is still one click away in the row menu, and the display name is still the label."""
     tag = _tag()
     with engine.begin() as c:
         pid = _person(c, tag)
         did = _doc(c, f"W2 {tag}.pdf", person_id=pid, display_name="2025 - W-2 - Adam Steinman")
     html = _render_documents_tab(SENDER, pid)
-    # The filename anchor carries a title (the full name stays reachable when the label clamps to
-    # two lines), so match the href and the label rather than an exact attribute string.
-    assert re.search(rf'<a href="/documents/{did}/download"[^>]*>\s*2025 - W-2 - Adam Steinman\s*</a>',
-                     html), "filename still links to the download url"
-    assert f'<a href="/documents/{did}/download">Open</a>' in html   # menu Open unchanged
+    assert re.search(
+        rf'<a class="docrow-name" href="/client/{pid}/documents/{did}/panel\?panel=preview"'
+        rf'[^>]*>\s*2025 - W-2 - Adam Steinman\s*</a>', html), "name opens the preview panel"
+    assert f'<a href="/documents/{did}/download">Download</a>' in html   # menu download preserved
+    # The drawer is an ENHANCEMENT: that href is a real page, so the panel is reachable with
+    # JavaScript disabled.
+    assert "data-doc-open" in html
 
 
 def test_email_action_target_is_the_existing_route():
@@ -166,7 +171,9 @@ def test_capability_matches_the_route_requirement():
 
     from app.routes import document_email
     from app.templates import __name__ as _  # noqa: F401 - templates are files, read below
-    tpl = open("app/templates/client360/workspace.html").read()
+    # The Documents screen lives in a shared partial. encoding= is explicit: these templates
+    # contain em-dashes the Windows default codec cannot decode.
+    tpl = open("app/templates/client360/_documents_screen.html", encoding="utf-8").read()
     assert 'principal.can("communications.send")' in tpl
     assert 'require_capability("communications.send")' in inspect.getsource(document_email)
 
@@ -176,13 +183,22 @@ def test_household_and_business_use_the_identical_gate():
     """Superseded scope guard. These two surfaces originally had no Email action (this change was
     scoped to the person tab); they gained it in a later bounded task and must use the SAME
     canonical-plus-capability gate, so the rule cannot diverge per surface."""
-    gate = 'd.source_kind == "canonical" and principal and principal.can("communications.send")'
-    for path in ("app/templates/client360/workspace.html",
-                 "app/templates/client360/household.html",
-                 "app/templates/business/workspace.html"):
-        tpl = open(path).read()
+    # The person and household surfaces now share ONE partial, which is a stronger version of
+    # this guarantee than asserting the same string twice: they cannot diverge at all.
+    # `is_canonical` is that partial's alias for the same source_kind test.
+    for path, gate in (
+        ("app/templates/client360/_documents_screen.html",
+         'is_canonical and principal and principal.can("communications.send")'),
+        ("app/templates/business/workspace.html",
+         'd.source_kind == "canonical" and principal and principal.can("communications.send")'),
+    ):
+        tpl = open(path, encoding="utf-8").read()
         assert gate in tpl, path
         assert '/documents/{{ d.id }}/email' in tpl, path
+
+    for path in ("app/templates/client360/workspace.html",
+                 "app/templates/client360/household.html"):
+        assert '/email' not in open(path, encoding="utf-8").read(), path
 
 
 def test_household_and_business_documents_still_render_normally():
@@ -211,8 +227,10 @@ def test_rendering_the_tab_mutates_nothing():
 
     def snapshot():
         with engine.connect() as c:
-            row = dict(c.execute(select(documents).where(documents.c.id == did)).mappings().one())
-            return row, c.scalar(select(func.count()).select_from(documents))
+            # Only the fixture row: a bare COUNT(*) over `documents` makes this assertion depend
+            # on every other writer touching the database, which says nothing about whether
+            # RENDERING wrote anything.
+            return dict(c.execute(select(documents).where(documents.c.id == did)).mappings().one())
 
     before = snapshot()
     _render_documents_tab(SENDER, pid)
@@ -246,7 +264,7 @@ def test_the_row_menu_keeps_details_summary_markup():
     assert '<details class="rowmenu">' in html
     assert "<summary" in html and "</details>" in html
     # Open stays a direct control outside the menu; Email stays inside it.
-    assert f'<a class="act-open" href="/documents/{did}/download"' in html
+    assert f'<a class="act-open" href="/client/{pid}/documents/{did}/panel?panel=preview"' in html
     assert f'/documents/{did}/email' in html
 
 

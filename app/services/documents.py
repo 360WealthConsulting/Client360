@@ -7,6 +7,7 @@ from typing import BinaryIO
 from sqlalchemy import and_, insert, or_, select, update
 
 from app.db import documents, engine, people
+from app.services.document_platform.lifecycle import active_documents_clause
 
 # Reuse the SINGLE vault validation implementation (no second security implementation) so an
 # untrusted client upload landing in the documents table gets the same controls as the vault path.
@@ -201,8 +202,14 @@ def _queue_image_normalization(document_id: int, original_name: str, content_typ
 #: document that carries either marker must never render on a client surface, so the stricter
 #: predicate is the safe one: any row that looks deleted by either measure is suppressed.
 def _not_deleted():
-    """SQL predicate: the document has not been soft-deleted."""
-    return and_(documents.c.status != "deleted", documents.c.deleted_at.is_(None))
+    """SQL predicate: the document has not been soft-deleted.
+
+    Delegates to ``document_platform.lifecycle.active_documents_clause`` so this file cannot drift
+    from the canonical rule. That clause spells the status half as ``IS DISTINCT FROM 'deleted'``,
+    which additionally keeps rows whose ``status`` is NULL — ``status != 'deleted'`` evaluates to
+    NULL for those and silently dropped them.
+    """
+    return active_documents_clause()
 
 
 def get_person_documents(person_id: int):
@@ -218,6 +225,8 @@ def get_person_documents(person_id: int):
         rows = connection.execute(
             select(documents)
             .where(
+                # Archived AND soft-deleted are both excluded. This filtered on `archived` alone,
+                # so every soft-deleted document stayed on the person's document list.
                 and_(scope, documents.c.archived.is_(False), _not_deleted()),
             )
             .order_by(
