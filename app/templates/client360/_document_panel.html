@@ -80,14 +80,16 @@
           {% else %}<span class="subtle">Not filed</span>{% endif %}
         </dd>
 
-        {# Confidence is shown ONLY for values that were actually inferred, and only for the ones
-           the naming layer really scores. There is no "client confidence" here: the owner is a
-           stored anchor column, not a guess, so scoring it would be theatre. #}
-        {% if d.type_derived and d.type_confidence is not none %}
+        {# Confidence is shown for every scored type — whether it came from the Knowledge layer's
+           classification or from the filename derivation — and says WHICH. It is deliberately not
+           a row of three matching percentages: the owner is a stored anchor column and the year is
+           either a filed tag or a plain regex hit, so neither carries a probability. Printing one
+           for them would be theatre, and the number staff must not trust is the invented one. #}
+        {% if d.type_confidence is not none %}
         <dt>Confidence</dt>
         <dd class="conf-row">
-          <span class="conf" title="Confidence in the derived document type">Type {{ (d.type_confidence * 100)|round|int }}%</span>
-          {% if d.type_basis %}<span class="subtle">from {{ d.type_basis|replace("_", " ") }}</span>{% endif %}
+          <span class="conf" title="Confidence in this document type">Type {{ (d.type_confidence * 100)|round|int }}%</span>
+          <span class="subtle">{{ ("derived from the " ~ (d.type_basis or "filename")|replace("_", " ")) if d.type_derived else "classified" }}</span>
         </dd>
         {% endif %}
       </dl>
@@ -113,15 +115,32 @@
   {% endif %}
 
   {% if panel_tab == "details" %}
-    {# Provenance. Deliberately LAST and visually secondary: the original filename and the source
-       path are how staff verify a document, but they are not what identifies it. #}
+    {# Text capture and extraction. These used to be two columns in the documents table; the
+       mockup's grid has no room for them, so they live here — relocated, not dropped, and still
+       in the plain language the states were rewritten into (never "OCR / AI", never "/ pending"). #}
+    <section class="docpanel-section">
+      <h3>Text &amp; Details</h3>
+      <dl class="docpanel-facts">
+        <dt>Text capture</dt>
+        <dd>
+          {{ d.ocr_label or "Not processed" }}
+          {%- if d.ocr_completed_at %} <span class="subtle">· {{ d.ocr_completed_at.strftime("%b %d, %Y") }}</span>{% endif %}
+          {%- if d.searchable_text %}<br><span class="subtle" title="This document's text can be found in search">🔍 Searchable</span>{% endif %}
+        </dd>
+        {% if d.extraction_label %}
+        <dt>Details read</dt>
+        <dd title="Details read from the document">{{ d.extraction_label }}</dd>
+        {% endif %}
+      </dl>
+    </section>
+
+    {# Provenance. Deliberately LAST and visually secondary: the original filename is how staff
+       verify a document, but it is not what identifies it. #}
     <section class="docpanel-section">
       <h3>Provenance</h3>
       <dl class="docpanel-facts">
         <dt>Original filename</dt>
         <dd class="mono">{{ d.original_name or "—" }}</dd>
-        <dt>Text capture</dt>
-        <dd>{{ d.ocr_label or "Not processed" }}</dd>
         <dt>Record</dt>
         <dd class="mono">Document #{{ d.id }}</dd>
       </dl>

@@ -111,7 +111,8 @@ def test_the_registry_still_defines_exactly_one_upload_action():
 
 def test_business_workspace_is_unchanged():
     """Quick actions are a client360 concept; the business template must not gain them."""
-    tpl = open("app/templates/business/workspace.html").read()
+    # encoding= is explicit: the template has em-dashes the Windows default codec cannot read.
+    tpl = open("app/templates/business/workspace.html", encoding="utf-8").read()
     assert "quick_action" not in tpl
     assert "/document-library" not in tpl
 

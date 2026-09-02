@@ -111,7 +111,7 @@ def test_template_gate_matches_the_payroll_route_capability():
     import inspect
 
     from app.routes import payroll
-    tpl = open("app/templates/business/workspace.html").read()
+    tpl = open("app/templates/business/workspace.html", encoding="utf-8").read()
     assert 'principal.can("payroll.read")' in tpl
     assert 'require_capability("payroll.read")' in inspect.getsource(payroll.payroll_dashboard)
 
@@ -177,14 +177,30 @@ def test_download_target_ordering_and_count_are_unchanged():
 
 # --------------------------------------------------------------------- nothing else moved
 def test_person_and_household_document_templates_are_unchanged():
-    """This change is scoped to the business template; the client ones keep Open and their own gates."""
+    """This change is scoped to the business template; the client surfaces keep their own controls.
+
+    The client person and household Documents surfaces now render one SHARED partial, which is a
+    stronger form of the same guarantee — there is no longer a per-surface copy that could drift
+    toward the business template. So the assertions moved with the markup, and the two page
+    templates are checked for what they must NOT have grown.
+
+    encoding= is explicit throughout: these templates contain em-dashes, and open() with the
+    Windows default codec cannot read them at all.
+    """
+    partial = "app/templates/client360/_documents_screen.html"
+    tpl = open(partial, encoding="utf-8").read()
+    assert 'class="act-open"' in tpl, partial                       # Open is still a direct control
+    assert "/payroll" not in tpl, partial                           # no business-template concepts
+    assert 'is_canonical and principal and principal.can("communications.send")' in tpl, partial
+
     for path in ("app/templates/client360/workspace.html",
                  "app/templates/client360/household.html"):
-        tpl = open(path).read()
-        assert '<a href="{{ d.download_url }}">Open</a>' in tpl, path
-        assert "/payroll" not in tpl, path
-        assert 'd.source_kind == "canonical" and principal and principal.can("communications.send")' \
-            in tpl, path
+        page = open(path, encoding="utf-8").read()
+        assert "/payroll" not in page, path
+        # The document row markup lives in the partial; a second copy here would be the drift
+        # this test exists to catch.
+        assert "d.download_url" not in page, path
+        assert 'include "client360/_documents_screen.html"' in page, path
 
 
 def test_rendering_is_read_only():

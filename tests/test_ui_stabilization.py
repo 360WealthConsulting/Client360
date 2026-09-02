@@ -124,13 +124,29 @@ def test_dashboard_renders(client):
 
 
 def test_documents_human_readable_states(client):
-    html = _html(client_workspace(_req(f"/client/{client['pids'][0]}"), client["pids"][0],
-                                  tab="documents", principal=_principal()))
-    assert "Text captured" in html and "Searchable" in html         # plain-language OCR state
-    assert "details found" in html                                  # plain-language extraction
-    assert "% match" in html                                        # plain-language classification
+    """Plain-language text-capture, extraction and classification states — no technical jargon.
+
+    They now live in the document's preview DRAWER rather than in dedicated table columns: the
+    Documents screen grid is Document / Type / Year / Related To / Date / Source / Actions, and
+    these states were relocated into the drawer's Details tab rather than dropped. The rule this
+    test exists for is unchanged: whatever is shown must be readable by a person.
+    """
+    from app.routes.document_panel import person_document_panel
+    pid, did = client["pids"][0], client["did"]
+
+    html = _html(client_workspace(_req(f"/client/{pid}"), pid, tab="documents",
+                                  principal=_principal()))
     assert "/ pending" not in html and "OCR / AI" not in html       # no technical jargon
-    assert f"/documents/{client['did']}/download" in html           # Open links to the download route
+    assert f"/documents/{did}/download" in html                     # the download route is reachable
+    assert f"/client/{pid}/documents/{did}/panel" in html           # the row opens the drawer
+
+    panel = _html(person_document_panel(
+        _req(f"/client/{pid}/documents/{did}/panel"), pid, did, panel="details",
+        principal=_principal()))
+    assert "Text captured" in panel and "Searchable" in panel       # plain-language OCR state
+    assert "details found" in panel                                 # plain-language extraction
+    assert "%" in panel and "Confidence" in panel                   # plain-language classification
+    assert "/ pending" not in panel and "OCR / AI" not in panel
 
 
 # --- document open flow (styled errors, never raw) ---------------------------

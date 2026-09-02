@@ -75,6 +75,7 @@ def _member_names(person_ids):
 
 def _panel(request, principal, entity_type, entity_id, document_id, panel_tab):
     from app.services.client360.sections import (
+        _attach_classification,
         _attach_ocr,
         _attach_source_refs,
         enrich_documents,
@@ -96,7 +97,9 @@ def _panel(request, principal, entity_type, entity_id, document_id, panel_tab):
     household_name = _household_name(household_id)
     member_ids = _member_ids_for_household(household_id) if household_id else [entity_id]
 
-    enriched = _attach_ocr(_attach_source_refs(enrich_documents([raw])))[0]
+    # The SAME enrichment chain the Documents tab runs, so the drawer cannot show a different
+    # document type, OCR state or source than the row the user clicked.
+    enriched = _attach_classification(_attach_ocr(_attach_source_refs(enrich_documents([raw]))))[0]
     doc = documents_screen.shape_row(
         {**raw, **enriched}, member_names=_member_names(member_ids),
         household_name=household_name)
