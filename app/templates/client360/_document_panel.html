@@ -1,78 +1,147 @@
-{# Documents-screen preview drawer for ONE document.
+{# Documents-workspace preview + details panel for ONE document.
 
-   Rendered standalone by /client/{id}/documents/{doc}/panel and injected into the drawer by
-   documents_screen.js. It is a FRAGMENT with no {% extends %}, so the same markup works in both
-   places; the drawer supplies the surrounding chrome.
+   Rendered standalone by /client/{id}/documents/{doc}/panel and injected into the workspace's
+   right-hand pane by documents_screen.js. It is a FRAGMENT with no {% extends %}, so the same
+   markup works in both places; the workspace supplies the surrounding chrome.
+
+   TWO tabs, not three. The preview and the details are one reading — a staff member checking a
+   document wants the page and the filing facts at once, not a click between them — so Overview
+   carries both and History (a per-document read of document_events / document_versions) stays on
+   its own. The route's existing `panel=preview` / `panel=details` links both land on Overview, so
+   every link that already pointed here still works.
 
    Every value here is a real column, a real tag, or a `documents_screen` derivation that says so.
    Nothing is filled in to make the panel look complete. #}
+{% set is_history = panel_tab == "history" %}
 <div class="docpanel" data-docpanel data-doc-id="{{ d.id }}">
   <header class="docpanel-head">
     <span class="fileicon fileicon--{{ d.file_kind }}" aria-hidden="true">{{ d.file_glyph }}</span>
-    <h2 title="{{ d.name }}">{{ d.name }}</h2>
+    <div class="docpanel-title">
+      <h2 title="{{ d.name }}">{{ d.name }}</h2>
+      {# The original filename is how staff verify a document, but it is NOT what identifies it —
+         so it is the secondary line here, exactly as it is in the list. #}
+      {% if d.original_name and d.original_name != d.name %}
+        <p class="docpanel-sub" title="{{ d.original_name }}">{{ d.original_name }}</p>
+      {% endif %}
+    </div>
     <button type="button" class="docpanel-close" data-docpanel-close
             aria-label="Close document panel">×</button>
   </header>
 
-  {# Panel tabs. Real links, so the panel works as a page without script; the drawer intercepts
+  {# Panel tabs. Real links, so the panel works as a page without script; the workspace intercepts
      them and swaps the fragment in place. #}
   {% set panel_base = "/client/household/" ~ d.household_id ~ "/documents/" ~ d.id ~ "/panel"
        if d.related_to.kind == "household" and d.household_id
        else "/client/" ~ (d.person_id or 0) ~ "/documents/" ~ d.id ~ "/panel" %}
   <nav class="docpanel-tabs" aria-label="Document panel sections">
-    {% for key, label in [("preview", "Preview"), ("details", "Details"), ("history", "History")] %}
-      <a class="docpanel-tab{{ ' active' if panel_tab == key else '' }}"
-         href="{{ panel_base }}?panel={{ key }}" data-docpanel-tab="{{ key }}"
-         {% if panel_tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
-    {% endfor %}
+    <a class="docpanel-tab{{ '' if is_history else ' active' }}"
+       href="{{ panel_base }}?panel=preview" data-docpanel-tab="preview"
+       {% if not is_history %}aria-current="page"{% endif %}>Overview</a>
+    <a class="docpanel-tab{{ ' active' if is_history else '' }}"
+       href="{{ panel_base }}?panel=history" data-docpanel-tab="history"
+       {% if is_history %}aria-current="page"{% endif %}>History</a>
   </nav>
 
   <div class="docpanel-body">
 
-  {% if panel_tab == "preview" %}
-    {% if can_preview %}
-      {# ?inline=1 on the EXISTING download route — the drawer adds no second file-serving path,
-         so authorization, the resolved storage path and the delivery filename are unchanged. #}
-      <div class="docpanel-preview">
-        <iframe src="/documents/{{ d.id }}/download?inline=1" title="Preview of {{ d.name }}"
-                loading="lazy"></iframe>
-      </div>
-    {% else %}
-      <div class="docpanel-nopreview">
-        <span aria-hidden="true">◫</span>
-        <p>This file type cannot be previewed in the browser. Download it to open it.</p>
-      </div>
-    {% endif %}
+  {% if not is_history %}
 
+    {# ---- preview -------------------------------------------------------------------------
+       THERE IS NO EMBEDDED PREVIEW, AND THERE CANNOT BE ONE. `/documents/{id}/download` serves every
+       file with `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` (see
+       app/security/middleware.py), so an <iframe> pointed at it is blocked by the application's own
+       headers for EVERY document, previewable type or not. The frame this panel used to render was
+       therefore always empty: a 230px gray rectangle occupying the top third of the pane, on every
+       document, forever. It is gone rather than made conditional — a frame that can never load is not
+       a preview, and reserving preview-sized height for it pushed the filing and review facts (the
+       things this panel actually exists to show) below the fold.
+
+       The working path is the new tab: X-Frame-Options constrains FRAMING only, so the same URL
+       opens and renders normally as a top-level document. Both buttons below are that one existing
+       route — no second file-serving path, no authorization change.
+
+       `can_preview` is still honoured, and now says the only true thing it can: whether the browser
+       would render this file itself in that new tab, or hand it to the desktop application. #}
+    <p class="docpanel-nopreview">
+      <span class="ico" aria-hidden="true">◫</span>
+      {% if can_preview %}
+        <span>Preview opens in a new tab.</span>
+      {% else %}
+        <span>No in-browser preview for this file type.</span>
+      {% endif %}
+    </p>
+
+    {# Both actions render in BOTH states. The same two things are true of a file the browser cannot
+       display as of one it can: it can be downloaded, and it can be handed to the desktop application
+       registered for it via a new tab. Offering only Download when there is no preview left the
+       no-preview panel looking like the file was less available than it is. Each is the EXISTING
+       download route — the panel adds no second file-serving path. #}
     <div class="docpanel-actions">
       <a class="btn primary" href="/documents/{{ d.id }}/download">Download</a>
-      {% if can_preview %}
-        <a class="btn secondary" href="/documents/{{ d.id }}/download?inline=1"
-           target="_blank" rel="noopener">Open in New Tab ↗</a>
-      {% endif %}
+      <a class="btn secondary" href="/documents/{{ d.id }}/download?inline=1"
+         target="_blank" rel="noopener">Open in New Tab ↗</a>
     </div>
-  {% endif %}
 
-  {% if panel_tab in ("preview", "details") %}
+    {# ---- review -----------------------------------------------------------------------------
+       Only when the document is genuinely unsettled. It says what is uncertain and WHY, and it
+       never resolves any of it: a document with no owner anchor stays without an owner here.
+       Ownership, filing confidence and the version rules are read from the services that own
+       them — this block reports their output, it does not re-decide it. #}
+    {# TWO tiers, in this order, and never merged. "Needs review" is one document, one decision, a
+       person resolves it now. "Incomplete metadata" is a field nobody has filled in yet — bulk work
+       for a backfill or a rule. Both are real recorded states; they are simply different work, and
+       a reviewer who filtered on one must see the reason that put the document there separated from
+       the gaps it happens to also have. #}
+    {% if d.actionable %}
+    <section class="docpanel-section docpanel-review">
+      <h3><span class="ico" aria-hidden="true">⚑</span> Needs review</h3>
+      <ul class="docpanel-reasons">
+        {% for r in d.actionable %}
+          <li class="reason reason--{{ r.kind }}">
+            <b>{{ r.what }}</b>
+            <span class="reason-basis">{{ r.basis }}</span>
+            {% if r.detail %}<span>{{ r.detail }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="docpanel-note">A filename is evidence, never identity. Nothing above is written to
+        the document until a person decides it.</p>
+    </section>
+    {% endif %}
+
+    {% if d.incomplete %}
+    <section class="docpanel-section docpanel-review docpanel-review--soft">
+      <h3><span class="ico" aria-hidden="true">◌</span> Incomplete metadata</h3>
+      <ul class="docpanel-reasons docpanel-reasons--soft">
+        {% for r in d.incomplete %}
+          <li class="reason reason--{{ r.kind }}">
+            <b>{{ r.what }}</b>
+            <span class="reason-basis">{{ r.basis }}</span>
+            {% if r.detail %}<span>{{ r.detail }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="docpanel-note">Gaps a backfill or a filing rule closes — not a decision waiting on
+        anyone. Nothing here is filled in automatically.</p>
+    </section>
+    {% endif %}
+
+    {% if not d.actionable and not d.incomplete %}
+      <p class="docpanel-clear">Nothing outstanding and nothing missing on this document.</p>
+    {% endif %}
+
+    {# ---- what is known ----------------------------------------------------------------------- #}
     <section class="docpanel-section">
       <h3>Filing Information</h3>
       <dl class="docpanel-facts">
-        <dt>Type</dt>
-        <dd>
-          {% if d.type_text %}{{ d.type_text }}
-            {% if d.type_derived %}<span class="inferred" title="Read from the filename — not a filed value">inferred</span>{% endif %}
-          {% else %}<span class="subtle">Not identified</span>{% endif %}
-        </dd>
-
-        <dt>Year</dt>
-        <dd>
-          {% if d.year %}{{ d.year }}
-            {% if d.year_derived %}<span class="inferred" title="Read from the filename — not a filed value">inferred</span>{% endif %}
-          {% else %}<span class="subtle">—</span>{% endif %}
-        </dd>
-
         <dt>Related To</dt>
-        <dd>{{ d.related_to.label }} <span class="subtle">({{ d.related_to.kind }})</span></dd>
+        <dd>
+          {% if d.related_to.kind == "none" %}
+            <span class="subtle">No owner on file</span>
+          {% else %}
+            {{ d.related_to.label }} <span class="subtle">({{ d.related_to.kind }})</span>
+          {% endif %}
+        </dd>
 
         <dt>Category</dt>
         <dd>
@@ -80,35 +149,98 @@
           {% else %}<span class="subtle">Not filed</span>{% endif %}
         </dd>
 
-        {# Confidence is shown for every scored type — whether it came from the Knowledge layer's
-           classification or from the filename derivation — and says WHICH. It is deliberately not
-           a row of three matching percentages: the owner is a stored anchor column and the year is
-           either a filed tag or a plain regex hit, so neither carries a probability. Printing one
-           for them would be theatre, and the number staff must not trust is the invented one. #}
-        {% if d.type_confidence is not none %}
-        <dt>Confidence</dt>
-        <dd class="conf-row">
-          {# Severity follows the score, so a weak classification never reads as a confident one.
-             Still exactly ONE score: the type confidence the pipeline produced. No owner or year
-             percentage is manufactured to fill the row. #}
-          {% set _c = (d.type_confidence * 100)|round|int %}
-          <span class="conf{{ ' conf--low' if _c < 60 else (' conf--mid' if _c < 85 else '') }}"
-                title="Confidence in this document type">Type {{ _c }}%</span>
-          <span class="subtle">{{ ("derived from the " ~ (d.type_basis or "filename")|replace("_", " ")) if d.type_derived else "classified" }}</span>
+        <dt>Type</dt>
+        <dd>
+          {% if d.type_text %}{{ d.type_text }}
+            {% if d.type_derived %}<span class="inferred" title="Read from the {{ (d.type_basis or 'filename')|replace('_', ' ') }} — not a filed value">inferred</span>{% endif %}
+          {% else %}<span class="subtle">Not identified</span>{% endif %}
         </dd>
-        {% endif %}
+
+        <dt>Tax Year</dt>
+        <dd>
+          {% if d.tax_year_confidence == "conflict" %}
+            {# The inference layer refused to propose a year because its two evidence sources
+               disagree. The filename reading is still shown, because hiding it would leave the
+               reviewer with nothing to check — but it is labelled disputed, not inferred, and the
+               evidence is listed in Filing Evidence below. #}
+            {% if d.year %}{{ d.year }} {% endif %}<span class="inferred inferred--conflict">disputed</span>
+          {% elif d.year %}{{ d.year }}
+            {% if d.year_derived %}<span class="inferred" title="Derived from the filename or the source folder — not a filed value">inferred</span>{% endif %}
+          {% else %}<span class="subtle">—</span>{% endif %}
+        </dd>
+
+        <dt>Review state</dt>
+        <dd><span class="state state--{{ d.status.kind }}">{{ d.status.label }}</span></dd>
       </dl>
     </section>
 
+    {# ---- the evidence behind the proposals ---------------------------------------------------
+       Rendered only when there IS evidence. Confidence is shown for the ONE thing the pipeline
+       scores — the document type — and says which. It is deliberately not a row of three matching
+       percentages: the owner is a stored anchor column and the year is either a filed tag or a
+       deterministic filename/folder reading, so neither carries a probability. Printing one for
+       them would be theatre, and the number staff must not trust is the invented one. #}
+    {% if d.type_confidence is not none or d.tax_year_evidence or d.type_derived %}
+    <section class="docpanel-section">
+      <h3>Filing Evidence</h3>
+      <dl class="docpanel-facts">
+        {% if d.type_confidence is not none %}
+        <dt>Type confidence</dt>
+        <dd class="conf-row">
+          {# Severity follows the score, so a weak classification never reads as a confident one. #}
+          {% set _c = (d.type_confidence * 100)|round|int %}
+          <span class="conf{{ ' conf--low' if _c < 60 else (' conf--mid' if _c < 85 else '') }}"
+                title="Confidence in this document type">{{ _c }}%</span>
+          <span class="subtle">{{ ("derived from the " ~ (d.type_basis or "filename")|replace("_", " ")) if d.type_derived else "classified" }}</span>
+        </dd>
+        {% elif d.type_derived %}
+        <dt>Type basis</dt>
+        <dd class="subtle">Read from the {{ (d.type_basis or "filename")|replace("_", " ") }}</dd>
+        {% endif %}
+
+        {% if d.tax_year_evidence %}
+        <dt>Tax year evidence</dt>
+        <dd>
+          <span class="conf{{ ' conf--low' if d.tax_year_confidence == 'conflict' else (' conf--mid' if d.tax_year_confidence == 'moderate' else '') }}">{{ d.tax_year_confidence }}</span>
+          <ul class="docpanel-evidence">
+            {% for e in d.tax_year_evidence %}<li>{{ e }}</li>{% endfor %}
+          </ul>
+          {% if d.tax_year_inferred %}<span class="subtle">Proposed for display only — not saved to the document.</span>{% endif %}
+        </dd>
+        {% endif %}
+
+        {% if d.version_family_size and d.version_family_size > 1 %}
+        <dt>Versions</dt>
+        <dd>Latest of {{ d.version_family_size }} copies of the same source file.
+          <span class="subtle">Grouped by the source system's own item id, never by filename.</span></dd>
+        {% elif d.needs_version_review %}
+        <dt>Look-alike</dt>
+        <dd>{{ d.version_review_reason }}
+          <span class="subtle">Both copies are kept — nothing is merged on a filename match.</span></dd>
+        {% endif %}
+      </dl>
+    </section>
+    {% endif %}
+
+    {# ---- where it came from ------------------------------------------------------------------- #}
     <section class="docpanel-section">
       <h3>Source Information</h3>
       <dl class="docpanel-facts">
         <dt>Source</dt>
         <dd>
+          {# The AVAILABILITY of the source copy is carried here, on the same `src-unavailable`
+             class the list column used to show it with. The list no longer has a Source column —
+             this panel is where a document's source is read now, so the one bit that column
+             carried beyond the system's name has to arrive with it. #}
           {% if d.sources %}
-            {% for src in d.sources %}<span class="src src-{{ (src.source_system or '')|lower|replace(' ','')|replace('drive','') }}">{{ src.source_system }}</span>{% endfor %}
+            {% for src in d.sources %}<span class="src src-{{ (src.source_system or '')|lower|replace(' ','')|replace('drive','') }}{{ ' src-unavailable' if not src.available else '' }}"
+                  title="{{ src.source_path or src.source_uri or src.source_system }}{{ ' — source copy not available' if not src.available else '' }}">{{ src.source_system }}</span>{% endfor %}
           {% else %}<span class="src">{{ d.source or "Upload" }}</span>{% endif %}
         </dd>
+        {% if d.source_path or d.source_folder %}
+        <dt>Source path</dt>
+        <dd class="mono">{{ d.source_path or d.source_folder }}</dd>
+        {% endif %}
         <dt>Added</dt>
         <dd>{{ d.created_at.strftime("%b %d, %Y at %I:%M %p") if d.created_at else "—" }}</dd>
         <dt>Modified</dt>
@@ -117,12 +249,10 @@
         <dd>{{ d.size_label }}</dd>
       </dl>
     </section>
-  {% endif %}
 
-  {% if panel_tab == "details" %}
-    {# Text capture and extraction. These used to be two columns in the documents table; the
-       mockup's grid has no room for them, so they live here — relocated, not dropped, and still
-       in the plain language the states were rewritten into (never "OCR / AI", never "/ pending"). #}
+    {# ---- text capture -------------------------------------------------------------------------
+       Still in the plain language the states were rewritten into (never "OCR / AI", never
+       "/ pending"). #}
     <section class="docpanel-section">
       <h3>Text &amp; Details</h3>
       <dl class="docpanel-facts">
@@ -130,7 +260,7 @@
         <dd>
           {{ d.ocr_label or "Not processed" }}
           {%- if d.ocr_completed_at %} <span class="subtle">· {{ d.ocr_completed_at.strftime("%b %d, %Y") }}</span>{% endif %}
-          {%- if d.searchable_text %}<br><span class="subtle" title="This document's text can be found in search">🔍 Searchable</span>{% endif %}
+          {%- if d.searchable_text %}<br><span class="subtle" title="This document's text can be found in search">Searchable</span>{% endif %}
         </dd>
         {% if d.extraction_label %}
         <dt>Details read</dt>
@@ -139,20 +269,25 @@
       </dl>
     </section>
 
-    {# Provenance. Deliberately LAST and visually secondary: the original filename is how staff
-       verify a document, but it is not what identifies it. #}
-    <section class="docpanel-section">
+    {# ---- provenance ---------------------------------------------------------------------------
+       Deliberately LAST and visually secondary: technical identifiers are how a document is traced,
+       not how it is named. #}
+    <section class="docpanel-section docpanel-prov">
       <h3>Provenance</h3>
       <dl class="docpanel-facts">
         <dt>Original filename</dt>
         <dd class="mono">{{ d.original_name or "—" }}</dd>
         <dt>Record</dt>
         <dd class="mono">Document #{{ d.id }}</dd>
+        {% if d.sha256 %}
+        <dt>Checksum</dt>
+        <dd class="mono">{{ d.sha256[:16] }}…</dd>
+        {% endif %}
       </dl>
     </section>
-  {% endif %}
 
-  {% if panel_tab == "history" %}
+  {% else %}
+
     <section class="docpanel-section">
       <h3>History</h3>
       {% if history.empty %}
@@ -191,6 +326,13 @@
         {% endif %}
       {% endif %}
     </section>
+
+  {% endif %}
+
+  {# The way back when this fragment is rendered as its own page (no JavaScript). Inside the
+     workspace pane it is simply a link to the list the user is already looking at. #}
+  {% if back_url %}
+    <p class="docpanel-back"><a href="{{ back_url }}">← Back to documents</a></p>
   {% endif %}
 
   </div>

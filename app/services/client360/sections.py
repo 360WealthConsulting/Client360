@@ -624,7 +624,9 @@ def _documents_screen(docs, ctx, member_names):
         docs, member_names=member_names, household_name=ctx.get("household_name"),
         q=view.get("q"), tab=view.get("tab"), year=view.get("year"),
         type_code=view.get("type"), related=view.get("related"),
-        needs_review=bool(view.get("needs_review")),
+        needs_review=bool(view.get("needs_review")), recent=bool(view.get("recent")),
+        incomplete=bool(view.get("incomplete")), flag=view.get("flag"),
+        sort=view.get("sort") or "date", direction=view.get("direction"),
         page=view.get("page") or 1, page_size=view.get("page_size") or 25)
 
 

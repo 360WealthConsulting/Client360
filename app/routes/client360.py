@@ -25,14 +25,20 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 
-def _documents_view(q, tab, year, doc_type, related, needs_review, doc_page, page_size):
+def _documents_view(q, tab, year, doc_type, related, needs_review, doc_page, page_size,
+                    recent=0, sort=None, direction=None, incomplete=0, flag=None):
     """The Documents-screen UI state, threaded into the composition the way ``vault_view`` is.
 
-    Every value is a filter over rows the composition already returns — none of it widens what the
-    caller may see, and none of it is persisted. ``page_size`` is clamped in the view model.
+    Every value is a filter or an ordering over rows the composition already returns — none of it
+    widens what the caller may see, and none of it is persisted. ``page_size`` is clamped in the
+    view model, ``sort``/``direction`` are normalized there too, and an unrecognised ``flag`` is
+    dropped there rather than filtered on — so a hand-edited URL can reach neither the ordering code
+    with a column that does not exist nor the review filter with a reason that does not exist.
     """
     return {"q": q, "tab": tab, "year": year, "type": doc_type, "related": related,
-            "needs_review": bool(needs_review), "page": doc_page, "page_size": page_size}
+            "needs_review": bool(needs_review), "recent": bool(recent),
+            "incomplete": bool(incomplete), "flag": flag,
+            "sort": sort, "direction": direction, "page": doc_page, "page_size": page_size}
 
 
 def _drake_returns_for_person(person_id: int) -> list[dict]:
@@ -131,13 +137,16 @@ def _render(request, ws, principal, tab):
 def household_workspace(request: Request, household_id: int, tab: str = "summary",
                         dq: str | None = None, dtab: str = "all", dyear: str | None = None,
                         dtype: str | None = None, related: str | None = None, review: int = 0,
+                        drecent: int = 0, dsort: str | None = None, ddir: str | None = None,
+                        dincomplete: int = 0, dflag: str | None = None,
                         dpage: int = 1, per: int = 25,
                         principal: Principal = Depends(require_capability("client.read"))):
     """Household 360 Workspace (Phase D.41) — the authoritative household surface at the D.40 route.
     Read-only composition of member-level rollups; every edit deep-links into the domain workflow."""
     from app.services.client360.household import get_household_workspace
     ws = get_household_workspace(principal, household_id, documents_view=_documents_view(
-        dq, dtab, dyear, dtype, related, review, dpage, per))
+        dq, dtab, dyear, dtype, related, review, dpage, per, drecent, dsort, ddir,
+        dincomplete, dflag))
     if ws is None:
         return render_error(request, 404, detail="Household not found.")
     tabs = ws["section_keys"]
@@ -263,6 +272,8 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
                      year: int | None = None, doc: int | None = None,
                      dq: str | None = None, dtab: str = "all", dyear: str | None = None,
                      dtype: str | None = None, related: str | None = None, review: int = 0,
+                     drecent: int = 0, dsort: str | None = None, ddir: str | None = None,
+                     dincomplete: int = 0, dflag: str | None = None,
                      dpage: int = 1, per: int = 25,
                      principal: Principal = Depends(require_capability("client.read"))):
     # Vault-tab UI state (filters + selected document) threaded into the composition context.
@@ -271,7 +282,8 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
     # Documents-tab UI state. Deliberately its OWN parameter names (d*): the Vault tab already owns
     # `q`/`year`/`category` on this route, and sharing them would make the two tabs fight — a
     # document search would silently re-filter the Vault list behind it.
-    documents_view = _documents_view(dq, dtab, dyear, dtype, related, review, dpage, per)
+    documents_view = _documents_view(dq, dtab, dyear, dtype, related, review, dpage, per,
+                                     drecent, dsort, ddir, dincomplete, dflag)
     ws = get_workspace(principal, person_id=person_id, vault_view=vault_view,
                        documents_view=documents_view)
     if ws is None:

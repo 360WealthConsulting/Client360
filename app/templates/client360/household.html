@@ -9,28 +9,11 @@
 <script src="/static/js/documents_screen.js" defer></script>{% endblock %}
 {% block body_class %}{{ " docsui" if active_tab == "documents" else "" }}{% endblock %}
 {% block nav_extra %}
-{# Documents sub-navigation — the approved design's expanded Documents group. Rendered only on
-   the Documents tab, and ONLY with entries that are real filtered views of this client's
-   documents screen. Nothing here invents a route or a feature: both links are the same
-   `?tab=documents` surface with the filters the screen already supports. #}
-{% if active_tab == "documents" %}
-  {% set navbase = ("/client/household/" ~ ws.entity_id) if ws.entity_type == "household" else ("/client/" ~ ws.entity_id) %}
-  {% set dsec = (ws.sections or {}).get("documents") or {} %}
-  {% set dscreen = dsec.get("screen") or {} %}
-  {% set nreview = dscreen.get("needs_review_count") %}
-  <div class="nav-group dw-navgroup">
-    <div class="label">Documents</div>
-    <div class="nav-subnav">
-      <a class="{{ 'on' if not dscreen.get('filters', {}).get('needs_review') else '' }}"
-         href="{{ navbase }}?tab=documents&amp;dtab=all">All Documents</a>
-      <a class="{{ 'on' if dscreen.get('filters', {}).get('needs_review') else '' }}"
-         href="{{ navbase }}?tab=documents&amp;dtab=all&amp;review=1">
-        Inbox / Needs Review
-        {% if nreview %}<span class="n">{{ nreview }}</span>{% endif %}
-      </a>
-    </div>
-  </div>
-{% endif %}
+{# The Documents workspace carries its own primary navigation (views + categories, with counts)
+   in the workspace's LEFT RAIL, beside the list it filters. A second copy in the application
+   sidebar would be two navigations for one screen that could disagree about the active view, so
+   the rail is the only one. Nothing was re-gated or removed: the rail's entries are the same
+   filtered views of the same `?tab=documents` surface these links pointed at. #}
 {% endblock %}
 {% block content %}
 {% set s = ws.snapshot %}
@@ -177,8 +160,13 @@
   {% include "client360/_documents_head.html" %}
 
 {% if principal and principal.can("documents.edit") %}
-  <details class="docs-upload" id="doc-upload">
-    <summary>Upload a document</summary>
+  {# ONE upload action on this workspace: the header's "+ Upload Document" button. This used to be a
+     <details> whose summary rendered a SECOND, full-width "Upload a document" strip directly beneath
+     that button — two controls for one job, and the strip cost a band of vertical space on every
+     visit whether or not anyone was uploading. The form is now revealed by the header button's own
+     #doc-upload anchor via :target, so the affordance is single and it still works with no
+     JavaScript. #}
+  <div class="docs-upload" id="doc-upload">
     <form method="post" action="/client/household/{{ ws.household_id }}/documents/upload"
           enctype="multipart/form-data" class="body">
       <div class="field"><label for="hh-doc-up-file">File</label>
@@ -186,8 +174,9 @@
       <div class="field"><label for="hh-doc-up-category">Category (optional)</label>
         <input class="input" id="hh-doc-up-category" name="category" placeholder="e.g. tax"></div>
       <button class="btn" type="submit">Upload</button>
+      <a class="docs-upload-cancel" href="#">Cancel</a>
     </form>
-  </details>
+  </div>
 {% endif %}
 
   {% with screen = sec.screen, panel_base = base %}

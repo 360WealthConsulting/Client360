@@ -36,7 +36,25 @@
        rest of the client record. It is the workspace URL the tabs already pointed at. #}
     <a class="dw-btn" href="{{ base }}">Client Profile <span aria-hidden="true">↗</span></a>
     {% if principal and principal.can("documents.edit") %}
+      {# The ONE upload affordance on this workspace. It targets the #doc-upload form the enclosing
+         template renders; that form stays hidden until this button reveals it. #}
       <a class="dw-btn dw-btn--primary" href="#doc-upload">+ Upload Document</a>
     {% endif %}
   </div>
+</div>
+
+{# Which SURFACE this is. The band above names the client; without this a staff member arriving on a
+   deep link sees a client name and a three-pane grid and has to infer what they are looking at. It
+   also states what the list is scoped to — the question the Related To column otherwise raises. #}
+<div class="dw-surfacebar">
+  <h2>Documents</h2>
+  <p>
+    {%- if ws.entity_type == "household" -%}
+      Every document filed to this household or to one of its members — canonical records and linked
+      Vault documents, in one list.
+    {%- else -%}
+      Every document filed to this client or to their household — canonical records and linked Vault
+      documents, in one list.
+    {%- endif -%}
+  </p>
 </div>

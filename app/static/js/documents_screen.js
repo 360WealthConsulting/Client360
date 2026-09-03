@@ -18,6 +18,15 @@
 
   function drawerOf(screen) { return screen.querySelector("[data-docdrawer]"); }
   function bodyOf(screen) { return screen.querySelector("[data-docdrawer-body]"); }
+  function emptyOf(screen) { return screen.querySelector("[data-docdrawer-empty]"); }
+
+  /* The panel is a permanent third pane, not a drawer that appears: it shows either its
+     "select a document" state or a document. Toggling those two keeps the workspace's column
+     widths fixed, so choosing a document never reflows the list underneath the cursor. */
+  function showEmpty(screen, empty) {
+    var placeholder = emptyOf(screen);
+    if (placeholder) { placeholder.hidden = !empty; }
+  }
 
   function markSelected(screen, row) {
     screen.querySelectorAll("[data-doc-row].is-selected").forEach(function (r) {
@@ -29,8 +38,8 @@
   function closeDrawer(screen) {
     var drawer = drawerOf(screen);
     if (!drawer) { return; }
-    drawer.hidden = true;
     bodyOf(screen).innerHTML = "";
+    showEmpty(screen, true);
     markSelected(screen, null);
   }
 
@@ -46,7 +55,7 @@
     if (!drawer || !body) { return; }
 
     var mine = ++token;
-    drawer.hidden = false;
+    showEmpty(screen, false);
     markSelected(screen, row);
     body.setAttribute("aria-busy", "true");
 
@@ -59,11 +68,13 @@
         if (mine !== token) { return; }               // superseded by a later click
         body.innerHTML = html;
         body.removeAttribute("aria-busy");
+        drawer.scrollTop = 0;      /* a tall previous panel must not leave the new one scrolled */
         var heading = body.querySelector(".docpanel-head h2");
         if (heading) { heading.setAttribute("tabindex", "-1"); heading.focus(); }
       })
       .catch(function () {
         if (mine !== token) { return; }
+        showEmpty(screen, true);
         /* Never strand the user in a half-open drawer: fall back to the plain navigation the
            link would have done on its own. */
         window.location.href = url;
@@ -71,6 +82,10 @@
   }
 
   function init(screen) {
+    /* The placeholder is visible in the server-rendered markup so a no-script user sees the
+       panel explain itself. Script hides nothing until a document is chosen. */
+    showEmpty(screen, !bodyOf(screen).firstElementChild);
+
     /* Row selection and panel tabs. Delegated, so rows swapped in by a later page load (or a
        panel that replaces itself) keep working without re-binding. */
     screen.addEventListener("click", function (ev) {
