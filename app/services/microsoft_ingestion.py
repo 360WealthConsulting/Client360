@@ -1053,12 +1053,39 @@ def _source_uri_for_external_id(item_id):
             .order_by(ds.c.id.desc())).scalar()
 
 
+def _client_folder_hint(folder_path):
+    """The connector's client-folder hint for ``folder_path``, or None.
+
+    Resolved lazily and defensively for the same reason this module resolves the staging entrypoint
+    late (see the module docstring): a deployment whose connector does not expose the helper must
+    still import and sync. Failing closed here costs an ownership hint — the document still imports,
+    unlinked, exactly as it does today — whereas raising would stop the sync.
+    """
+    try:
+        from app.connectors.microsoft365.sharepoint_content import client_folder_hint
+    except Exception:      # noqa: BLE001 — connector shape is deployment-dependent
+        return None
+    try:
+        return client_folder_hint(folder_path)
+    except Exception:      # noqa: BLE001 — a malformed path must never break ingestion
+        return None
+
+
 def _delta_item_record(drive_id, it, local_path):
-    """A real staged item record (with local_path) for import_sharepoint_items — from a delta driveItem."""
+    """A real staged item record (with local_path) for import_sharepoint_items — from a delta driveItem.
+
+    ``client_folder`` is the ownership hint ``import_sharepoint_items`` gates its folder→owner
+    resolution on (importers/sharepoint.py). Without it that branch never runs, and every document
+    the live delta/webhook path imports lands with person_id and household_id NULL — which is why
+    the live cohort sat at 1% owner-anchored while the migration cohort, whose records DO carry the
+    key, sat at 100%. The hint is derived by the connector's own helper so there is exactly one
+    implementation of the folder grammar."""
     pr = it.get("parentReference") or {}
+    folder_path = pr.get("path")
     return {"drive_id": drive_id, "item_id": it.get("id"), "name": it.get("name"),
-            "web_url": it.get("webUrl"), "parent_path": pr.get("path"),
-            "folder_path": pr.get("path"), "size": it.get("size"),
+            "web_url": it.get("webUrl"), "parent_path": folder_path,
+            "folder_path": folder_path, "size": it.get("size"),
+            "client_folder": _client_folder_hint(folder_path),
             "modified_at": it.get("lastModifiedDateTime"), "created_at": it.get("createdDateTime"),
             "site": pr.get("siteId"), "library": pr.get("driveId") or drive_id,
             "content_type": (it.get("file") or {}).get("mimeType"), "local_path": local_path}
@@ -1634,8 +1661,10 @@ def _driveitem_to_record(drive_id, it):
     """Convert a Microsoft Graph driveItem into the base metadata record import_sharepoint_items needs —
     NO content, clearly marked dry-run. Deleted items carry the deleted marker for reconciliation."""
     pr = it.get("parentReference") or {}
+    folder_path = pr.get("path")
     rec = {"drive_id": drive_id, "item_id": it.get("id"), "name": it.get("name"),
-           "parent_path": pr.get("path"), "folder_path": pr.get("path"),
+           "parent_path": folder_path, "folder_path": folder_path,
+           "client_folder": _client_folder_hint(folder_path),   # same ownership hint as the delta path
            "web_url": it.get("webUrl"), "target": it.get("webUrl"),
            "size": it.get("size"), "size_bytes": it.get("size"),
            "modified_at": it.get("lastModifiedDateTime"),
