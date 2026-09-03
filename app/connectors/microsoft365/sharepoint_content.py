@@ -560,11 +560,90 @@ def _folder_path(item: dict) -> str:
     return raw.strip("/")
 
 
-def _client_folder_hint(folder_path: str) -> str | None:
-    """Best-effort ownership hint = top-level folder segment, resolved later by the importer's
-    ``resolve_folder`` (same convention as TaxDome). Unresolved items import unlinked — never guessed."""
-    top = folder_path.split("/", 1)[0] if folder_path else ""
-    return top or None
+#: Segments that organise the practice, not a client. Proven from production metadata: under
+#: ``Clients`` the library nests a SERVICE LINE, sometimes a sub-service, sometimes an activity
+#: status, sometimes an entity class — and only then the client. Every one of these has been
+#: observed sitting in the position a client folder would otherwise occupy.
+_STRUCTURAL_SEGMENTS = frozenset({
+    # service lines
+    "tax preparation", "tax preparation(1)", "sales, litter & pp tax", "sales & litter tax",
+    "sales and litter tax", "sales tax", "payroll", "bookkeeping", "bookkeeping(1)",
+    "client services", "tax planning", "tax representation",
+    # entity classes
+    "individual", "individuals", "business", "businesses", "corporate", "partnership",
+    "trust", "estate", "non-profit", "nonprofit",
+    # activity status / workflow buckets
+    "active", "inactive", "active clients", "inactive clients", "needs to be done",
+    "archive", "archived", "general",
+})
+
+#: Work-product / document-category folders. These normally sit BELOW a client, where the walk
+#: never reaches them. Finding one AT the client position means the client level is simply absent
+#: (``Clients/Sales, Litter & PP Tax/Fixed Asset List/2018`` — 402 documents in production), so the
+#: structure is not understood and the only safe answer is no hint. They are TERMINAL rather than
+#: skippable for exactly that reason: skipping would walk on and return the year below them.
+_NON_CLIENT_TERMINAL = frozenset({
+    "fixed asset list", "federal", "state", "unemployment", "paystubs", "check stubs",
+    "bank statements", "payroll reports", "notes", "reports", "correspondence",
+})
+
+#: The segment that opens the client area. Everything before it is firm/library chrome, so a
+#: client can NEVER be read from above it — the firm root is excluded structurally, not by name.
+_CLIENT_ROOT_SEGMENTS = frozenset({"clients", "active clients"})
+
+
+def _segments(folder_path: str) -> list[str]:
+    """Path segments, tolerant of Windows separators and Graph's ``/drives/<id>/root:/A/B`` form."""
+    path = (folder_path or "").replace("\\", "/")
+    if "root:" in path:
+        path = path.split("root:", 1)[1]
+    return [seg for seg in (p.strip() for p in path.split("/")) if seg]
+
+
+def client_folder_hint(folder_path: str) -> str | None:
+    """The CLIENT folder in a SharePoint path, or None when the structure is not recognised.
+
+    Resolved later by the importer's ``resolve_folder`` (the same convention TaxDome uses). This
+    only proposes a folder NAME; it never resolves an owner and never guesses.
+
+    The library is organised as::
+
+        360 Tax Solutions, LLC / Clients / Tax Preparation / Individual / Sebastian, Britt / 2022
+        360 Tax Solutions, LLC / Clients / Payroll / Inactive / ERE Power LLC / Federal / 2018
+        Documents 1 / FileHistory / 360 Tax / Clients / Bookkeeping / Raymonds Construction
+
+    so the client is neither the first segment nor the deepest one. It is the first segment after
+    ``Clients`` that is not practice structure. Reading the TOP segment — which is what this used
+    to do — yields the FIRM ("360 Tax Solutions, LLC") on ~25k documents, and the firm is itself a
+    canonical business record, so that would have anchored them all onto the firm's own entity.
+
+    Fail-closed by construction:
+
+    * no ``Clients`` root  ->  None. Backup trees, mailbox dumps and system folders never match.
+    * only structural segments after it  ->  None.
+    * a numeric or date-like candidate (``1179``, ``2022``)  ->  None; those are IDs and years.
+    * the search starts AFTER ``Clients``, so no segment above it — the firm root included — can
+      ever be returned. That is a property of the walk, not a denylist that must be maintained.
+    """
+    segments = _segments(folder_path)
+    lowered = [s.lower() for s in segments]
+    try:
+        start = next(i for i, s in enumerate(lowered) if s in _CLIENT_ROOT_SEGMENTS) + 1
+    except StopIteration:
+        return None                                   # not the client area — no hint
+    for segment, low in zip(segments[start:], lowered[start:]):
+        if low in _STRUCTURAL_SEGMENTS:
+            continue                                  # service line / entity class / status
+        if low in _NON_CLIENT_TERMINAL:
+            return None                               # category folder here => no client level
+        if not any(ch.isalpha() for ch in segment):
+            return None                               # numeric id or bare year -> unsafe
+        return segment
+    return None
+
+
+#: Historical private name; the record builders and this module both call the public helper.
+_client_folder_hint = client_folder_hint
 
 
 _STAGE_MAX_TEMP_PATH = 240

@@ -219,33 +219,74 @@ def infer_category(filename: str, relative_path: str) -> str | None:
 
 
 _NAME_TOKEN_RE = re.compile(r"[a-z0-9]+")
-_NAME_DROP = {"family", "trust", "llc", "inc", "the", "and", "household", "jr", "sr", "ii", "iii"}
+_NAME_DROP = {"family", "trust", "llc", "inc", "the", "and", "household",
+              "jr", "sr", "ii", "iii", "iv"}
 # Separators that join two people in a TaxDome folder name, e.g. "Michael and Debra White".
 _JOINT_SPLIT_RE = re.compile(r"\s+and\s+|\s*&\s*|\s*\+\s*", re.IGNORECASE)
 
 
 def _name_key(name: str | None) -> str:
     """Order-insensitive normalized name key so 'Smith, John' matches 'John Smith'. Only exact token
-    sets match, which keeps auto-linking conservative (never a weak/partial match)."""
+    sets match, which keeps auto-linking conservative (never a weak/partial match).
+
+    SINGLE-LETTER TOKENS ARE DROPPED. A middle initial is a rendering detail of whichever system
+    wrote the folder, not identity: SharePoint files 'CASHMAN, KIMBERLY S' while the CRM holds
+    'Cashman, Kimberly', and keying on the initial made those two different people. Dropping it
+    cannot introduce a WRONG link — it can only merge two keys, and every caller here requires a
+    UNIQUE match, so a genuine 'John A Smith' / 'John B Smith' pair collapses to one key with two
+    candidates and fails closed exactly as an ambiguous name already does.
+
+    A name that is ONLY initials keeps them, because dropping every token would produce the empty
+    key, and the empty key matches nothing (callers treat it as "no identity")."""
     if not name:
         return ""
-    tokens = _NAME_TOKEN_RE.findall(name.lower())
-    return " ".join(sorted(t for t in tokens if t not in _NAME_DROP))
+    tokens = [t for t in _NAME_TOKEN_RE.findall(name.lower()) if t not in _NAME_DROP]
+    substantive = [t for t in tokens if len(t) > 1]
+    return " ".join(sorted(substantive or tokens))
+
+
+def _tokens(text: str) -> list[str]:
+    """Name tokens, minus noise words and single-letter initials — the same rule as ``_name_key``."""
+    toks = [t for t in _NAME_TOKEN_RE.findall((text or "").lower()) if t not in _NAME_DROP]
+    return [t for t in toks if len(t) > 1] or toks
+
+
+def _shared_surname(parts: list[str]) -> str | None:
+    """The surname both halves of a joint folder share, or None.
+
+    Two conventions occur in the wild and the surname sits at opposite ends of each:
+
+        "Michael and Debra White"        -> surname trails the LAST fragment
+        "Philips, Betty & Bill"          -> surname LEADS the first, before the comma
+        "STOVALL, JEFFERY W & PEGGY S"   -> same, with initials
+
+    A comma in the first fragment is the reliable marker of the second form, so it is checked
+    first; otherwise the original trailing-surname rule applies unchanged.
+    """
+    if "," in parts[0]:
+        lead = _tokens(parts[0].split(",", 1)[0])
+        if lead:
+            return lead[-1]
+    last = _tokens(parts[-1])
+    return last[-1] if len(last) >= 2 else None
 
 
 def _folder_person_keys(folder_name: str) -> list[str]:
     """Normalized name key(s) a folder refers to. A joint folder is split on 'and'/'&'/'+', and a bare
-    first name inherits the shared surname from the final fragment, so 'Michael and Debra White' yields
-    the keys for 'Michael White' and 'Debra White'. A single-name folder yields one key."""
+    first name inherits the shared surname, so 'Michael and Debra White' and 'Philips, Betty & Bill'
+    both yield one key per spouse. A single-name folder yields one key.
+
+    Initials are dropped here for the same reason ``_name_key`` drops them: 'STOVALL, JEFFERY W &
+    PEGGY S' names the same two people as 'Jeffery Stovall' and 'Peggy Stovall', and keying on the
+    initial made the joint folder resolve to nobody."""
     parts = [p.strip() for p in _JOINT_SPLIT_RE.split(folder_name or "") if p.strip()]
     if len(parts) <= 1:
         key = _name_key(folder_name)
         return [key] if key else []
-    last_tokens = [t for t in _NAME_TOKEN_RE.findall(parts[-1].lower()) if t not in _NAME_DROP]
-    surname = last_tokens[-1] if len(last_tokens) >= 2 else None
+    surname = _shared_surname(parts)
     keys = []
     for part in parts:
-        tokens = [t for t in _NAME_TOKEN_RE.findall(part.lower()) if t not in _NAME_DROP]
+        tokens = _tokens(part)
         if not tokens:
             continue
         if len(tokens) == 1 and surname and tokens[0] != surname:
