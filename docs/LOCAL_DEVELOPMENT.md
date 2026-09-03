@@ -78,6 +78,42 @@ scripts/test.sh fast     # run without resetting (quick iteration)
 | Port 8000 in use | `DEV_PORT=8010 scripts/dev.sh run` |
 | Suite refuses to run | Target must be a disposable `*_test` DB — use `scripts/test.sh` |
 
+## Repository hygiene — `git status` is NOT a complete source inventory
+
+`.gitignore` line 26 is a bare `documents/` pattern. A bare directory pattern with no
+leading slash matches a directory of that name **anywhere in the tree**, not just at the
+repository root. It was written for a runtime content directory, but it also silently
+matches:
+
+    app/templates/documents/
+
+Every file under that path is **ignored**, not merely untracked. Ignored files do not
+appear in `git status`, and they do not appear in `git status --untracked-files=all`
+either — that flag expands untracked *directories*, it does not defeat `.gitignore`.
+
+**This has already cost us once.** During the September 2026 preservation of the parallel
+Documents workspace prototype, an audit built on `git status` concluded that exactly two
+untracked source files existed. Four Jinja templates under `app/templates/documents/`
+(`workspace.html`, `_list.html`, `_detail.html`, `_rail.html`) plus one related stylesheet
+were invisible to that audit and were left out of the first preservation package — which
+could not have reconstructed the feature. They were recovered only because the files
+happened to still be on disk.
+
+**When doing forensic or audit work, do not treat `git status` as authoritative:**
+
+- Check a specific suspect path with `git check-ignore -v <path>`. It prints the exact
+  `.gitignore` file, line number and pattern responsible, e.g.
+  `.gitignore:26:documents/  app/templates/documents/_rail.html`.
+- Enumerate the filesystem directly (`ls` / `find` / `Get-ChildItem`) for any directory
+  that could plausibly hold source, and reconcile that listing against git's.
+- List everything git is hiding with `git status --ignored`, or
+  `git ls-files --others --ignored --exclude-standard`.
+- Before declaring "all uncommitted work is preserved", resolve every import and template
+  reference in the code you are preserving and confirm each target is actually captured.
+
+The same trap applies to any future bare directory pattern (`notes/`, `demo/`, …). Prefer
+an anchored pattern such as `/documents/` when only the repository-root directory is meant.
+
 ## Boundaries (ADR-013)
 The application root is `app/`; architecture evolves around the working
 implementation. See [`docs/architecture/MODULE_MAP.md`](architecture/MODULE_MAP.md)
