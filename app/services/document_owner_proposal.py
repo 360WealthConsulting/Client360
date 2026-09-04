@@ -545,14 +545,14 @@ def _mark_owner_eligibility(conn, idx):
     that shape.
     """
     eligible, staff = set(), set()
-    firm_domains = set()
-    if users_table is not None:
-        try:
-            firm_domains = {e.split("@", 1)[1].lower()
-                            for (e,) in conn.execute(select(users_table.c.email))
-                            if e and "@" in e and "example" not in e.lower()}
-        except Exception:  # noqa: BLE001 — users table shape is deployment-dependent
-            firm_domains = set()
+    # STAFF is derived from the firm's mail domains, and "a domain some users row happens to use" is
+    # not one. That broader rule was a live suppression hazard on this path exactly as it was on the
+    # organization path: measured against production, a single users row on gmail.com would have
+    # marked 1,949 people by their own address plus 2,100 more through their source links as staff
+    # and removed every one of them from owner eligibility — silently, and with no reviewer signal.
+    # ``_firm_mail_domains`` applies the narrow-domain rule already deployed for organizations, so
+    # both paths now share one definition of "the practice's own domain" instead of two.
+    firm_domains = _firm_mail_domains(conn)
 
     # Canonical contact_type is the only per-person column consulted. Household membership and
     # existing document ownership are deliberately absent — see the docstring for the production
