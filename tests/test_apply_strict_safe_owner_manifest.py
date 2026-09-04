@@ -234,6 +234,103 @@ def _seed_document(conn, **kw):
         **kw).returning(docs_t.c.id)).scalar_one()
 
 
+# ---------------------------------------------------------------- audit attribution + provenance
+
+def _capture_audit_call(monkeypatch):
+    """Record what the script would hand write_audit_event, without writing anything."""
+    calls = []
+
+    def _fake(**kw):
+        calls.append(kw)
+        return 1
+
+    monkeypatch.setattr(ap, "write_audit_event", _fake)
+    return calls
+
+
+def _one_row_apply(tmp_path, monkeypatch, *, actor_user_id):
+    """Drive a full 162-row run() against REAL seeded rows, then roll back.
+
+    Only the per-row VERIFICATION is stubbed, because real verification would require the deployed
+    proposal engine to independently propose these synthetic owners. Everything else is the real
+    thing -- the manifest gates, the FOR UPDATE lock, the rollback snapshot, the atomic UPDATE guard
+    and the audit call -- so what is asserted below is what the script would genuinely write.
+    """
+    import uuid as _uuid
+
+    from app.db import documents as docs_t
+    from app.db import engine
+    from app.db import households as hh_t
+    from app.db import people as people_t
+
+    with engine.begin() as c:
+        pid = c.execute(people_t.insert().values(
+            full_name=f"Owner {_uuid.uuid4().hex[:6]}", active=True
+        ).returning(people_t.c.id)).scalar_one()
+        hid = c.execute(hh_t.insert().values(
+            name=f"HH {_uuid.uuid4().hex[:6]}"
+        ).returning(hh_t.c.id)).scalar_one()
+        dids = [_seed_document(c) for _ in range(162)]
+
+    rows = ([(dids[i], "person", pid, "Michael Shelton, RFC") for i in range(59)]
+            + [(dids[59 + i], "household", hid, "A Household") for i in range(103)])
+    p = _write_manifest(tmp_path, rows)
+    calls = _capture_audit_call(monkeypatch)
+    monkeypatch.setattr(ap, "verify_row", lambda *a, **k: [])
+    try:
+        ap.run(p, apply_changes=False, expect_sha=_sha(p), snapshot_root=tmp_path,
+               actor_user_id=actor_user_id, out=lambda *_a: None)
+    finally:
+        with engine.begin() as c:
+            c.execute(docs_t.delete().where(docs_t.c.id.in_(dids)))
+            c.execute(hh_t.delete().where(hh_t.c.id == hid))
+            c.execute(people_t.delete().where(people_t.c.id == pid))
+    return calls, dids[0], pid
+
+
+def test_actor_user_id_reaches_write_audit_event(tmp_path, monkeypatch):
+    calls, _did, pid = _one_row_apply(tmp_path, monkeypatch, actor_user_id=1)
+    assert calls, "no audit event was produced"
+    assert all(c["actor_user_id"] == 1 for c in calls), \
+        "every audit event must carry the operator"
+
+
+def test_actor_defaults_to_none_when_not_supplied(tmp_path, monkeypatch):
+    calls, _did, pid = _one_row_apply(tmp_path, monkeypatch, actor_user_id=None)
+    assert calls and all(c["actor_user_id"] is None for c in calls)
+
+
+def test_destination_is_the_canonical_structured_triple(tmp_path, monkeypatch):
+    calls, did, pid = _one_row_apply(tmp_path, monkeypatch, actor_user_id=1)
+    dest = calls[0]["metadata"]["destination"]
+    assert isinstance(dest, dict), "destination must be structured, not a bare name"
+    assert dest["entity_type"] == "person"
+    assert dest["entity_id"] == pid
+    assert dest["entity_name"] == "Michael Shelton, RFC"
+
+
+def test_owner_type_is_explicit_in_metadata(tmp_path, monkeypatch):
+    calls, _did, pid = _one_row_apply(tmp_path, monkeypatch, actor_user_id=1)
+    assert calls[0]["metadata"]["owner_type"] == "person"
+
+
+def test_every_provenance_field_survives_the_change(tmp_path, monkeypatch):
+    """The attribution patch must not drop any field needed to reconstruct WHY."""
+    calls, did, pid = _one_row_apply(tmp_path, monkeypatch, actor_user_id=1)
+    call = calls[0]
+    md = call["metadata"]
+    assert call["action"] == "document.ownership_resolved"
+    assert call["entity_type"] == "document" and call["entity_id"] == did
+    assert call["request_id"].startswith("strict-safe-manifest:")
+    assert md["document_id"] == did                       # document id
+    assert len(md["manifest_sha256"]) == 64               # manifest SHA256, in full
+    assert md["previous_ownership_state"] == "all NULL (manifest apply)"
+    assert md["person_id"] == pid                           # new ownership state
+    assert md["household_id"] is None and md["organization_id"] is None
+    assert md["scope"] == "strict_safe_manifest"
+    # occurred_at is a NOT NULL column written by the audit layer, not by this metadata.
+
+
 def test_dry_run_over_real_rows_writes_nothing(tmp_path):
     """A row that cannot pass verification still proves the dry run persists nothing."""
     from app.db import documents as docs_t

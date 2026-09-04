@@ -237,7 +237,16 @@ def write_snapshot(rows, docs, digest, root=SNAPSHOT_ROOT):
 
 
 def run(manifest_path, *, apply_changes, confirm=None, expect_sha=EXPECTED_SHA256,
-        snapshot_root=SNAPSHOT_ROOT, out=print):
+        snapshot_root=SNAPSHOT_ROOT, actor_user_id=None, out=print):
+    """``actor_user_id`` attributes the audit events to a real ``users`` row.
+
+    It defaults to None so the caller must state the operator explicitly rather than inherit a
+    constant buried here. NULL is the right value for automated pipeline work -- production runs
+    document.ocr_run, ingestion.sync_run and the merge operations that way -- but it is NOT the
+    convention for this action: both existing ``document.ownership_resolved`` events in production
+    carry a real actor, including one that resolved 25 documents at once. Ownership resolution
+    records a human decision, so the human who authorised the manifest belongs on the event.
+    """
     rows, digest = load_manifest(manifest_path, expect_sha=expect_sha)
     if apply_changes and confirm != CONFIRM_PHRASE:
         raise SystemExit(f"ABORT: --apply requires --confirm {CONFIRM_PHRASE}")
@@ -293,8 +302,14 @@ def run(manifest_path, *, apply_changes, confirm=None, expect_sha=EXPECTED_SHA25
             report["applied"] += updated
             write_audit_event(
                 action="document.ownership_resolved", entity_type="document", entity_id=did,
-                actor_user_id=None, request_id=f"strict-safe-manifest:{digest[:12]}",
-                metadata={"document_id": did, "destination": r["owner_name"],
+                actor_user_id=actor_user_id,
+                request_id=f"strict-safe-manifest:{digest[:12]}",
+                # ``destination`` is the structured triple the canonical write path records, so a
+                # reader can resolve the owner without inferring it from which id field is set.
+                metadata={"document_id": did,
+                          "destination": {"entity_type": otype, "entity_id": oid,
+                                          "entity_name": r["owner_name"]},
+                          "owner_type": otype,
                           "person_id": oid if otype == "person" else None,
                           "household_id": oid if otype == "household" else None,
                           "organization_id": oid if otype == "organization" else None,
@@ -348,13 +363,17 @@ def main(argv=None):
     ap.add_argument("--apply", action="store_true", default=False)
     ap.add_argument("--confirm", default=None)
     ap.add_argument("--expect-sha", default=EXPECTED_SHA256)
+    ap.add_argument("--actor-user-id", type=int, default=None,
+                    help="users.id to attribute the audit events to. Omit only for genuinely "
+                         "unattended system operation; ownership resolution is a human decision "
+                         "and production precedent for this action carries a real actor.")
     args = ap.parse_args(argv)
     if args.apply and args.dry_run:
         raise SystemExit("ABORT: choose --dry-run or --apply, not both")
     if not args.apply:
         args.dry_run = True
     report = run(args.manifest, apply_changes=args.apply, confirm=args.confirm,
-                 expect_sha=args.expect_sha)
+                 expect_sha=args.expect_sha, actor_user_id=args.actor_user_id)
     return 0 if (report["committed"] or not args.apply) else 1
 
 
