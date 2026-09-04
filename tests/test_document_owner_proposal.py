@@ -64,6 +64,10 @@ def _idx():
         "hh_name": {113: "Mcdaniel Household"},
         "biz": {"widgets llc": (9, "Widgets LLC")},
         "inst": {"wells fargo", "liberty university"},
+        # Every fixture person here stands for a real client, so all are owner-eligible. HIGH now
+        # requires that proof up front; see test_document_owner_proposal_safety for the gate itself.
+        "owner_eligible": {2421, 7430, 5284, 100, 101, 5338, 7530},
+        "staff": set(),
     }
 
 
@@ -74,21 +78,31 @@ def test_exact_name_plus_email_is_high():
     assert r["confidence"] == "HIGH" and (r["proposed_entity_type"], r["proposed_entity_id"]) == ("person", 2421)
 
 
-def test_email_alone_is_high():
+def test_email_alone_is_a_lead_not_an_owner():
+    """WAS test_email_alone_is_high. An identifier with no name in the document surfaces the right
+    candidate but cannot conclude ownership — see test_document_owner_proposal_safety."""
     r = analyze_identity("remittance to jl@x.com", "f.pdf", "F", _idx())
-    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 2421   # exact email = very strong
+    assert r["proposed_entity_id"] == 2421
+    assert r["confidence"] == "MEDIUM"
 
 
-def test_phone_alone_is_high():
+def test_phone_alone_is_a_lead_not_an_owner():
+    """WAS test_phone_alone_is_high. This exact rule produced 160 of one person's 2,157 HIGH
+    proposals from an office number; the number was UNIQUE to that record, so per-value sharing
+    could not catch it. Requiring a name is what does."""
     r = analyze_identity("Call 440-382-6802 regarding your return", "f.pdf", "F", _idx())
-    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 2421
+    assert r["proposed_entity_id"] == 2421
+    assert r["confidence"] == "MEDIUM"
     assert any("phone ending 6802" in e for e in r["evidence"])
 
 
-def test_name_plus_address_zip_is_high():
+def test_name_plus_zip_is_not_high():
+    """WAS test_name_plus_address_zip_is_high. A ZIP is a town — production has one spanning 98
+    distinct people — so it corroborates place, not identity. A street match still does."""
     r = analyze_identity("Recipient MARY HARDY, mailing ZIP 23112", "f.pdf", "F", _idx())
-    assert r["confidence"] == "HIGH" and r["proposed_entity_id"] == 7430
-    assert any("address/ZIP matched" in e for e in r["evidence"])
+    assert r["proposed_entity_id"] == 7430
+    assert r["confidence"] == "MEDIUM"
+    assert any("ZIP matched" in e for e in r["evidence"])
 
 
 def test_exact_full_name_alone_is_medium():
@@ -231,7 +245,8 @@ def test_lowercase_pdf_name_plus_matching_address_is_high():
     idx["pid"][7430]["streets"] = {"316 tilden st"}
     r = analyze_identity(_PROD_1095A, "Form1095a_2021.pdf", "Adrianna Hardy", idx)
     assert (r["proposed_entity_id"], r["confidence"]) == (7430, "HIGH")
-    assert any("address/ZIP matched" in e for e in r["evidence"])
+    # A STREET match still corroborates a named candidate to HIGH; only the ZIP half was demoted.
+    assert any("street address matched" in e for e in r["evidence"])
 
 
 @pytest.mark.parametrize("form", ["MARY HARDY", "Mary Hardy", "mary hardy", "Mary A Hardy", "HARDY, MARY"])
@@ -272,6 +287,7 @@ _UNIQUE_NAME = "Zebulon Quibbleworth"   # alpha-only + very unlikely to exist in
 def _person_with(email, full_name=_UNIQUE_NAME):
     with engine.begin() as c:
         pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client",
                                                primary_email=email).returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     return pid
@@ -305,6 +321,7 @@ def test_extract_plaintext_and_propose_person_no_mutation(tmp_path):
     did = _doc(f, name="letter.txt")
     r = dop.propose_document_owner(did)
     assert r["eligible"] is True and r["extraction_method"] == "plaintext"
+    # Name AND a unique email: owner-positive identity, so this stays HIGH under the safety rules.
     assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
     assert _owner(did) == (None, None, None)             # READ-ONLY: nothing assigned
 
@@ -345,7 +362,8 @@ def test_already_owned_document_is_not_eligible():
 
 def _person_no_contact(full_name):
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+        pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client")
                         .returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     return pid
@@ -386,7 +404,8 @@ def test_content_matches_person_via_source_contact_email_outside_folder(tmp_path
     f.write_text(f"Please remit to {email} regarding the 2021 filing.\n")
     did = _doc(f, name="notice.txt")
     r = dop.propose_document_owner(did)
-    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
+    # Identifier without a name in the document is a lead (MEDIUM), not an owner.
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "MEDIUM")
     assert any("matched" in e for e in r["evidence"])
     assert _owner(did) == (None, None, None)                   # still no mutation
 
@@ -398,7 +417,8 @@ def test_content_matches_person_via_source_contact_phone(tmp_path):
     f.write_text("Contact number on file: 804-218-9034\n")
     did = _doc(f, name="call.txt")
     r = dop.propose_document_owner(did)
-    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "HIGH")
+    # Identifier without a name in the document is a lead (MEDIUM), not an owner.
+    assert (r["proposed_entity_type"], r["proposed_entity_id"], r["confidence"]) == ("person", pid, "MEDIUM")
 
 
 # --- candidate-quality guard (placeholder canonical people) ----------------------------------------
@@ -443,7 +463,9 @@ def test_placeholder_person_still_matchable_by_email(tmp_path):
     f.write_text(f"remit to {email}\n")
     did = _doc(f, name="d.txt")
     r = dop.propose_document_owner(did)
-    assert (r["proposed_entity_id"], r["confidence"]) == (pid, "HIGH")   # email is strong regardless
+    # Still matchable by identifier regardless of name quality — but a placeholder name cannot be
+    # corroborated, so it is a lead for review rather than a confident owner.
+    assert (r["proposed_entity_id"], r["confidence"]) == (pid, "MEDIUM")
 
 
 # --- OCR / image extraction fallback --------------------------------------------------------------

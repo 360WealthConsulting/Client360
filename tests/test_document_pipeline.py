@@ -27,7 +27,10 @@ from app.services import document_pipeline as dp
 from app.services.document_classification import classify_document
 from app.services.document_sources import resolve_or_create_canonical
 
-_TAG = uuid.uuid4().hex[:8]
+_TAG = uuid.uuid4().hex[:8].translate(str.maketrans("0123456789", "abcdefghij")).capitalize()
+# Alphabetic + capitalised so names built as f"First {_TAG}" are extractable by the content
+# name matcher. A hex tag ("Jennifer a1b2c3d4") is not a name the extractor can see, so these
+# fixtures used to reach HIGH on the email alone — the exact rule the safety patch removed.
 _DOCS: list = []
 _PEOPLE: list = []
 _SC: list = []
@@ -56,7 +59,8 @@ def _cleanup():
 
 def _person(full_name):
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+        pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client")
                         .returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     return pid
@@ -143,7 +147,9 @@ def test_persist_proposal_writes_facts_not_ownership(tmp_path):
     pid = _person(f"Thaddeus {_TAG}")
     _source_email(pid, email)
     f = tmp_path / "notice.txt"
-    f.write_text(f"Please contact {email} about your 2020 return\n")
+    # Names the owner as well as carrying their unique email: an identifier alone is a lead, not an
+    # owner, so a HIGH precondition must supply owner-positive identity.
+    f.write_text(f"Please contact Thaddeus {_TAG} at {email} about your 2020 return\n")
     did = _doc(path=f, name="notice.txt")
     with engine.begin() as c:
         r = dp.analyze_document(did, conn=c)
@@ -256,9 +262,10 @@ def test_ingestion_disabled_flag_skips_analysis(monkeypatch, tmp_path):
 
 def test_batch_totals_and_buckets_and_no_mutation(tmp_path):
     email = f"batch-{_TAG}@mail.com"
-    pid = _person(f"Batchy {_TAG}")
+    full_name = f"Batchy {_TAG}"
+    pid = _person(full_name)
     _source_email(pid, email)
-    hi = tmp_path / "hi.txt"; hi.write_text(f"remit to {email}\n")
+    hi = tmp_path / "hi.txt"; hi.write_text(f"Statement for {full_name}\nremit to {email}\n")
     no = tmp_path / "no.txt"; no.write_text("adobe creative cloud total 10\n")
     d_hi = _doc(path=hi, name="hi.txt")
     d_no = _doc(path=no, name="no.txt")
@@ -304,10 +311,11 @@ def test_analyze_uses_cached_ocr_text_and_routes_high(tmp_path):
 
 def test_batch_reports_ocr_stats(tmp_path):
     email = f"stat-{_TAG}@mail.com"
-    pid = _person(f"Statina {_TAG}")
+    full_name = f"Statina {_TAG}"
+    pid = _person(full_name)
     _source_email(pid, email)
     did = _doc(path=None, name="scan2.jpg")
-    _ocr_cache(did, f"remit to {email}")
+    _ocr_cache(did, f"Statement for {full_name}\nremit to {email}")
     out = dp.run_batch(include_details=True)
     assert set(out["stats"]) == {"ocr_extracted", "ocr_with_identity", "unsupported_remaining"}
     assert out["stats"]["ocr_extracted"] >= 1 and out["stats"]["ocr_with_identity"] >= 1

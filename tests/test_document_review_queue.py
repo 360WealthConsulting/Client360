@@ -18,7 +18,10 @@ from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services import document_review_queue as rq
 
-_TAG = uuid.uuid4().hex[:8]
+_TAG = uuid.uuid4().hex[:8].translate(str.maketrans("0123456789", "abcdefghij")).capitalize()
+# Alphabetic + capitalised so names built as f"First {_TAG}" are extractable by the content
+# name matcher. A hex tag ("Jennifer a1b2c3d4") is not a name the extractor can see, so these
+# fixtures used to reach HIGH on the email alone — the exact rule the safety patch removed.
 _A = _TAG.translate(str.maketrans("0123456789", "abcdefghij"))
 _DOCS: list = []
 _PEOPLE: list = []
@@ -46,7 +49,8 @@ def _cleanup():
 
 def _person(full_name, email=None):
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+        pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client")
                         .returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     if email:
@@ -154,8 +158,10 @@ def test_queue_read_only_no_auto_assignment(tmp_path):
 def test_high_clean_not_in_review_queue(tmp_path):
     # a clean HIGH (email match) belongs to the bulk-confirm set, not the review queue
     email = f"high-{_TAG}@mail.com"
-    _person(f"Highperson {_A}", email=email)
-    did = _doc(tmp_path, f"remit to {email}\n")
+    full_name = f"Highperson {_A}"
+    _person(full_name, email=email)
+    # Names the owner AND carries their unique email — the evidence a clean HIGH now requires.
+    did = _doc(tmp_path, f"Statement for {full_name}\nremit to {email}\n")
     q = rq.review_queue()
     assert _find(q["medium"], did) is None and _find(q["ambiguous"], did) is None
     assert _find(q["high_review"], did) is None
