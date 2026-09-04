@@ -44,7 +44,8 @@ def _make_docx(path, text):
 
 def _person(full_name, email=None):
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+        pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client")
                         .returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     if email:

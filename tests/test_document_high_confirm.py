@@ -12,7 +12,10 @@ from app.security.models import Principal
 from app.services import document_high_confirm as hc
 from app.services import document_high_validation as hv
 
-_TAG = uuid.uuid4().hex[:8]
+_TAG = uuid.uuid4().hex[:8].translate(str.maketrans("0123456789", "abcdefghij")).capitalize()
+# Alphabetic + capitalised so names built as f"First {_TAG}" are extractable by the content
+# name matcher. A hex tag ("Jennifer a1b2c3d4") is not a name the extractor can see, so these
+# fixtures used to reach HIGH on the email alone — the exact rule the safety patch removed.
 _A = _TAG.translate(str.maketrans("0123456789", "abcdefghij"))
 _DOCS: list = []
 _PEOPLE: list = []
@@ -39,7 +42,8 @@ def _cleanup():
 
 def _person(full_name, email=None):
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+        pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client")
                         .returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     if email:
@@ -75,9 +79,12 @@ def _owner(did):
 
 def _clean_high_doc(tmp_path, tag):
     email = f"{tag}-{_TAG}@mail.com"
-    pid = _person(f"{tag}person {_A}", email=email)
+    full_name = f"{tag}person {_A}"
+    pid = _person(full_name, email=email)
     f = tmp_path / f"{tag}.txt"
-    f.write_text(f"remit to {email}\n")
+    # The document must NAME the owner as well as carry their unique email. An identifier on its own
+    # is a lead, not an owner — see tests/test_document_owner_proposal_safety.py.
+    f.write_text(f"Statement for {full_name}\nremit to {email}\n")
     return _doc(f, name=f"{tag}.txt"), pid
 
 
@@ -96,7 +103,9 @@ def test_excluded_high_is_not_selectable_in_preview(tmp_path):
     e1, e2 = f"x-{_TAG}@mail.com", f"y-{_TAG}@mail.com"
     _person(f"Xperson {_A}", email=e1)
     _person(f"Yperson {_A}", email=e2)
-    f = tmp_path / "d.txt"; f.write_text(f"{e1} and {e2}\n")
+    # A legitimate HIGH for Xperson (name + their unique email), plus Yperson's email as the
+    # foreign strong identifier the contradiction guard must catch.
+    f = tmp_path / "d.txt"; f.write_text(f"Statement for Xperson {_A}  {e1} and {e2}\n")
     did = _doc(f, name="d.txt")
     data = hc.preview_high_confirm()
     assert did not in {r["document_id"] for r in data["eligible"]}

@@ -15,7 +15,10 @@ from app.db import (
 )
 from app.services import document_high_validation as hv
 
-_TAG = uuid.uuid4().hex[:8]
+_TAG = uuid.uuid4().hex[:8].translate(str.maketrans("0123456789", "abcdefghij")).capitalize()
+# Alphabetic + capitalised so names built as f"First {_TAG}" are extractable by the content
+# name matcher. A hex tag ("Jennifer a1b2c3d4") is not a name the extractor can see, so these
+# fixtures used to reach HIGH on the email alone — the exact rule the safety patch removed.
 _A = _TAG.translate(str.maketrans("0123456789", "abcdefghij"))   # alpha-only tag for use inside NAMES
 _DOCS: list = []
 _PEOPLE: list = []
@@ -44,7 +47,8 @@ def _cleanup():
 
 def _person(full_name, email=None):
     with engine.begin() as c:
-        pid = c.execute(people.insert().values(full_name=full_name, active=True)
+        pid = c.execute(people.insert().values(full_name=full_name, active=True,
+                                               contact_type="Client")
                         .returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     if email:
@@ -115,7 +119,9 @@ def test_foreign_strong_identifier_excludes(tmp_path):
     p1 = _person(f"Aperson {_A}", email=e1)
     _person(f"Bperson {_A}", email=e2)                  # a DIFFERENT person's email in the same doc
     f = tmp_path / "d.txt"
-    f.write_text(f"Primary {e1} and also {e2}\n")
+    # Names Aperson and carries their unique email -> a legitimate HIGH; e2 is then the foreign
+    # strong identifier the contradiction guard must catch.
+    f.write_text(f"Statement for Aperson {_A}  {e1} and also {e2}\n")
     did = _doc(f, name="d.txt")
     row = _row_for(hv.validate_high_proposals(), did)
     assert row and row["eligible"] is False
@@ -128,21 +134,32 @@ def test_folder_identity_conflict_excludes(tmp_path):
     _person(f"Maryperson {_A}", email=email)
     _person(f"Adrianna {_A}")                           # folder names a different canonical person
     f = tmp_path / "d.txt"
-    f.write_text(f"contact {email}\n")
+    f.write_text(f"Statement for Maryperson {_A}, contact {email}\n")
     did = _doc(f, name="d.txt", folder=f"Adrianna {_A}")
     row = _row_for(hv.validate_high_proposals(), did)
     assert row and row["eligible"] is False
     assert "folder_identity_conflict" in row["contradictions"]
 
 
-def test_placeholder_candidate_excludes(tmp_path):
+def test_placeholder_candidate_never_reaches_the_high_set(tmp_path):
+    """A placeholder canonical record can no longer become a HIGH proposal at all.
+
+    This used to assert that ``placeholder_candidate`` EXCLUDED such a row from bulk confirm — the
+    row reached HIGH on the email alone and the contradiction guard caught it afterwards. The owner
+    safety rules remove the first half: a placeholder name is deliberately absent from the name index
+    (``_placeholder_name``), and HIGH now requires the owner's name plus a unique identifier, so the
+    identifier-only route that produced these HIGH rows is gone.
+
+    The guard in ``document_high_validation`` is deliberately left in place as defence in depth; this
+    test now pins the stronger property that nothing has to reach it by this route.
+    """
     email = f"ph-{_TAG}@mail.com"
-    _person("A B", email=email)                           # placeholder name, HIGH via email
+    _person("A B", email=email)                           # placeholder canonical name
     f = tmp_path / "d.txt"
-    f.write_text(f"remit to {email}\n")
+    f.write_text(f"Statement for A B\nremit to {email}\n")
     did = _doc(f, name="d.txt")
-    row = _row_for(hv.validate_high_proposals(), did)
-    assert row and row["eligible"] is False and "placeholder_candidate" in row["contradictions"]
+    assert _row_for(hv.validate_high_proposals(), did) is None   # never enters the HIGH set
+    assert _owner(did) == (None, None, None)                     # and nothing was assigned
 
 
 def test_organization_person_conflict_excludes(tmp_path):
@@ -150,7 +167,7 @@ def test_organization_person_conflict_excludes(tmp_path):
     _person(f"Opperson {_A}", email=email)
     _org(f"Widgets {_A} LLC")
     f = tmp_path / "d.txt"
-    f.write_text(f"Invoice from Widgets {_A} LLC, remit to {email}\n")
+    f.write_text(f"Invoice from Widgets {_A} LLC for Opperson {_A}, remit to {email}\n")
     did = _doc(f, name="d.txt")
     row = _row_for(hv.validate_high_proposals(), did)
     assert row and row["eligible"] is False and "organization_person_conflict" in row["contradictions"]
@@ -162,7 +179,7 @@ def test_report_totals_and_native_ocr_split(tmp_path):
     email = f"split-{_TAG}@mail.com"
     _person(f"Splitperson {_A}", email=email)
     f = tmp_path / "d.txt"
-    f.write_text(f"remit to {email}\n")
+    f.write_text(f"Statement for Splitperson {_A}\nremit to {email}\n")
     did = _doc(f, name="d.txt")
     result = hv.validate_high_proposals()
     assert result["high_total"] == result["eligible"] + result["excluded"]

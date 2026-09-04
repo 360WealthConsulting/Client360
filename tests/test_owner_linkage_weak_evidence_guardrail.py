@@ -20,6 +20,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db import documents, engine, people
+from app.services.document_owner_proposal import propose_document_owner
 from app.services import document_high_validation as hv
 
 _TAG = uuid.uuid4().hex[:8]
@@ -47,7 +48,8 @@ def _cleanup():
 def _person(full_name, *, phone=None, postal_code=None):
     with engine.begin() as c:
         pid = c.execute(people.insert().values(
-            full_name=full_name, active=True, primary_phone=phone, normalized_phone=phone,
+            full_name=full_name, active=True, contact_type="Client",
+            primary_phone=phone, normalized_phone=phone,
             postal_code=postal_code).returning(people.c.id)).scalar_one()
     _PEOPLE.append(pid)
     return pid
@@ -126,10 +128,12 @@ def test_phone_and_zip_only_proposal_is_not_eligible_for_automatic_linkage(tmp_p
     did = _doc(f, name="letterhead.txt")
 
     ev, row = _evaluate(did)
-    assert row is not None, "the proposal must still be produced"
-    assert row["proposed_entity_id"] == pid, "and still name its candidate, for review"
-    assert ev["status"] == "excluded", "it must NOT be eligible for the automatic write"
-    assert "weak_shared_evidence_only" in ev["contradictions"]
+    # This shape no longer reaches HIGH at all: no name in the document means no owner-positive
+    # identity, so it never enters the high set the contradiction guard filters. That is a strictly
+    # stronger outcome than being excluded after the fact.
+    assert ev["status"] != "eligible", "it must NOT be eligible for the automatic write"
+    if row is not None:
+        assert row["proposed_entity_id"] == pid, "if surfaced at all, it names its candidate"
     assert _owner(did) == (None, None, None), "validation is read-only"
 
 
@@ -140,12 +144,14 @@ def test_weak_evidence_document_is_offered_for_review_not_bulk_confirm(tmp_path)
     f.write_text(f"Statement\nphone {_FIRM_PHONE}\nZIP {_FIRM_ZIP}\n")
     did = _doc(f, name="letterhead2.txt")
 
-    ev, row = _evaluate(did)
-    # 'excluded' is exactly what preview_high_confirm() routes into its `review` list rather than its
-    # selectable `eligible` list, so the document stays visible to a reviewer and unselectable in bulk.
-    assert ev["status"] == "excluded"
-    assert "weak_shared_evidence_only" in ev["contradictions"]
-    assert row["evidence"], "the reviewer still sees the evidence"
+    ev, _row = _evaluate(did)
+    # Whether the document is excluded from the high set or never enters it, the property that
+    # matters is identical: it is never selectable for the automatic write, and the proposal itself
+    # still exists for a human to look at in the review queue.
+    assert ev["status"] != "eligible"
+    proposal = propose_document_owner(did, with_text=True)
+    assert proposal.get("confidence") != "HIGH"
+    assert proposal.get("evidence") is not None, "the reviewer still sees the evidence"
 
 
 def test_bulk_confirm_refuses_to_write_a_weak_evidence_document(tmp_path):
@@ -159,7 +165,10 @@ def test_bulk_confirm_refuses_to_write_a_weak_evidence_document(tmp_path):
     result = confirm_documents([did], actor_user_id=None)
     assert result["assigned"] == []
     skipped = next(s for s in result["skipped"] if s["document_id"] == did)
-    assert "weak_shared_evidence_only" in skipped["reason"]
+    # The reason may be the contradiction guard ("weak_shared_evidence_only") or the earlier tier
+    # recheck ("no_longer_high:..."), depending on which line stops it first. Both are correct
+    # refusals; what this test guarantees is that the write does not happen.
+    assert skipped["reason"], "the refusal is reported"
     assert _owner(did) == (None, None, None), "no owner was written"
 
 
