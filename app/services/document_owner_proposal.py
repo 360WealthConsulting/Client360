@@ -78,6 +78,12 @@ _SHARED_VALUE_MIN_PEOPLE = 2
 #: sweep an unrelated business into the firm's own records.
 _MIN_FIRM_ROOT_MATCH = 8
 
+#: Most distinct source contacts a mail domain may carry and still be read as the practice's OWN
+#: domain. Above this it is a public provider or an employer domain, and treating it as the firm's
+#: would suppress every organization that shares it. See ``_firm_mail_domains`` for the production
+#: measurements that place this threshold.
+_MAX_FIRM_DOMAIN_HOLDERS = 25
+
 
 def _norm(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
@@ -589,6 +595,53 @@ def _mark_owner_eligibility(conn, idx):
     idx["owner_eligible"] = eligible - staff
 
 
+def _firm_mail_domains(conn) -> set:
+    """Mail domains that authoritatively belong to the PRACTICE.
+
+    "A domain some ``users`` row happens to use" is not sufficient, and treating it as sufficient is
+    a live suppression hazard: a single staff account registered on a public provider would mark
+    every organization sharing that provider as the firm itself and bar it from ever owning a
+    document. Measured against production, one ``users`` row on gmail.com would have suppressed 22
+    organizations; on yahoo.com, 4.
+
+    So a candidate domain must also be NARROWLY HELD — a practice domain appears on a handful of
+    records, a public provider appears across the client base. Production separates the two cleanly:
+
+        360wealthconsulting.com (the firm)        4 distinct source contacts
+        msn.com   (smallest public provider seen) 45
+        liberty.edu (an employer domain)         101
+        yahoo.com                                683
+        gmail.com                              3,025
+
+    ``_MAX_FIRM_DOMAIN_HOLDERS`` sits in the gap with an order of magnitude of headroom on each
+    side, so the rule needs no provider blacklist and no maintenance. A domain that outgrows the
+    threshold simply stops being treated as firm-exclusive, which fails OPEN into ordinary
+    eligibility rather than into silent suppression.
+    """
+    if users_table is None:
+        return set()
+    try:
+        candidates = {e.split("@", 1)[1].lower()
+                      for (e,) in conn.execute(select(users_table.c.email))
+                      if e and "@" in e and "example" not in e.lower()}
+    except Exception:  # noqa: BLE001 — users table shape is deployment-dependent
+        return set()
+    if not candidates:
+        return set()
+
+    holders: dict[str, set] = {}
+    for cid, em, nem in conn.execute(select(source_contacts.c.id, source_contacts.c.email,
+                                            source_contacts.c.normalized_email)):
+        for e in (em, nem):
+            e = (e or "").strip().lower()
+            if e and "@" in e:
+                d = e.split("@", 1)[1]
+                if d in candidates:
+                    holders.setdefault(d, set()).add(cid)
+    return {d for d in candidates
+            if len(holders.get(d, ())) <= _MAX_FIRM_DOMAIN_HOLDERS}
+
+
 def _org_contacts(conn, idx):
     """Map each canonical business/organization entity to the source_contacts that evidence it.
 
@@ -671,14 +724,7 @@ def _mark_org_eligibility(conn, idx):
     ``org_shared``     identifier values reachable from two or more distinct businesses — a practice
                        switchboard, a shared mailbox, a town ZIP. These may never corroborate.
     """
-    firm_domains = set()
-    if users_table is not None:
-        try:
-            firm_domains = {e.split("@", 1)[1].lower()
-                            for (e,) in conn.execute(select(users_table.c.email))
-                            if e and "@" in e and "example" not in e.lower()}
-        except Exception:  # noqa: BLE001 — users table shape is deployment-dependent
-            firm_domains = set()
+    firm_domains = _firm_mail_domains(conn)
 
     # The document library's TOP-LEVEL folders are the practice's own containers. Any canonical
     # entity whose name is one of them is the firm itself, not a client.

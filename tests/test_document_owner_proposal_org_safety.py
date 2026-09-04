@@ -222,6 +222,48 @@ def test_matching_client_folder_anchors():
         "Acme Fuel Mart") is True
 
 
+# ------------------------------------------------------- firm mail-domain breadth guard
+
+class _FakeConn:
+    """Minimal stand-in: yields the users emails, then the source-contact emails."""
+
+    def __init__(self, user_emails, contact_emails):
+        self._users = [(e,) for e in user_emails]
+        self._contacts = [(i, e, None) for i, e in enumerate(contact_emails)]
+        self._n = 0
+
+    def execute(self, _stmt):
+        self._n += 1
+        return self._users if self._n == 1 else self._contacts
+
+
+def test_a_narrowly_held_domain_is_a_firm_domain():
+    from app.services.document_owner_proposal import _firm_mail_domains
+    conn = _FakeConn(["partner@hilltoptax.test"],
+                     [f"person{i}@hilltoptax.test" for i in range(4)])
+    assert _firm_mail_domains(conn) == {"hilltoptax.test"}
+
+
+def test_a_public_provider_is_never_a_firm_domain():
+    """THE DEFECT. One staff account on a public provider must not brand every organization that
+    shares that provider as the firm itself — in production that would have suppressed 22
+    organizations off a single gmail.com row."""
+    from app.services.document_owner_proposal import (
+        _MAX_FIRM_DOMAIN_HOLDERS,
+        _firm_mail_domains,
+    )
+    conn = _FakeConn(["admin@bigmail.test"],
+                     [f"client{i}@bigmail.test" for i in range(_MAX_FIRM_DOMAIN_HOLDERS + 1)])
+    assert _firm_mail_domains(conn) == set()
+
+
+def test_domain_breadth_failure_is_open_not_suppressing():
+    """Losing firm-domain status must fall back to ordinary eligibility, never to suppression."""
+    from app.services.document_owner_proposal import _firm_mail_domains
+    conn = _FakeConn([], [])
+    assert _firm_mail_domains(conn) == set()
+
+
 def test_a_different_client_folder_does_not_anchor():
     assert _org_folder_anchor(
         "/drives/x/root:/Firm, LLC/Clients/Bookkeeping/Watkins Market/2021",
