@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import and_, or_, select
 
 from app.db import document_relationships, documents, engine, people
-from app.services.document_platform.lifecycle import active_documents_clause
+from app.services.document_platform.lifecycle import active_unarchived_clause
 
 ENTITY_TYPES = frozenset({"person", "household", "organization", "opportunity", "campaign",
                           "referral_source", "annual_review", "business_owner_plan",
@@ -67,9 +67,10 @@ def documents_for_entity(principal, entity_type: str, entity_id: int, *, limit=1
     own anchor columns), excluding soft-deleted. Consumers get visibility, never ownership. The
     caller has already established the entity is in scope.
 
-    "Soft-deleted" is ``lifecycle.active_documents_clause`` — BOTH delete markers. This used to
-    filter on ``status`` alone, which let a half-retired merge row (``deleted_at`` stamped, status
-    untouched) surface in every consumer that reads through here."""
+    Excluded rows are ``lifecycle.active_unarchived_clause`` — BOTH delete markers and BOTH archive
+    markers. This used to filter on ``status`` alone, which let a half-retired merge row
+    (``deleted_at`` stamped, status untouched) surface in every consumer that reads through here;
+    it then filtered soft-delete only, which let archived rows do the same."""
     with engine.connect() as c:
         related_ids = set(c.scalars(select(document_relationships.c.document_id).where(
             document_relationships.c.entity_type == entity_type,
@@ -87,8 +88,9 @@ def documents_for_entity(principal, entity_type: str, entity_id: int, *, limit=1
         # Soft-delete is marked by BOTH ``status='deleted'`` and ``deleted_at`` (document_platform
         # .service.soft_delete writes them together; restore clears both). Checking only ``status``
         # leaks rows where one marker was written without the other, so both are required here.
+        # Archived rows are excluded on the same terms — see lifecycle.active_unarchived_clause.
         rows = c.execute(select(documents).where(and_(
-            or_(*conds), active_documents_clause())).order_by(documents.c.id.desc())
+            or_(*conds), active_unarchived_clause())).order_by(documents.c.id.desc())
             .limit(limit)).mappings().all()
     return [dict(r) for r in rows]
 
@@ -140,7 +142,7 @@ def client_documents(principal, entity_type: str, entity_id: int, *, limit=500) 
             return []
 
         rows = c.execute(select(documents).where(and_(
-            or_(*anchor_conds), active_documents_clause()))
+            or_(*anchor_conds), active_unarchived_clause()))
             .order_by(documents.c.id.desc()).limit(limit)).mappings().all()
 
     return [_tag_anchor(dict(r), person_ids, household_ids) for r in rows]
@@ -200,5 +202,5 @@ def client_document(principal, entity_type: str, entity_id: int, document_id: in
             return None
         row = c.execute(select(documents).where(and_(
             documents.c.id == document_id, or_(*conds),
-            active_documents_clause()))).mappings().first()
+            active_unarchived_clause()))).mappings().first()
     return _tag_anchor(dict(row), person_ids, household_ids) if row else None

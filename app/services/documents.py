@@ -7,7 +7,10 @@ from typing import BinaryIO
 from sqlalchemy import and_, func, insert, or_, select, update
 
 from app.db import documents, engine, people
-from app.services.document_platform.lifecycle import active_documents_clause
+from app.services.document_platform.lifecycle import (
+    active_documents_clause,
+    active_unarchived_clause,
+)
 
 # Reuse the SINGLE vault validation implementation (no second security implementation) so an
 # untrusted client upload landing in the documents table gets the same controls as the vault path.
@@ -196,7 +199,9 @@ def _queue_image_normalization(document_id: int, original_name: str, content_typ
 #: The canonical delete semantics live in ``document_platform.service``: :func:`soft_delete` sets
 #: ``status='deleted'`` AND stamps ``deleted_at``; :func:`restore` clears both. ``archived`` is a
 #: SEPARATE, older lifecycle flag (a document can be archived without being deleted), so it stays an
-#: independent filter rather than being folded into this one.
+#: independent filter rather than being folded into this one — a single-document read
+#: (:func:`get_document`) must still deliver an archived document, which is why only the LIST
+#: clause below suppresses them, through ``lifecycle.active_unarchived_clause``.
 #:
 #: Both columns are checked, not just ``status``. They are written together by the service, but a
 #: document that carries either marker must never render on a client surface, so the stricter
@@ -231,7 +236,7 @@ def person_documents_clause(connection, person_id: int):
     scope = documents.c.person_id == person_id
     if household_id is not None:
         scope = or_(scope, documents.c.household_id == household_id)
-    return and_(scope, documents.c.archived.is_(False), _not_deleted())
+    return and_(scope, active_unarchived_clause())
 
 
 def count_person_documents(person_id: int, connection=None) -> int:

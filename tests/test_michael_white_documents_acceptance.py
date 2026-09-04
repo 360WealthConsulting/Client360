@@ -325,3 +325,95 @@ def test_a_resolved_version_family_is_not_also_flagged_for_review():
     by_id = {d["id"]: d for d in docs}
     assert by_id[newer]["needs_version_review"] is False
     assert by_id[older]["is_current_version"] is False
+
+
+# --- E. containment, filing location and source access -------------------------------------------
+#
+# The sections above cover completeness, naming, findability and version presentation. These close
+# the remaining acceptance criteria for this archetype: the documents belong to this client and to
+# nobody else, they say WHERE they are filed, and staff can actually get to the underlying file.
+
+
+def _foreign_client():
+    """A second, unrelated client filed in their own SharePoint folder.
+
+    Michael White's file is the largest and most heavily cross-linked in the deployment, so it is
+    also where a widened ownership read would show up first. Leakage is only visible from the side
+    that GAINS the document, so both directions are checked below.
+    """
+    hid = _household(f"{_TAG} Ferraro Household")
+    person = _person("Lucia", "Ferraro", household_id=hid)
+    site_folder = ("360%20Tax%20Solutions,%20LLC/Clients/Tax%20Preparation/Individual/"
+                   "FERRARO,%20LUCIA")
+    with engine.begin() as c:
+        did = c.execute(documents.insert().values(
+            original_name="Ferraro 2021 Return.pdf",
+            stored_name=f"ferraro-{_TAG}-{uuid.uuid4().hex}",
+            storage_path="/x/ferraro", storage_provider="Client360 Local", size_bytes=100,
+            sha256=uuid.uuid4().hex * 2, household_id=hid, status="active", archived=False,
+            category="tax_document", review_status="none", current_version=1,
+            tags={"source_system": "SharePoint",
+                  "web_url": f"{_SITE}/{site_folder}/2021/Ferraro%202021%20Return.pdf"},
+        ).returning(documents.c.id)).scalar_one()
+    return hid, person, did
+
+
+def test_no_other_clients_documents_reach_michael_white():
+    _hid, michael, _debra, _ids = _white_household()
+    _fhid, _fperson, foreign_doc = _foreign_client()
+    assert foreign_doc not in {d["id"] for d in get_person_documents(michael)}
+    docs = get_workspace(_principal(), person_id=michael)["sections"]["documents"]["documents"]
+    assert foreign_doc not in {d["id"] for d in docs}
+
+
+def test_the_white_household_file_does_not_reach_another_client():
+    _hid, _michael, _debra, ids = _white_household()
+    _fhid, foreign_person, _fdoc = _foreign_client()
+    assert not (set(ids.values()) & {d["id"] for d in get_person_documents(foreign_person)})
+
+
+def test_every_visible_row_says_where_it_is_filed():
+    """Correct owner, stated honestly. Every one of these documents is anchored at the HOUSEHOLD, so
+    every row must say "household" — not imply that the member whose page you opened owns it."""
+    _hid, michael, _debra, _ids = _white_household()
+    screen = get_workspace(_principal(), person_id=michael)["sections"]["documents"]["screen"]
+    kinds = {r["related_to"]["kind"] for r in screen["rows"]}
+    assert kinds == {"household"}
+    assert all(r["related_to"]["kind"] != "none" for r in screen["rows"])
+
+
+def test_every_document_is_filed_under_the_white_client_folder():
+    """Filing-tree placement, read from SharePoint's own hierarchy (the captured ``web_url``) rather
+    than from a path this application reconstructed."""
+    _hid, michael, _debra, _ids = _white_household()
+    docs = get_workspace(_principal(), person_id=michael)["sections"]["documents"]["documents"]
+    for row in docs:
+        assert "WHITE, MICHAEL AND DEBRA" in (row["source_folder"] or "")
+        assert "FERRARO" not in (row["source_folder"] or "")
+
+
+def test_every_row_offers_a_download_path_that_points_at_itself():
+    _hid, michael, _debra, _ids = _white_household()
+    docs = get_workspace(_principal(), person_id=michael)["sections"]["documents"]["documents"]
+    for row in docs:
+        assert row["download_url"] == f"/documents/{row['id']}/download"
+
+
+def test_a_synced_document_keeps_a_resolvable_link_back_to_sharepoint():
+    """Source access: the row keeps the source system's own URI and item id, so staff can open the
+    original in SharePoint instead of only the stored copy."""
+    hid = _household()
+    michael = _person("Michael", "White", household_id=hid)
+    did = _doc("2021 Taxes In-Take.xlsx", household_id=hid, folder_year=2021,
+               item_id="01ATBOW3NVULPKQSTT4JE3TLRZBAOV25UY", sha="a" * 64)
+    docs = get_workspace(_principal(), person_id=michael)["sections"]["documents"]["documents"]
+    row = next(d for d in docs if d["id"] == did)
+    assert row["source_systems"] == ["SharePoint"]
+    assert row["sources"], "a synced document must keep its source reference"
+    source = row["sources"][0]
+    assert source["source_uri"].startswith("https://")
+    assert source["source_external_id"] == "01ATBOW3NVULPKQSTT4JE3TLRZBAOV25UY"
+    assert source["available"] is True
+    # ``source_path`` keeps the source system's own spelling of the path — percent-encoded, exactly
+    # as SharePoint reports it. The decoded, human-readable form is what ``source_folder`` carries.
+    assert _CLIENT_FOLDER in source["source_path"]
