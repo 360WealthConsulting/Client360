@@ -75,9 +75,10 @@ def _counts():
 def test_classify_dispositions():
     people_key, people_tok = build_name_index([
         (1, "John Smith", None, None), (2, "John Smith", None, None),   # duplicate name-key
-        (3, "Abigail R Dargis", None, None),                            # alternate representation
+        (3, "Abigail R Dargis", None, None),                            # middle INITIAL
         (4, "Andrew Tribbett", None, None),                             # a joint member
         (5, "Unique Personx", None, None),                              # unique exact
+        (6, "Marcus Aurelius Kwan", None, None),                        # middle NAME, not an initial
     ])
     sc_key, sc_tok = build_name_index([(10, "Solo Sourceonly", None, None), (11, "VAL6, INC", None, None)])
 
@@ -87,7 +88,20 @@ def test_classify_dispositions():
     assert cl("John Smith") == "canonical_ambiguous"
     assert cl("Unique Personx") == "canonical_unique_resolver_gap"
     assert cl("Solo Sourceonly") == "source_exists_not_promoted"
-    assert cl("Abigail Dargis") == "canonical_alternate_name"
+
+    # A single-letter middle initial is NOT identity, so "Abigail R Dargis" and the folder
+    # "Abigail Dargis" key identically and this is an EXACT unique canonical match. It used to
+    # expect ``canonical_alternate_name``, which was correct only while ``_name_key`` kept the
+    # initial and the two keys therefore differed; the anchoring fix drops single-letter tokens
+    # deliberately (SharePoint files "CASHMAN, KIMBERLY S" where the CRM holds "Cashman, Kimberly").
+    assert cl("Abigail Dargis") == "canonical_unique_resolver_gap"
+
+    # The boundary of that rule, and the ``canonical_alternate_name`` branch the line above used to
+    # cover: a MULTI-LETTER middle name is substantive and is never dropped, so "Marcus Kwan" does
+    # not key to "Marcus Aurelius Kwan" and can only reach the token-overlap fallback.
+    assert cl("Marcus Aurelius Kwan") == "canonical_unique_resolver_gap"
+    assert cl("Marcus Kwan") == "canonical_alternate_name"
+
     assert cl("Andrew and Amanda Tribbett") == "joint_partial_uncanonicalized"
     assert cl("Bob and Alice Zzznone") == "joint_absent"
     assert cl("Zznobody Uniquename") == "truly_absent"
