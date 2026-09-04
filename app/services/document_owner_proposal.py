@@ -73,6 +73,11 @@ _INST_KW = ("university", "college", "bank", "credit union", "insurance", "mortg
 #: corroborate. Anything at or above this many distinct people makes a value non-identifying.
 _SHARED_VALUE_MIN_PEOPLE = 2
 
+#: Minimum normalized-name length before a canonical entity name may be matched INSIDE a SharePoint
+#: library root. Equality is always allowed; containment needs this much name so a short token cannot
+#: sweep an unrelated business into the firm's own records.
+_MIN_FIRM_ROOT_MATCH = 8
+
 
 def _norm(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
@@ -459,6 +464,7 @@ def build_match_indexes(conn):
             idx["inst"].add(_norm(e["name"]))
         else:
             idx["biz"][_norm(e["name"])] = (e["id"], e["name"])
+    _mark_org_eligibility(conn, idx)
     return idx
 
 
@@ -581,6 +587,207 @@ def _mark_owner_eligibility(conn, idx):
 
     idx["staff"] = staff
     idx["owner_eligible"] = eligible - staff
+
+
+def _org_contacts(conn, idx):
+    """Map each canonical business/organization entity to the source_contacts that evidence it.
+
+    Two links, because production carries both shapes:
+
+    * ``relationship_entities.details.source_contact_ids`` — written by the canonical repair /
+      population runs for entities built from structured provenance;
+    * an exact normalized NAME match against ``source_contacts.full_name`` — the fallback for
+      entities created by later remediation passes, which recorded no contact ids at all.
+
+    The name fallback is deliberately included even though it also reaches the FIRM's own entities.
+    Suppressing the firm is the job of ``_mark_org_eligibility``'s firm detection, not of hiding the
+    firm's evidence: an entity whose eligibility we cannot see is an entity we cannot reason about.
+    """
+    by_name: dict[str, list] = {}
+    rows = {}
+    for r in conn.execute(select(source_contacts.c.id, source_contacts.c.source_system,
+                                 source_contacts.c.full_name, source_contacts.c.email,
+                                 source_contacts.c.normalized_email, source_contacts.c.phone,
+                                 source_contacts.c.normalized_phone,
+                                 source_contacts.c.postal_code,
+                                 source_contacts.c.raw_data)).mappings():
+        rows[r["id"]] = r
+        n = _norm(r["full_name"])
+        if n:
+            by_name.setdefault(n, []).append(r)
+
+    out: dict[int, list] = {}
+    for e in conn.execute(select(relationship_entities.c.id, relationship_entities.c.name,
+                                 relationship_entities.c.details)).mappings():
+        details = e["details"]
+        if isinstance(details, str):
+            try:
+                details = json.loads(details)
+            except (ValueError, TypeError):
+                details = {}
+        details = details if isinstance(details, dict) else {}
+        found = []
+        for cid in (details.get("source_contact_ids") or []):
+            try:
+                r = rows.get(int(cid))
+            except (TypeError, ValueError):
+                r = None
+            if r is not None:
+                found.append(r)
+        if not found:
+            found = list(by_name.get(_norm(e["name"]), ()))
+        out[e["id"]] = found
+    return out
+
+
+def _mark_org_eligibility(conn, idx):
+    """Which canonical ORGANIZATIONS may own a document, and which are the firm's own records.
+
+    This is the organization counterpart of :func:`_mark_owner_eligibility`, built to the same
+    fail-closed standard. Before it existed the organization branch of :func:`analyze_identity`
+    emitted HIGH on nothing more than "this business name appears in the text, and SOME address or
+    ZIP appears somewhere in the text" — no eligibility test, no name-uniqueness test, and no
+    requirement that the corroborating identifier belong to the proposed business.
+
+    The production audit that motivated this found the accounting firm's own entity attracting 544
+    client documents across 108 DIFFERENT client folders: 1099s and payroll summaries for the firm's
+    clients, matched because the firm's legal name and address sit on the letterhead as PREPARER.
+    That is the same letterhead failure the person path already fixed for the office phone.
+
+    Four index products, all derived from deployed data — no entity id, firm name or brand list
+    appears anywhere in this module:
+
+    ``org_eligible``   the business is ON a filed return as ``taxpayer``/``spouse`` (Drake), or a CRM
+                       record marks it ``contact_type`` "Client*". Existence in
+                       ``relationship_entities`` proves only that somebody recorded the name.
+    ``firm_entities``  the firm's OWN records. Detected two ways, both authoritative: the entity's
+                       contact email sits on a domain that a ``users`` row also uses (the firm's own
+                       mail domain), or the entity's name matches a SharePoint LIBRARY ROOT — the
+                       top-level folders of the document library are the practice's own, never a
+                       client's. A firm entity is never owner-eligible, even though the firm does
+                       file its own returns and therefore does carry taxpayer-role evidence.
+    ``org_ident``      the identifiers that actually BELONG to each business, so corroboration can be
+                       checked against the proposed entity instead of against the whole document.
+    ``org_shared``     identifier values reachable from two or more distinct businesses — a practice
+                       switchboard, a shared mailbox, a town ZIP. These may never corroborate.
+    """
+    firm_domains = set()
+    if users_table is not None:
+        try:
+            firm_domains = {e.split("@", 1)[1].lower()
+                            for (e,) in conn.execute(select(users_table.c.email))
+                            if e and "@" in e and "example" not in e.lower()}
+        except Exception:  # noqa: BLE001 — users table shape is deployment-dependent
+            firm_domains = set()
+
+    # The document library's TOP-LEVEL folders are the practice's own containers. Any canonical
+    # entity whose name is one of them is the firm itself, not a client.
+    firm_roots = set()
+    try:
+        for (p,) in conn.execute(
+                select(document_sources.c.source_path)
+                .where(document_sources.c.source_path.like("%root:/%")).distinct()):
+            seg = str(p).split("root:/", 1)[1].split("/")[0]
+            n = _norm(seg)
+            if n:
+                firm_roots.add(n)
+                # "360 tax solutions llc" as a root must also catch the entity "360 Tax Solutions".
+                firm_roots.add(re.sub(r"\b(llc|inc|corp|corporation|pc|pllc|lp|llp|co)\b", "",
+                                      n).strip())
+    except Exception:  # noqa: BLE001 — provenance shape is deployment-dependent
+        firm_roots = set()
+
+    contacts = _org_contacts(conn, idx)
+    eligible, firm, ident = set(), set(), {}
+    phone_owners: dict[str, set] = {}
+    email_owners: dict[str, set] = {}
+    zip_owners: dict[str, set] = {}
+
+    for e in conn.execute(select(relationship_entities.c.id, relationship_entities.c.name,
+                                 relationship_entities.c.entity_type,
+                                 relationship_entities.c.active)).mappings():
+        eid, nm = e["id"], e["name"]
+        norm_name = _norm(nm)
+        phones, emails, zips = set(), set(), set()
+        is_eligible = False
+        for r in contacts.get(eid, ()):
+            raw = r["raw_data"]
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except (ValueError, TypeError):
+                    raw = {}
+            raw = raw if isinstance(raw, dict) else {}
+            role = str(raw.get("role") or "").strip().lower()
+            ctype = str(raw.get("contact_type") or "").strip().lower()
+            if role in ("taxpayer", "spouse") or ctype.startswith("client"):
+                is_eligible = True
+            for ph in (_phone10(r["phone"]), _phone10(r["normalized_phone"])):
+                if ph:
+                    phones.add(ph)
+            for em in (r["email"], r["normalized_email"]):
+                em = (em or "").strip().lower()
+                if em and "@" in em:
+                    emails.add(em)
+                    if em.split("@", 1)[1] in firm_domains:
+                        firm.add(eid)
+            z = _zip5(r["postal_code"])
+            if z:
+                zips.add(z)
+
+        # A short token would match a root by accident ("360" inside "360 tax solutions llc"), so
+        # containment needs enough name to be meaningful. Equality always counts.
+        if norm_name and (norm_name in firm_roots
+                          or (len(norm_name) >= _MIN_FIRM_ROOT_MATCH
+                              and any(root and norm_name in root for root in firm_roots if root))):
+            firm.add(eid)
+        if is_eligible and e["active"] is not False:
+            eligible.add(eid)
+        ident[eid] = {"phones": phones, "emails": emails, "zips": zips}
+        for ph in phones:
+            phone_owners.setdefault(ph, set()).add(eid)
+        for em in emails:
+            email_owners.setdefault(em, set()).add(eid)
+        for z in zips:
+            zip_owners.setdefault(z, set()).add(eid)
+
+    idx["firm_entities"] = firm
+    idx["org_eligible"] = eligible - firm
+    idx["org_ident"] = ident
+    idx["org_shared"] = {
+        "phone": {v for v, o in phone_owners.items() if len(o) >= _SHARED_VALUE_MIN_PEOPLE}
+                 | {p for p in (idx.get("shared") or {}).get("phone", set())},
+        "email": {v for v, o in email_owners.items() if len(o) >= _SHARED_VALUE_MIN_PEOPLE}
+                 | {p for p in (idx.get("shared") or {}).get("email", set())},
+        # A ZIP is a town. It is never identifying for an organization either.
+        "zip": set(zip_owners),
+    }
+    counts: dict[str, set] = {}
+    for e_norm, (bid, _bname) in idx["biz"].items():
+        counts.setdefault(e_norm, set()).add(bid)
+    idx["org_name_counts"] = {k: len(v) for k, v in counts.items()}
+
+
+def _org_folder_anchor(folder, name) -> bool:
+    """Does the SOURCE FOLDER structurally anchor this document to ``name``?
+
+    Only the CLIENT folder counts, resolved by the importer's own ``client_folder_hint``. That helper
+    already fails closed above the client level, so a firm root, a service-line folder, a status
+    folder, a bare year and a numeric id all yield no anchor and therefore no boost. A generic
+    drop-box segment ("WEB UPLOAD", "Scans") survives as a folder NAME but cannot match a business
+    legal name, so it grants nothing here either.
+    """
+    if not folder or not name:
+        return False
+    try:
+        from app.connectors.microsoft365.sharepoint_content import client_folder_hint
+    except Exception:  # noqa: BLE001 — connector optional in some deployments
+        return False
+    hint = client_folder_hint(str(folder))
+    if not hint:
+        return False
+    a, b = _norm(hint), _norm(name)
+    return bool(a) and bool(b) and (a == b or a.startswith(b) or b.startswith(a))
 
 
 def _phrase_in(phrase: str, normalized: str) -> bool:
@@ -887,15 +1094,70 @@ def analyze_identity(text, filename, folder, idx, *, tax_document=False):
     # return, so fail closed until role-aware entity parsing identifies the
     # taxpayer/entity block specifically.
     if not tax_document:
-        for nm in full_names:
-            if nm in idx["biz"]:
-                bid, bname = idx["biz"][nm]
-                conf = "HIGH" if (doc_zips or doc_streets) else "MEDIUM"
-                result.update({"proposed_entity_type": "organization", "proposed_entity_id": bid,
-                               "proposed_entity_name": bname, "confidence": conf})
-                result["evidence"] = [f"✓ business legal name '{bname}' found in document"
-                                      + (" + address" if conf == "HIGH" else "")] + result["evidence"]
-                return result
+        matched = [nm for nm in full_names if nm in idx["biz"]]
+        # Several distinct businesses named in one document is a judgement call, never an automatic
+        # proposal — the same rule the person path applies to a tied name.
+        if len({idx["biz"][nm][0] for nm in matched}) > 1:
+            names = ", ".join(sorted(idx["biz"][nm][1] for nm in matched)[:4])
+            result.update({"confidence": "AMBIGUOUS"})
+            result["evidence"] = [f"several canonical businesses named in this document: {names}"] \
+                + result["evidence"]
+            return result
+        for nm in matched:
+            bid, bname = idx["biz"][nm]
+            org_ident = (idx.get("org_ident") or {}).get(bid) or {}
+            org_shared = idx.get("org_shared") or {}
+            reasons, blocks = [f"✓ business legal name '{bname}' found in document"], []
+
+            # (1) the name must identify ONE business.
+            if (idx.get("org_name_counts") or {}).get(nm, 1) > 1:
+                blocks.append("the name is carried by more than one canonical business")
+
+            # (2) the firm's own records never own a client's paperwork. The firm appears on
+            #     prepared documents as PREPARER; that is provenance, not ownership.
+            if bid in (idx.get("firm_entities") or ()):
+                blocks.append("this is the firm's own entity (preparer/self), not a client owner")
+
+            # (3) positive owner eligibility, exactly as the person path requires.
+            if bid not in (idx.get("org_eligible") or ()):
+                blocks.append("no authoritative client evidence (no taxpayer/spouse return role, "
+                              "no CRM Client contact_type)")
+
+            # (4) corroboration must BELONG to this business and must not be a shared value.
+            #     A ZIP or a street lifted from anywhere in the document proves nothing about which
+            #     business owns it — that was the defect this replaces.
+            own_phone = sorted((org_ident.get("phones") or set()) & set(phones)
+                               - set(org_shared.get("phone") or ()))
+            own_email = sorted((org_ident.get("emails") or set()) & set(emails)
+                               - set(org_shared.get("email") or ()))
+            folder_anchor = _org_folder_anchor(folder, bname)
+            if own_phone:
+                reasons.append(f"✓ the business's own phone matched (...{own_phone[0][-4:]})")
+            if own_email:
+                reasons.append("✓ the business's own email matched")
+            if folder_anchor:
+                reasons.append("✓ the source client folder anchors to this business")
+            shared_hit = sorted((org_ident.get("phones") or set()) & set(phones)
+                                & set(org_shared.get("phone") or ()))
+            if shared_hit:
+                reasons.append("• a phone matched but is shared across businesses "
+                               "(context only, never an owner)")
+            if (org_ident.get("zips") or set()) & set(doc_zips):
+                reasons.append("• ZIP matched (a ZIP is a town, not an owner — context only)")
+
+            corroborated = bool(own_phone or own_email or folder_anchor)
+            if not corroborated:
+                blocks.append("no identifier belonging to this business corroborates it "
+                              "(an address or ZIP found elsewhere in the document is not evidence "
+                              "about this business)")
+
+            conf = "HIGH" if not blocks else "MEDIUM"
+            if blocks:
+                reasons.append("held below HIGH: " + "; ".join(blocks))
+            result.update({"proposed_entity_type": "organization", "proposed_entity_id": bid,
+                           "proposed_entity_name": bname, "confidence": conf})
+            result["evidence"] = reasons + result["evidence"]
+            return result
 
     return result
 
