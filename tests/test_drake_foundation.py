@@ -49,6 +49,21 @@ def _dirs(tmp_path):
     return src, dst
 
 
+def _client_dir(src, label):
+    """The DDM ``Documents`` folder for a deterministic client id derived from ``label``.
+
+    Drake stores documents at ``<root>\<bucket>\<8-hex CLIENT_ID>\Documents\<file>`` and the
+    importer now ingests only that shape, so a fixture must build it. The old flat
+    ``<root>\<FolderName>\<file>`` layout is Drake-internal territory and is deliberately ignored.
+    The label still names the scenario; it simply no longer carries identity.
+    """
+    import hashlib as _h
+    cid = _h.md5(str(label).encode()).hexdigest()[:8].upper()
+    d = src / "3" / cid / "Documents"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _sync(src, dst, **kw):
     return drake.sync(src, dst, progress=lambda *_a, **_k: None, **kw)
 
@@ -81,11 +96,11 @@ def _document_id_for(content: str) -> int:
 
 def test_discovery_creates_canonical_with_drake_source(tmp_path):
     src, dst = _dirs(tmp_path)
-    (src / f"White {_TAG}").mkdir()
-    (src / f"White {_TAG}" / "2024 Federal 1040.pdf").write_text("federal return bytes")
+    _docs = _client_dir(src, f"White {_TAG}")
+    (_docs / "2024 Federal 1040.pdf").write_text("federal return bytes")
     summary = _sync(src, dst)
     assert summary["canonical_created"] == 1 and summary["source_refs_added"] == 1
-    assert (dst / f"White {_TAG}" / "2024 Federal 1040.pdf").exists()   # canonical local copy
+    assert list(dst.rglob("2024 Federal 1040.pdf"))                     # canonical local copy
     row = _drake_rows(_document_id_for("federal return bytes"))[0]
     assert row["source_system"] == "Drake" and row["metadata"]["drake_doc_type"] == "federal_return"
 
@@ -114,8 +129,8 @@ def test_identical_document_reuses_canonical_and_adds_source_ref(tmp_path):
             tags={"source_system": "TaxDome Drive"}).returning(documents.c.id)).scalar_one()
         # Its TaxDome source reference (as the backfill migration would create in production).
         add_source_reference(c, did, source_system="TaxDome Drive", source_uri="Z:/1040", source_hash=sha)
-    (src / f"White {_TAG}").mkdir()
-    (src / f"White {_TAG}" / f"1040 {_TAG}.pdf").write_text(content)
+    _docs = _client_dir(src, f"White {_TAG}")
+    (_docs / f"1040 {_TAG}.pdf").write_text(content)
     before = engine.connect().execute(select(documents.c.id).where(documents.c.sha256 == sha)).rowcount
     summary = _sync(src, dst)
     assert summary["reused_canonical"] == 1 and summary["canonical_created"] == 0
@@ -166,8 +181,8 @@ def test_folder_name_does_not_assign_household_ownership(tmp_path):
                 active=True).returning(people.c.id)).scalar_one()
             c.execute(insert(household_relationships).values(
                 household_id=hid, person_id=pid, relationship_type="member"))
-    (src / "Michael and Debra White").mkdir()
-    (src / "Michael and Debra White" / f"2024 1040 {_TAG}.pdf").write_text("joint")
+    _docs = _client_dir(src, "Michael and Debra White")
+    (_docs / f"2024 1040 {_TAG}.pdf").write_text("joint")
     try:
         summary = _sync(src, dst)
         with engine.connect() as c:
@@ -178,7 +193,7 @@ def test_folder_name_does_not_assign_household_ownership(tmp_path):
         assert row["person_id"] is None
         assert row["organization_id"] is None
         # The folder is still recorded as provenance — corroboration stays available downstream.
-        assert row["tags"]["taxdome_folder"] == "Michael and Debra White"
+        assert row["tags"]["taxdome_folder"] == "3"          # the DDM bucket, not a client name
         assert summary["left_unassigned"] == 1
     finally:
         with engine.begin() as c:
@@ -191,8 +206,8 @@ def test_folder_name_does_not_assign_household_ownership(tmp_path):
 
 def test_incremental_skips_unchanged(tmp_path):
     src, dst = _dirs(tmp_path)
-    (src / f"C {_TAG}").mkdir()
-    (src / f"C {_TAG}" / f"doc {_TAG}.pdf").write_text("x")
+    _docs = _client_dir(src, f"C {_TAG}")
+    (_docs / f"doc {_TAG}.pdf").write_text("x")
     _sync(src, dst)
     summary = _sync(src, dst)
     assert summary["skipped"] == 1 and summary["canonical_created"] == 0
@@ -200,12 +215,12 @@ def test_incremental_skips_unchanged(tmp_path):
 
 def test_idempotent_no_duplicate_source_refs(tmp_path):
     src, dst = _dirs(tmp_path)
-    (src / f"C {_TAG}").mkdir()
+    _docs = _client_dir(src, f"C {_TAG}")
     # UNIQUE content. A one-byte fixture can share its SHA-256 with an unrelated test's synthetic
     # document, and ADR-072 would then correctly attach this Drake reference to THAT document —
     # making "the document this test produced" ambiguous. Unique content keeps it unambiguous.
     content = f"{_TAG} idempotency {uuid.uuid4().hex}"
-    (src / f"C {_TAG}" / f"doc {_TAG}.pdf").write_text(content)
+    (_docs / f"doc {_TAG}.pdf").write_text(content)
     _sync(src, dst)
     _sync(src, dst)
     document_id = _document_id_for(content)
@@ -216,8 +231,8 @@ def test_idempotent_no_duplicate_source_refs(tmp_path):
 
 def test_deleted_source_marked_unavailable(tmp_path):
     src, dst = _dirs(tmp_path)
-    (src / f"C {_TAG}").mkdir()
-    f = src / f"C {_TAG}" / f"gone {_TAG}.pdf"
+    _docs = _client_dir(src, f"C {_TAG}")
+    f = _docs / f"gone {_TAG}.pdf"
     f.write_text("z")
     _sync(src, dst)
     f.unlink()
@@ -234,8 +249,8 @@ def test_deleted_source_marked_unavailable(tmp_path):
 
 def test_dry_run_makes_no_changes(tmp_path):
     src, dst = _dirs(tmp_path)
-    (src / f"C {_TAG}").mkdir()
-    (src / f"C {_TAG}" / f"doc {_TAG}.pdf").write_text("q")
+    _docs = _client_dir(src, f"C {_TAG}")
+    (_docs / f"doc {_TAG}.pdf").write_text("q")
     summary = _sync(src, dst, dry_run=True)
     assert summary["dry_run"] is True and summary["canonical_created"] == 1
     assert _drake_rows() == [] and not dst.exists() or list(dst.rglob("*")) == []

@@ -71,6 +71,21 @@ def _dirs(tmp_path):
     return src, dst
 
 
+def _client_dir(src, label):
+    """The DDM ``Documents`` folder for a deterministic client id derived from ``label``.
+
+    Drake stores documents at ``<root>\<bucket>\<8-hex CLIENT_ID>\Documents\<file>`` and the
+    importer now ingests only that shape, so a fixture must build it. The old flat
+    ``<root>\<FolderName>\<file>`` layout is Drake-internal territory and is deliberately ignored.
+    The label still names the scenario; it simply no longer carries identity.
+    """
+    import hashlib as _h
+    cid = _h.md5(str(label).encode()).hexdigest()[:8].upper()
+    d = src / "3" / cid / "Documents"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _sync(src, dst, **kw):
     return drake.sync(src, dst, progress=lambda *_a, **_k: None, **kw)
 
@@ -127,8 +142,8 @@ def test_person_named_folder_does_not_assign_person_ownership(tmp_path):
     src, dst = _dirs(tmp_path)
     _person(f"Rodney {_TAG}")
     name = f"2021 Tax Return Documents (Rodney {_TAG}).pdf"
-    (src / f"Rodney {_TAG}").mkdir()
-    (src / f"Rodney {_TAG}" / name).write_text("single taxpayer bytes")
+    _docs = _client_dir(src, f"Rodney {_TAG}")
+    (_docs / name).write_text("single taxpayer bytes")
 
     summary = _sync(src, dst)
 
@@ -149,8 +164,8 @@ def test_joint_folder_does_not_assign_household_ownership(tmp_path):
     _person(f"Michael {_TAG}", household_id=hid)
     _person(f"Debra {_TAG}", household_id=hid)
     name = f"2024 1040 joint {_TAG}.pdf"
-    (src / f"Michael and Debra {_TAG}").mkdir()
-    (src / f"Michael and Debra {_TAG}" / name).write_text("joint bytes")
+    _docs = _client_dir(src, f"Michael and Debra {_TAG}")
+    (_docs / name).write_text("joint bytes")
 
     _sync(src, dst)
 
@@ -169,8 +184,8 @@ def test_business_return_in_person_named_folder_stays_unowned(tmp_path):
     src, dst = _dirs(tmp_path)
     _person(f"Mark {_TAG}")
     name = f"2023 Tax Return Documents ({_TAG} HOLDINGS LLC).pdf"
-    (src / f"Mark {_TAG}").mkdir()
-    (src / f"Mark {_TAG}" / name).write_text("1120S bytes")
+    _docs = _client_dir(src, f"Mark {_TAG}")
+    (_docs / name).write_text("1120S bytes")
 
     _sync(src, dst)
 
@@ -186,14 +201,14 @@ def test_drake_provenance_tags_are_preserved(tmp_path):
     src, dst = _dirs(tmp_path)
     name = f"2022 Federal 1040 {_TAG}.pdf"
     folder = f"Client Folder {_TAG}"
-    (src / folder).mkdir()
-    (src / folder / name).write_text("provenance bytes")
+    _docs = _client_dir(src, folder)
+    (_docs / name).write_text("provenance bytes")
 
     _sync(src, dst)
 
     tags = _doc_row(name)["tags"]
     assert tags["source_system"] == "Drake"
-    assert tags["taxdome_folder"] == folder            # folder/client info retained as provenance
+    assert tags["taxdome_folder"] == "3"          # the DDM bucket, not a client name            # folder/client info retained as provenance
     assert tags["drake_doc_type"] == "federal_return"
     assert tags["tax_year"] == "2022"
     assert tags["source_relative_path"].endswith(name)
@@ -211,8 +226,8 @@ def test_existing_drake_client_id_and_source_external_id_survive_a_resync(tmp_pa
     src, dst = _dirs(tmp_path)
     folder = f"Barbara {_TAG}"
     name = f"2021 Tax Return Documents ({_TAG} BARBARA S).pdf"
-    (src / folder).mkdir()
-    target = src / folder / name
+    _docs = _client_dir(src, folder)
+    target = _docs / name
     content = f"client id bytes {uuid.uuid4().hex}"
     target.write_text(content)
     sha = hashlib.sha256(content.encode()).hexdigest()
@@ -265,8 +280,8 @@ def test_existing_canonical_ownership_is_not_overwritten(tmp_path):
             person_id=owner, tags={"source_system": "TaxDome Drive"}).returning(
                 documents.c.id)).scalar_one()
 
-    (src / f"Interloper {_TAG}").mkdir()
-    (src / f"Interloper {_TAG}" / name).write_text(content)
+    _docs = _client_dir(src, f"Interloper {_TAG}")
+    (_docs / name).write_text(content)
 
     summary = _sync(src, dst)
 
