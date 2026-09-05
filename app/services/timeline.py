@@ -4,8 +4,8 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.templating import format_datetime
 from app.db import engine, timeline_events
+from app.templating import format_datetime
 
 EVENT_DISPLAY = {
     "note_updated": {

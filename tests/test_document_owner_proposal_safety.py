@@ -423,7 +423,8 @@ def _db_eligibility(rows):
     """Insert people, build the real indexes against the DB, return (eligible, staff, ids)."""
     import uuid
 
-    from app.db import engine, people as people_t
+    from app.db import engine
+    from app.db import people as people_t
     from app.services.document_owner_proposal import build_match_indexes
 
     ids = []
@@ -451,7 +452,8 @@ def test_existing_document_ownership_is_not_eligibility_evidence():
     import hashlib
     import uuid
 
-    from app.db import documents, engine, people as people_t
+    from app.db import documents, engine
+    from app.db import people as people_t
     from app.services.document_owner_proposal import build_match_indexes
 
     with engine.begin() as c:
@@ -483,7 +485,8 @@ def test_household_membership_alone_is_not_eligibility_evidence():
     """
     import uuid
 
-    from app.db import engine, households, people as people_t
+    from app.db import engine, households
+    from app.db import people as people_t
     from app.services.document_owner_proposal import build_match_indexes
 
     with engine.begin() as c:
