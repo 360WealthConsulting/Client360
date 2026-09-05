@@ -86,7 +86,7 @@ def test_discovery_creates_canonical_with_drake_source(tmp_path):
     summary = _sync(src, dst)
     assert summary["canonical_created"] == 1 and summary["source_refs_added"] == 1
     assert (dst / f"White {_TAG}" / "2024 Federal 1040.pdf").exists()   # canonical local copy
-    row = _drake_rows()[0]
+    row = _drake_rows(_document_id_for("federal return bytes"))[0]
     assert row["source_system"] == "Drake" and row["metadata"]["drake_doc_type"] == "federal_return"
 
 
