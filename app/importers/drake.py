@@ -3,10 +3,33 @@
 Drake documents become CANONICAL documents (ADR-072): each discovered file is hashed (SHA-256) and
 resolved against the existing corpus — an identical document already present from another source (e.g.
 TaxDome) is REUSED and gains a Drake source reference (provenance preserved); a new document creates the
-canonical row plus its first source reference. Ownership is linked to the client's household/person
-(ADR-073) using the same conservative folder→owner resolution as the TaxDome sync. Nothing here is a
-parallel document system — canonical storage, dedup, and ownership are the platform's, and Drake is one
-source among many.
+canonical row plus its first source reference. Nothing here is a parallel document system — canonical
+storage, dedup, and ownership are the platform's, and Drake is one source among many.
+
+INGESTION NEVER ASSIGNS AN OWNER
+--------------------------------
+This importer registers Drake documents with ``person_id`` and ``household_id`` NULL, always. It used
+to resolve the top-level folder name through the TaxDome ``resolve_folder`` matcher and write the
+result, which put the WEAKEST identity signal available — a folder name matched against
+``people.full_name`` — ahead of every stronger one. Because every ownership write in the platform
+requires all three owner columns to be NULL (``households.resolve_document_ownership`` re-checks that
+inside its UPDATE, and ``document_owner_proposal`` refuses an already-owned document), whichever
+mechanism writes FIRST wins permanently. Assigning at ingestion therefore did not merely rank the
+folder name first; it locked out Drake's own SSN/EIN identifier-hash resolution
+(``app.services.drake_document_owner``) for good.
+
+Leaving ownership NULL is what lets the stronger path run: ``resolve_or_create_canonical`` invokes the
+analysis hook in the same transaction, ``propose_drake_document_owner`` evaluates the document's Drake
+return identity, and the result is persisted as a NON-authoritative proposal for a human to confirm at
+``/admin/documents/unassigned`` — a surface that already states this expectation ("Drake documents are
+surfaced individually because their canonical registration intentionally preserved them as unassigned
+rather than guessing an owner"). Nothing is lost: the folder name is still recorded in ``tags`` as
+provenance and remains available to every downstream resolver as CORROBORATION.
+
+Verified read-only against production before this change: the importer had never run there (no
+``uploaded_by='Drake Sync'`` row, no ``tags.sync_version``, no Drake ``import_jobs`` row), so removing
+the write corrects no existing document and creates no review backlog. The 794 Drake documents present
+were loaded by a separate out-of-band migration and are untouched by this module.
 
 Honest boundary: this discovers Drake artifacts from a Drake EXPORT directory (Drake's live database
 format is environment-specific). Files are classified by Drake naming conventions (federal/state return
@@ -41,7 +64,6 @@ from app.importers.taxdome_drive import (
     _is_ignored_file,
     _iso,
     infer_category,
-    resolve_folder,
     sanitize_relative_path,
 )
 from app.services.storage_paths import document_root as _document_root
@@ -117,7 +139,9 @@ def _new_summary(source, dest, scan_id, started):
             "folders_examined": 0, "files_examined": 0, "ignored": 0,
             "canonical_created": 0, "reused_canonical": 0, "source_refs_added": 0,
             "skipped": 0, "missing": 0, "purged": 0, "bytes_copied": 0, "errors": [],
-            "linked_household": 0, "linked_person": 0, "status": "started", "dry_run": False}
+            # Replaces the former linked_household/linked_person counters: ingestion no longer
+            # assigns an owner, so every document it registers is left for the proposal path.
+            "left_unassigned": 0, "status": "started", "dry_run": False}
 
 
 def _print_progress(s):
@@ -186,7 +210,8 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
     with db.engine.connect() as conn:
         existing_ref = conn.execute(
             select(db.document_sources.c.document_id, db.document_sources.c.metadata,
-                   db.document_sources.c.source_hash)
+                   db.document_sources.c.source_hash,
+                   db.document_sources.c.source_external_id)
             .where(db.document_sources.c.source_system == SOURCE_SYSTEM,
                    db.document_sources.c.source_uri == abs_path)).mappings().first()
     if existing_ref is not None:
@@ -205,11 +230,6 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
 
     sha, size = _copy_verified(Path(abs_path), dest_abs)   # canonical local copy + verify
     with db.engine.begin() as conn:
-        household_id, person_id = resolve_folder(conn, folder_name)
-        if person_id is not None:
-            summary["linked_person"] += 1
-        if household_id is not None:
-            summary["linked_household"] += 1
         tags = {
             "source_system": SOURCE_SYSTEM, "drake_doc_type": drake_doc_type(filename),
             "tax_year": _tax_year(filename, rel_str), "source_path": abs_path,
@@ -223,8 +243,18 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
             storage_provider=STORAGE_PROVIDER, storage_uri=str(dest_abs), storage_path=str(safe_rel),
             size_bytes=size, content_type=mimetypes.guess_type(filename)[0],
             category=infer_category(filename, rel_str), tags=tags,
-            person_id=person_id, household_id=household_id,
-            source_system=SOURCE_SYSTEM, source_uri=abs_path, source_path=rel_str, conn=conn)
+            # Deliberately unowned — see "INGESTION NEVER ASSIGNS AN OWNER" above. Passing None also
+            # means the hash-hit branch computes an empty fill, so a Drake file that dedupes onto a
+            # canonical row from another source cannot write an owner onto that row either.
+            person_id=None, household_id=None,
+            source_system=SOURCE_SYSTEM, source_uri=abs_path, source_path=rel_str,
+            # Carry an ALREADY-RECORDED Drake client id through the re-sync. add_source_reference
+            # upserts on (document_id, source_system, source_uri) and assigns source_external_id
+            # unconditionally, so passing None here would blank the native Drake client id that the
+            # out-of-band migration recorded on every existing Drake source reference. This only ever
+            # preserves an existing value — the importer still derives no identifier of its own.
+            source_external_id=(existing_ref or {}).get("source_external_id"),
+            conn=conn)
         # Record size/mtime on the source ref for the next incremental run.
         conn.execute(db.document_sources.update().where(and_(
             db.document_sources.c.document_id == result["document_id"],
@@ -234,6 +264,7 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
                       "drake_doc_type": tags["drake_doc_type"]}))
     summary["reused_canonical" if result["reused"] else "canonical_created"] += 1
     summary["source_refs_added"] += 1
+    summary["left_unassigned"] += 1
     summary["bytes_copied"] += size
 
 
@@ -280,7 +311,7 @@ def main(argv=None):
     print(f"Drake {label}.")
     for k in ("folders_examined", "files_examined", "ignored", "canonical_created", "reused_canonical",
               "source_refs_added", "skipped", "missing", "purged", "bytes_copied",
-              "linked_household", "linked_person", "status"):
+              "left_unassigned", "status"):
         print(f"  {k}: {summary[k]}")
     if summary["errors"]:
         print(f"  errors ({len(summary['errors'])}):")

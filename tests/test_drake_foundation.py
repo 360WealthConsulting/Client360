@@ -141,7 +141,21 @@ def test_resolve_or_create_direct_reuse():
 
 # --- client / household linking (ADR-073) ------------------------------------
 
-def test_household_linking_via_folder(tmp_path):
+def test_folder_name_does_not_assign_household_ownership(tmp_path):
+    """INVERTED, deliberately. This test previously asserted ``doc == hid``.
+
+    That assertion encoded the defect: Drake ingestion resolved the top-level folder name through the
+    TaxDome ``resolve_folder`` matcher and wrote the result. A folder name matched against
+    ``people.full_name`` is the weakest identity signal in the platform, and because every ownership
+    write requires all three owner columns to be NULL, writing it at ingestion permanently locked out
+    Drake's own SSN/EIN identifier-hash resolution for that document.
+
+    The scenario below is the STRONGEST case the old behaviour had — a joint folder whose two names
+    both match canonical people sharing one household, i.e. exactly the match ``resolve_folder`` is
+    most confident about. Even here ingestion must leave the document unowned so that
+    ``propose_drake_document_owner`` can evaluate it and a human can confirm. Ownership is not lost,
+    it is deferred to a stronger mechanism.
+    """
     src, dst = _dirs(tmp_path)
     with engine.begin() as c:
         hid = c.execute(households.insert().values(name=f"{_TAG} White Household").returning(
@@ -155,11 +169,17 @@ def test_household_linking_via_folder(tmp_path):
     (src / "Michael and Debra White").mkdir()
     (src / "Michael and Debra White" / f"2024 1040 {_TAG}.pdf").write_text("joint")
     try:
-        _sync(src, dst)
+        summary = _sync(src, dst)
         with engine.connect() as c:
-            doc = c.execute(select(documents.c.household_id).where(
-                documents.c.original_name == f"2024 1040 {_TAG}.pdf")).scalar()
-        assert doc == hid                                    # linked to the household
+            row = c.execute(select(documents.c.person_id, documents.c.household_id,
+                                   documents.c.organization_id, documents.c.tags)
+                            .where(documents.c.original_name == f"2024 1040 {_TAG}.pdf")).mappings().one()
+        assert row["household_id"] is None                   # NOT linked by folder name
+        assert row["person_id"] is None
+        assert row["organization_id"] is None
+        # The folder is still recorded as provenance — corroboration stays available downstream.
+        assert row["tags"]["taxdome_folder"] == "Michael and Debra White"
+        assert summary["left_unassigned"] == 1
     finally:
         with engine.begin() as c:
             pids = list(c.scalars(select(people.c.id).where(people.c.full_name.in_(["Michael White", "Debra White"]))))
