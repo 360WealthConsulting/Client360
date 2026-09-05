@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import argparse
 
-from sqlalchemy import and_, func, insert, or_, select
+from sqlalchemy import and_, case, func, insert, or_, select
 
 from app.db import (
     audit_events,
@@ -40,6 +40,7 @@ from app.db import (
     people,
     relationship_entities,
 )
+from app.services.document_platform.lifecycle import DEFERRED_OWNERSHIP_REVIEW_STATUS
 from app.services.household_derivation import _household_name
 
 
@@ -358,6 +359,20 @@ def resolve_document_ownership(document_id, *, person_id=None, household_id=None
         if dry_run:
             return {**base, "assigned": False, "eligible": True, "would_assign": True}
         values = {f: v for f, v in assignments.items() if v is not None}
+        # Clearing the deferred-ownership lane is part of THIS statement, not a follow-up write.
+        # Assignment and deferral-clearing must not be separable: a document that is both owned and
+        # deferred would be counted as parked while sitting in a client's file, and a crash between
+        # two statements is exactly how that state would arise. The CASE narrows the write to the
+        # deferral sentinel, so any other review_status a document legitimately carries (a real
+        # 'pending' review) survives assignment untouched.
+        values["review_status"] = case(
+            (documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS, "not_required"),
+            else_=documents.c.review_status)
+        values["tags"] = case(
+            (and_(documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS,
+                  func.jsonb_typeof(documents.c.tags) == "object"),
+             documents.c.tags.op("-")("deferred_ownership")),
+            else_=documents.c.tags)
         updated = conn.execute(documents.update().where(and_(
             documents.c.id == document_id,
             documents.c.person_id.is_(None), documents.c.household_id.is_(None),

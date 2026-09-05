@@ -245,7 +245,7 @@ def _entity_search(q, limit=15):
 
 
 @router.get("/documents/unassigned")
-def unassigned_documents(request: Request, q: str = "",
+def unassigned_documents(request: Request, q: str = "", lane: str = "", reason: str = "",
                          principal: Principal = Depends(require_capability("client.write"))):
     """Unified human-resolution worklist for genuinely unassigned documents.
 
@@ -266,12 +266,17 @@ def unassigned_documents(request: Request, q: str = "",
         propose_document_owner,
     )
 
-    folders = _folder_samples_and_candidates(
+    # Both blocks below are expensive (a folder census, then a live proposal per Drake document).
+    # The deferred lane needs neither, so it skips them rather than computing two lists the
+    # template will not render.
+    deferred_lane = lane == "deferred"
+
+    folders = [] if deferred_lane else _folder_samples_and_candidates(
         unresolved_taxdome_folders(limit=200)
     )
 
     drake_unassigned = []
-    ds = metadata.tables.get("document_sources")
+    ds = None if deferred_lane else metadata.tables.get("document_sources")
 
     if ds is not None:
         with engine.connect() as conn:
@@ -382,6 +387,28 @@ def unassigned_documents(request: Request, q: str = "",
                     "proposal": proposal_map.get(document_id),
                 })
 
+    # The deferred-ownership lane is a FILTER on this page, not a second page: it lists the same
+    # kind of row (an unowned document awaiting a human) and promotion goes through the same
+    # resolve-document endpoint below. Adding a route here would also break nine pinned
+    # ``len(app.routes)`` assertions across unrelated test files for no behavioural gain.
+    from app.services.document_deferral import (
+        DEFERRABLE_REASONS,
+        deferred_counts,
+        list_deferred,
+    )
+
+    deferred_rows, deferred_reason_counts = [], {}
+    if deferred_lane:
+        wanted = reason if reason in DEFERRABLE_REASONS else None
+        deferred_rows = [
+            {**row,
+             "name": _doc_display_name(row) or f"Document {row['id']}",
+             "view_url": f"/documents/{row['id']}/download?inline=1",
+             "download_url": f"/documents/{row['id']}/download"}
+            for row in list_deferred(reason=wanted)
+        ]
+        deferred_reason_counts = deferred_counts()
+
     return templates.TemplateResponse(
         request=request,
         name="admin/unassigned_documents.html",
@@ -389,6 +416,11 @@ def unassigned_documents(request: Request, q: str = "",
             "principal": principal,
             "unassigned": folders,
             "drake_unassigned": drake_unassigned,
+            "deferred_lane": deferred_lane,
+            "deferred_rows": deferred_rows,
+            "deferred_reason_counts": deferred_reason_counts,
+            "deferred_reason": reason,
+            "deferrable_reasons": sorted(DEFERRABLE_REASONS),
             "q": q,
             "search": _entity_search(q),
             "ok": request.query_params.get("ok"),

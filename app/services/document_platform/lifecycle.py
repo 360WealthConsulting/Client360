@@ -78,6 +78,34 @@ def active_unarchived_clause():
                 documents.c.status.is_distinct_from(ARCHIVED_STATUS))
 
 
+#: The ``documents.review_status`` sentinel for the deferred-ownership lane. Defined here beside the
+#: other lifecycle sentinels so a reader finds every "which documents count" marker in one file; the
+#: rules for entering and leaving the lane live in ``app.services.document_deferral``.
+DEFERRED_OWNERSHIP_REVIEW_STATUS = "deferred_ownership"
+
+
+def deferred_ownership_clause():
+    """SQL restriction to the documents parked in the deferred-ownership lane.
+
+    A deferred document is a real, live document whose owner is not currently provable. It is NOT
+    deleted and NOT archived, so it deliberately does not appear in either of those clauses — this
+    is a queue state, not a lifecycle state, which is why it is a separate predicate rather than a
+    new ``status`` value.
+    """
+    return and_(active_unarchived_clause(),
+                documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS)
+
+
+def not_deferred_clause():
+    """SQL restriction to documents that are NOT deferred — the actionable side of the lane.
+
+    AND this into a backlog COUNT, never into a client-facing or search read. Deferral changes what
+    is outstanding work; it must never change what staff can find. ``IS DISTINCT FROM`` so the
+    predicate is NULL-safe if the column's NOT NULL constraint is ever relaxed.
+    """
+    return documents.c.review_status.is_distinct_from(DEFERRED_OWNERSHIP_REVIEW_STATUS)
+
+
 def is_active(row) -> bool:
     """The row-level form of :func:`active_documents_clause`, for a document already loaded.
 
