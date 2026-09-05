@@ -631,7 +631,12 @@ def client_folder_hint(folder_path: str) -> str | None:
         start = next(i for i, s in enumerate(lowered) if s in _CLIENT_ROOT_SEGMENTS) + 1
     except StopIteration:
         return None                                   # not the client area — no hint
-    for segment, low in zip(segments[start:], lowered[start:]):
+    # strict=True: ``lowered`` is a 1:1 comprehension over ``segments``, so the two slices are
+    # equal-length by construction. Asserting it keeps that invariant enforced — were ``lowered``
+    # ever changed to filter or reshape, strict=False would silently walk the shorter list and
+    # mis-pair a segment with the wrong lowered form, which is precisely how a client folder gets
+    # matched against the wrong token.
+    for segment, low in zip(segments[start:], lowered[start:], strict=True):
         if low in _STRUCTURAL_SEGMENTS:
             continue                                  # service line / entity class / status
         if low in _NON_CLIENT_TERMINAL:

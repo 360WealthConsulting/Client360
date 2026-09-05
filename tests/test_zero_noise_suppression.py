@@ -9,7 +9,6 @@ Both directions matter, so both are pinned: the zero case must disappear, and th
 case must render EXACTLY as before. A suppression rule that also hides real data would be a
 worse defect than the noise it removes.
 """
-import io
 
 import pytest
 from jinja2 import Environment, FileSystemLoader

@@ -5,7 +5,6 @@ from sqlalchemy import func, select
 
 from app.db import (
     activities,
-    documents,
     engine,
     tasks,
     timeline_events,

@@ -19,7 +19,6 @@ from datetime import date, datetime
 
 from app.templating import format_datetime, human_datetime
 
-
 # --- portable strftime -----------------------------------------------------------------
 
 def test_no_pad_day_directive_formats_on_every_platform():
@@ -65,11 +64,10 @@ def test_literal_percent_in_output_is_not_read_as_a_directive():
 def test_staff_templates_contain_no_raw_no_pad_strftime():
     """The defect must not creep back in via a new .strftime("%-d") call site."""
     import glob
-    import io
     import re
     offenders = []
     for path in glob.glob("app/templates/**/*.html", recursive=True):
-        text = io.open(path, encoding="utf-8").read()
+        text = open(path, encoding="utf-8").read()
         if re.search(r'\.strftime\("[^"]*%-', text):
             offenders.append(path)
     assert offenders == [], f"use the `datefmt` filter instead: {offenders}"
