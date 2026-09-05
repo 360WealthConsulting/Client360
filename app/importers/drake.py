@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from collections import namedtuple
 from datetime import UTC, datetime
 from functools import cache
@@ -75,6 +76,79 @@ DEFAULT_SOURCE_ROOT = os.getenv("DRAKE_EXPORT_ROOT", os.getenv("DRAKE_DRIVE_ROOT
 # CLIENT360_DRAKE_DOCUMENT_ROOT still wins; else <CLIENT360_DATA_ROOT>\Documents\Drake; else legacy default.
 DEFAULT_DESTINATION_ROOT = _document_root("Drake", "CLIENT360_DRAKE_DOCUMENT_ROOT")
 DEFAULT_PROGRESS_INTERVAL = int(os.getenv("DRAKE_SYNC_PROGRESS_INTERVAL", "100") or "100")
+
+#: Drake Document Manager names each client's folder with an 8-character hexadecimal key.
+_DRAKE_CLIENT_ID_RE = re.compile(r"\A[0-9A-Fa-f]{8}\Z")
+#: The fixed folder DDM places directly inside each client folder. Case varies across installs.
+_DDM_DOCUMENTS_DIR = "documents"
+
+
+class DrakeClientIdConflict(RuntimeError):
+    """A re-sync derived a different native client id than the one already recorded."""
+
+
+def drake_client_id(source_relative_path: str) -> str | None:
+    """The native Drake client id for a document, or ``None`` when the path does not prove one.
+
+    Drake stores documents in its own installation tree, not in a purpose-built export::
+
+        C:\\DRAKE21\\DT\\<bucket 0-9>\\<CLIENT_ID>\\Documents\\<filename>
+
+    ``CLIENT_ID`` is 8 hexadecimal characters, is created by Drake before Client360 ever sees the
+    file, and survives Drake's year rollover — measured against production, 48 of 493 client ids
+    appear under two or three different ``DRAKE<YY>`` installs. It is therefore the authoritative
+    document-side client identifier, and it is the only one available: the return-side exports carry
+    no client id at all (``CLIENT.CSV`` has 123 columns and none of them is one).
+
+    STRUCTURAL, NOT POSITIONAL. A fixed segment index would break the moment the configured source
+    root changed from ``C:\\DRAKE21`` to ``C:\\DRAKE21\\DT``, and a bare "first 8-hex segment" scan
+    would happily accept a *filename* like ``DEADBEEF.pdf`` or an unrelated nested directory. The id
+    is identified by its RELATIONSHIP instead: it is the directory whose immediate child is the DDM
+    ``Documents`` folder. That anchor is what makes the rule root-agnostic and fail-closed.
+
+    Fails closed and returns ``None`` when the shape is not proven — no client folder, or (defensively)
+    more than one distinct candidate. A caller must leave ``source_external_id`` NULL in that case
+    rather than guess; a document with no identity is recoverable, a document with the WRONG identity
+    is not.
+
+    Replayed read-only against all 795 existing Drake source paths: 795 derived, 795 matching the
+    id recorded out-of-band, 0 mismatches — for both plausible source roots.
+    """
+    parts = [p for p in re.split(r"[\\/]+", source_relative_path or "") if p not in ("", ".")]
+    if len(parts) < 3:
+        # Need at least <CLIENT_ID>/Documents/<file>.
+        return None
+
+    # ``len(parts) - 1`` excludes the final segment: that is the file, never the client folder.
+    candidates = {
+        parts[i].upper()
+        for i in range(len(parts) - 1)
+        if _DRAKE_CLIENT_ID_RE.match(parts[i]) and parts[i + 1].lower() == _DDM_DOCUMENTS_DIR
+    }
+    if len(candidates) != 1:
+        return None
+    return candidates.pop()
+
+
+def _resolve_source_external_id(rel_str, existing_ref):
+    """The native client id to persist, or ``None``. Raises on a conflicting re-derivation.
+
+    Precedence is derived-over-recorded, because the derivation is reproducible from the path while
+    the recorded value came from an out-of-band migration. They may not DISAGREE, though: an existing
+    id and a derived id that differ mean the file moved between client folders, or the recorded id was
+    wrong. Either way the document's identity is in question, so this refuses rather than silently
+    re-pointing a document at a different client.
+    """
+    derived = drake_client_id(rel_str)
+    existing = (existing_ref or {}).get("source_external_id")
+
+    if derived and existing and derived != str(existing).upper():
+        raise DrakeClientIdConflict(
+            f"native Drake client id conflict for {rel_str!r}: recorded id differs from the id "
+            f"derived from the source path; refusing to change document identity"
+        )
+    return derived or existing
+
 
 _Database = namedtuple("_Database", "engine documents document_sources")
 
@@ -141,7 +215,13 @@ def _new_summary(source, dest, scan_id, started):
             "skipped": 0, "missing": 0, "purged": 0, "bytes_copied": 0, "errors": [],
             # Replaces the former linked_household/linked_person counters: ingestion no longer
             # assigns an owner, so every document it registers is left for the proposal path.
-            "left_unassigned": 0, "status": "started", "dry_run": False}
+            "left_unassigned": 0,
+            # Native Drake client id capture. ``client_id_missing`` is surfaced rather than silently
+            # tolerated: a document ingested without one cannot later be resolved by client identity,
+            # so a non-zero count is a signal that the source root or the DDM layout is not what this
+            # importer expects. A conflict is recorded in ``errors`` and the file is skipped.
+            "client_id_captured": 0, "client_id_missing": 0, "client_id_missing_paths": [],
+            "status": "started", "dry_run": False}
 
 
 def _print_progress(s):
@@ -228,6 +308,17 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
         summary["bytes_copied"] += int(stat.st_size)
         return
 
+    # Resolve the native client id BEFORE any copy or write. A conflict raises here, so the file is
+    # skipped and recorded in summary["errors"] by the caller rather than being ingested under a
+    # contested identity.
+    source_external_id = _resolve_source_external_id(rel_str, existing_ref)
+    if source_external_id:
+        summary["client_id_captured"] += 1
+    else:
+        summary["client_id_missing"] += 1
+        if len(summary["client_id_missing_paths"]) < 50:
+            summary["client_id_missing_paths"].append(rel_str)
+
     sha, size = _copy_verified(Path(abs_path), dest_abs)   # canonical local copy + verify
     with db.engine.begin() as conn:
         tags = {
@@ -248,12 +339,12 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
             # canonical row from another source cannot write an owner onto that row either.
             person_id=None, household_id=None,
             source_system=SOURCE_SYSTEM, source_uri=abs_path, source_path=rel_str,
-            # Carry an ALREADY-RECORDED Drake client id through the re-sync. add_source_reference
-            # upserts on (document_id, source_system, source_uri) and assigns source_external_id
-            # unconditionally, so passing None here would blank the native Drake client id that the
-            # out-of-band migration recorded on every existing Drake source reference. This only ever
-            # preserves an existing value — the importer still derives no identifier of its own.
-            source_external_id=(existing_ref or {}).get("source_external_id"),
+            # The native Drake client id — DERIVED from the DDM path for a new document, and falling
+            # back to the already-recorded value on a re-sync (add_source_reference upserts on
+            # (document_id, source_system, source_uri) and assigns source_external_id
+            # unconditionally, so passing None would blank the id the out-of-band migration recorded).
+            # ``_resolve_source_external_id`` refuses a derived id that contradicts a recorded one.
+            source_external_id=source_external_id,
             conn=conn)
         # Record size/mtime on the source ref for the next incremental run.
         conn.execute(db.document_sources.update().where(and_(
@@ -311,8 +402,14 @@ def main(argv=None):
     print(f"Drake {label}.")
     for k in ("folders_examined", "files_examined", "ignored", "canonical_created", "reused_canonical",
               "source_refs_added", "skipped", "missing", "purged", "bytes_copied",
-              "left_unassigned", "status"):
+              "left_unassigned", "client_id_captured", "client_id_missing", "status"):
         print(f"  {k}: {summary[k]}")
+    if summary["client_id_missing"]:
+        # Not an error — the document is still ingested — but it can never be resolved by client
+        # identity, so it must not pass silently.
+        print(f"  documents with NO native Drake client id ({summary['client_id_missing']}):")
+        for p in summary["client_id_missing_paths"][:20]:
+            print(f"    - {p}")
     if summary["errors"]:
         print(f"  errors ({len(summary['errors'])}):")
         for e in summary["errors"][:20]:
