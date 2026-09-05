@@ -106,6 +106,38 @@ def not_deferred_clause():
     return documents.c.review_status.is_distinct_from(DEFERRED_OWNERSHIP_REVIEW_STATUS)
 
 
+#: The ``documents.review_status`` sentinel for the non-client exclusion lane — a file that is not
+#: client paperwork at all (a web asset, a font, a help file), as opposed to a client document whose
+#: owner is merely unprovable. Kept beside the deferral sentinel because both answer the same
+#: question ("does this count as outstanding work?") through the same column; the rules for entering
+#: and leaving THIS lane live in ``app.services.document_nonclient_exclusion``.
+#:
+#: Distinct from :data:`DEFERRED_OWNERSHIP_REVIEW_STATUS` on purpose. Deferral says "a real document
+#: we cannot yet attribute"; exclusion says "not a client document". Collapsing them would make the
+#: backlog unable to distinguish work that may become possible from work that never existed.
+EXCLUDED_NONCLIENT_REVIEW_STATUS = "excluded_nonclient"
+
+
+def excluded_nonclient_clause():
+    """SQL restriction to documents classified as non-client artifacts.
+
+    Like deferral this is a QUEUE state, not a lifecycle state: the row is not deleted, not
+    archived, keeps every byte of provenance, and stays visible to staff search. It is excluded from
+    the actionable backlog only.
+    """
+    return and_(active_unarchived_clause(),
+                documents.c.review_status == EXCLUDED_NONCLIENT_REVIEW_STATUS)
+
+
+def not_excluded_nonclient_clause():
+    """SQL restriction to documents NOT classified as non-client — the actionable side.
+
+    Same rule as :func:`not_deferred_clause`: AND this into a backlog COUNT, never into a
+    client-facing or staff search read. ``IS DISTINCT FROM`` keeps it NULL-safe.
+    """
+    return documents.c.review_status.is_distinct_from(EXCLUDED_NONCLIENT_REVIEW_STATUS)
+
+
 def is_active(row) -> bool:
     """The row-level form of :func:`active_documents_clause`, for a document already loaded.
 

@@ -40,7 +40,10 @@ from app.db import (
     people,
     relationship_entities,
 )
-from app.services.document_platform.lifecycle import DEFERRED_OWNERSHIP_REVIEW_STATUS
+from app.services.document_platform.lifecycle import (
+    DEFERRED_OWNERSHIP_REVIEW_STATUS,
+    not_excluded_nonclient_clause,
+)
 from app.services.household_derivation import _household_name
 
 
@@ -191,14 +194,19 @@ def household_audit(household_id, *, limit: int = 50) -> list[dict]:
 def unresolved_taxdome_folders(*, limit: int = 200) -> list[dict]:
     """TaxDome folders whose documents are still unlinked (no person and no household), with the
     candidate people for each — the worklist for the in-product resolve tool. Re-evaluates
-    resolution live, so a folder becomes resolvable as soon as its household/people exist."""
+    resolution live, so a folder becomes resolvable as soon as its household/people exist.
+
+    Files classified as non-client artifacts are not counted: this is a worklist of ownership work,
+    and a ``Thumbs.db`` sitting in a client folder is not work anyone can do. The row still exists
+    and is still retrievable — only its claim on a reviewer's attention is withdrawn."""
     from app.importers import taxdome_drive as td
     folder_col = documents.c.tags["taxdome_folder"].astext
     with engine.connect() as conn:
         rows = conn.execute(
             select(folder_col.label("folder"), func.count().label("files"))
             .where(and_(td.taxdome_filter(documents),
-                        documents.c.person_id.is_(None), documents.c.household_id.is_(None)))
+                        documents.c.person_id.is_(None), documents.c.household_id.is_(None),
+                        not_excluded_nonclient_clause()))
             .group_by(folder_col).order_by(folder_col).limit(limit)).mappings().all()
         out = []
         for r in rows:
