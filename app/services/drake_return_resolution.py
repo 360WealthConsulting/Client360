@@ -46,13 +46,29 @@ THE RULES — every one fails closed
 MEASURED COST OF EACH POLICY (current production, read-only replay)
 -------------------------------------------------------------------
     STRICT (recorded trust only)          0 of 3,690 returns resolve
-    LEGACY_DERIVED (identifier + human)   646 returns resolve
-    the parked commit's own behaviour   2,797 returns resolve, 41.1% of the linkage name-derived
+    LEGACY_DERIVED (identifier + human)   520 returns resolve
+    the parked commit's own behaviour   2,794 returns resolve, 41.1% of the linkage name-derived
+
+An earlier revision of this docstring said LEGACY_DERIVED yields 646. It does not, and the difference
+is a definition rather than a measurement. That figure came from a grading pass that counted all 171
+``manual_*`` links as human review. This module deliberately does not: a human RUNNING a repair script
+is not a human APPROVING a particular link, so ``derive_legacy_trust`` classifies ``manual_*`` as
+``canonical_repair`` or ``unknown_legacy`` and never as ``human_approved``. Under this module's own
+predicates the trusted set is 533 links — all ``identifier_verified``, since production contains ZERO
+proven human approvals — and those 533 resolve 520 returns.
+
+The 2,794 likewise reflects THIS module's rules: the parked commit resolves 2,797, and the 3-return
+difference is the identity gate above withholding one collided identity tuple that the parked commit
+had no notion of.
 
 STRICT resolves nothing today because nothing has been back-filled — no production row carries a
 recorded ``trust_level``, by design (see ``migrations/versions/psl02_link_trust_provenance.py``).
 That is not a bug in this module; it is the honest starting position, and it is why ``policy`` has no
 default. The caller must choose, in code, and the choice is visible in review.
+
+These counts are DOCUMENTATION of a point-in-time replay, not behaviour. Nothing in this module reads
+them, and no test asserts them; they are here so a reader can see what each policy costs before
+choosing one. ``scripts/apply_drake_trust_backfill.py --preview`` recomputes them from live data.
 
 Read-only. Nothing here writes, and the 3,690 ``drake_client_returns`` staging rows are untouched.
 """
