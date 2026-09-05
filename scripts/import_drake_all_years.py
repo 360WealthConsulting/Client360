@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import text
 
 load_dotenv(r"C:\Client360\app\.env")
 
 from app.db import engine  # noqa: E402
+from app.importers.drake_returns import upsert_return_rows  # noqa: E402
 
 ROOT = Path(r"C:\Client360\data\Drake")
 HASH_KEY = os.getenv("MICROSOFT_TOKEN_KEY", "")
@@ -94,176 +94,81 @@ def find_client_file(year_folder):
     return max(candidates, key=lambda item: item.stat().st_size)
 
 
-upsert = text("""
-INSERT INTO drake_client_returns (
-    tax_year,
-    source_row_number,
-    taxpayer_identifier_hash,
-    spouse_identifier_hash,
-    taxpayer_first_name,
-    taxpayer_last_name,
-    taxpayer_normalized_name,
-    taxpayer_dob,
-    spouse_first_name,
-    spouse_last_name,
-    spouse_normalized_name,
-    spouse_dob,
-    filing_status,
-    return_type,
-    preparer_code,
-    agi,
-    preparer_fee,
-    prepare_date,
-    review_date,
-    approved_date,
-    complete_date,
-    federal_product,
-    federal_ack_date,
-    federal_ack_code,
-    state_product,
-    state_ack_date,
-    state_ack_code,
-    source_updated_at,
-    raw_data
-)
-VALUES (
-    :tax_year,
-    :source_row_number,
-    :taxpayer_identifier_hash,
-    :spouse_identifier_hash,
-    :taxpayer_first_name,
-    :taxpayer_last_name,
-    :taxpayer_normalized_name,
-    :taxpayer_dob,
-    :spouse_first_name,
-    :spouse_last_name,
-    :spouse_normalized_name,
-    :spouse_dob,
-    :filing_status,
-    :return_type,
-    :preparer_code,
-    :agi,
-    :preparer_fee,
-    :prepare_date,
-    :review_date,
-    :approved_date,
-    :complete_date,
-    :federal_product,
-    :federal_ack_date,
-    :federal_ack_code,
-    :state_product,
-    :state_ack_date,
-    :state_ack_code,
-    :source_updated_at,
-    CAST(:raw_data AS JSONB)
-)
-ON CONFLICT (tax_year, source_row_number)
-DO UPDATE SET
-    taxpayer_identifier_hash = EXCLUDED.taxpayer_identifier_hash,
-    spouse_identifier_hash = EXCLUDED.spouse_identifier_hash,
-    taxpayer_first_name = EXCLUDED.taxpayer_first_name,
-    taxpayer_last_name = EXCLUDED.taxpayer_last_name,
-    taxpayer_normalized_name = EXCLUDED.taxpayer_normalized_name,
-    taxpayer_dob = EXCLUDED.taxpayer_dob,
-    spouse_first_name = EXCLUDED.spouse_first_name,
-    spouse_last_name = EXCLUDED.spouse_last_name,
-    spouse_normalized_name = EXCLUDED.spouse_normalized_name,
-    spouse_dob = EXCLUDED.spouse_dob,
-    filing_status = EXCLUDED.filing_status,
-    return_type = EXCLUDED.return_type,
-    preparer_code = EXCLUDED.preparer_code,
-    agi = EXCLUDED.agi,
-    preparer_fee = EXCLUDED.preparer_fee,
-    prepare_date = EXCLUDED.prepare_date,
-    review_date = EXCLUDED.review_date,
-    approved_date = EXCLUDED.approved_date,
-    complete_date = EXCLUDED.complete_date,
-    federal_product = EXCLUDED.federal_product,
-    federal_ack_date = EXCLUDED.federal_ack_date,
-    federal_ack_code = EXCLUDED.federal_ack_code,
-    state_product = EXCLUDED.state_product,
-    state_ack_date = EXCLUDED.state_ack_date,
-    state_ack_code = EXCLUDED.state_ack_code,
-    source_updated_at = EXCLUDED.source_updated_at,
-    raw_data = EXCLUDED.raw_data
-""")
+# The positional upsert that used to live here — ON CONFLICT (tax_year, source_row_number) — has been
+# retired. ``source_row_number`` is the row's POSITION in the export, so a re-export that inserted,
+# deleted or re-sorted a single row made row N a different taxpayer and overwrote one client's return
+# with another's. The upsert now keys on a content-derived identity and lives in
+# ``app.importers.drake_returns``; see ``app.services.drake_return_identity`` for how identity is
+# derived and which rows deliberately get none.
+def parse_client_row(row, *, tax_year, source_row_number, source_updated_at):
+    """One Drake ``CLIENT.CSV`` record -> the column values for ``drake_client_returns``.
+
+    Pure, so the identity rules can be exercised against real Drake column names without a database.
+    ``source_row_number`` is carried purely as provenance now; it no longer keys anything.
+    """
+    return {
+        "tax_year": tax_year,
+        "source_row_number": source_row_number,
+        "taxpayer_identifier_hash": identifier_hash(row.get("TP_Social")),
+        "spouse_identifier_hash": identifier_hash(row.get("SP_Social")),
+        "taxpayer_first_name": row.get("TP_FirstName") or None,
+        "taxpayer_last_name": row.get("TP_LastName") or None,
+        "taxpayer_normalized_name": normalized_name(
+            row.get("TP_FirstName"),
+            row.get("TP_LastName"),
+        ),
+        "taxpayer_dob": parse_date(row.get("TP_DoB")),
+        "spouse_first_name": row.get("SP_FirstName") or None,
+        "spouse_last_name": row.get("SP_LastName") or None,
+        "spouse_normalized_name": normalized_name(
+            row.get("SP_FirstName"),
+            row.get("SP_LastName"),
+        ),
+        "spouse_dob": parse_date(row.get("SP_DoB")),
+        "filing_status": row.get("FS") or None,
+        "return_type": row.get("Type") or None,
+        "preparer_code": row.get("Prep") or None,
+        "agi": decimal_value(row.get("AGI")),
+        "preparer_fee": decimal_value(row.get("Prep_Fee")),
+        "prepare_date": parse_date(row.get("Prepare - Date")),
+        "review_date": parse_date(row.get("Review - Date")),
+        "approved_date": parse_date(row.get("Approved - Date")),
+        "complete_date": parse_date(row.get("Complete - Date")),
+        "federal_product": row.get("e-File Product #1") or None,
+        "federal_ack_date": parse_date(row.get("e-File ACK Date #1")),
+        "federal_ack_code": row.get("e-File ACK Code #1") or None,
+        "state_product": row.get("e-File Product #2") or None,
+        "state_ack_date": parse_date(row.get("e-File ACK Date #2")),
+        "state_ack_code": row.get("e-File ACK Code #2") or None,
+        "source_updated_at": source_updated_at,
+        "raw_data": json.dumps(row, ensure_ascii=False),
+    }
+
+
+def read_client_rows(tax_year, client_file):
+    """Parse one year's export. The WHOLE file is materialized on purpose.
+
+    Identity collisions are only visible with the complete export in hand, so the batch — not the
+    row — is the unit of import.
+    """
+    source_time = datetime.fromtimestamp(client_file.stat().st_mtime, tz=UTC)
+
+    with client_file.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+        return [
+            parse_client_row(
+                {clean(key): clean(value)
+                 for key, value in original_row.items() if key is not None},
+                tax_year=tax_year,
+                source_row_number=row_number,
+                source_updated_at=source_time,
+            )
+            for row_number, original_row in enumerate(csv.DictReader(handle), start=1)
+        ]
 
 
 def import_year(connection, tax_year, client_file):
-    source_time = datetime.fromtimestamp(
-        client_file.stat().st_mtime,
-        tz=UTC,
-    )
-
-    count = 0
-
-    with client_file.open(
-        "r",
-        encoding="utf-8-sig",
-        errors="replace",
-        newline="",
-    ) as handle:
-        reader = csv.DictReader(handle)
-
-        for row_number, original_row in enumerate(reader, start=1):
-            row = {
-                clean(key): clean(value)
-                for key, value in original_row.items()
-                if key is not None
-            }
-
-            connection.execute(
-                upsert,
-                {
-                    "tax_year": tax_year,
-                    "source_row_number": row_number,
-                    "taxpayer_identifier_hash": identifier_hash(
-                        row.get("TP_Social")
-                    ),
-                    "spouse_identifier_hash": identifier_hash(
-                        row.get("SP_Social")
-                    ),
-                    "taxpayer_first_name": row.get("TP_FirstName") or None,
-                    "taxpayer_last_name": row.get("TP_LastName") or None,
-                    "taxpayer_normalized_name": normalized_name(
-                        row.get("TP_FirstName"),
-                        row.get("TP_LastName"),
-                    ),
-                    "taxpayer_dob": parse_date(row.get("TP_DoB")),
-                    "spouse_first_name": row.get("SP_FirstName") or None,
-                    "spouse_last_name": row.get("SP_LastName") or None,
-                    "spouse_normalized_name": normalized_name(
-                        row.get("SP_FirstName"),
-                        row.get("SP_LastName"),
-                    ),
-                    "spouse_dob": parse_date(row.get("SP_DoB")),
-                    "filing_status": row.get("FS") or None,
-                    "return_type": row.get("Type") or None,
-                    "preparer_code": row.get("Prep") or None,
-                    "agi": decimal_value(row.get("AGI")),
-                    "preparer_fee": decimal_value(row.get("Prep_Fee")),
-                    "prepare_date": parse_date(row.get("Prepare - Date")),
-                    "review_date": parse_date(row.get("Review - Date")),
-                    "approved_date": parse_date(row.get("Approved - Date")),
-                    "complete_date": parse_date(row.get("Complete - Date")),
-                    "federal_product": row.get("e-File Product #1") or None,
-                    "federal_ack_date": parse_date(
-                        row.get("e-File ACK Date #1")
-                    ),
-                    "federal_ack_code": row.get("e-File ACK Code #1") or None,
-                    "state_product": row.get("e-File Product #2") or None,
-                    "state_ack_date": parse_date(
-                        row.get("e-File ACK Date #2")
-                    ),
-                    "state_ack_code": row.get("e-File ACK Code #2") or None,
-                    "source_updated_at": source_time,
-                    "raw_data": json.dumps(row, ensure_ascii=False),
-                },
-            )
-
-            count += 1
-
-    return count
+    """Import one year by STABLE IDENTITY. Returns the upsert summary."""
+    return upsert_return_rows(connection, read_client_rows(tax_year, client_file))
 
 
 folders = sorted(
@@ -289,15 +194,30 @@ with engine.begin() as connection:
             print(f"{tax_year}: no valid client export found — skipped")
             continue
 
-        count = import_year(connection, tax_year, client_file)
-        results.append((tax_year, count, client_file.name))
+        summary = import_year(connection, tax_year, client_file)
+        results.append((tax_year, summary, client_file.name))
 
         print(
-            f"{tax_year}: imported {count} rows "
-            f"from {client_file.name}"
+            f"{tax_year}: read {summary['rows_read']} rows from {client_file.name} — "
+            f"{summary['inserted']} inserted, {summary['updated']} updated, "
+            f"{summary['quarantined']} quarantined"
         )
 
 print("\nAll-year Drake import completed.")
 
-for tax_year, count, filename in results:
-    print(f"  {tax_year}: {count} returns ({filename})")
+total_quarantined = 0
+
+for tax_year, summary, filename in results:
+    total_quarantined += summary["quarantined"]
+    print(f"  {tax_year}: {summary['identified']} returns ({filename})")
+
+# Quarantined rows are reported, never guessed at. A row lands here when it carries no usable taxpayer
+# identifier, or when several rows in one export claim one identity — see
+# ``app.services.drake_return_identity``. Nothing was written for them, so no existing return was
+# overwritten; they need a human to look at the export.
+if total_quarantined:
+    print(f"\n{total_quarantined} row(s) QUARANTINED — imported for no one, and needing review:")
+    for tax_year, summary, _filename in results:
+        for row in summary["quarantined_rows"]:
+            print(f"  {tax_year} row {row['source_row_number']} "
+                  f"(type={row['return_type'] or '<blank>'}): {row['identity_status']}")
