@@ -9,13 +9,16 @@ Every test here asserts either that evidence is genuinely required, or that a wr
 
 Temp/test rows only, all tagged and torn down.
 """
+import contextlib
 import csv
 import hashlib
+import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, insert, select, text
+from sqlalchemy import delete, event, insert, select, text
 
 from app.db import engine, metadata, people, person_source_links, source_contacts
 from app.services.drake_trust_backfill import (
@@ -372,16 +375,118 @@ def _trust_of(link_ids):
             {"ids": list(link_ids)}).mappings()}
 
 
-def test_dry_run_commits_nothing(world, tmp_path):
+@contextlib.contextmanager
+def _captured_sql():
+    """Every statement the engine sends to Postgres while the block runs.
+
+    Proving "no UPDATE" by inspecting the database afterwards cannot distinguish "never wrote" from
+    "wrote and rolled back" — and that distinction IS the fix under test. Capturing the statements
+    proves the stronger claim: the UPDATE was never sent, so no row lock was ever taken.
+    """
+    seen = []
+
+    def listen(conn, cursor, statement, parameters, context, executemany):
+        seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", listen)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "before_cursor_execute", listen)
+
+
+def _writes_in(statements):
+    return [s for s in statements
+            if re.match(r"\s*(update|insert|delete)\b", s, re.IGNORECASE)]
+
+
+def _audit_count():
+    with engine.connect() as c:
+        return c.execute(text("SELECT count(*) FROM audit_events")).scalar()
+
+
+def _dry_run(world_, result, census, phrase, tmp_path):
+    from scripts.apply_drake_trust_backfill import run
+    return run(plan_path=result["plan_path"], expect_sha=result["plan_sha256"],
+               expect_rows=result["planned_rows"], expect_census=census,
+               apply_changes=False, confirm=phrase, batch_id="roundtrip",
+               actor_user_id=world_["user"], snapshot_root=tmp_path / "dr",
+               emit=lambda *_: None)
+
+
+# --- A/B/C/D: the dry-run safety contract ----------------------------------------------------------
+
+def test_dry_run_sends_no_update_insert_or_delete(world, tmp_path):
+    """A. Not 'rolled back' — never sent. No write lock is taken by an attempted UPDATE."""
+    result, census, phrase = _approved_plan(tmp_path)
+    with _captured_sql() as statements:
+        report = _dry_run(world, result, census, phrase, tmp_path)
+    assert _writes_in(statements) == []
+    assert report["committed"] is False
+    assert report["written"] == 0
+    assert report["would_write"] == result["planned_rows"]
+
+
+def test_dry_run_creates_no_rollback_snapshot(world, tmp_path):
+    """B. A snapshot implies an apply happened. A dry run must not leave one."""
+    result, census, phrase = _approved_plan(tmp_path)
+    _dry_run(world, result, census, phrase, tmp_path)
+    assert not (tmp_path / "dr").exists(), "dry run left a rollback snapshot on disk"
+
+
+def test_dry_run_creates_no_audit_event(world, tmp_path):
+    """C."""
+    result, census, phrase = _approved_plan(tmp_path)
+    before = _audit_count()
+    _dry_run(world, result, census, phrase, tmp_path)
+    assert _audit_count() == before
+
+
+def test_dry_run_leaves_every_trust_column_unchanged(world, tmp_path):
+    """D."""
+    result, census, phrase = _approved_plan(tmp_path)
+    ids = list(world["link"].values())
+    with engine.connect() as c:
+        before = {r["id"]: dict(r) for r in c.execute(text(
+            "SELECT id, trust_level, confirmation_source, evidence_method, "
+            "confirmed_by_user_id, confirmed_at FROM person_source_links WHERE id = ANY(:ids)"),
+            {"ids": ids}).mappings()}
+    _dry_run(world, result, census, phrase, tmp_path)
+    with engine.connect() as c:
+        after = {r["id"]: dict(r) for r in c.execute(text(
+            "SELECT id, trust_level, confirmation_source, evidence_method, "
+            "confirmed_by_user_id, confirmed_at FROM person_source_links WHERE id = ANY(:ids)"),
+            {"ids": ids}).mappings()}
+    assert after == before
+
+
+def test_dry_run_still_detects_drift(world, tmp_path):
+    """A dry run that writes nothing must still be a real check, not a rubber stamp."""
     from scripts.apply_drake_trust_backfill import run
     result, census, phrase = _approved_plan(tmp_path)
-    before = _trust_of(world["link"].values())
-    with pytest.raises(SystemExit, match="dry run complete"):
-        run(plan_path=result["plan_path"], expect_sha=result["plan_sha256"],
-            expect_rows=result["planned_rows"], expect_census=census,
-            apply_changes=False, confirm=phrase, batch_id="roundtrip", actor_user_id=world["user"],
-            snapshot_root=tmp_path / "dr", emit=lambda *_: None)
-    assert _trust_of(world["link"].values()) == before
+    with engine.begin() as c:
+        c.execute(delete(drake_client_returns).where(drake_client_returns.c.id.in_(world["ret"])))
+    try:
+        with pytest.raises(SystemExit, match="no longer match the live evidence"):
+            run(plan_path=result["plan_path"], expect_sha=result["plan_sha256"],
+                expect_rows=result["planned_rows"], expect_census=census,
+                apply_changes=False, confirm=phrase, batch_id="roundtrip",
+                actor_user_id=world["user"], snapshot_root=tmp_path / "dr",
+                emit=lambda *_: None)
+    finally:
+        world["ret"].clear()
+
+
+# --- E: preview is read-only -----------------------------------------------------------------------
+
+def test_preview_sends_no_write_statements(world, tmp_path):
+    """E."""
+    from scripts.apply_drake_trust_backfill import run
+    audit_before = _audit_count()
+    with _captured_sql() as statements:
+        run(preview=True, out_dir=tmp_path, emit=lambda *_: None)
+    assert _writes_in(statements) == []
+    assert _audit_count() == audit_before
 
 
 def test_apply_then_rollback_restores_every_row(world, tmp_path):
@@ -400,6 +505,10 @@ def test_apply_then_rollback_restores_every_row(world, tmp_path):
                        emit=lambda *_: None)
     try:
         assert report["committed"] is True
+        # G: an ACTUAL apply does leave a rollback snapshot, and it hashes to what it recorded.
+        snapshot = Path(report["snapshot"])
+        assert snapshot.is_file()
+        assert hashlib.sha256(snapshot.read_bytes()).hexdigest() == report["snapshot_sha256"]
         after = _trust_of(world["link"].values())
         assert after[world["link"]["identifier"]] == IDENTIFIER_VERIFIED
         assert after[world["link"]["approved"]] == HUMAN_APPROVED
@@ -427,11 +536,15 @@ def test_apply_aborts_when_the_evidence_drifted_since_the_plan(world, tmp_path):
         c.execute(delete(drake_client_returns).where(
             drake_client_returns.c.id.in_(world["ret"])))
     try:
-        with pytest.raises(SystemExit, match="no longer match the live evidence"):
+        with _captured_sql() as statements, \
+                pytest.raises(SystemExit, match="no longer match the live evidence"):
             run(plan_path=result["plan_path"], expect_sha=result["plan_sha256"],
                 expect_rows=result["planned_rows"], expect_census=census,
                 apply_changes=True, confirm=phrase, batch_id="roundtrip",
                 actor_user_id=world["user"], snapshot_root=tmp_path / "dr", emit=lambda *_: None)
         assert _trust_of(world["link"].values()) == before, "an aborted apply must write nothing"
+        # H: the abort happens in the read-only validation pass, so nothing was even attempted.
+        assert _writes_in(statements) == []
+        assert not (tmp_path / "dr").exists(), "an aborted apply left a rollback snapshot"
     finally:
         world["ret"].clear()

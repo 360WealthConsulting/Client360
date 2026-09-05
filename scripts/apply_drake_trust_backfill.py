@@ -23,6 +23,20 @@ WHY APPLY RE-DERIVES INSTEAD OF TRUSTING THE PLAN
     is no longer eligible, or eligible at a different level — aborts the whole run. A stale plan can
     never write.
 
+WHICH MODES TOUCH ANYTHING
+    ``--preview``   pure read. SELECTs only; writes the plan + digest to ``--out`` and nothing else.
+    ``--dry-run``   pure read against the database. Runs every authorization and drift check needed
+                    to prove an apply would be accepted, then RETURNS before the first side effect:
+                    no UPDATE, no row locks taken by an attempted UPDATE, no rollback snapshot, no
+                    audit event. Exits 0 when the plan is good.
+    ``--apply``     the only mode that writes anything.
+
+    Use ``--preview`` or ``--dry-run`` against production; neither modifies it. An earlier revision
+    made ``--dry-run`` prove itself by running the UPDATEs and relying on the transaction rolling
+    back — nothing persisted, but statements executed, locks were taken, and a rollback snapshot was
+    left on disk for an apply that never happened. Rollback is a safety net, not a substitute for not
+    writing.
+
 WHAT IT WILL ACTUALLY DO TODAY
     Measured against production: 533 rows eligible (all ``identifier_verified``), 3,074 refused.
     ZERO ``human_approved``, because ``drake_identity_match_candidates`` holds 435 rows that are all
@@ -164,6 +178,29 @@ def _write_snapshot(before, rows, digest, batch_id, root) -> tuple[Path, str]:
     return path, meta["snapshot_sha256"]
 
 
+def _resolve_and_check_drift(conn, rows):
+    """Re-derive the plan from ``conn`` and compare it to the approved rows.
+
+    Returns ``(live_by_id, drift)``. Pure read — it runs the classifier and compares, and is used by
+    BOTH the read-only validation pass and the write transaction so the two cannot diverge in what
+    they consider drift.
+    """
+    live = build_plan(conn)
+    live_by_id = {e["person_source_link_id"]: e for e in live["planned"]}
+
+    drift = []
+    for r in rows:
+        link_id = int(r["person_source_link_id"])
+        current = live_by_id.get(link_id)
+        if current is None:
+            drift.append({"person_source_link_id": link_id, "problem": "no longer eligible"})
+        elif current["trust_level"] != r["trust_level"]:
+            drift.append({"person_source_link_id": link_id,
+                          "problem": f"evidence now supports {current['trust_level']}, "
+                                     f"plan says {r['trust_level']}"})
+    return live_by_id, drift
+
+
 def run(*, preview=False, out_dir=None, plan_path=None, expect_sha=None, expect_rows=None,
         expect_census=None, apply_changes=False, confirm=None, batch_id=None, actor_user_id=None,
         snapshot_root=SNAPSHOT_ROOT, emit=print):
@@ -192,29 +229,39 @@ def run(*, preview=False, out_dir=None, plan_path=None, expect_sha=None, expect_
     report = {"written": 0, "skipped": 0, "drift": [], "committed": False,
               "plan_sha256": digest, "batch_id": batch_id}
 
+    # PASS 1 — VALIDATION, on a read-only connection.
+    #
+    # A dry run has to prove the apply WOULD be accepted, and it must do so without a single side
+    # effect. An earlier revision proved it by running the UPDATEs and relying on the transaction
+    # rolling back: nothing persisted, but the statements executed, took row locks, and the run also
+    # left a rollback snapshot on disk for an apply that never happened. Rollback is a safety net,
+    # not a substitute for not writing. Dry run now RETURNS from here, before the first side effect.
+    with engine.connect() as conn:
+        live_by_id, drift = _resolve_and_check_drift(conn, rows)
+    report["drift"] = drift
+    if drift:
+        for d in drift[:20]:
+            emit(f"    DRIFT {d['person_source_link_id']}: {d['problem']}")
+        raise SystemExit(f"ABORT: {len(drift)} planned row(s) no longer match the live evidence; "
+                         "nothing was written. Re-run --preview.")
+
+    if not apply_changes:
+        report["would_write"] = len(rows)
+        emit(f"DRY RUN: {len(rows)} row(s) would be written; the plan matches the live evidence.")
+        emit("DRY RUN: nothing was written — no UPDATE, no snapshot, no audit event.")
+        emit("Re-run with --apply to commit.")
+        return report
+
+    # PASS 2 — THE WRITE. Drift is re-checked INSIDE the write transaction, because pass 1 ran on a
+    # different connection and the evidence could have moved between the two.
     with engine.begin() as conn:
-        # Re-derive from the LIVE database inside the transaction. The approved plan is checked
-        # against reality, never replayed over it.
-        live = build_plan(conn)
-        live_by_id = {e["person_source_link_id"]: e for e in live["planned"]}
-
-        for r in rows:
-            link_id = int(r["person_source_link_id"])
-            current = live_by_id.get(link_id)
-            if current is None:
-                report["drift"].append(
-                    {"person_source_link_id": link_id, "problem": "no longer eligible"})
-            elif current["trust_level"] != r["trust_level"]:
-                report["drift"].append({
-                    "person_source_link_id": link_id,
-                    "problem": f"evidence now supports {current['trust_level']}, "
-                               f"plan says {r['trust_level']}"})
-
-        if report["drift"]:
-            for d in report["drift"][:20]:
+        live_by_id, drift = _resolve_and_check_drift(conn, rows)
+        report["drift"] = drift
+        if drift:
+            for d in drift[:20]:
                 emit(f"    DRIFT {d['person_source_link_id']}: {d['problem']}")
-            raise SystemExit(f"ABORT: {len(report['drift'])} planned row(s) no longer match the "
-                             "live evidence; nothing was written. Re-run --preview.")
+            raise SystemExit(f"ABORT: {len(drift)} planned row(s) drifted between validation and "
+                             "apply; nothing was written. Re-run --preview.")
 
         link_ids = [int(r["person_source_link_id"]) for r in rows]
         before = current_state(conn, link_ids)
@@ -227,10 +274,6 @@ def run(*, preview=False, out_dir=None, plan_path=None, expect_sha=None, expect_
                 report["written"] += 1
             else:
                 report["skipped"] += 1
-
-        if not apply_changes:
-            raise SystemExit("ABORT: dry run complete; nothing committed "
-                             "(re-run with --apply to commit)")
 
         write_audit_event(
             action="drake.link_trust_backfilled", entity_type="person_source_links",
