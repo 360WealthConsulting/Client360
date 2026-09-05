@@ -38,11 +38,12 @@ def test_inbox_summary_reflects_unowned_and_ocr():
 
 def test_inbox_summary_lists_every_review_lane():
     lanes = inbox_summary()["lanes"]
-    assert lanes is REVIEW_LANES and len(lanes) == 5
+    assert lanes is REVIEW_LANES and len(lanes) == 6
     urls = {lane["url"] for lane in lanes}
     assert urls == {"/admin/documents/unassigned", "/admin/documents/review-queue",
                     "/admin/documents/high-confirm", "/admin/documents/entity-proposals",
-                    "/admin/documents/context-review"}
+                    "/admin/documents/context-review",
+                    "/admin/documents/unassigned?lane=deferred"}
     assert all(lane.get("label") and lane.get("desc") for lane in lanes)
 
 

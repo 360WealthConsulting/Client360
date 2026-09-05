@@ -25,6 +25,62 @@
 
 </section>
 
+{% if deferred_lane %}
+{# DEFERRED-OWNERSHIP LANE. Same page, filtered view: these documents are parked because their
+   owner is not currently provable, not because anything is wrong with them. They keep every byte
+   of provenance and stay searchable everywhere staff already look — this lane exists so they stop
+   counting as outstanding work, not so they stop existing. Promotion is the ordinary
+   resolve-document flow below, which clears the deferral in the same atomic write. #}
+<section class="u-mt-18px u-mb-22px">
+  <div class="row u-justify-between u-items-end u-gap-12px u-wrap">
+    <h2 class="section-title">Deferred ownership</h2>
+    <span class="subtle">{{ deferred_rows | length }} shown ·
+      {{ deferred_reason_counts.get('total', 0) }} deferred in total</span>
+  </div>
+  <p class="subtle">Valid documents whose owner cannot be proven from the evidence available today.
+    They are excluded from the actionable backlog and from filing-completion metrics, and are
+    promoted the moment an owner can be established.</p>
+
+  <div class="row tight u-mb-12px">
+    <a class="btn {% if not deferred_reason %}secondary{% endif %}"
+       href="/admin/documents/unassigned?lane=deferred">All reasons</a>
+    {% for r in deferrable_reasons %}
+    <a class="btn {% if deferred_reason != r %}secondary{% endif %}"
+       href="/admin/documents/unassigned?lane=deferred&amp;reason={{ r }}">{{ r }}
+      ({{ deferred_reason_counts.get(r, 0) }})</a>
+    {% endfor %}
+    <a class="btn secondary" href="/admin/documents/unassigned">Back to actionable queue</a>
+  </div>
+
+  {% if not deferred_rows %}
+    <div class="card c-p-14px-16px subtle">Nothing is deferred{% if deferred_reason %}
+      under “{{ deferred_reason }}”{% endif %}.</div>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Document</th><th>Reason</th><th>Route at deferral</th><th>Source</th>
+      <th>Deferred</th><th>OCR</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for d in deferred_rows %}
+      <tr>
+        <td><a href="{{ d.view_url }}">{{ d.name }}</a>
+            <div class="subtle">{{ d.original_name }}</div></td>
+        <td>{{ d.deferral_reason or '—' }}</td>
+        <td>{{ d.deferral_route or 'no proposal' }}</td>
+        <td>{{ d.source_system or '—' }}</td>
+        <td>{{ (d.deferred_at or '')[:10] or '—' }}</td>
+        <td>{{ d.ocr_status or '—' }}</td>
+        <td><a class="btn secondary"
+               href="/admin/documents/{{ d.id }}/resolve-document">Review &amp; file</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if drake_unassigned %}
 <section class="u-mt-18px u-mb-22px">
   <div class="row u-justify-between u-items-end u-gap-12px u-wrap">
