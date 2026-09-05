@@ -495,7 +495,7 @@ def _attach_version_family(docs):
         name = (d.get("original_name") or "").strip().lower()
         if name:
             by_name.setdefault(name, []).append(d)
-    for name, members in by_name.items():
+    for _name, members in by_name.items():
         if len(members) < 2 or len({id(m) for m in members}) < 2:
             continue
         if len({m.get("version_family_key") for m in members}) == 1 and \

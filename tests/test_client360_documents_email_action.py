@@ -10,7 +10,7 @@ import re
 import uuid
 
 import pytest
-from sqlalchemy import func, insert, select
+from sqlalchemy import insert, select
 
 from app.db import documents, engine, households, people, relationship_entities
 from app.security.models import Principal

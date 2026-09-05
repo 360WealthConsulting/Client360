@@ -1,6 +1,5 @@
 from typing import Any, Mapping, Optional
 
-
 #: Recommendations that fire purely because a FIELD IS EMPTY, not because the client's situation
 #: presents an opportunity. They are a data-completeness checklist: useful on an onboarding or
 #: data-quality surface, misleading under the heading "Advisor Recommendations" on a client

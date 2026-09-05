@@ -20,8 +20,8 @@ import pytest
 from sqlalchemy import select
 
 from app.db import documents, engine, people
-from app.services.document_owner_proposal import propose_document_owner
 from app.services import document_high_validation as hv
+from app.services.document_owner_proposal import propose_document_owner
 
 _TAG = uuid.uuid4().hex[:8]
 _A = _TAG.translate(str.maketrans("0123456789", "abcdefghij"))
