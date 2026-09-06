@@ -184,8 +184,12 @@ def _folder_category_counts(conn, folder_names):
 
     _tally("docs_in_folder", base)
     _tally("reject", and_(base, documents.c.id.in_(rejects)))
+    # "eligible" means eligible for OWNERSHIP ASSIGNMENT, so a document classified as a non-client
+    # artifact is not eligible — it is still counted in docs_in_folder, which stays the raw total.
+    from app.services.document_platform.lifecycle import not_excluded_nonclient_clause
     _tally("eligible", and_(base, not_reject, documents.c.person_id.is_(None),
-                            documents.c.household_id.is_(None), documents.c.organization_id.is_(None)))
+                            documents.c.household_id.is_(None), documents.c.organization_id.is_(None),
+                            not_excluded_nonclient_clause()))
     _tally("already_owned", and_(base, not_reject, or_(
         documents.c.person_id.isnot(None), documents.c.household_id.isnot(None),
         documents.c.organization_id.isnot(None))))
