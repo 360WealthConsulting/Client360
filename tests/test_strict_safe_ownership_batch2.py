@@ -27,6 +27,7 @@ from sqlalchemy import delete, select, text
 from app.db import documents, engine, metadata, people
 from app.services import document_strict_safe_ownership_batch2 as b2
 from scripts import apply_strict_safe_ownership_batch2 as ap
+from scripts import rollback_strict_safe_ownership_batch2 as rb
 
 _TAG = f"SSOTWO{uuid.uuid4().hex[:6]}"
 
@@ -198,6 +199,17 @@ def _audit_rows(request_id):
     audit = metadata.tables["audit_events"]
     with engine.connect() as c:
         return c.execute(select(audit.c.id).where(audit.c.request_id == request_id)).all()
+
+
+def _audit_events(request_id):
+    audit = metadata.tables["audit_events"]
+    with engine.connect() as c:
+        return c.execute(select(audit.c.action, audit.c.entity_id, audit.c.metadata)
+                         .where(audit.c.request_id == request_id)).mappings().all()
+
+
+def _snap_dir(batch):
+    return next(Path(batch["snapshot_root"]).glob("strict-safe-ownership-batch2-apply-*"))
 
 
 def _request_id(sha):
@@ -645,7 +657,7 @@ def test_apply_leaves_sources_and_ocr_untouched(batch):
 
 def test_snapshot_is_written_before_any_write_and_names_the_corroborator(batch):
     _apply(batch)
-    snap_dir = next(Path(batch["snapshot_root"]).glob("strict-safe-ownership-batch2-apply-*"))
+    snap_dir = _snap_dir(batch)
     rows = list(csv.DictReader((snap_dir / ap.SNAPSHOT_CSV).open(encoding="utf-8")))
     assert len(rows) == 3
     for r in rows:
@@ -701,7 +713,176 @@ def test_a_late_invariant_failure_rolls_back_ownership_and_audit(batch, monkeypa
         assert _row(did)["person_id"] is None, "ownership must not survive a failed invariant"
     assert _audit_rows(_request_id(batch["sha"])) == [], \
         "audit must not survive a failed invariant either"
-    snap_dir = next(Path(batch["snapshot_root"]).glob("strict-safe-ownership-batch2-apply-*"))
+    snap_dir = _snap_dir(batch)
     assert (snap_dir / ap.SNAPSHOT_CSV).is_file(), \
         "the snapshot is taken before the writes and survives the rollback"
     assert not (snap_dir / "apply_receipt.json").exists(), "a receipt is written only after commit"
+
+
+# --- the batch 2 rollback ------------------------------------------------------
+
+def _rollback(batch, **kw):
+    kw.setdefault("snapshot_root", batch["snapshot_root"])
+    kw.setdefault("out", lambda *_a, **_k: None)
+    return rb.run(_snap_dir(batch), **kw)
+
+
+def _rollback_request_id(batch):
+    return f"strict-safe-ownership-batch2-rollback:{ap.sha256_of(_snap_dir(batch) / ap.SNAPSHOT_CSV)[:12]}"
+
+
+def _rewrite_snapshot(snap_dir, *, rows=None, batch_id="STRICT-SAFE-OWNERSHIP-2", columns=None):
+    """Rewrite a snapshot in place, keeping manifest.json's recorded digest correct."""
+    path = snap_dir / ap.SNAPSHOT_CSV
+    existing = list(csv.DictReader(path.open(encoding="utf-8")))
+    rows = existing if rows is None else rows
+    columns = columns if columns is not None else list(rows[0])
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=columns, lineterminator="\n", extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    meta = json.loads((snap_dir / "manifest.json").read_text(encoding="utf-8"))
+    meta["batch_id"] = batch_id
+    meta["snapshot_sha256"] = ap.sha256_of(path)
+    (snap_dir / "manifest.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+
+def test_rollback_confirmation_phrase_is_batch2_specific():
+    """The reviewed batch's phrase, and one a batch 1 phrase can never satisfy."""
+    from scripts import rollback_strict_safe_ownership as batch1_rb
+    assert rb.confirm_phrase(52) == "ROLLBACK-STRICT-SAFE-OWNERSHIP-2-52"
+    assert batch1_rb.confirm_phrase(52) == "ROLLBACK-STRICT-SAFE-OWNERSHIP-1-52"
+    assert rb.confirm_phrase(52) != batch1_rb.confirm_phrase(52)
+    assert rb.EXPECTED_BATCH_ID == b2.BATCH_ID == "STRICT-SAFE-OWNERSHIP-2"
+
+
+def test_rollback_is_read_only_by_default(batch):
+    _apply(batch)
+    report = _rollback(batch)
+    assert report["committed"] is False and report["restored"] == 0
+    assert report["confirm_phrase"] == rb.confirm_phrase(3)
+    for did in batch["ids"]:
+        assert _row(did)["person_id"] is not None, "a dry run must not revert anything"
+    assert _audit_rows(_rollback_request_id(batch)) == []
+    assert not (_snap_dir(batch) / "rollback_receipt.json").exists()
+
+
+def test_rollback_requires_the_batch2_phrase_and_an_actor(batch):
+    _apply(batch)
+    from scripts import rollback_strict_safe_ownership as batch1_rb
+    with pytest.raises(SystemExit, match="ROLLBACK-STRICT-SAFE-OWNERSHIP-2-3"):
+        _rollback(batch, apply_changes=True, actor_user_id=7,
+                  confirm=batch1_rb.confirm_phrase(3))
+    with pytest.raises(SystemExit, match="--confirm"):
+        _rollback(batch, apply_changes=True, actor_user_id=7)
+    with pytest.raises(SystemExit, match="actor"):
+        _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(3))
+    for did in batch["ids"]:
+        assert _row(did)["person_id"] is not None
+
+
+def test_rollback_restores_exact_prior_state_and_audits_as_batch2(batch):
+    prior = {did: dict(_row(did)) for did in batch["ids"]}
+    _apply(batch)
+    request_id = _rollback_request_id(batch)
+
+    report = _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(3), actor_user_id=7)
+    assert report["committed"] is True and report["restored"] == 3
+
+    for did in batch["ids"]:
+        now, was = _row(did), prior[did]
+        assert now["person_id"] == was["person_id"] is None
+        assert now["household_id"] == was["household_id"]
+        assert now["organization_id"] == was["organization_id"]
+        assert now["review_status"] == was["review_status"]
+        assert now["tags"] == was["tags"]
+
+    events = _audit_events(request_id)
+    assert len(events) == 3
+    assert {e["action"] for e in events} == {"document.ownership_rollback"}
+    assert {int(e["entity_id"]) for e in events} == set(batch["ids"])
+    assert {e["metadata"]["batch_id"] for e in events} == {"STRICT-SAFE-OWNERSHIP-2"}
+    assert (_snap_dir(batch) / "rollback_receipt.json").is_file()
+
+
+def test_rollback_refuses_a_tampered_snapshot(batch):
+    _apply(batch)
+    snap = _snap_dir(batch) / ap.SNAPSHOT_CSV
+    snap.write_text(snap.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="has been modified"):
+        _rollback(batch)
+    for did in batch["ids"]:
+        assert _row(did)["person_id"] is not None
+
+
+def test_rollback_refuses_a_batch1_snapshot_by_its_manifest(batch):
+    _apply(batch)
+    _rewrite_snapshot(_snap_dir(batch), batch_id="STRICT-SAFE-OWNERSHIP-1")
+    with pytest.raises(SystemExit, match="not 'STRICT-SAFE-OWNERSHIP-2'"):
+        _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(3), actor_user_id=7)
+    for did in batch["ids"]:
+        assert _row(did)["person_id"] is not None
+
+
+def test_rollback_refuses_a_batch1_shaped_snapshot_by_its_columns(batch):
+    """Even a manifest that CLAIMS batch 2: batch 1's snapshot carries corroborator_count."""
+    _apply(batch)
+    snap_dir = _snap_dir(batch)
+    rows = list(csv.DictReader((snap_dir / ap.SNAPSHOT_CSV).open(encoding="utf-8")))
+    batch1_shaped = [{**{k: v for k, v in r.items()
+                         if k not in b2.CORROBORATOR_KINDS and k != "corroborator"},
+                      "corroborator_count": 2} for r in rows]
+    _rewrite_snapshot(snap_dir, rows=batch1_shaped, columns=list(batch1_shaped[0]))
+    with pytest.raises(SystemExit, match="batch 1 column"):
+        _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(3), actor_user_id=7)
+    for did in batch["ids"]:
+        assert _row(did)["person_id"] is not None
+
+
+def test_rollback_refuses_a_snapshot_outside_the_batch2_root(batch):
+    """The default root is var/strict_safe_ownership_batch2; anything else needs a deliberate flag."""
+    _apply(batch)
+    with pytest.raises(SystemExit, match="not under the batch 2 snapshot root"):
+        rb.run(_snap_dir(batch), out=lambda *_a, **_k: None)
+    for did in batch["ids"]:
+        assert _row(did)["person_id"] is not None
+
+
+def test_rollback_drift_blocks_the_entire_rollback(batch):
+    _apply(batch)
+    other = _person("Reassigned")
+    with engine.begin() as c:
+        c.execute(documents.update().where(documents.c.id == batch["ids"][0])
+                  .values(person_id=other))
+    with pytest.raises(SystemExit, match="drifted"):
+        _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(3), actor_user_id=7)
+    assert _row(batch["ids"][0])["person_id"] == other
+    for did in batch["ids"][1:]:
+        assert _row(did)["person_id"] is not None, "no row may revert when the rollback aborts"
+    assert _audit_rows(_rollback_request_id(batch)) == []
+
+
+def test_rollback_scope_never_broadens_beyond_the_snapshot_ids(batch):
+    """A document this batch never touched must survive the rollback exactly as it was."""
+    bystander = _doc(batch["p1"], "Ada", route="MEDIUM")
+    _apply(batch)
+    with engine.begin() as c:
+        c.execute(documents.update().where(documents.c.id == bystander)
+                  .values(person_id=batch["p1"]))
+    before = dict(_row(bystander))
+    _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(3), actor_user_id=7)
+    assert dict(_row(bystander)) == before, "the bystander is not in the snapshot and must not move"
+
+
+def test_rollback_of_a_partial_snapshot_reverts_only_its_own_ids(batch):
+    """Scope is the snapshot's ids, not "everything this batch might have touched"."""
+    _apply(batch)
+    snap_dir = _snap_dir(batch)
+    rows = list(csv.DictReader((snap_dir / ap.SNAPSHOT_CSV).open(encoding="utf-8")))
+    kept = [r for r in rows if int(r["document_id"]) != batch["ids"][-1]]
+    _rewrite_snapshot(snap_dir, rows=kept)
+    report = _rollback(batch, apply_changes=True, confirm=rb.confirm_phrase(2), actor_user_id=7)
+    assert report["restored"] == 2
+    for did in batch["ids"][:-1]:
+        assert _row(did)["person_id"] is None
+    assert _row(batch["ids"][-1])["person_id"] is not None, "an id not in the snapshot is out of scope"
