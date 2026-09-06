@@ -23,7 +23,10 @@ from . import gate, registry
 # Engagement modules that must remain read-only composition (governance.py excluded — it holds the
 # detection string-literals and would self-match; it enforces by checking, not by doing).
 _MODULES = ("service.py", "model.py", "registry.py", "gate.py", "stats.py", "metrics.py",
-            "diagnostics.py", "adapters/timeline.py", "adapters/portal.py")
+            "diagnostics.py", "adapters/timeline.py", "adapters/portal.py",
+            # Batch 4d unified staff feed. Held to the same read-only invariants as the rest of the
+            # layer: it composes the portal and canonical-email stores and writes to neither.
+            "feed.py", "adapters/email_feed.py", "adapters/portal_feed.py")
 
 # The authoritative composed reads the layer must reuse (proves no shadow timeline / no domain fan-out).
 _AUTHORITATIVE_READS = ("activity_timeline", "client_threads", "client_notifications",

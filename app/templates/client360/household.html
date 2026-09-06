@@ -257,6 +257,10 @@
   <h2 class="section-title">Benefits by member</h2>
   <article class="card">{% for m in sec.members %}<div class="detail-row"><span><a href="/client/{{ m.person_id }}?tab=benefits">{{ m.name }}</a></span><strong class="subtle">{{ m.summary.employments }} relationship(s)</strong></div>{% else %}{% call ui.empty("No benefits") %}{% endcall %}{% endfor %}</article>
 
+{% elif active_tab == "communications" %}
+  {% set base_q = base ~ "?tab=communications" %}
+  {% include "client360/_communications_feed.html" %}
+
 {% else %}
   {% call ui.empty("Section", "No renderer for this section.") %}{% endcall %}
 {% endif %}

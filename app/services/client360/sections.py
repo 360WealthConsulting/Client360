@@ -801,15 +801,27 @@ def timeline(principal, ctx):
 
 
 def communications(principal, ctx):
-    """Unified engagement summary for the client — recent interactions across every channel, composed by
-    the D.44 engagement layer over the authoritative subsystems (never a second store)."""
+    """The unified staff communications surface — secure portal messages AND canonical email in one
+    chronological history, composed by the D.44 engagement layer over the authoritative stores.
+
+    The engagement SUMMARY (counts + last interaction) is unchanged and keeps riding the section's
+    ``communications.view`` gate. The FEED shows message content, so it is gated separately on
+    ``communications.message.read`` — the same capability the secure-message work queue requires,
+    because it is the same bodies. A principal without it gets the summary and no rows; the feed
+    composer itself fails closed, so this is not a hidden-button check (Batch 4d)."""
     from app.services.communications.engagement import engagement_summary, engagement_timeline
+    from app.services.communications.engagement.feed import client_communications
     pid, hid = _pid(ctx), _hid(ctx)
+    view = ctx.get("comms_view") or {}
     summary = engagement_summary(principal, person_id=pid, household_id=hid)
     recent = engagement_timeline(principal, person_id=pid, household_id=hid, page=1, page_size=8)
     rows = recent.get("rows", []) if recent else []
-    return {"summary": summary, "recent": rows, "source": "communications.engagement",
-            "not_a_second_store": True}
+    feed = client_communications(principal, person_id=pid, household_id=hid,
+                                 channel=view.get("channel") or None,
+                                 direction=view.get("direction") or None,
+                                 page=view.get("page") or 1)
+    return {"summary": summary, "recent": rows, "feed": feed,
+            "source": "communications.engagement", "not_a_second_store": True}
 
 
 def messages(principal, ctx):

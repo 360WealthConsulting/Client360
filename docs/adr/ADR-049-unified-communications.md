@@ -57,6 +57,35 @@ any new store:
 No migration, no new table, no new capability (reuses `communications.view` / `observability.audit`), and
 **no new outbox contract** — the layer only consumes existing authoritative reads.
 
+### Amendment (Batch 4d) — the staff communications feed composes the stores, not the timeline
+
+This ADR's own revisit condition named outbound email transport, which ADR-075 delivered. Building the
+unified staff surface on top of it established a rule the original design did not have to state, because
+until ADR-074/075 there was only one place email appeared:
+
+6. The **unified staff communications feed** (`feed.py`, `adapters/email_feed.py`,
+   `adapters/portal_feed.py`) composes the two AUTHORITATIVE correspondence stores DIRECTLY —
+   `portal_threads`/`portal_messages` and `communication_*` — rather than the activity timeline, and
+   normalizes both onto one `FeedEntry` display model.
+
+Why it does not use the timeline spine of (3): `activity_timeline` holds one row per *sender-matched
+inbound* email and none at all for outbound replies or recipient-matched inbound, because ADR-074/075
+deliberately do not write one (**one email, one timeline row**). It also carries no per-message direction,
+sender, attachment count or conversation identity. So the timeline can anchor a relationship view but
+cannot answer "what have we said to each other"; and reading BOTH the timeline and the canonical store
+would show every sender-matched inbound email twice. **Email is therefore taken from `communication_*`
+only.**
+
+This does not weaken the composition rule — it applies it one level lower. The feed still writes nothing,
+still emits no timeline event, still copies neither store into the other, is held to the same governance
+invariants (its modules are listed in `governance._MODULES`), and introduces no new interaction type: the
+registry already names `secure_message` and `email`. Portal and email conversations remain separate
+conversations even for the same client, which is correct — they are separate exchanges.
+
+Message CONTENT in this feed is gated on `communications.message.read` (the capability the secure-message
+work queue already requires, since it is the same bodies); the pre-existing engagement summary keeps
+riding `communications.view`.
+
 ## Alternatives considered
 - **A new `interactions` table + ingestion pipeline.** Rejected: a second store, duplicates content, and
   re-implements dedup/scope/redaction the activity timeline already owns.
@@ -107,13 +136,20 @@ because external portal principals are not staff principals and cannot use the r
 It only ever produces externally-visible interaction types (governance-verified).
 
 ## Revisit conditions
-Revisit when SMS or outbound email transport is implemented (new interaction sources), when a deep archive
-engagement view is required (beyond the recent-interactions window), or if any engagement lifecycle event
-gains a consumer that would justify an outbox contract.
+Revisit when SMS is implemented (a new interaction source), when a deep archive engagement view is
+required (beyond the recent-interactions window), when a firm-wide communications inbox or work queue is
+built across clients rather than per client, or if any engagement lifecycle event gains a consumer that
+would justify an outbox contract.
+
+Outbound email transport, named here originally, was delivered by ADR-075 and folded in by the Batch 4d
+amendment above.
 
 ## References
 - `app/services/communications/engagement/*` (`registry.py`, `model.py`, `service.py`, `gate.py`,
-  `stats.py`, `metrics.py`, `diagnostics.py`, `governance.py`, `adapters/timeline.py`, `adapters/portal.py`)
+  `stats.py`, `metrics.py`, `diagnostics.py`, `governance.py`, `adapters/timeline.py`, `adapters/portal.py`,
+  and the Batch 4d feed: `feed.py`, `adapters/email_feed.py`, `adapters/portal_feed.py`)
+- `app/templates/client360/_communications_feed.html`; `tests/test_unified_communications_feed.py`;
+  relates to ADR-074 (inbound normalization) and ADR-075 (outbound reply)
 - `app/routes/engagement.py`; portal routes in `app/routes/portal.py`; Client 360 section in
   `app/services/client360/{registry,sections}.py`; Household 360 section in
   `app/services/client360/household.py`; AI grounding in `app/services/ai_assist/context.py`;
