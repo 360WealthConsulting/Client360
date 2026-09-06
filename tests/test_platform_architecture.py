@@ -22,7 +22,7 @@ SERVICES = REPO / "app" / "services"
 
 
 def _manifest():
-    return yaml.safe_load(MANIFEST_PATH.read_text())
+    return yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
 # --- deliverables exist ------------------------------------------------------
@@ -33,13 +33,13 @@ def test_platform_architecture_document_and_manifest_exist():
 
 
 def test_required_document_sections_present():
-    text = DOC_PATH.read_text()
+    text = DOC_PATH.read_text(encoding="utf-8")
     for section in _manifest()["required_doc_sections"]:
         assert section in text, f"missing architecture section: {section!r}"
 
 
 def test_advisor_workspace_doc_references_platform_doc():
-    text = (DOCS / "ADVISOR_WORKSPACE_ARCHITECTURE.md").read_text()
+    text = (DOCS / "ADVISOR_WORKSPACE_ARCHITECTURE.md").read_text(encoding="utf-8")
     assert "PLATFORM_ARCHITECTURE.md" in text
 
 
@@ -66,7 +66,7 @@ def test_manifest_capabilities_exist_in_migrations():
     """Every capability the architecture document names must be seeded by a migration."""
     seeded = set()
     for p in MIGRATIONS.glob("*.py"):
-        src = p.read_text()
+        src = p.read_text(encoding="utf-8")
         # capabilities are inserted as ("code", ...) or code = "x.y"; capture x.y[.z] tokens
         for m in re.findall(r'["\']([a-z_]+\.[a-z_.]+)["\']', src):
             seeded.add(m)
@@ -89,7 +89,7 @@ def test_source_producers_do_not_import_composition_layers():
     manifest = _manifest()
     comp = manifest["composition_layer_modules"]
     for rel in manifest["source_producer_modules"]:
-        src = (REPO / rel).read_text()
+        src = (REPO / rel).read_text(encoding="utf-8")
         for layer in comp:
             pattern = re.compile(rf"import\s+{layer}\b|from\s+\S*{layer}\s+import|"
                                  rf"services\s+import\s+.*\b{layer}\b")
@@ -97,7 +97,7 @@ def test_source_producers_do_not_import_composition_layers():
 
 
 def test_advisor_intelligence_does_not_import_its_consumers():
-    src = (SERVICES / "advisor_intelligence.py").read_text()
+    src = (SERVICES / "advisor_intelligence.py").read_text(encoding="utf-8")
     for consumer in _manifest()["advisor_intelligence_forbidden_imports"]:
         pattern = re.compile(rf"import\s+{consumer}\b|from\s+\S*{consumer}\s+import")
         assert not pattern.search(src), f"advisor_intelligence must not import {consumer}"
@@ -108,7 +108,7 @@ def test_activity_timeline_is_a_projection_no_second_event_table():
     created = []
     for p in MIGRATIONS.glob("*.py"):
         created += re.findall(r'create_table\(\s*["\']([a-z_]*timeline[a-z_]*)["\']',
-                              p.read_text())
+                              p.read_text(encoding="utf-8"))
     assert created.count("timeline_events") == 1
     assert set(created) == {"timeline_events"}, f"unexpected timeline tables: {set(created)}"
 
@@ -116,7 +116,7 @@ def test_activity_timeline_is_a_projection_no_second_event_table():
 # --- declared schema modules are registered ----------------------------------
 
 def test_declared_schema_modules_registered():
-    schema_src = (REPO / "app" / "database" / "schema.py").read_text()
+    schema_src = (REPO / "app" / "database" / "schema.py").read_text(encoding="utf-8")
     for fn in _manifest()["declared_schema_registrations"]:
         assert f"{fn}(metadata)" in schema_src, f"{fn} not registered in schema.py"
 
@@ -124,7 +124,7 @@ def test_declared_schema_modules_registered():
 # --- documentation honesty: unavailable data is not claimed as a domain ------
 
 def test_not_modeled_data_is_documented_as_unavailable():
-    doc = DOC_PATH.read_text()
+    doc = DOC_PATH.read_text(encoding="utf-8")
     assert "Not currently modeled" in doc or "not modeled" in doc
     # A representative unavailable item is present in both manifest and doc.
     assert "tax_return_financial_content" in {x for x in _manifest()["not_currently_modeled"]}
