@@ -1,0 +1,236 @@
+{
+  "batch": "DOCUMENT-FILING-BATCH3",
+  "census": {
+    "by_category": {
+      "Sales & Litter Tax": 3,
+      "Tax Preparation": 9
+    },
+    "by_scope_type": {
+      "organization": 5,
+      "person": 7
+    },
+    "category_nodes": 6,
+    "client_nodes": 6,
+    "documents": 12,
+    "folder_nodes": 12,
+    "year_nodes": 0
+  },
+  "documents": [
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 34928,
+      "folder_code": "client-person-7646--category-tax-preparation",
+      "folder_path": "LANDON FOSTER/Tax Preparation",
+      "scope_id": 7646,
+      "scope_name": "LANDON FOSTER",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 34938,
+      "folder_code": "client-person-7646--category-tax-preparation",
+      "folder_path": "LANDON FOSTER/Tax Preparation",
+      "scope_id": 7646,
+      "scope_name": "LANDON FOSTER",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 34942,
+      "folder_code": "client-person-7646--category-tax-preparation",
+      "folder_path": "LANDON FOSTER/Tax Preparation",
+      "scope_id": 7646,
+      "scope_name": "LANDON FOSTER",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 34948,
+      "folder_code": "client-person-7710--category-tax-preparation",
+      "folder_path": "CASEY FURY/Tax Preparation",
+      "scope_id": 7710,
+      "scope_name": "CASEY FURY",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 35111,
+      "folder_code": "client-person-7666--category-tax-preparation",
+      "folder_path": "NOAH HARDING/Tax Preparation",
+      "scope_id": 7666,
+      "scope_name": "NOAH HARDING",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 35114,
+      "folder_code": "client-person-7666--category-tax-preparation",
+      "folder_path": "NOAH HARDING/Tax Preparation",
+      "scope_id": 7666,
+      "scope_name": "NOAH HARDING",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 35443,
+      "folder_code": "client-person-7640--category-tax-preparation",
+      "folder_path": "George Stevens/Tax Preparation",
+      "scope_id": 7640,
+      "scope_name": "George Stevens",
+      "scope_type": "person",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 35767,
+      "folder_code": "client-organization-144--category-tax-preparation",
+      "folder_path": "Harmony Day Support Inc/Tax Preparation",
+      "scope_id": 144,
+      "scope_name": "Harmony Day Support Inc",
+      "scope_type": "organization",
+      "tax_year": null
+    },
+    {
+      "category": "Tax Preparation",
+      "depth": 2,
+      "document_id": 35768,
+      "folder_code": "client-organization-144--category-tax-preparation",
+      "folder_path": "Harmony Day Support Inc/Tax Preparation",
+      "scope_id": 144,
+      "scope_name": "Harmony Day Support Inc",
+      "scope_type": "organization",
+      "tax_year": null
+    },
+    {
+      "category": "Sales & Litter Tax",
+      "depth": 2,
+      "document_id": 36393,
+      "folder_code": "client-organization-64--category-sales-litter-tax",
+      "folder_path": "SOUTH EAST VAL6 INC/Sales & Litter Tax",
+      "scope_id": 64,
+      "scope_name": "SOUTH EAST VAL6 INC",
+      "scope_type": "organization",
+      "tax_year": null
+    },
+    {
+      "category": "Sales & Litter Tax",
+      "depth": 2,
+      "document_id": 36395,
+      "folder_code": "client-organization-64--category-sales-litter-tax",
+      "folder_path": "SOUTH EAST VAL6 INC/Sales & Litter Tax",
+      "scope_id": 64,
+      "scope_name": "SOUTH EAST VAL6 INC",
+      "scope_type": "organization",
+      "tax_year": null
+    },
+    {
+      "category": "Sales & Litter Tax",
+      "depth": 2,
+      "document_id": 37117,
+      "folder_code": "client-organization-64--category-sales-litter-tax",
+      "folder_path": "SOUTH EAST VAL6 INC/Sales & Litter Tax",
+      "scope_id": 64,
+      "scope_name": "SOUTH EAST VAL6 INC",
+      "scope_type": "organization",
+      "tax_year": null
+    }
+  ],
+  "exclusion_rule": "any row whose path does not mechanically name the stored owner — unsupported nickname/initial/spelling variants and paths carrying no client identity",
+  "folder_manifest_digest": "95d130216ed4c9a45a9e8f80670168b88c0aeea7e94aebbe5cb2576b2f831b73",
+  "folders": [
+    {
+      "code": "client-organization-144",
+      "kind": "client",
+      "name": "Harmony Day Support Inc",
+      "parent_code": null
+    },
+    {
+      "code": "client-organization-64",
+      "kind": "client",
+      "name": "SOUTH EAST VAL6 INC",
+      "parent_code": null
+    },
+    {
+      "code": "client-person-7640",
+      "kind": "client",
+      "name": "George Stevens",
+      "parent_code": null
+    },
+    {
+      "code": "client-person-7646",
+      "kind": "client",
+      "name": "LANDON FOSTER",
+      "parent_code": null
+    },
+    {
+      "code": "client-person-7666",
+      "kind": "client",
+      "name": "NOAH HARDING",
+      "parent_code": null
+    },
+    {
+      "code": "client-person-7710",
+      "kind": "client",
+      "name": "CASEY FURY",
+      "parent_code": null
+    },
+    {
+      "code": "client-organization-144--category-tax-preparation",
+      "kind": "category",
+      "name": "Tax Preparation",
+      "parent_code": "client-organization-144"
+    },
+    {
+      "code": "client-organization-64--category-sales-litter-tax",
+      "kind": "category",
+      "name": "Sales & Litter Tax",
+      "parent_code": "client-organization-64"
+    },
+    {
+      "code": "client-person-7640--category-tax-preparation",
+      "kind": "category",
+      "name": "Tax Preparation",
+      "parent_code": "client-person-7640"
+    },
+    {
+      "code": "client-person-7646--category-tax-preparation",
+      "kind": "category",
+      "name": "Tax Preparation",
+      "parent_code": "client-person-7646"
+    },
+    {
+      "code": "client-person-7666--category-tax-preparation",
+      "kind": "category",
+      "name": "Tax Preparation",
+      "parent_code": "client-person-7666"
+    },
+    {
+      "code": "client-person-7710--category-tax-preparation",
+      "kind": "category",
+      "name": "Tax Preparation",
+      "parent_code": "client-person-7710"
+    }
+  ],
+  "inclusion_rule": "tax-year-conflict lane AND the available client filing source path mechanically corroborates the stored owner: owner name tokens set-equal to or a subset of the path client-folder tokens, or (organizations) the reviewed core_name_tokens legal-suffix primitive matches",
+  "plan_digest": "8857aa6a996442865f38a4872c60abddd90e2ac7a7aec2269178cdd64b51145f",
+  "rows": 12,
+  "status": "CORROBORATED_REBUILD",
+  "supersedes": {
+    "candidate_csv_sha256": "e252f9c745d693fdb777ac27909a0dce7fd1fafc327d1f238d52823b2168b627",
+    "documents": 49
+  }
+}
