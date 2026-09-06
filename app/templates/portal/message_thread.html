@@ -13,7 +13,26 @@
   <h3 style="margin:0 0 .5rem;">Linked requests</h3>
   <ul class="portal-list">
   {% for r in linked_requests %}
-    <li class="meta">{{ r.title }} — <span class="pill {{ 'ok' if r.status in ('uploaded','approved') else 'pending' }}">{{ r.status|title }}</span>{% if r.due_date %} · Due {{ r.due_date }}{% endif %}</li>
+    <li class="meta">{{ r.title }} — <span class="pill {{ 'ok' if r.status in ('uploaded','approved') else 'pending' }}">{{ r.status|title }}</span>{% if r.due_date %} · Due {{ r.due_date }}{% endif %}
+      {#- The request was visible here but had no way to act on it, so a client had to find the
+          same request again on Documents to upload against it. This is the SAME action
+          portal/documents.html and portal/requests.html already offer, pointed at the same route.
+
+          ``status == 'open'`` is the existing eligibility rule, not a new one: the client request
+          surfaces are fed by ``client_document_requests``, which filters to ('open', 'uploaded'),
+          and requests.html then hides the action once a file has arrived — leaving 'open'. The
+          thread's ``linked_requests()`` is deliberately unfiltered (staff see every status), so the
+          test lives here instead. An approved or rejected request therefore never offers an upload
+          that would reopen it.
+
+          Authorization is unchanged and is NOT the link's job: ``portal_can`` mirrors the surface
+          gate the middleware enforces, and ``portal_vault.upload_document`` re-resolves the request
+          and refuses one outside this account's documents scope — so a hand-edited request_id
+          cannot upload against another client's request. -#}
+      {% if r.status == 'open' and portal_can(principal, '/portal/upload') %}
+      · <a href="/portal/upload?request_id={{ r.id }}">Upload for this request</a>
+      {% endif %}
+    </li>
   {% endfor %}
   </ul>
 </div>
