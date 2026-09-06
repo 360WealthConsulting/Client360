@@ -11,3 +11,8 @@
 # ownership manifests, not `reports/` at large.
 reports/strict-safe-ownership-batch*/*_manifest.csv   -text
 reports/strict-safe-ownership-batch*/*_manifest.json  -text
+
+# The frozen document-filing candidate manifests are pinned the same way — by
+# ``document_filing_batch2.CANDIDATE_CSV_SHA256`` — and need the same protection for the same reason.
+reports/document-filing-batch*/*_candidate.csv        -text
+reports/document-filing-batch*/*_candidate.json       -text
