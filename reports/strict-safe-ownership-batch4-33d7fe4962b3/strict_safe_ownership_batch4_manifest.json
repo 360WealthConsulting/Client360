@@ -1,0 +1,77 @@
+{
+  "batch_id": "STRICT-SAFE-OWNERSHIP-4",
+  "census": {
+    "distinct_former_people": 1,
+    "distinct_organizations": 1,
+    "rows": 4,
+    "with_twin_corroboration": 2
+  },
+  "confirmation_phrase": "APPLY-STRICT-SAFE-OWNERSHIP-4-4",
+  "generated_at": "2026-09-06T13:45:39.841787+00:00",
+  "plan": [
+    {
+      "document_id": 465,
+      "filename_names_organization": true,
+      "folder_segment": "Affordable Measures",
+      "folder_source_id": 257,
+      "former_person_id": 3796,
+      "former_person_name": "Affordable Measures LLC",
+      "organization_id": 129,
+      "organization_name": "Affordable Measures LLC",
+      "original_name": "2023 Signature Documents (AFFORDABLE MEASURES CO).pdf",
+      "repaired_from_person_id": 3796,
+      "review_status": "not_required",
+      "twin_document_id": 36020
+    },
+    {
+      "document_id": 467,
+      "filename_names_organization": true,
+      "folder_segment": "Affordable Measures",
+      "folder_source_id": 11153,
+      "former_person_id": 3796,
+      "former_person_name": "Affordable Measures LLC",
+      "organization_id": 129,
+      "organization_name": "Affordable Measures LLC",
+      "original_name": "2023 Tax Return Documents (AFFORDABLE MEASURES CO).pdf",
+      "repaired_from_person_id": 3796,
+      "review_status": "not_required",
+      "twin_document_id": null
+    },
+    {
+      "document_id": 469,
+      "filename_names_organization": true,
+      "folder_segment": "Affordable Measures",
+      "folder_source_id": 11154,
+      "former_person_id": 3796,
+      "former_person_name": "Affordable Measures LLC",
+      "organization_id": 129,
+      "organization_name": "Affordable Measures LLC",
+      "original_name": "2022 Signature Documents (AFFORDABLE MEASURES CO).pdf",
+      "repaired_from_person_id": 3796,
+      "review_status": "not_required",
+      "twin_document_id": 36017
+    },
+    {
+      "document_id": 471,
+      "filename_names_organization": true,
+      "folder_segment": "Affordable Measures",
+      "folder_source_id": 11155,
+      "former_person_id": 3796,
+      "former_person_name": "Affordable Measures LLC",
+      "organization_id": 129,
+      "organization_name": "Affordable Measures LLC",
+      "original_name": "2022 Tax Return Documents (AFFORDABLE MEASURES CO).pdf",
+      "repaired_from_person_id": 3796,
+      "review_status": "not_required",
+      "twin_document_id": null
+    }
+  ],
+  "plan_digest": "33d7fe4962b3ac9c86c13a8ba12a84d8c0053ab82533e54a72d8ac012aada5af",
+  "rollback_phrase": "ROLLBACK-STRICT-SAFE-OWNERSHIP-4-4",
+  "rows": 4,
+  "target_state": {
+    "household_id": null,
+    "organization_id": "unchanged (already correct)",
+    "person_id": null
+  }
+}
