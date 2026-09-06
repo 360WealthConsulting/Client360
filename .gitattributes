@@ -1,0 +1,13 @@
+# Frozen strict-safe ownership manifests are SHA256-PINNED artifacts.
+#
+# The apply and rollback scripts hash these files byte-for-byte and refuse to run unless the hash
+# equals the reviewed value. That makes them the one class of file in this repository whose bytes
+# must survive a checkout unchanged on every platform: git's normal end-of-line normalization would
+# hand a Windows clone CRLF and a Linux clone LF, so the same reviewed manifest would hash two
+# different ways and the gate could not be satisfied on both.
+#
+# `-text` disables end-of-line conversion while leaving the files diffable and mergeable as text,
+# which `binary` would not. The pattern is deliberately narrow — only the generated strict-safe
+# ownership manifests, not `reports/` at large.
+reports/strict-safe-ownership-batch*/*_manifest.csv   -text
+reports/strict-safe-ownership-batch*/*_manifest.json  -text

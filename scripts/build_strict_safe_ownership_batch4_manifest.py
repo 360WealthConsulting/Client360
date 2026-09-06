@@ -15,9 +15,9 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +47,33 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def write_manifest(plan, out_dir: Path) -> dict:
+def write_text_lf(path: Path, body: str) -> None:
+    """Write UTF-8 text with LF newlines, on every platform.
+
+    Both manifests go through this one function, and the guarantee it makes is why the apply's SHA
+    pin is portable at all. ``Path.write_text`` translates ``\\n`` to ``\\r\\n`` on Windows, which is
+    how the JSON manifest came to be CRLF on disk while git stored it as LF — the same reviewed file
+    then hashed one way on Windows and another on Linux, and the gate could not be satisfied on both.
+    Encoding the bytes ourselves takes the platform out of the answer.
+
+    ``.gitattributes`` marks these artifacts ``-text`` so a checkout cannot undo it. The two defences
+    are deliberately independent: the generator makes the bytes right, and git is prevented from
+    rewriting them afterwards. Neither alone is enough — a file copied by hand bypasses git, and a
+    file regenerated on another platform bypasses .gitattributes.
+    """
+    path.write_bytes(body.encode("utf-8"))
+
+
+def manifest_bytes(plan) -> tuple[str, str, str]:
+    """The exact CSV and JSON text for a plan, plus its digest. Pure: no clock, no filesystem.
+
+    Deterministic by construction, which is the point: a frozen manifest is hashed and that hash is
+    a gate, so the artifact has to be a function of the REVIEWED PLAN and nothing else. It carries no
+    generation timestamp for exactly that reason — a wall clock would give every regeneration a
+    different hash and make "regenerate and compare" impossible to use as a check. When the batch was
+    applied belongs in the apply receipt, which already records ``applied_at``; it is not part of
+    what was approved.
+    """
     from app.services.document_strict_safe_ownership_batch4 import (
         BATCH_ID,
         PLAN_FIELDS,
@@ -55,38 +81,46 @@ def write_manifest(plan, out_dir: Path) -> dict:
         plan_digest,
     )
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     digest = plan_digest(plan)
     ordered = sorted(plan, key=lambda r: r["document_id"])
 
-    csv_path = out_dir / CSV_NAME
-    with csv_path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(CSV_COLUMNS), lineterminator="\n")
-        writer.writeheader()
-        for row in ordered:
-            writer.writerow({
-                **{k: row[k] for k in CSV_COLUMNS if k != "support_json"},
-                "support_json": json.dumps({k: row[k] for k in SUPPORT_FIELDS},
-                                           sort_keys=True, ensure_ascii=False),
-            })
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=list(CSV_COLUMNS), lineterminator="\n")
+    writer.writeheader()
+    for row in ordered:
+        writer.writerow({
+            **{k: row[k] for k in CSV_COLUMNS if k != "support_json"},
+            "support_json": json.dumps({k: row[k] for k in SUPPORT_FIELDS},
+                                       sort_keys=True, ensure_ascii=False),
+        })
+    csv_text = buffer.getvalue()
 
-    json_path = out_dir / JSON_NAME
-    json_path.write_text(json.dumps({
+    json_text = json.dumps({
         "batch_id": BATCH_ID,
         "confirmation_phrase": f"APPLY-{BATCH_ID}-{len(ordered)}",
         "rollback_phrase": f"ROLLBACK-{BATCH_ID}-{len(ordered)}",
-        "generated_at": datetime.now(UTC).isoformat(),
         "rows": len(ordered),
         "census": plan_census(ordered),
         "target_state": {"person_id": None, "household_id": None,
                          "organization_id": "unchanged (already correct)"},
         "plan_digest": digest,
         "plan": [{k: r[k] for k in PLAN_FIELDS} for r in ordered],
-    }, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    }, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    return csv_text, json_text, digest
+
+
+def write_manifest(plan, out_dir: Path) -> dict:
+    from app.services.document_strict_safe_ownership_batch4 import plan_census
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_text, json_text, digest = manifest_bytes(plan)
+    csv_path, json_path = out_dir / CSV_NAME, out_dir / JSON_NAME
+    write_text_lf(csv_path, csv_text)
+    write_text_lf(json_path, json_text)
 
     return {"csv": csv_path, "json": json_path, "csv_sha256": sha256_of(csv_path),
             "json_sha256": sha256_of(json_path), "plan_digest": digest,
-            "rows": len(ordered), "census": plan_census(ordered)}
+            "rows": len(plan), "census": plan_census(plan)}
 
 
 def main(argv=None) -> int:
