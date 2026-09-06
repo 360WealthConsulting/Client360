@@ -43,6 +43,11 @@ pytestmark = pytest.mark.usefixtures("portal_messaging_on", "production_identity
 
 
 STAFF = frozenset({"client.read", "client.write", "record.read_all", "record.write_all"})
+# A coordinator who may actually work the Messages surface. The thread routes are gated on the
+# dedicated Messages pair (msgcap01), not on client.read/client.write, so anything that renders or
+# posts to /admin/client-portal/threads* needs these. Kept SEPARATE from STAFF so the ~20 record-scope
+# tests above keep exercising exactly the capability set they were written for.
+MESSAGING_STAFF = STAFF | {"communications.message.read", "communications.message.write"}
 
 
 @pytest.fixture(autouse=True)
@@ -1255,7 +1260,7 @@ def test_h6_a_named_persons_thread_is_not_duplicated_onto_a_housemate():
 
 
 def test_h7_starting_a_conversation_from_the_profile_preselects_the_client():
-    staff = _staff_principal()
+    staff = _staff_principal(MESSAGING_STAFF)
     _, _, person_id, _ = seed_portal_account(staff.user_id)
 
     html = _render_profile(staff, person_id)
@@ -1269,7 +1274,7 @@ def test_h7_starting_a_conversation_from_the_profile_preselects_the_client():
 
 
 def test_h8_the_compose_action_is_hidden_from_a_read_only_principal():
-    """Never shown-then-403: the create route enforces client.write."""
+    """Never shown-then-403: the create route enforces communications.message.write."""
     staff_id = seed_staff_user()
     _, _, person_id, _ = seed_portal_account(staff_id)
     read_only = Principal(staff_id, "staff@example.com", "Staff",
@@ -1279,6 +1284,78 @@ def test_h8_the_compose_action_is_hidden_from_a_read_only_principal():
 
     assert "Secure messages" in html
     assert 'action="/admin/client-portal/threads/new"' not in html
+
+
+# --- the compose predicate tracks the create route's real capability ----------
+#
+# `can_start` decides whether the profile renders the compose form. It has to name the capability
+# POST /admin/client-portal/threads/new actually enforces, or the form is either shown-then-403 or
+# hidden from staff who may use it. It said `client.write` until the thread handlers were aligned
+# with the middleware rule (msgcap01); these pin it to the route's real gate in both directions.
+
+def _messages_section(principal, person_id):
+    from app.services.client360 import sections
+    return sections.messages(principal, {"person_id": person_id})
+
+
+def test_the_compose_action_is_shown_to_a_message_writer_without_client_write():
+    """The direction that used to fail closed: a coordinator holding the Messages capability but
+    not client.write was hidden a form the route would have accepted."""
+    staff_id = seed_staff_user()
+    _, _, person_id, _ = seed_portal_account(staff_id)
+    writer = Principal(staff_id, "staff@example.com", "Staff",
+                       frozenset({"client.read", "record.read_all",
+                                  "communications.message.read", "communications.message.write"}))
+
+    assert _messages_section(writer, person_id)["can_start"] is True
+    assert 'action="/admin/client-portal/threads/new"' in _render_profile(writer, person_id)
+
+
+def test_the_compose_action_is_hidden_from_a_client_write_holder_without_the_message_capability():
+    """The direction that used to fail open: client.write alone no longer opens the composer, so a
+    principal the create route would refuse is never shown it."""
+    staff_id = seed_staff_user()
+    _, _, person_id, _ = seed_portal_account(staff_id)
+    broad = Principal(staff_id, "staff@example.com", "Staff",
+                      frozenset({"client.read", "client.write",
+                                 "record.read_all", "record.write_all"}))
+
+    assert _messages_section(broad, person_id)["can_start"] is False
+    assert 'action="/admin/client-portal/threads/new"' not in _render_profile(broad, person_id)
+
+
+def test_the_compose_predicate_names_the_capability_the_create_route_enforces():
+    """Pins the two together so neither can drift again: whatever POST /threads/new declares is
+    what `can_start` asks for."""
+    from app.routes.portal_admin import portal_admin_start_thread
+    from app.security.dependencies import CAPABILITY_DEP_ATTR
+
+    route_caps = set()
+    for default in portal_admin_start_thread.__defaults__ or ():
+        route_caps.update(getattr(getattr(default, "dependency", None), CAPABILITY_DEP_ATTR, ()))
+    assert route_caps == {"communications.message.write"}
+
+    import inspect
+
+    from app.services.client360 import sections
+    assert 'principal.can("communications.message.write")' in inspect.getsource(sections.messages)
+
+
+def test_the_rest_of_the_messages_section_is_unchanged():
+    """Only the compose predicate moved: the thread list, unread count, topics and provenance keys
+    still come from the same portal_threads read."""
+    staff = _staff_principal(MESSAGING_STAFF)
+    _, principal, person_id, household_id = seed_portal_account(staff.user_id)
+    thread_id = create_thread(principal, household_id=household_id, person_id=person_id,
+                              subject="Section shape", body="Body")
+
+    section = _messages_section(staff, person_id)
+
+    assert section["person_id"] == person_id
+    assert section["source"] == "portal_threads" and section["not_a_second_store"] is True
+    assert list(section["topics"]) == list(hub.TOPICS)
+    assert thread_id in [t["id"] for t in section["threads"]]
+    assert section["unread_count"] == sum(1 for t in section["threads"] if t["unread"])
 
 
 def test_h9_a_tampered_person_id_from_the_profile_form_still_fails_server_side():
