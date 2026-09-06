@@ -100,14 +100,14 @@ effect rather than as separate work.
 
 ## Consequences
 
-### Positive
+### Positive consequences
 - Email becomes a first-class communication record without a second history or a new store.
 - Idempotency is a database constraint, not a convention, and survives re-runs, retries, folder moves
   and duplicate mailbox copies.
 - The Graph-id duplication defect and the Sent-Items queue pollution are both closed.
 - Attachments and outbound send can be added later without another identity migration.
 
-### Negative and tradeoffs
+### Negative consequences and tradeoffs
 - Conversation lookup scans email conversations and matches on `conversation_metadata` rather than an
   indexed column; acceptable at current volume, and a generated column or index is a later,
   additive change if it stops being so.
@@ -128,9 +128,12 @@ that no body or storage identifier is persisted. Migration head and manifest gua
 None.
 
 ## Revisit conditions
-Storing full message bodies (needs a retention decision), ingesting email attachments, outbound send
-through Graph, a delta/cursor-based sync, shared-mailbox ingestion, or any convergence of portal
-messages with `communication_messages` would each warrant a new or superseding ADR.
+A delta/cursor-based sync, shared-mailbox ingestion, or any convergence of portal messages with
+`communication_messages` would each warrant a new or superseding ADR.
+
+Two conditions named here have since been met and are superseded by **ADR-075**: outbound send
+through Graph, and storing full message bodies — which ADR-075 resolves asymmetrically, retaining
+outbound in full while inbound stays a preview.
 
 ## References
 - `app/services/communications/email_ingest.py`, `app/jobs/microsoft_mail_sync.py`,

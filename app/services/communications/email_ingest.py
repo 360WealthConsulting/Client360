@@ -223,6 +223,18 @@ def normalize_email(conn, *, account: dict, message: dict, match: EmailMatch) ->
             sources.c.source_external_id == external_id).values(last_synced_at=_now()))
         return existing                                        # already ingested — nothing to write
 
+    # A message this firm SENT from 360Plus comes back around in Sent Items. Graph's direct reply
+    # returns no identity (Batch 4c / ADR-075), so the outbound record has been waiting for exactly
+    # this sighting: attach the real identity to it rather than creating a second message.
+    if match.direction == OUTBOUND:
+        from app.services.communications import email_send
+        pending = email_send.pending_reconciliation(
+            conn, provider_conversation_id=message.get("conversationId"),
+            mailbox_user_id=account.get("user_id"))
+        if pending is not None:
+            return email_send.reconcile(conn, message_row=pending, graph_message=message,
+                                        account=account)
+
     now = _now()
     received_at = _parse_datetime(message.get("receivedDateTime"))
     subject = message.get("subject") or "(No subject)"
