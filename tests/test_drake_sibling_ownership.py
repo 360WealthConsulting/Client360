@@ -637,3 +637,105 @@ def test_rollback_dry_run_restores_nothing(tmp_path, drake_docs):
     finally:
         with engine.begin() as c:
             c.execute(delete(people).where(people.c.id == pid))
+
+
+# ==================================================================================================
+# Preview CLI — the metadata/collection namespace collision
+#
+# build() merges the report file's metadata back into its return value. That metadata records the
+# row and rejection COUNTS under the same names the return value uses for the row and rejection
+# LISTS, so the merge replaced both lists with integers. main() then called len() on an int and the
+# command died with TypeError after having already written correct artifacts -- a successful preview
+# that reported failure. These pin the fix at the source rather than at the call site.
+# ==================================================================================================
+
+def _verdict(*, eligible, did):
+    """The shape build() consumes from evaluate()."""
+    if not eligible:
+        return {"eligible": False, "reasons": ["no_owned_sibling"], "candidate": None,
+                "client_id": "AAAAAAAA", "siblings": [], "sibling_tuples": [],
+                "engine": {"type": None, "id": None, "confidence": None},
+                "contradictions_strict": [], "contradictions_tuned": [],
+                "firm_excluded": None, "extract_method": None, "text_len": None}
+    return {"eligible": True, "reasons": [], "candidate": ("person", CLIENT),
+            "client_id": "BBBBBBBB", "siblings": [did + 1000],
+            "sibling_tuples": [(CLIENT, None, None)],
+            "engine": {"type": None, "id": None, "confidence": "HOLD"},
+            "contradictions_strict": ["foreign_strong_identifier"], "contradictions_tuned": [],
+            "firm_excluded": {"staff": [STAFF_A], "entities": []},
+            "extract_method": "pdf_text", "text_len": 42}
+
+
+@pytest.fixture
+def preview(monkeypatch):
+    """The preview module with the database stubbed out: one eligible row, one rejected."""
+    import scripts.preview_drake_sibling_ownership as prev
+    monkeypatch.setattr(prev, "candidates", lambda conn, **kw: [11, 22])
+    monkeypatch.setattr(prev, "build_match_indexes", lambda conn: _idx())
+    monkeypatch.setattr(prev, "_owner_name", lambda conn, otype, oid: "Fixture Owner")
+    monkeypatch.setattr(prev, "evaluate",
+                        lambda conn, did, idx, exclude_firm=True: _verdict(eligible=(did == 11),
+                                                                          did=did))
+    return prev
+
+
+def test_preview_metadata_merge_leaves_the_row_list_a_list(preview, tmp_path):
+    """28. The exact regression: with an --out directory the metadata merge fires, and before the
+    fix result["rows"] came back as an int."""
+    r = preview.build(document_ids=None, out_dir=str(tmp_path))
+    assert isinstance(r["rows"], list), "the proposal rows must survive the metadata merge"
+    assert isinstance(r["rejected"], list), "the rejection list must survive it too"
+    assert len(r["rows"]) == 1 and len(r["rejected"]) == 1
+
+
+def test_preview_exposes_counts_under_distinct_names(preview, tmp_path):
+    """29. The counts are still available — under names that cannot collide with the collections."""
+    r = preview.build(document_ids=None, out_dir=str(tmp_path))
+    assert r["row_count"] == 1
+    assert r["rejected_count"] == 1
+    assert r["row_count"] == len(r["rows"])
+    assert r["rejected_count"] == len(r["rejected"])
+
+
+def test_preview_counts_are_present_without_an_output_directory(preview):
+    """30. main() prints the counts on every run, so they cannot exist only when --out is given."""
+    r = preview.build(document_ids=None, out_dir=None)
+    assert r["row_count"] == 1 and r["rejected_count"] == 1
+    assert isinstance(r["rows"], list)
+
+
+def test_preview_cli_completes_and_exits_zero(preview, tmp_path, capsys):
+    """31. The end-to-end proof: main() used to raise TypeError AFTER writing correct artifacts."""
+    rc = preview.main(["--out", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "eligible rows     : 1" in out
+    assert "rejected          : 1" in out
+    assert "manifest_sha256" in out
+
+
+def test_preview_report_file_keeps_its_own_schema(preview, tmp_path):
+    """32. The artifact is a separate contract: preview_meta.json has always recorded `rows` and
+    `rejected` as COUNTS, and anything already reading it must keep seeing that."""
+    import json
+    preview.build(document_ids=None, out_dir=str(tmp_path))
+    meta = json.loads((tmp_path / "preview_meta.json").read_text(encoding="utf-8"))
+    assert meta["rows"] == 1
+    assert meta["rejected"] == 1
+    assert isinstance(meta["rejected_detail"], list) and len(meta["rejected_detail"]) == 1
+    assert meta["manifest_sha256"] and meta["policy"] == "tuned_firm_exclusion"
+
+
+def test_preview_manifest_contents_are_unchanged_by_the_fix(preview, tmp_path):
+    """33. Nothing about WHAT is proposed moved — the manifest is still one row for the eligible
+    document, with its evidence, and applied=NO."""
+    import csv as _csv
+    preview.build(document_ids=None, out_dir=str(tmp_path))
+    rows = list(_csv.DictReader(
+        (tmp_path / "drake_sibling_ownership_manifest.csv").open(encoding="utf-8")))
+    assert len(rows) == 1
+    assert rows[0]["document_id"] == "11"
+    assert rows[0]["owner_type"] == "person" and int(rows[0]["owner_id"]) == CLIENT
+    assert rows[0]["applied"] == "NO"
+    assert rows[0]["contradictions_remaining"] == ""
+    assert rows[0]["evidence_digest"]

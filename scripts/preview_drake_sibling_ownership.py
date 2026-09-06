@@ -114,7 +114,14 @@ def build(*, document_ids=None, since_first_sync=False, exclude_firm=True, out_d
 
     census = {t: sum(1 for r in rows if r["owner_type"] == t)
               for t in ("person", "household", "organization")}
+    # COUNTS ARE NAMED SEPARATELY FROM THE COLLECTIONS THEY COUNT.
+    # ``rows`` and ``rejected`` are lists and stay lists for every caller. The report file below
+    # records the same two things as integers under its own long-standing key names, and merging
+    # that metadata back used to overwrite both lists with their own lengths -- so ``len(r["rows"])``
+    # in main() raised TypeError on a successful run, and ``for x in r["rejected"]`` would have
+    # failed next. Distinct names remove the collision at the source rather than at the merge.
     result = {"rows": rows, "rejected": rejected, "census": census,
+              "row_count": len(rows), "rejected_count": len(rejected),
               "policy": "tuned_firm_exclusion" if exclude_firm else "strict"}
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -131,7 +138,10 @@ def build(*, document_ids=None, since_first_sync=False, exclude_firm=True, out_d
                 "policy": result["policy"], "rejected": len(rejected)}
         with open(os.path.join(out_dir, "preview_meta.json"), "w", encoding="utf-8") as fh:
             json.dump({**meta, "rejected_detail": rejected}, fh, indent=2, default=str)
-        result.update(meta)
+        # The report file keeps its own schema -- ``rows`` and ``rejected`` are counts THERE, and
+        # anything already reading preview_meta.json still sees what it expects. Only the keys the
+        # returned dict does not already own are merged in, so the in-memory lists survive.
+        result.update({k: v for k, v in meta.items() if k not in result})
     return result
 
 
@@ -148,9 +158,9 @@ def main(argv=None):
     r = build(document_ids=ids, since_first_sync=a.since_first_sync,
               exclude_firm=not a.strict, out_dir=a.out)
     print(f"policy            : {r['policy']}")
-    print(f"eligible rows     : {len(r['rows'])}")
+    print(f"eligible rows     : {r['row_count']}")
     print(f"census            : {r['census']}")
-    print(f"rejected          : {len(r['rejected'])}")
+    print(f"rejected          : {r['rejected_count']}")
     if r.get("manifest"):
         print(f"manifest          : {r['manifest']}")
         print(f"manifest_sha256   : {r['manifest_sha256']}")
