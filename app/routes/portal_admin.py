@@ -481,9 +481,18 @@ def _load_thread(thread_id):
 
 
 @router.get("/threads", response_class=HTMLResponse)
-def portal_admin_threads(request: Request, principal: Principal = Depends(require_capability("client.read"))):
+def portal_admin_threads(request: Request,
+                         principal: Principal = Depends(
+                             require_capability("communications.message.read"))):
     """Communication hub work-queue: conversations the staff member can service, filterable by unread /
-    assigned-to-me / unassigned / topic / status (record-scoped)."""
+    assigned-to-me / unassigned / topic / status (record-scoped).
+
+    ``communications.message.read`` is the SAME capability the ``^/admin/client-portal/threads``
+    middleware rule enforces (msgcap01). It used to be ``client.read``, which eleven roles hold —
+    so the door and the handler asked for different authorities and a principal needed both.
+    Reading a client's correspondence is narrower than reading their record; the rule is now
+    stated once. Record scope is untouched: ``hub.staff_inbox`` still filters every row through
+    ``thread_in_staff_scope``."""
     q = request.query_params
     threads = hub.staff_inbox(
         principal, unread=q.get("filter") == "unread",
@@ -501,14 +510,15 @@ def portal_admin_start_thread(
         request: Request,
         person_id: str = Form(default=""), subject: str = Form(default=""),
         body: str = Form(default=""), topic: str = Form(default=""),
-        principal: Principal = Depends(require_capability("client.write"))):
+        principal: Principal = Depends(require_capability("communications.message.write"))):
     """Staff open a conversation with a client they are authorised to service.
 
-    ``client.write`` and not ``client.read``: starting a conversation writes to the client's record,
-    so it matches the reply route rather than the read-only inbox. Every field is optional at the
-    boundary so FastAPI cannot pre-empt this handler with raw Pydantic JSON; validation and
-    authorization live in :func:`communication_hub.staff_start_thread`, which re-resolves the person
-    and re-checks write record scope. The browser never chooses the sender — the Principal does.
+    ``communications.message.write`` and not ``.read``: starting a conversation writes to the
+    client's record, so it matches the reply route rather than the read-only inbox. Every field is
+    optional at the boundary so FastAPI cannot pre-empt this handler with raw Pydantic JSON;
+    validation and authorization live in :func:`communication_hub.staff_start_thread`, which
+    re-resolves the person and re-checks write record scope. The browser never chooses the sender
+    — the Principal does.
 
     A client with no usable portal account produces a plain explanation on the inbox, never a
     silently created account and never an automatic invitation."""
@@ -527,7 +537,8 @@ def portal_admin_start_thread(
 
 @router.get("/threads/{thread_id}", response_class=HTMLResponse)
 def portal_admin_thread(thread_id: int, request: Request,
-                        principal: Principal = Depends(require_capability("client.read"))):
+                        principal: Principal = Depends(
+                            require_capability("communications.message.read"))):
     thread = _load_thread(thread_id)
     if not thread or not hub.thread_in_staff_scope(principal, thread):
         raise HTTPException(404, "Thread not found")           # out-of-scope never discloses existence
@@ -550,9 +561,10 @@ def portal_admin_thread(thread_id: int, request: Request,
 @router.post("/threads/{thread_id}/reply")
 def portal_admin_thread_reply(thread_id: int, request: Request, body: str = Form(...),
                               internal_note: str | None = Form(None),
-                              principal: Principal = Depends(require_capability("client.write"))):
-    """Staff reply (or internal note) into a thread. Requires client.write AND write record scope on
-    the thread. Delegates to the existing ``staff_send_message`` service (audited)."""
+                              principal: Principal = Depends(
+                                  require_capability("communications.message.write"))):
+    """Staff reply (or internal note) into a thread. Requires communications.message.write AND write
+    record scope on the thread. Delegates to the existing ``staff_send_message`` service (audited)."""
     _guard_thread_write(principal, thread_id)
     if not (body or "").strip():
         return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?error=Reply+cannot+be+empty",
@@ -596,10 +608,11 @@ def _opt_int(value):
 def portal_admin_thread_assign(thread_id: int, request: Request,
                                assigned_user_id: str | None = Form(None),
                                assigned_team_id: str | None = Form(None), topic: str | None = Form(None),
-                               principal: Principal = Depends(require_capability("client.write"))):
+                               principal: Principal = Depends(
+                                   require_capability("communications.message.write"))):
     """Reassign / route a conversation and/or set its topic from the employee/team selectors (audited
-    prev→new). client.write + record scope; only valid, selectable users/teams are accepted server-side;
-    an empty selection is the valid Unassigned state."""
+    prev→new). communications.message.write + record scope; only valid, selectable users/teams are
+    accepted server-side; an empty selection is the valid Unassigned state."""
     _guard_thread_write(principal, thread_id)
     try:
         user_id, team_id = _opt_int(assigned_user_id), _opt_int(assigned_team_id)
@@ -612,8 +625,9 @@ def portal_admin_thread_assign(thread_id: int, request: Request,
 
 @router.post("/threads/{thread_id}/resolve")
 def portal_admin_thread_resolve(thread_id: int, request: Request, action: str = Form("resolve"),
-                                principal: Principal = Depends(require_capability("client.write"))):
-    """Resolve or reopen a conversation (audited). client.write + record scope."""
+                                principal: Principal = Depends(
+                                    require_capability("communications.message.write"))):
+    """Resolve or reopen a conversation (audited). communications.message.write + record scope."""
     _guard_thread_write(principal, thread_id)
     hub.set_thread_state(principal.user_id, thread_id, resolved=(action == "resolve"),
                          request_id=request.state.request_id)
@@ -622,8 +636,10 @@ def portal_admin_thread_resolve(thread_id: int, request: Request, action: str = 
 
 @router.post("/threads/{thread_id}/link-request")
 def portal_admin_thread_link_request(thread_id: int, request: Request, request_ref: int = Form(...),
-                                     principal: Principal = Depends(require_capability("client.write"))):
-    """Link an existing document request to this conversation (same client only). client.write + scope."""
+                                     principal: Principal = Depends(
+                                         require_capability("communications.message.write"))):
+    """Link an existing document request to this conversation (same client only).
+    communications.message.write + scope."""
     _guard_thread_write(principal, thread_id)
     try:
         hub.link_request(principal.user_id, thread_id, request_ref, request_id=request.state.request_id)
@@ -637,8 +653,10 @@ def portal_admin_thread_link_request(thread_id: int, request: Request, request_r
 @router.post("/threads/{thread_id}/create-request")
 def portal_admin_thread_create_request(thread_id: int, request: Request, title: str = Form(...),
                                        description: str | None = Form(None),
-                                       principal: Principal = Depends(require_capability("client.write"))):
-    """Turn a conversation into an actionable document request (linked back). client.write + scope."""
+                                       principal: Principal = Depends(
+                                           require_capability("communications.message.write"))):
+    """Turn a conversation into an actionable document request (linked back).
+    communications.message.write + scope."""
     _guard_thread_write(principal, thread_id)
     if not (title or "").strip():
         return _thread_redirect(thread_id, error="A request title is required.")

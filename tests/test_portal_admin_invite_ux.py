@@ -2180,7 +2180,11 @@ def test_the_staff_start_thread_route_requires_write_capability():
 
     from app.routes import portal_admin
     src = inspect.getsource(portal_admin.portal_admin_start_thread)
-    assert 'require_capability("client.write")' in src, "starting a conversation is a write"
+    # The WRITE half of the dedicated Messages pair (msgcap01) — the same capability the
+    # ^/admin/client-portal/threads middleware rule infers for a POST. It was client.write, which
+    # made the door and the handler ask for different authorities.
+    assert 'require_capability("communications.message.write")' in src, \
+        "starting a conversation is a write"
     assert "hub.staff_start_thread(" in src, "the route does not delegate to the audited service"
     for direct in ("portal_threads.insert", "portal_messages.insert"):
         assert direct not in src, f"the route writes {direct} directly"

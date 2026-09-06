@@ -1,6 +1,6 @@
 """Secure messaging UI — client thread browse/compose/reply + the staff reply side that makes it a
 real two-way conversation. Client routes go through the scoped portal services; staff routes enforce
-BOTH capability (client.read/write) and record scope on the thread's person/household.
+BOTH capability (communications.message.read/write) and record scope on the thread's person/household.
 """
 from __future__ import annotations
 
@@ -139,9 +139,13 @@ def test_staff_reply_denied_without_record_scope():
 
 
 def test_staff_reply_route_is_capability_gated():
+    """The thread handlers declare the dedicated Messages capabilities — the SAME ones the
+    ``^/admin/client-portal/threads`` middleware rule enforces. They previously declared
+    client.read/client.write, so the door and the handler asked for different authorities.
+    tests/test_messages_handler_capability.py pins the full contract."""
     src = inspect.getsource(portal_admin_thread_reply)
-    assert 'require_capability("client.write")' in src
-    assert 'require_capability("client.read")' in inspect.getsource(portal_admin_thread)
+    assert 'require_capability("communications.message.write")' in src
+    assert 'require_capability("communications.message.read")' in inspect.getsource(portal_admin_thread)
 
 
 def test_staff_reply_is_audited():
