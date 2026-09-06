@@ -195,9 +195,27 @@ def test_regression_121836_clears_only_under_the_tuned_policy():
 
 @pytest.fixture
 def drake_docs():
-    """Temp Drake documents + refs, torn down by tag."""
+    """Temp Drake documents + refs, plus the owner entities they reference, torn down afterwards.
+
+    The owners are CREATED here rather than assumed. ``documents.person_id`` and
+    ``household_id`` are foreign keys, so a test that names a pre-existing production id passes
+    only on a database that happens to contain it — which is exactly how these tests passed
+    locally and failed on CI's clean schema. Ids are sequence-assigned, never pinned, so nothing
+    collides with rows other tests create.
+
+    ``make.person_a`` / ``make.person_b`` / ``make.household`` / ``make.idx`` expose the created
+    entities and a match index built from them."""
     tag = uuid.uuid4().hex[:8].upper()
     made = []
+    people = metadata.tables["people"]
+    households_t = metadata.tables["households"]
+    with engine.begin() as c:
+        person_a = c.execute(people.insert().values(full_name=f"Fixture Client A {tag}")
+                             .returning(people.c.id)).scalar_one()
+        person_b = c.execute(people.insert().values(full_name=f"Fixture Client B {tag}")
+                             .returning(people.c.id)).scalar_one()
+        household = c.execute(households_t.insert().values(name=f"Fixture Household {tag}")
+                              .returning(households_t.c.id)).scalar_one()
 
     def make(*, client_id=tag, owner=None, status="active", archived=False, available=True,
              external_id=None, name=None):
@@ -219,11 +237,17 @@ def drake_docs():
         made.append(did)
         return did
 
+    make.person_a, make.person_b, make.household = person_a, person_b, household
+    make.idx = _idx(owner_eligible=(person_a, person_b), members={household: {person_a, person_b}})
+    make.idx["pid"] = {person_a: {"name": "Fixture Client A", "household_id": None},
+                       person_b: {"name": "Fixture Client B", "household_id": household}}
     yield make
     with engine.begin() as c:
         if made:
             c.execute(delete(document_sources).where(document_sources.c.document_id.in_(made)))
             c.execute(delete(documents).where(documents.c.id.in_(made)))
+        c.execute(delete(households_t).where(households_t.c.id == household))
+        c.execute(delete(people).where(people.c.id.in_([person_a, person_b])))
 
 
 def _sibs(did, client_id):
@@ -234,20 +258,20 @@ def _sibs(did, client_id):
 def test_unanimous_siblings_yield_one_candidate(drake_docs):
     """8. The core carry-over: two owned siblings under one client id, both the same owner."""
     cid = uuid.uuid4().hex[:8].upper()
-    drake_docs(client_id=cid, owner=("person", CLIENT))
-    drake_docs(client_id=cid, owner=("person", CLIENT))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
     target = drake_docs(client_id=cid)
     tuples, sibs = _sibs(target, cid)
     assert len(tuples) == 1
-    assert dso.owner_of(next(iter(tuples))) == ("person", CLIENT)
+    assert dso.owner_of(next(iter(tuples))) == ("person", drake_docs.person_a)
     assert len(sibs) == 2
 
 
 def test_conflicting_sibling_owners_are_not_collapsed(drake_docs):
     """9. Two owned siblings disagreeing is exactly the case that must never auto-resolve."""
     cid = uuid.uuid4().hex[:8].upper()
-    drake_docs(client_id=cid, owner=("person", CLIENT))
-    drake_docs(client_id=cid, owner=("person", OTHER_CLIENT))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_b))
     target = drake_docs(client_id=cid)
     tuples, _ = _sibs(target, cid)
     assert len(tuples) == 2
@@ -263,14 +287,14 @@ def test_a_document_never_supplies_its_own_sibling_evidence(drake_docs):
     """10. Non-circularity: the target is excluded from its own sibling set even when owned. This
     is what makes a retrospective meaningful rather than self-fulfilling."""
     cid = uuid.uuid4().hex[:8].upper()
-    target = drake_docs(client_id=cid, owner=("person", CLIENT))
+    target = drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
     assert _sibs(target, cid)[0] == set()
 
 
 def test_deleted_and_archived_siblings_are_not_evidence(drake_docs):
     cid = uuid.uuid4().hex[:8].upper()
-    drake_docs(client_id=cid, owner=("person", CLIENT), status="deleted")
-    drake_docs(client_id=cid, owner=("person", CLIENT), archived=True)
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a), status="deleted")
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a), archived=True)
     target = drake_docs(client_id=cid)
     assert _sibs(target, cid)[0] == set()
 
@@ -321,26 +345,29 @@ def scored(monkeypatch):
 
 
 def _pair(drake_docs, **target):
-    """One owned sibling plus an unowned target under a shared client id."""
+    """One owned sibling plus an unowned target under a shared client id.
+
+    The sibling's owner is the fixture-created person, so these tests carry their own entities
+    rather than depending on any row a particular database happens to hold."""
     cid = uuid.uuid4().hex[:8].upper()
-    drake_docs(client_id=cid, owner=("person", CLIENT))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
     return cid, drake_docs(client_id=cid, **target)
 
 
 def test_evaluate_accepts_a_clean_carry_over(drake_docs, scored):
     """12. The whole rule, end to end: one agreeing sibling, no competing signal, engine silent."""
     _cid, target = _pair(drake_docs)
-    v = scored(target, sig={CLIENT: {"name"}})
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx)
     assert v["eligible"] is True
-    assert v["candidate"] == ("person", CLIENT)
+    assert v["candidate"] == ("person", drake_docs.person_a)
     assert v["reasons"] == []
 
 
 def test_evaluate_blocks_a_high_proposal_for_a_different_owner(drake_docs, scored):
     """13. RULE 7. The engine need not agree, but it may not disagree."""
     _cid, target = _pair(drake_docs)
-    v = scored(target, sig={CLIENT: {"name"}},
-               engine_says=("household", 112, "HIGH"))
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx,
+               engine_says=("household", drake_docs.household, "HIGH"))
     assert not v["eligible"]
     assert dso.R_CONTRADICTED in v["reasons"]
     assert "engine_proposes_different_owner" in v["contradictions_tuned"]
@@ -349,7 +376,8 @@ def test_evaluate_blocks_a_high_proposal_for_a_different_owner(drake_docs, score
 def test_evaluate_allows_a_high_proposal_for_the_same_owner(drake_docs, scored):
     """14. Agreement is welcome; it is simply not required."""
     _cid, target = _pair(drake_docs)
-    v = scored(target, sig={CLIENT: {"name"}}, engine_says=("person", CLIENT, "HIGH"))
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx,
+               engine_says=("person", drake_docs.person_a, "HIGH"))
     assert v["eligible"] is True
 
 
@@ -357,20 +385,21 @@ def test_evaluate_ignores_a_non_high_proposal_for_a_different_owner(drake_docs, 
     """15. HOLD/MEDIUM is silence. Only HIGH disagreement blocks — that is what makes the rule
     usable on Drake documents, whose filenames the engine cannot read."""
     _cid, target = _pair(drake_docs)
-    v = scored(target, sig={CLIENT: {"name"}}, engine_says=("person", OTHER_CLIENT, "MEDIUM"))
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx,
+               engine_says=("person", drake_docs.person_b, "MEDIUM"))
     assert v["eligible"] is True
 
 
 def test_evaluate_blocks_an_already_owned_target(drake_docs, scored):
-    _cid, target = _pair(drake_docs, owner=("person", OTHER_CLIENT))
-    v = scored(target, sig={CLIENT: {"name"}})
+    _cid, target = _pair(drake_docs, owner=("person", drake_docs.person_b))
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx)
     assert not v["eligible"] and dso.R_ALREADY_OWNED in v["reasons"]
 
 
 def test_retrospective_mode_scores_an_owned_document(drake_docs, scored):
     """16. Only the all-NULL rule is skipped, and only in retrospective mode."""
-    _cid, target = _pair(drake_docs, owner=("person", OTHER_CLIENT))
-    v = scored(target, sig={CLIENT: {"name"}}, retrospective=True)
+    _cid, target = _pair(drake_docs, owner=("person", drake_docs.person_b))
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx, retrospective=True)
     assert v["eligible"] is True
     assert dso.R_ALREADY_OWNED not in v["reasons"]
 
@@ -384,7 +413,7 @@ def test_retrospective_mode_scores_an_owned_document(drake_docs, scored):
 def test_evaluate_blocks_on_lifecycle_and_source_state(drake_docs, scored, kw, reason):
     """17. Deleted, archived, source gone, or a client id that is not a client id."""
     _cid, target = _pair(drake_docs, **kw)
-    v = scored(target, sig={CLIENT: {"name"}})
+    v = scored(target, sig={drake_docs.person_a: {"name"}}, idx=drake_docs.idx)
     assert not v["eligible"] and reason in v["reasons"]
 
 
@@ -419,10 +448,10 @@ def test_evaluate_blocks_when_the_owner_is_firm_staff(drake_docs, scored):
 
 def test_evaluate_blocks_when_siblings_disagree(drake_docs, scored):
     cid = uuid.uuid4().hex[:8].upper()
-    drake_docs(client_id=cid, owner=("person", CLIENT))
-    drake_docs(client_id=cid, owner=("person", OTHER_CLIENT))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
+    drake_docs(client_id=cid, owner=("person", drake_docs.person_b))
     target = drake_docs(client_id=cid)
-    v = scored(target, sig={})
+    v = scored(target, sig={}, idx=drake_docs.idx)
     assert not v["eligible"] and dso.R_MULTI_SIBLING in v["reasons"]
 
 
@@ -443,7 +472,7 @@ def test_unreadable_document_does_not_break_scoring(drake_docs, monkeypatch):
     monkeypatch.setattr(dso, "document_signals", boom)
     monkeypatch.setattr(dso, "engine_proposal", lambda *a, **k: (None, None, None))
     with engine.connect() as c:
-        v = dso.evaluate(c, target, _idx())
+        v = dso.evaluate(c, target, drake_docs.idx)
     assert v["extract_method"] == "unreadable"
 
 
@@ -461,14 +490,14 @@ def test_keen_pair_shows_carry_over_mirrors_whichever_sibling_it_sees(drake_docs
     does NOT assert that either granularity is universally correct. That is a data-quality question
     about the source ownership, not a rule to encode."""
     cid = uuid.uuid4().hex[:8].upper()
-    idx = _idx(members={112: {CLIENT, OTHER_CLIENT}})
-    person_owned = drake_docs(client_id=cid, owner=("person", CLIENT))
-    household_owned = drake_docs(client_id=cid, owner=("household", 112))
+    idx = drake_docs.idx
+    person_owned = drake_docs(client_id=cid, owner=("person", drake_docs.person_a))
+    household_owned = drake_docs(client_id=cid, owner=("household", drake_docs.household))
 
     from_person = scored(household_owned, sig={}, idx=idx, retrospective=True)
     from_household = scored(person_owned, sig={}, idx=idx, retrospective=True)
-    assert from_person["candidate"] == ("person", CLIENT)
-    assert from_household["candidate"] == ("household", 112)
+    assert from_person["candidate"] == ("person", drake_docs.person_a)
+    assert from_household["candidate"] == ("household", drake_docs.household)
     # Neither is asserted "correct": the point is that the two disagree because the sources do.
     assert from_person["candidate"] != from_household["candidate"]
 
