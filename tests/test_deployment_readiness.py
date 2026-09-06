@@ -105,7 +105,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "msgatt01"    # vault-backed message attachments (… -> psl02 -> cf01 -> msgatt01)
+    assert migrate.target_head() == "vaultdl01"   # client_service vault.download (… -> cf01 -> msgatt01 -> vaultdl01)
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():

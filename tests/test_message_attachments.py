@@ -577,13 +577,13 @@ def test_vault_ownership_follows_vault_document_links_through_a_person_merge():
 
 # ============================ KNOWN GAP: client_service download ============================
 
-def test_client_service_can_open_the_thread_but_cannot_download_the_attachment(gates):
-    """BLOCKED, recorded rather than hidden under a more privileged role.
+def test_a_messages_role_without_vault_download_sees_but_cannot_fetch(gates):
+    """The door and the contents are separate gates, and this pins the door.
 
-    client_service holds communications.message.read/write, vault.view and vault.category.general —
-    but NOT vault.download — so the primary Messages role sees the attachment and is refused the
-    bytes. advisor and operations hold no vault capability at all. Resolving this is an authorization
-    decision (see the Batch 3b report), deliberately not made inside this batch."""
+    A principal may hold every Messages capability, read the thread, and still be refused the bytes
+    when it lacks ``vault.download``. That was client_service's situation until ``vaultdl01`` granted
+    it; advisor and operations are still in it, and hold no vault capability at all. The per-ROLE
+    matrix lives in tests/test_message_attachment_authorization.py — this asserts the mechanism."""
     from fastapi import HTTPException
 
     from app.security.dependencies import require_capability
@@ -598,10 +598,10 @@ def test_client_service_can_open_the_thread_but_cannot_download_the_attachment(g
         thread_id, fake_request("/x", state_principal=coordinator), coordinator))
     assert "w2-statement" in html, "the coordinator can see the attachment"
 
-    # The gap is EXACTLY one capability, and nothing else: the coordinator already satisfies the
+    # The gap is EXACTLY one capability, and nothing else: this principal already satisfies the
     # vault service's own authorization — category `general` plus record scope — so the document is
-    # genuinely within their document authority. Only the route's door capability stops them.
+    # genuinely within its document authority. Only the route's door capability stops it.
     vault.download_target(coordinator, vault_id)               # service authorization: PASSES
     with pytest.raises(HTTPException) as excinfo:
         require_capability("vault.download")(principal=coordinator)
-    assert excinfo.value.status_code == 403                    # route door: REFUSED. BLOCKED.
+    assert excinfo.value.status_code == 403                    # route door: REFUSED
