@@ -124,23 +124,52 @@ def load_manifest(path, *, expect_sha=None):
     return manifest, digest
 
 
-def _live_folders(connection, codes):
+_FOLDER_SELECT = ("select id, code, name, parent_folder_id, folder_kind, owner_scope_type, "
+                  "       owner_scope_id, service_code, tax_year from document_folders ")
+
+
+def _live_subtree(connection, codes):
+    """The batch's target folders plus every ancestor — and nothing else.
+
+    Scoping matters. Hashing every canonical folder in the database would make this batch's gate
+    depend on folders belonging to other batches, so an unrelated Phase A elsewhere in the tree
+    would abort a filing run that is perfectly valid. The approved set is exactly the targets and
+    their ancestors, which is also precisely what the Phase A manifest hashed.
+    """
     from sqlalchemy import text
 
-    rows = connection.execute(text(
-        "select id, code, name, parent_folder_id, folder_kind, owner_scope_type, owner_scope_id, "
-        "       service_code, tax_year "
-        "  from document_folders where owner_scope_type is not null order by id"), {}).mappings()
+    rows = connection.execute(text(_FOLDER_SELECT + " where code = any(:codes)"),
+                              {"codes": list(codes)}).mappings()
     live = {r["code"]: dict(r) for r in rows}
     missing = sorted(set(codes) - set(live))
-    return live, missing
+    if missing:
+        return live, missing
+
+    # Walk up. A cycle is impossible via the natural identity, but bound the walk anyway rather
+    # than trusting that: a corrupted parent chain must abort, not hang.
+    by_id = {record["id"]: record for record in live.values()}
+    for _ in range(len(_KINDS)):
+        parent_ids = sorted({r["parent_folder_id"] for r in live.values()
+                             if r["parent_folder_id"] is not None and r["parent_folder_id"]
+                             not in by_id})
+        if not parent_ids:
+            break
+        for row in connection.execute(text(_FOLDER_SELECT + " where id = any(:ids)"),
+                                      {"ids": parent_ids}).mappings():
+            record = dict(row)
+            live[record["code"]] = record
+            by_id[record["id"]] = record
+    return live, []
+
+
+_KINDS = ("client", "service", "year")
 
 
 def _verify_folder_tree(connection, manifest, codes):
-    """Every named folder exists, and the live canonical tree hashes to the approved digest."""
+    """Every named folder exists, and the approved subtree hashes to the Phase A digest."""
     from app.services.canonical_filing_phases import folder_manifest_digest_of
 
-    live, missing = _live_folders(connection, codes)
+    live, missing = _live_subtree(connection, codes)
     if missing:
         raise Abort(f"ABORT: {len(missing)} approved folders do not exist "
                     f"(e.g. {missing[:5]}) — phase A has not run, or its result changed. "
@@ -149,6 +178,9 @@ def _verify_folder_tree(connection, manifest, codes):
     nodes = []
     for record in live.values():
         parent = by_id.get(record["parent_folder_id"])
+        if record["parent_folder_id"] is not None and parent is None:
+            raise Abort(f"ABORT: folder {record['code']!r} has a parent outside the approved "
+                        "subtree — the tree is not the one phase A built")
         nodes.append({
             "code": record["code"], "kind": record["folder_kind"], "name": record["name"],
             "parent_code": parent["code"] if parent else None,
