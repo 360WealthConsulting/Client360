@@ -174,6 +174,112 @@ def record_notification(
         return _do(connection)
 
 
+# --- model: recipient-scoped read + read-state ------------------------------
+#
+# Every function below takes the RECIPIENT as a required argument and puts it in the WHERE clause.
+# That is the security boundary for the staff inbox: a caller cannot read or mark a row belonging to
+# someone else, because there is no code path that omits the recipient. Setting ``read_at`` stays
+# inside the ledger boundary — ``read`` is deliberately not a status (ADR-017 §8), so this mutates no
+# workflow, domain or evidence state, and it needs no schema change.
+
+def list_notifications(
+    *, recipient_type: str, recipient_ref: str, limit: int = 50, unread_only: bool = False, conn=None,
+) -> list[NotificationRecord]:
+    """One recipient's notifications, newest first. Read-only."""
+    notifications = _notifications_table()
+    query = select(notifications).where(
+        notifications.c.recipient_type == recipient_type,
+        notifications.c.recipient_ref == recipient_ref,
+    )
+    if unread_only:
+        query = query.where(notifications.c.read_at.is_(None))
+    query = query.order_by(notifications.c.created_at.desc(), notifications.c.id.desc()).limit(limit)
+
+    def _do(c):
+        return [_to_record(row) for row in c.execute(query).mappings().all()]
+
+    if conn is not None:
+        return _do(conn)
+    from app.db import engine
+
+    with engine.connect() as connection:
+        return _do(connection)
+
+
+def unread_notification_count(*, recipient_type: str, recipient_ref: str, conn=None) -> int:
+    """How many of one recipient's notifications are unread. Read-only."""
+    from sqlalchemy import func
+
+    notifications = _notifications_table()
+    query = select(func.count()).select_from(notifications).where(
+        notifications.c.recipient_type == recipient_type,
+        notifications.c.recipient_ref == recipient_ref,
+        notifications.c.read_at.is_(None),
+    )
+
+    def _do(c):
+        return int(c.scalar(query) or 0)
+
+    if conn is not None:
+        return _do(conn)
+    from app.db import engine
+
+    with engine.connect() as connection:
+        return _do(connection)
+
+
+def mark_notification_read(
+    *, notification_id: int, recipient_type: str, recipient_ref: str, conn=None,
+) -> bool:
+    """Mark ONE of this recipient's notifications read. ``True`` when a row was changed.
+
+    Idempotent (an already-read row is left alone and reports ``False``) and recipient-scoped, so a
+    notification id belonging to somebody else simply matches nothing — it is never an error that
+    would disclose the row's existence.
+    """
+    from datetime import UTC, datetime
+
+    notifications = _notifications_table()
+    statement = notifications.update().where(
+        notifications.c.id == notification_id,
+        notifications.c.recipient_type == recipient_type,
+        notifications.c.recipient_ref == recipient_ref,
+        notifications.c.read_at.is_(None),
+    ).values(read_at=datetime.now(UTC))
+
+    def _do(c) -> bool:
+        return c.execute(statement).rowcount > 0
+
+    if conn is not None:
+        return _do(conn)
+    from app.db import engine
+
+    with engine.begin() as connection:
+        return _do(connection)
+
+
+def mark_all_notifications_read(*, recipient_type: str, recipient_ref: str, conn=None) -> int:
+    """Mark every unread notification for ONE recipient read. Returns how many changed."""
+    from datetime import UTC, datetime
+
+    notifications = _notifications_table()
+    statement = notifications.update().where(
+        notifications.c.recipient_type == recipient_type,
+        notifications.c.recipient_ref == recipient_ref,
+        notifications.c.read_at.is_(None),
+    ).values(read_at=datetime.now(UTC))
+
+    def _do(c) -> int:
+        return int(c.execute(statement).rowcount)
+
+    if conn is not None:
+        return _do(conn)
+    from app.db import engine
+
+    with engine.begin() as connection:
+        return _do(connection)
+
+
 def get_notification(
     *, notification_uid: str | None = None, notification_id: int | None = None,
     dedupe_key: str | None = None, conn=None,
