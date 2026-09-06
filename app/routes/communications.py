@@ -17,6 +17,7 @@ from app.security.dependencies import require_capability
 from app.security.models import Principal
 from app.services.communications import delivery
 from app.services.communications import email_send
+from app.services.communications import inbox as inbox_service
 from app.services.communications import service as svc
 from app.services.communications import templates as tmpl
 from app.templating import install_filters
@@ -75,6 +76,28 @@ def list_templates(request: Request,
     return JSONResponse({"templates": [
         {"id": t["id"], "code": t["code"], "name": t["name"], "category": t["category"],
          "channel": t["channel"], "active": t["active"]} for t in tmpl.list_templates()]})
+
+
+# --- staff communications inbox (Batch 4e) -----------------------------------
+#
+# MUST stay declared BEFORE ``/{conversation_id}`` — FastAPI matches in declaration order, and
+# "inbox" would otherwise be parsed as a conversation id and 422.
+#
+# Gated on ``communications.message.read``, the capability that actually guards message CONTENT
+# (the same one /admin/client-portal/threads and /notifications enforce) rather than the broader
+# ``communications.view`` the conversation list uses. Not under /admin, for the same reason
+# /notifications is not: this is daily client work, and /admin would drag in identity.manage.
+
+@router.get("/inbox", response_class=HTMLResponse)
+def inbox(request: Request, view: str = inbox_service.FILTER_ALL, channel: str | None = None,
+          page: int = 1,
+          principal: Principal = Depends(require_capability("communications.message.read"))):
+    """Cross-client work queue: which client communications need attention, across both channels."""
+    result = inbox_service.staff_communications_inbox(principal, view=view, channel=channel,
+                                                      page=page)
+    return templates.TemplateResponse(request=request, name="communications/inbox.html", context={
+        "principal": principal, "result": result,
+        "filters": inbox_service.FILTERS, "filter_labels": inbox_service.FILTER_LABELS})
 
 
 @router.get("/{conversation_id}", response_class=HTMLResponse)

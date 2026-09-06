@@ -86,6 +86,47 @@ Message CONTENT in this feed is gated on `communications.message.read` (the capa
 work queue already requires, since it is the same bodies); the pre-existing engagement summary keeps
 riding `communications.view`.
 
+### Amendment (Batch 4e) — the cross-client communications inbox is a derived work queue
+
+The revisit conditions below named a firm-wide communications inbox. This is it, and it stays inside the
+composition rule:
+
+7. The **staff communications inbox** (`app/services/communications/inbox.py`, `GET
+   /communications/inbox`) is a **derived operational view** across every client the principal services.
+   It reads the same two authoritative stores at request time and writes nothing: no third store, no
+   copying between the two, no timeline event, and no notification row. It is not a second
+   `/notifications` — that stays the event-alert ledger; this is the client-message work queue, and the
+   two link to the same thread page.
+
+**"Needs attention" is derived, never guessed.** Portal reuses the store's own semantics (a client
+message newer than `staff_last_read_at`, or newer than the firm's last reply, on a thread that is still
+open). Email compares the newest inbound against the newest outbound **within one canonical
+conversation** — never subject matching, never across conversations. An email ADR-074 could not anchor
+unambiguously is absent from the queue entirely and stays in the existing review workflow, because a
+queue that guesses whose client an email belongs to is worse than one that omits it.
+
+**Portal has unread; email does not.** Outlook's `isRead` is one mailbox owner's flag, and ADR-074
+normalized no firm-level equivalent, so email rows carry `unread = None` — absent, not `False`. Mapping
+the mailbox flag onto a firm-wide concept would tell every reader something only one person's Outlook
+knows.
+
+**Assignment is read, not invented.** Portal threads own `assigned_user_id` / `assigned_team_id` and
+those are used as-is. `communication_conversations` has no assignment column; rather than build an
+assignment subsystem for this batch, the owner is read from the authoritative `record_assignments` on the
+client and labelled as derived, or left unassigned.
+
+**Bounds.** Record scope is resolved ONCE into id sets — direct user/team assignment plus the
+work-derived read path, mirroring `security.authorization` — and applied as a SQL filter, rather than
+asking the authorization layer per candidate row, which is what makes a firm-wide queue affordable. Each
+store contributes a bounded window (250) and the page is 25 rows, capped at 100. The statement count is
+fixed and does not grow with the number of clients, conversations or messages; a test asserts this. Every
+filter, including "unassigned", operates on rows already restricted by that scope, so no filter can be
+used to enumerate the firm.
+
+**Ordering** is stated once, in `inbox._sort_key`: attention-required first; within it oldest wait first
+(the client who has waited longest is the most urgent, and newest-first buries exactly them); everything
+else newest first.
+
 ## Alternatives considered
 - **A new `interactions` table + ingestion pipeline.** Rejected: a second store, duplicates content, and
   re-implements dedup/scope/redaction the activity timeline already owns.
@@ -137,12 +178,13 @@ It only ever produces externally-visible interaction types (governance-verified)
 
 ## Revisit conditions
 Revisit when SMS is implemented (a new interaction source), when a deep archive engagement view is
-required (beyond the recent-interactions window), when a firm-wide communications inbox or work queue is
-built across clients rather than per client, or if any engagement lifecycle event gains a consumer that
-would justify an outbox contract.
+required (beyond the recent-interactions window), when email gains an assignment model of its own (the
+inbox derives one from record assignments today), when the queue needs a firm-wide supervisory view
+beyond the caller's own record scope, or if any engagement lifecycle event gains a consumer that would
+justify an outbox contract.
 
-Outbound email transport, named here originally, was delivered by ADR-075 and folded in by the Batch 4d
-amendment above.
+Two conditions named here originally have been met and folded into the amendments above: outbound email
+transport (delivered by ADR-075, Batch 4d) and the cross-client communications inbox (Batch 4e).
 
 ## References
 - `app/services/communications/engagement/*` (`registry.py`, `model.py`, `service.py`, `gate.py`,
@@ -150,6 +192,9 @@ amendment above.
   and the Batch 4d feed: `feed.py`, `adapters/email_feed.py`, `adapters/portal_feed.py`)
 - `app/templates/client360/_communications_feed.html`; `tests/test_unified_communications_feed.py`;
   relates to ADR-074 (inbound normalization) and ADR-075 (outbound reply)
+- Batch 4e inbox: `app/services/communications/inbox.py`, `app/routes/communications.py`
+  (`GET /communications/inbox`), `app/templates/communications/inbox.html`,
+  `tests/test_communications_inbox.py`
 - `app/routes/engagement.py`; portal routes in `app/routes/portal.py`; Client 360 section in
   `app/services/client360/{registry,sections}.py`; Household 360 section in
   `app/services/client360/household.py`; AI grounding in `app/services/ai_assist/context.py`;
