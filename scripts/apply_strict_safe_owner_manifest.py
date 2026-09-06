@@ -1,5 +1,17 @@
 """One-time controlled apply of the STRICT-SAFE document-owner manifest. ALL-OR-NOTHING.
 
+HISTORICAL — DO NOT USE FOR A NEW BATCH
+    This tool is frozen to ONE completed production write: 162 rows, confirm phrase
+    APPLY-STRICT-SAFE-162, manifest SHA 3eea2350…. Those constants ARE that batch's approval, so it
+    physically cannot be pointed at another manifest — a different file fails the SHA gate. It is
+    kept because its constants are an audit record and because
+    ``rollback_strict_safe_owner_manifest.py`` still has to load the DR snapshot it produced.
+
+    For a NEW strict-safe ownership batch use ``scripts/apply_strict_safe_ownership.py``, which is
+    parameterised, takes its expectations from outside the file, and assigns through the canonical
+    ``households.resolve_document_ownership(..., conn=...)`` rather than restating ownership rules.
+    For any other approved ownership manifest use ``scripts/apply_owner_manifest.py``.
+
 WHAT THIS WRITES, AND NOTHING ELSE
     documents.person_id / household_id / organization_id   (exactly one per row, NULL -> value)
     audit_events                                           (one 'document.ownership_resolved' per row)

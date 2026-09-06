@@ -335,7 +335,8 @@ def resolve_folder_ownership(folder_name, *, household_id=None, person_id=None, 
 
 
 def resolve_document_ownership(document_id, *, person_id=None, household_id=None, organization_id=None,
-                               actor_user_id=None, request_id=None, dry_run: bool = False) -> dict:
+                               actor_user_id=None, request_id=None, dry_run: bool = False,
+                               conn=None) -> dict:
     """Assign ONE document to a single owner — per-document manual resolution for the admin workflow.
 
     Safety (identical guarantees to the folder resolver, scoped to one document): assigns only when the
@@ -343,61 +344,94 @@ def resolve_document_ownership(document_id, *, person_id=None, household_id=None
     one of the six permanent V2 rejects. The write is atomic and RE-CHECKED in the same statement
     (WHERE all-NULL AND not-reject), so a stale/double confirmation cannot overwrite an owner or a
     now-owned document. Never modifies an already-owned document; never assigns a permanent reject.
-    Returns {assigned, reason, destination, ...}; audits each successful single-document resolution."""
+    Returns {assigned, reason, destination, ...}; audits each successful single-document resolution.
+
+    ``conn`` lets a CALLER own the transaction. Without it the behaviour is exactly as before — this
+    function opens ``engine.begin()`` (or ``engine.connect()`` for a dry run) and commits on its own,
+    which is right for the admin workflow's one document at a time. With it, every statement including
+    the audit event runs in the caller's transaction and nothing is committed here, which is what a
+    batch needs: a per-document commit would make a partial apply possible, and a batch that half
+    applies is a batch nobody reviewed. The ownership rules themselves live in ONE place either way —
+    a batch script must never restate them.
+    """
     if person_id is None and household_id is None and organization_id is None:
         raise ValueError("a person_id, household_id, or organization_id is required")
-    assignments = {"person_id": person_id, "household_id": household_id, "organization_id": organization_id}
+    if conn is not None:
+        return _resolve_document_ownership_conn(
+            conn, document_id, person_id=person_id, household_id=household_id,
+            organization_id=organization_id, actor_user_id=actor_user_id,
+            request_id=request_id, dry_run=dry_run)
     runner = engine.connect if dry_run else engine.begin
-    with runner() as conn:
-        row = conn.execute(select(documents.c.id, documents.c.person_id, documents.c.household_id,
-                                  documents.c.organization_id, documents.c.original_name)
-                           .where(documents.c.id == document_id)).mappings().first()
-        if row is None:
-            raise ValueError("document not found")
-        label = _entity_label(conn, person_id=person_id, household_id=household_id,
-                              organization_id=organization_id)
-        base = {"document_id": document_id, "original_name": row["original_name"],
-                "destination": label, "dry_run": dry_run}
-        if document_id in PERMANENT_REJECT_DOCUMENT_IDS:
-            return {**base, "assigned": False, "reason": "permanent_reject"}
-        unassigned = (row["person_id"] is None and row["household_id"] is None
-                      and row["organization_id"] is None)
-        if not unassigned:
-            return {**base, "assigned": False, "reason": "already_owned"}
-        if dry_run:
-            return {**base, "assigned": False, "eligible": True, "would_assign": True}
-        values = {f: v for f, v in assignments.items() if v is not None}
-        # Clearing the deferred-ownership lane is part of THIS statement, not a follow-up write.
-        # Assignment and deferral-clearing must not be separable: a document that is both owned and
-        # deferred would be counted as parked while sitting in a client's file, and a crash between
-        # two statements is exactly how that state would arise. The CASE narrows the write to the
-        # deferral sentinel, so any other review_status a document legitimately carries (a real
-        # 'pending' review) survives assignment untouched.
-        values["review_status"] = case(
-            (documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS, "not_required"),
-            else_=documents.c.review_status)
-        values["tags"] = case(
-            (and_(documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS,
-                  func.jsonb_typeof(documents.c.tags) == "object"),
-             documents.c.tags.op("-")("deferred_ownership")),
-            else_=documents.c.tags)
-        updated = conn.execute(documents.update().where(and_(
-            documents.c.id == document_id,
-            documents.c.person_id.is_(None), documents.c.household_id.is_(None),
-            documents.c.organization_id.is_(None),
-            documents.c.id.notin_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))))).values(**values)).rowcount
-        if not updated:
-            return {**base, "assigned": False, "reason": "no_longer_eligible"}
-        if actor_user_id is not None:
-            from app.security.audit import write_audit_event
-            write_audit_event(
-                action="document.ownership_resolved", entity_type="document", entity_id=document_id,
-                actor_user_id=actor_user_id, request_id=request_id,
-                metadata={"document_id": document_id, "destination": label,
-                          "person_id": person_id, "household_id": household_id,
-                          "organization_id": organization_id, "scope": "single_document",
-                          "previous_ownership_state": "all NULL (single-document resolution)"})
-        return {**base, "assigned": True}
+    with runner() as own:
+        return _resolve_document_ownership_conn(
+            own, document_id, person_id=person_id, household_id=household_id,
+            organization_id=organization_id, actor_user_id=actor_user_id,
+            request_id=request_id, dry_run=dry_run)
+
+
+def _resolve_document_ownership_conn(conn, document_id, *, person_id=None, household_id=None,
+                                     organization_id=None, actor_user_id=None, request_id=None,
+                                     dry_run: bool = False) -> dict:
+    """The canonical ownership write, against a connection the caller supplies.
+
+    This is the whole implementation; :func:`resolve_document_ownership` is the transaction policy
+    around it. Keeping the body here means the admin workflow and any guarded batch share one set of
+    ownership rules, one atomic re-check, and one audit action.
+    """
+    assignments = {"person_id": person_id, "household_id": household_id, "organization_id": organization_id}
+    row = conn.execute(select(documents.c.id, documents.c.person_id, documents.c.household_id,
+                              documents.c.organization_id, documents.c.original_name)
+                       .where(documents.c.id == document_id)).mappings().first()
+    if row is None:
+        raise ValueError("document not found")
+    label = _entity_label(conn, person_id=person_id, household_id=household_id,
+                          organization_id=organization_id)
+    base = {"document_id": document_id, "original_name": row["original_name"],
+            "destination": label, "dry_run": dry_run}
+    if document_id in PERMANENT_REJECT_DOCUMENT_IDS:
+        return {**base, "assigned": False, "reason": "permanent_reject"}
+    unassigned = (row["person_id"] is None and row["household_id"] is None
+                  and row["organization_id"] is None)
+    if not unassigned:
+        return {**base, "assigned": False, "reason": "already_owned"}
+    if dry_run:
+        return {**base, "assigned": False, "eligible": True, "would_assign": True}
+    values = {f: v for f, v in assignments.items() if v is not None}
+    # Clearing the deferred-ownership lane is part of THIS statement, not a follow-up write.
+    # Assignment and deferral-clearing must not be separable: a document that is both owned and
+    # deferred would be counted as parked while sitting in a client's file, and a crash between
+    # two statements is exactly how that state would arise. The CASE narrows the write to the
+    # deferral sentinel, so any other review_status a document legitimately carries (a real
+    # 'pending' review) survives assignment untouched.
+    values["review_status"] = case(
+        (documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS, "not_required"),
+        else_=documents.c.review_status)
+    values["tags"] = case(
+        (and_(documents.c.review_status == DEFERRED_OWNERSHIP_REVIEW_STATUS,
+              func.jsonb_typeof(documents.c.tags) == "object"),
+         documents.c.tags.op("-")("deferred_ownership")),
+        else_=documents.c.tags)
+    updated = conn.execute(documents.update().where(and_(
+        documents.c.id == document_id,
+        documents.c.person_id.is_(None), documents.c.household_id.is_(None),
+        documents.c.organization_id.is_(None),
+        documents.c.id.notin_(tuple(sorted(PERMANENT_REJECT_DOCUMENT_IDS))))).values(**values)).rowcount
+    if not updated:
+        return {**base, "assigned": False, "reason": "no_longer_eligible"}
+    if actor_user_id is not None:
+        from app.security.audit import write_audit_event
+        # conn= enlists the ledger entry in the SAME transaction as the ownership write, so the two
+        # can never disagree: a rolled-back assignment can no longer leave a committed audit row
+        # claiming it happened.
+        write_audit_event(
+            action="document.ownership_resolved", entity_type="document", entity_id=document_id,
+            actor_user_id=actor_user_id, request_id=request_id,
+            metadata={"document_id": document_id, "destination": label,
+                      "person_id": person_id, "household_id": household_id,
+                      "organization_id": organization_id, "scope": "single_document",
+                      "previous_ownership_state": "all NULL (single-document resolution)"},
+            conn=conn)
+    return {**base, "assigned": True}
 
 
 def main(argv=None):
