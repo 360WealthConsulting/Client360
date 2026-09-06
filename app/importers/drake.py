@@ -56,7 +56,7 @@ from functools import cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, and_, create_engine, select
+from sqlalchemy import MetaData, and_, case, create_engine, select
 
 from app.importers.taxdome_drive import (
     _copy_verified,
@@ -389,6 +389,39 @@ def sync(source_root=None, destination_root=None, *, source_roots=None, dry_run=
     return summary
 
 
+# A Drake source_uri is unique PER DOCUMENT, not globally: uq_document_source_ref covers
+# (document_id, source_system, source_uri), so one Drake file can legitimately hold a reference on
+# more than one canonical document. That is exactly what an out-of-band migration plus a later sync
+# produce — the migration registered the file against a document that was afterwards soft-deleted,
+# and the sync, which must never reuse a deleted document as canonical (see
+# resolve_or_create_canonical), registered it again against the live one. An unordered ``.first()``
+# then resolves arbitrarily between the two rows, so the same unchanged file could be skipped on one
+# run and re-copied plus re-reconciled on the next, and _resolve_source_external_id could read the
+# recorded client id off either row.
+#
+# Preference is therefore explicit and total: a reference that is available AND whose document is
+# still active always wins. A historical reference — unavailable, or attached to a soft-deleted
+# document — is a FALLBACK only, never a winner over a live row, but it is still returned when it is
+# all that exists so that a lone historical row keeps suppressing a spurious "new document"
+# classification and keeps supplying its recorded client id. Ties inside a tier break on the newest
+# reference id: the most recently written row, and a stable total order.
+_REF_LIVE, _REF_HISTORICAL = 0, 1
+
+
+def _existing_source_ref(conn, db, abs_path):
+    """The Drake source reference for ``abs_path``, preferring the live one. Never resurrects a
+    deleted document — it only reports which reference exists; canonical resolution stays with
+    ``resolve_or_create_canonical``, which excludes deleted documents on its own."""
+    ds, docs = db.document_sources, db.documents
+    preference = case((and_(ds.c.available.is_(True), docs.c.status != "deleted"), _REF_LIVE),
+                      else_=_REF_HISTORICAL)
+    return conn.execute(
+        select(ds.c.document_id, ds.c.metadata, ds.c.source_hash, ds.c.source_external_id)
+        .select_from(ds.join(docs, docs.c.id == ds.c.document_id))
+        .where(ds.c.source_system == SOURCE_SYSTEM, ds.c.source_uri == abs_path)
+        .order_by(preference, ds.c.id.desc()).limit(1)).mappings().first()
+
+
 def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run, seen_uris, summary,
               resolve_or_create_canonical):
     stat = os.stat(abs_path)
@@ -398,14 +431,10 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
     seen_uris.add(abs_path)
     summary["processed"] += 1
 
-    # Incremental fast path: an existing Drake source ref with the same size (+ local copy) is skipped.
+    # Incremental fast path: an existing Drake source ref with the same size (+ local copy) is
+    # skipped. The lookup prefers the live reference — see _existing_source_ref.
     with db.engine.connect() as conn:
-        existing_ref = conn.execute(
-            select(db.document_sources.c.document_id, db.document_sources.c.metadata,
-                   db.document_sources.c.source_hash,
-                   db.document_sources.c.source_external_id)
-            .where(db.document_sources.c.source_system == SOURCE_SYSTEM,
-                   db.document_sources.c.source_uri == abs_path)).mappings().first()
+        existing_ref = _existing_source_ref(conn, db, abs_path)
     if existing_ref is not None:
         meta = existing_ref["metadata"] or {}
         if dest_abs.exists() and meta.get("size") == int(stat.st_size) \
