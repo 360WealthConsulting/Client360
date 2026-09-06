@@ -483,7 +483,8 @@ def client_portal_status(person_id):
     return row["id"], None
 
 
-def staff_start_thread(principal, *, person_id, subject, body, topic=None, request_id=None):
+def staff_start_thread(principal, *, person_id, subject, body, topic=None, request_id=None,
+                       attachment_vault_document_ids=None):
     """Open a conversation with a client the staff member is authorised to service.
 
     Authorisation is derived entirely from the staff Principal: the person id arriving from the
@@ -525,6 +526,11 @@ def staff_start_thread(principal, *, person_id, subject, body, topic=None, reque
     if account_id is None:
         raise StaffMessageError(reason)
 
+    from app.portal import message_attachments as msg_attachments
+    vault_ids = msg_attachments.authorize_staff_attachment(
+        principal, person_id=person["id"], household_id=person["household_id"],
+        vault_document_ids=attachment_vault_document_ids)
+
     now = datetime.now(UTC)
     with engine.begin() as connection:
         thread_id = connection.execute(portal_threads.insert().values(
@@ -540,6 +546,11 @@ def staff_start_thread(principal, *, person_id, subject, body, topic=None, reque
         message_id = connection.execute(portal_messages.insert().values(
             thread_id=thread_id, sender_user_id=principal.user_id, body=body,
             visibility="client").returning(portal_messages.c.id)).scalar_one()
+        # The opening message is CLIENT-VISIBLE, so any attachment must be vault-backed and already
+        # shared with this client. Authorized before the write and inside the same transaction, so a
+        # refusal leaves no thread and no message behind.
+        msg_attachments.attach(connection, message_id=message_id, visibility="client",
+                               vault_document_ids=vault_ids)
 
     add_timeline_event(person_id=person["id"], household_id=person["household_id"],
                        source="client_portal", event_type="secure_message",

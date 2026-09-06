@@ -116,6 +116,73 @@ def _canonical_view(row) -> dict:
     }
 
 
+def attachable_for_client(principal, *, person_id, household_id=None) -> list[dict]:
+    """Vault documents STAFF may attach to a message this client can read.
+
+    The smallest safe source, and the only one this release offers: a document that is ALREADY
+    published to the client. Three conditions, all of them existing rules:
+
+      * ``client_visible`` is true — the deliberate, audited publication decision was already made
+        elsewhere (``vault.manage``, administrator-only). Nothing here publishes a document, so
+        staff cannot turn internal work product into client-visible material by attaching it;
+      * it is linked to this thread's person or household through ``vault_document_links``, so a
+        document belonging to another client can never appear in the picker;
+      * the staff principal passes the Vault's OWN authorization for it (category + record scope),
+        so nobody can attach a document they are not themselves permitted to read.
+
+    Uploading a new file for the client, and publishing a canonical document into the vault, both
+    need ``vault.upload`` / ``vault.manage`` — which the coordinator roles do not hold — and the
+    latter is a deliberate review step. Both are out of scope here rather than half-built.
+    """
+    from sqlalchemy import or_, select
+
+    from app.db import engine, vault_document_links, vault_documents
+    from app.services.vault import service as vault
+    from app.services.vault.naming import safe_vault_label
+
+    anchors = [vault_document_links.c.person_id == person_id]
+    if household_id is not None:
+        anchors.append(vault_document_links.c.household_id == household_id)
+    with engine.connect() as c:
+        rows = c.execute(
+            select(vault_documents)
+            .select_from(vault_documents.join(
+                vault_document_links, vault_document_links.c.document_id == vault_documents.c.id))
+            .where(vault_documents.c.client_visible.is_(True), or_(*anchors),
+                   vault_documents.c.archived_at.is_(None))
+            .distinct().order_by(vault_documents.c.created_at.desc()).limit(100)).mappings().all()
+        out = []
+        for row in rows:
+            links = c.execute(select(vault_document_links).where(
+                vault_document_links.c.document_id == row["id"])).mappings().all()
+            try:
+                vault._authorize(principal, row, links)
+            except Exception:                      # not this staff member's to read, so not to send
+                continue
+            out.append({"id": row["id"], "label": safe_vault_label(row)})
+    return out
+
+
+def authorize_staff_attachment(principal, *, person_id, household_id, vault_document_ids):
+    """Re-resolve staff-chosen attachments against :func:`attachable_for_client`.
+
+    The ids arrive from a form, so they are claims. Re-deriving the permitted set rather than
+    checking the claim means a hand-edited id cannot smuggle in an internal or another client's
+    document, and it is the same rule the picker renders — the list and the check cannot diverge.
+    """
+    ids = tuple(dict.fromkeys(int(i) for i in vault_document_ids or ()))
+    if not ids:
+        return ()
+    allowed = {row["id"] for row in attachable_for_client(
+        principal, person_id=person_id, household_id=household_id)}
+    for vault_document_id in ids:
+        if vault_document_id not in allowed:
+            raise MessageAttachmentError(
+                "That document is not available to attach. It must already be shared with this "
+                "client and within your own document access.")
+    return ids
+
+
 def attachments_for_messages(message_ids, *, audience: str = STAFF) -> dict[int, list[dict]]:
     """``{message_id: [safe attachment view, …]}`` for a set of messages.
 

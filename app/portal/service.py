@@ -439,17 +439,32 @@ def send_message(principal, thread_id, body, attachment_document_ids=None, attac
     notify_staff_of_client_message(thread_id, message_id)
     return message_id
 
-def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachment_document_ids=None):
+def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachment_document_ids=None,
+                       attachment_vault_document_ids=None, principal=None):
+    """Staff reply, internal note, or client-visible message with an attachment.
+
+    A CLIENT-VISIBLE message may carry only ``attachment_vault_document_ids``; an INTERNAL note may
+    carry canonical ``attachment_document_ids``. ``principal`` is required to attach a vault document
+    because the choice is re-authorized against what THAT staff member may both read and send —
+    ``user_id`` alone is an id, not an authority."""
+    vault_ids = ()
     with engine.begin() as connection:
         thread = connection.execute(select(portal_threads).where(portal_threads.c.id == thread_id)).mappings().one_or_none()
         if not thread: raise ValueError("Thread not found")
         visibility = "internal" if internal_note else "client"
+        if attachment_vault_document_ids:
+            if principal is None:
+                raise msg_attachments.MessageAttachmentError(
+                    "Attaching a document requires the staff principal making the request.")
+            vault_ids = msg_attachments.authorize_staff_attachment(
+                principal, person_id=thread["person_id"], household_id=thread["household_id"],
+                vault_document_ids=attachment_vault_document_ids)
         message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_user_id=user_id, body=body, visibility=visibility).returning(portal_messages.c.id)).scalar_one()
         # Canonical attachments are permitted ONLY on an internal note; the invariant refuses one on
-        # a client-visible reply. Staff attaching a document FOR the client is Batch 3c and needs a
-        # deliberate publish-to-vault step, so no vault parameter is offered here yet.
+        # a client-visible reply. Both writes share this transaction, so a refusal leaves no message.
         msg_attachments.attach(connection, message_id=message_id, visibility=visibility,
-                               document_ids=attachment_document_ids or ())
+                               document_ids=attachment_document_ids or (),
+                               vault_document_ids=vault_ids)
         # A client-visible staff reply is the "last staff response" + makes the thread unread for the
         # client; an internal note is staff-only and never changes the client-facing markers.
         if not internal_note:

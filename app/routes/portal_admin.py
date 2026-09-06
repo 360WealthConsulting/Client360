@@ -28,6 +28,7 @@ from app.db import (
 from app.portal import communication_hub as hub
 from app.portal import diagnostics as portal_diagnostics
 from app.portal import invitation_handoff, invite_targets, visibility
+from app.portal import message_attachments as msg_attachments
 from app.portal.service import (
     PortalAccountConflictError,
     invite_portal_account,
@@ -549,12 +550,15 @@ def portal_admin_thread(thread_id: int, request: Request,
             client_name = connection.scalar(select(people.c.full_name).where(
                 people.c.id == thread["person_id"]))
     hub.mark_thread_read_staff(thread_id, actor_user_id=principal.user_id)   # relationship-level read
-    from app.portal import message_attachments as msg_attachments
     attachments = msg_attachments.attachments_for_messages(
         [m["id"] for m in messages], audience=msg_attachments.STAFF)
+    # Only documents already shared with THIS client and readable by THIS staff member. The same
+    # derivation re-runs on submit, so the picker and the check can never diverge.
+    attachable = msg_attachments.attachable_for_client(
+        principal, person_id=thread["person_id"], household_id=thread["household_id"])
     return templates.TemplateResponse(request=request, name="admin/portal_thread.html", context={
         "thread": dict(thread), "messages": messages, "attachments": attachments,
-        "client_name": client_name,
+        "attachable": attachable, "client_name": client_name,
         "assigned_name": hub.staff_name(thread["assigned_user_id"]),
         "linked_requests": hub.linked_requests(thread_id), "topics": hub.TOPICS,
         "assignable_users": hub.assignable_users(), "assignable_teams": hub.assignable_teams(),
@@ -565,16 +569,33 @@ def portal_admin_thread(thread_id: int, request: Request,
 @router.post("/threads/{thread_id}/reply")
 def portal_admin_thread_reply(thread_id: int, request: Request, body: str = Form(...),
                               internal_note: str | None = Form(None),
+                              attachment_vault_document_id: str | None = Form(None),
                               principal: Principal = Depends(
                                   require_capability("communications.message.write"))):
     """Staff reply (or internal note) into a thread. Requires communications.message.write AND write
-    record scope on the thread. Delegates to the existing ``staff_send_message`` service (audited)."""
+    record scope on the thread. Delegates to the existing ``staff_send_message`` service (audited).
+
+    An optional attachment is an ALREADY client-visible vault document belonging to this client. The
+    id is re-authorized in the service against what this staff member may both read and send, so the
+    form's value is a claim, never permission. Nothing here publishes a document."""
     _guard_thread_write(principal, thread_id)
     if not (body or "").strip():
         return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?error=Reply+cannot+be+empty",
                                 status_code=303)
-    staff_send_message(thread_id=thread_id, user_id=principal.user_id, body=body.strip(),
-                       internal_note=bool(internal_note))
+    # ``isinstance`` rather than a truth test: a DIRECT call that omits the argument receives the
+    # unevaluated ``Form(None)`` marker rather than None, so every existing caller keeps working.
+    chosen = attachment_vault_document_id if isinstance(attachment_vault_document_id, str) else ""
+    vault_ids = [int(chosen)] if chosen.strip().isdigit() else []
+    if vault_ids and internal_note:
+        # The client cannot see an internal note, so "attach a client-visible document to one" is a
+        # request with no coherent meaning. Refuse it rather than silently dropping the attachment.
+        return _thread_redirect(thread_id, error="An internal note cannot carry a client document.")
+    try:
+        staff_send_message(thread_id=thread_id, user_id=principal.user_id, body=body.strip(),
+                           internal_note=bool(internal_note),
+                           attachment_vault_document_ids=vault_ids, principal=principal)
+    except msg_attachments.MessageAttachmentError as exc:
+        return _thread_redirect(thread_id, error=str(exc))
     kind = "Internal note added" if internal_note else "Reply sent to client"
     return RedirectResponse(f"/admin/client-portal/threads/{thread_id}?notice={kind.replace(' ', '+')}",
                             status_code=303)
