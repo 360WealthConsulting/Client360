@@ -549,8 +549,12 @@ def portal_admin_thread(thread_id: int, request: Request,
             client_name = connection.scalar(select(people.c.full_name).where(
                 people.c.id == thread["person_id"]))
     hub.mark_thread_read_staff(thread_id, actor_user_id=principal.user_id)   # relationship-level read
+    from app.portal import message_attachments as msg_attachments
+    attachments = msg_attachments.attachments_for_messages(
+        [m["id"] for m in messages], audience=msg_attachments.STAFF)
     return templates.TemplateResponse(request=request, name="admin/portal_thread.html", context={
-        "thread": dict(thread), "messages": messages, "client_name": client_name,
+        "thread": dict(thread), "messages": messages, "attachments": attachments,
+        "client_name": client_name,
         "assigned_name": hub.staff_name(thread["assigned_user_id"]),
         "linked_requests": hub.linked_requests(thread_id), "topics": hub.TOPICS,
         "assignable_users": hub.assignable_users(), "assignable_teams": hub.assignable_teams(),

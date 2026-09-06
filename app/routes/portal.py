@@ -18,6 +18,7 @@ from app.portal import appointments as portal_appointments
 from app.portal import communication_hub as portal_hub
 from app.portal import consent as portal_consent
 from app.portal import profile as portal_profile
+from app.portal import message_attachments as msg_attachments
 from app.portal import vault_documents as portal_vault
 from app.services.vault.service import CATEGORIES as VAULT_CATEGORIES
 from app.services.vault.storage import VaultStorageError
@@ -522,13 +523,52 @@ def portal_messages_page(request: Request, principal: PortalPrincipal = Depends(
         "notice": request.query_params.get("notice"), "error": request.query_params.get("error")})
 
 
+#: An attachment is offered only when BOTH surfaces are switched on — messaging carries the message,
+#: the vault upload carries the file. Neither gate is weakened; the attachment simply needs both.
+ATTACHMENT_UPLOAD_PATH = "/portal/upload"
+_ATTACHMENT_REFUSED = "That file could not be attached. Please check the file type and size."
+
+
+def _attachment_vault_ids(request, principal, upload):
+    """Store an optional attached file through the EXISTING client vault upload and return its id.
+
+    No second upload service and no relaxed validation: ``portal_vault.upload_document`` applies the
+    same size cap, extension allow-list and content sniffing it applies to every client upload, and
+    the file lands as a pending, client-visible vault document owned by this account's person. An
+    empty file part means "no attachment" and is not an error.
+
+    Deliberately SYNCHRONOUS, like the two message routes that call it: FastAPI runs a sync route in
+    a threadpool and ``UploadFile.file`` is an ordinary file object there, so the handlers keep the
+    plain signature every existing caller and test already uses.
+    """
+    # ``getattr`` rather than ``upload is None``: a DIRECT call that omits the argument receives the
+    # unevaluated ``File(None)`` marker rather than None, and an empty file part has no filename.
+    # Both mean "no attachment", so every existing caller keeps working untouched.
+    if not (getattr(upload, "filename", None) or "").strip():
+        return ()
+    try:
+        return (portal_vault.upload_document(
+            principal, source=upload.file, original_filename=upload.filename,
+            display_name=(upload.filename or "").strip(), category="general",
+            http_request_id=getattr(request.state, "request_id", "portal"),
+            ip_address=request.client.host if request.client else None),)
+    finally:
+        upload.file.close()
+
+
 @router.post("/portal/messages/new")
 def portal_messages_new(request: Request, subject: str = Form(...), body: str = Form(...),
                         topic: str | None = Form(None),
+                        attachment: UploadFile | None = File(None),
                         principal: PortalPrincipal = Depends(current_portal)):
     """Start a new thread on the client's OWN record. Person/household are derived server-side from
     the account's messages scope — never accepted from the client — so a client cannot open a thread
-    against someone else's record. create_thread re-checks scope (permission='messages')."""
+    against someone else's record. create_thread re-checks scope (permission='messages').
+
+    An optional attachment is stored through the existing client vault upload FIRST; if the message
+    is then refused, the thread is not created and no attachment row exists. The uploaded vault
+    document survives as the client's own pending upload, which is the vault's normal state for a
+    client upload and is visible to them on Documents — never an orphan the client cannot see."""
     if not (subject or "").strip() or not (body or "").strip():
         return RedirectResponse("/portal/messages?error=" + quote("A subject and message are required."),
                                 status_code=303)
@@ -539,8 +579,13 @@ def portal_messages_new(request: Request, subject: str = Form(...), body: str = 
                                 status_code=303)
     safe_topic = topic if topic in portal_hub.TOPICS else None      # client-chosen topic; else unassigned
     try:
+        vault_ids = _attachment_vault_ids(request, principal, attachment)
+    except (PermissionError, VaultStorageError, ValueError):
+        return RedirectResponse("/portal/messages?error=" + quote(_ATTACHMENT_REFUSED), status_code=303)
+    try:
         thread_id = create_thread(principal, household_id=household_id, person_id=principal.person_id,
-                                  subject=subject.strip(), body=body.strip(), topic=safe_topic)
+                                  subject=subject.strip(), body=body.strip(), topic=safe_topic,
+                                  attachment_vault_document_ids=vault_ids)
     except PermissionError:
         return RedirectResponse("/portal/messages?error=" + quote("Messaging is not enabled on your account."),
                                 status_code=303)
@@ -560,24 +605,38 @@ def portal_message_thread_page(thread_id: int, request: Request,
         row = connection.execute(select(portal_threads.c.subject, portal_threads.c.topic).where(
             portal_threads.c.id == thread_id)).mappings().one_or_none()
     portal_hub.mark_thread_read_client(principal, thread_id)     # relationship-level client read marker
+    # Attachments are passed BESIDE the message projection, not merged into it: _client_message_view
+    # has a fixed key set paired with an exact-key test and the visibility registry, and adding a key
+    # there would be a change to the client contract rather than to this page.
     return templates.TemplateResponse(request=request, name="portal/message_thread.html", context={
         "principal": principal, "thread_id": thread_id,
         "subject": (row["subject"] if row else None) or "Conversation",
         "topic": row["topic"] if row else None, "messages": messages,
+        "attachments": msg_attachments.attachments_for_messages(
+            [m["id"] for m in messages], audience=msg_attachments.CLIENT),
         "linked_requests": portal_hub.linked_requests(thread_id),
         "notice": request.query_params.get("notice"), "error": request.query_params.get("error")})
 
 
 @router.post("/portal/messages/{thread_id}/reply")
 def portal_message_reply(thread_id: int, request: Request, body: str = Form(...),
+                         attachment: UploadFile | None = File(None),
                          principal: PortalPrincipal = Depends(current_portal)):
     """Reply into an existing thread via the scoped send_message service (permission='messages').
-    Out-of-scope threads deny existence with 404."""
+    Out-of-scope threads deny existence with 404.
+
+    An optional attachment goes through the existing client vault upload and is linked to the reply
+    in the same transaction as the message — a refused reply leaves no attachment row."""
     if not (body or "").strip():
         return RedirectResponse(f"/portal/messages/{thread_id}?error=" + quote("Please enter a reply."),
                                 status_code=303)
     try:
-        send_message(principal, thread_id, body.strip())
+        vault_ids = _attachment_vault_ids(request, principal, attachment)
+    except (PermissionError, VaultStorageError, ValueError):
+        return RedirectResponse(f"/portal/messages/{thread_id}?error=" + quote(_ATTACHMENT_REFUSED),
+                                status_code=303)
+    try:
+        send_message(principal, thread_id, body.strip(), attachment_vault_document_ids=vault_ids)
     except PermissionError:
         raise HTTPException(404, "Conversation not found") from None
     return RedirectResponse(f"/portal/messages/{thread_id}?notice=" + quote("Reply sent."), status_code=303)

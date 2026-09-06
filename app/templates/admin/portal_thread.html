@@ -124,6 +124,18 @@
   {# Visibility semantics unchanged — this only chooses a neutral tone for an existing state. #}
   <article class="thread-msg{% if m.visibility == 'internal' %} internal{% elif m.sender_user_id %} staff{% else %} client{% endif %}">
     <div class="msg-body">{{ m.body }}</div>
+    {# Attachments carry a safe label and a link to the route that authorizes THEM — the vault
+       download re-checks capability, category and record scope, so this link is not access. No
+       storage key, checksum, provider or internal vault metadata reaches the page. #}
+    {% set atts = attachments.get(m.id, []) if attachments else [] %}
+    {% if atts %}
+    <ul class="portal-list msg-attachments">
+      {% for a in atts %}
+      <li class="meta">📎 <a class="rowlink" href="{{ a.download_href }}">{{ a.label }}</a>
+        {% if a.content_type %}<span class="subtle">· {{ a.content_type }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <p class="thread-msg-meta">
       {% if m.visibility == 'internal' %}{{ ui.badge('Internal note (staff only)', 'warn') }}
       {% elif m.sender_user_id %}{{ ui.badge('Staff', 'info') }}

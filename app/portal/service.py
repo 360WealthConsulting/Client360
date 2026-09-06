@@ -17,7 +17,6 @@ from app.db import (
     portal_devices,
     portal_document_requests,
     portal_invitations,
-    portal_message_attachments,
     portal_message_receipts,
     portal_messages,
     portal_notifications,
@@ -28,6 +27,7 @@ from app.db import (
     workflow_instances,
     workflow_steps,
 )
+from app.portal import message_attachments as msg_attachments
 from app.portal.gate import gate
 from app.portal.providers import NOTIFICATION_PROVIDERS
 from app.security.audit import write_audit_event
@@ -368,13 +368,19 @@ def require_scope(principal, *, person_id=None, household_id=None, permission=No
         raise PermissionError("Household is outside portal access scope" if permission is None else f"Portal grant does not allow {permission}")
     return scope
 
-def create_thread(principal, *, household_id, person_id, subject, body, topic=None, organization_id=None):
+def create_thread(principal, *, household_id, person_id, subject, body, topic=None, organization_id=None, attachment_vault_document_ids=None):
     require_scope(principal, person_id=person_id, household_id=household_id, permission="messages")
+    # Attachments are VAULT-backed (msgatt01). Each id is re-authorized here against the account's
+    # documents scope — the browser's claim is never trusted — and the rows are written inside the
+    # SAME transaction as the message, so a refusal leaves no thread, no message and no attachment.
+    vault_ids = _authorized_vault_attachments(principal, attachment_vault_document_ids)
     now = datetime.now(UTC)
     with engine.begin() as connection:
         thread_id = connection.execute(portal_threads.insert().values(household_id=household_id, person_id=person_id, subject=subject, topic=topic, organization_id=organization_id, created_by_portal_account_id=principal.account_id, last_client_message_at=now, updated_at=now).returning(portal_threads.c.id)).scalar_one()
         connection.execute(portal_thread_participants.insert().values(thread_id=thread_id, portal_account_id=principal.account_id, participant_role="client"))
         message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_portal_account_id=principal.account_id, body=body, visibility="client").returning(portal_messages.c.id)).scalar_one()
+        msg_attachments.attach(connection, message_id=message_id, visibility="client",
+                               vault_document_ids=vault_ids)
     add_timeline_event(person_id=person_id, household_id=household_id, source="client_portal", event_type="secure_message", title="Secure portal message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     write_audit_event(action="portal.message.sent", entity_type="portal_message", entity_id=message_id, request_id=f"portal-message-{uuid.uuid4()}", metadata={"portal_account_id": principal.account_id, "thread_id": thread_id})
     # Post-commit, beside the timeline/audit writes: tell the staff who own this conversation that a
@@ -383,16 +389,44 @@ def create_thread(principal, *, household_id, person_id, subject, body, topic=No
     notify_staff_of_client_message(thread_id, message_id)
     return thread_id
 
-def send_message(principal, thread_id, body, attachment_document_ids=None):
+def _authorized_vault_attachments(principal, vault_document_ids):
+    """Re-resolve each claimed vault attachment against the account's DOCUMENTS scope.
+
+    The ids arrive from a browser, so they are claims. A vault document is attachable only when it is
+    reachable by this account exactly as the Vault itself decides — client_visible AND linked to a
+    person in the documents-permission scope (``portal.vault_documents._reachable_document``). That is
+    the same rule the client download enforces, so attaching can never widen what a client may reach,
+    and an id belonging to somebody else is refused before any row is written."""
+    ids = tuple(dict.fromkeys(int(i) for i in vault_document_ids or ()))
+    if not ids:
+        return ()
+    from app.portal import vault_documents as portal_vault
+    scope = portal_scope(principal.account_id, permission="documents")
+    with engine.connect() as connection:
+        for vault_document_id in ids:
+            if portal_vault._reachable_document(connection, principal, vault_document_id, scope) is None:
+                raise PermissionError("Attachment is outside portal access scope")
+    return ids
+
+
+def send_message(principal, thread_id, body, attachment_document_ids=None, attachment_vault_document_ids=None):
+    """Client reply. Attachments are VAULT-backed only.
+
+    ``attachment_document_ids`` (canonical ``documents``) is retained so an old caller fails LOUDLY
+    rather than silently attaching an internal document to a message the client can read: a client
+    message is always ``visibility='client'``, and the invariant in
+    ``portal.message_attachments`` refuses a canonical reference on one. Canonical attachments remain
+    legitimate on staff INTERNAL notes, which is where that path now lives."""
     scope = portal_scope(principal.account_id, permission="messages")
+    vault_ids = _authorized_vault_attachments(principal, attachment_vault_document_ids)
+    if attachment_document_ids:
+        msg_attachments.assert_canonical_allowed("client")      # always refuses; states why
     with engine.begin() as connection:
         thread = connection.execute(select(portal_threads).where(portal_threads.c.id == thread_id, or_(portal_threads.c.person_id.in_(scope["person_ids"]), portal_threads.c.household_id.in_(scope["shared_household_ids"])))).mappings().one_or_none()
         if not thread: raise PermissionError("Thread is outside portal access scope")
         message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_portal_account_id=principal.account_id, body=body, visibility="client").returning(portal_messages.c.id)).scalar_one()
-        for document_id in attachment_document_ids or []:
-            owner = connection.scalar(select(documents.c.person_id).where(documents.c.id == document_id))
-            if owner not in scope["person_ids"]: raise PermissionError("Attachment is outside portal access scope")
-            connection.execute(portal_message_attachments.insert().values(message_id=message_id, document_id=document_id))
+        msg_attachments.attach(connection, message_id=message_id, visibility="client",
+                               vault_document_ids=vault_ids)
         # Relationship-owned activity marker: a client reply makes the thread unread for staff.
         now = datetime.now(UTC)
         connection.execute(portal_threads.update().where(portal_threads.c.id == thread_id).values(last_client_message_at=now, updated_at=now))
@@ -409,8 +443,13 @@ def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachm
     with engine.begin() as connection:
         thread = connection.execute(select(portal_threads).where(portal_threads.c.id == thread_id)).mappings().one_or_none()
         if not thread: raise ValueError("Thread not found")
-        message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_user_id=user_id, body=body, visibility="internal" if internal_note else "client").returning(portal_messages.c.id)).scalar_one()
-        for document_id in attachment_document_ids or []: connection.execute(portal_message_attachments.insert().values(message_id=message_id, document_id=document_id))
+        visibility = "internal" if internal_note else "client"
+        message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_user_id=user_id, body=body, visibility=visibility).returning(portal_messages.c.id)).scalar_one()
+        # Canonical attachments are permitted ONLY on an internal note; the invariant refuses one on
+        # a client-visible reply. Staff attaching a document FOR the client is Batch 3c and needs a
+        # deliberate publish-to-vault step, so no vault parameter is offered here yet.
+        msg_attachments.attach(connection, message_id=message_id, visibility=visibility,
+                               document_ids=attachment_document_ids or ())
         # A client-visible staff reply is the "last staff response" + makes the thread unread for the
         # client; an internal note is staff-only and never changes the client-facing markers.
         if not internal_note:

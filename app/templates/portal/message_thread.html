@@ -42,6 +42,16 @@
 {% for m in messages %}
   <div class="msg {{ 'from-client' if m.sender_type == "client" else 'from-staff' }}">
     <div class="msg-body">{{ m.body }}</div>
+    {# The client's own attachments. The link goes to the portal download, which re-checks the
+       documents grant, client_visible and link scope — the same rule as the Documents page. #}
+    {% set atts = attachments.get(m.id, []) if attachments else [] %}
+    {% if atts %}
+    <ul class="portal-list msg-attachments">
+      {% for a in atts %}
+      <li class="meta">📎 <a href="{{ a.download_href }}">{{ a.label }}</a></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <span class="msg-meta">{{ 'You' if m.sender_type == "client" else 'Your advisor' }} · {{ m.sent_at.strftime('%b %d, %Y %I:%M %p') if m.sent_at else '' }}</span>
   </div>
 {% else %}
@@ -49,11 +59,20 @@
 {% endfor %}
 </div>
 
-<form class="portal-form wide" method="post" action="/portal/messages/{{ thread_id }}/reply" style="margin-top:1rem;">
+{# enctype is required for the optional attachment; without it the browser posts the filename only. #}
+<form class="portal-form wide" method="post" action="/portal/messages/{{ thread_id }}/reply"
+      enctype="multipart/form-data" style="margin-top:1rem;">
   <div class="field">
     <label for="body">Reply</label>
     <textarea id="body" name="body" required></textarea>
   </div>
+  {% if portal_can(principal, '/portal/upload') %}
+  <div class="field">
+    <label for="attachment">Attach a file (optional)</label>
+    <input type="file" id="attachment" name="attachment">
+    <p class="meta">Your advisor receives it with this reply. It is also saved to your documents.</p>
+  </div>
+  {% endif %}
   <div class="form-actions"><button class="btn" type="submit">Send reply</button></div>
 </form>
 {% endblock %}
