@@ -77,7 +77,30 @@ R_YEAR_CONFLICT = "tax_year_conflict"
 R_YEAR_MODERATE = "tax_year_not_strong"
 R_NO_YEAR = "missing_tax_year"
 R_NO_DISPLAY_NAME = "missing_display_name"
+R_DIFFERENT_CLIENT_PATH = "conflicting_client_context"
 R_SAFETY_HOLD = "filing_safety_hold"
+
+#: The legacy preview raises ``filing_status = UNRESOLVED`` for six distinct reasons, and they are
+#: NOT equivalent. Five are already decided by an explicit canonical gate; the sixth is a genuine
+#: safety fact that no canonical gate covered, so it gets one of its own. The aggregate status is
+#: deliberately NOT consulted — carrying it forward let the legacy path-taxonomy failure veto the
+#: very documents the TaxDome owner-profile derivation exists to rescue.
+#:
+#:   excluded_nonclient              -> gate 1
+#:   conflicting_ownership_context   -> gate 2
+#:   no_current_owner                -> gate 2
+#:   conflicting_client_context      -> gate 3  (added; see below)
+#:   no_client_taxonomy_source       -> superseded for TaxDome by the derivation; gate 5 otherwise
+#:   operational_paths_only          -> superseded for TaxDome by the derivation; gate 5 otherwise
+#:   no_trustworthy_category         -> superseded for TaxDome by the derivation; gate 5 otherwise
+LEGACY_REASON_SUPERSEDED_BY_DERIVATION = frozenset({
+    "no_trustworthy_category", "no_client_taxonomy_source", "operational_paths_only"})
+
+#: A path naming a DIFFERENT known client is a disagreement about WHO the client is. The legacy
+#: engine returns before reaching its own check for this when the taxonomy is unreadable, but it
+#: appends the conflict first — so the conflict string is the reliable signal, not the reason code.
+DIFFERENT_CLIENT_CONFLICT = "a source path names a different known client"
+LEGACY_REASON_DIFFERENT_CLIENT = "conflicting_client_context"
 
 STRONG = "strong"
 
@@ -191,8 +214,21 @@ _REASON_BUCKET = {
     R_YEAR_MODERATE: REVIEW,
     R_NO_YEAR: UNRESOLVED,
     R_NO_DISPLAY_NAME: REVIEW,
+    R_DIFFERENT_CLIENT_PATH: REVIEW,
     R_SAFETY_HOLD: REVIEW,
 }
+
+
+def names_a_different_client(proposal) -> bool:
+    """Does a source path identify a client other than the document's resolved owner?
+
+    Checked on the conflicts list first: when the legacy engine cannot read a taxonomy it returns
+    before its own ``conflicting_client_context`` check, but it has already appended the conflict,
+    so the reason code alone would miss the case entirely.
+    """
+    if any(DIFFERENT_CLIENT_CONFLICT in str(c) for c in (proposal.get("conflicts") or [])):
+        return True
+    return LEGACY_REASON_DIFFERENT_CLIENT in (proposal.get("reasons") or [])
 
 
 def classify(proposal, profiles, *, min_backing_documents=MIN_BACKING_DOCUMENTS) -> dict:
@@ -242,7 +278,12 @@ def classify(proposal, profiles, *, min_backing_documents=MIN_BACKING_DOCUMENTS)
         return fail(R_NO_OWNER)
     row["owner_scope_type"], row["owner_scope_id"] = str(scope_type), int(scope_id)
 
-    # 3. a visible label must exist and must survive sanitation.
+    # 3. a source path naming a DIFFERENT known client outranks everything below it: this is a
+    #    disagreement about WHO the client is, and no service or year derivation can settle it.
+    if names_a_different_client(proposal):
+        return fail(R_DIFFERENT_CLIENT_PATH)
+
+    # 4. a visible label must exist and must survive sanitation.
     source_label = proposal.get("proposed_scope_name")
     row["owner_source_label"] = source_label
     try:
@@ -251,7 +292,7 @@ def classify(proposal, profiles, *, min_backing_documents=MIN_BACKING_DOCUMENTS)
         return fail(R_OWNER_LABEL_UNSAFE)
     row["owner_label_sanitized"] = row["owner_folder_label"] != str(source_label or "")
 
-    # 4. service line — the firm's decision, or the validated owner-profile derivation.
+    # 5. service line — the firm's decision, or the validated owner-profile derivation.
     service, derivation, failure = _service_for(
         proposal, profiles, min_backing_documents=min_backing_documents)
     row["derivation"] = derivation
@@ -261,12 +302,12 @@ def classify(proposal, profiles, *, min_backing_documents=MIN_BACKING_DOCUMENTS)
     row["service_label"] = service_label_for_code(service)
     row["service_source"] = "taxdome_owner_profile_derivation" if derivation else "source_taxonomy"
 
-    # 5. TaxDome Unsorted is a hold for every source, checked here so it applies even when the
+    # 6. TaxDome Unsorted is a hold for every source, checked here so it applies even when the
     #    service came from the taxonomy rather than the derivation.
     if row["taxdome_unsorted"]:
         return fail(R_TAXDOME_UNSORTED)
 
-    # 6. tax year: conflict and moderate are both REVIEW; only strong may be filed.
+    # 7. tax year: conflict and moderate are both REVIEW; only strong may be filed.
     confidence = proposal.get("tax_year_confidence")
     if confidence == "conflict":
         return fail(R_YEAR_CONFLICT)
@@ -277,13 +318,15 @@ def classify(proposal, profiles, *, min_backing_documents=MIN_BACKING_DOCUMENTS)
         return fail(R_YEAR_MODERATE)
     row["tax_year"] = year
 
-    # 7. a document must have a name to file under.
+    # 8. a document must have a name to file under. This is presence, not quality — quality is a
+    #    Phase B gate, because a poorly named document still has a correct destination.
     if not (row["proposed_display_name"] or "").strip():
         return fail(R_NO_DISPLAY_NAME)
 
-    # 8. any safety hold the preview itself raised.
-    if (proposal.get("filing_status") or "") == "UNRESOLVED":
-        return fail(R_SAFETY_HOLD)
+    # NOTE: the legacy ``filing_status`` is deliberately NOT consulted. Every safety fact it
+    # aggregated is decided above by an explicit gate; the one fact no gate covered — a path naming
+    # a different known client — is gate 3. Consulting the aggregate let the legacy path-taxonomy
+    # failure veto exactly the TaxDome documents the owner-profile derivation exists to rescue.
 
     segments = [row["owner_folder_label"], row["service_label"], str(year)]
     if len(segments) != CANONICAL_DEPTH or not all(s and str(s).strip() for s in segments):
@@ -304,16 +347,18 @@ def display_name_fields(proposal) -> dict:
     A raw-filename fallback does not invalidate placement — the folder is right either way — but it
     must be countable so naming can be worked on separately.
     """
+    from app.services.filing_name_quality import allowed_in_phase_b, classify
+
     proposed = (proposal.get("proposed_display_name") or "").strip()
     raw = (proposal.get("original_name") or "").strip()
     fallback = bool(proposed) and proposed.casefold() == raw.casefold()
+    quality = classify(proposed, raw)
     return {
         "proposed_display_name": proposed,
         "display_name_source": proposal.get("display_name_source") or "",
-        "display_name_quality": ("missing" if not proposed
-                                 else "raw_filename_fallback" if fallback
-                                 else "engine_named"),
+        "display_name_quality": quality,
         "raw_filename_fallback": fallback,
+        "phase_b_naming_ok": allowed_in_phase_b(quality),
     }
 
 
@@ -391,6 +436,8 @@ def summarize(rows) -> dict:
         "raw_filename_fallback": sum(1 for r in auto if r["raw_filename_fallback"]),
         "display_name_quality": dict(sorted(Counter(
             r["display_name_quality"] for r in auto).items())),
+        "phase_b_naming_ok": sum(1 for r in auto if r["phase_b_naming_ok"]),
+        "phase_b_naming_hold": sum(1 for r in auto if not r["phase_b_naming_ok"]),
         "owner_labels_sanitized": sum(1 for r in auto if r["owner_label_sanitized"]),
         "depth_census": dict(sorted(Counter(len(r["folder_segments"]) for r in auto).items())),
     }

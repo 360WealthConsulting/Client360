@@ -283,11 +283,12 @@ def test_the_existing_naming_engine_is_reported_never_reimplemented():
     assert row["raw_filename_fallback"] is False
 
 
-def test_a_raw_filename_fallback_is_measurable_but_does_not_block_placement():
+def test_a_useful_raw_filename_is_measurable_but_does_not_block_placement():
     row = classify_one(proposal(proposed_display_name="2023 Tax Return 8879s.pdf"))
     assert row["status"] == AUTO_FILE_SAFE
     assert row["raw_filename_fallback"] is True
-    assert row["display_name_quality"] == "raw_filename_fallback"
+    assert row["display_name_quality"] == "raw_filename_already_useful"
+    assert row["phase_b_naming_ok"] is True
 
 
 def test_a_document_with_no_name_at_all_is_review():
@@ -538,13 +539,43 @@ def test_the_legacy_batch_is_marked_retired():
     assert legacy.RETIRED is True
 
 
-@pytest.mark.parametrize("entry_point", [
-    "build_plan", "read_frozen_rows", "confirm_phrase", "rollback_phrase", "plan_digest",
-    "folder_manifest_digest", "client_code", "category_code", "year_code", "slugify", "sha256_of",
-])
-def test_every_legacy_entry_point_refuses_to_run(entry_point):
+@pytest.mark.parametrize("entry_point", legacy.RETIRED_ENTRY_POINTS)
+def test_every_legacy_apply_entry_point_refuses_to_run(entry_point):
     with pytest.raises(legacy.LegacyBatchRetired):
         getattr(legacy, entry_point)("anything")
+
+
+def test_the_retired_set_is_exactly_the_apply_path():
+    assert set(legacy.RETIRED_ENTRY_POINTS) == {
+        "build_plan", "read_frozen_rows", "confirm_phrase", "rollback_phrase"}
+
+
+@pytest.mark.parametrize("symbol", [
+    "FOLDER_FIELDS", "FOLDER_KINDS", "PLAN_FIELDS", "PlanError", "category_code", "client_code",
+    "folder_manifest_digest", "plan_digest", "sha256_of", "slugify",
+])
+def test_batch2s_borrowed_primitives_still_work(symbol):
+    """Batch 2 is merged and applied in production; retiring a POLICY must not break its arithmetic."""
+    assert hasattr(legacy, symbol)
+
+
+def test_the_borrowed_primitives_are_the_frozen_ones():
+    # 16,854 production documents sit in folders these two generated. They are frozen, not
+    # maintained: a changed slug rule would orphan live folder references.
+    assert legacy.slugify("Sales & Litter Tax") == "sales-litter-tax"
+    assert legacy.client_code("person", 5830) == "client-person-5830"
+    assert legacy.category_code("person", 5830, "Tax Preparation") == \
+        "client-person-5830--category-tax-preparation"
+    assert legacy.year_code("person", 5830, "Tax Preparation", 2023) == \
+        "client-person-5830--category-tax-preparation--year-2023"
+
+
+def test_the_merged_batch2_module_still_imports():
+    import importlib
+
+    module = importlib.import_module("app.services.document_filing_batch2")
+    assert module.DESTINATION_DEPTH == 2  # legacy policy, preserved but not adopted
+    assert module.EXPECTED_DOCUMENTS == 550
 
 
 def test_the_old_confirmation_phrase_can_no_longer_be_produced():
@@ -576,3 +607,144 @@ def test_the_retired_depth_census_is_recorded_as_the_reason_not_as_a_target():
     assert legacy.LEGACY_EXPECTED_DEPTH_CENSUS == {2: 9361, 3: 6943}
     rows, _ = build_rows([proposal(tax_year_confidence="moderate")])
     assert rows[0]["status"] == REVIEW
+
+
+# --- the legacy aggregate status must not veto canonical derivation ------------------------------
+
+@pytest.mark.parametrize("legacy_reason", [
+    "no_trustworthy_category", "no_client_taxonomy_source", "operational_paths_only"])
+def test_a_legacy_path_taxonomy_failure_no_longer_vetoes_a_derived_taxdome_document(legacy_reason):
+    """The exact condition owner_profile_single_service_v1 exists to solve must not block it."""
+    row = classify_one(
+        taxdome(filing_status="UNRESOLVED", reasons=[legacy_reason]), backing(MIN_BACKING_DOCUMENTS))
+    assert row["status"] == AUTO_FILE_SAFE
+    assert row["service_source"] == "taxdome_owner_profile_derivation"
+    assert row["folder_segments"] == ["Jane Doe", "Tax Preparation", "2023"]
+
+
+def test_the_aggregate_legacy_status_is_not_consulted_at_all():
+    a = classify_one(taxdome(filing_status="UNRESOLVED", reasons=["no_trustworthy_category"]),
+                     backing(20))
+    b = classify_one(taxdome(filing_status="AUTO_FILE_SAFE", reasons=[]), backing(20))
+    assert a["status"] == b["status"] == AUTO_FILE_SAFE
+
+
+def test_a_non_taxdome_document_with_no_service_is_still_not_filed():
+    row = classify_one(proposal(proposed_top_level_category=None,
+                                filing_status="UNRESOLVED", reasons=["no_trustworthy_category"]))
+    assert row["status"] == UNRESOLVED
+    assert row["reason"] == "missing_service_line"
+
+
+def test_a_non_taxdome_provenance_only_category_is_still_review():
+    row = classify_one(proposal(proposed_top_level_category="Client Uploads",
+                                filing_status="UNRESOLVED"))
+    assert row["reason"] == "service_line_is_provenance_only"
+
+
+# --- conflicting client context is now an explicit gate ------------------------------------------
+
+def test_the_conflicting_client_reason_always_blocks():
+    row = classify_one(taxdome(reasons=["conflicting_client_context"]), backing(20))
+    assert row["status"] == REVIEW
+    assert row["reason"] == "conflicting_client_context"
+
+
+def test_a_path_naming_a_different_known_client_always_blocks():
+    """The legacy engine returns before its own check when the taxonomy is unreadable, but it has
+    already appended the conflict — so the conflict string is the signal, not the reason code."""
+    row = classify_one(
+        taxdome(filing_status="UNRESOLVED", reasons=["no_trustworthy_category"],
+                conflicts=["a source path names a different known client"]),
+        backing(20))
+    assert row["status"] == REVIEW
+    assert row["reason"] == "conflicting_client_context"
+
+
+def test_dropping_the_aggregate_status_cannot_admit_a_different_client_conflict():
+    # Same document, once with the legacy status and once without: blocked either way.
+    for status in ("UNRESOLVED", "AUTO_FILE_SAFE"):
+        row = classify_one(
+            taxdome(filing_status=status,
+                    conflicts=["a source path names a different known client"]), backing(20))
+        assert row["reason"] == "conflicting_client_context"
+
+
+def test_the_different_client_gate_outranks_service_and_year():
+    row = classify_one(
+        taxdome(proposed_tax_year=None, tax_year_confidence=None,
+                conflicts=["a source path names a different known client"]), backing(20))
+    assert row["reason"] == "conflicting_client_context"
+
+
+def test_an_unrelated_conflict_string_does_not_block():
+    row = classify_one(taxdome(conflicts=["tax-year signals disagree: filename=2022"]), backing(20))
+    assert row["status"] == AUTO_FILE_SAFE
+
+
+# --- naming quality: a Phase B gate, never a Phase A one -----------------------------------------
+
+@pytest.mark.parametrize("name,useful", [
+    ("MCC 1099 2023.pdf", True),
+    ("2023 Signature Documents (CASPER AARON).pdf", True),
+    ("2021 8879 S.pdf", True),          # no three-letter word, still a real name
+    ("M w2 2023.pdf", True),
+    ("Chapel 2023.pdf", True),
+    ("Sch C Income Expense Worksheet.pdf", True),
+    ("IMG_4695.jpg", False),
+    ("DSC00123.JPG", False),
+    ("20220325_155854.jpg", False),
+    ("d1888c09-a1d1-49c2-881b-29c348f3a265.pdf", False),
+    ("COMMPREF 0001-STATEMENT-01-13-2023-2eff75b5-af22-4c1a.pdf", False),
+    ("document.pdf", False),
+    ("Untitled.pdf", False),
+    ("scan_240223-154351.pdf", False),
+])
+def test_the_naming_quality_rule_is_deterministic(name, useful):
+    from app.services.filing_name_quality import is_useful_filename
+
+    assert is_useful_filename(name) is useful
+
+
+def test_naming_quality_depends_only_on_the_strings():
+    from app.services.filing_name_quality import classify as name_classify
+
+    assert name_classify("1040 - Jane Doe", "IMG_1.jpg") == "engine_named"
+    assert name_classify("MCC 1099 2023.pdf", "MCC 1099 2023.pdf") == "raw_filename_already_useful"
+    assert name_classify("IMG_4695.jpg", "IMG_4695.jpg") == "raw_filename_low_quality"
+    assert name_classify("", "x.pdf") == "missing"
+
+
+def test_an_opaque_filename_still_gets_a_canonical_destination():
+    """Placement and naming are independent — Phase A must see this document."""
+    row = classify_one(proposal(original_name="IMG_4695.jpg", proposed_display_name="IMG_4695.jpg"))
+    assert row["status"] == AUTO_FILE_SAFE
+    assert row["folder_segments"] == ["Jane Doe", "Tax Preparation", "2023"]
+    assert row["display_name_quality"] == "raw_filename_low_quality"
+    assert row["phase_b_naming_ok"] is False
+
+
+def test_phase_a_ignores_naming_quality_and_phase_b_does_not():
+    good = proposal()
+    opaque = proposal(original_name="IMG_4695.jpg", proposed_display_name="IMG_4695.jpg",
+                      proposed_tax_year=2022)
+    rows, _ = build_rows([good, opaque])
+    phase_a = build_phase_a_manifest(rows)
+    phase_b = build_phase_b_manifest(rows, phase_a)
+    # Phase A builds the tree for BOTH documents — two years under one client/service.
+    assert phase_a["census"] == {"client": 1, "service": 1, "year": 2}
+    # Phase B admits only the well-named one, and says so.
+    assert phase_b["document_count"] == 1
+    assert phase_b["naming_hold_count"] == 1
+    assert phase_b["naming_hold_document_ids"] == [opaque["document_id"]]
+
+
+def test_phase_b_accepts_engine_named_and_deterministically_useful_names():
+    engine = proposal(proposed_display_name="1040 - Jane Doe")
+    useful = proposal(proposed_display_name="MCC 1099 2023.pdf", original_name="MCC 1099 2023.pdf")
+    rows, _ = build_rows([engine, useful])
+    phase_b = build_phase_b_manifest(rows, build_phase_a_manifest(rows))
+    assert phase_b["document_count"] == 2
+    assert phase_b["naming_hold_count"] == 0
+    assert phase_b["by_display_name_quality"] == {
+        "engine_named": 1, "raw_filename_already_useful": 1}

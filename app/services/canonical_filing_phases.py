@@ -142,7 +142,13 @@ def build_phase_b_manifest(rows, phase_a_manifest) -> dict:
             f"expected a {PHASE_A} manifest, got {phase_a_manifest.get('phase')!r}")
     approved = {node["code"] for node in phase_a_manifest["folders"]}
 
-    auto = _auto_rows(rows)
+    # Naming quality gates PHASE B ONLY. The folder tree is already correct for a badly named
+    # document — what must not happen is filing it under a name nobody can read. Phase A above
+    # sees the full AUTO_FILE_SAFE population; these rows simply wait for naming.
+    every_row = _auto_rows(rows)
+    auto = [r for r in every_row if r.get("phase_b_naming_ok", True)]
+    naming_hold = [r for r in every_row if not r.get("phase_b_naming_ok", True)]
+
     assignments = []
     for row in auto:
         require(row["folder_code"] in approved,
@@ -175,6 +181,10 @@ def build_phase_b_manifest(rows, phase_a_manifest) -> dict:
         "by_service_source": dict(sorted(Counter(
             a["service_source"] for a in assignments).items())),
         "derived_assignments": sum(1 for a in assignments if a["derivation_rule"]),
+        "naming_hold_count": len(naming_hold),
+        "naming_hold_document_ids": sorted(int(r["document_id"]) for r in naming_hold),
+        "by_display_name_quality": dict(sorted(Counter(
+            r["display_name_quality"] for r in auto).items())),
         "assignment_digest": digest,
         FOLDER_MANIFEST_DIGEST_FIELD: phase_a_manifest[FOLDER_MANIFEST_DIGEST_FIELD],
         "batch_id": batch_id(PHASE_B, digest),

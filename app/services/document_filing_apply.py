@@ -1,47 +1,71 @@
-"""RETIRED — the batch-1 one-step filing apply. Historical record only; nothing here executes.
+"""RETIRED — the batch-1 one-step filing apply. Its APPLY PATH is dead; its arithmetic is not.
 
 WHAT THIS WAS
 --------------
 Batch 1 (PR #253) created the whole folder tree and set ``documents.folder_id`` under a single
-confirmation phrase, against a frozen preview of 16,304 AUTO_FILE_SAFE documents. It was never
-applied to production.
+confirmation phrase, against a frozen preview of 16,304 AUTO_FILE_SAFE documents.
 
-WHY IT IS RETIRED RATHER THAN DELETED
---------------------------------------
-Its filing POLICY is obsolete on three counts, each of which is now a hard rule:
-
+WHY THE POLICY IS RETIRED
+--------------------------
 1. **Two-level destinations.** Its approved depth census was ``{2: 9361, 3: 6943}`` — 57% of the
    batch filed at ``CLIENT/SERVICE`` with no year at all. The canonical hierarchy is
    ``CLIENT > SERVICE_LINE > TAX_YEAR`` and a depth-2 destination can no longer be AUTO_FILE_SAFE.
 2. **Moderate tax years.** It accepted a year segment whenever the preview offered one. Only
    ``strong`` confidence may enter an automatic path now; moderate is REVIEW.
 3. **One authorization, both phases.** It created folders and mutated documents in a single
-   transaction behind one phrase. Folder materialization (Phase A) and document filing (Phase B) are
-   now separately previewed, separately manifested and separately confirmed.
+   transaction behind one phrase. Reconciliation (R), folder materialization (A) and document
+   filing (B) are now separately previewed, manifested and confirmed.
 
-The constants below are kept because the numbers are the historical record of what was reviewed at
-the time, and tests assert they can no longer be executed. They are documentation, not parameters.
+WHY THE HELPERS ARE STILL LIVE
+-------------------------------
+Batch 2 (PR #254) is merged and applied in production, and it imports ten neutral helpers from this
+module — the slug rule, the folder codes, the content digests, and the field tuples those digests
+hash over. Retiring a policy must not break code that merely borrowed its arithmetic, and batch 2's
+pinned digests are computed from these exact bytes.
 
-THE RETIREMENT IS ENFORCED, NOT ADVISORY
------------------------------------------
-Every executable entry point raises :class:`LegacyBatchRetired`. There is no flag, environment
-variable or argument that re-enables it, and the two scripts that drove it
+So the helpers now live in :mod:`app.services.legacy_filing_codes` and are re-exported here. They
+are frozen: 16,854 production documents sit in folders whose codes :func:`client_code` and
+:func:`category_code` generated, so changing them would orphan live references.
+
+WHAT REMAINS FAIL-CLOSED
+-------------------------
+Only the apply path: :func:`build_plan`, :func:`read_frozen_rows`, :func:`confirm_phrase` and
+:func:`rollback_phrase` raise :class:`LegacyBatchRetired`. The two scripts that drove it
 (``scripts/apply_document_filing.py``, ``scripts/rollback_document_filing.py``) are deleted. The old
-frozen CSV can still be read by a human, but nothing in this codebase will turn it into a plan, a
-confirmation phrase, or a write.
+frozen CSV can still be read by a human, but nothing here will turn it into a plan, a confirmation
+phrase, or a write.
 
 The replacement lives in :mod:`app.services.canonical_filing`,
-:mod:`app.services.canonical_filing_phases` and the ``scripts/*_canonical_*`` commands.
+:mod:`app.services.canonical_filing_reconcile` and :mod:`app.services.canonical_filing_phases`.
 """
 from __future__ import annotations
+
+# Re-exported for the merged batch-2 code. Neutral arithmetic, no policy, no writes.
+from app.services.legacy_filing_codes import (  # noqa: F401
+    FOLDER_FIELDS,
+    FOLDER_KINDS,
+    PLAN_FIELDS,
+    PlanError,
+    category_code,
+    client_code,
+    folder_manifest_digest,
+    plan_digest,
+    sha256_of,
+    slugify,
+    year_code,
+)
 
 #: True. Asserted by tests so the retirement cannot be quietly undone.
 RETIRED = True
 
 REPLACEMENT_MODULES = (
     "app.services.canonical_filing",
+    "app.services.canonical_filing_reconcile",
     "app.services.canonical_filing_phases",
 )
+
+#: The entry points that are dead. Everything else in this module is neutral arithmetic.
+RETIRED_ENTRY_POINTS = ("build_plan", "read_frozen_rows", "confirm_phrase", "rollback_phrase")
 
 # --- historical record: what batch 1 was reviewed as. NOT parameters to anything. ----------------
 
@@ -60,14 +84,14 @@ LEGACY_ROLLBACK_PHRASE = "ROLLBACK-DOCUMENT-FILING-BATCH1-16304"
 
 
 class LegacyBatchRetired(RuntimeError):
-    """Raised by every batch-1 entry point. The canonical two-phase path replaces it."""
+    """Raised by the batch-1 APPLY entry points. The canonical R/A/B path replaces them."""
 
     def __init__(self, entry_point):
         super().__init__(
             f"{entry_point}: the batch-1 one-step filing apply is RETIRED. Its policy allowed "
             f"depth-2 destinations ({LEGACY_EXPECTED_DEPTH_CENSUS[2]} documents with no tax year) "
             "and combined folder creation with document mutation under one authorization. Use the "
-            f"canonical two-phase path: {', '.join(REPLACEMENT_MODULES)}."
+            f"canonical path: {', '.join(REPLACEMENT_MODULES)}."
         )
 
 
@@ -89,31 +113,3 @@ def confirm_phrase(*_args, **_kwargs):
 
 def rollback_phrase(*_args, **_kwargs):
     _retired("rollback_phrase")
-
-
-def plan_digest(*_args, **_kwargs):
-    _retired("plan_digest")
-
-
-def folder_manifest_digest(*_args, **_kwargs):
-    _retired("folder_manifest_digest")
-
-
-def client_code(*_args, **_kwargs):
-    _retired("client_code")
-
-
-def category_code(*_args, **_kwargs):
-    _retired("category_code")
-
-
-def year_code(*_args, **_kwargs):
-    _retired("year_code")
-
-
-def slugify(*_args, **_kwargs):
-    _retired("slugify")
-
-
-def sha256_of(*_args, **_kwargs):
-    _retired("sha256_of")
