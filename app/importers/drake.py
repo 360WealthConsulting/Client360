@@ -83,8 +83,56 @@ _DRAKE_CLIENT_ID_RE = re.compile(r"\A[0-9A-Fa-f]{8}\Z")
 _DDM_DOCUMENTS_DIR = "documents"
 
 
+#: The only extension an ongoing Drake sync ingests. Compared case-insensitively: the DDM store
+#: holds both ``.pdf`` and ``.PDF``, and both are ordinary client documents.
+_ELIGIBLE_SUFFIX = ".pdf"
+
+
 class DrakeClientIdConflict(RuntimeError):
     """A re-sync derived a different native client id than the one already recorded."""
+
+
+class DrakeRootUnavailable(RuntimeError):
+    """A configured Drake root could not be enumerated. Discovery for the run is incomplete."""
+
+
+def is_eligible_document(source_relative_path: str) -> bool:
+    """Is this path an ongoing-sync Drake DOCUMENT, as opposed to Drake's own internals?
+
+    Eligible means ALL of:
+
+      * the path is ``<bucket>/<DDM_CLIENT_ID>/Documents/<filename>`` relative to a configured root
+        (the client id being 8 hex characters — the DDM client folder);
+      * the file is an IMMEDIATE child of that ``Documents`` folder — never a subfolder beneath it;
+      * the extension is ``.pdf``, case-insensitively.
+
+    WHY THIS EXISTS. A Drake installation tree is not a document export. Measured across the four
+    production roots, 25,711 files are reachable but only 828 are client documents. The rest are
+    Drake's own artifacts — ``.DI1`` / ``.EI1`` / ``.LI1`` index files sitting directly in the client
+    folder, ``Archive\\<timestamp>\\`` snapshots, and ``.dat`` / ``.xml`` / ``.xls`` / ``.zip`` /
+    ``.csv`` / ``.ddmpsp`` internals. Ingesting those would create ~24,900 documents that no resolver
+    could ever place, because only a file under ``Documents/`` carries a derivable client identity.
+
+    WHAT THIS DELIBERATELY DOES NOT DO. It applies no filename heuristics. The 795 documents loaded
+    by the 2026-08-29/30 migration were selected by ELEVEN hand-curated passes recorded in
+    ``D:\\Client360-Data\\_System\\Source-Manifests`` (named for individual clients — PHILIPS,
+    ZIELSKI, SAME-CLIENT-13, EXACT-ENTITY-72 …), and that migration's own policy states "wholesale
+    Drake resynchronization is not part of this migration". Those manifests are audit evidence, not a
+    specification. Reproducing their residue by excluding names like "Draft", "Notes", "Copy" or
+    "TaxFormSelection" would encode one person's one-time judgement as permanent policy — and would
+    contradict itself, since "Draft", "Notes" and "Copy" all appear among the 795 as well. The 33
+    files this rule admits beyond the historical set are legitimate sync candidates.
+    """
+    parts = [p for p in re.split(r"[\\/]+", source_relative_path or "") if p not in ("", ".")]
+    if len(parts) < 3:
+        return False
+    if Path(parts[-1]).suffix.lower() != _ELIGIBLE_SUFFIX:
+        return False
+    # parts[-2] is the immediate parent; it must BE the Documents folder, and its parent must be the
+    # client id. A file deeper than Documents/ fails on the first test, an Archive/ file on both.
+    if parts[-2].lower() != _DDM_DOCUMENTS_DIR:
+        return False
+    return bool(_DRAKE_CLIENT_ID_RE.match(parts[-3]))
 
 
 def drake_client_id(source_relative_path: str) -> str | None:
@@ -207,9 +255,15 @@ def _drake_stored_name(source_relative_path: str) -> str:
 
 # --- sync --------------------------------------------------------------------
 
-def _new_summary(source, dest, scan_id, started):
-    return {"source_root": str(source), "destination_root": str(dest), "scan_id": scan_id,
+def _new_summary(roots, dest, scan_id, started):
+    roots = list(roots) if isinstance(roots, (list, tuple)) else [roots]
+    return {"source_roots": [str(r) for r in roots],
+            "source_root": str(roots[0]) if roots else "",
+            "destination_root": str(dest), "scan_id": scan_id,
             "started_at": started.isoformat(), "completed_at": None,
+            # Discovery is multi-root and fail-closed; these say which roots actually contributed.
+            "roots_configured": len(roots), "roots_discovered": [], "source_root_failures": 0,
+            "missing_reconciliation": "not_run", "processed": 0,
             "folders_examined": 0, "files_examined": 0, "ignored": 0,
             "canonical_created": 0, "reused_canonical": 0, "source_refs_added": 0,
             "skipped": 0, "missing": 0, "purged": 0, "bytes_copied": 0, "errors": [],
@@ -230,44 +284,101 @@ def _print_progress(s):
           f"skipped={s['skipped']} ignored={s['ignored']} errors={len(s['errors'])}", flush=True)
 
 
-def sync(source_root=None, destination_root=None, *, dry_run=False, purge_missing=False,
-         actor_user_id=None, progress_interval=DEFAULT_PROGRESS_INTERVAL, progress=_print_progress):
-    """Discover a Drake export tree and integrate it into the canonical document model. Returns a
-    summary dict. Read-only w.r.t. the Drake source; idempotent + resumable w.r.t. Client360."""
+def _discover_root(root, summary):
+    """Every ELIGIBLE document under one root, as ``(abs_path, relative_path, bucket)`` tuples.
+
+    Raises :class:`DrakeRootUnavailable` if the root cannot be fully enumerated. The caller turns
+    that into a fail-closed run rather than a partial one — an unreadable root is indistinguishable
+    from an empty one by its results, and treating it as empty is exactly how a transient mount
+    failure would mark a client's whole document history unavailable.
+    """
+    if not root.exists():
+        raise DrakeRootUnavailable(f"Drake root not found: {root}")
+    found, walk_errors = [], []
+    try:
+        buckets = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError as exc:
+        raise DrakeRootUnavailable(f"Drake root not readable: {root}: {exc}") from exc
+
+    for bucket in buckets:
+        summary["folders_examined"] += 1
+        for dirpath, _dirs, filenames in os.walk(bucket, onerror=walk_errors.append):
+            for filename in sorted(filenames):
+                abs_path = os.path.join(dirpath, filename)
+                rel = os.path.relpath(abs_path, root)
+                if _is_ignored_file(filename) or not is_eligible_document(rel):
+                    summary["ignored"] += 1
+                    continue
+                found.append((abs_path, rel, bucket.name))
+    if walk_errors:
+        raise DrakeRootUnavailable(
+            f"Drake root {root} could not be fully enumerated ({len(walk_errors)} error(s); "
+            f"first: {walk_errors[0]})")
+    return found
+
+
+def sync(source_root=None, destination_root=None, *, source_roots=None, dry_run=False,
+         purge_missing=False, actor_user_id=None, progress_interval=DEFAULT_PROGRESS_INTERVAL,
+         progress=_print_progress):
+    """Discover the configured Drake roots and integrate them into the canonical document model.
+
+    ``source_roots`` is the multi-root form and is what production uses: the Drake corpus lives in
+    FOUR installation trees (``C:\\DRAKE21\\DT`` … ``C:\\DRAKE24\\DT``), and they are ONE logical
+    source set. ``source_root`` remains for a single-root call. Returns a summary dict. Read-only
+    w.r.t. the Drake source; idempotent + resumable w.r.t. Client360.
+    """
     from app.services.document_sources import mark_source_unavailable, resolve_or_create_canonical
     db = _database()
-    source = Path(source_root or DEFAULT_SOURCE_ROOT)
+    roots = [Path(r) for r in (source_roots or ([source_root] if source_root else
+                                                [DEFAULT_SOURCE_ROOT]))]
     destination = Path(destination_root or DEFAULT_DESTINATION_ROOT)
     started = datetime.now(UTC)
-    scan_id = None
-    summary = _new_summary(source, destination, scan_id, started)
+    summary = _new_summary(roots, destination, None, started)
     summary["dry_run"] = dry_run
     seen_uris: set[str] = set()
 
-    if not source.exists():
-        summary["errors"].append(f"Drake export root not found: {source}")
-    else:
-        if not dry_run:
-            destination.mkdir(parents=True, exist_ok=True)
-        for entry in sorted(p for p in source.iterdir() if p.is_dir()):
-            folder_name = entry.name
-            summary["folders_examined"] += 1
-            for dirpath, _dirs, filenames in os.walk(entry):
-                for filename in sorted(filenames):
-                    if _is_ignored_file(filename):
-                        summary["ignored"] += 1
-                        continue
-                    abs_path = os.path.join(dirpath, filename)
-                    summary["files_examined"] += 1
-                    try:
-                        _sync_one(db, source, destination, folder_name, abs_path, filename,
-                                  dry_run, seen_uris, summary, resolve_or_create_canonical)
-                    except Exception as exc:      # noqa: BLE001 — record & continue
-                        summary["errors"].append(f"{abs_path}: {exc}")
-                    if progress and summary["files_examined"] % max(progress_interval, 1) == 0:
-                        progress(summary)
+    # PASS 1 — discovery across EVERY root, before a single write. Missing-source reconciliation
+    # compares against the UNION, so it must not begin until every root has been enumerated
+    # successfully.
+    discovered, root_failed = [], False
+    for root in roots:
+        try:
+            found = _discover_root(root, summary)
+        except DrakeRootUnavailable as exc:
+            root_failed = True
+            summary["source_root_failures"] += 1
+            summary["errors"].append(str(exc))
+            continue
+        summary["roots_discovered"].append(str(root))
+        discovered.extend((root, *item) for item in found)
 
-    _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable)
+    summary["files_examined"] = len(discovered)
+
+    if not dry_run and discovered:
+        destination.mkdir(parents=True, exist_ok=True)
+
+    for root, abs_path, _rel, bucket in discovered:
+        seen_uris.add(abs_path)
+        try:
+            _sync_one(db, root, destination, bucket, abs_path, os.path.basename(abs_path),
+                      dry_run, seen_uris, summary, resolve_or_create_canonical)
+        except Exception as exc:      # noqa: BLE001 — record & continue
+            summary["errors"].append(f"{abs_path}: {exc}")
+        if progress and summary["processed"] % max(progress_interval, 1) == 0:
+            progress(summary)
+
+    # PASS 2 — missing-source reconciliation, FAIL CLOSED. A run that could not enumerate every
+    # configured root has an incomplete ``seen_uris``, so every reference it did not see is
+    # unexplained rather than absent. Marking those unavailable would be a data-loss-shaped error
+    # driven by a mount hiccup, so the run skips reconciliation entirely and says so.
+    if root_failed:
+        summary["missing_reconciliation"] = "skipped_root_failure"
+        summary["errors"].append(
+            "missing-source reconciliation SKIPPED: one or more configured Drake roots failed "
+            "discovery, so absence cannot be distinguished from unavailability")
+    else:
+        summary["missing_reconciliation"] = "dry_run" if dry_run else "performed"
+        _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_unavailable)
 
     completed = datetime.now(UTC)
     summary["completed_at"] = completed.isoformat()
@@ -285,6 +396,7 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
     safe_rel = sanitize_relative_path(rel_str)
     dest_abs = _destination_path(destination, safe_rel)
     seen_uris.add(abs_path)
+    summary["processed"] += 1
 
     # Incremental fast path: an existing Drake source ref with the same size (+ local copy) is skipped.
     with db.engine.connect() as conn:
@@ -302,10 +414,19 @@ def _sync_one(db, source, destination, folder_name, abs_path, filename, dry_run,
             return
 
     if dry_run:
-        summary["files_examined"]  # already counted
-        # Report what would happen without hashing/copying every file.
+        # DRY RUN ENDS HERE — before the client-id resolution, the copy and every database write.
+        # It reports what WOULD happen and touches nothing: no INSERT/UPDATE, no available=False,
+        # no file copy, no OCR/analysis enqueue, no audit event, no metadata mutation.
         summary["canonical_created" if existing_ref is None else "reused_canonical"] += 1
         summary["bytes_copied"] += int(stat.st_size)
+        # Report identity coverage in dry run too — a first sync is authorised on this number.
+        if drake_client_id(rel_str):
+            summary["client_id_captured"] += 1
+        else:
+            summary["client_id_missing"] += 1
+            if len(summary["client_id_missing_paths"]) < 50:
+                summary["client_id_missing_paths"].append(rel_str)
+        summary["left_unassigned"] += 1
         return
 
     # Resolve the native client id BEFORE any copy or write. A conflict raises here, so the file is
@@ -386,7 +507,12 @@ def _handle_missing(db, seen_uris, dry_run, purge_missing, summary, mark_source_
 def _parse_args(argv=None):
     p = argparse.ArgumentParser(prog="python -m app.importers.drake",
                                 description="Integrate a Drake export as a canonical source provider.")
-    p.add_argument("--source-root", default=None)
+    # REPEATABLE. Production has four Drake installation trees that form ONE logical source set;
+    # passing them separately would make each run believe the other three roots' documents had
+    # vanished. Give every root in a single invocation.
+    p.add_argument("--source-root", action="append", default=None, dest="source_roots",
+                   metavar="ROOT",
+                   help="A Drake root such as C:\\DRAKE21\\DT. Repeat for each configured root.")
     p.add_argument("--destination-root", default=None)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--purge-missing", action="store_true")
@@ -396,14 +522,21 @@ def _parse_args(argv=None):
 
 def main(argv=None):
     args = _parse_args(argv)
-    summary = sync(args.source_root, args.destination_root, dry_run=args.dry_run,
-                   purge_missing=args.purge_missing, progress_interval=args.progress_interval)
+    summary = sync(source_roots=args.source_roots, destination_root=args.destination_root,
+                   dry_run=args.dry_run, purge_missing=args.purge_missing,
+                   progress_interval=args.progress_interval)
     label = "DRY RUN — no changes made" if args.dry_run else "Drake integration complete"
     print(f"Drake {label}.")
-    for k in ("folders_examined", "files_examined", "ignored", "canonical_created", "reused_canonical",
-              "source_refs_added", "skipped", "missing", "purged", "bytes_copied",
-              "left_unassigned", "client_id_captured", "client_id_missing", "status"):
+    print(f"  source_roots: {summary['source_roots']}")
+    for k in ("roots_configured", "source_root_failures", "missing_reconciliation",
+              "folders_examined", "files_examined", "ignored", "canonical_created",
+              "reused_canonical", "source_refs_added", "skipped", "missing", "purged",
+              "bytes_copied", "left_unassigned", "client_id_captured", "client_id_missing",
+              "status"):
         print(f"  {k}: {summary[k]}")
+    if summary["source_root_failures"]:
+        print("  NOTE: a configured root failed discovery, so missing-source reconciliation was "
+              "SKIPPED and no reference was marked unavailable.")
     if summary["client_id_missing"]:
         # Not an error — the document is still ingested — but it can never be resolved by client
         # identity, so it must not pass silently.

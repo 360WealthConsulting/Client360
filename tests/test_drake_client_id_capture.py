@@ -223,21 +223,23 @@ def test_resync_preserves_the_id_and_creates_no_duplicate(drake_tree):
     assert after[0]["source_external_id"] == client_id
 
 
-def test_a_document_outside_the_ddm_shape_is_ingested_without_an_id(drake_tree):
-    """6, end to end: unassigned AND unidentified, but reported rather than guessed."""
+def test_a_document_outside_the_ddm_shape_is_never_ingested(drake_tree):
+    """Stronger than the old behaviour: an ineligible file is IGNORED, not ingested id-less.
+
+    Previously a stray file was registered with source_external_id NULL and counted in
+    ``client_id_missing``. Now discovery rejects anything that is not an immediate-child PDF under
+    ``<CLIENT_ID>\Documents\``, so no unidentifiable document can enter the corpus at all and
+    ``client_id_missing`` is structurally 0.
+    """
     stray = drake_tree["source"] / "Loose" / f"{drake_tree['tag']}-note.pdf"
     stray.parent.mkdir(parents=True, exist_ok=True)
     stray.write_bytes(b"%PDF-1.4 stray\n")
 
     summary = _sync(drake_tree)
     assert summary["client_id_captured"] == 0
-    assert summary["client_id_missing"] == 1
-    assert summary["client_id_missing_paths"]
-
-    rows = _refs(drake_tree["tag"])
-    assert len(rows) == 1
-    assert rows[0]["source_external_id"] is None
-    assert rows[0]["person_id"] is None
+    assert summary["client_id_missing"] == 0, "an ineligible file must not be ingested at all"
+    assert summary["ignored"] >= 1
+    assert _refs(drake_tree["tag"]) == []
 
 
 def test_a_conflicting_id_is_reported_and_the_file_is_not_reingested(drake_tree):
