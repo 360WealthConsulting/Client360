@@ -606,6 +606,117 @@ def test_rollback_scope_never_broadens_beyond_the_snapshot(batch):
     assert dict(_row(batch["principal_doc"])) == before
 
 
+# --- byte reproducibility -------------------------------------------------------
+#
+# The manifests are SHA-PINNED: the apply hashes them and refuses to run unless the hash equals the
+# reviewed value. That makes their BYTES part of the safety gate, so the bytes have to be identical
+# on Windows, on Linux, and after any git checkout. Three separate things had to be true for that,
+# and each has a test here: the generator must emit LF, it must not embed a clock, and git must be
+# told not to rewrite the files on checkout.
+
+CR = bytes([13])
+CRLF = bytes([13, 10])
+
+
+def _generated_bytes(plan):
+    csv_text, json_text, _digest = builder.manifest_bytes(plan)
+    return csv_text.encode("utf-8"), json_text.encode("utf-8")
+
+
+def test_the_generator_emits_lf_only_bytes(batch, tmp_path):
+    """No CR anywhere in either artifact, whatever platform this runs on."""
+    written = builder.write_manifest(batch["plan"], tmp_path / "lf")
+    for key in ("csv", "json"):
+        body = Path(written[key]).read_bytes()
+        assert CR not in body, f"{key} manifest contains a carriage return"
+        assert CRLF not in body
+        assert body.count(bytes([10])) > 0, f"{key} manifest has no newlines at all"
+
+
+def test_the_generator_is_deterministic_across_runs(batch, tmp_path):
+    """A frozen artifact that embeds a clock can never be re-derived and compared."""
+    first = builder.write_manifest(batch["plan"], tmp_path / "a")
+    second = builder.write_manifest(batch["plan"], tmp_path / "b")
+    assert first["csv_sha256"] == second["csv_sha256"]
+    assert first["json_sha256"] == second["json_sha256"]
+    assert Path(first["csv"]).read_bytes() == Path(second["csv"]).read_bytes()
+    assert Path(first["json"]).read_bytes() == Path(second["json"]).read_bytes()
+
+
+def test_the_manifest_carries_no_generation_timestamp(batch):
+    _csv_bytes, json_bytes = _generated_bytes(batch["plan"])
+    payload = json.loads(json_bytes.decode("utf-8"))
+    assert "generated_at" not in payload, \
+        "a wall clock in a hash-pinned artifact makes it impossible to reproduce"
+
+
+def test_write_text_lf_does_not_translate_newlines(tmp_path):
+    path = tmp_path / "probe.txt"
+    builder.write_text_lf(path, "a\nb\n")
+    assert path.read_bytes() == b"a\nb\n"
+
+
+def test_gitattributes_protects_the_manifests_from_checkout_conversion():
+    """The generator makes the bytes right; git must be stopped from rewriting them afterwards."""
+    import subprocess
+    repo = Path(__file__).resolve().parents[1]
+    base = "reports/strict-safe-ownership-batch4-33d7fe4962b3/strict_safe_ownership_batch4_manifest"
+    for suffix in ("csv", "json"):
+        result = subprocess.run(["git", "check-attr", "text", "--", f"{base}.{suffix}"],
+                                cwd=repo, capture_output=True, text=True, check=True)
+        assert "text: unset" in result.stdout, result.stdout
+
+
+def test_generated_bytes_match_the_committed_blob():
+    """Generated == git blob: the committed manifest is exactly what the generator produces."""
+    import subprocess
+    repo = Path(__file__).resolve().parents[1]
+    directories = sorted((repo / "reports").glob("strict-safe-ownership-batch4-*"))
+    if not directories:
+        pytest.skip("frozen batch 4 manifest not present in this worktree")
+    out_dir = directories[-1]
+    for name in (builder.CSV_NAME, builder.JSON_NAME):
+        relative = f"reports/{out_dir.name}/{name}"
+        blob = subprocess.run(["git", "show", f"HEAD:{relative}"], cwd=repo,
+                              capture_output=True, check=False)
+        if blob.returncode != 0:
+            pytest.skip(f"{relative} is not committed yet")
+        assert (out_dir / name).read_bytes() == blob.stdout, \
+            f"{name}: working copy differs from the committed blob"
+        assert CR not in blob.stdout, f"{name}: the committed blob contains CR"
+
+
+def test_the_plan_digest_is_content_based_not_byte_based(batch):
+    """Line-ending representation must not move the digest — it hashes the plan, not the file."""
+    from app.services.document_strict_safe_ownership_batch4 import plan_digest
+    csv_bytes, json_bytes = _generated_bytes(batch["plan"])
+    crlf_json = json.loads(json_bytes.replace(b"\n", b"\r\n").decode("utf-8"))
+    assert plan_digest(crlf_json["plan"]) == plan_digest(batch["plan"]) == batch["digest"]
+    assert CR not in csv_bytes
+
+
+def test_the_apply_rejects_a_manifest_whose_bytes_were_altered(batch, tmp_path):
+    """The SHA pin is what makes the bytes matter: a CRLF rewrite must be refused."""
+    written = builder.write_manifest(batch["plan"], tmp_path / "crlf")
+    csv_path = Path(written["csv"])
+    csv_path.write_bytes(csv_path.read_bytes().replace(b"\n", b"\r\n"))
+    with pytest.raises(SystemExit, match="SHA256"):
+        ap.run(csv_path, expect_sha=written["csv_sha256"],
+               expect_json_sha=written["json_sha256"], manifest_json=written["json"],
+               expect_plan_digest=batch["digest"], expect_rows=batch["rows"],
+               out=lambda *_a, **_k: None)
+
+
+def test_csv_and_json_still_cross_describe_the_same_plan(batch, tmp_path):
+    written = builder.write_manifest(batch["plan"], tmp_path / "cross")
+    rows = ap.load_manifest(Path(written["csv"]), expect_sha=written["csv_sha256"],
+                            expect_rows=batch["rows"])
+    meta = ap.verify_json_manifest(written["json"], expect_json_sha=written["json_sha256"],
+                                   expect_plan_digest=batch["digest"], rows=rows)
+    assert meta["plan_digest"] == batch["digest"]
+    assert [r["document_id"] for r in meta["plan"]] == sorted(r["document_id"] for r in rows)
+
+
 # --- the frozen production manifest ---------------------------------------------
 
 FROZEN = Path(__file__).resolve().parents[1] / "reports"
