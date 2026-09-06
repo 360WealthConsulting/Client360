@@ -551,4 +551,8 @@ def staff_start_thread(principal, *, person_id, subject, body, topic=None, reque
                       request_id=request_id or f"staff-thread-{uuid.uuid4()}",
                       metadata={"person_id": person["id"], "household_id": person["household_id"],
                                 "initiated_by": "staff"})
+    # The opening message is a STAFF message, so the CLIENT is the one told about it. The author is
+    # never notified of their own message; the thread is already marked read for them above.
+    from app.portal.message_notifications import notify_client_of_staff_message
+    notify_client_of_staff_message(thread_id, message_id)
     return thread_id

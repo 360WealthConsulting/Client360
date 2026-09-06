@@ -377,6 +377,10 @@ def create_thread(principal, *, household_id, person_id, subject, body, topic=No
         message_id = connection.execute(portal_messages.insert().values(thread_id=thread_id, sender_portal_account_id=principal.account_id, body=body, visibility="client").returning(portal_messages.c.id)).scalar_one()
     add_timeline_event(person_id=person_id, household_id=household_id, source="client_portal", event_type="secure_message", title="Secure portal message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     write_audit_event(action="portal.message.sent", entity_type="portal_message", entity_id=message_id, request_id=f"portal-message-{uuid.uuid4()}", metadata={"portal_account_id": principal.account_id, "thread_id": thread_id})
+    # Post-commit, beside the timeline/audit writes: tell the staff who own this conversation that a
+    # client is waiting. Unassigned threads notify nobody and stay in the work queue's unread state.
+    from app.portal.message_notifications import notify_staff_of_client_message
+    notify_staff_of_client_message(thread_id, message_id)
     return thread_id
 
 def send_message(principal, thread_id, body, attachment_document_ids=None):
@@ -397,6 +401,8 @@ def send_message(principal, thread_id, body, attachment_document_ids=None):
     # staff_send_message. Placed after the transaction commits and only reached on success — an
     # out-of-scope reply raises PermissionError above (rolling the insert back) and is never audited.
     write_audit_event(action="portal.message.sent", entity_type="portal_message", entity_id=message_id, request_id=f"portal-message-{uuid.uuid4()}", metadata={"portal_account_id": principal.account_id, "thread_id": thread_id})
+    from app.portal.message_notifications import notify_staff_of_client_message
+    notify_staff_of_client_message(thread_id, message_id)
     return message_id
 
 def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachment_document_ids=None):
@@ -413,6 +419,11 @@ def staff_send_message(*, thread_id, user_id, body, internal_note=False, attachm
     if not internal_note:
         add_timeline_event(person_id=thread["person_id"], household_id=thread["household_id"], source="client_portal", event_type="secure_message", title="Secure staff message", external_id=f"portal-message-{message_id}", event_metadata={"thread_id": thread_id})
     write_audit_event(action="portal.internal_note.created" if internal_note else "portal.message.sent", entity_type="portal_message", entity_id=message_id, actor_user_id=user_id, request_id=f"portal-staff-message-{uuid.uuid4()}", metadata={"thread_id": thread_id, "visibility": "internal" if internal_note else "client"})
+    # An INTERNAL note is staff-only — the client can neither see it nor act on it — so it notifies
+    # nobody, exactly as it already publishes no timeline event.
+    if not internal_note:
+        from app.portal.message_notifications import notify_client_of_staff_message
+        notify_client_of_staff_message(thread_id, message_id)
     return message_id
 
 def list_messages(principal, thread_id):
