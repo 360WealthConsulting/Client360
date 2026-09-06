@@ -290,6 +290,10 @@ communication_messages = metadata.tables["communication_messages"]
 communication_recipients = metadata.tables["communication_recipients"]
 communication_deliveries = metadata.tables["communication_deliveries"]
 communication_attachments = metadata.tables["communication_attachments"]
+# Provider identity for a message (emailnorm01). Tolerant bind, like the other post-baseline tables
+# above: an environment that has not applied emailnorm01 imports cleanly and the ingest fails
+# loudly at use rather than at import.
+communication_message_sources = metadata.tables.get("communication_message_sources")
 communication_events = metadata.tables["communication_events"]
 
 # Scheduling & Meeting Management platform (Phase D.19). Authoritative for scheduling metadata

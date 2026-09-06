@@ -44,7 +44,9 @@ DELIVERY_STATUSES = ("queued", "scheduled", "sending", "sent", "delivered", "fai
                      "read", "expired")
 RECIPIENT_TYPES = ("person", "household", "organization", "user", "external")
 RECIPIENT_ROLES = ("to", "cc", "bcc")
-SENDER_TYPES = ("user", "system")
+# ``external`` (emailnorm01) is a correspondent who is not a staff user and not the platform — the
+# client who sent an ingested email. Recording that as ``system`` would be false in the data.
+SENDER_TYPES = ("user", "system", "external")
 
 _CHANNELS_SQL = ",".join(f"'{c}'" for c in COMMUNICATION_CHANNELS)
 _CATEGORIES_SQL = ",".join(f"'{c}'" for c in COMMUNICATION_CATEGORIES)
@@ -207,6 +209,27 @@ def define_communication_tables(metadata: MetaData):
         CheckConstraint("NOT (document_id IS NOT NULL AND vault_document_id IS NOT NULL)",
                         name="ck_comm_attachment_at_most_one_reference"),
     )
+    # Provider identity for a message (emailnorm01). Mirrors ``document_sources`` (ADR-072): one
+    # canonical message, many source references — so the same email seen in two connected mailboxes
+    # is ONE message with two sightings. ``(source_system, source_external_id)`` is UNIQUE and is the
+    # idempotency key every ingest upserts against; for email it holds the RFC 5322
+    # ``internetMessageId``, never the mailbox-scoped Graph id.
+    message_sources = Table(
+        "communication_message_sources", metadata,
+        Column("id", Integer, primary_key=True),
+        Column("message_id", Integer,
+               ForeignKey("communication_messages.id", ondelete="CASCADE"), nullable=False),
+        Column("source_system", Text, nullable=False),
+        Column("source_external_id", Text, nullable=False),
+        Column("source_uri", Text),
+        Column("source_metadata", JSON, nullable=False, server_default="{}"),
+        Column("first_seen_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+        Column("last_synced_at", DateTime(timezone=True)),
+        UniqueConstraint("source_system", "source_external_id",
+                         name="uq_comm_message_source_identity"),
+        UniqueConstraint("message_id", "source_system", "source_external_id",
+                         name="uq_comm_message_source_ref"),
+    )
     # Append-only audit ledger (immutability enforced by a BEFORE UPDATE OR DELETE trigger in the
     # migration). conversation_id is RESTRICT (no cascade into an immutable table); message_id and
     # actor_user_id are plain columns (no FK) so a parent delete never attempts to mutate a row here.
@@ -229,5 +252,6 @@ def define_communication_tables(metadata: MetaData):
         "communication_recipients": recipients,
         "communication_deliveries": deliveries,
         "communication_attachments": attachments,
+        "communication_message_sources": message_sources,
         "communication_events": events,
     }
