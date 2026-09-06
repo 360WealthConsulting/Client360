@@ -44,6 +44,25 @@ OWNER = "advisor@360wealth.example"
 TENANT = "tenant-a"
 MAILBOX = "mailbox-1"
 
+_SEEN_PEOPLE: set = set()
+_SEEN_HOUSEHOLDS: set = set()
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_seeded_rows():
+    """Leave the database as this test found it — see the note in tests/test_email_attachments.py.
+    Hundreds of orphan people per run make unrelated table-count assertions fail elsewhere."""
+    yield
+    with engine.begin() as c:
+        if _SEEN_PEOPLE:
+            ids = list(_SEEN_PEOPLE)
+            c.execute(timeline_events.delete().where(timeline_events.c.person_id.in_(ids)))
+            c.execute(people.delete().where(people.c.id.in_(ids)))
+        if _SEEN_HOUSEHOLDS:
+            c.execute(households.delete().where(households.c.id.in_(list(_SEEN_HOUSEHOLDS))))
+    _SEEN_PEOPLE.clear()
+    _SEEN_HOUSEHOLDS.clear()
+
 
 def _account(user_id=MAILBOX, tenant=TENANT, email=OWNER):
     return {"id": 1, "tenant_id": tenant, "user_id": user_id, "email": email}
@@ -56,13 +75,16 @@ def _person(email=None, household_id=None, name="Ada Client"):
         pid = c.execute(people.insert().values(
             full_name=f"{name} {tag}", primary_email=address, normalized_email=address,
             active=True, household_id=household_id).returning(people.c.id)).scalar_one()
+    _SEEN_PEOPLE.add(pid)
     return pid, address
 
 
 def _household(name="Client Household"):
     with engine.begin() as c:
-        return c.execute(households.insert().values(
+        hid = c.execute(households.insert().values(
             name=f"{name} {uuid.uuid4().hex[:8]}").returning(households.c.id)).scalar_one()
+    _SEEN_HOUSEHOLDS.add(hid)
+    return hid
 
 
 def _message(*, sender, to=(), cc=(), graph_id=None, internet_id=None, conversation=None,

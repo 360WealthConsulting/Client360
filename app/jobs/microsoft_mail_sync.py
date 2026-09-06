@@ -11,7 +11,7 @@ from app.db import (
     microsoft_unmatched_messages,
     people,
 )
-from app.services.communications import email_ingest
+from app.services.communications import email_attachments, email_ingest
 from app.services.microsoft_identity import (
     account_by_id,
     connected_accounts,
@@ -175,6 +175,7 @@ def _ingest_messages(account, access_token: str, top: int,
     unmatched = 0
     published = 0
     normalized = 0
+    attached = 0
 
     owner_address = _normalize_email(account.get("email"))
 
@@ -256,8 +257,10 @@ def _ingest_messages(account, access_token: str, top: int,
             # Still normalize: an email may name a client as a RECIPIENT even when its sender is
             # unknown, and the firm's own outbound copies name one too. This writes no timeline
             # event, so the client's history is untouched by it.
-            if _normalize(account, message, match):
+            normalized_id = _normalize(account, message, match)
+            if normalized_id is not None:
                 normalized += 1
+                attached += _ingest_attachments(account, access_token, message, normalized_id, match)
 
             continue
 
@@ -301,10 +304,18 @@ def _ingest_messages(account, access_token: str, top: int,
                 },
                 conn=connection,
             )
-            if email_ingest.normalize_email(
+            communication_message_id = email_ingest.normalize_email(
                 connection, account=account, message=message, match=match
-            ) is not None:
+            )
+            if communication_message_id is not None:
                 normalized += 1
+
+        # Attachments run AFTER that transaction commits, on their own. The email is already valid
+        # and its timeline event already written; an attachment that cannot be fetched, or a type
+        # this release does not ingest, must never roll back a correctly normalized message.
+        if communication_message_id is not None:
+            attached += _ingest_attachments(account, access_token, message, communication_message_id,
+                                            match)
 
         published += 1
 
@@ -315,26 +326,55 @@ def _ingest_messages(account, access_token: str, top: int,
         "unmatched_messages": unmatched,
         "published_events": published,
         "normalized_messages": normalized,
+        "attachments_ingested": attached,
     }
 
 
-def _normalize(account, message, match) -> bool:
-    """Normalize one message on its own transaction. Returns whether a record was written.
+def _normalize(account, message, match):
+    """Normalize one message on its own transaction. Returns the message id, or None.
 
     Used for the branches that write no timeline event, so there is nothing to keep atomic with.
     Failure-isolated: normalization is derived data, and it must never stop the mail sync that
     populates the review queue and the timeline.
     """
     if not match.anchored:
-        return False
+        return None
     try:
         with engine.begin() as connection:
             return email_ingest.normalize_email(
-                connection, account=account, message=message, match=match
-            ) is not None
+                connection, account=account, message=message, match=match)
     except Exception:
         logger.exception("Communication normalization failed for one message; sync continues.")
-        return False
+        return None
+
+
+def _ingest_attachments(account, access_token, message, communication_message_id, match) -> int:
+    """Fetch and ingest one email's supported file attachments. Returns how many were newly linked.
+
+    Nothing is fetched unless Graph said the message HAS attachments and this message has not been
+    handled before — so scheduled polling over the same mailbox re-downloads nothing. Runs on its own
+    transaction, after the email is already durable, and swallows its own failures: an attachment
+    problem is an attachment problem, never a reason to lose a correctly normalized email.
+    """
+    if not message.get("hasAttachments"):
+        return 0
+    try:
+        with engine.connect() as connection:
+            if email_attachments.already_ingested(connection, communication_message_id):
+                return 0
+        list_metadata, fetch_bytes = email_attachments.graph_attachment_reader(
+            access_token, message.get("id"), requests_module=requests)
+        payload = list_metadata()
+        with engine.begin() as connection:
+            summary = email_attachments.ingest_attachments(
+                connection, communication_message_id=communication_message_id,
+                attachments_payload=payload,
+                anchor={"person_id": match.person_id, "household_id": match.household_id},
+                fetch_bytes=fetch_bytes)
+        return summary.ingested
+    except Exception:
+        logger.exception("Attachment ingestion failed for one message; sync continues.")
+        return 0
 
 
 if __name__ == "__main__":
