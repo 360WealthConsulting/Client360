@@ -77,6 +77,11 @@ AUDIT_ACTION = "document.filing_folder_assigned"
 #: real actor: an ownership-adjacent write with no attributable person is not auditable.
 MINIMUM_ACTOR_USER_ID = 1
 
+#: The destination depth that carries a year folder. ``document_filing_batch4.DESTINATION_DEPTHS``
+#: is ``(2, 3)`` and only the deeper of the two is a year node; the plan layer already refuses any
+#: other depth, so the post-write check needs the one number rather than the pair.
+YEAR_DESTINATION_DEPTH = 3
+
 #: Document columns this batch must NOT change. Fingerprinted before and after.
 PROTECTED_COLUMNS = ("person_id", "household_id", "organization_id", "category", "classification",
                      "subcategory", "tags", "display_name", "review_status", "status", "archived",
@@ -127,6 +132,39 @@ def sha256_of(path: Path) -> str:
 def confirm_phrase_for(plan) -> str:
     from app.services.document_filing_batch4 import confirm_phrase
     return confirm_phrase(len(plan["documents"]))
+
+
+def year_biconditional_violations(documents, placed) -> list[str]:
+    """Where a document's PLANNED depth disagrees with the folder it actually came to rest in.
+
+    Batch 3 forbade year destinations outright, and this script inherited that check verbatim:
+    ``if any("--year-" in code ...): raise``. Correct for Batch 3, which refuses to choose a year at
+    all; wrong for Batch 4, which files 491 documents into year folders precisely because their year
+    is strongly proven. It aborted a production apply after every row had been written, and the
+    transaction rolled back.
+
+    What replaces it is not weaker. The caller's equality check proves the DATABASE matches the
+    plan; this proves the plan's own depth and destination SHAPE agree with each other, which
+    equality cannot — comparing a row against the same plan value twice would accept a plan that
+    contradicted itself. So a document with no strongly proven year can never come to rest in a year
+    folder, and one with a proven year can never be flattened into its shared category folder or
+    land in a DIFFERENT year than the one planned for it.
+
+    Pure, and reads only ``depth`` and ``folder_code``: nothing here touches ``documents.tax_year``,
+    which no batch writes. A year exists only as a folder.
+    """
+    violations = []
+    for document in documents:
+        code = placed.get(document["document_id"]) or ""
+        in_year_folder = "--year-" in code
+        if document["depth"] == YEAR_DESTINATION_DEPTH:
+            if not in_year_folder or code != document["folder_code"]:
+                violations.append(f"{document['document_id']} expected its planned year folder "
+                                  f"{document['folder_code']!r}, found {code!r}")
+        elif in_year_folder:
+            violations.append(
+                f"{document['document_id']} has no strongly proven year yet rests in {code!r}")
+    return violations
 
 
 # --- live state -----------------------------------------------------------------------------------
@@ -482,8 +520,11 @@ def run(candidate_csv, *, apply_changes=False, confirm=None, actor_user_id=None,
                  if placed.get(d["document_id"]) != d["folder_code"]]
         if wrong:
             raise RuntimeError(f"{len(wrong)} documents are in the wrong folder: {wrong[:5]}")
-        if any("--year-" in code for code in placed.values()):
-            raise RuntimeError("a batch 4 document was filed into a YEAR folder")
+        year_violations = year_biconditional_violations(documents, placed)
+        if year_violations:
+            raise RuntimeError(
+                f"{len(year_violations)} documents break the year biconditional (depth "
+                f"{YEAR_DESTINATION_DEPTH} if and only if a year folder): {year_violations[:5]}")
 
         folders_after = connection.execute(text("select count(*) from document_folders")).scalar()
         if folders_after != folders_before + len(missing):
@@ -519,8 +560,8 @@ def run(candidate_csv, *, apply_changes=False, confirm=None, actor_user_id=None,
         report["committed"] = True
         out(f"  COMMITTED {report['folders_created']} new folders, {report['assigned']} "
             f"assignments, {report['audit_rows']} audit rows")
-        out("  post-write checks: exact destinations, no year folders, existing tree byte-identical, "
-            "protected document fields and non-target folder_id all unchanged")
+        out("  post-write checks: exact destinations, the year biconditional, existing tree "
+            "byte-identical, protected document fields and non-target folder_id all unchanged")
     except BaseException:
         if not report["committed"]:
             transaction.rollback()

@@ -838,3 +838,147 @@ def test_a_moderate_year_files_at_the_category_and_records_no_year(tmp_path):
     doc = plan["documents"][0]
     assert doc["depth"] == 2 and doc["tax_year"] is None
     assert "--year-" not in doc["folder_code"]
+
+
+# --- the post-write year biconditional ---------------------------------------------------------
+# Batch 3 forbade year destinations outright and this script inherited the check verbatim, so a
+# production apply wrote all 1,285 rows and then aborted on its own success. These prove the
+# replacement admits exactly what the reviewed plan intends and nothing else.
+
+def _doc(document_id, depth, folder_code):
+    return {"document_id": document_id, "depth": depth, "folder_code": folder_code}
+
+
+CATEGORY = "client-person-7--category-tax-preparation"
+YEAR_2023 = f"{CATEGORY}--year-2023"
+YEAR_2022 = f"{CATEGORY}--year-2022"
+
+
+def test_a_planned_year_destination_is_accepted():
+    """The case the inherited invariant wrongly rejected: 491 of the batch look like this."""
+    documents = [_doc(1, 3, YEAR_2023), _doc(2, 2, CATEGORY)]
+    placed = {1: YEAR_2023, 2: CATEGORY}
+    assert ap.year_biconditional_violations(documents, placed) == []
+
+
+def test_a_depth_two_document_in_a_year_folder_is_rejected():
+    """No strongly proven year, so no year folder — the batch must not choose one by accident."""
+    violations = ap.year_biconditional_violations([_doc(1, 2, YEAR_2023)], {1: YEAR_2023})
+    assert len(violations) == 1
+    assert "no strongly proven year" in violations[0]
+
+
+def test_a_depth_three_document_in_a_category_folder_is_rejected():
+    """A proven year must not be silently flattened into the shared category folder."""
+    violations = ap.year_biconditional_violations([_doc(1, 3, CATEGORY)], {1: CATEGORY})
+    assert len(violations) == 1
+    assert "expected its planned year folder" in violations[0]
+
+
+def test_the_wrong_year_folder_is_rejected():
+    """A year folder is not enough; it must be THE planned one."""
+    violations = ap.year_biconditional_violations([_doc(1, 3, YEAR_2023)], {1: YEAR_2022})
+    assert len(violations) == 1
+    assert "2023" in violations[0] and "2022" in violations[0]
+
+
+def test_an_unplaced_document_is_rejected():
+    violations = ap.year_biconditional_violations([_doc(1, 3, YEAR_2023)], {})
+    assert len(violations) == 1
+
+
+def test_the_blanket_batch3_prohibition_is_gone():
+    """The exact defect: no code path may refuse a destination merely for being a year folder."""
+    source = Path(ap.__file__).read_text(encoding="utf-8")
+    assert "a batch 4 document was filed into a YEAR folder" not in source
+    assert 'any("--year-" in code for code in placed.values())' not in source
+    assert ap.YEAR_DESTINATION_DEPTH == 3
+
+
+# --- the same property, end to end against the database ----------------------------------------
+
+@pytest.fixture
+def year_batch(tmp_path):
+    """Two documents with a STRONGLY proven year, so both file at depth 3."""
+    person = _person("Ida")
+    name = f"Ida {_TAG}"
+    d1, d2 = _document(person), _document(person)
+    rows = [candidate_row(d, scope_id=person, scope_name=name, tax_year="2023",
+                          tax_year_confidence="strong",
+                          segments=[name, "Tax Preparation", "2023"])
+            for d in (d1, d2)]
+    path = write_candidate(tmp_path, rows)
+    return {"person": person, "ids": sorted([d1, d2]), "candidate": path, "plan": build(path),
+            "out": tmp_path / "out",
+            "year_code": plan_mod.year_code("person", person, "Tax Preparation", 2023),
+            "category_code": plan_mod.category_code("person", person, "Tax Preparation")}
+
+
+def test_a_year_destination_applies_and_commits(year_batch):
+    """The production apply that failed would now succeed for its 491 depth-3 rows."""
+    plan = year_batch["plan"]
+    assert plan["census"]["year_nodes"] == 1
+    assert [f["kind"] for f in plan["folders"]] == ["client", "category", "year"]
+
+    report = _apply(year_batch)
+    assert report["committed"] is True
+    assert report["assigned"] == 2 and report["folders_created"] == 3
+    for document_id in year_batch["ids"]:
+        assert _folder_of(document_id) == year_batch["year_code"]
+    # the category node exists as the year node's parent, and holds no documents itself
+    assert _folder_row(year_batch["category_code"]) is not None
+    assert plan_mod.sha256_of(Path(year_batch["candidate"]))  # artifact untouched by the apply
+
+
+def test_a_self_contradictory_plan_aborts_and_rolls_everything_back(year_batch, monkeypatch):
+    """Equality alone cannot catch this: the row matches a plan that disagrees with itself.
+
+    Relabelling a depth-3 document as depth 2 leaves its planned folder_code a YEAR code, so the
+    exact-destination check passes and only the biconditional can refuse it. Every write must go.
+    """
+    original = plan_mod.build_plan
+
+    def contradictory(*args, **kwargs):
+        plan = original(*args, **kwargs)
+        plan["documents"][0]["depth"] = 2
+        return plan
+
+    monkeypatch.setattr(plan_mod, "build_plan", contradictory)
+    with pytest.raises(RuntimeError, match="year biconditional"):
+        _apply(year_batch)
+
+    for document_id in year_batch["ids"]:
+        assert _folder_of(document_id) is None
+    assert _folder_row(year_batch["year_code"]) is None
+    assert _folder_row(year_batch["category_code"]) is None
+    assert _folder_row(plan_mod.client_code("person", year_batch["person"])) is None
+
+
+def test_a_flattened_year_document_aborts_and_rolls_everything_back(year_batch, monkeypatch):
+    """The mirror case: depth 3 kept, but the destination downgraded to the category node."""
+    original = plan_mod.build_plan
+
+    def flattened(*args, **kwargs):
+        plan = original(*args, **kwargs)
+        for document in plan["documents"]:
+            document["folder_code"] = year_batch["category_code"]
+        plan["folders"] = [f for f in plan["folders"] if f["kind"] != "year"]
+        return plan
+
+    monkeypatch.setattr(plan_mod, "build_plan", flattened)
+    with pytest.raises(RuntimeError, match="year biconditional"):
+        _apply(year_batch)
+
+    for document_id in year_batch["ids"]:
+        assert _folder_of(document_id) is None
+    assert _folder_row(year_batch["category_code"]) is None
+
+
+def test_batch3_still_refuses_every_year_destination():
+    """Batch 4's repair must not have loosened Batch 3, which genuinely files no years."""
+    from app.services import document_filing_batch3 as b3
+
+    assert b3.DESTINATION_DEPTH == 2
+    b3_apply = (Path(ap.__file__).parent / "apply_document_filing_batch3.py").read_text(
+        encoding="utf-8")
+    assert "a batch 3 document was filed into a YEAR folder" in b3_apply
