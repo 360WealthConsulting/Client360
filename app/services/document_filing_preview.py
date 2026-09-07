@@ -490,6 +490,25 @@ def _year_evidence(row: dict, readings: list[dict]) -> dict[str, Any]:
         evidence["source_path"] = "conflict"
 
     values = [v for v in evidence.values() if isinstance(v, int)]
+    # A RESOLVED year short-circuits the vote. ``documents.tax_year`` is not a fourth signal: it is
+    # the adjudicated outcome of a validated resolution process, and the evidence that produced it
+    # is the document's own content. Letting it agree with the raw signals would count one piece of
+    # evidence twice and manufacture "two independent signals" out of one — see
+    # :mod:`app.services.document_tax_year_resolution`. So it decides, and the raw signals are
+    # reported beside it rather than combined with it.
+    resolved = row.get("tax_year")
+    if resolved is not None and str(resolved).strip()[:4].isdigit():
+        resolved = int(str(resolved).strip()[:4])
+        evidence["resolved"] = resolved
+        # Silence is not safety: a raw signal that contradicts the resolved year is recorded so a
+        # reviewer sees it, even though the resolution is what the filing gate acts on.
+        disagreeing = sorted(k for k, v in evidence.items()
+                             if k != "resolved" and isinstance(v, int) and v != resolved)
+        if disagreeing:
+            evidence["resolved_conflicts_with"] = disagreeing
+        return {"year": resolved, "confidence": "strong", "source": "resolved",
+                "evidence": evidence}
+
     distinct = sorted(set(values))
     if "conflict" in evidence.values() or len(distinct) > 1:
         return {"year": None, "confidence": "conflict", "source": None, "evidence": evidence}
@@ -697,7 +716,8 @@ _ACTIVE_CLAUSE = ("d.status <> 'deleted' AND d.deleted_at IS NULL AND d.archived
 
 _DOCUMENTS_SQL = f"""
     SELECT d.id, d.original_name, d.display_name, d.storage_path, d.tags, d.category,
-           d.review_status, d.person_id, d.household_id, d.organization_id, d.effective_date
+           d.review_status, d.person_id, d.household_id, d.organization_id, d.effective_date,
+           d.tax_year
       FROM documents d
      WHERE {_ACTIVE_CLAUSE}
      ORDER BY d.id
