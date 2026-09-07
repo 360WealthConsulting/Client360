@@ -79,8 +79,17 @@ _PINNED = object()
 CANDIDATE_CSV_SHA256 = "b7a06200acee2d21809ffe7e40977a077ce012be7b958ea52ffd744d0c166a8b"
 EXPECTED_DOCUMENTS = 756
 
-#: The only verdict a candidate row may carry.
-REQUIRED_VERDICT = "VERIFIED_FOLDER_YEAR"
+#: The verdict labels a reviewed candidate row may carry. Both mean the same reviewed fact — the
+#: document's own content states a year and that year equals its SharePoint folder year — they are
+#: simply the spellings used by the two analysis lanes the frozen candidate was merged from:
+#: ``VERIFIED_FOLDER_YEAR`` from this lane's 706 rows, ``VERIFIED_YEAR`` from the 50 recovered out
+#: of the corrected 1,249 population. The artifact is frozen and hash-pinned, so the labels cannot
+#: be normalised without re-freezing a reviewed file; the reader accepts both instead.
+#:
+#: This widens VOCABULARY, not eligibility. Every other clause is unchanged, and in particular the
+#: extracted-year == folder-year agreement is still checked independently below — so a row cannot
+#: get in merely by carrying an approved-looking label.
+ACCEPTED_VERDICTS = frozenset({"VERIFIED_FOLDER_YEAR", "VERIFIED_YEAR"})
 
 #: Extraction rules accepted as a document-level year statement. Deliberately the validated set —
 #: a bare year, a revision stamp or an OMB number is not a tax-year statement.
@@ -136,10 +145,10 @@ def read_frozen_candidates(candidate_csv, *, expect_sha=_PINNED,
         if document_id in seen:
             raise TaxYearPlanError(f"duplicate document_id {document_id} in the candidate")
         seen.add(document_id)
-        if row["verdict"] != REQUIRED_VERDICT:
+        if row["verdict"] not in ACCEPTED_VERDICTS:
             raise TaxYearPlanError(
                 f"document {document_id} carries verdict {row['verdict']!r}, "
-                f"only {REQUIRED_VERDICT} may be applied")
+                f"only {sorted(ACCEPTED_VERDICTS)} may be applied")
         if row["anomaly_flags"]:
             raise TaxYearPlanError(
                 f"document {document_id} carries anomaly flags {row['anomaly_flags']!r}")
@@ -308,6 +317,7 @@ def rollback_phrase(document_count) -> str:
 
 __all__ = [
     "ACCEPTED_RULES",
+    "ACCEPTED_VERDICTS",
     "BATCH_ID",
     "CANDIDATE_CSV_SHA256",
     "EXPECTED_DOCUMENTS",
