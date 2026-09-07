@@ -102,9 +102,20 @@ def _cleanup():
     """
     yield
     from app.db import (
-        documents, households, portal_access_grants, portal_accounts, portal_auth_tokens,
-        portal_consents, portal_devices, portal_document_requests, portal_email_verifications,
-        portal_invitations, portal_notifications, portal_sessions, portal_threads, vault_documents,
+        documents,
+        households,
+        portal_access_grants,
+        portal_accounts,
+        portal_auth_tokens,
+        portal_consents,
+        portal_devices,
+        portal_document_requests,
+        portal_email_verifications,
+        portal_invitations,
+        portal_notifications,
+        portal_sessions,
+        portal_threads,
+        vault_documents,
     )
 
     with engine.begin() as c:

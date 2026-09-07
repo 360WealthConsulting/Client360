@@ -56,8 +56,14 @@ def portal_entries(principal, *, person_id=None, household_id=None,
 
 
 def _portal_entries(principal, *, person_id, household_id, member_ids=()) -> list[FeedEntry]:
-    from app.db import documents, engine, portal_accounts, portal_message_attachments
-    from app.db import portal_messages, users
+    from app.db import (
+        documents,
+        engine,
+        portal_accounts,
+        portal_message_attachments,
+        portal_messages,
+        users,
+    )
     from app.portal import communication_hub as hub
 
     people_ids = [person_id] if person_id is not None else list(member_ids)[:MAX_MEMBERS]

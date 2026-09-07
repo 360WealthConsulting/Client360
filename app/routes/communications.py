@@ -15,8 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.communications import delivery
-from app.services.communications import email_send
+from app.services.communications import delivery, email_send
 from app.services.communications import inbox as inbox_service
 from app.services.communications import service as svc
 from app.services.communications import templates as tmpl

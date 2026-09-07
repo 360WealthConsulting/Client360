@@ -62,7 +62,6 @@ def _email_entries(principal, *, person_id, household_id) -> list[FeedEntry]:
     from app.db import communication_message_sources as sources
     from app.db import communication_messages as messages
     from app.db import documents, engine
-
     from app.services.communications.service import _can_write
 
     can_reply = principal.can(EMAIL_REPLY_CAPABILITY)
