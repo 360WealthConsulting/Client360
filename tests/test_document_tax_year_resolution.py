@@ -98,6 +98,35 @@ def _document(person_id, *, year, tmp_path, tags=None, archived=False, status="a
     return document_id, path
 
 
+def _add_source(document_id, *, system, path, first=False):
+    """Attach another source record. ``first`` forces a LOWER id than the document's existing rows,
+    which is what the old ``ORDER BY id LIMIT 1`` would have selected."""
+    table = metadata.tables["document_sources"]
+    with engine.begin() as connection:
+        if first:
+            lowest = connection.execute(text(
+                "select min(id) from document_sources where document_id = :d"),
+                {"d": document_id}).scalar()
+            new_id = (lowest or 1) - 1
+            connection.execute(text(
+                "insert into document_sources (id, document_id, source_system, source_path, "
+                "                              source_uri, source_external_id, available) "
+                "values (:i, :d, :s, :p, :p, :x, true)"),
+                {"i": new_id, "d": document_id, "s": system, "p": path,
+                 "x": uuid.uuid4().hex})
+            return new_id
+        return connection.execute(table.insert().values(
+            document_id=document_id, source_system=system, source_path=path, source_uri=path,
+            source_external_id=uuid.uuid4().hex, available=True)
+            .returning(table.c.id)).scalar_one()
+
+
+def _plan_for(csv_path, expect_documents):
+    with engine.connect() as connection:
+        return plan_mod.build_plan(connection, str(csv_path), expect_sha=None,
+                                   expect_documents=expect_documents)
+
+
 def _candidate_csv(tmp_path, rows, name="candidate.csv") -> Path:
     path = tmp_path / name
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -287,6 +316,7 @@ def test_an_unowned_candidate_is_dropped(batch):
 
 
 def test_a_candidate_outside_the_provenance_boundary_is_dropped(batch):
+    """Still dropped — the three provenance checks are now one, so the reason reads differently."""
     with engine.begin() as connection:
         connection.execute(text(
             "update document_sources set source_path = '/somewhere/else/2023/x.pdf', "
@@ -295,7 +325,10 @@ def test_a_candidate_outside_the_provenance_boundary_is_dropped(batch):
     with engine.connect() as connection:
         plan = plan_mod.build_plan(connection, str(batch["csv"]), expect_sha=batch["sha"],
                                    expect_documents=3)
-    assert any("provenance boundary" in d["reason"] for d in plan["dropped"])
+    dropped = {d["document_id"]: d["reason"] for d in plan["dropped"]}
+    assert batch["ids"][0] in dropped
+    assert "no single SharePoint source record" in dropped[batch["ids"][0]]
+    assert batch["ids"][0] not in {r["document_id"] for r in plan["documents"]}
 
 
 def test_the_frozen_candidate_refuses_a_conflicting_row(batch, tmp_path):
@@ -309,6 +342,119 @@ def test_the_frozen_candidate_refuses_an_anomaly_row(batch, tmp_path):
                                          anomaly_flags="hash_twin_in_other_year")], "bad.csv")
     with pytest.raises(plan_mod.TaxYearPlanError, match="anomaly flags"):
         plan_mod.read_frozen_candidates(bad, expect_sha=None, expect_documents=1)
+
+
+# --- provenance is a property of the DOCUMENT, not of one arbitrary source row --------------------
+#
+# The production dry run dropped 168 of 756 candidates: 163 because ORDER BY id LIMIT 1 selected a
+# TaxDome row while a qualifying SharePoint row existed, and 5 because the lower-id SharePoint row
+# named a different year. All 168 were false drops. These pin the corrected semantic and, just as
+# importantly, pin what must still FAIL.
+
+def test_a_taxdome_source_with_a_lower_id_does_not_hide_a_qualifying_sharepoint_source(
+        tmp_path, pin_to_fixture):
+    """The 163-row failure mode: TaxDome sorts first, SharePoint qualifies."""
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2023, tmp_path=tmp_path)
+    _add_source(document_id, system="TaxDome Drive",
+                path=r"Z:\Test Client\Client uploaded documents\thing.pdf", first=True)
+
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert plan["dropped"] == []
+    assert [r["document_id"] for r in plan["documents"]] == [document_id]
+
+
+def test_an_earlier_sharepoint_source_naming_another_year_does_not_hide_the_approved_one(
+        tmp_path, pin_to_fixture):
+    """The 5-row failure mode: both sources are SharePoint, the lower id names the wrong year."""
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2023, tmp_path=tmp_path)
+    _add_source(document_id, system="SharePoint",
+                path=f"{_PATH_PREFIX}/2019/older-copy.pdf", first=True)
+
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert plan["dropped"] == []
+    assert [r["document_id"] for r in plan["documents"]] == [document_id]
+
+
+def test_path_and_year_must_hold_on_the_SAME_source_row(tmp_path, pin_to_fixture):
+    """Evidence may not be assembled across rows: an approved path here, the year over there."""
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2019, tmp_path=tmp_path)   # SharePoint path, 2019
+    # A different source carries 2023 but is outside the Tax Preparation boundary.
+    _add_source(document_id, system="SharePoint",
+                path="/drives/b!test/root:/360 Tax Solutions, LLC/Clients/Bookkeeping/"
+                     "Individual/Test Client/2023/thing.pdf")
+
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert plan["documents"] == []
+    assert "no single SharePoint source record" in plan["dropped"][0]["reason"]
+
+
+def test_a_document_whose_sources_never_carry_the_approved_year_fails(tmp_path, pin_to_fixture):
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2019, tmp_path=tmp_path)
+    _add_source(document_id, system="SharePoint", path=f"{_PATH_PREFIX}/2018/thing.pdf")
+
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert plan["documents"] == []
+    assert "no single SharePoint source record" in plan["dropped"][0]["reason"]
+
+
+def test_the_year_carried_only_by_taxdome_does_not_qualify(tmp_path, pin_to_fixture):
+    """TaxDome is outside the approved provenance boundary however good its year looks."""
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2019, tmp_path=tmp_path)
+    _add_source(document_id, system="TaxDome Drive",
+                path=r"Z:\Test Client\Clients\Tax Preparation\Individual\Test Client\2023\x.pdf")
+
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert plan["documents"] == []
+
+
+@pytest.mark.parametrize("segment", ["2023x", "x2023", "2023s", "20231", "SMITH 2023", "12023"])
+def test_a_year_lookalike_segment_is_not_an_approved_year(tmp_path, pin_to_fixture, segment):
+    """The old check was a SUBSTRING test. A year must be a real path SEGMENT."""
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2019, tmp_path=tmp_path)
+    _add_source(document_id, system="SharePoint", path=f"{_PATH_PREFIX}/{segment}/thing.pdf")
+
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert plan["documents"] == [], segment
+
+
+def test_a_single_source_sharepoint_candidate_still_passes(tmp_path, pin_to_fixture):
+    person_id = _person()
+    document_id, _ = _document(person_id, year=2023, tmp_path=tmp_path)
+    csv_path = _candidate_csv(tmp_path, [_row(document_id, 2023)])
+    pin_to_fixture(csv_path, 1)
+    plan = _plan_for(csv_path, 1)
+    assert [r["document_id"] for r in plan["documents"]] == [document_id]
+
+
+def test_qualifying_source_reuses_the_repository_year_segment_predicate():
+    """The year test must be the repo's own, not a private near-copy of it."""
+    from app.services.document_filing_preview import segment_year
+
+    assert segment_year("2023") == 2023
+    assert segment_year("2023 Receipts") == 2023      # the repo allows a trailing label
+    assert segment_year("SMITH 2023") is None
+    sources = [{"source_id": 1, "source_system": "SharePoint",
+                "source_path": f"{_PATH_PREFIX}/2023 Receipts/x.pdf", "source_uri": None}]
+    assert plan_mod.qualifying_source(sources, 2023) is not None
+    assert plan_mod.qualifying_source(sources, 2022) is None
 
 
 def test_the_frozen_candidate_accepts_the_folder_year_verdict_label(batch, tmp_path):
