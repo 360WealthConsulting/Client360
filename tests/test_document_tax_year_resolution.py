@@ -372,7 +372,19 @@ def test_apply_leaves_non_target_confidence_unchanged(batch, tmp_path):
     assert pairs[already] == (2021, "moderate")
 
 
-def test_the_audit_row_records_the_resolved_confidence(batch):
+def test_the_audit_row_records_the_resolution_under_the_existing_redaction_policy(batch):
+    """Every year key is REDACTED, and the provenance that stays observable is intact.
+
+    ``app/security/redaction.py`` redacts any metadata key matching
+    ``token|secret|password|tax|ssn|content|body``. Every field naming a tax year matches ``tax``,
+    so the audit trail deliberately stores ``[REDACTED]`` for all four. That is firm-wide policy and
+    this batch does not get an exemption from it — the values themselves are proved against the
+    database by the other tests here, and the rollback snapshot, not the audit row, is the artifact
+    that records what was written.
+
+    What the audit row must still carry is the batch's provenance: which plan, which rule, which
+    evidence, which bytes.
+    """
     _apply(batch)
     with engine.connect() as connection:
         rows = connection.execute(text(
@@ -382,10 +394,18 @@ def test_the_audit_row_records_the_resolved_confidence(batch):
     assert len(rows) == 3
     for metadata_value in rows:
         payload = metadata_value if isinstance(metadata_value, dict) else json.loads(metadata_value)
-        assert payload["tax_year_confidence"] == "strong"
-        assert payload["tax_year"] == 2023
-        assert payload["previous_tax_year"] is None
-        assert payload["previous_tax_year_confidence"] is None
+        # Present, and redacted — the key must exist so the trail shows the field was written.
+        for key in ("tax_year", "tax_year_confidence",
+                    "previous_tax_year", "previous_tax_year_confidence"):
+            assert key in payload, key
+            assert payload[key] == "[REDACTED]", key
+        # Observable provenance, asserted on its real values.
+        assert payload["extraction_rule"] == "calendar_year"
+        assert payload["evidence_source"] == "non_persistent_ocr"
+        assert payload["form_family"] == "8879"
+        assert payload["sha256"] and len(payload["sha256"]) == 64
+        assert payload["batch_id"] == plan_mod.BATCH_ID
+        assert payload["plan_digest"] and len(payload["plan_digest"]) == 64
 
 
 def test_the_fixture_pin_does_not_weaken_the_production_pin():
