@@ -311,6 +311,49 @@ def test_the_frozen_candidate_refuses_an_anomaly_row(batch, tmp_path):
         plan_mod.read_frozen_candidates(bad, expect_sha=None, expect_documents=1)
 
 
+def test_the_frozen_candidate_accepts_the_folder_year_verdict_label(batch, tmp_path):
+    good = _candidate_csv(tmp_path, [_row(batch["ids"][0], 2023, verdict="VERIFIED_FOLDER_YEAR")],
+                          "folder_label.csv")
+    rows = plan_mod.read_frozen_candidates(good, expect_sha=None, expect_documents=1)
+    assert [r["verdict"] for r in rows] == ["VERIFIED_FOLDER_YEAR"]
+
+
+def test_the_frozen_candidate_accepts_the_recovered_lane_verdict_label(batch, tmp_path):
+    """The 50 rows recovered from the corrected 1,249 spell the same reviewed fact this way."""
+    good = _candidate_csv(tmp_path, [_row(batch["ids"][0], 2023, verdict="VERIFIED_YEAR")],
+                          "recovered_label.csv")
+    rows = plan_mod.read_frozen_candidates(good, expect_sha=None, expect_documents=1)
+    assert [r["verdict"] for r in rows] == ["VERIFIED_YEAR"]
+
+
+@pytest.mark.parametrize("verdict", ["CONFLICTING_DOCUMENT_YEAR", "AMBIGUOUS_YEAR",
+                                     "NO_YEAR_FOUND", "EXTRACTION_FAILED", "SOURCE_UNAVAILABLE",
+                                     "VERIFIED", "verified_year", ""])
+def test_the_frozen_candidate_refuses_every_other_verdict(batch, tmp_path, verdict):
+    bad = _candidate_csv(tmp_path, [_row(batch["ids"][0], 2023, verdict=verdict)], "bad.csv")
+    with pytest.raises(plan_mod.TaxYearPlanError, match="carries verdict"):
+        plan_mod.read_frozen_candidates(bad, expect_sha=None, expect_documents=1)
+
+
+def test_the_accepted_verdicts_are_exactly_the_two_reviewed_labels():
+    assert plan_mod.ACCEPTED_VERDICTS == frozenset({"VERIFIED_FOLDER_YEAR", "VERIFIED_YEAR"})
+
+
+def test_a_verdict_label_alone_cannot_admit_a_disagreeing_row(batch, tmp_path):
+    """Widening the label vocabulary must not weaken the year-agreement clause."""
+    bad = _candidate_csv(tmp_path, [_row(batch["ids"][0], 2023, verdict="VERIFIED_YEAR",
+                                         extracted_year=2022)], "bad.csv")
+    with pytest.raises(plan_mod.TaxYearPlanError, match="conflict may never be applied"):
+        plan_mod.read_frozen_candidates(bad, expect_sha=None, expect_documents=1)
+
+
+def test_a_verdict_label_alone_cannot_admit_an_anomaly_row(batch, tmp_path):
+    bad = _candidate_csv(tmp_path, [_row(batch["ids"][0], 2023, verdict="VERIFIED_YEAR",
+                                         anomaly_flags="hash_twin_in_other_year")], "bad.csv")
+    with pytest.raises(plan_mod.TaxYearPlanError, match="anomaly flags"):
+        plan_mod.read_frozen_candidates(bad, expect_sha=None, expect_documents=1)
+
+
 def test_the_frozen_candidate_refuses_a_weak_extraction_rule(batch, tmp_path):
     bad = _candidate_csv(tmp_path, [_row(batch["ids"][0], 2023, extraction_rule="form_header")],
                          "bad.csv")
