@@ -59,6 +59,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from sqlalchemy import text
@@ -174,19 +175,51 @@ _LIVE_SQL = """
            d.archived                   AS archived,
            d.deleted_at                 AS deleted_at,
            d.person_id, d.household_id, d.organization_id,
-           d.storage_uri, d.storage_path,
-           s.source_system              AS source_system,
-           lower(coalesce(s.source_path, s.source_uri, '')) AS source_path
+           d.storage_uri, d.storage_path
       FROM documents d
- LEFT JOIN LATERAL (
-           SELECT source_system, source_path, source_uri
-             FROM document_sources
-            WHERE document_id = d.id
-            ORDER BY id
-            LIMIT 1) s ON true
      WHERE d.id = ANY(:ids)
      ORDER BY d.id
 """
+
+#: EVERY source record, in one query. Provenance is a property of the DOCUMENT — it holds if ANY of
+#: its sources qualifies — so a query that returned one arbitrary row could not answer the question.
+#: One statement for the whole batch rather than one per document.
+_SOURCES_SQL = """
+    SELECT document_id, id AS source_id, source_system, source_path, source_uri
+      FROM document_sources
+     WHERE document_id = ANY(:ids)
+     ORDER BY document_id, id
+"""
+
+
+def qualifying_source(sources, folder_year) -> dict | None:
+    """The first source record that ALONE proves this document's provenance and year, or None.
+
+    All three facts must hold on the SAME row. Assembling them across rows would let a SharePoint
+    path from one source borrow a year from another, which is not evidence of anything.
+
+    The year test reuses :func:`document_filing_preview.segment_year` — the repository's existing
+    authoritative path-year predicate — so this cannot drift from how the cohort was defined. That
+    matters: the old check was ``f"/{folder_year}" in path``, a SUBSTRING test that would accept
+    ``/2020s/`` or ``/x2020/``. A year must be a folder SEGMENT.
+
+    Imported inside the function on purpose: ``document_filing_preview`` imports ``app.db`` at module
+    scope, and keeping this module importable without a database is what lets the frozen candidate be
+    validated statically.
+    """
+    from app.services.document_filing_preview import segment_year
+
+    for source in sources:
+        if (source["source_system"] or "") != REQUIRED_SOURCE_SYSTEM:
+            continue
+        for raw in (source["source_path"], source["source_uri"]):
+            path = raw or ""
+            if REQUIRED_PATH_FRAGMENT not in path.replace("\\", "/").lower():
+                continue
+            segments = (s for s in re.split(r"[\\/]+", path) if s)
+            if any(segment_year(segment) == folder_year for segment in segments):
+                return {"source_id": source["source_id"], "path": path}
+    return None
 
 
 def _owner_scope(row) -> str | None:
@@ -213,6 +246,9 @@ def build_plan(conn, candidate_csv, *, expect_sha=_PINNED,
     by_id = {int(r["document_id"]): r for r in candidates}
     ids = sorted(by_id)
     live = {r["document_id"]: dict(r) for r in conn.execute(text(_LIVE_SQL), {"ids": ids}).mappings()}
+    sources_by_document: dict[int, list[dict]] = {}
+    for row in conn.execute(text(_SOURCES_SQL), {"ids": ids}).mappings():
+        sources_by_document.setdefault(row["document_id"], []).append(dict(row))
 
     rows, dropped = [], []
     for document_id in ids:
@@ -244,15 +280,13 @@ def build_plan(conn, candidate_csv, *, expect_sha=_PINNED,
         if scope is None:
             drop("owner is no longer resolved")
             continue
-        if (record["source_system"] or "") != REQUIRED_SOURCE_SYSTEM:
-            drop(f"source system is {record['source_system']!r}")
-            continue
-        if REQUIRED_PATH_FRAGMENT not in (record["source_path"] or ""):
-            drop("source path is outside the approved provenance boundary")
-            continue
         folder_year = int(candidate["folder_year"])
-        if f"/{folder_year}" not in (record["source_path"] or ""):
-            drop(f"source path no longer carries the approved year {folder_year}")
+        qualifying = qualifying_source(sources_by_document.get(document_id, ()), folder_year)
+        if qualifying is None:
+            systems = sorted({(s["source_system"] or "?")
+                              for s in sources_by_document.get(document_id, ())})
+            drop("no single SharePoint source record carries both the approved Tax Preparation "
+                 f"path and the year {folder_year} (sources: {systems or ['none']})")
             continue
         if not record["sha256"]:
             drop("document has no content hash to bind the evidence to")
@@ -325,6 +359,7 @@ __all__ = [
     "RESOLVED_CONFIDENCE",
     "TaxYearPlanError",
     "build_plan",
+    "qualifying_source",
     "confirm_phrase",
     "plan_census",
     "plan_digest",
