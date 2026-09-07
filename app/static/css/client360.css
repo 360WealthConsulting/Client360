@@ -295,6 +295,15 @@ table.data.docs-table td > .badge {
 .c360-tab--client::after { background:var(--info); }
 .c360-tab--internal::after { background:var(--warn); }
 
+/* ---- unified communications feed (Batch 4d) --------------------------------
+   Portal and email are two stores composed into one chronological list, so the row itself must say
+   which channel it came from at a glance — otherwise "Reply" means two different things on rows
+   that look identical. A left edge, not a background wash: the cards stay cards, and the badge row
+   keeps carrying the literal words "Secure Message" / "Email" for anyone who cannot see the hue. */
+.c360-comm { border-left:3px solid var(--border); }
+.c360-comm--secure_message { border-left-color:var(--info); }
+.c360-comm--email { border-left-color:var(--accent, var(--text)); }
+
 
 /* ---- vault panel ----------------------------------------------------------
    Seventeen style="" attributes lived here, every one of them dropped by the CSP

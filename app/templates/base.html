@@ -67,6 +67,10 @@
    they may service. It was client.read, which eleven roles hold; those without the dedicated
    capability were shown the link and then refused. #}
 {% set can_messages = 'communications.message.read' in caps %}
+{# Communications (/communications/inbox) — the cross-client work queue over BOTH secure messaging
+   and canonical email (Batch 4e). It sits immediately above Messages, which stays: Messages is the
+   secure-portal triage queue with its own assign/resolve controls, and Communications is the
+   superset that also carries email. Same capability, since both show message content. #}
 {# Personal notification inbox (/notifications). Gated on the capability that route enforces, which
    is the same one Messages uses: the ledger's only staff notification type today is the secure
    message this list links to. No count is shown — a badge would need a per-request query reaching
@@ -94,6 +98,7 @@
     {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": firm_client},
     {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": firm_client},
     {"href": "/relationships/search", "label": "Relationships", "match": "/relationships", "ico": "⬡", "show": firm_client},
+    {"href": "/communications/inbox", "label": "Communications", "match": "/communications/inbox", "ico": "✉", "show": can_messages},
     {"href": "/admin/client-portal/threads", "label": "Messages", "match": "/admin/client-portal/threads", "ico": "✉", "show": can_messages},
     {"href": "/demo/identity", "label": "Identity Review", "match": "/demo/identity", "ico": "◑", "show": demo_mode},
     {"href": "/demo/taxdome-drive", "label": "TaxDome Drive", "match": "/demo/taxdome-drive", "ico": "◇", "show": demo_mode}]},

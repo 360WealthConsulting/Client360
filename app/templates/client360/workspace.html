@@ -321,6 +321,10 @@
     {% else %}{% call ui.empty("No notes", "Internal notes about this client appear here. They are never shown to the client.") %}{% endcall %}{% endfor %}
   </article>
 
+{% elif active_tab == "communications" %}
+  {% set base_q = "/client/" ~ ws.entity_id ~ "?tab=communications" %}
+  {% include "client360/_communications_feed.html" %}
+
 {% elif active_tab == "messages" %}
   {# Secure client-portal conversations. Same portal_threads the Communication Hub reads — this is a
      second VIEW, not a second store. Thread ids appear only as link targets, never as text. #}

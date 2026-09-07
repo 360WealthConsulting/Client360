@@ -67,7 +67,8 @@ HOUSEHOLD_SECTIONS = (
 GRAPH_DEPTH = 1   # each member's relationship graph is one-hop; the household adds a membership hop.
 
 
-def get_household_workspace(principal, household_id, *, page=1, documents_view=None):
+def get_household_workspace(principal, household_id, *, page=1, documents_view=None,
+                            comms_view=None):
     """Compose the Household 360 workspace. Returns None if the household is out of record scope."""
     household_id = int(household_id)
     if not record_in_scope(principal, "household", household_id):
@@ -76,6 +77,7 @@ def get_household_workspace(principal, household_id, *, page=1, documents_view=N
     if ctx is None:
         return None
     ctx["documents_view"] = documents_view
+    ctx["comms_view"] = comms_view
 
     built, timings, suppressed = {}, {}, []
     for key, cap in HOUSEHOLD_SECTIONS:
@@ -383,10 +385,19 @@ def _communications(principal, ctx):
     """Household unified engagement summary — composed by the D.44 engagement layer over the household's
     authoritative activity timeline (member-merged, deduped). Never a second store."""
     from app.services.communications.engagement import engagement_summary, engagement_timeline
+    from app.services.communications.engagement.feed import client_communications
     hid = ctx["household_id"]
+    view = ctx.get("comms_view") or {}
     summary = engagement_summary(principal, household_id=hid)
     recent = engagement_timeline(principal, household_id=hid, page=1, page_size=8)
-    return {"summary": summary, "recent": recent.get("rows", []) if recent else [],
+    # The same unified feed the client profile shows (Batch 4d), anchored on the household: its own
+    # email conversations plus the secure threads of members already in scope.
+    feed = client_communications(principal, household_id=hid,
+                                 member_ids=tuple(ctx.get("member_ids") or ()),
+                                 channel=view.get("channel") or None,
+                                 direction=view.get("direction") or None,
+                                 page=view.get("page") or 1)
+    return {"summary": summary, "recent": recent.get("rows", []) if recent else [], "feed": feed,
             "source": "communications.engagement", "not_a_second_store": True}
 
 

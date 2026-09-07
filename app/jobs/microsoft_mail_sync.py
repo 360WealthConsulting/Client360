@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,6 +11,7 @@ from app.db import (
     microsoft_unmatched_messages,
     people,
 )
+from app.services.communications import email_attachments, email_ingest
 from app.services.microsoft_identity import (
     account_by_id,
     connected_accounts,
@@ -17,6 +19,8 @@ from app.services.microsoft_identity import (
     record_sync_health,
 )
 from app.services.timeline import add_timeline_event
+
+logger = logging.getLogger(__name__)
 
 GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages"
 
@@ -76,12 +80,15 @@ def sync_recent_mail(top: int = 50, *, account_id: int | None = None) -> dict[st
         person_rows = connection.execute(
             select(
                 people.c.id,
+                people.c.household_id,
                 people.c.primary_email,
                 people.c.normalized_email,
             )
         ).mappings().all()
 
-    person_by_email: dict[str, int] = {}
+    # ``{normalized email: (person_id, household_id)}``. The household comes along so an email can be
+    # anchored to the family when several members are addressed — see communications.email_ingest.
+    person_by_email: dict[str, tuple[int, int | None]] = {}
 
     for person in person_rows:
         for candidate in (
@@ -91,7 +98,7 @@ def sync_recent_mail(top: int = 50, *, account_id: int | None = None) -> dict[st
             normalized = _normalize_email(candidate)
 
             if normalized:
-                person_by_email[normalized] = person["id"]
+                person_by_email[normalized] = (person["id"], person["household_id"])
 
     totals = {"messages_reviewed": 0, "matched_messages": 0,
               "unmatched_messages": 0, "published_events": 0}
@@ -140,9 +147,14 @@ def _ingest_messages(account, access_token: str, top: int,
         },
         params={
             "$top": str(top),
+            # conversationId / internetMessageId / recipients are what make an email addressable and
+            # de-duplicable; the read-only preview route has selected them against the live API since
+            # it shipped, so this adds no permission and no new call. `sender` accompanies `from`
+            # because a delegated send sets them differently.
             "$select": (
-                "id,subject,from,receivedDateTime,"
-                "bodyPreview,webLink,hasAttachments,isRead"
+                "id,subject,from,sender,toRecipients,ccRecipients,receivedDateTime,"
+                "bodyPreview,webLink,hasAttachments,isRead,"
+                "conversationId,internetMessageId"
             ),
             "$orderby": "receivedDateTime desc",
         },
@@ -162,76 +174,93 @@ def _ingest_messages(account, access_token: str, top: int,
     matched = 0
     unmatched = 0
     published = 0
+    normalized = 0
+    attached = 0
+
+    owner_address = _normalize_email(account.get("email"))
 
     for message in messages:
-        sender = (
-            message.get("from", {})
-            .get("emailAddress", {})
-        )
+        # One resolution per message, shared by every branch below: direction, the counterparty
+        # addresses, and which client (if any) this email belongs to. Ambiguity is preserved, never
+        # resolved by guessing — see communications.email_ingest.resolve_match.
+        match = email_ingest.resolve_match(message, person_by_email, owner_address)
+        sender_address = match.sender_address
+        sender_name = match.sender_name
 
-        sender_address = _normalize_email(
-            sender.get("address")
-        )
-        sender_name = sender.get("name") or sender_address
-
-        person_id = person_by_email.get(sender_address)
+        # The TIMELINE contract is unchanged: an event is written exactly when the SENDER is a known
+        # client, exactly as before. Recipient matching widens what can be NORMALIZED, never what
+        # appears on a client's timeline, so no new user-visible event is introduced by this batch.
+        sender_person = person_by_email.get(sender_address)
+        person_id = sender_person[0] if sender_person else None
 
         if person_id is None:
-            unmatched += 1
+            # A message the mailbox owner SENT is this firm's own copy, not an unrecognised inbound
+            # sender: /me/messages is not folder-scoped, so Sent Items arrive here too. It is still
+            # normalized below when it names a client, but it no longer pollutes the review queue.
+            if match.direction != email_ingest.OUTBOUND:
+                unmatched += 1
 
-            message_id = message.get("id")
+                message_id = message.get("id")
 
-            if message_id:
-                statement = (
-                    pg_insert(microsoft_unmatched_messages)
-                    .values(
-                        microsoft_message_id=message_id,
-                        sender_name=sender_name,
-                        sender_address=sender_address,
-                        subject=message.get("subject"),
-                        body_preview=message.get("bodyPreview"),
-                        received_at=_parse_graph_datetime(
-                            message.get("receivedDateTime")
-                        ),
-                        web_link=message.get("webLink"),
-                        has_attachments=bool(
-                            message.get("hasAttachments")
-                        ),
-                        status="pending",
-                    )
-                    .on_conflict_do_update(
-                        constraint=(
-                            "uq_microsoft_unmatched_message_id"
-                        ),
-                        set_={
-                            "sender_name": sender_name,
-                            "sender_address": sender_address,
-                            "subject": message.get("subject"),
-                            "body_preview": message.get(
-                                "bodyPreview"
+                if message_id:
+                    statement = (
+                        pg_insert(microsoft_unmatched_messages)
+                        .values(
+                            microsoft_message_id=message_id,
+                            sender_name=sender_name,
+                            sender_address=sender_address,
+                            subject=message.get("subject"),
+                            body_preview=message.get("bodyPreview"),
+                            received_at=_parse_graph_datetime(
+                                message.get("receivedDateTime")
                             ),
-                            "received_at": (
-                                _parse_graph_datetime(
-                                    message.get(
-                                        "receivedDateTime"
+                            web_link=message.get("webLink"),
+                            has_attachments=bool(
+                                message.get("hasAttachments")
+                            ),
+                            status="pending",
+                        )
+                        .on_conflict_do_update(
+                            constraint=(
+                                "uq_microsoft_unmatched_message_id"
+                            ),
+                            set_={
+                                "sender_name": sender_name,
+                                "sender_address": sender_address,
+                                "subject": message.get("subject"),
+                                "body_preview": message.get(
+                                    "bodyPreview"
+                                ),
+                                "received_at": (
+                                    _parse_graph_datetime(
+                                        message.get(
+                                            "receivedDateTime"
+                                        )
                                     )
-                                )
-                            ),
-                            "web_link": message.get("webLink"),
-                            "has_attachments": bool(
-                                message.get(
-                                    "hasAttachments"
-                                )
-                            ),
-                            "updated_at": datetime.now(
-                                UTC
-                            ),
-                        },
+                                ),
+                                "web_link": message.get("webLink"),
+                                "has_attachments": bool(
+                                    message.get(
+                                        "hasAttachments"
+                                    )
+                                ),
+                                "updated_at": datetime.now(
+                                    UTC
+                                ),
+                            },
+                        )
                     )
-                )
 
-                with engine.begin() as connection:
-                    connection.execute(statement)
+                    with engine.begin() as connection:
+                        connection.execute(statement)
+
+            # Still normalize: an email may name a client as a RECIPIENT even when its sender is
+            # unknown, and the firm's own outbound copies name one too. This writes no timeline
+            # event, so the client's history is untouched by it.
+            normalized_id = _normalize(account, message, match)
+            if normalized_id is not None:
+                normalized += 1
+                attached += _ingest_attachments(account, access_token, message, normalized_id, match)
 
             continue
 
@@ -248,27 +277,45 @@ def _ingest_messages(account, access_token: str, top: int,
         if len(preview) > 500:
             preview = preview[:497] + "..."
 
-        add_timeline_event(
-            person_id=person_id,
-            source="microsoft",
-            event_type="email_received",
-            title=subject,
-            summary=preview or None,
-            event_time=_parse_graph_datetime(
-                message.get("receivedDateTime")
-            ),
-            external_id=f"outlook-message-{message_id}",
-            event_metadata={
-                "sender_name": sender_name,
-                "sender_address": sender_address,
-                "web_link": message.get("webLink"),
-                "has_attachments": bool(
-                    message.get("hasAttachments")
+        # ONE transaction for the timeline event and the canonical rows, so the two can never
+        # disagree about whether this email was ingested. `add_timeline_event` already accepts a
+        # connection; the event itself — source, event_type, external_id, summary — is unchanged, so
+        # nothing user-visible moves and the email still produces exactly one timeline row.
+        with engine.begin() as connection:
+            add_timeline_event(
+                person_id=person_id,
+                source="microsoft",
+                event_type="email_received",
+                title=subject,
+                summary=preview or None,
+                event_time=_parse_graph_datetime(
+                    message.get("receivedDateTime")
                 ),
-                "is_read": bool(message.get("isRead")),
-                "microsoft_message_id": message_id,
-            },
-        )
+                external_id=f"outlook-message-{message_id}",
+                event_metadata={
+                    "sender_name": sender_name,
+                    "sender_address": sender_address,
+                    "web_link": message.get("webLink"),
+                    "has_attachments": bool(
+                        message.get("hasAttachments")
+                    ),
+                    "is_read": bool(message.get("isRead")),
+                    "microsoft_message_id": message_id,
+                },
+                conn=connection,
+            )
+            communication_message_id = email_ingest.normalize_email(
+                connection, account=account, message=message, match=match
+            )
+            if communication_message_id is not None:
+                normalized += 1
+
+        # Attachments run AFTER that transaction commits, on their own. The email is already valid
+        # and its timeline event already written; an attachment that cannot be fetched, or a type
+        # this release does not ingest, must never roll back a correctly normalized message.
+        if communication_message_id is not None:
+            attached += _ingest_attachments(account, access_token, message, communication_message_id,
+                                            match)
 
         published += 1
 
@@ -278,7 +325,56 @@ def _ingest_messages(account, access_token: str, top: int,
         "matched_messages": matched,
         "unmatched_messages": unmatched,
         "published_events": published,
+        "normalized_messages": normalized,
+        "attachments_ingested": attached,
     }
+
+
+def _normalize(account, message, match):
+    """Normalize one message on its own transaction. Returns the message id, or None.
+
+    Used for the branches that write no timeline event, so there is nothing to keep atomic with.
+    Failure-isolated: normalization is derived data, and it must never stop the mail sync that
+    populates the review queue and the timeline.
+    """
+    if not match.anchored:
+        return None
+    try:
+        with engine.begin() as connection:
+            return email_ingest.normalize_email(
+                connection, account=account, message=message, match=match)
+    except Exception:
+        logger.exception("Communication normalization failed for one message; sync continues.")
+        return None
+
+
+def _ingest_attachments(account, access_token, message, communication_message_id, match) -> int:
+    """Fetch and ingest one email's supported file attachments. Returns how many were newly linked.
+
+    Nothing is fetched unless Graph said the message HAS attachments and this message has not been
+    handled before — so scheduled polling over the same mailbox re-downloads nothing. Runs on its own
+    transaction, after the email is already durable, and swallows its own failures: an attachment
+    problem is an attachment problem, never a reason to lose a correctly normalized email.
+    """
+    if not message.get("hasAttachments"):
+        return 0
+    try:
+        with engine.connect() as connection:
+            if email_attachments.already_ingested(connection, communication_message_id):
+                return 0
+        list_metadata, fetch_bytes = email_attachments.graph_attachment_reader(
+            access_token, message.get("id"), requests_module=requests)
+        payload = list_metadata()
+        with engine.begin() as connection:
+            summary = email_attachments.ingest_attachments(
+                connection, communication_message_id=communication_message_id,
+                attachments_payload=payload,
+                anchor={"person_id": match.person_id, "household_id": match.household_id},
+                fetch_bytes=fetch_bytes)
+        return summary.ingested
+    except Exception:
+        logger.exception("Attachment ingestion failed for one message; sync continues.")
+        return 0
 
 
 if __name__ == "__main__":

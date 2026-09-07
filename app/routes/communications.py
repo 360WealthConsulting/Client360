@@ -15,7 +15,8 @@ from fastapi.templating import Jinja2Templates
 
 from app.security.dependencies import require_capability
 from app.security.models import Principal
-from app.services.communications import delivery
+from app.services.communications import delivery, email_send
+from app.services.communications import inbox as inbox_service
 from app.services.communications import service as svc
 from app.services.communications import templates as tmpl
 from app.templating import install_filters
@@ -74,6 +75,28 @@ def list_templates(request: Request,
     return JSONResponse({"templates": [
         {"id": t["id"], "code": t["code"], "name": t["name"], "category": t["category"],
          "channel": t["channel"], "active": t["active"]} for t in tmpl.list_templates()]})
+
+
+# --- staff communications inbox (Batch 4e) -----------------------------------
+#
+# MUST stay declared BEFORE ``/{conversation_id}`` — FastAPI matches in declaration order, and
+# "inbox" would otherwise be parsed as a conversation id and 422.
+#
+# Gated on ``communications.message.read``, the capability that actually guards message CONTENT
+# (the same one /admin/client-portal/threads and /notifications enforce) rather than the broader
+# ``communications.view`` the conversation list uses. Not under /admin, for the same reason
+# /notifications is not: this is daily client work, and /admin would drag in identity.manage.
+
+@router.get("/inbox", response_class=HTMLResponse)
+def inbox(request: Request, view: str = inbox_service.FILTER_ALL, channel: str | None = None,
+          page: int = 1,
+          principal: Principal = Depends(require_capability("communications.message.read"))):
+    """Cross-client work queue: which client communications need attention, across both channels."""
+    result = inbox_service.staff_communications_inbox(principal, view=view, channel=channel,
+                                                      page=page)
+    return templates.TemplateResponse(request=request, name="communications/inbox.html", context={
+        "principal": principal, "result": result,
+        "filters": inbox_service.FILTERS, "filter_labels": inbox_service.FILTER_LABELS})
 
 
 @router.get("/{conversation_id}", response_class=HTMLResponse)
@@ -215,6 +238,48 @@ async def mark_read(request: Request, message_id: int,
     except (svc.CommunicationError, delivery.DeliveryError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(url=f"/communications/{msg['conversation_id']}", status_code=303)
+
+
+# --- Outlook reply (Batch 4c / ADR-075) --------------------------------------
+#
+# Deliberately narrow: reply to ONE normalized inbound email, body only. There is no recipient
+# field — Graph's reply addresses the original sender and the stored conversation supplies who that
+# is — so no request can redirect an outbound email to an address of its own choosing. Not a
+# composer, not Reply All, no attachments.
+
+@router.get("/messages/{message_id}/reply", response_class=HTMLResponse)
+def reply_form(request: Request, message_id: int,
+               principal: Principal = Depends(require_capability("communications.send"))):
+    from app.db import engine
+
+    try:
+        with engine.connect() as conn:
+            target = email_send.reply_target(conn, message_id)
+        email_send.authorize(principal, target["conversation"])
+    except email_send.NotAuthorized as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except email_send.SendError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return templates.TemplateResponse(request=request, name="communications/reply.html", context={
+        "principal": principal, "message": target["message"], "recipient": target["recipient"],
+        "conversation": target["conversation"],
+        # Minted per rendered form: the POST carries it back, so a double submit is one email.
+        "send_key": email_send.new_send_key()})
+
+
+@router.post("/messages/{message_id}/reply")
+async def reply_send(request: Request, message_id: int,
+                     principal: Principal = Depends(require_capability("communications.send"))):
+    form = await _form(request)
+    try:
+        # Re-checks capability, record scope and mailbox identity; nothing is inherited from the GET.
+        result = email_send.send_reply(principal, communication_message_id=message_id,
+                                       body=_one(form, "body"), send_key=_one(form, "send_key"))
+    except email_send.NotAuthorized as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except email_send.SendError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse(url=f"/communications/{result['conversation_id']}", status_code=303)
 
 
 @router.post("/messages/{message_id}/cancel")

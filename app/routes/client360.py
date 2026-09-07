@@ -140,13 +140,15 @@ def household_workspace(request: Request, household_id: int, tab: str = "summary
                         drecent: int = 0, dsort: str | None = None, ddir: str | None = None,
                         dincomplete: int = 0, dflag: str | None = None,
                         dpage: int = 1, per: int = 25,
+                        cchannel: str | None = None, cdir: str | None = None, cpage: int = 1,
                         principal: Principal = Depends(require_capability("client.read"))):
     """Household 360 Workspace (Phase D.41) — the authoritative household surface at the D.40 route.
     Read-only composition of member-level rollups; every edit deep-links into the domain workflow."""
     from app.services.client360.household import get_household_workspace
     ws = get_household_workspace(principal, household_id, documents_view=_documents_view(
         dq, dtab, dyear, dtype, related, review, dpage, per, drecent, dsort, ddir,
-        dincomplete, dflag))
+        dincomplete, dflag),
+        comms_view={"channel": cchannel, "direction": cdir, "page": cpage})
     if ws is None:
         return render_error(request, 404, detail="Household not found.")
     tabs = ws["section_keys"]
@@ -275,6 +277,7 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
                      drecent: int = 0, dsort: str | None = None, ddir: str | None = None,
                      dincomplete: int = 0, dflag: str | None = None,
                      dpage: int = 1, per: int = 25,
+                     cchannel: str | None = None, cdir: str | None = None, cpage: int = 1,
                      principal: Principal = Depends(require_capability("client.read"))):
     # Vault-tab UI state (filters + selected document) threaded into the composition context.
     vault_view = {"q": q, "category": category, "document_type": document_type,
@@ -284,8 +287,11 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
     # document search would silently re-filter the Vault list behind it.
     documents_view = _documents_view(dq, dtab, dyear, dtype, related, review, dpage, per,
                                      drecent, dsort, ddir, dincomplete, dflag)
+    # Communications-tab UI state, on its own `c*` parameter names for the same reason the Documents
+    # tab uses `d*`: sharing `q`/`page` across tabs makes them fight each other.
+    comms_view = {"channel": cchannel, "direction": cdir, "page": cpage}
     ws = get_workspace(principal, person_id=person_id, vault_view=vault_view,
-                       documents_view=documents_view)
+                       documents_view=documents_view, comms_view=comms_view)
     if ws is None:
         survivor_id = _merged_into(person_id, principal)
         if survivor_id is not None:

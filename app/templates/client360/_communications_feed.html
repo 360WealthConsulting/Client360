@@ -1,0 +1,82 @@
+{# Unified staff communications feed (Batch 4d) — shared by the Client 360 and Household 360
+   workspaces so the two cannot drift into two different readings of the same composed data.
+
+   ONE chronological history across secure portal messaging and Outlook email. Both stores stay
+   separate and authoritative; this composes them and never copies either. Every row links back to
+   the subsystem that owns it, and every action re-authorizes server-side — a rendered button is a
+   convenience, never the permission.
+
+   Expects: `sec` (the communications section), `base_q` (this workspace's tab URL). #}
+{% import "components/ui.html" as ui %}
+{% set feed = sec.feed %}
+<h2 class="section-title">Communications
+  {% if feed and feed.total %}<span class="subtle">· {{ feed.total }} in view</span>{% endif %}
+</h2>
+{% if not feed or not feed.authorized %}
+  {% call ui.empty("Message content not available",
+                   "Viewing client correspondence requires the secure-message read capability.") %}{% endcall %}
+{% else %}
+{% set qs_channel %}{% if feed.filters.channel %}&amp;cchannel={{ feed.filters.channel }}{% endif %}{% endset %}
+{% set qs_dir %}{% if feed.filters.direction %}&amp;cdir={{ feed.filters.direction }}{% endif %}{% endset %}
+<nav class="filterbar card" aria-label="Communication filters">
+  <div class="u-flex u-gap-8px u-wrap u-items-center">
+    <a class="btn btn-ghost {% if not feed.filters.channel %}active{% endif %}" href="{{ base_q }}{{ qs_dir }}">All
+      <span class="subtle">{{ feed.counts.secure_message + feed.counts.email }}</span></a>
+    <a class="btn btn-ghost {% if feed.filters.channel == 'secure_message' %}active{% endif %}"
+       href="{{ base_q }}&amp;cchannel=secure_message{{ qs_dir }}">Secure Messages
+      <span class="subtle">{{ feed.counts.secure_message }}</span></a>
+    <a class="btn btn-ghost {% if feed.filters.channel == 'email' %}active{% endif %}"
+       href="{{ base_q }}&amp;cchannel=email{{ qs_dir }}">Email
+      <span class="subtle">{{ feed.counts.email }}</span></a>
+    <span class="u-ml-auto u-flex u-gap-8px">
+      <a class="btn btn-ghost {% if not feed.filters.direction %}active{% endif %}"
+         href="{{ base_q }}{{ qs_channel }}">Both ways</a>
+      <a class="btn btn-ghost {% if feed.filters.direction == 'inbound' %}active{% endif %}"
+         href="{{ base_q }}{{ qs_channel }}&amp;cdir=inbound">Inbound</a>
+      <a class="btn btn-ghost {% if feed.filters.direction == 'outbound' %}active{% endif %}"
+         href="{{ base_q }}{{ qs_channel }}&amp;cdir=outbound">Outbound</a>
+    </span>
+  </div>
+</nav>
+{% for e in feed.rows %}
+<article class="card mb-3 c360-comm c360-comm--{{ e.channel }}">
+  <div class="u-flex u-gap-10px u-items-center u-wrap">
+    {{ ui.badge(e.channel_label, "info" if e.channel == "email" else "") }}
+    {{ ui.badge(e.direction_label, "warn" if e.direction == "internal_note" else "") }}
+    <strong>{{ e.sender }}</strong>
+    {% if e.unread %}{{ ui.badge("Unread", "warn") }}{% endif %}
+    <span class="subtle u-ml-auto u-fs-12px">{{ e.timestamp.strftime("%Y-%m-%d %H:%M") if e.timestamp else "" }}</span>
+  </div>
+  <div class="u-mt-6px"><strong>{{ e.subject }}</strong></div>
+  <p class="u-prewrap c-m-8px-0-0">{{ e.preview }}</p>
+  {% if e.body_retained and e.body and e.body != e.preview %}
+  {# Full content only where the store actually retained it. An inbound email keeps the bounded
+     preview ADR-074 stored — there is no fuller copy to expand into, and offering to "show more"
+     would misrepresent what the record holds. #}
+  <details class="u-mt-6px"><summary class="subtle">Show full message</summary>
+    <p class="u-prewrap c-m-8px-0-0">{{ e.body }}</p>
+  </details>
+  {% endif %}
+  <div class="u-mt-8px u-flex u-gap-8px u-items-center u-wrap">
+    <a class="btn btn-ghost" href="{{ e.thread_url }}">{{ e.thread_label }}</a>
+    {% for a in e.attachments %}
+      <a class="btn btn-ghost" href="{{ a.url }}">{{ a.label }}</a>
+    {% endfor %}
+    {% if e.reply_url %}<a class="btn" href="{{ e.reply_url }}">{{ e.reply_label }}</a>{% endif %}
+  </div>
+</article>
+{% else %}
+  {% call ui.empty("No communications yet",
+                   "Secure messages and Outlook email with this client appear here.") %}{% endcall %}
+{% endfor %}
+{% if feed.pages > 1 %}
+<nav class="u-flex u-gap-8px u-items-center" aria-label="Communication pages">
+  {% if feed.page > 1 %}<a class="btn btn-ghost" href="{{ base_q }}{{ qs_channel }}{{ qs_dir }}&amp;cpage={{ feed.page - 1 }}">Newer</a>{% endif %}
+  <span class="subtle">Page {{ feed.page }} of {{ feed.pages }}</span>
+  {% if feed.page < feed.pages %}<a class="btn btn-ghost" href="{{ base_q }}{{ qs_channel }}{{ qs_dir }}&amp;cpage={{ feed.page + 1 }}">Older</a>{% endif %}
+</nav>
+{% endif %}
+{% if feed.window_reached %}
+<p class="subtle u-fs-12px">Showing recent correspondence only. Open a conversation for its full history.</p>
+{% endif %}
+{% endif %}

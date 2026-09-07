@@ -8,11 +8,68 @@ from app.db import (
     microsoft_unmatched_messages,
     people,
 )
+from app.services.communications import email_ingest
 from app.services.timeline import add_timeline_event
 
 
 router = APIRouter(prefix="/microsoft365")
 templates = Jinja2Templates(directory="app/templates")
+
+
+def _record_match(message, *, person_id: int, queue_row_id: int) -> None:
+    """Resolve one queued email onto a person: timeline event, canonical rows, queue transition.
+
+    ONE transaction, so a manually matched email can never be half-recorded. The timeline event is
+    unchanged — same source, event_type, external_id and summary — so this path still produces
+    exactly one timeline row per email, the same contract the scheduled sync keeps.
+
+    The queue row predates the communication schema and stores only the Graph id, no Message-ID and
+    no conversationId. So the canonical message is reconciled by Graph id first: if the scheduled
+    sync already normalized this email (it now does so whenever a RECIPIENT matches, even when the
+    sender does not), this records the match without creating a second message.
+    """
+    graph_id = message["microsoft_message_id"]
+    with engine.begin() as connection:
+        add_timeline_event(
+            person_id=person_id,
+            source="microsoft",
+            event_type="email_received",
+            title=message["subject"] or "(No subject)",
+            summary=message["body_preview"] or None,
+            event_time=message["received_at"],
+            external_id=f"outlook-message-{graph_id}",
+            event_metadata={
+                "sender_name": message["sender_name"],
+                "sender_address": message["sender_address"],
+                "web_link": message["web_link"],
+                "has_attachments": message["has_attachments"],
+                "microsoft_message_id": graph_id,
+            },
+            conn=connection,
+        )
+        if email_ingest.find_by_graph_id(connection, graph_id) is None:
+            household_id = connection.execute(
+                select(people.c.household_id).where(people.c.id == person_id)).scalar()
+            email_ingest.normalize_email(
+                connection, account={},
+                message={"id": graph_id,
+                         "subject": message["subject"],
+                         "bodyPreview": message["body_preview"],
+                         "receivedDateTime": message["received_at"],
+                         "webLink": message["web_link"],
+                         "hasAttachments": message["has_attachments"],
+                         "from": {"emailAddress": {"name": message["sender_name"],
+                                                   "address": message["sender_address"]}}},
+                match=email_ingest.EmailMatch(
+                    direction=email_ingest.INBOUND,
+                    sender_name=message["sender_name"] or "",
+                    sender_address=email_ingest.normalize_address(message["sender_address"]),
+                    person_id=person_id, household_id=household_id,
+                    matched_person_ids=frozenset({person_id})))
+        connection.execute(
+            update(microsoft_unmatched_messages)
+            .where(microsoft_unmatched_messages.c.id == queue_row_id)
+            .values(status="matched", matched_person_id=person_id))
 
 
 @router.get(
@@ -112,39 +169,7 @@ def match_message_to_person(
             status_code=404,
         )
 
-    add_timeline_event(
-        person_id=person_id,
-        source="microsoft",
-        event_type="email_received",
-        title=message["subject"] or "(No subject)",
-        summary=message["body_preview"] or None,
-        event_time=message["received_at"],
-        external_id=(
-            f"outlook-message-"
-            f"{message['microsoft_message_id']}"
-        ),
-        event_metadata={
-            "sender_name": message["sender_name"],
-            "sender_address": message["sender_address"],
-            "web_link": message["web_link"],
-            "has_attachments": message["has_attachments"],
-            "microsoft_message_id": (
-                message["microsoft_message_id"]
-            ),
-        },
-    )
-
-    with engine.begin() as connection:
-        connection.execute(
-            update(microsoft_unmatched_messages)
-            .where(
-                microsoft_unmatched_messages.c.id == message_id
-            )
-            .values(
-                status="matched",
-                matched_person_id=person_id,
-            )
-        )
+    _record_match(message, person_id=person_id, queue_row_id=message_id)
 
     return RedirectResponse(
         url="/microsoft365/inbox-review",
@@ -201,39 +226,7 @@ def create_contact_from_message(message_id: int):
             .returning(people.c.id)
         ).scalar_one()
 
-    add_timeline_event(
-        person_id=person_id,
-        source="microsoft",
-        event_type="email_received",
-        title=message["subject"] or "(No subject)",
-        summary=message["body_preview"] or None,
-        event_time=message["received_at"],
-        external_id=(
-            f"outlook-message-"
-            f"{message['microsoft_message_id']}"
-        ),
-        event_metadata={
-            "sender_name": message["sender_name"],
-            "sender_address": message["sender_address"],
-            "web_link": message["web_link"],
-            "has_attachments": message["has_attachments"],
-            "microsoft_message_id": (
-                message["microsoft_message_id"]
-            ),
-        },
-    )
-
-    with engine.begin() as connection:
-        connection.execute(
-            update(microsoft_unmatched_messages)
-            .where(
-                microsoft_unmatched_messages.c.id == message_id
-            )
-            .values(
-                status="matched",
-                matched_person_id=person_id,
-            )
-        )
+    _record_match(message, person_id=person_id, queue_row_id=message_id)
 
     return RedirectResponse(
         url=f"/people/{person_id}",

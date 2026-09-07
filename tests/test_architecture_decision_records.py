@@ -12,7 +12,7 @@ REPO = Path(__file__).resolve().parent.parent
 ADR_DIR = REPO / "docs" / "adr"
 README = ADR_DIR / "README.md"
 
-EXPECTED_COUNT = 73
+EXPECTED_COUNT = 75  # +1 ADR-074 inbound email normalization  # +1 ADR-075 outbound email reply
 REQUIRED_HEADINGS = [
     "## Status", "## Date", "## Decision owners", "## Context", "## Decision",
     "## Alternatives considered", "## Reasons for the decision", "## Consequences",
@@ -38,10 +38,11 @@ def test_adr_index_exists():
     assert README.is_file()
 
 
-def test_all_seventeen_adrs_exist():
+def test_all_adrs_exist():
     nums = [_number(p) for p in _adr_files()]
     assert len(nums) == EXPECTED_COUNT, f"expected {EXPECTED_COUNT} ADRs, found {len(nums)}"
-    assert nums == list(range(1, EXPECTED_COUNT + 1)), f"ADR numbers not sequential 1..17: {nums}"
+    assert nums == list(range(1, EXPECTED_COUNT + 1)), \
+        f"ADR numbers not sequential 1..{EXPECTED_COUNT}: {nums}"
 
 
 def test_adr_numbers_and_filenames_unique():

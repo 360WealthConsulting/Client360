@@ -18,6 +18,82 @@ _A = _TAG.translate(str.maketrans("0123456789", "abcdefghij"))
 _SEEN_DOCS: set = set()
 
 
+class _LiveAccessAttempted(AssertionError):
+    """A test reached for the real Microsoft/SharePoint world. Always a defect in the test."""
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_microsoft(tmp_path_factory, monkeypatch):
+    """Cut this suite off from the real Microsoft/SharePoint world, and fail LOUDLY if it reaches.
+
+    WHY THIS EXISTS. ``resolve_sharepoint_stager`` prefers the manifest FILE the connector was told to
+    write over the connector's return value (``_stage_one``: "Prefer the manifest FILE ... else parse
+    the return"). The manifest path is derived from the STAGING ROOT, which resolves to a real machine
+    directory — on a workstation that has ever run a real sync, ``<staging root>/manifest.json`` is a
+    genuine production manifest. A test that stubbed the connector still had its stub's return value
+    discarded in favour of that file, so it asserted against live SharePoint rows it never asked for.
+    Nothing reached the network: the escape was a file left on disk by an earlier real run.
+
+    Three guards, in order of what they catch:
+
+      1. the staging roots point at a per-test temp directory, so no machine artifact is readable;
+      2. the HTTP layer both the adapter and the connector use raises, so a genuine network call
+         cannot be made silently;
+      3. the REAL connector's staging entrypoints raise, so a test that forgets to inject a stub
+         fails closed instead of quietly running against configured production sites.
+
+    The connector module is still importable — ``sharepoint_staging_diagnostics`` imports it and is
+    expected to work — only its staging callables are armed.
+    """
+    # Redirect the CONFIGURATION, not the function: `sharepoint_staging_root()` honours
+    # CLIENT360_SHAREPOINT_SOURCE_ROOT first, so pointing that at a temp directory moves the default
+    # without replacing any resolution logic. A test that sets the variable itself still wins, and
+    # the tests that pin the connector-attribute -> env -> fallback precedence keep exercising it.
+    root = tmp_path_factory.mktemp("sharepoint_staging")
+    for var in ("MICROSOFT_SHAREPOINT_SITE_IDS", "MICROSOFT_SHAREPOINT_DRIVE_ID",
+                "CLIENT360_SHAREPOINT_STAGING_ROOT", "CLIENT360_SHAREPOINT_DOCUMENT_ROOT",
+                "CLIENT360_DATA_ROOT"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("CLIENT360_SHAREPOINT_SOURCE_ROOT", str(root))
+
+    # Loopback is allowed: several tests drive a LOCAL stall server to prove header/read deadlines.
+    # Only a route off this machine is a hermeticity breach.
+    _LOCAL = ("127.0.0.1", "localhost", "::1", "[::1]")
+
+    def _guard(original):
+        def _checked(*args, **kwargs):
+            url = next((a for a in args if isinstance(a, str) and "//" in a), "") or kwargs.get("url", "")
+            host = url.split("//", 1)[-1].split("/", 1)[0].split(":")[0] if url else ""
+            if host and host not in _LOCAL:
+                raise _LiveAccessAttempted(
+                    f"This suite is hermetic: an HTTP call to {host!r} was attempted. Inject a stub "
+                    "connector or fixture instead of reaching Microsoft Graph / SharePoint.")
+            return original(*args, **kwargs)
+        return _checked
+
+    import requests
+    for name in ("get", "post", "put", "patch", "delete", "head", "request"):
+        original = getattr(requests, name, None)
+        if callable(original):
+            monkeypatch.setattr(requests, name, _guard(original), raising=False)
+    monkeypatch.setattr(requests.Session, "request", _guard(requests.Session.request), raising=False)
+
+    try:
+        from app.connectors.microsoft365 import sharepoint_content as real_connector
+    except Exception:                      # environment without the connector — nothing to arm
+        real_connector = None
+    if real_connector is not None:
+        def _no_real_connector(*args, **kwargs):
+            raise _LiveAccessAttempted(
+                "The REAL SharePoint connector's staging entrypoint was called. Pass "
+                "module=<stub> to resolve_sharepoint_stager, or items=[...] to run_sharepoint_sync.")
+        for name in (*mi._SHAREPOINT_STAGER_NAMES, *mi._ENUMERATOR_NAMES,
+                     "enumerate_site_drives", "resolve_site_ids"):
+            if callable(getattr(real_connector, name, None)):
+                monkeypatch.setattr(real_connector, name, _no_real_connector, raising=False)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _clear_cache():
     sharepoint._database.cache_clear()          # importer uses the test DB (DATABASE_URL env)
@@ -2748,3 +2824,79 @@ def test_connector_session_uses_connector_existing_auth_path():
     assert isinstance(session, FakeSession)
     assert session.headers["Authorization"] == "Bearer TEST-TOKEN"
     assert session.headers["Accept"] == "application/json"
+
+
+# --- hermetic-suite guards (Batch 4a.1) -----------------------------------------------------------
+# The regression these pin: `resolve_sharepoint_stager` prefers the manifest FILE over the connector's
+# return value, and the manifest path came from a REAL machine staging root. On a workstation that had
+# run a real sync, a stubbed connector's return was discarded in favour of a genuine production
+# manifest, so tests asserted against live SharePoint rows. No network was involved — the escape was a
+# file on disk. `_hermetic_microsoft` closes it and arms two further guards; these prove all three.
+
+def test_the_staging_root_is_redirected_away_from_the_machine(tmp_path):
+    """The actual escape path. The resolved root must be a temp directory, never the real one."""
+    root = mi._staging_root().replace("\\", "/")
+    assert "Client360/Data" not in root, "the real machine staging root is still reachable"
+    assert "sharepoint_staging" in root
+    # A connector exposing no root of its own falls through to the redirected fallback.
+    import types
+    assert mi._connector_staging_root(types.SimpleNamespace()) == mi._staging_root()
+
+
+def test_a_stubbed_connectors_return_is_not_overridden_by_a_manifest_on_disk():
+    """What actually failed: the stub said one thing and the machine's manifest said another."""
+    import types
+    mod = types.SimpleNamespace(
+        stage_sharepoint_content=lambda *, site_ids=None, dry_run=False: ([{"name": "only.txt"}], {}))
+    items = mi.resolve_sharepoint_stager(module=mod, dry_run=True)()
+    assert items == [{"name": "only.txt"}]
+    assert not any("sharepoint.com" in str(i.get("web_url", "")) for i in items)
+
+
+def test_no_external_hostname_can_reach_a_staged_result():
+    import types
+    mod = types.SimpleNamespace(
+        stage_sharepoint_content=lambda *, site_ids=None, dry_run=False: ([{"name": "a.txt"}], {}))
+    blob = str(mi.resolve_sharepoint_stager(module=mod, dry_run=True)())
+    for host in ("sharepoint.com", "graph.microsoft.com", "360financialsolutions"):
+        assert host not in blob
+
+
+def test_the_network_sentinel_fires_for_anything_off_this_machine():
+    """Fail closed: a route off this machine is an immediate, named test failure. Loopback stays
+    allowed because several tests drive a local stall server to prove transfer deadlines."""
+    import requests
+    for url in ("https://graph.microsoft.com/v1.0/me/messages",
+                "https://360financialsolutions.sharepoint.com/sites/360Data",
+                "https://example.invalid/x"):
+        with pytest.raises(AssertionError, match="hermetic"):
+            requests.get(url)
+    with pytest.raises(AssertionError, match="hermetic"):
+        requests.Session().request("GET", "https://graph.microsoft.com/v1.0/me")
+
+
+def test_the_real_connector_sentinel_fires():
+    """A test that forgets to inject a stub must fail loudly rather than run against production."""
+    try:
+        from app.connectors.microsoft365 import sharepoint_content as real_connector
+    except Exception:
+        pytest.skip("connector not importable in this environment")
+    with pytest.raises(AssertionError, match="REAL SharePoint connector"):
+        real_connector.stage_sharepoint_content()
+    with pytest.raises(AssertionError, match="REAL SharePoint connector"):
+        mi.resolve_sharepoint_stager(dry_run=True)()      # no module= -> resolves the real connector
+
+
+def test_production_site_configuration_cannot_influence_a_test(monkeypatch):
+    import os
+    assert os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS") is None
+    assert os.getenv("CLIENT360_SHAREPOINT_STAGING_ROOT") is None
+
+
+@pytest.mark.parametrize("run", (1, 2, 3))
+def test_staging_is_deterministic_across_repeated_runs(run):
+    """Same stub, same answer, every time — the property machine state was destroying."""
+    import types
+    mod = types.SimpleNamespace(
+        stage_sharepoint_content=lambda *, site_ids=None, dry_run=False: ([{"name": "d.txt"}], {}))
+    assert mi.resolve_sharepoint_stager(module=mod, dry_run=True)() == [{"name": "d.txt"}]
