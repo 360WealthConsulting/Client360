@@ -85,6 +85,7 @@ from app.routes.microsoft365_inbox_review import router as microsoft365_inbox_re
 from app.routes.microsoft365_mail import router as microsoft365_mail_router
 from app.routes.microsoft365_oauth import router as microsoft365_oauth_router
 from app.routes.notes import router as notes_router
+from app.routes.notifications import router as notifications_router
 from app.routes.observability import router as observability_router
 from app.routes.operational_resilience import router as operational_resilience_router
 from app.routes.operations import router as operations_router
@@ -249,6 +250,7 @@ app.include_router(linkage_review_router)
 app.include_router(people_router)
 app.include_router(person_edit_router)
 app.include_router(notes_router)
+app.include_router(notifications_router)
 app.include_router(tasks_router)
 app.include_router(lead_import_router)
 app.include_router(task_dashboard_router)

@@ -154,8 +154,16 @@ EXISTING_PROFILES: dict[str, frozenset[str]] = {
 #   which eleven roles hold: reading a client's correspondence is a narrower authority than reading
 #   their record. tax_staff gets read only — a preparer needs the conversation for context, but
 #   replying to the client is the coordinator's job.
+#
+#   vaultdl01 — Client Service gains vault.download. It already held vault.view +
+#   vault.category.general, so it could list and open the metadata of exactly these documents and
+#   was refused only the bytes; the grant converts existing VIEW access into FETCH access over the
+#   same set. No new category, no vault.upload/manage/access.all, no record-scope capability, and no
+#   other role changes — advisor and operations hold no vault capability at all, and giving them one
+#   is a separate business decision.
 POST_SEED_GRANTS: dict[str, frozenset[str]] = {
-    "client_service": frozenset({"communications.message.read", "communications.message.write"}),
+    "client_service": frozenset({"communications.message.read", "communications.message.write",
+                                 "vault.download"}),
     "senior_tax": frozenset({"communications.message.read", "communications.message.write"}),
     "tax_staff": frozenset({"communications.message.read"}),
 }

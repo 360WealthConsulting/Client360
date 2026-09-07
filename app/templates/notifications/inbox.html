@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui %}
+{% block title %}Notifications | 360Plus{% endblock %}
+{% block crumb %}Notifications{% endblock %}
+{% block content %}
+{% call ui.page_head("Notifications", eyebrow="You", desc="What has arrived for you. Only your own notifications appear here.") %}{% endcall %}
+
+{% if notice %}<p class="subtle">{{ notice }}</p>{% endif %}
+
+<div class="row">
+  <a class="chip{{ '' if unread_only else ' active' }}" href="/notifications">All</a>
+  <a class="chip{{ ' active' if unread_only else '' }}" href="/notifications?unread=1">Unread ({{ unread_count }})</a>
+  {% if unread_count %}
+  <form method="post" action="/notifications/read-all{{ '?unread=1' if unread_only else '' }}">
+    <button class="btn sm secondary" type="submit">Mark all read</button>
+  </form>
+  {% endif %}
+</div>
+
+<article class="card">
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>When</th><th>Type</th><th>Notification</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for n in rows %}
+        <tr>
+          <td class="subtle">{{ n.created_at | humandt if n.created_at else "—" }}</td>
+          <td>{{ ui.badge(n.label) }}</td>
+          <td>
+            {# The link is allow-listed in notification_inbox.safe_link; an unrecognised or external
+               destination renders as plain text rather than as an href. #}
+            {% if n.link %}<a class="rowlink" href="{{ n.link }}">{{ n.title }}</a>
+            {% else %}{{ n.title }}{% endif %}
+            {% if n.body %}<div class="subtle">{{ n.body }}</div>{% endif %}
+          </td>
+          <td>{% if n.unread %}{{ ui.badge("Unread", "warn") }}{% else %}<span class="subtle">Read</span>{% endif %}</td>
+          <td>
+            {% if n.unread %}
+            <form method="post" action="/notifications/{{ n.id }}/read{{ '?unread=1' if unread_only else '' }}">
+              <button class="btn sm secondary" type="submit">Mark read</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>{{ "Nothing unread" if unread_only else "No notifications" }}</h3>
+    <p class="subtle">You're all caught up.</p>
+  </div>
+  {% endif %}
+</article>
+{% endblock %}

@@ -55,7 +55,7 @@ def test_adr_numbers_and_filenames_unique():
 
 def test_every_adr_has_required_headings():
     for p in _adr_files():
-        text = p.read_text()
+        text = p.read_text(encoding="utf-8")
         assert text.startswith(f"# ADR-{_number(p):03d} —"), f"{p.name} title heading malformed"
         for heading in REQUIRED_HEADINGS:
             assert heading in text, f"{p.name} missing heading: {heading!r}"
@@ -63,7 +63,7 @@ def test_every_adr_has_required_headings():
 
 def test_every_adr_has_valid_status():
     for p in _adr_files():
-        text = p.read_text()
+        text = p.read_text(encoding="utf-8")
         m = re.search(r"## Status\s*\n+([A-Za-z]+)", text)
         assert m, f"{p.name} has no parseable Status"
         assert m.group(1) in VALID_STATUSES, f"{p.name} invalid status {m.group(1)!r}"
@@ -71,7 +71,7 @@ def test_every_adr_has_valid_status():
 
 def test_no_adr_is_proposed_or_empty_placeholder():
     for p in _adr_files():
-        text = p.read_text()
+        text = p.read_text(encoding="utf-8")
         status = re.search(r"## Status\s*\n+([A-Za-z]+)", text).group(1)
         # This set is all Accepted; a Proposed here would be unintentional.
         assert status != "Proposed", f"{p.name} unexpectedly Proposed"
@@ -85,13 +85,13 @@ def test_no_adr_is_proposed_or_empty_placeholder():
 # --- index links every ADR ---------------------------------------------------
 
 def test_index_links_every_adr():
-    index = README.read_text()
+    index = README.read_text(encoding="utf-8")
     for p in _adr_files():
         assert f"]({p.name})" in index, f"ADR index does not link {p.name}"
 
 
 def test_index_has_required_sections():
-    index = README.read_text()
+    index = README.read_text(encoding="utf-8")
     for marker in ("## Purpose", "numbering", "Status definitions", "supersede",
                    "## ADR index", "change process"):
         assert marker.lower() in index.lower(), f"ADR index missing: {marker!r}"
@@ -100,12 +100,12 @@ def test_index_has_required_sections():
 # --- cross-references from the top-level docs ---------------------------------
 
 def test_platform_architecture_references_adr_index():
-    text = (REPO / "docs" / "PLATFORM_ARCHITECTURE.md").read_text()
+    text = (REPO / "docs" / "PLATFORM_ARCHITECTURE.md").read_text(encoding="utf-8")
     assert "docs/adr/README.md" in text or "adr/README.md" in text
 
 
 def test_advisor_workspace_doc_references_adr_index():
-    text = (REPO / "docs" / "ADVISOR_WORKSPACE_ARCHITECTURE.md").read_text()
+    text = (REPO / "docs" / "ADVISOR_WORKSPACE_ARCHITECTURE.md").read_text(encoding="utf-8")
     assert "docs/adr/README.md" in text or "adr/README.md" in text
 
 

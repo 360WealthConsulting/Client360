@@ -10,7 +10,8 @@
 
 <details class="portal-card" {% if not threads %}open{% endif %}>
   <summary style="cursor:pointer;font-weight:600;">Start a new conversation</summary>
-  <form method="post" action="/portal/messages/new" style="margin-top:1rem;">
+  {# enctype is required for the optional attachment; without it the browser posts the filename only. #}
+  <form method="post" action="/portal/messages/new" enctype="multipart/form-data" style="margin-top:1rem;">
     <div class="field">
       <label for="subject">Subject</label>
       <input id="subject" name="subject" type="text" maxlength="200" required>
@@ -27,6 +28,15 @@
       <label for="body">Message</label>
       <textarea id="body" name="body" required></textarea>
     </div>
+    {# Offered only when the upload surface is switched on — the file goes through the SAME vault
+       upload as the Documents page, with the same size, type and content checks. #}
+    {% if portal_can(principal, '/portal/upload') %}
+    <div class="field">
+      <label for="attachment">Attach a file (optional)</label>
+      <input type="file" id="attachment" name="attachment">
+      <span class="hint">Your advisory team receives it with this message. It is also saved to your documents.</span>
+    </div>
+    {% endif %}
     <div class="form-actions"><button class="btn" type="submit">Send message</button></div>
   </form>
 </details>

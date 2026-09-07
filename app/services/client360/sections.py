@@ -819,13 +819,18 @@ def messages(principal, ctx):
     one store, never a second store. Scope is enforced per thread inside
     ``communication_hub.person_threads``; the Hub keeps its triage/work-queue role unchanged.
 
-    ``can_start`` mirrors the capability the create route actually enforces (``client.write``), so a
-    read-only principal is never shown an action that would 403."""
+    ``can_start`` mirrors the capability the create route actually enforces
+    (``communications.message.write``), so a principal is never shown an action that would 403. It
+    was ``client.write``, which stopped being the create route's gate when the thread handlers were
+    aligned with the ``^/admin/client-portal/threads`` middleware rule (msgcap01) — the same reason
+    the sidebar's Messages item tracks ``communications.message.read``. Visibility only: the section
+    itself still rides the page-level ``client.read``, and per-thread record scope is applied inside
+    ``communication_hub.person_threads``."""
     from app.portal import communication_hub as hub
     pid, hid = _pid(ctx), _hid(ctx)
     threads = hub.person_threads(principal, person_id=pid, household_id=hid) if pid else []
     return {"threads": threads,
-            "can_start": bool(principal.can("client.write")),
+            "can_start": bool(principal.can("communications.message.write")),
             "person_id": pid,
             "unread_count": sum(1 for t in threads if t["unread"]),
             "topics": list(hub.TOPICS),

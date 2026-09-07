@@ -186,16 +186,26 @@ def define_communication_tables(metadata: MetaData):
         Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
         CheckConstraint(f"status IN ({_DELIVERY_STATUS_SQL})", name="ck_comm_delivery_status"),
     )
+    # Two storage references, AT MOST ONE populated (msgatt01). "Neither" stays legal and is the
+    # tombstone state this table was built for: both FKs are ON DELETE SET NULL, so deleting the
+    # underlying document leaves the attachment row as history rather than erasing it. That is why
+    # this constraint is at-most-one while ``portal_message_attachments`` (CASCADE, no tombstone)
+    # is exactly-one — the tables have deliberately different lifecycles.
     attachments = Table(
         "communication_attachments", metadata,
         Column("id", Integer, primary_key=True),
         Column("message_id", Integer,
                ForeignKey("communication_messages.id", ondelete="CASCADE"), nullable=False),
         Column("document_id", Integer, ForeignKey("documents.id", ondelete="SET NULL")),
+        Column("vault_document_id", Integer,
+               ForeignKey("vault_documents.id", ondelete="SET NULL")),
         Column("attachment_ref", Text),
         Column("description", Text),
         Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
         UniqueConstraint("message_id", "document_id", name="uq_comm_attachment_document"),
+        UniqueConstraint("message_id", "vault_document_id", name="uq_comm_attachment_vault_document"),
+        CheckConstraint("NOT (document_id IS NOT NULL AND vault_document_id IS NOT NULL)",
+                        name="ck_comm_attachment_at_most_one_reference"),
     )
     # Append-only audit ledger (immutability enforced by a BEFORE UPDATE OR DELETE trigger in the
     # migration). conversation_id is RESTRICT (no cascade into an immutable table); message_id and

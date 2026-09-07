@@ -87,9 +87,12 @@ THREAD_WRITES = ("/admin/client-portal/threads/new", "/admin/client-portal/threa
                  "/admin/client-portal/threads/7/create-request")
 
 
-VIEWER = ("communications.message.read", "client.read")
-REPLIER = ("communications.message.read", "communications.message.write",
-           "client.read", "client.write")
+# The message capabilities ALONE. These deliberately carry no client.read/client.write: the handlers
+# used to declare those as well, so a principal needed both families at once. The handlers now declare
+# the same capabilities this middleware rule enforces (tests/test_messages_handler_capability.py pins
+# that), and these tuples state the real requirement rather than the historical superset.
+VIEWER = ("communications.message.read",)
+REPLIER = ("communications.message.read", "communications.message.write")
 
 
 @pytest.mark.parametrize("path", THREAD_READS)

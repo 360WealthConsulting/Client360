@@ -67,6 +67,11 @@
    they may service. It was client.read, which eleven roles hold; those without the dedicated
    capability were shown the link and then refused. #}
 {% set can_messages = 'communications.message.read' in caps %}
+{# Personal notification inbox (/notifications). Gated on the capability that route enforces, which
+   is the same one Messages uses: the ledger's only staff notification type today is the secure
+   message this list links to. No count is shown — a badge would need a per-request query reaching
+   the shared header, which components/header_actions.html records as deliberately absent. #}
+{% set can_notifications = 'communications.message.read' in caps %}
 {# Navigation groups. PRESENTATION ONLY: every href, match prefix and `show` capability below is
    byte-identical to what it was - the twelve original groups are consolidated into eight so the rail
    scans quickly while each heading still names one real domain. Nothing was added, removed or re-gated.
@@ -83,7 +88,8 @@
     {"href": "/home", "label": "Home", "match": "/home", "ico": "⌂", "show": p},
     {"href": "/workspace", "label": "Today", "match": "/workspace", "ico": "◭", "show": can_workspace},
     {"href": "/", "label": "Dashboard", "match": "/", "ico": "◧", "show": firm_client},
-    {"href": "/activities", "label": "Activity", "match": "/activities", "ico": "◈", "show": firm_client}]},
+    {"href": "/activities", "label": "Activity", "match": "/activities", "ico": "◈", "show": firm_client},
+    {"href": "/notifications", "label": "Notifications", "match": "/notifications", "ico": "◉", "show": can_notifications}]},
   {"label": "Clients", "items": [
     {"href": "/households", "label": "Households", "match": "/households", "ico": "⬠", "show": firm_client},
     {"href": "/people", "label": "People", "match": "/people", "ico": "◔", "show": firm_client},

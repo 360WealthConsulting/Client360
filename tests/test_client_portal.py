@@ -108,17 +108,26 @@ def test_secure_messages_hide_internal_notes_publish_timeline_audit_and_receipts
             audit_id = connection.scalar(select(audit_events.c.id).where(audit_events.c.entity_type == "portal_message"))
             connection.execute(audit_events.update().where(audit_events.c.id == audit_id).values(action="tampered"))
 
-def test_message_attachments_enforce_document_owner_scope():
+def test_client_messages_refuse_canonical_document_attachments():
+    """A CLIENT-VISIBLE message may carry only vault-backed attachments (msgatt01).
+
+    This test previously attached a canonical ``documents`` row to a client message and asserted the
+    owner-scope check. That scope check was the only barrier, and canonical documents have no
+    client-visibility flag and no client-facing serving path — the same over-broad model removed from
+    the portal download route in ``de26702``. The attachment path is now vault-backed, so a canonical
+    reference on a client message is refused outright and the owner-scope case it was guarding no
+    longer exists. Vault attachment scope is covered by tests/test_message_attachments.py."""
+    from app.portal.message_attachments import MessageAttachmentError
+
     household_id, person_ids, user_id, suffix = _seed_household()
     account_id = _activate(person_ids[0], household_id, user_id, suffix, permissions={"messages": True, "documents": True, "tasks": True}); _, principal = _principal(account_id)
     thread_id = create_thread(principal, household_id=household_id, person_id=person_ids[0], subject="Documents", body="Initial")
-    other_household, other_people, _, other_suffix = _seed_household("Attachment Other")
     with engine.begin() as connection:
         own_id = connection.execute(documents.insert().values(person_id=person_ids[0], original_name="own.pdf", stored_name=f"own-{suffix}.pdf", storage_path=f"/tmp/own-{suffix}.pdf", size_bytes=1, sha256=("d"*54)+suffix).returning(documents.c.id)).scalar_one()
-        other_id = connection.execute(documents.insert().values(person_id=other_people[0], original_name="other.pdf", stored_name=f"other-{other_suffix}.pdf", storage_path=f"/tmp/other-{other_suffix}.pdf", size_bytes=1, sha256=("e"*54)+other_suffix).returning(documents.c.id)).scalar_one()
-    message_id = send_message(principal, thread_id, "Attached", [own_id])
-    with engine.connect() as connection: assert connection.scalar(select(portal_message_attachments.c.document_id).where(portal_message_attachments.c.message_id == message_id)) == own_id
-    with pytest.raises(PermissionError): send_message(principal, thread_id, "Forbidden attachment", [other_id])
+    with pytest.raises(MessageAttachmentError):
+        send_message(principal, thread_id, "Attached", [own_id])
+    with engine.connect() as connection:
+        assert connection.scalar(select(func.count()).select_from(portal_message_attachments).where(portal_message_attachments.c.document_id == own_id)) == 0
 
 def test_document_request_upload_version_approval_and_scope():
     household_id, person_ids, user_id, suffix = _seed_household()

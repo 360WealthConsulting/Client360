@@ -124,6 +124,18 @@
   {# Visibility semantics unchanged — this only chooses a neutral tone for an existing state. #}
   <article class="thread-msg{% if m.visibility == 'internal' %} internal{% elif m.sender_user_id %} staff{% else %} client{% endif %}">
     <div class="msg-body">{{ m.body }}</div>
+    {# Attachments carry a safe label and a link to the route that authorizes THEM — the vault
+       download re-checks capability, category and record scope, so this link is not access. No
+       storage key, checksum, provider or internal vault metadata reaches the page. #}
+    {% set atts = attachments.get(m.id, []) if attachments else [] %}
+    {% if atts %}
+    <ul class="portal-list msg-attachments">
+      {% for a in atts %}
+      <li class="meta">📎 <a class="rowlink" href="{{ a.download_href }}">{{ a.label }}</a>
+        {% if a.content_type %}<span class="subtle">· {{ a.content_type }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <p class="thread-msg-meta">
       {% if m.visibility == 'internal' %}{{ ui.badge('Internal note (staff only)', 'warn') }}
       {% elif m.sender_user_id %}{{ ui.badge('Staff', 'info') }}
@@ -151,6 +163,21 @@
     <label for="reply-body">Message</label>
     <textarea class="input" id="reply-body" name="body" rows="5" required></textarea>
   </div>
+  {# Only documents ALREADY shared with this client and readable by this staff member. Attaching
+     publishes nothing: making a document client-visible stays the deliberate, audited Vault action
+     it already is, so nothing here can turn internal work product into client-visible material.
+     Absent entirely when there is nothing eligible, rather than an empty control. #}
+  {% if attachable %}
+  <div class="field">
+    <label for="reply-attachment">Attach a shared document (optional)</label>
+    <select class="input" id="reply-attachment" name="attachment_vault_document_id">
+      <option value="">No attachment</option>
+      {% for d in attachable %}<option value="{{ d.id }}">{{ d.label }}</option>{% endfor %}
+    </select>
+    <p class="subtle">Only documents already shared with this client appear here. An internal note
+    cannot carry one.</p>
+  </div>
+  {% endif %}
   <div class="row thread-reply-options">
     <label class="thread-internal-toggle" for="reply-internal">
       <input type="checkbox" id="reply-internal" name="internal_note" value="1">

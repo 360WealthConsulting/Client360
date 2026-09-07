@@ -8,6 +8,7 @@ counts without writing; and apply is guarded off in Phase 1. Temp fixtures only;
 import csv
 import io
 import json
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -104,18 +105,40 @@ def test_inventory_reports_unavailable_source(cfg):
 # --- Vault provider (DB + files, read-only) -----------------------------------
 
 def test_vault_inventory_counts_files_and_orphans(cfg):
+    """Files under the vault root that no ``vault_document`` references are orphans.
+
+    ``inventory_vault`` walks THIS test's temporary root but counts ``vault_documents`` across the
+    whole database, so the physical-file figures are the test's own while the document figures are
+    not. It used to assert ``vault_documents == 0`` ("empty test DB"), which only held when nothing
+    else had created a vault document first — true in isolation, false as soon as another suite ran
+    earlier, and false on CI once this branch added vault-backed attachment fixtures.
+
+    So the document-side figures are asserted as DELTAS this test establishes: it takes a baseline
+    against its own empty root, creates two files that reference nothing, and requires the document
+    count and the missing-file count to be untouched while orphans rise by exactly its own two files.
+    Every assertion is now about state this test owns, and none of them was weakened.
+    """
     from app.services.migration.inventory import inventory_vault
-    # two physical files under the vault root; test DB has 0 vault_documents -> both are orphans
+    baseline = inventory_vault(cfg)                          # own root still empty
+    assert baseline.object_counts["physical_files"] == 0
+
+    # Two physical files under this test's vault root, named so nothing in the database can
+    # reference them, which is what makes them orphans by construction.
+    unique = uuid.uuid4().hex[:12]
     (cfg.vault_root / "ab").mkdir()
-    (cfg.vault_root / "ab" / "abcd.pdf").write_bytes(b"x" * 10)
+    (cfg.vault_root / "ab" / f"{unique}-a.pdf").write_bytes(b"x" * 10)
     (cfg.vault_root / "cd").mkdir()
-    (cfg.vault_root / "cd" / "efgh.pdf").write_bytes(b"y" * 20)
+    (cfg.vault_root / "cd" / f"{unique}-b.pdf").write_bytes(b"y" * 20)
+
     before = _import_job_count()
     inv = inventory_vault(cfg)
+    # Owned outright: both come from this test's own root.
     assert inv.object_counts["physical_files"] == 2
     assert inv.total_bytes == 30
-    assert inv.object_counts["vault_documents"] == 0        # empty test DB
-    assert inv.object_counts["orphan_files"] == 2 and inv.object_counts["missing_files"] == 0
+    # Owned as deltas: this test created no vault_document and deleted no file.
+    assert inv.object_counts["vault_documents"] == baseline.object_counts["vault_documents"]
+    assert inv.object_counts["missing_files"] == baseline.object_counts["missing_files"]
+    assert inv.object_counts["orphan_files"] == baseline.object_counts["orphan_files"] + 2
     assert _import_job_count() == before                    # read-only: no writes
 
 

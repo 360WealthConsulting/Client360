@@ -33,9 +33,10 @@ SECTIONS = (
     SectionDef("meetings", "Meetings", None, sections.meetings),
     SectionDef("compliance", "Compliance", "compliance.review.read", sections.compliance),
     SectionDef("communications", "Communications", "communications.view", sections.communications),
-    # Secure client-portal messaging. capability=None → rides the page-level client.read, the
-    # SAME capability /admin/client-portal/threads enforces; per-thread record scope is applied
-    # inside the builder. The Communication Hub keeps its triage role.
+    # Secure client-portal messaging. capability=None → rides the page-level client.read; the
+    # /admin/client-portal/threads work queue is separately gated on communications.message.read,
+    # so this profile VIEW and the Hub no longer share one capability. Per-thread record scope is
+    # applied inside the builder. The Communication Hub keeps its triage role.
     SectionDef("messages", "Secure Messages", None, sections.messages),
     SectionDef("knowledge", "Knowledge", None, sections.knowledge),
     SectionDef("recommendations", "Recommendations", None, sections.recommendations),
