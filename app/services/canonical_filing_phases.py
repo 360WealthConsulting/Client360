@@ -8,7 +8,9 @@ own audit events. It may not touch a single document row.
 **Phase B** files documents into folders that ALREADY EXIST. It may set ``documents.folder_id`` on
 exactly the manifest-approved rows. It may not create a folder, not even one that is obviously
 missing — a missing folder is an abort, because "create what's missing" is how a Phase B quietly
-becomes a Phase A.
+becomes a Phase A. It also may not re-file a document that already has a folder, so a Phase B
+manifest names only documents that are UNFILED when it is planned — see
+:func:`build_phase_b_manifest`.
 
 The two are bound by :data:`FOLDER_MANIFEST_DIGEST_FIELD`: a Phase B manifest records the digest of
 the Phase A folder manifest it was planned against. Phase B re-derives that digest from the folders
@@ -130,8 +132,34 @@ def build_phase_a_manifest(rows) -> dict:
     }
 
 
-def build_phase_b_manifest(rows, phase_a_manifest) -> dict:
+def build_phase_b_manifest(rows, phase_a_manifest, *, filed_document_ids=()) -> dict:
     """The filing manifest: which document goes into which ALREADY-APPROVED folder.
+
+    ``filed_document_ids`` is the set of documents that ALREADY have a ``documents.folder_id``.
+    Pass the live set; the caller reads it, this stays pure.
+
+    WHY THE PLANNER MUST KNOW WHAT IS ALREADY FILED
+    ------------------------------------------------
+    :mod:`scripts.apply_canonical_filing` files a document with ``UPDATE documents SET folder_id
+    = :folder_id WHERE id = :id AND folder_id IS NULL`` and aborts the whole batch on any row it
+    finds already filed. That is the correct safeguard and it is not relaxed here. But the planner
+    used to emit every AUTO_FILE_SAFE row that passed the naming gate, whichever folder it was
+    already sitting in — so once ANY documents had been filed (by a previous Phase B, or by one of
+    the strict-safe-ownership batches), the manifest contained rows the apply was guaranteed to
+    reject, and a batch that was entirely valid for its remaining 3,801 documents aborted on the
+    7,422 that were already home.
+
+    A manifest is an authorization to act. Listing a document that cannot be acted on overstates
+    what is being approved and makes the apply's own guard the thing that discovers it. Eligibility
+    belongs in the plan, and the apply's guard stays where it is to catch DRIFT — a document filed
+    between planning and applying — which is a different fact and still an abort.
+
+    THE THREE BUCKETS PARTITION AUTO_FILE_SAFE EXACTLY
+    ---------------------------------------------------
+    ``already_filed`` is checked BEFORE ``naming_hold``, so the buckets never overlap and
+    ``auto_file_safe_count == already_filed_count + naming_hold_count + document_count`` always
+    holds. Precedence is that way round because being filed is a fact about live state that no
+    amount of renaming changes: a filed document is not waiting for a better name, it is done.
 
     :raises ManifestError: if handed something that is not a Phase A manifest, or if any assignment
         names a folder that Phase A does not create. The second check is what makes "Phase B cannot
@@ -141,13 +169,22 @@ def build_phase_b_manifest(rows, phase_a_manifest) -> dict:
     require(phase_a_manifest.get("phase") == PHASE_A,
             f"expected a {PHASE_A} manifest, got {phase_a_manifest.get('phase')!r}")
     approved = {node["code"] for node in phase_a_manifest["folders"]}
+    filed = {int(document_id) for document_id in filed_document_ids}
 
     # Naming quality gates PHASE B ONLY. The folder tree is already correct for a badly named
     # document — what must not happen is filing it under a name nobody can read. Phase A above
     # sees the full AUTO_FILE_SAFE population; these rows simply wait for naming.
     every_row = _auto_rows(rows)
-    auto = [r for r in every_row if r.get("phase_b_naming_ok", True)]
-    naming_hold = [r for r in every_row if not r.get("phase_b_naming_ok", True)]
+    already_filed, naming_hold, auto = [], [], []
+    for row in every_row:
+        if int(row["document_id"]) in filed:
+            already_filed.append(row)
+        elif not row.get("phase_b_naming_ok", True):
+            naming_hold.append(row)
+        else:
+            auto.append(row)
+    require(len(already_filed) + len(naming_hold) + len(auto) == len(every_row),
+            "the phase B buckets do not partition the AUTO_FILE_SAFE population")
 
     assignments = []
     for row in auto:
@@ -181,8 +218,21 @@ def build_phase_b_manifest(rows, phase_a_manifest) -> dict:
         "by_service_source": dict(sorted(Counter(
             a["service_source"] for a in assignments).items())),
         "derived_assignments": sum(1 for a in assignments if a["derivation_rule"]),
+        "auto_file_safe_count": len(every_row),
+        "already_filed_count": len(already_filed),
+        "already_filed_document_ids": sorted(int(r["document_id"]) for r in already_filed),
         "naming_hold_count": len(naming_hold),
         "naming_hold_document_ids": sorted(int(r["document_id"]) for r in naming_hold),
+        # Every AUTO_FILE_SAFE document lands in exactly one bucket, and the four numbers are
+        # published together so a reviewer can add them up without re-deriving anything.
+        "reconciliation": {
+            "auto_file_safe": len(every_row),
+            "already_filed": len(already_filed),
+            "naming_hold": len(naming_hold),
+            "planned": len(assignments),
+            "reconciles": len(every_row) == (
+                len(already_filed) + len(naming_hold) + len(assignments)),
+        },
         "by_display_name_quality": dict(sorted(Counter(
             r["display_name_quality"] for r in auto).items())),
         "assignment_digest": digest,

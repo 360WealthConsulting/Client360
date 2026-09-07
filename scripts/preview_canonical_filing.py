@@ -112,11 +112,15 @@ def run(out_dir: Path, *, min_backing_documents=None) -> dict:
         alembic = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
         totals = corpus_totals(connection)
         proposals = build_preview(connection)
+        # Live filing state, read in the SAME read-only snapshot as the proposals, so the plan's
+        # eligibility and its classification can never be from two different moments.
+        filed_document_ids = [r[0] for r in connection.execute(text(
+            "select id from documents where folder_id is not null order by id"))]
         transaction.rollback()
 
     rows, profiles = build_rows(proposals, min_backing_documents=minimum)
     phase_a = build_phase_a_manifest(rows)
-    phase_b = build_phase_b_manifest(rows, phase_a)
+    phase_b = build_phase_b_manifest(rows, phase_a, filed_document_ids=filed_document_ids)
     census = summarize(rows)
 
     owners = {(r["owner_scope_type"], r["owner_scope_id"]): r["owner_source_label"]
@@ -163,8 +167,11 @@ def run(out_dir: Path, *, min_backing_documents=None) -> dict:
                      "folder_manifest_digest", "batch_id", "confirm_phrase")},
         "phase_b": {k: phase_b[k] for k in
                     ("phase", "document_count", "destinations", "owners", "by_service",
-                     "by_service_source", "derived_assignments", "assignment_digest",
-                     "folder_manifest_digest", "batch_id", "confirm_phrase")},
+                     "by_service_source", "derived_assignments", "auto_file_safe_count",
+                     "already_filed_count", "naming_hold_count", "reconciliation",
+                     "assignment_digest", "folder_manifest_digest", "batch_id",
+                     "confirm_phrase")},
+        "documents_already_filed": len(filed_document_ids),
     }
     summary_sha = _write_json(out_dir / SUMMARY_NAME, summary)
     summary["artifacts"][SUMMARY_NAME] = summary_sha
@@ -196,6 +203,12 @@ def main(argv=None) -> int:
           f"{summary['phase_a']['confirm_phrase']}")
     print(f"phase B            : {summary['phase_b']['document_count']} documents  "
           f"{summary['phase_b']['confirm_phrase']}")
+    reconciliation = summary["phase_b"]["reconciliation"]
+    print(f"  eligibility      : {reconciliation['auto_file_safe']} AUTO_FILE_SAFE = "
+          f"{reconciliation['already_filed']} already filed + "
+          f"{reconciliation['naming_hold']} naming hold + "
+          f"{reconciliation['planned']} planned"
+          f"{'' if reconciliation['reconciles'] else '  *** DOES NOT RECONCILE ***'}")
     print(f"label collisions   : {summary['visible_label_collision_count']}")
     for name, digest in sorted(summary["artifacts"].items()):
         print(f"  {digest}  {name}")

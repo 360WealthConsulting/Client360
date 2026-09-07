@@ -507,6 +507,163 @@ def test_an_already_filed_document_aborts(batch, capsys):
     assert "already filed in folder" in capsys.readouterr().out
 
 
+# --- phase B eligibility -------------------------------------------------------------------------
+#
+# The planner used to emit every AUTO_FILE_SAFE row that passed the naming gate, whatever its live
+# filing state, while apply_canonical_filing refuses any row that already has a folder_id. In
+# production that mismatch aborted a Phase B whose 7,422 already-filed documents were listed
+# alongside the 3,801 that were genuinely eligible. These prove the plan now agrees with the apply,
+# and that agreeing did not cost the apply its own guard.
+
+def _pure_rows(specs):
+    """Rows for synthetic documents — no database. ``specs`` is (document_id, year, opaque)."""
+    name = f"Ada {_TAG}"
+    proposals = []
+    for document_id, year, opaque in specs:
+        proposal = _proposal(document_id, 4242, name, year=year)
+        if opaque:
+            # Same string both sides and not useful -> raw_filename_low_quality -> naming hold.
+            proposal["original_name"] = "IMG_4695.jpg"
+            proposal["proposed_display_name"] = "IMG_4695.jpg"
+        proposals.append(proposal)
+    rows, _ = build_rows(proposals)
+    return rows
+
+
+def test_phase_b_excludes_documents_that_are_already_filed():
+    rows = _pure_rows([(101, 2023, False), (102, 2023, False), (103, 2024, False)])
+    manifest_a = build_phase_a_manifest(rows)
+    manifest_b = build_phase_b_manifest(rows, manifest_a, filed_document_ids=[101, 103])
+
+    assert [a["document_id"] for a in manifest_b["assignments"]] == [102]
+    assert manifest_b["document_count"] == 1
+    assert manifest_b["already_filed_count"] == 2
+    assert manifest_b["already_filed_document_ids"] == [101, 103]
+
+
+def test_phase_b_keeps_every_unfiled_document():
+    rows = _pure_rows([(101, 2023, False), (102, 2023, False), (103, 2024, False)])
+    manifest_b = build_phase_b_manifest(rows, build_phase_a_manifest(rows))
+
+    assert [a["document_id"] for a in manifest_b["assignments"]] == [101, 102, 103]
+    assert manifest_b["already_filed_count"] == 0
+    assert manifest_b["already_filed_document_ids"] == []
+
+
+def test_a_naming_hold_is_still_held_back():
+    rows = _pure_rows([(101, 2023, False), (102, 2023, True)])
+    manifest_b = build_phase_b_manifest(rows, build_phase_a_manifest(rows))
+
+    assert [a["document_id"] for a in manifest_b["assignments"]] == [101]
+    assert manifest_b["naming_hold_count"] == 1
+    assert manifest_b["naming_hold_document_ids"] == [102]
+
+
+def test_already_filed_wins_over_naming_hold_so_the_buckets_never_overlap():
+    """A filed document is not waiting for a better name — it is done. One bucket, never two."""
+    rows = _pure_rows([(101, 2023, True)])
+    manifest_b = build_phase_b_manifest(rows, build_phase_a_manifest(rows),
+                                        filed_document_ids=[101])
+
+    assert manifest_b["already_filed_document_ids"] == [101]
+    assert manifest_b["naming_hold_document_ids"] == []
+    assert manifest_b["document_count"] == 0
+
+
+def test_phase_a_population_is_unaffected_by_what_is_already_filed():
+    """Phase A materializes the tree for the WHOLE AUTO_FILE_SAFE population, filed or not."""
+    rows = _pure_rows([(101, 2023, False), (102, 2023, True), (103, 2024, False)])
+    before = build_phase_a_manifest(rows)
+    build_phase_b_manifest(rows, before, filed_document_ids=[101, 102, 103])
+    after = build_phase_a_manifest(rows)
+
+    assert after["folder_count"] == before["folder_count"] == 4
+    assert after["census"] == before["census"]
+    assert after["folder_manifest_digest"] == before["folder_manifest_digest"]
+
+
+def test_phase_b_counts_reconcile_between_every_bucket():
+    # 101 unfiled+named -> planned; 102 unfiled+opaque -> naming hold; 103 and 104 filed.
+    rows = _pure_rows([(101, 2023, False), (102, 2023, True),
+                       (103, 2024, False), (104, 2024, True)])
+    manifest_b = build_phase_b_manifest(rows, build_phase_a_manifest(rows),
+                                        filed_document_ids=[103, 104])
+
+    reconciliation = manifest_b["reconciliation"]
+    assert reconciliation == {"auto_file_safe": 4, "already_filed": 2, "naming_hold": 1,
+                              "planned": 1, "reconciles": True}
+    assert reconciliation["auto_file_safe"] == (
+        reconciliation["already_filed"] + reconciliation["naming_hold"]
+        + reconciliation["planned"])
+    assert manifest_b["auto_file_safe_count"] == 4
+    assert manifest_b["document_count"] == reconciliation["planned"]
+
+
+def test_excluding_a_filed_document_preserves_the_phase_a_binding():
+    """The folder digest binds B to A. Narrowing the document set must not disturb it."""
+    rows = _pure_rows([(101, 2023, False), (102, 2024, False)])
+    manifest_a = build_phase_a_manifest(rows)
+    full = build_phase_b_manifest(rows, manifest_a)
+    narrowed = build_phase_b_manifest(rows, manifest_a, filed_document_ids=[101])
+
+    assert (narrowed["folder_manifest_digest"] == full["folder_manifest_digest"]
+            == manifest_a["folder_manifest_digest"])
+    assert narrowed["assignment_digest"] != full["assignment_digest"]
+    assert narrowed["confirm_phrase"] == confirm_phrase(PHASE_B, 1)
+
+
+def test_replanning_after_a_partial_apply_files_only_what_is_left(batch, tmp_path):
+    """The production failure, end to end: replan against live state and the rest goes home."""
+    _apply_a(batch)
+    stranded = batch["manifest_b"]["assignments"][0]
+    with engine.begin() as connection:
+        folder_id = connection.execute(text(
+            "select id from document_folders where code = :c"),
+            {"c": stranded["folder_code"]}).scalar()
+        connection.execute(text("update documents set folder_id = :f where id = :i"),
+                           {"f": folder_id, "i": stranded["document_id"]})
+
+    # The manifest planned before that filing still names it, and the apply correctly refuses.
+    with pytest.raises(SystemExit, match="no longer match the approved manifest"):
+        _apply_b(batch)
+
+    replanned = build_phase_b_manifest(batch["rows"], batch["manifest_a"],
+                                       filed_document_ids=[stranded["document_id"]])
+    assert replanned["document_count"] == 2
+    assert stranded["document_id"] not in [a["document_id"] for a in replanned["assignments"]]
+
+    path, sha = _write(tmp_path / "phase_b_replanned.json", replanned)
+    report = phase_b.run(path, apply_changes=True, confirm=confirm_phrase(PHASE_B, 2),
+                         actor_user_id=1, manifest_sha256=sha,
+                         report_dir=tmp_path / "out_replanned")
+    assert report["committed"] is True and report["assigned"] == 2
+    with engine.connect() as connection:
+        filed = connection.execute(text(
+            "select count(*) from documents where id = any(:ids) and folder_id is not null"),
+            {"ids": batch["ids"]}).scalar()
+    assert filed == 3
+
+
+def test_apply_still_refuses_a_document_filed_after_planning(batch, tmp_path):
+    """Eligibility in the plan must not cost the apply its drift guard."""
+    _apply_a(batch)
+    planned = build_phase_b_manifest(batch["rows"], batch["manifest_a"], filed_document_ids=[])
+    assert planned["document_count"] == 3
+    path, sha = _write(tmp_path / "phase_b_fresh.json", planned)
+
+    drifted = planned["assignments"][0]
+    with engine.begin() as connection:
+        folder_id = connection.execute(text(
+            "select id from document_folders where code = :c"),
+            {"c": drifted["folder_code"]}).scalar()
+        connection.execute(text("update documents set folder_id = :f where id = :i"),
+                           {"f": folder_id, "i": drifted["document_id"]})
+
+    with pytest.raises(SystemExit, match="no longer match the approved manifest"):
+        phase_b.run(path, apply_changes=True, confirm=confirm_phrase(PHASE_B, 3),
+                    actor_user_id=1, manifest_sha256=sha, report_dir=tmp_path / "out_drift")
+
+
 # --- rollback ------------------------------------------------------------------------------------
 
 def test_phase_b_rollback_restores_folder_id_and_leaves_folders_alone(batch):
