@@ -161,14 +161,77 @@ def test_the_communications_table_allows_neither_because_it_keeps_tombstones(gat
     assert "ck_comm_attachment_at_most_one_reference" in str(both.value)
 
 
-def test_the_pre_existing_tombstone_rows_survived_the_migration():
-    """The 25 rows Batch 3a found. If the migration had used exactly-one they would have been
-    rejected or destroyed; they must still be present and still legal."""
+# The two predicates migration ``msgatt01`` adds, quoted from it. The difference between them is
+# the whole point of this test: only one of the two tolerates a row that already exists.
+_AT_MOST_ONE = "NOT (document_id IS NOT NULL AND vault_document_id IS NOT NULL)"
+_EXACTLY_ONE = "(document_id IS NOT NULL) <> (vault_document_id IS NOT NULL)"
+
+
+def test_a_pre_existing_tombstone_row_survives_the_migrations_constraint():
+    """A tombstone already in the table must survive ``msgatt01``, and exactly-one would have killed it.
+
+    Batch 3a found 25 such rows in the firm's database — a communication attachment whose document
+    was deleted (SET NULL) but whose history D.18 deliberately keeps. The migration therefore had to
+    add a constraint that VALIDATES against rows already in that state.
+
+    This proves that property directly rather than counting the production rows: it seeds a tombstone
+    and then re-runs the migration's own constraint step against it. The at-most-one CHECK is
+    accepted with the row present and the row survives; the exactly-one CHECK the portal table uses
+    is refused by that very row, which is precisely what would have destroyed the 25. Counting
+    pre-existing rows only ever proved which database the suite happened to be pointed at — CI
+    builds an empty one, where there is nothing to count.
+
+    Everything happens inside a transaction that is rolled back, so neither the seeded rows nor the
+    constraint churn outlives the test (PostgreSQL DDL is transactional).
+    """
+    from app.db import communication_conversations, communication_messages
+
     with engine.connect() as c:
-        tombstones = c.scalar(select(func.count()).select_from(communication_attachments).where(
-            communication_attachments.c.document_id.is_(None),
-            communication_attachments.c.vault_document_id.is_(None)))
-    assert tombstones >= 25, f"tombstone rows were lost: {tombstones}"
+        tx = c.begin()
+        try:
+            conversation_id = c.execute(communication_conversations.insert().values(
+                subject="Tombstone survival").returning(
+                communication_conversations.c.id)).scalar_one()
+            message_id = c.execute(communication_messages.insert().values(
+                conversation_id=conversation_id, body="b").returning(
+                communication_messages.c.id)).scalar_one()
+            # The pre-existing state: a row referencing neither store.
+            c.execute(insert(communication_attachments).values(
+                message_id=message_id, document_id=None, vault_document_id=None))
+
+            def _tombstones():
+                return c.scalar(select(func.count()).select_from(
+                    communication_attachments).where(
+                    communication_attachments.c.message_id == message_id,
+                    communication_attachments.c.document_id.is_(None),
+                    communication_attachments.c.vault_document_id.is_(None)))
+
+            assert _tombstones() == 1, "the tombstone this test owns was not seeded"
+
+            # Re-run msgatt01's constraint step with that row already present.
+            c.execute(text("ALTER TABLE communication_attachments "
+                           "DROP CONSTRAINT ck_comm_attachment_at_most_one_reference"))
+            c.execute(text("ALTER TABLE communication_attachments ADD CONSTRAINT "
+                           f"ck_comm_attachment_at_most_one_reference CHECK ({_AT_MOST_ONE})"))
+            assert _tombstones() == 1, "the tombstone did not survive the at-most-one constraint"
+
+            # The portal table's predicate, applied to the same row, is refused — the outcome the
+            # communications table was spared by choosing at-most-one.
+            savepoint = c.begin_nested()
+            with pytest.raises(Exception) as exactly_one:
+                c.execute(text("ALTER TABLE communication_attachments ADD CONSTRAINT "
+                               f"ck_tmp_exactly_one_probe CHECK ({_EXACTLY_ONE})"))
+            savepoint.rollback()
+            assert "ck_tmp_exactly_one_probe" in str(exactly_one.value)
+        finally:
+            tx.rollback()
+
+    # The shipped constraint is exactly as it was: the rollback restored it.
+    with engine.connect() as c:
+        assert c.scalar(text("SELECT count(*) FROM pg_constraint WHERE conname = "
+                             "'ck_comm_attachment_at_most_one_reference'")) == 1
+        assert c.scalar(text("SELECT count(*) FROM pg_constraint WHERE conname = "
+                             "'ck_tmp_exactly_one_probe'")) == 0
 
 
 def test_the_vault_foreign_keys_are_enforced_and_carry_the_right_delete_rules():
