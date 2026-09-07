@@ -52,8 +52,8 @@ from sqlalchemy import text
 BATCH_ID = "STRICT-SAFE-TAX-YEAR-1"
 
 #: The reviewed analysis artifact this batch is authorized against.
-CANDIDATE_CSV_SHA256 = "7d06c13c0b333bb7e5a1f7f3f3872704a342aca6b29f5c074c039f9c8918718c"
-EXPECTED_DOCUMENTS = 706
+CANDIDATE_CSV_SHA256 = "b7a06200acee2d21809ffe7e40977a077ce012be7b958ea52ffd744d0c166a8b"
+EXPECTED_DOCUMENTS = 756
 
 #: The only verdict a candidate row may carry.
 REQUIRED_VERDICT = "VERIFIED_FOLDER_YEAR"

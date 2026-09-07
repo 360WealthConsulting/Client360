@@ -14,7 +14,7 @@ document_folders. Every one of those is fingerprinted before and after and a dif
 
 WHY THIS DOES NOT RUN OCR
 --------------------------
-The evidence is a separate, already-completed non-persistent extraction pass. Re-extracting 706
+The evidence is a separate, already-completed non-persistent extraction pass. Re-extracting 756
 documents takes hours; doing it while holding row locks would be a self-inflicted outage. Instead
 the evidence is bound to CONTENT: the plan records each document's ``sha256``, the plan builder
 re-hashes the file on disk to prove those bytes are the bytes the extractor read, and this script
