@@ -6,6 +6,21 @@ It is the **resolved** tax year of a document: an adjudicated result produced by
 resolution process, persisted so the rest of the system can stop re-deriving it. It is authoritative
 STATE, not another raw signal.
 
+IT IS A PAIR, NOT A COLUMN
+---------------------------
+Migration cf01 enforces ``(tax_year IS NULL) = (tax_year_confidence IS NULL)``, so a resolved year
+is inseparable from its confidence — writing the year alone violates the schema. This batch
+therefore persists BOTH fields for its frozen target rows:
+
+    documents.tax_year            = the resolved year
+    documents.tax_year_confidence = 'strong'
+
+``strong`` is the truthful value: the year comes from the document's own content under a validated
+deterministic rule, which is a stronger claim than either of the alternatives cf01 admits
+(``moderate`` means one raw signal, ``conflict`` means signals disagree). Those two are states of the
+raw-evidence vote; this is the outcome of adjudication, and calling it anything weaker would
+understate what was proved and would keep the canonical gate closed for no reason.
+
 That distinction is the whole safety argument, so it is worth being blunt about the failure it
 prevents. ``document_filing_preview._year_evidence`` grades a year ``strong`` when two independent
 signals agree. The evidence behind this batch is the document's own OCR text. If the resolved year
@@ -51,6 +66,15 @@ from sqlalchemy import text
 #: Batch identity, encoded into both phrases so a phrase cannot be reused elsewhere.
 BATCH_ID = "STRICT-SAFE-TAX-YEAR-1"
 
+#: The confidence persisted alongside every resolved year. cf01 admits 'strong'|'moderate'|
+#: 'conflict'; an adjudicated document-level resolution is 'strong' and nothing else.
+RESOLVED_CONFIDENCE = "strong"
+
+#: Sentinel so an EXPLICIT ``None`` still means "skip this check" while an omitted argument reads
+#: the module pin at call time. That is what lets a test monkeypatch the pin without the production
+#: path ever gaining a way to pass a different count.
+_PINNED = object()
+
 #: The reviewed analysis artifact this batch is authorized against.
 CANDIDATE_CSV_SHA256 = "b7a06200acee2d21809ffe7e40977a077ce012be7b958ea52ffd744d0c166a8b"
 EXPECTED_DOCUMENTS = 756
@@ -68,8 +92,8 @@ REQUIRED_SOURCE_SYSTEM = "SharePoint"
 REQUIRED_SERVICE_CODE = "tax_preparation"
 REQUIRED_PATH_FRAGMENT = "/clients/tax preparation/"
 
-PLAN_FIELDS = ("document_id", "tax_year", "folder_year", "extraction_rule", "form_family",
-               "evidence_source", "sha256", "owner_scope", "service_code")
+PLAN_FIELDS = ("document_id", "tax_year", "tax_year_confidence", "folder_year", "extraction_rule",
+               "form_family", "evidence_source", "sha256", "owner_scope", "service_code")
 
 
 class TaxYearPlanError(RuntimeError):
@@ -84,9 +108,18 @@ def sha256_of(path) -> str:
     return digest.hexdigest()
 
 
-def read_frozen_candidates(candidate_csv, *, expect_sha=CANDIDATE_CSV_SHA256,
-                           expect_documents=EXPECTED_DOCUMENTS) -> list[dict]:
-    """The reviewed rows, with the artifact pinned by content hash before a byte is trusted."""
+def read_frozen_candidates(candidate_csv, *, expect_sha=_PINNED,
+                           expect_documents=_PINNED) -> list[dict]:
+    """The reviewed rows, with the artifact pinned by content hash before a byte is trusted.
+
+    Both pins are read from the module constants AT CALL TIME rather than bound as defaults, so a
+    test can monkeypatch the constants for a small fixture. The production path never passes either
+    argument and there is no CLI flag for them, so it is always the approved count and hash.
+    """
+    if expect_sha is _PINNED:
+        expect_sha = CANDIDATE_CSV_SHA256
+    if expect_documents is _PINNED:
+        expect_documents = EXPECTED_DOCUMENTS
     path = Path(candidate_csv)
     actual = sha256_of(path)
     if expect_sha and actual != expect_sha:
@@ -126,6 +159,7 @@ def read_frozen_candidates(candidate_csv, *, expect_sha=CANDIDATE_CSV_SHA256,
 _LIVE_SQL = """
     SELECT d.id                         AS document_id,
            d.tax_year                   AS current_tax_year,
+           d.tax_year_confidence        AS current_tax_year_confidence,
            d.sha256                     AS sha256,
            d.status                     AS status,
            d.archived                   AS archived,
@@ -156,8 +190,8 @@ def _owner_scope(row) -> str | None:
     return None
 
 
-def build_plan(conn, candidate_csv, *, expect_sha=CANDIDATE_CSV_SHA256,
-               expect_documents=EXPECTED_DOCUMENTS, verify_file_hash=True) -> dict:
+def build_plan(conn, candidate_csv, *, expect_sha=_PINNED,
+               expect_documents=_PINNED, verify_file_hash=True) -> dict:
     """The plan as it stands RIGHT NOW. Read-only; issues SELECTs and reads files, writes nothing.
 
     ``verify_file_hash`` re-hashes each document's bytes on disk and requires them to equal
@@ -184,6 +218,12 @@ def build_plan(conn, candidate_csv, *, expect_sha=CANDIDATE_CSV_SHA256,
             continue
         if record["current_tax_year"] is not None:
             drop(f"tax_year already set to {record['current_tax_year']}")
+            continue
+        # cf01 pairs the two fields, so a stray confidence with a NULL year is a corrupt row this
+        # batch must not touch — it would have to clear a value nobody approved clearing.
+        if record["current_tax_year_confidence"] is not None:
+            drop(f"tax_year_confidence already set to {record['current_tax_year_confidence']!r} "
+                 "with a NULL tax_year")
             continue
         if record["status"] == "deleted" or record["deleted_at"] is not None:
             drop("document is deleted")
@@ -220,6 +260,7 @@ def build_plan(conn, candidate_csv, *, expect_sha=CANDIDATE_CSV_SHA256,
         rows.append({
             "document_id": document_id,
             "tax_year": int(candidate["extracted_year"]),
+            "tax_year_confidence": RESOLVED_CONFIDENCE,
             "folder_year": folder_year,
             "extraction_rule": candidate["extraction_rule"],
             "form_family": candidate["form_family"],
@@ -271,6 +312,7 @@ __all__ = [
     "CANDIDATE_CSV_SHA256",
     "EXPECTED_DOCUMENTS",
     "PLAN_FIELDS",
+    "RESOLVED_CONFIDENCE",
     "TaxYearPlanError",
     "build_plan",
     "confirm_phrase",

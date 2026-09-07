@@ -4,13 +4,14 @@ Runs against ``client360_test`` (enforced by tests/conftest.py) and cleans up af
 
 The properties that matter here are the ones a pure test cannot reach: that a resolved
 ``documents.tax_year`` satisfies the canonical year gate WITHOUT being counted as a second signal
-alongside the evidence that produced it, that the apply changes exactly one column, and that every
-drift the plan is supposed to catch actually aborts the batch.
+alongside the evidence that produced it, that the apply changes exactly the two resolved-state
+columns cf01 pairs together, and that every drift the plan is supposed to catch aborts the batch.
 """
 from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import uuid
 from pathlib import Path
 
@@ -54,9 +55,28 @@ def _person() -> int:
             .returning(people.c.id)).scalar_one()
 
 
+@pytest.fixture
+def pin_to_fixture(monkeypatch):
+    """Let a 3-row fixture satisfy the module pin WITHOUT giving production a bypass.
+
+    The pins are module constants read at call time, so patching them here is enough. ``run()`` and
+    the CLI still take no count argument, so nothing outside a test can apply a different number.
+    """
+    def _pin(csv_path, count):
+        monkeypatch.setattr(plan_mod, "EXPECTED_DOCUMENTS", count)
+        monkeypatch.setattr(plan_mod, "CANDIDATE_CSV_SHA256", plan_mod.sha256_of(csv_path))
+    return _pin
+
+
 def _document(person_id, *, year, tmp_path, tags=None, archived=False, status="active",
-              tax_year=None) -> tuple[int, Path]:
-    """A live document with a real file on disk, so the plan's content-hash binding is exercised."""
+              tax_year=None, tax_year_confidence=None) -> tuple[int, Path]:
+    """A live document with a real file on disk, so the plan's content-hash binding is exercised.
+
+    ``tax_year`` and ``tax_year_confidence`` are inserted together because migration cf01 enforces
+    ``(tax_year IS NULL) = (tax_year_confidence IS NULL)``.
+    """
+    if tax_year is not None and tax_year_confidence is None:
+        tax_year_confidence = "moderate"
     name = f"{_TAG}-{uuid.uuid4().hex[:8]}.pdf"
     path = tmp_path / name
     path.write_bytes(b"%PDF-1.4 tax year " + str(year).encode() + b"\n")
@@ -67,7 +87,8 @@ def _document(person_id, *, year, tmp_path, tags=None, archived=False, status="a
             storage_path=str(path), storage_provider="Client360 Local", storage_uri=str(path),
             size_bytes=path.stat().st_size, sha256=digest, status=status, archived=archived,
             review_status="not_required", current_version=1, person_id=person_id,
-            folder_id=None, tags=tags or {}, tax_year=tax_year)
+            folder_id=None, tags=tags or {}, tax_year=tax_year,
+            tax_year_confidence=tax_year_confidence)
             .returning(documents.c.id)).scalar_one()
         connection.execute(metadata.tables["document_sources"].insert().values(
             document_id=document_id, source_system="SharePoint",
@@ -99,11 +120,12 @@ def _row(document_id, year, **overrides) -> dict:
 
 
 @pytest.fixture
-def batch(tmp_path):
+def batch(tmp_path, pin_to_fixture):
     person_id = _person()
     made = [_document(person_id, year=2023, tmp_path=tmp_path) for _ in range(3)]
     ids = [m[0] for m in made]
     csv_path = _candidate_csv(tmp_path, [_row(i, 2023) for i in ids])
+    pin_to_fixture(csv_path, len(ids))
     return {"person": person_id, "ids": ids, "paths": {m[0]: m[1] for m in made},
             "csv": csv_path, "sha": plan_mod.sha256_of(csv_path), "tmp": tmp_path}
 
@@ -121,6 +143,14 @@ def _tax_years(ids):
     with engine.connect() as connection:
         return {r[0]: r[1] for r in connection.execute(text(
             "select id, tax_year from documents where id = any(:ids)"), {"ids": ids})}
+
+
+def _tax_pairs(ids):
+    """The resolved pair per document — both halves, because cf01 binds them together."""
+    with engine.connect() as connection:
+        return {r[0]: (r[1], r[2]) for r in connection.execute(text(
+            "select id, tax_year, tax_year_confidence from documents where id = any(:ids)"),
+            {"ids": ids})}
 
 
 def _documents_fingerprint(ids):
@@ -214,7 +244,7 @@ def test_the_plan_is_built_from_evidence_not_from_document_ids(batch):
 
 def test_a_candidate_whose_tax_year_is_already_set_is_dropped(batch):
     with engine.begin() as connection:
-        connection.execute(text("update documents set tax_year = 2019 where id = :i"),
+        connection.execute(text("update documents set tax_year = 2019, tax_year_confidence = 'moderate' where id = :i"),
                            {"i": batch["ids"][0]})
     with engine.connect() as connection:
         plan = plan_mod.build_plan(connection, str(batch["csv"]), expect_sha=batch["sha"],
@@ -303,15 +333,75 @@ def test_dry_run_writes_nothing(batch):
     assert _documents_fingerprint(batch["ids"]) == before_docs
 
 
-def test_apply_sets_only_tax_year(batch):
+def test_apply_sets_the_resolved_pair_and_nothing_else(batch):
     before_docs = _documents_fingerprint(batch["ids"])
     before_folders = _folders_fingerprint()
     report = _apply(batch)
     assert report["committed"] is True
     assert report["assigned"] == 3 and report["audit_rows"] == 3
-    assert set(_tax_years(batch["ids"]).values()) == {2023}
+    # Both halves, together — a year-only write would violate cf01's pairing constraint.
+    assert set(_tax_pairs(batch["ids"]).values()) == {(2023, "strong")}
     assert _documents_fingerprint(batch["ids"]) == before_docs   # tags/owner/folder/name untouched
     assert _folders_fingerprint() == before_folders
+
+
+def test_the_paired_constraint_is_satisfied_after_apply(batch):
+    """cf01: (tax_year IS NULL) = (tax_year_confidence IS NULL). Prove no row breaks it."""
+    _apply(batch)
+    with engine.connect() as connection:
+        broken = connection.execute(text(
+            "select count(*) from documents "
+            " where (tax_year is null) <> (tax_year_confidence is null)")).scalar()
+    assert broken == 0
+
+
+def test_dry_run_writes_neither_field(batch):
+    report = apply_mod.run(str(batch["csv"]), candidate_sha256=batch["sha"])
+    assert report["committed"] is False
+    assert set(_tax_pairs(batch["ids"]).values()) == {(None, None)}
+
+
+def test_apply_leaves_non_target_confidence_unchanged(batch, tmp_path):
+    other_person = _person()
+    untouched, _ = _document(other_person, year=2022, tmp_path=tmp_path)
+    already, _ = _document(other_person, year=2021, tmp_path=tmp_path,
+                           tax_year=2021, tax_year_confidence="moderate")
+    _apply(batch)
+    pairs = _tax_pairs([untouched, already])
+    assert pairs[untouched] == (None, None)
+    assert pairs[already] == (2021, "moderate")
+
+
+def test_the_audit_row_records_the_resolved_confidence(batch):
+    _apply(batch)
+    with engine.connect() as connection:
+        rows = connection.execute(text(
+            "select metadata from audit_events where action = :a and entity_id = any(:ids)"),
+            {"a": apply_mod.AUDIT_ACTION,
+             "ids": [str(i) for i in batch["ids"]]}).scalars().all()
+    assert len(rows) == 3
+    for metadata_value in rows:
+        payload = metadata_value if isinstance(metadata_value, dict) else json.loads(metadata_value)
+        assert payload["tax_year_confidence"] == "strong"
+        assert payload["tax_year"] == 2023
+        assert payload["previous_tax_year"] is None
+        assert payload["previous_tax_year_confidence"] is None
+
+
+def test_the_fixture_pin_does_not_weaken_the_production_pin():
+    """The seam is a monkeypatchable constant, not a bypass anyone can reach from outside."""
+    import importlib
+    import inspect
+
+    fresh = importlib.reload(plan_mod)
+    assert fresh.EXPECTED_DOCUMENTS == 756
+    assert fresh.CANDIDATE_CSV_SHA256 == (
+        "b7a06200acee2d21809ffe7e40977a077ce012be7b958ea52ffd744d0c166a8b")
+    # run() exposes no way to state a different count, and neither does the CLI.
+    assert "expect_documents" not in inspect.signature(apply_mod.run).parameters
+    source = Path(apply_mod.__file__).read_text(encoding="utf-8")
+    assert "--expected-documents" not in source
+    assert "expect_documents" not in source
 
 
 def test_apply_does_not_touch_tags(batch):
@@ -359,7 +449,7 @@ def test_apply_refuses_a_manifest_hash_mismatch(batch):
 def test_apply_refuses_when_a_candidate_drifted(batch):
     """Any dropped row aborts the whole batch rather than quietly applying the remainder."""
     with engine.begin() as connection:
-        connection.execute(text("update documents set tax_year = 2019 where id = :i"),
+        connection.execute(text("update documents set tax_year = 2019, tax_year_confidence = 'moderate' where id = :i"),
                            {"i": batch["ids"][0]})
     with pytest.raises(SystemExit, match="no longer satisfy the strict-safe rule"):
         _apply(batch)
@@ -382,20 +472,26 @@ def test_a_second_apply_is_refused_because_the_rows_are_no_longer_eligible(batch
     assert set(_tax_years(batch["ids"]).values()) == {2023}
 
 
-def test_the_rollback_snapshot_restores_the_previous_values(batch):
+def test_the_rollback_snapshot_restores_both_previous_values(batch):
+    """The snapshot carries the exact prior PAIR, and restoring it uses those values."""
     report = _apply(batch)
     snapshot = Path(report["snapshot"])
     rows = list(csv.DictReader(snapshot.open(encoding="utf-8")))
     assert len(rows) == 3
     assert all(r["previous_tax_year"] == "" for r in rows)
+    assert all(r["previous_tax_year_confidence"] == "" for r in rows)
     assert all(int(r["new_tax_year"]) == 2023 for r in rows)
+    assert all(r["new_tax_year_confidence"] == "strong" for r in rows)
+    assert set(_tax_pairs(batch["ids"]).values()) == {(2023, "strong")}
 
     with engine.begin() as connection:
         for row in rows:
-            connection.execute(text("update documents set tax_year = :y where id = :i"),
-                               {"y": int(row["previous_tax_year"]) if row["previous_tax_year"]
-                                else None, "i": int(row["document_id"])})
-    assert all(v is None for v in _tax_years(batch["ids"]).values())
+            connection.execute(text(
+                "update documents set tax_year = :y, tax_year_confidence = :c where id = :i"),
+                {"y": int(row["previous_tax_year"]) if row["previous_tax_year"] else None,
+                 "c": row["previous_tax_year_confidence"] or None,
+                 "i": int(row["document_id"])})
+    assert set(_tax_pairs(batch["ids"]).values()) == {(None, None)}
 
 
 def test_the_whole_cohort_would_pass_the_year_gate_once_resolved(batch):
