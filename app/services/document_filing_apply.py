@@ -40,8 +40,8 @@ The replacement lives in :mod:`app.services.canonical_filing`,
 """
 from __future__ import annotations
 
-# Re-exported for the merged batch-2 code. Neutral arithmetic, no policy, no writes.
-from app.services.legacy_filing_codes import (  # noqa: F401
+# Re-exported for the merged batch-2 and batch-3 code. Neutral arithmetic, no policy, no writes.
+from app.services.legacy_filing_codes import (
     FOLDER_FIELDS,
     FOLDER_KINDS,
     PLAN_FIELDS,
@@ -54,6 +54,40 @@ from app.services.legacy_filing_codes import (  # noqa: F401
     slugify,
     year_code,
 )
+
+#: This module's public surface. The first block is the re-exported arithmetic batches 2 and 3
+#: import from here; declaring it explicitly is what distinguishes a deliberate re-export from a
+#: stray import, both to a reader and to the dead-code gate.
+__all__ = [
+    "FOLDER_FIELDS",
+    "FOLDER_KINDS",
+    "PLAN_FIELDS",
+    "PlanError",
+    "category_code",
+    "client_code",
+    "folder_manifest_digest",
+    "plan_digest",
+    "sha256_of",
+    "slugify",
+    "year_code",
+    # retirement surface
+    "RETIRED",
+    "RETIRED_ENTRY_POINTS",
+    "REPLACEMENT_MODULES",
+    "LegacyBatchRetired",
+    "LEGACY_BATCH_NAME",
+    "LEGACY_FROZEN_CSV_SHA256",
+    "LEGACY_EXPECTED_PREVIEW_ROWS",
+    "LEGACY_EXPECTED_AUTO_ROWS",
+    "LEGACY_EXPECTED_FOLDER_NODES",
+    "LEGACY_EXPECTED_DEPTH_CENSUS",
+    "LEGACY_CONFIRM_PHRASE",
+    "LEGACY_ROLLBACK_PHRASE",
+    "build_plan",
+    "read_frozen_rows",
+    "confirm_phrase",
+    "rollback_phrase",
+]
 
 #: True. Asserted by tests so the retirement cannot be quietly undone.
 RETIRED = True
