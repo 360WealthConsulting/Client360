@@ -316,6 +316,7 @@ def test_an_unowned_candidate_is_dropped(batch):
 
 
 def test_a_candidate_outside_the_provenance_boundary_is_dropped(batch):
+    """Still dropped — the three provenance checks are now one, so the reason reads differently."""
     with engine.begin() as connection:
         connection.execute(text(
             "update document_sources set source_path = '/somewhere/else/2023/x.pdf', "
@@ -324,7 +325,10 @@ def test_a_candidate_outside_the_provenance_boundary_is_dropped(batch):
     with engine.connect() as connection:
         plan = plan_mod.build_plan(connection, str(batch["csv"]), expect_sha=batch["sha"],
                                    expect_documents=3)
-    assert any("provenance boundary" in d["reason"] for d in plan["dropped"])
+    dropped = {d["document_id"]: d["reason"] for d in plan["dropped"]}
+    assert batch["ids"][0] in dropped
+    assert "no single SharePoint source record" in dropped[batch["ids"][0]]
+    assert batch["ids"][0] not in {r["document_id"] for r in plan["documents"]}
 
 
 def test_the_frozen_candidate_refuses_a_conflicting_row(batch, tmp_path):
