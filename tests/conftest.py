@@ -113,6 +113,50 @@ def _verify_schema(name: str) -> None:
         )
 
 
+# --- synthetic document ids must not collide with pinned production ids ------
+# Several safety rules pin PRODUCTION document ids and apply them corpus-wide:
+# ``document_owner_proposal.PERMANENT_REJECT_DOCUMENT_IDS`` {4704, 4716, 4717,
+# 17932, 22336, 22338}, ``document_strict_safe_ownership_batch2.
+# PERMANENT_EXCLUDED_DOCUMENT_IDS`` {40100, 44247} and
+# ``drake_document_owner.FROZEN_DRAKE_DOCUMENT_IDS`` {121627, 121628}. The Batch 3
+# candidate query, for one, excludes them with ``NOT (d.id = ANY(:rejects))``.
+#
+# CI builds an EMPTY database, so ``documents_id_seq`` starts at 1 and climbs
+# through that range as the suite runs. A synthetic fixture document that lands on
+# a pinned id is then silently dropped from the plan it was created for, and the
+# owning test fails on a fixture assertion that has nothing to do with its
+# subject. That failure is order-dependent — it moves to a different test whenever
+# an unrelated change alters how many documents earlier tests create — which makes
+# it look like a defect in whichever PR last shifted the count.
+#
+# Starting the sequence above every pinned id removes the collision outright,
+# without relaxing a single production rule. The floor sits far above the current
+# maximum (121628) so that adding a pin does not quietly reintroduce this.
+DOCUMENT_ID_FLOOR = 200_000
+
+_DOCUMENT_ID_FLOOR_SQL = """
+    select setval('documents_id_seq',
+                  greatest((select last_value from documents_id_seq), :floor))
+"""
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _document_ids_clear_of_pinned_production_ids() -> int:
+    """Advance ``documents_id_seq`` past every pinned production id. Never lowers it.
+
+    ``greatest`` is the whole safety property: a test database restored from a
+    production copy already sits far beyond the floor, and this must leave such a
+    sequence exactly where it is. It can only ever move forward.
+    """
+    from sqlalchemy import text
+
+    from app.db import engine
+
+    with engine.begin() as connection:
+        return connection.execute(
+            text(_DOCUMENT_ID_FLOOR_SQL), {"floor": DOCUMENT_ID_FLOOR}
+        ).scalar()
+
 
 # --- portal feature gates ----------------------------------------------------
 # The firm-wide portal gates (``app/portal/gate.py``) default OFF and genuinely close their surfaces.
