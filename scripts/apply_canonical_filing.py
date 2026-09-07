@@ -166,8 +166,24 @@ _KINDS = ("client", "service", "year")
 
 
 def _verify_folder_tree(connection, manifest, codes):
-    """Every named folder exists, and the approved subtree hashes to the Phase A digest."""
-    from app.services.canonical_filing_phases import folder_manifest_digest_of
+    """Every named folder exists, and the approved subtree hashes to the target-subtree digest.
+
+    The read is scoped to the targets and their ancestors (see :func:`_live_subtree`), so what it
+    can prove is a statement about THAT subtree — which is what ``target_subtree_digest`` records.
+    It used to be compared against ``folder_manifest_digest``, the digest of the whole Phase A
+    manifest; the two agree only when a batch targets every folder Phase A created. The Phase A
+    digest has not gone anywhere — it is hashed into the target-subtree digest, so the binding is
+    checked here rather than merely carried.
+    """
+    from app.services.canonical_filing_phases import (
+        TARGET_SUBTREE_DIGEST_FIELD,
+        target_subtree_digest_of,
+    )
+
+    expected = manifest.get(TARGET_SUBTREE_DIGEST_FIELD)
+    if not expected:
+        raise Abort(f"ABORT: the manifest carries no {TARGET_SUBTREE_DIGEST_FIELD} — it was "
+                    "planned before the target-subtree binding existed. Re-plan it.")
 
     live, missing = _live_subtree(connection, codes)
     if missing:
@@ -189,10 +205,10 @@ def _verify_folder_tree(connection, manifest, codes):
             "service_code": record["service_code"],
             "tax_year": None if record["tax_year"] is None else int(record["tax_year"]),
         })
-    digest = folder_manifest_digest_of(nodes)
-    if digest != manifest["folder_manifest_digest"]:
-        raise Abort(f"ABORT: live folder tree digest {digest} != the phase A manifest digest "
-                    f"{manifest['folder_manifest_digest']} this batch was planned against")
+    digest = target_subtree_digest_of(nodes, manifest["folder_manifest_digest"])
+    if digest != expected:
+        raise Abort(f"ABORT: live folder tree digest {digest} != the target subtree digest "
+                    f"{expected} this batch was planned against")
     return live
 
 
@@ -215,6 +231,7 @@ def run(manifest_path, *, apply_changes=False, confirm=None, actor_user_id=None,
         "manifest_sha256": manifest_digest,
         "assignment_digest": manifest["assignment_digest"],
         "folder_manifest_digest": manifest["folder_manifest_digest"],
+        "target_subtree_digest": manifest.get("target_subtree_digest"),
         "manifest_documents": len(assignments), "assigned": 0, "audit_rows": 0,
         "committed": False, "dry_run": not apply_changes, "log": [],
         "snapshot": None, "snapshot_sha256": None, "report_dir": None,
