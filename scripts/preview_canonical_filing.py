@@ -169,7 +169,8 @@ def run(out_dir: Path, *, min_backing_documents=None) -> dict:
                     ("phase", "document_count", "destinations", "owners", "by_service",
                      "by_service_source", "derived_assignments", "auto_file_safe_count",
                      "already_filed_count", "naming_hold_count", "reconciliation",
-                     "assignment_digest", "folder_manifest_digest", "batch_id",
+                     "assignment_digest", "folder_manifest_digest", "target_subtree_digest",
+                     "target_subtree_folder_count", "target_subtree_census", "batch_id",
                      "confirm_phrase")},
         "documents_already_filed": len(filed_document_ids),
     }
@@ -209,6 +210,11 @@ def main(argv=None) -> int:
           f"{reconciliation['naming_hold']} naming hold + "
           f"{reconciliation['planned']} planned"
           f"{'' if reconciliation['reconciles'] else '  *** DOES NOT RECONCILE ***'}")
+    print(f"  target subtree   : {summary['phase_b']['target_subtree_folder_count']} folders "
+          f"of {summary['phase_a']['folder_count']}  "
+          f"{summary['phase_b']['target_subtree_census']}")
+    print(f"  subtree digest   : {summary['phase_b']['target_subtree_digest']}")
+    print(f"  phase A digest   : {summary['phase_b']['folder_manifest_digest']}")
     print(f"label collisions   : {summary['visible_label_collision_count']}")
     for name, digest in sorted(summary["artifacts"].items()):
         print(f"  {digest}  {name}")

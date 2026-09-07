@@ -58,6 +58,9 @@ ASSIGNMENT_FIELDS = ("document_id", "folder_code", "owner_scope_type", "owner_sc
 
 FOLDER_MANIFEST_DIGEST_FIELD = "folder_manifest_digest"
 
+#: Digest of the folders THIS Phase B actually touches — its destinations plus every ancestor.
+TARGET_SUBTREE_DIGEST_FIELD = "target_subtree_digest"
+
 
 def _auto_rows(rows) -> list[dict]:
     auto = [r for r in rows if r["status"] == AUTO_FILE_SAFE]
@@ -207,6 +210,10 @@ def build_phase_b_manifest(rows, phase_a_manifest, *, filed_document_ids=()) -> 
 
     payload = [{k: a[k] for k in ASSIGNMENT_FIELDS} for a in assignments]
     digest = digest_of(payload)
+    # The folders this batch will actually touch. Phase A's full digest stays below as the binding
+    # to the approved tree; this is what the apply can re-prove against a scoped read of live state.
+    subtree = target_subtree_nodes(phase_a_manifest,
+                                   sorted({a["folder_code"] for a in assignments}))
     from collections import Counter
     return {
         "phase": PHASE_B,
@@ -237,6 +244,10 @@ def build_phase_b_manifest(rows, phase_a_manifest, *, filed_document_ids=()) -> 
             r["display_name_quality"] for r in auto).items())),
         "assignment_digest": digest,
         FOLDER_MANIFEST_DIGEST_FIELD: phase_a_manifest[FOLDER_MANIFEST_DIGEST_FIELD],
+        TARGET_SUBTREE_DIGEST_FIELD: target_subtree_digest_of(
+            subtree, phase_a_manifest[FOLDER_MANIFEST_DIGEST_FIELD]),
+        "target_subtree_folder_count": len(subtree),
+        "target_subtree_census": _folder_census(subtree),
         "batch_id": batch_id(PHASE_B, digest),
         "confirm_phrase": confirm_phrase(PHASE_B, len(assignments)),
         "rollback_phrase": rollback_phrase(PHASE_B, len(assignments)),
@@ -244,17 +255,71 @@ def build_phase_b_manifest(rows, phase_a_manifest, *, filed_document_ids=()) -> 
 
 
 def folder_manifest_digest_of(folders) -> str:
-    """Digest of a folder set in manifest form — used by Phase B to re-prove the live tree."""
+    """Digest of a folder set in manifest form — the whole approved Phase A tree."""
     ordered = sorted(folders, key=lambda n: (FOLDER_KINDS.index(n["kind"]), n["code"]))
     return digest_of([{k: n[k] for k in FOLDER_FIELDS} for n in ordered])
+
+
+def target_subtree_nodes(phase_a_manifest, folder_codes) -> list[dict]:
+    """The Phase A folders a Phase B touches: its destinations plus every ancestor, nothing else.
+
+    Derived from the APPROVED Phase A manifest, never from live state, so the plan states what the
+    apply must find rather than discovering it there.
+    """
+    by_code = {node["code"]: node for node in phase_a_manifest["folders"]}
+    wanted: dict[str, dict] = {}
+    for code in folder_codes:
+        cursor = code
+        # Bounded by the canonical depth: client > service > year and nothing deeper.
+        for _ in range(len(FOLDER_KINDS) + 1):
+            if cursor is None or cursor in wanted:
+                break
+            node = by_code.get(cursor)
+            require(node is not None,
+                    f"folder {cursor!r} is required by a phase B target but the phase A manifest "
+                    "does not create it")
+            wanted[cursor] = node
+            cursor = node["parent_code"]
+        else:  # pragma: no cover - a chain deeper than the canonical depth cannot be built
+            raise ManifestError(f"folder {code!r} has a parent chain deeper than the canonical tree")
+    return sorted(wanted.values(), key=lambda n: (FOLDER_KINDS.index(n["kind"]), n["code"]))
+
+
+def target_subtree_digest_of(folders, folder_manifest_digest) -> str:
+    """Digest of a Phase B's target subtree, BOUND to the Phase A manifest it came from.
+
+    WHY THIS IS NOT ``folder_manifest_digest_of``
+    ----------------------------------------------
+    Phase B's folder gate reads only its target folders and their ancestors, deliberately: hashing
+    every canonical folder would make one batch's gate depend on folders belonging to another, so an
+    unrelated Phase A elsewhere in the tree would abort a filing run that is perfectly valid. But
+    that scoped hash used to be compared against ``folder_manifest_digest``, which covers the ENTIRE
+    Phase A manifest. Those two are equal only when the batch happens to target every folder Phase A
+    created — which the pre-eligibility Phase B did, and which is why the mismatch stayed invisible
+    until the plan was correctly narrowed to 3,787 documents across 852 destinations. A proper
+    subset can never hash to the whole.
+
+    The Phase A digest is not dropped; it is hashed INTO this one. So the binding is enforced rather
+    than merely recorded: a manifest whose ``folder_manifest_digest`` was edited produces a
+    different target-subtree digest, and the apply — which recomputes this from the live subtree and
+    the manifest's own recorded Phase A digest — aborts.
+    """
+    ordered = sorted(folders, key=lambda n: (FOLDER_KINDS.index(n["kind"]), n["code"]))
+    return digest_of({
+        FOLDER_MANIFEST_DIGEST_FIELD: folder_manifest_digest,
+        "folders": [{k: n[k] for k in FOLDER_FIELDS} for n in ordered],
+    })
 
 
 __all__ = [
     "ASSIGNMENT_FIELDS",
     "FOLDER_FIELDS",
     "FOLDER_MANIFEST_DIGEST_FIELD",
+    "TARGET_SUBTREE_DIGEST_FIELD",
     "ManifestError",
     "build_phase_a_manifest",
     "build_phase_b_manifest",
     "folder_manifest_digest_of",
+    "target_subtree_digest_of",
+    "target_subtree_nodes",
 ]

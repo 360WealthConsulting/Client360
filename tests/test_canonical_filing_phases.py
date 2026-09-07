@@ -17,7 +17,12 @@ from sqlalchemy import delete, select, text
 
 from app.db import documents, engine, metadata, people
 from app.services.canonical_filing import build_rows
-from app.services.canonical_filing_phases import build_phase_a_manifest, build_phase_b_manifest
+from app.services.canonical_filing_phases import (
+    build_phase_a_manifest,
+    build_phase_b_manifest,
+    target_subtree_digest_of,
+    target_subtree_nodes,
+)
 from app.services.filing_manifest import PHASE_A, PHASE_B, confirm_phrase, rollback_phrase
 from scripts import apply_canonical_filing as phase_b
 from scripts import apply_canonical_folders as phase_a
@@ -662,6 +667,197 @@ def test_apply_still_refuses_a_document_filed_after_planning(batch, tmp_path):
     with pytest.raises(SystemExit, match="no longer match the approved manifest"):
         phase_b.run(path, apply_changes=True, confirm=confirm_phrase(PHASE_B, 3),
                     actor_user_id=1, manifest_sha256=sha, report_dir=tmp_path / "out_drift")
+
+
+# --- phase B target-subtree binding ----------------------------------------------------------------
+#
+# _live_subtree deliberately reads only the batch's destinations and their ancestors, but the digest
+# it produced was compared against folder_manifest_digest — the digest of the WHOLE phase A manifest.
+# Those agree only when a batch targets every folder phase A created, which the pre-eligibility phase
+# B did. Once the plan was correctly narrowed to 3,787 documents over 852 of 1,941 destinations, a
+# proper subset could not hash to the whole and every run aborted. The subtree now has its own
+# digest, with the phase A digest hashed into it so the binding is checked rather than just carried.
+
+def _file(document_id, folder_code) -> int:
+    with engine.begin() as connection:
+        folder_id = connection.execute(text(
+            "select id from document_folders where code = :c"), {"c": folder_code}).scalar()
+        connection.execute(text("update documents set folder_id = :f where id = :i"),
+                           {"f": folder_id, "i": document_id})
+    return folder_id
+
+
+def _rename(folder_code, name="Renamed"):
+    with engine.begin() as connection:
+        connection.execute(text("update document_folders set name = :n where code = :c"),
+                           {"n": name, "c": folder_code})
+
+
+def _narrow_to_one_year(batch):
+    """Replan phase B after the 2023 documents are filed — one destination out of two.
+
+    This is the production shape: the target subtree becomes client + service + the 2024 year,
+    a PROPER subset of the four folders phase A created.
+    """
+    by_year = {}
+    for assignment in batch["manifest_b"]["assignments"]:
+        by_year.setdefault(assignment["tax_year"], []).append(assignment)
+    filed = [a["document_id"] for a in by_year[2023]]
+    for assignment in by_year[2023]:
+        _file(assignment["document_id"], assignment["folder_code"])
+    narrowed = build_phase_b_manifest(batch["rows"], batch["manifest_a"],
+                                      filed_document_ids=filed)
+    return narrowed, by_year[2023][0]["folder_code"], by_year[2024][0]["folder_code"]
+
+
+def _run_b(manifest, tmp_path, name, **kw):
+    path, sha = _write(tmp_path / f"{name}.json", manifest)
+    kw.setdefault("apply_changes", True)
+    kw.setdefault("confirm", confirm_phrase(PHASE_B, manifest["document_count"]))
+    kw.setdefault("actor_user_id", 1)
+    kw.setdefault("manifest_sha256", sha)
+    kw.setdefault("report_dir", tmp_path / f"out_{name}")
+    return phase_b.run(path, **kw)
+
+
+def test_a_proper_subset_has_its_own_digest_not_the_phase_a_one():
+    rows = _pure_rows([(101, 2023, False), (102, 2024, False)])
+    manifest_a = build_phase_a_manifest(rows)
+    narrowed = build_phase_b_manifest(rows, manifest_a, filed_document_ids=[101])
+
+    assert narrowed["document_count"] == 1
+    assert narrowed["target_subtree_folder_count"] == 3          # client + service + one year
+    assert manifest_a["folder_count"] == 4                        # phase A still built both years
+    assert narrowed["target_subtree_digest"] != narrowed["folder_manifest_digest"]
+    # And the full phase A binding is still carried, unchanged.
+    assert narrowed["folder_manifest_digest"] == manifest_a["folder_manifest_digest"]
+
+
+def test_the_target_subtree_is_exactly_the_destinations_and_their_ancestors():
+    rows = _pure_rows([(101, 2023, False), (102, 2024, False)])
+    manifest_a = build_phase_a_manifest(rows)
+    narrowed = build_phase_b_manifest(rows, manifest_a, filed_document_ids=[101])
+
+    targets = sorted({a["folder_code"] for a in narrowed["assignments"]})
+    subtree = target_subtree_nodes(manifest_a, targets)
+    assert [n["kind"] for n in subtree] == ["client", "service", "year"]
+    assert set(targets) <= {n["code"] for n in subtree}
+    assert narrowed["target_subtree_census"] == {"client": 1, "service": 1, "year": 1}
+
+
+def test_the_subtree_digest_is_bound_to_the_phase_a_digest():
+    """Editing the recorded phase A digest changes the subtree digest — the binding is checked."""
+    rows = _pure_rows([(101, 2023, False), (102, 2024, False)])
+    manifest_a = build_phase_a_manifest(rows)
+    manifest_b = build_phase_b_manifest(rows, manifest_a)
+    subtree = target_subtree_nodes(
+        manifest_a, sorted({a["folder_code"] for a in manifest_b["assignments"]}))
+
+    honest = target_subtree_digest_of(subtree, manifest_a["folder_manifest_digest"])
+    forged = target_subtree_digest_of(subtree, "0" * 64)
+    assert honest == manifest_b["target_subtree_digest"]
+    assert forged != honest
+
+
+def test_eligibility_reconciliation_survives_the_new_digest():
+    rows = _pure_rows([(101, 2023, False), (102, 2023, True), (103, 2024, False)])
+    manifest_b = build_phase_b_manifest(rows, build_phase_a_manifest(rows),
+                                        filed_document_ids=[103])
+    reconciliation = manifest_b["reconciliation"]
+    assert reconciliation == {"auto_file_safe": 3, "already_filed": 1, "naming_hold": 1,
+                              "planned": 1, "reconciles": True}
+
+
+def test_a_narrowed_phase_b_verifies_against_live_state(batch, tmp_path):
+    """The production failure: a proper subset of phase A's destinations must now pass."""
+    _apply_a(batch)
+    narrowed, _filed_year_code, target_code = _narrow_to_one_year(batch)
+    assert narrowed["document_count"] == 1
+    assert narrowed["target_subtree_folder_count"] == 3
+    assert narrowed["target_subtree_digest"] != narrowed["folder_manifest_digest"]
+
+    report = _run_b(narrowed, tmp_path, "narrowed")
+    assert report["committed"] is True and report["assigned"] == 1
+    assert report["target_subtree_digest"] == narrowed["target_subtree_digest"]
+    with engine.connect() as connection:
+        code = connection.execute(text(
+            "select f.code from documents d join document_folders f on f.id = d.folder_id "
+            " where d.id = :i"), {"i": narrowed["assignments"][0]["document_id"]}).scalar()
+    assert code == target_code
+
+
+def test_a_phase_a_folder_outside_the_subtree_does_not_abort_the_run(batch, tmp_path):
+    """The whole reason the read is scoped: unrelated folders must not invalidate this batch."""
+    _apply_a(batch)
+    narrowed, outside_code, _target = _narrow_to_one_year(batch)
+    _rename(outside_code, "Some Other Batch Renamed This")
+
+    report = _run_b(narrowed, tmp_path, "outside")
+    assert report["committed"] is True and report["assigned"] == 1
+
+
+def test_mutating_a_target_folder_aborts(batch, tmp_path):
+    _apply_a(batch)
+    narrowed, _outside, target_code = _narrow_to_one_year(batch)
+    _rename(target_code)
+    with pytest.raises(SystemExit, match="target subtree digest"):
+        _run_b(narrowed, tmp_path, "target_mutated")
+
+
+def test_mutating_a_required_ancestor_aborts(batch, tmp_path):
+    _apply_a(batch)
+    narrowed, _outside, _target = _narrow_to_one_year(batch)
+    client_code = next(n["code"] for n in batch["manifest_a"]["folders"] if n["kind"] == "client")
+    _rename(client_code)
+    with pytest.raises(SystemExit, match="target subtree digest"):
+        _run_b(narrowed, tmp_path, "ancestor_mutated")
+
+
+def test_a_missing_target_aborts(batch, tmp_path):
+    _apply_a(batch)
+    narrowed, _outside, target_code = _narrow_to_one_year(batch)
+    with engine.begin() as connection:
+        connection.execute(text("delete from document_folders where code = :c"),
+                           {"c": target_code})
+    with pytest.raises(SystemExit, match="approved folders do not exist"):
+        _run_b(narrowed, tmp_path, "target_missing")
+
+
+def test_a_changed_parent_chain_aborts(batch, tmp_path):
+    """Re-parent the year folder straight onto the client, skipping its service."""
+    _apply_a(batch)
+    narrowed, _outside, target_code = _narrow_to_one_year(batch)
+    client_code = next(n["code"] for n in batch["manifest_a"]["folders"] if n["kind"] == "client")
+    with engine.begin() as connection:
+        client_id = connection.execute(text(
+            "select id from document_folders where code = :c"), {"c": client_code}).scalar()
+        connection.execute(text(
+            "update document_folders set parent_folder_id = :p where code = :c"),
+            {"p": client_id, "c": target_code})
+    with pytest.raises(SystemExit, match="target subtree digest"):
+        _run_b(narrowed, tmp_path, "reparented")
+
+
+def test_a_manifest_without_the_subtree_digest_is_refused(batch, tmp_path):
+    """A plan frozen before this binding existed must be re-planned, not silently accepted."""
+    _apply_a(batch)
+    stale = json.loads(Path(batch["path_b"]).read_text(encoding="utf-8"))
+    stale.pop("target_subtree_digest")
+    path, sha = _write(tmp_path / "stale_b.json", stale)
+    with pytest.raises(SystemExit, match="carries no target_subtree_digest"):
+        phase_b.run(path, apply_changes=True, confirm=confirm_phrase(PHASE_B, 3),
+                    actor_user_id=1, manifest_sha256=sha, report_dir=tmp_path / "out_stale")
+
+
+def test_document_drift_is_still_refused_under_the_new_binding(batch, tmp_path):
+    """The folder gate changed; the document gate did not."""
+    _apply_a(batch)
+    narrowed, _outside, _target = _narrow_to_one_year(batch)
+    with engine.begin() as connection:
+        connection.execute(text("update documents set archived = true where id = :i"),
+                           {"i": narrowed["assignments"][0]["document_id"]})
+    with pytest.raises(SystemExit, match="no longer match the approved manifest"):
+        _run_b(narrowed, tmp_path, "doc_drift")
 
 
 # --- rollback ------------------------------------------------------------------------------------
