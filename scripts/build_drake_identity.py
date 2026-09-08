@@ -84,7 +84,13 @@ with engine.begin() as conn:
                 END
             ),
 
-            100
+            -- Confidence describes EVIDENCE, and grouping Drake source contacts by their identifier
+            -- hash is not evidence about any person: this statement resolves nobody. It used to
+            -- write a literal 100 for all 1,802 identities, which made the column unreadable --
+            -- a linked identity confirmed on a name scored the same as one confirmed on an
+            -- identifier. NULL is the honest value until something actually resolves the identity,
+            -- at which point the review path writes the evaluator's evidence-derived confidence.
+            NULL
 
         FROM source_contacts
 

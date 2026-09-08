@@ -1,8 +1,16 @@
+"""Import Drake returns as source contacts and link the unambiguous ones to canonical people.
+
+Matching semantics are NOT defined here. They live in ``app.services.drake_linkage_evidence`` and are
+shared with the identity review queue, because this script and that queue had drifted into two
+different opinions about the same evidence -- including two incompatible ``normalize_name`` helpers.
+
+What this script may do is deliberately narrow: it creates a link only where the shared evaluator
+returns AUTO_LINK, and only where no link for that source contact exists yet. It never rewrites,
+re-scores or removes a link that is already recorded.
+"""
 from __future__ import annotations
 
 import hashlib
-import re
-from collections import defaultdict
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, select
@@ -11,6 +19,20 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 load_dotenv(r"C:\Client360\app\.env")
 
 from app.db import engine  # noqa: E402
+from app.services.drake_linkage_evidence import (  # noqa: E402
+    SPOUSE,
+    TAXPAYER,
+    Roster,
+    RosterPerson,
+    build_identity_evidence,
+    clean,
+    evaluate,
+    join_name,
+    normalize_email,
+    normalize_name,
+    normalize_phone,
+)
+from app.services.link_trust import SOURCE_MACHINE  # noqa: E402
 
 metadata = MetaData()
 metadata.reflect(bind=engine)
@@ -23,29 +45,9 @@ drake_returns = metadata.tables["drake_client_returns"]
 SOURCE_SYSTEM = "Drake"
 
 
-def clean(value):
-    if value is None:
-        return None
-    value = str(value).replace("\x00", "").strip()
-    return value or None
-
-
-def normalize_email(value):
-    value = clean(value)
-    return value.lower() if value else None
-
-
-def normalize_phone(value):
-    digits = "".join(ch for ch in clean(value) or "" if ch.isdigit())
-    if len(digits) > 10:
-        digits = digits[-10:]
-    return digits or None
-
-
-def normalize_name(first, last):
-    value = " ".join(part for part in (clean(first), clean(last)) if part)
-    value = re.sub(r"[^a-z0-9 ]+", "", value.lower())
-    return re.sub(r"\s+", " ", value).strip() or None
+def normalize_name_parts(first, last):
+    """This script's historical two-argument form, expressed through the shared normaliser."""
+    return normalize_name(join_name(first, last))
 
 
 def column_name(table, *names):
@@ -118,7 +120,10 @@ def build_drake_contacts(connection):
 
         taxpayer_first = clean(row["taxpayer_first_name"])
         taxpayer_last = clean(row["taxpayer_last_name"])
+        spouse_present = bool(clean(row.get("spouse_first_name")))
 
+        # ``Email`` carries no attribution in Drake; ``TP_*`` phones are explicitly the taxpayer's.
+        # The evaluator decides what that entitles each role to claim -- see build_identity_evidence.
         taxpayer_email = value_from_raw(raw, "Email")
         taxpayer_phone = value_from_raw(
             raw,
@@ -137,10 +142,14 @@ def build_drake_contacts(connection):
             "full_name": " ".join(
                 part for part in (taxpayer_first, taxpayer_last) if part
             ),
-            "normalized_name": normalize_name(
+            "normalized_name": normalize_name_parts(
                 taxpayer_first,
                 taxpayer_last,
             ),
+            "has_spouse": spouse_present,
+            "taxpayer_name": join_name(taxpayer_first, taxpayer_last),
+            "spouse_name": join_name(clean(row.get("spouse_first_name")),
+                                     clean(row.get("spouse_last_name")) or taxpayer_last),
             "email": taxpayer_email,
             "normalized_email": normalize_email(taxpayer_email),
             "phone": taxpayer_phone,
@@ -174,10 +183,13 @@ def build_drake_contacts(connection):
                 "full_name": " ".join(
                     part for part in (spouse_first, spouse_last) if part
                 ),
-                "normalized_name": normalize_name(
+                "normalized_name": normalize_name_parts(
                     spouse_first,
                     spouse_last,
                 ),
+                "has_spouse": True,
+                "taxpayer_name": join_name(taxpayer_first, taxpayer_last),
+                "spouse_name": join_name(spouse_first, spouse_last),
                 "email": None,
                 "normalized_email": None,
                 "phone": None,
@@ -201,164 +213,62 @@ def build_drake_contacts(connection):
 
 
 def load_people(connection):
+    """The canonical roster the evaluator matches against.
+
+    ONLY canonical ``people`` columns are read. Drake's own source contacts are deliberately NOT
+    folded in: a Drake identity whose email matches the Drake source_contact that a previous run
+    created is the link vouching for itself, which is not evidence of anything.
+    """
     rows = connection.execute(select(people)).mappings().all()
 
-    output = []
+    dob_column = column_name(people, "date_of_birth", "dob", "birth_date")
 
-    dob_column = column_name(
-        people,
-        "date_of_birth",
-        "dob",
-        "birth_date",
+    roster = []
+    for row in rows:
+        email = clean(row.get("normalized_email") or row.get("primary_email") or row.get("email"))
+        phone = clean(row.get("normalized_phone") or row.get("primary_phone") or row.get("phone"))
+        roster.append(RosterPerson(
+            person_id=row["id"],
+            full_name=clean(row.get("full_name"))
+            or join_name(row.get("first_name"), row.get("last_name")),
+            dob=row.get(dob_column) if dob_column else None,
+            emails=frozenset({email} - {None}),
+            phones=frozenset({phone} - {None}),
+            city=clean(row.get("city")),
+            state=clean(row.get("state")),
+        ))
+
+    return roster
+
+
+def match_contact(contact, roster):
+    """Resolve one Drake contact through the shared evaluator.
+
+    Returns a match dict only for AUTO_LINK. REVIEW_CANDIDATE, AMBIGUOUS and NO_MATCH all return
+    None here: a candidate is not a decision, and this script's only power is to write links.
+    """
+    evidence = build_identity_evidence(
+        contact.get("identifier_hash") or contact["source_record_id"],
+        SPOUSE if contact["role"] == "spouse" else TAXPAYER,
+        taxpayer_name=contact.get("taxpayer_name"),
+        spouse_name=contact.get("spouse_name"),
+        emails=[contact["email"]] if contact["email"] else (),
+        phones=[contact["phone"]] if contact["phone"] else (),
+        dob=contact.get("dob"),
+        city=contact.get("city"),
+        state=contact.get("state"),
+        has_spouse=bool(contact.get("has_spouse")),
     )
 
-    for row in rows:
-        first = clean(row.get("first_name"))
-        last = clean(row.get("last_name"))
-
-        email = clean(
-            row.get("normalized_email")
-            or row.get("primary_email")
-            or row.get("email")
-        )
-
-        phone = clean(
-            row.get("normalized_phone")
-            or row.get("primary_phone")
-            or row.get("phone")
-        )
-
-        output.append({
-            "id": row["id"],
-            "normalized_name": normalize_name(first, last),
-            "normalized_email": normalize_email(email),
-            "normalized_phone": normalize_phone(phone),
-            "dob": row.get(dob_column) if dob_column else None,
-            "city": clean(row.get("city")),
-            "state": clean(row.get("state")),
-            "zip": clean(
-                row.get("zip")
-                or row.get("postal_code")
-            ),
-        })
-
-    return output
-
-
-def build_indexes(person_rows):
-    indexes = {
-        "email": defaultdict(list),
-        "phone": defaultdict(list),
-        "name_dob": defaultdict(list),
-        "name_city_state": defaultdict(list),
-    }
-
-    for person in person_rows:
-        if person["normalized_email"]:
-            indexes["email"][person["normalized_email"]].append(person)
-
-        if person["normalized_phone"]:
-            indexes["phone"][person["normalized_phone"]].append(person)
-
-        if person["normalized_name"] and person["dob"]:
-            indexes["name_dob"][
-                (person["normalized_name"], str(person["dob"]))
-            ].append(person)
-
-        if (
-            person["normalized_name"]
-            and person["city"]
-            and person["state"]
-        ):
-            indexes["name_city_state"][
-                (
-                    person["normalized_name"],
-                    person["city"].lower(),
-                    person["state"].lower(),
-                )
-            ].append(person)
-
-    return indexes
-
-
-def unique_candidate(candidates):
-    ids = {candidate["id"] for candidate in candidates}
-    if len(ids) != 1:
-        return None
-    return candidates[0]
-
-
-def match_contact(contact, indexes):
-    evidence = []
-
-    if contact["normalized_email"]:
-        candidate = unique_candidate(
-            indexes["email"].get(contact["normalized_email"], [])
-        )
-        if candidate:
-            evidence.append((candidate["id"], 100, "exact_email"))
-
-    if contact["normalized_phone"]:
-        candidate = unique_candidate(
-            indexes["phone"].get(contact["normalized_phone"], [])
-        )
-        if candidate:
-            evidence.append((candidate["id"], 98, "exact_phone"))
-
-    if contact["normalized_name"] and contact["dob"]:
-        candidate = unique_candidate(
-            indexes["name_dob"].get(
-                (
-                    contact["normalized_name"],
-                    str(contact["dob"]),
-                ),
-                [],
-            )
-        )
-        if candidate:
-            evidence.append((candidate["id"], 99, "exact_name_dob"))
-
-    if (
-        contact["normalized_name"]
-        and contact["city"]
-        and contact["state"]
-    ):
-        candidate = unique_candidate(
-            indexes["name_city_state"].get(
-                (
-                    contact["normalized_name"],
-                    contact["city"].lower(),
-                    contact["state"].lower(),
-                ),
-                [],
-            )
-        )
-        if candidate:
-            evidence.append(
-                (candidate["id"], 95, "exact_name_city_state")
-            )
-
-    if not evidence:
+    decision = evaluate(evidence, roster)
+    if not decision.is_auto_link:
         return None
 
-    by_person = defaultdict(list)
-    for person_id, score, method in evidence:
-        by_person[person_id].append((score, method))
-
-    if len(by_person) != 1:
-        return None
-
-    person_id = next(iter(by_person))
-    best_score, best_method = max(by_person[person_id])
-
-    if best_score < 95:
-        return None
-
-    methods = sorted({method for _, method in by_person[person_id]})
     return {
-        "person_id": person_id,
-        "score": best_score,
-        "method": "+".join(methods),
+        "person_id": decision.person_id,
+        "score": decision.confidence,
+        "method": decision.method,
+        "trust_level": decision.trust_level,
     }
 
 
@@ -412,6 +322,8 @@ def link_contact(connection, source_contact_id, match):
     if existing:
         return False
 
+    # Trust is recorded explicitly rather than left to be inferred from ``confirmed``, which is
+    # hardcoded True here and means seven different things across the table. See app.services.link_trust.
     values = {
         "person_id": match["person_id"],
         "source_contact_id": source_contact_id,
@@ -419,6 +331,12 @@ def link_contact(connection, source_contact_id, match):
         "match_score": match["score"],
         "confirmed": True,
     }
+    if "trust_level" in person_source_links.c and match.get("trust_level"):
+        values["trust_level"] = match["trust_level"]
+    if "confirmation_source" in person_source_links.c:
+        values["confirmation_source"] = SOURCE_MACHINE
+    if "evidence_method" in person_source_links.c:
+        values["evidence_method"] = match["method"]
 
     connection.execute(
         pg_insert(person_source_links)
@@ -433,8 +351,7 @@ def link_contact(connection, source_contact_id, match):
 
 with engine.begin() as connection:
     contacts = build_drake_contacts(connection)
-    person_rows = load_people(connection)
-    indexes = build_indexes(person_rows)
+    roster = Roster(load_people(connection))
 
     created = 0
     updated = 0
@@ -452,7 +369,7 @@ with engine.begin() as connection:
         else:
             updated += 1
 
-        match = match_contact(contact, indexes)
+        match = match_contact(contact, roster)
 
         if not match:
             unmatched += 1
