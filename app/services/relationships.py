@@ -16,6 +16,9 @@ from app.db import (
 )
 from app.services.timeline import add_timeline_event
 
+#: Entity kinds a caller may create. Kept here so the service and organization_service cannot drift.
+ENTITY_TYPES = frozenset({"business", "trust", "professional", "insurance_carrier"})
+
 
 def ensure_person_entity(connection, person_id: int) -> int:
     person = connection.execute(
@@ -62,7 +65,13 @@ def ensure_household_entity(connection, household_id: int) -> int:
 
 
 def create_named_entity(connection, entity_type: str, name: str, details=None) -> int:
-    if entity_type not in {"business", "trust", "estate", "professional", "insurance_carrier"}:
+    # "estate" is deliberately absent. Production stores every estate as entity_type='trust' (all
+    # five of them), and canonical_population._DRAKE_ENTITY_BY_RETURN already maps the 1041 return
+    # to "trust". Allowing "estate" here offered a second, divergent bucket for the same legal kind
+    # that no caller ever used and no row ever carried. The estate/trust distinction belongs in
+    # organization_profiles.entity_form, which now accepts estate / revocable_trust /
+    # irrevocable_trust (migration dbi01).
+    if entity_type not in ENTITY_TYPES:
         raise ValueError("Unsupported relationship entity type.")
     if not name.strip():
         raise ValueError("Entity name is required.")

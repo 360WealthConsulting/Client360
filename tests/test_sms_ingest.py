@@ -587,16 +587,21 @@ def test_the_sms_channel_was_already_permitted_by_the_schema():
     assert definition is not None and "'sms'" in definition
 
 
-def test_the_migration_head_is_unchanged():
-    """This batch adds no migration. If it ever does, this is where the claim breaks."""
+def test_the_sms_batch_added_no_migration():
+    """This batch adds no migration. If it ever does, this is where the claim breaks.
+
+    It used to assert that nothing at all sat downstream of ``emailnorm01``, which held only while
+    that was the head. A later, unrelated batch legitimately extended the chain (``dbi01``, the
+    non-natural Drake identity foundation), so the assertion now pins what this batch actually
+    claims: no SMS migration exists.
+    """
     import pathlib
 
-    heads = []
-    for path in pathlib.Path("migrations/versions").glob("*.py"):
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        if 'down_revision = "emailnorm01"' in text:
-            heads.append(path.name)
-    assert heads == [], f"something now sits downstream of emailnorm01: {heads}"
+    sms_migrations = sorted(
+        path.name for path in pathlib.Path("migrations/versions").glob("*.py")
+        if "sms" in path.name.lower()
+    )
+    assert sms_migrations == [], f"the SMS batch now carries a migration: {sms_migrations}"
 
 
 def test_sms_writes_no_timeline_event():

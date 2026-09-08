@@ -528,3 +528,11 @@ work_queue_preferences = metadata.tables["work_queue_preferences"]
 # Client Portal consent ledger (Phase D.43). Governed, versioned portal consent records (terms / privacy
 # / electronic delivery / secure messaging / document delivery) — consent-management metadata + refs only.
 portal_consents = metadata.tables["portal_consents"]
+
+# Non-natural Drake identity foundation (D7 Phase A, migration dbi01). Tolerant bind: the migration
+# may not be applied yet in every environment, so these are None until the tables exist and callers
+# must check. drake_business_identity holds Drake tax identities for businesses, estates and trusts,
+# pointing at relationship_entities rather than people; entity_source_links is the entity-side
+# parallel of person_source_links. Both are created empty and are dormant until a later phase.
+drake_business_identity = metadata.tables.get("drake_business_identity")
+entity_source_links = metadata.tables.get("entity_source_links")
