@@ -1,7 +1,21 @@
+"""Build the Drake identity review queue: candidates for a HUMAN to confirm, never a decision.
+
+Scoring semantics are NOT defined here. They come from ``app.services.drake_linkage_evidence``, the
+same evaluator the automatic linker uses, because the two had drifted:
+
+* this script pooled ``taxpayer_name`` and ``spouse_name`` into a single set, so a person carrying
+  the SPOUSE's name scored an exact-name hit against a TAXPAYER identity;
+* it paid 40/35 points for a return-level ``Email`` / ``TP_*`` phone regardless of whose they were,
+  which is how a joint return's household mailbox came to identify a taxpayer;
+* it ordered ties by the LOWEST ``person_id``, turning a coin-flip into an identity decision.
+
+Candidates are now produced per ROLE, and their score is the evaluator's evidence-derived confidence.
+An AUTO_LINK-grade candidate is still only written here as a candidate: this script proposes, the
+review queue disposes.
+"""
 from __future__ import annotations
 
 import json
-import re
 
 from dotenv import load_dotenv
 from sqlalchemy import MetaData, select, text
@@ -9,6 +23,18 @@ from sqlalchemy import MetaData, select, text
 load_dotenv(r"C:\Client360\app\.env")
 
 from app.db import engine  # noqa: E402
+from app.services.drake_linkage_evidence import (  # noqa: E402
+    AMBIGUOUS,
+    NO_MATCH,
+    ROLES,
+    TAXPAYER,
+    Roster,
+    RosterPerson,
+    build_identity_evidence,
+    clean,
+    evaluate,
+    join_name,
+)
 
 metadata = MetaData()
 metadata.reflect(bind=engine)
@@ -18,74 +44,60 @@ drake_identity = metadata.tables["drake_identity"]
 source_contacts = metadata.tables["source_contacts"]
 
 
-def clean(value):
-    if value is None:
-        return None
-    value = str(value).replace("\x00", "").strip()
-    return value or None
+def build_roster(person_rows):
+    """Canonical people only. Drake's own contacts are excluded so a link cannot vouch for itself."""
+    roster = []
+    for row in person_rows:
+        roster.append(RosterPerson(
+            person_id=row["id"],
+            full_name=clean(row.get("full_name"))
+            or join_name(row.get("first_name"), row.get("last_name")),
+            dob=row.get("birth_date"),
+            emails=frozenset({(clean(row.get("normalized_email")) or "").lower()} - {""}),
+            phones=frozenset({clean(row.get("normalized_phone"))} - {None}),
+            city=clean(row.get("city")),
+            state=clean(row.get("state")),
+        ))
+    return Roster(roster)
 
 
-def normalize_name(value):
-    value = clean(value)
-    if not value:
-        return None
-    value = re.sub(r"[^a-z0-9 ]+", "", value.lower())
-    return re.sub(r"\s+", " ", value).strip() or None
+def candidates_for_identity(identity, evidence, roster):
+    """Every role-correct candidate for one identity, with the evaluator's own confidence.
 
+    An identity holds a taxpayer name, a spouse name, or (for 64 of the 1,802) both, when the same
+    person filed in different roles across years. Each role is evaluated SEPARATELY and the role is
+    recorded on the candidate, so the queue can never again present a spouse as a taxpayer match.
+    """
+    proposals = {}
+    for role in ROLES:
+        role_name = identity.get("taxpayer_name") if role == TAXPAYER else identity.get("spouse_name")
+        if not clean(role_name):
+            continue
 
-def normalize_email(value):
-    value = clean(value)
-    return value.lower() if value else None
+        decision = evaluate(build_identity_evidence(
+            identity["identifier_hash"], role,
+            taxpayer_name=identity.get("taxpayer_name"),
+            spouse_name=identity.get("spouse_name"),
+            emails=evidence["emails"], phones=evidence["phones"],
+            city=next(iter(evidence["cities"]), None),
+            state=next(iter(evidence["states"]), None),
+            has_spouse=bool(clean(identity.get("spouse_name"))),
+        ), roster)
 
+        if decision.outcome in (NO_MATCH, AMBIGUOUS):
+            # Ambiguity is an ANSWER, not a gap to be filled with a best guess.
+            continue
 
-def normalize_phone(value):
-    digits = "".join(
-        character
-        for character in (clean(value) or "")
-        if character.isdigit()
-    )
-    if len(digits) > 10:
-        digits = digits[-10:]
-    return digits or None
+        for person_id in decision.candidates:
+            reasons = {"role": role, "outcome": decision.outcome,
+                       "trust_level": decision.trust_level, "method": decision.method,
+                       "evidence": list(decision.reasons)}
+            existing = proposals.get(person_id)
+            if existing is None or decision.confidence > existing["score"]:
+                proposals[person_id] = {"person_id": person_id, "score": decision.confidence,
+                                        "reasons": reasons}
+    return list(proposals.values())
 
-
-def score_candidate(identity, evidence, person):
-    score = 0
-    reasons = []
-
-    identity_names = {
-        normalize_name(identity.get("taxpayer_name")),
-        normalize_name(identity.get("spouse_name")),
-    }
-    identity_names.discard(None)
-
-    person_name = normalize_name(person.get("full_name"))
-
-    if person_name and person_name in identity_names:
-        score += 55
-        reasons.append("exact_name")
-
-    if evidence["emails"] and person.get("normalized_email"):
-        if normalize_email(person["normalized_email"]) in evidence["emails"]:
-            score += 40
-            reasons.append("exact_email")
-
-    if evidence["phones"] and person.get("normalized_phone"):
-        if normalize_phone(person["normalized_phone"]) in evidence["phones"]:
-            score += 35
-            reasons.append("exact_phone")
-
-    if evidence["cities"] and clean(person.get("city")):
-        if person["city"].lower() in evidence["cities"]:
-            score += 10
-            reasons.append("same_city")
-
-    if evidence["states"] and clean(person.get("state")):
-        if person["state"].lower() in evidence["states"]:
-            score += 5
-            reasons.append("same_state")
-
-    return score, reasons
 
 
 with engine.begin() as conn:
@@ -119,6 +131,7 @@ with engine.begin() as conn:
     ).mappings().all()
 
     person_rows = conn.execute(select(people)).mappings().all()
+    roster = build_roster(person_rows)
 
     evidence_rows = conn.execute(text("""
         SELECT
@@ -135,10 +148,10 @@ with engine.begin() as conn:
 
     evidence_by_hash = {
         row["identifier_hash"]: {
-            "emails": set(row["emails"] or []),
-            "phones": set(row["phones"] or []),
-            "cities": set(row["cities"] or []),
-            "states": set(row["states"] or []),
+            "emails": list(row["emails"] or []),
+            "phones": list(row["phones"] or []),
+            "cities": list(row["cities"] or []),
+            "states": list(row["states"] or []),
         }
         for row in evidence_rows
     }
@@ -154,39 +167,15 @@ with engine.begin() as conn:
     for identity in unresolved:
         evidence = evidence_by_hash.get(
             identity["identifier_hash"],
-            {
-                "emails": set(),
-                "phones": set(),
-                "cities": set(),
-                "states": set(),
-            },
+            {"emails": [], "phones": [], "cities": [], "states": []},
         )
 
-        candidates = []
+        candidates = candidates_for_identity(identity, evidence, roster)
 
-        for person in person_rows:
-            score, reasons = score_candidate(
-                identity,
-                evidence,
-                person,
-            )
-
-            if score < 55:
-                continue
-
-            candidates.append({
-                "person_id": person["id"],
-                "score": score,
-                "reasons": reasons,
-            })
-
-        candidates.sort(
-            key=lambda candidate: (
-                candidate["score"],
-                -candidate["person_id"],
-            ),
-            reverse=True,
-        )
+        # Ordered by evidence strength only. The previous ``-person_id`` tie-break turned a genuine
+        # tie into a decision; equal-scoring candidates now stay equal and are all shown, so the
+        # reviewer sees the ambiguity instead of inheriting an arbitrary winner.
+        candidates.sort(key=lambda candidate: candidate["score"], reverse=True)
 
         top_candidates = candidates[:5]
 
