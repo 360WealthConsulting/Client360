@@ -370,7 +370,9 @@ def test_the_evaluator_refuses_to_link_a_business_identifier_to_a_person():
 
     assert decision.outcome == NO_MATCH
     assert not decision.is_auto_link
-    assert any("non_natural_subject" in r for r in decision.reasons)
+    # The refusal names the subject. "non_natural" would be wrong for the held-for-review case,
+    # where the subject IS a natural person that simply may not be linked unattended.
+    assert any("not_a_linkable_person(business_entity)" in r for r in decision.reasons)
 
 
 def test_the_evaluator_refuses_a_conflicting_identifier_too():
@@ -389,6 +391,74 @@ def test_the_evaluator_still_links_an_ordinary_person():
         return_observations=obs(("1040", 2021)))
 
     assert evaluate(evidence, roster_with(9, phone)).is_auto_link
+
+
+# ==================================================================================================
+# The observable subject value. A refusal must name what the identifier actually IS.
+# ==================================================================================================
+
+@pytest.mark.parametrize("observations,expected", [
+    ([("1040", 2021)], "natural_person"),
+    ([("1040NR", 2021)], "natural_person"),
+    ([("1120S", 2021)], "business_entity"),
+    ([("1120", 2021)], "business_entity"),
+    ([("1065", 2021)], "business_entity"),
+    ([("990", 2021)], "business_entity"),
+    ([("1041", 2021)], "estate_or_trust"),
+    # A single subject that is non-natural still names itself even when something else on the
+    # identifier is unrecognised: it is refused either way, and the refusal should say what it is.
+    ([("1120S", 2021), ("706", 2022)], "business_entity"),
+    # Two legal subjects are NOT flattened into one for reporting.
+    ([("1040", 2021), ("1041", 2022)], "person_then_estate"),
+    # A contradiction invents no subject.
+    ([("1040", 2021), ("1120S", 2022)], "conflicting_subjects"),
+    ([("706", 2021)], "unknown"),
+    ([(None, 2021)], "unknown"),
+    # A natural person held for review must not report ``natural_person`` -- that would open the
+    # gate -- and must not report ``None`` either, which means "never evaluated".
+    ([("1040", 2021), ("706", 2022)], "held_for_review"),
+])
+def test_the_evidence_reports_the_subject_it_actually_classified(observations, expected):
+    evidence = build_identity_evidence(
+        "hash", TAXPAYER, taxpayer_name="ANY NAME", return_observations=obs(*observations))
+
+    assert evidence.subject_type == expected
+
+
+@pytest.mark.parametrize("observations", [
+    [("1120S", 2021)], [("1120", 2021)], [("1065", 2021)], [("990", 2021)], [("1041", 2021)],
+    [("1040", 2021), ("1120S", 2022)], [("706", 2021)], [(None, 2021)],
+    [("1040", 2021), ("1041", 2022)], [("1040", 2021), ("706", 2022)],
+])
+def test_every_non_natural_or_review_case_still_refuses_to_auto_link(observations):
+    """Naming the subject more precisely must not open the gate for any of them."""
+    phone = "5555559999"
+    evidence = build_identity_evidence(
+        "hash", TAXPAYER, taxpayer_name="Shared Phone Owner", phones=[phone],
+        return_observations=obs(*observations))
+
+    decision = evaluate(evidence, roster_with(11, phone))
+
+    assert decision.outcome == NO_MATCH
+    assert not decision.is_auto_link
+
+
+def test_a_refusal_names_the_subject_rather_than_an_internal_outcome():
+    evidence = build_identity_evidence(
+        "hash", TAXPAYER, taxpayer_name="A COMPANY", phones=["5555559998"],
+        return_observations=obs(("1120S", 2021)))
+
+    decision = evaluate(evidence, roster_with(12, "5555559998"))
+
+    assert any("business_entity" in r for r in decision.reasons)
+    assert not any("single_subject" in r for r in decision.reasons)
+
+
+def test_held_for_review_is_distinct_from_both_a_person_and_an_unevaluated_identity():
+    from app.services.drake_return_subject import HELD_FOR_REVIEW, NATURAL_PERSON
+
+    assert HELD_FOR_REVIEW != NATURAL_PERSON
+    assert HELD_FOR_REVIEW is not None
 
 
 def test_evidence_without_return_observations_behaves_exactly_as_before():

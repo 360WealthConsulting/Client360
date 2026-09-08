@@ -67,6 +67,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.services.drake_return_subject import (
+    HELD_FOR_REVIEW,
     NATURAL_PERSON,
     SINGLE_SUBJECT,
 )
@@ -281,16 +282,25 @@ def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse
     if return_observations is not None:
         result = classify_return_subject(return_observations)
         subject_reason = result.reason
-        # Only ONE shape may link to a person: exactly one subject, that subject a natural person,
-        # and nothing held for review. Everything else -- a business, an estate, a decedent who also
-        # has an estate, a contradictory identifier, an unrecognised form -- records the classifier's
-        # outcome instead, which the evaluator reads as "not a person" and refuses. Leaving it None
-        # for the failure cases was a real defect: a conflicting identifier fell through the gate and
-        # auto-linked on a phone match.
-        subject_type = (NATURAL_PERSON
-                        if result.outcome == SINGLE_SUBJECT and not result.requires_review
-                        and result.subjects[0].subject_type == NATURAL_PERSON
-                        else result.outcome)
+        # Only ONE value may link to a person -- NATURAL_PERSON -- and every other value is refused
+        # by the gate in evaluate(). Leaving the failure cases as None was a real defect: a
+        # conflicting identifier fell through and auto-linked on a phone match.
+        #
+        # Where the classifier resolved exactly one subject, that subject's OWN type is recorded, so
+        # a business reports ``business_entity`` and an estate reports ``estate_or_trust`` rather
+        # than the classifier's internal outcome. Both still fail the gate, and the refusal now names
+        # what the identifier actually is.
+        #
+        # The one case that may not report its own type is a natural person held for review: naming
+        # it ``natural_person`` would let it through the gate. It reports HELD_FOR_REVIEW, which is
+        # distinct from NATURAL_PERSON (so it is refused) and from None (so it is not mistaken for
+        # never having been evaluated).
+        if result.outcome != SINGLE_SUBJECT:
+            subject_type = result.outcome
+        elif result.requires_review and result.subjects[0].subject_type == NATURAL_PERSON:
+            subject_type = HELD_FOR_REVIEW
+        else:
+            subject_type = result.subjects[0].subject_type
 
     role_name = taxpayer_name if role == TAXPAYER else spouse_name
     emails = {normalize_email(v) for v in emails}
@@ -359,7 +369,7 @@ def evaluate(evidence, roster):
     if evidence.subject_type is not None and evidence.subject_type != NATURAL_PERSON:
         return Decision(
             NO_MATCH,
-            reasons=(f"non_natural_subject({evidence.subject_type})",
+            reasons=(f"not_a_linkable_person({evidence.subject_type})",
                      evidence.subject_reason or ""),
         )
 
