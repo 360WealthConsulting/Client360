@@ -72,6 +72,49 @@ TRUST_LEVELS = (
     MACHINE_CONTACT, CANONICAL_REPAIR, UNKNOWN_LEGACY,
 )
 
+# --- relative strength -----------------------------------------------------------------------------
+
+#: The trust levels ordered STRONGEST first. This is a strength ranking, which ``TRUST_LEVELS`` is
+#: not -- that tuple is a declaration order and happens to list ``machine_exact_name`` above
+#: ``machine_contact``, which would be backwards here: a name is not an identifier, while an email or
+#: phone at least identifies a mailbox or a handset.
+#:
+#: * a named human who approved THIS link outranks everything;
+#: * an SSN/EIN-derived identifier hash is the strongest machine evidence;
+#: * contact beats name+location beats bare name;
+#: * ``canonical_repair`` asserts that provenance was matched WITHOUT recording on what, so it ranks
+#:   below every class that says what it matched on, and above only "nothing was recorded at all".
+TRUST_STRENGTH_ORDER = (
+    HUMAN_APPROVED,
+    IDENTIFIER_VERIFIED,
+    MACHINE_CONTACT,
+    MACHINE_NAME_LOCATION,
+    MACHINE_EXACT_NAME,
+    CANONICAL_REPAIR,
+    UNKNOWN_LEGACY,
+)
+
+_STRENGTH_RANK = {level: index for index, level in enumerate(TRUST_STRENGTH_ORDER)}
+
+
+def trust_strength(row) -> tuple[int, int]:
+    """How strong is this link's evidence, for choosing between two links about the same thing?
+
+    Returns a sort key where SMALLER is stronger, so it drops straight into a ``min``/``sorted``:
+
+    * position in :data:`TRUST_STRENGTH_ORDER`, using the RECORDED level when the row has one and
+      the level derived from ``match_method`` otherwise;
+    * then recorded-beats-derived, so an explicit platform assertion outranks this module's
+      best-effort reading of a legacy string at the same level.
+
+    It deliberately says nothing about ``confirmed``, ``match_score``, age or row id. Those are the
+    caller's to weigh, because what they mean differs by call site.
+    """
+    trust = link_trust(row)
+    return (_STRENGTH_RANK.get(trust["trust_level"], len(TRUST_STRENGTH_ORDER)),
+            0 if trust["recorded"] else 1)
+
+
 # --- confirmation source --------------------------------------------------------------------------
 
 SOURCE_HUMAN = "human"
