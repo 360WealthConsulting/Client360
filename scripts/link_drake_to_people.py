@@ -32,6 +32,7 @@ from app.services.drake_linkage_evidence import (  # noqa: E402
     normalize_name,
     normalize_phone,
 )
+from app.services.drake_return_subject import Observation as SubjectObservation  # noqa: E402
 from app.services.link_trust import SOURCE_MACHINE  # noqa: E402
 
 metadata = MetaData()
@@ -113,6 +114,21 @@ def build_drake_contacts(connection):
         )
     ).mappings().all()
 
+    # D7 Phase B: every return each identifier appears on, gathered before the contacts are built.
+    # Subject typing is a property of the identifier across all its years, not of one row, so a
+    # single 1041 in 2022 must be visible when the 2021 taxpayer contact is evaluated.
+    observations = {}
+    for row in rows:
+        for hash_column, dob_column in (("taxpayer_identifier_hash", "taxpayer_dob"),
+                                        ("spouse_identifier_hash", "spouse_dob")):
+            identifier = row.get(hash_column)
+            if identifier:
+                observations.setdefault(identifier, []).append(SubjectObservation(
+                    return_type=row.get("return_type"),
+                    tax_year=row.get("tax_year"),
+                    has_dob=row.get(dob_column) is not None,
+                ))
+
     contacts = []
 
     for row in rows:
@@ -160,6 +176,7 @@ def build_drake_contacts(connection):
             "state": value_from_raw(raw, "State"),
             "zip": value_from_raw(raw, "Zip"),
             "identifier_hash": row.get("taxpayer_identifier_hash"),
+            "return_observations": observations.get(row.get("taxpayer_identifier_hash"), []),
             "raw_data": {
                 "drake_return_id": row["id"],
                 "tax_year": row["tax_year"],
@@ -200,6 +217,7 @@ def build_drake_contacts(connection):
                 "state": value_from_raw(raw, "State"),
                 "zip": value_from_raw(raw, "Zip"),
                 "identifier_hash": row.get("spouse_identifier_hash"),
+                "return_observations": observations.get(row.get("spouse_identifier_hash"), []),
                 "raw_data": {
                     "drake_return_id": row["id"],
                     "tax_year": row["tax_year"],
@@ -258,6 +276,10 @@ def match_contact(contact, roster):
         city=contact.get("city"),
         state=contact.get("state"),
         has_spouse=bool(contact.get("has_spouse")),
+        # D7 Phase B: the returns this identifier appears on, so the evaluator can refuse to link a
+        # business, estate or trust identifier to a person. Without this the firm's own phone number
+        # is enough to pull an S-corp onto a contact record.
+        return_observations=contact.get("return_observations"),
     )
 
     decision = evaluate(evidence, roster)

@@ -55,8 +55,15 @@ class Seeder:
             {"i": person_id, "n": f"{self.tag} {name}"})
         return person_id
 
-    def contacts(self, identifier_hash, years, *, taxpayer=None, spouse=None):
-        """One Drake source contact per year, exactly as the importer writes them."""
+    def contacts(self, identifier_hash, years, *, taxpayer=None, spouse=None,
+                 return_type="1040"):
+        """One Drake source contact per year, exactly as the importer writes them.
+
+        ``return_type`` defaults to ``1040`` because these fixtures are natural persons. Since D7
+        Phase B it is what routes an identifier to ``drake_identity`` at all: an identifier with no
+        recognised return type is held for review rather than written to either identity table, so
+        omitting it here would test the refusal path instead of the rebuild.
+        """
         for year in years:
             for role, name in (("taxpayer", taxpayer), ("spouse", spouse)):
                 if name is None:
@@ -67,7 +74,7 @@ class Seeder:
                     "VALUES ('Drake', :f, :sh, :n, CAST(:raw AS json))"),
                     {"f": f"{self.tag}.csv", "sh": uuid.uuid4().hex, "n": name,
                      "raw": json.dumps({"identifier_hash": identifier_hash, "role": role,
-                                        "tax_year": str(year)})})
+                                        "tax_year": str(year), "return_type": return_type})})
         self.hashes.append(identifier_hash)
 
     def identity(self, identifier_hash, *, person_id=None, first_year=1990, last_year=1990,

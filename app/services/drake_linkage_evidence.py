@@ -66,6 +66,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.services.drake_return_subject import (
+    NATURAL_PERSON,
+    SINGLE_SUBJECT,
+)
+from app.services.drake_return_subject import (
+    classify as classify_return_subject,
+)
 from app.services.link_trust import (
     MACHINE_CONTACT,
     MACHINE_EXACT_NAME,
@@ -245,11 +252,15 @@ class IdentityEvidence:
     city: str | None = None
     state: str | None = None
     joint_return: bool = False
+    #: What legal subject this identifier denotes, from the filed return (D7 Phase B). ``None`` when
+    #: the caller supplied no return evidence, which leaves the pre-existing behaviour unchanged.
+    subject_type: str | None = None
+    subject_reason: str | None = None
 
 
 def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse_name=None,
                             emails=(), phones=(), dob=None, city=None, state=None,
-                            has_spouse=False):
+                            has_spouse=False, return_observations=None):
     """Assemble the evidence for one identity, applying Drake's own attribution rules.
 
     ``emails`` / ``phones`` are the raw contact points the return carried. Drake attributes phones to
@@ -262,6 +273,24 @@ def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse
     """
     if role not in ROLES:
         raise ValueError(f"unknown Drake role: {role!r}")
+
+    # D7 Phase B. When the caller supplies the returns this identifier appears on, its legal subject
+    # is resolved here -- once, from the shared classifier -- so every consumer of the evaluator
+    # inherits the same answer and a business identifier cannot reach a person through one of them.
+    subject_type, subject_reason = None, None
+    if return_observations is not None:
+        result = classify_return_subject(return_observations)
+        subject_reason = result.reason
+        # Only ONE shape may link to a person: exactly one subject, that subject a natural person,
+        # and nothing held for review. Everything else -- a business, an estate, a decedent who also
+        # has an estate, a contradictory identifier, an unrecognised form -- records the classifier's
+        # outcome instead, which the evaluator reads as "not a person" and refuses. Leaving it None
+        # for the failure cases was a real defect: a conflicting identifier fell through the gate and
+        # auto-linked on a phone match.
+        subject_type = (NATURAL_PERSON
+                        if result.outcome == SINGLE_SUBJECT and not result.requires_review
+                        and result.subjects[0].subject_type == NATURAL_PERSON
+                        else result.outcome)
 
     role_name = taxpayer_name if role == TAXPAYER else spouse_name
     emails = {normalize_email(v) for v in emails}
@@ -290,6 +319,8 @@ def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse
         city=clean(city),
         state=clean(state),
         joint_return=bool(has_spouse),
+        subject_type=subject_type,
+        subject_reason=subject_reason,
     )
 
 
@@ -320,6 +351,17 @@ def _sole(candidates):
 def evaluate(evidence, roster):
     """Resolve one Drake identity against the roster. Pure, deterministic, and fails closed."""
     reasons = []
+
+    # D7 Phase B, before any evidence is weighed: a business, estate or trust identifier is not a
+    # person and must never reach one. This is the defect that put 360 FINANCIAL SOLUTIONS and 360
+    # TAX SOLUTIONS onto an unrelated contact -- the firm's phone matched, and a phone match was
+    # allowed to decide. Refusing here covers every consumer of the evaluator at once.
+    if evidence.subject_type is not None and evidence.subject_type != NATURAL_PERSON:
+        return Decision(
+            NO_MATCH,
+            reasons=(f"non_natural_subject({evidence.subject_type})",
+                     evidence.subject_reason or ""),
+        )
 
     contact_hits = set()
     for value in evidence.attributed_emails:

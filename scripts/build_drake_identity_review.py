@@ -35,6 +35,7 @@ from app.services.drake_linkage_evidence import (  # noqa: E402
     evaluate,
     join_name,
 )
+from app.services.drake_return_subject import Observation as SubjectObservation  # noqa: E402
 
 metadata = MetaData()
 metadata.reflect(bind=engine)
@@ -82,6 +83,7 @@ def candidates_for_identity(identity, evidence, roster):
             city=next(iter(evidence["cities"]), None),
             state=next(iter(evidence["states"]), None),
             has_spouse=bool(clean(identity.get("spouse_name"))),
+            return_observations=evidence.get("return_observations"),
         ), roster)
 
         if decision.outcome in (NO_MATCH, AMBIGUOUS):
@@ -139,7 +141,9 @@ with engine.begin() as conn:
             ARRAY_REMOVE(ARRAY_AGG(DISTINCT lower(email)), NULL) AS emails,
             ARRAY_REMOVE(ARRAY_AGG(DISTINCT normalized_phone), NULL) AS phones,
             ARRAY_REMOVE(ARRAY_AGG(DISTINCT lower(city)), NULL) AS cities,
-            ARRAY_REMOVE(ARRAY_AGG(DISTINCT lower(state)), NULL) AS states
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT lower(state)), NULL) AS states,
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT raw_data->>'return_type'), NULL) AS return_types,
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT (raw_data->>'tax_year')::integer), NULL) AS tax_years
         FROM source_contacts
         WHERE source_system = 'Drake'
           AND raw_data->>'identifier_hash' IS NOT NULL
@@ -152,6 +156,13 @@ with engine.begin() as conn:
             "phones": list(row["phones"] or []),
             "cities": list(row["cities"] or []),
             "states": list(row["states"] or []),
+            # D7 Phase B: the returns behind this identifier, so the evaluator can refuse to
+            # propose a person for a business, estate or trust identifier.
+            "return_observations": [
+                SubjectObservation(return_type=t, tax_year=y)
+                for t in (row["return_types"] or [])
+                for y in (row["tax_years"] or [None])
+            ],
         }
         for row in evidence_rows
     }
@@ -167,7 +178,8 @@ with engine.begin() as conn:
     for identity in unresolved:
         evidence = evidence_by_hash.get(
             identity["identifier_hash"],
-            {"emails": [], "phones": [], "cities": [], "states": []},
+            {"emails": [], "phones": [], "cities": [], "states": [],
+             "return_observations": []},
         )
 
         candidates = candidates_for_identity(identity, evidence, roster)

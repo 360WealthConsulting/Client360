@@ -14,6 +14,7 @@ from app.db import (
     match_review_decisions,
     source_contacts,
 )
+from app.services.drake_return_subject import classify as classify_return_subject
 from app.services.person_merge import merge_source_contacts
 from app.templating import render_error
 
@@ -379,6 +380,27 @@ def approve_drake_identity(identifier_hash: str, person_id: int):
             return HTMLResponse(
                 "<h1>Drake identity not found</h1>",
                 status_code=404,
+            )
+
+        # D7 Phase B. This route is the only runtime writer of primary_person_id, so it is also the
+        # last place a business, estate or trust identifier could be attached to a person. The
+        # subject is decided by the filed return, from the same classifier the ingestion path uses.
+        subject = connection.execute(text("""
+            SELECT sc.raw_data->>'return_type'         AS return_type,
+                   (sc.raw_data->>'tax_year')::integer AS tax_year
+            FROM source_contacts sc
+            WHERE sc.source_system = 'Drake'
+              AND sc.raw_data->>'identifier_hash' = :identifier_hash
+        """), {"identifier_hash": identifier_hash}).mappings().all()
+        classification = classify_return_subject(list(subject))
+        if subject and not classification.is_single_natural_person:
+            return HTMLResponse(
+                "<h1>Not a natural person</h1>"
+                "<p>This Drake identity does not resolve to a single natural person, so it cannot "
+                f"be approved onto a person record.</p><p>{classification.reason}</p>"
+                "<p>Business, estate and trust identities belong in "
+                "<code>drake_business_identity</code>, against a relationship entity.</p>",
+                status_code=409,
             )
 
         connection.execute(text("""
