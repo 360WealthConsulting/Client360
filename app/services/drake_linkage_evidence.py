@@ -66,6 +66,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.services.drake_return_subject import (
+    HELD_FOR_REVIEW,
+    NATURAL_PERSON,
+    SINGLE_SUBJECT,
+)
+from app.services.drake_return_subject import (
+    classify as classify_return_subject,
+)
 from app.services.link_trust import (
     MACHINE_CONTACT,
     MACHINE_EXACT_NAME,
@@ -245,11 +253,15 @@ class IdentityEvidence:
     city: str | None = None
     state: str | None = None
     joint_return: bool = False
+    #: What legal subject this identifier denotes, from the filed return (D7 Phase B). ``None`` when
+    #: the caller supplied no return evidence, which leaves the pre-existing behaviour unchanged.
+    subject_type: str | None = None
+    subject_reason: str | None = None
 
 
 def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse_name=None,
                             emails=(), phones=(), dob=None, city=None, state=None,
-                            has_spouse=False):
+                            has_spouse=False, return_observations=None):
     """Assemble the evidence for one identity, applying Drake's own attribution rules.
 
     ``emails`` / ``phones`` are the raw contact points the return carried. Drake attributes phones to
@@ -262,6 +274,33 @@ def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse
     """
     if role not in ROLES:
         raise ValueError(f"unknown Drake role: {role!r}")
+
+    # D7 Phase B. When the caller supplies the returns this identifier appears on, its legal subject
+    # is resolved here -- once, from the shared classifier -- so every consumer of the evaluator
+    # inherits the same answer and a business identifier cannot reach a person through one of them.
+    subject_type, subject_reason = None, None
+    if return_observations is not None:
+        result = classify_return_subject(return_observations)
+        subject_reason = result.reason
+        # Only ONE value may link to a person -- NATURAL_PERSON -- and every other value is refused
+        # by the gate in evaluate(). Leaving the failure cases as None was a real defect: a
+        # conflicting identifier fell through and auto-linked on a phone match.
+        #
+        # Where the classifier resolved exactly one subject, that subject's OWN type is recorded, so
+        # a business reports ``business_entity`` and an estate reports ``estate_or_trust`` rather
+        # than the classifier's internal outcome. Both still fail the gate, and the refusal now names
+        # what the identifier actually is.
+        #
+        # The one case that may not report its own type is a natural person held for review: naming
+        # it ``natural_person`` would let it through the gate. It reports HELD_FOR_REVIEW, which is
+        # distinct from NATURAL_PERSON (so it is refused) and from None (so it is not mistaken for
+        # never having been evaluated).
+        if result.outcome != SINGLE_SUBJECT:
+            subject_type = result.outcome
+        elif result.requires_review and result.subjects[0].subject_type == NATURAL_PERSON:
+            subject_type = HELD_FOR_REVIEW
+        else:
+            subject_type = result.subjects[0].subject_type
 
     role_name = taxpayer_name if role == TAXPAYER else spouse_name
     emails = {normalize_email(v) for v in emails}
@@ -290,6 +329,8 @@ def build_identity_evidence(identifier_hash, role, *, taxpayer_name=None, spouse
         city=clean(city),
         state=clean(state),
         joint_return=bool(has_spouse),
+        subject_type=subject_type,
+        subject_reason=subject_reason,
     )
 
 
@@ -320,6 +361,17 @@ def _sole(candidates):
 def evaluate(evidence, roster):
     """Resolve one Drake identity against the roster. Pure, deterministic, and fails closed."""
     reasons = []
+
+    # D7 Phase B, before any evidence is weighed: a business, estate or trust identifier is not a
+    # person and must never reach one. This is the defect that put 360 FINANCIAL SOLUTIONS and 360
+    # TAX SOLUTIONS onto an unrelated contact -- the firm's phone matched, and a phone match was
+    # allowed to decide. Refusing here covers every consumer of the evaluator at once.
+    if evidence.subject_type is not None and evidence.subject_type != NATURAL_PERSON:
+        return Decision(
+            NO_MATCH,
+            reasons=(f"not_a_linkable_person({evidence.subject_type})",
+                     evidence.subject_reason or ""),
+        )
 
     contact_hits = set()
     for value in evidence.attributed_emails:

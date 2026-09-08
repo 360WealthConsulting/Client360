@@ -60,6 +60,11 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 
 from app.db import engine
+from app.services.drake_subject_routing import (
+    observations_by_identifier,
+    route_all,
+    upsert_business_identity,
+)
 
 #: Recomputed from Drake source data on every rebuild.
 DERIVED_COLUMNS = ("first_year", "last_year", "return_count", "taxpayer_name", "spouse_name")
@@ -93,6 +98,7 @@ _UPSERT = f"""
         s.identifier_hash, s.first_year, s.last_year, s.return_count,
         s.taxpayer_name, s.spouse_name, NULL
     FROM ({_SOURCE_IDENTITIES}) AS s
+    WHERE s.identifier_hash = ANY(:person_hashes)
     ON CONFLICT (identifier_hash) DO UPDATE SET
         first_year    = EXCLUDED.first_year,
         last_year     = EXCLUDED.last_year,
@@ -129,6 +135,13 @@ class RebuildReport:
     links_preserved: int = 0
     stale_retained: list[str] = field(default_factory=list)
     stale_retained_linked: list[str] = field(default_factory=list)
+    #: D7 Phase B routing. Identities that are not natural persons never enter drake_identity.
+    routed_to_business: int = 0
+    held_for_review: int = 0
+    #: Existing drake_identity rows that classify non-natural. Retained untouched; a later phase
+    #: relocates them. Reported so the backlog is visible rather than silent.
+    pending_d7_migration: list[str] = field(default_factory=list)
+    routing: object = None
 
     @property
     def stale_total(self) -> int:
@@ -144,9 +157,17 @@ class RebuildReport:
             f"person links preserved       {self.links_preserved}",
             f"stale retained (unlinked)    {len(self.stale_retained)}",
             f"stale retained (LINKED)      {len(self.stale_retained_linked)}",
+            f"routed to business identity  {self.routed_to_business}",
+            f"held for review              {self.held_for_review}",
+            f"pending D7 migration         {len(self.pending_d7_migration)}",
         ]
         for identifier_hash in self.stale_retained_linked:
             out.append(f"  REVIEW: {identifier_hash} is linked but absent from source data")
+        if self.routing is not None:
+            out.extend(f"  {line}" for line in self.routing.lines())
+        if self.pending_d7_migration:
+            out.append(f"  {len(self.pending_d7_migration)} existing drake_identity row(s) are not "
+                       "natural persons; they are retained untouched for a later phase")
         return out
 
 
@@ -172,10 +193,46 @@ def rebuild_drake_identities(connection) -> RebuildReport:
             "Drake source contacts yielded no identities. A truncated or failed import must not be "
             "mistaken for an empty world; refusing to rebuild.")
 
-    report.inserted = len(source_hashes - before.keys())
-    report.refreshed = len(source_hashes & before.keys())
+    # Subject routing (D7 Phase B). Only a natural person belongs in this table. A business or
+    # fiduciary identifier is written to drake_business_identity instead, and a contradictory or
+    # unrecognised one is written nowhere and reported. Deciding here rather than in the caller is
+    # the point: this is the only writer that derives drake_identity rows from source contacts.
+    evidence = observations_by_identifier(connection)
+    business_names = {h: entry["names"] for h, entry in evidence.items()}
+    routes, routing = route_all(connection)
+    report.routing = routing
+    person_hashes = {h for h, route in routes.items() if route.is_person}
+    report.routed_to_business = len(routing.business)
+    report.held_for_review = len(routing.review)
 
-    connection.execute(text(_UPSERT))
+    # An identifier with no route at all (no recognised return evidence) is not written to
+    # drake_identity, but neither is it treated as having vanished from source -- see below.
+    report.inserted = len(person_hashes - before.keys())
+    report.refreshed = len(person_hashes & before.keys())
+
+    connection.execute(text(_UPSERT), {"person_hashes": sorted(person_hashes)})
+
+    for route in routing.business:
+        names = business_names.get(route.identifier_hash) if business_names else None
+        upsert_business_identity(connection, route,
+                                 subject_name=(names or {}).get("taxpayer")
+                                 or (names or {}).get("spouse"))
+        if route.companion is not None:
+            upsert_business_identity(connection, route.companion,
+                                     subject_name=(names or {}).get("taxpayer"))
+    for route in routing.person:
+        if route.companion is not None:
+            # A decedent-then-estate identifier: the person half stays here, the estate half is
+            # written beside it. Neither subject is collapsed into the other.
+            names = business_names.get(route.identifier_hash) if business_names else None
+            upsert_business_identity(connection, route.companion,
+                                     subject_name=(names or {}).get("taxpayer"))
+            report.routed_to_business += 1
+
+    # Existing rows that are non-natural are RETAINED untouched and reported. Relocating them is a
+    # later, separately authorised phase; this pass must never move or delete one.
+    report.pending_d7_migration = sorted(
+        h for h in before if h in routes and not routes[h].is_person)
 
     for identifier_hash in sorted(before.keys() - source_hashes):
         if before[identifier_hash]["primary_person_id"] is None:
@@ -207,7 +264,9 @@ def rebuild_drake_identities(connection) -> RebuildReport:
             f"a rebuild changed persistent state on {len(changed)} column value(s); "
             f"first: {changed[0]}")
 
-    expected_total = len(before.keys() | source_hashes)
+    # Only person-routed identifiers are inserted here now, so the expected total is the existing
+    # rows plus the newly routed persons -- not every identifier in the source.
+    expected_total = len(before.keys() | person_hashes)
     if report.total_after != expected_total:
         raise RebuildRefused(
             f"expected {expected_total} identities after the rebuild, found {report.total_after}")

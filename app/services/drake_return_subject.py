@@ -52,6 +52,10 @@ PERSON_THEN_ESTATE = "person_then_estate"
 CONFLICTING_SUBJECTS = "conflicting_subjects"
 #: Nothing to classify from.
 UNKNOWN = "unknown"
+#: A single subject that IS a natural person but is held for review — an unrecognised form alongside
+#: a 1040, say. Distinct from ``NATURAL_PERSON`` on purpose: it must not pass a person gate, and
+#: distinct from ``None``, which means the subject was never evaluated.
+HELD_FOR_REVIEW = "held_for_review"
 
 PERSON_RETURNS = frozenset({"1040", "1040NR"})
 BUSINESS_RETURNS = frozenset({"1065", "1120", "1120S", "990"})
