@@ -1,119 +1,37 @@
+"""Rebuild ``drake_identity`` from Drake source contacts, without destroying linkage.
+
+This script used to ``DELETE FROM drake_identity`` and re-insert, which silently discarded
+``primary_person_id`` on every identity -- 931 person links at the time this was fixed, including
+human-adjudicated and individually authorised manual repairs. The rebuild semantics now live in
+``app.services.drake_identity_rebuild``, which refreshes only the fields Drake actually derives and
+fails closed rather than dropping state. This file is the command-line entry point.
+
+The table's schema is owned by the ``drake01`` Alembic migration, so the old ``CREATE TABLE IF NOT
+EXISTS`` block is gone with it -- a script is no longer a second definition of the schema.
+
+    python scripts/build_drake_identity.py
+"""
 from dotenv import load_dotenv
 
 load_dotenv(r"C:\Client360\app\.env")
 
-from sqlalchemy import text  # noqa: E402
-
-from app.db import engine  # noqa: E402
+from app.services.drake_identity_rebuild import RebuildRefused  # noqa: E402
+from app.services.drake_identity_rebuild import main as rebuild  # noqa: E402
 
 print("=" * 70)
 print("BUILDING DRAKE IDENTITIES")
 print("=" * 70)
-
-with engine.begin() as conn:
-
-    conn.execute(text("""
-
-        CREATE TABLE IF NOT EXISTS drake_identity (
-
-            identifier_hash text PRIMARY KEY,
-
-            primary_person_id integer,
-
-            first_year integer,
-
-            last_year integer,
-
-            return_count integer,
-
-            taxpayer_name text,
-
-            spouse_name text,
-
-            confidence integer,
-
-            created_at timestamptz default now()
-
-        )
-
-    """))
-
-    conn.execute(text("DELETE FROM drake_identity"))
-
-    conn.execute(text("""
-
-        INSERT INTO drake_identity (
-
-            identifier_hash,
-
-            first_year,
-
-            last_year,
-
-            return_count,
-
-            taxpayer_name,
-
-            spouse_name,
-
-            confidence
-
-        )
-
-        SELECT
-
-            raw_data->>'identifier_hash',
-
-            MIN((raw_data->>'tax_year')::integer),
-
-            MAX((raw_data->>'tax_year')::integer),
-
-            COUNT(*),
-
-            MAX(
-                CASE
-                    WHEN raw_data->>'role'='taxpayer'
-                    THEN full_name
-                END
-            ),
-
-            MAX(
-                CASE
-                    WHEN raw_data->>'role'='spouse'
-                    THEN full_name
-                END
-            ),
-
-            -- Confidence describes EVIDENCE, and grouping Drake source contacts by their identifier
-            -- hash is not evidence about any person: this statement resolves nobody. It used to
-            -- write a literal 100 for all 1,802 identities, which made the column unreadable --
-            -- a linked identity confirmed on a name scored the same as one confirmed on an
-            -- identifier. NULL is the honest value until something actually resolves the identity,
-            -- at which point the review path writes the evaluator's evidence-derived confidence.
-            NULL
-
-        FROM source_contacts
-
-        WHERE source_system='Drake'
-
-          AND raw_data->>'identifier_hash' IS NOT NULL
-
-        GROUP BY raw_data->>'identifier_hash'
-
-    """))
-
-    rows = conn.execute(text("""
-
-        SELECT COUNT(*)
-
-        FROM drake_identity
-
-    """)).scalar()
-
 print()
 
-print("Drake identities built:", rows)
+try:
+    report = rebuild()
+except RebuildRefused as refusal:
+    print("REFUSED - nothing was written:")
+    print(f"  {refusal}")
+    raise SystemExit(1) from refusal
+
+for line in report.lines():
+    print(line)
 
 print()
-
 print("Finished.")
