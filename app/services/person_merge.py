@@ -14,6 +14,10 @@ from app.db import (
     source_contacts,
 )
 
+# The trust vocabulary and its strength order live in one place; this module ranks with it rather
+# than keeping a second, private idea of which provenance is stronger.
+from app.services.link_trust import trust_strength
+
 
 def _first_value(records, field_name):
     for record in records:
@@ -303,6 +307,17 @@ def _table_exists(conn, table) -> bool:
     return conn.execute(text("SELECT to_regclass(:t)"), {"t": table}).scalar() is not None
 
 
+#: Trust columns are optional: a deployment that has not run the link-trust migration still merges.
+_TRUST_COLUMNS = ("trust_level", "confirmation_source", "evidence_method")
+
+
+def _present_columns(conn, table, columns):
+    """Which of ``columns`` this deployment actually has on ``table``."""
+    found = {r[0] for r in conn.execute(text(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = :t"), {"t": table})}
+    return [c for c in columns if c in found]
+
+
 def _canonical_display_name(row) -> str:
     """full_name, else first + last, else a neutral label. Never "Person <id>".
 
@@ -318,13 +333,43 @@ def _canonical_display_name(row) -> str:
     return "Unnamed person"
 
 
-#: Deterministic precedence when both people link the SAME source contact. A confirmed link beats an
-#: unconfirmed one; then the higher match score; then the earlier link, which is the one the rest of
-#: the system has been treating as authoritative.
+#: Deterministic precedence when both people link the SAME source contact, strongest first.
+#:
+#: Evidence STRENGTH is compared before match score and before age. It has to be: two links can be
+#: equally confirmed and equally scored while saying completely different things about how they were
+#: established, and the older row is not automatically the better one. Production holds twelve
+#: collisions where both rows are ``confirmed`` with ``match_score = 100``, one established from an
+#: SSN-derived identifier hash (``drake_identity_promotion`` -> ``identifier_verified``) and one from
+#: a canonical-repair pass that records provenance was matched but not on what
+#: (``canonical_repair_promotion`` -> ``canonical_repair``). Ranking by age alone kept the weaker row
+#: every time, and silently rewrote the survivor's provenance to the weaker claim.
+#:
+#: ``confirmed`` stays first so the existing behaviour is preserved exactly: an explicitly
+#: unconfirmed link still loses to a confirmed one. Strength decides within that.
+#:
+#: The strength order itself is NOT defined here -- it comes from app.services.link_trust, which owns
+#: the trust vocabulary, so this stays one hierarchy rather than a second private one.
 def _link_rank(link):
     return (0 if link.get("confirmed") else 1,
+            trust_strength(link),
             -(link.get("match_score") or 0),
-            link.get("created_at") or 0)
+            link.get("created_at") or 0,
+            # Final, purely mechanical fallback so the order is total even when every piece of
+            # evidence ties. It carries no meaning and must never be the reason a link is chosen.
+            link.get("id") or 0)
+
+
+def _link_choice_reason(survivor_link, duplicate_link):
+    """Say WHY one colliding link beat the other, in the order _link_rank actually decides."""
+    if bool(survivor_link.get("confirmed")) != bool(duplicate_link.get("confirmed")):
+        return "confirmed beats unconfirmed"
+    if trust_strength(survivor_link) != trust_strength(duplicate_link):
+        return "stronger recorded/derived provenance"
+    if (survivor_link.get("match_score") or 0) != (duplicate_link.get("match_score") or 0):
+        return "higher match score"
+    if survivor_link.get("created_at") != duplicate_link.get("created_at"):
+        return "earlier link, all evidence equal"
+    return "every signal tied; resolved by row id"
 
 
 def _resolve_source_link_collisions(conn, survivor_id, duplicate_id):
@@ -334,8 +379,11 @@ def _resolve_source_link_collisions(conn, survivor_id, duplicate_id):
     higher-scoring link if the survivor's happened to be weaker. Here the winning provenance is
     copied onto the survivor's row first, and BOTH links are recorded so the merge history shows what
     existed rather than only what survived. No duplicate link is ever created."""
+    trust_columns = _present_columns(conn, "person_source_links", _TRUST_COLUMNS)
+    selected = "".join(", " + c for c in trust_columns)
     rows = conn.execute(text(
-        "SELECT id, person_id, source_contact_id, match_method, match_score, confirmed, created_at "
+        "SELECT id, person_id, source_contact_id, match_method, match_score, confirmed, created_at"
+        + selected + " "
         "FROM person_source_links WHERE person_id IN (:surv, :dup) "
         "AND source_contact_id IN (SELECT source_contact_id FROM person_source_links "
         "                          WHERE person_id = :surv "
@@ -358,18 +406,25 @@ def _resolve_source_link_collisions(conn, survivor_id, duplicate_id):
             continue
         winner = min((survivor_link, duplicate_link), key=_link_rank)
         if winner is duplicate_link:
-            conn.execute(text(
-                "UPDATE person_source_links SET match_method = :m, match_score = :s, "
-                "confirmed = :c WHERE id = :id"),
-                {"m": duplicate_link["match_method"], "s": duplicate_link["match_score"],
-                 "c": duplicate_link["confirmed"], "id": survivor_link["id"]})
+            # Copy the trust columns along with the method. Moving match_method without them would
+            # leave the survivor row asserting one provenance in its method string and a different
+            # one in its recorded trust, which is worse than either row was on its own.
+            assignments = ["match_method = :m", "match_score = :s", "confirmed = :c"]
+            params = {"m": duplicate_link["match_method"], "s": duplicate_link["match_score"],
+                      "c": duplicate_link["confirmed"], "id": survivor_link["id"]}
+            for column in trust_columns:
+                assignments.append(f"{column} = :{column}")
+                params[column] = duplicate_link.get(column)
+            conn.execute(text("UPDATE person_source_links SET " + ", ".join(assignments)
+                              + " WHERE id = :id"), params)
         resolved.append({
             "source_contact_id": contact_id,
             "kept_from": "duplicate" if winner is duplicate_link else "survivor",
+            "reason": _link_choice_reason(survivor_link, duplicate_link),
             "survivor_link": {k: str(survivor_link.get(k)) for k in
-                              ("match_method", "match_score", "confirmed")},
+                              ("match_method", "match_score", "confirmed", *trust_columns)},
             "duplicate_link": {k: str(duplicate_link.get(k)) for k in
-                               ("match_method", "match_score", "confirmed")}})
+                               ("match_method", "match_score", "confirmed", *trust_columns)}})
     return resolved
 
 
