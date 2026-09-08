@@ -23,11 +23,14 @@ from app.db import (engine, organization_profiles, organization_service_lines,
 from app.security.audit import write_audit_event
 from app.security.authorization import organization_in_scope, team_ids
 from app.security import benefits_crypto
-from app.services.relationships import (create_named_entity, ensure_household_entity,
-    ensure_person_entity)
+from app.services.relationships import (ENTITY_TYPES, create_named_entity,
+    ensure_household_entity, ensure_person_entity)
 from app.services.work_management import assign_work
 
-ORG_ENTITY_TYPES = frozenset({"business", "trust", "estate", "professional", "insurance_carrier"})
+#: Sourced from relationships.ENTITY_TYPES so the two allowlists cannot drift. "estate" was removed
+#: with migration dbi01: production stores estates as entity_type='trust', and the estate/trust
+#: distinction now lives in organization_profiles.entity_form.
+ORG_ENTITY_TYPES = ENTITY_TYPES
 _ACTIVE_STATUSES = frozenset({"prospect", "active", "inactive"})
 
 
