@@ -14,6 +14,7 @@ estate and a living trust, each a full-width 123-field export row with a blank t
 Every row is seeded inside a transaction and rolled back. Nothing is committed.
 """
 
+import ast
 import hashlib
 import json
 import re
@@ -411,6 +412,91 @@ def test_the_derived_hash_matches_the_historical_expression(monkeypatch):
     assert identifier_hash(TRUST_EIN) == expected
     assert identifier_hash("997000002") == expected
     assert identifier_hash("99 7000002") == expected
+
+
+def test_the_derived_hash_matches_the_retired_2025_expression(monkeypatch):
+    """``scripts/import_drake_2025`` used to hash inline. Centralising it changed no value."""
+    monkeypatch.setenv("MICROSOFT_TOKEN_KEY", "a-known-key")
+
+    def retired_2025(value, key="a-known-key"):
+        cleaned = "" if value is None else value.replace("\x00", "").strip()
+        digits = "".join(ch for ch in cleaned if ch.isdigit())
+        if not digits:
+            return None
+        return hashlib.sha256(f"{key}:{digits}".encode()).hexdigest()
+
+    for value in (TRUST_EIN, ESTATE_EIN, "  123-45-6789  ", "12\x003456789", "0",
+                  "000000000", "", None, "no digits"):
+        assert identifier_hash(value) == retired_2025(value), value
+
+
+# --- the 2025 importer is centralised too, pinned WITHOUT importing it --------------------------------
+
+# ``scripts/import_drake_2025`` runs its whole import at module import: it creates schema and writes
+# rows with no ``if __name__ == "__main__"`` guard. Importing it from a test would perform a real
+# import against whatever database is configured, so these read its source and never execute it.
+_IMPORT_2025 = Path(__file__).resolve().parent.parent / "scripts" / "import_drake_2025.py"
+_MISSING_SECRET_MESSAGE = "MICROSOFT_TOKEN_KEY is required for deterministic identifier hashing"
+
+
+def _module_2025():
+    return ast.parse(_IMPORT_2025.read_text(encoding="utf-8"))
+
+
+def test_the_2025_importer_imports_the_one_hash_function():
+    imported = {
+        alias.name
+        for node in ast.walk(_module_2025())
+        if isinstance(node, ast.ImportFrom) and node.module == "app.services.drake_identifier"
+        for alias in node.names
+    }
+    assert "identifier_hash" in imported
+
+
+def test_the_2025_importer_defines_no_hash_of_its_own():
+    tree = _module_2025()
+    defined = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    assert "identifier_hash" not in defined
+
+    modules = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+               for alias in node.names}
+    assert "hashlib" not in modules, "a second hashing implementation has reappeared"
+
+
+def test_the_2025_importer_still_refuses_to_load_without_the_secret():
+    """Its fail-closed check must stay at IMPORT time, and keep its original message.
+
+    The canonical hash reads the secret at call time. Without this guard the failure would move to
+    the first row hashed — which, in a module that imports and imports in one step, is after the
+    schema has been created.
+    """
+    tree = _module_2025()
+
+    checks = [node for node in ast.walk(tree)
+              if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and node.func.attr == "hash_key"]
+    assert checks, "the import-time secret check is gone"
+
+    raised = [node for node in ast.walk(tree) if isinstance(node, ast.Raise)]
+    messages = [arg.value for node in raised if isinstance(node.exc, ast.Call)
+                for arg in node.exc.args if isinstance(arg, ast.Constant)]
+    assert _MISSING_SECRET_MESSAGE in messages, "the original refusal message changed"
+
+
+def test_the_2025_importer_never_runs_at_import_so_nothing_may_import_it():
+    """A guard on the guard: if this module ever gains a ``__main__`` block the tests may import it."""
+    source = _IMPORT_2025.read_text(encoding="utf-8")
+    assert "__main__" not in source, \
+        "import_drake_2025 now has a main guard — the AST-only tests above can become real imports"
+
+
+def test_the_all_years_importer_is_fail_closed_without_the_secret(monkeypatch, capsys):
+    """Behavioural, not textual: the driver exits 2 and imports nothing."""
+    from scripts import import_drake_all_years as driver
+
+    monkeypatch.setenv("MICROSOFT_TOKEN_KEY", "")
+    assert driver.main(["--year", "2022"]) == 2
+    assert _MISSING_SECRET_MESSAGE.split(" is required")[0] in capsys.readouterr().err
 
 
 def test_the_import_driver_uses_this_one_hash_function():
