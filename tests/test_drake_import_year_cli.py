@@ -209,6 +209,32 @@ def test_explicit_years_never_broaden_to_the_discovered_set(drake_root, captured
     assert 2023 not in years and 2024 not in years and 2025 not in years
 
 
+def test_an_uppercase_csv_extension_is_found_on_any_filesystem(tmp_path):
+    """Every real Drake export is uppercase: ``CLIENT.CSV``, ``2023.CSV``.
+
+    The lookup used to be ``glob("*.csv")``, which is case-insensitive on Windows and case-SENSITIVE
+    everywhere else — so on a case-sensitive filesystem it matched nothing and every year was
+    silently skipped. This pins the extension match, in both cases.
+    """
+    for name in ("CLIENT.CSV", "client.csv", "Client.Csv"):
+        folder = tmp_path / name.replace(".", "_")
+        _export(folder, [_wellformed("1234567", "EXAMPLE")])
+        (folder / "CLIENT.CSV").rename(folder / name)
+
+        found = driver.find_client_file(folder)
+        assert found is not None, f"{name} must be found"
+        assert found.name == name
+
+
+def test_a_directory_holding_only_non_csv_files_resolves_to_nothing(tmp_path):
+    folder = tmp_path / "2021"
+    folder.mkdir()
+    (folder / "CLIENT.TXT").write_text("not a csv", encoding="utf-8")
+    (folder / "notes.md").write_text("nor this", encoding="utf-8")
+
+    assert driver.find_client_file(folder) is None
+
+
 # --- fail closed, before any import ------------------------------------------------------------
 
 @pytest.mark.parametrize("year", [5, 1899, 3000, 20211])

@@ -80,9 +80,21 @@ def read_header(path):
 
 
 def find_client_file(year_folder):
+    """The largest CSV in ``year_folder`` whose header carries the taxpayer columns.
+
+    The extension match is CASE-INSENSITIVE, and deliberately so. This used to be
+    ``year_folder.glob("*.csv")``, which is case-insensitive on Windows and case-SENSITIVE
+    everywhere else — while every real Drake export is uppercase (``CLIENT.CSV``, ``2023.CSV``). On
+    the production host it happened to work; on a case-sensitive filesystem it matched nothing and
+    every year was silently reported as "no valid client export found — skipped". The new CLI tests
+    run on Linux in CI, which is what surfaced it.
+    """
     candidates = []
 
-    for path in year_folder.glob("*.csv"):
+    for path in sorted(year_folder.iterdir()):
+        if not path.is_file() or path.suffix.lower() != ".csv":
+            continue
+
         header = read_header(path)
 
         if {
