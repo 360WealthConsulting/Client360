@@ -130,9 +130,42 @@ using `CLIENT_EXPORT_HEADER` to recover the original value order (JSONB sorts it
 ```
 1. deploy the release (importer fix + drake03 together)
 2. alembic upgrade head
-3. re-import 2021 and 2022; expect inserted = 0, updated = 109
+3. re-import 2021 and 2022; expect inserted = 0
+     .venv\Scripts\python -m scripts.import_drake_all_years --year 2021 --year 2022
 4. separately authorized, later: drake_identity rebuild, DBI, ESL, person-side cleanup
 ```
+
+Step 3 is year-scoped deliberately. The driver imports every discovered year when given no `--year`,
+and re-importing 2023-2025 as a side effect of repairing 2021/2022 is a wider blast radius than the
+operation calls for.
+
+### The driver names its target before writing
+
+`load_dotenv(r"C:\Client360\app\.env")` runs at module scope and fills in any variable the shell has
+**not** set. Unsetting `DATABASE_URL` or `MICROSOFT_TOKEN_KEY` to make an invocation "safe" therefore
+does the opposite — the production env file supplies both. The driver prints
+`Target database: <name>` before it writes anything, so the target is never in doubt.
+
+## Rollback after a re-import — read this before relying on `drake03.downgrade()`
+
+`drake03` never rewrites `raw_data`, which is what lets its upgrade and downgrade both derive their
+values from the preserved payload. **A subsequent Drake source re-import legitimately refreshes
+`raw_data`**: the corrected importer writes the normalized mapping, so the payload no longer describes
+the displaced original.
+
+After such a re-import the historical values cannot be reconstructed from the live row, and both
+directions of the migration refuse rather than invent them:
+
+| direction | what it finds | what it does |
+|---|---|---|
+| `downgrade` | `return_type` reads back as `1120S`, not NULL | raises *"does not re-read as a NULL return_type"* |
+| `upgrade` (re-run) | `Paid` no longer holds a form token | raises *"row does not match the proven short-row shape"* |
+
+That refusal is deliberate and is asserted by
+`tests/test_drake_1120s_short_row_repair.py::test_downgrade_refuses_once_a_re_import_has_refreshed_raw_data`.
+**Do not relax it, and never synthesize historical values to make the downgrade succeed.** Once a
+re-import has run, the **verified pre-migration backup is the authoritative rollback mechanism**, and a
+restore is a separately authorized operation.
 
 ## Downstream
 

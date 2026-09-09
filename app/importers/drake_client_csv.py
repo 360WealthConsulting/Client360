@@ -384,7 +384,8 @@ def parse_client_row(row, *, tax_year, source_row_number, source_updated_at, ide
     }
 
 
-def read_client_rows(tax_year, client_file, *, identifier_hash, source_updated_at=None):
+def read_client_rows(tax_year, client_file, *, identifier_hash, source_updated_at=None,
+                     counters=None):
     """Parse one year's export. The WHOLE file is materialized on purpose.
 
     Identity collisions are only visible with the complete export in hand, so the batch — not the
@@ -392,15 +393,24 @@ def read_client_rows(tax_year, client_file, *, identifier_hash, source_updated_a
 
     Returns ``(rows, anomalies)``. An anomaly is a short row whose shape is NOT the proven one: it is
     parsed exactly as it always was and reported, never realigned on a guess.
+
+    ``counters``, when a mapping is passed, is filled in with ``unchanged`` / ``normalized`` /
+    ``unrecognised_short`` tallies. It exists so a driver can REPORT how many rows the short-row rule
+    repaired without parsing the file a second time — the alternative would be a duplicate parse loop
+    in the caller, which is exactly what this module exists to prevent. Optional and additive: every
+    existing caller is unaffected.
     """
     if source_updated_at is None:
         source_updated_at = datetime.fromtimestamp(client_file.stat().st_mtime, tz=UTC)
 
     rows = []
     anomalies = []
+    tally = {UNCHANGED: 0, NORMALIZED: 0, UNRECOGNISED_SHORT_ROW: 0}
 
     with client_file.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
         for client_row in iter_client_rows(handle):
+            tally[client_row.shape.status] = tally.get(client_row.shape.status, 0) + 1
+
             if client_row.shape.needs_review:
                 anomalies.append({
                     "tax_year": tax_year,
@@ -416,5 +426,10 @@ def read_client_rows(tax_year, client_file, *, identifier_hash, source_updated_a
                 source_updated_at=source_updated_at,
                 identifier_hash=identifier_hash,
             ))
+
+    if counters is not None:
+        counters["unchanged"] = tally[UNCHANGED]
+        counters["normalized"] = tally[NORMALIZED]
+        counters["unrecognised_short"] = tally[UNRECOGNISED_SHORT_ROW]
 
     return rows, anomalies

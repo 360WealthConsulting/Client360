@@ -19,6 +19,7 @@ stand-ins and every figure is invented.
 import csv
 import hashlib
 import importlib.util
+import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from sqlalchemy import delete, select, text
 from app.db import engine, metadata
 from app.importers.drake_client_csv import (
     CLIENT_EXPORT_HEADER,
+    normalize_row,
     read_client_rows,
     to_mapping,
 )
@@ -413,6 +415,33 @@ def test_the_migration_touches_only_the_columns_after_the_displacement(cleanup):
 
     assert after["return_type"] != before["return_type"]
     assert after["raw_data"] == before["raw_data"], "the raw payload is the audit trail"
+
+
+def test_downgrade_refuses_once_a_re_import_has_refreshed_raw_data():
+    """The migration is lossless only while ``raw_data`` is still the pre-fix payload.
+
+    A Drake source re-import legitimately refreshes it: the corrected importer writes the NORMALIZED
+    mapping. After that the historical values cannot be reconstructed from the live row, and both
+    directions must refuse rather than synthesize them — the verified pre-migration backup is then the
+    rollback mechanism. This asserts the refusal, so it cannot be relaxed by accident.
+    """
+    values = _shorten(_business_1120s("272000015", "EXAMPLE REFRESHED LLC"))
+
+    original = {key: value for key, value in to_mapping(HEADER, values).items() if key is not None}
+    refreshed = {key: value for key, value in
+                 to_mapping(HEADER, normalize_row(HEADER, values).values).items() if key is not None}
+
+    # While raw_data is the original payload, both directions work.
+    assert migration._original_values(json.dumps(original))["return_type"] is None
+    assert migration._repaired_values(json.dumps(original))["return_type"] == "1120S"
+
+    # Once it has been refreshed by a re-import, downgrade's own precondition fails...
+    assert migration._original_values(json.dumps(refreshed))["return_type"] == "1120S", \
+        "downgrade requires a NULL return_type here; a non-NULL value is what makes it refuse"
+
+    # ...and re-running the upgrade refuses too, rather than shifting an already-correct row again.
+    with pytest.raises(RuntimeError, match="does not match the proven short-row shape"):
+        migration._repaired_values(json.dumps(refreshed))
 
 
 # --- mixed years, and a legitimate multi-form history ----------------------------------------------
