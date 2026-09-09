@@ -13,6 +13,7 @@ from sqlalchemy import text
 load_dotenv(r"C:\Client360\app\.env")
 
 from app.db import engine  # noqa: E402
+from app.importers.drake_client_csv import iter_client_rows  # noqa: E402
 
 CLIENT_FILE = Path(r"C:\Client360\data\Drake\2025\2025.csv")
 EFILE_FILE = Path(r"C:\Client360\data\Drake\2025\2025EF.CSV")
@@ -296,16 +297,29 @@ DO UPDATE SET
 
 
 def import_clients(connection) -> int:
+    """Import the 2025 client export.
+
+    Rows pass through ``app.importers.drake_client_csv`` first. The 2025 export carries no malformed
+    rows, but the same reader is used here so that a future export with the 2021/2022 short-row 1120S
+    shape cannot silently import its values one column early — and so that an unrecognised short row
+    is reported rather than realigned on a guess.
+    """
     count = 0
+    unrecognised = 0
     source_time = datetime.fromtimestamp(
         CLIENT_FILE.stat().st_mtime,
         tz=UTC,
     )
 
     with CLIENT_FILE.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
+        for client_row in iter_client_rows(handle):
+            row_number = client_row.row_number
+            row = {key: value for key, value in client_row.mapping.items() if key is not None}
 
-        for row_number, row in enumerate(reader, start=1):
+            if client_row.shape.needs_review:
+                unrecognised += 1
+                print(f"  short row NOT NORMALIZED at row {row_number}: {client_row.shape.detail}")
+
             connection.execute(
                 client_upsert,
                 {
@@ -347,6 +361,9 @@ def import_clients(connection) -> int:
                 },
             )
             count += 1
+
+    if unrecognised:
+        print(f"  {unrecognised} short row(s) NOT NORMALIZED — shape not recognised, needing review")
 
     return count
 
