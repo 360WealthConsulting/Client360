@@ -23,11 +23,29 @@ through its new key and updates it in place.
 WHAT IS RE-READ, AND FROM WHERE
 -------------------------------
 Nothing is guessed and no client value is embedded in this file. ``raw_data`` holds the row exactly as
-the export produced it and is NEVER rewritten, so this migration reconstructs the original ordered
+the export produced it, and THIS MIGRATION never rewrites it, so it reconstructs the original ordered
 values from it — using ``CLIENT_EXPORT_HEADER``, because JSONB sorts its keys and loses the order —
 runs the SAME normalization the importer now runs, and re-derives the affected columns with the SAME
 parse helpers. Upgrade and downgrade both derive their values that way, which is what makes the pair
 lossless without storing a single taxpayer figure in version control.
+
+**That losslessness is conditional on ``raw_data`` still being the pre-fix payload.** A later Drake
+source re-import legitimately REFRESHES ``raw_data``: the corrected importer writes the normalized
+mapping, so a re-imported row's payload no longer describes the displaced original. This is not a
+fault — it is the importer doing its job — but it means the downgrade below can no longer reconstruct
+the historical values from the live row alone.
+
+Both directions already refuse in that situation rather than inventing anything, and that behaviour is
+deliberate and must not be relaxed:
+
+  * ``downgrade`` reads the refreshed payload, finds ``return_type`` is ``1120S`` rather than NULL, and
+    raises "does not re-read as a NULL return_type";
+  * a re-run ``upgrade`` finds ``Paid`` no longer holds a form token and raises "row does not match the
+    proven short-row shape".
+
+**After a source re-import, the verified pre-migration backup is the authoritative rollback
+mechanism**, not this downgrade. See ``docs/DRAKE_1120S_SHORT_ROW.md``. Never synthesize historical
+values to make the downgrade succeed.
 
 Columns re-derived (every column the importer reads from a header position at or after the
 displacement, measured across the 109 rows):
