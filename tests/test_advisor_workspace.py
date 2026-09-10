@@ -7,6 +7,7 @@ absence of any policy-gated Advisor Intelligence content.
 """
 import uuid
 from datetime import datetime, time, timedelta
+from pathlib import Path
 
 from sqlalchemy import delete, insert
 from starlette.requests import Request
@@ -119,6 +120,27 @@ def test_nav_shows_workspace_for_client_read_only_advisor():
     nobody = Principal(2, "b@e.com", "B", frozenset({"work.read"}))
     html2 = templates.env.get_template("base.html").render(request=_req(), principal=nobody)
     assert 'href="/workspace"' not in html2
+
+
+def test_workspace_has_compact_category_navigation():
+    template = (Path(__file__).parents[1] / "app/templates/workspace/dashboard.html").read_text()
+
+    assert 'aria-label="Workspace categories"' in template
+    for category in (
+        "priorities",
+        "widgets",
+        "attention",
+        "meetings",
+        "reviews",
+        "tasks",
+        "exceptions",
+        "intelligence",
+        "activity",
+    ):
+        assert f'id="workspace-{category}"' in template
+        assert f'href="#workspace-{category}"' in template
+
+    assert template.count('class="workspace-category workspace-anchor-section') == 7
 
 
 def test_route_renders_for_authorized_principal():
