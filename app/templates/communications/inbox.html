@@ -2,7 +2,7 @@
 {% block title %}Communications | 360Plus{% endblock %}{% block crumb %}Communications{% endblock %}
 {% block content %}
 <div class="conversation-page-head"><div><p class="eyebrow">Work queue</p><h1>Communications</h1><p class="subtle">Client messages and email waiting on the firm.</p></div></div>
-{% if not result.authorized %}<div class="card">Viewing client correspondence requires secure-message access.</div>{% else %}
+{% if not result.authorized %}<div class="card"><strong>Not available</strong><p class="subtle">Viewing client correspondence requires the secure-message read capability.</p></div>{% else %}
 {% set c = result.counts %}
 <div class="conversation-shell staff-conversation-shell">
   <aside class="conversation-channels" aria-label="Communication channels">
@@ -20,7 +20,9 @@
   <section class="conversation-list" aria-label="Communication list">
     <div class="conversation-list-head"><strong>{% if result.filters.channel == 'email' %}Emails{% elif result.filters.channel == 'secure_message' %}Secure messages{% else %}All communications{% endif %}</strong><span>{{ result.total }}</span></div>
     {% for r in result.rows %}<a class="conversation-row{{ ' is-unread' if r.unread else '' }}" href="{{ r.conversation_url }}"><span class="conversation-avatar">{{ (r.client_name or 'C')[0]|upper }}</span><span class="conversation-row-body"><strong>{{ r.subject }}</strong><small>{{ r.client_name or 'Client' }} · {{ r.channel_label }}</small><span>{{ r.preview or r.sender }} · {{ r.age_label }}</span></span>{% if r.attention %}<span class="conversation-unread" title="{{ r.attention_reason }}"></span>{% endif %}</a>
-    {% else %}<div class="conversation-empty"><strong>Nothing waiting</strong><span>No communications match this view.</span></div>{% endfor %}
+    {% else %}{# "nothing waiting" and "nothing matches this filter" are different facts for the reader. #}
+    {% if result.filters.view == 'all' and not result.filters.channel %}<div class="conversation-empty"><strong>Nothing waiting</strong><span>No client communications need your attention right now.</span></div>
+    {% else %}<div class="conversation-empty"><strong>No items match this filter</strong><span>Try another view, or clear it to see everything.</span></div>{% endif %}{% endfor %}
     {% if result.pages > 1 %}<nav class="conversation-pagination">{% if result.page > 1 %}<a href="?view={{ result.filters.view }}{% if result.filters.channel %}&amp;channel={{ result.filters.channel }}{% endif %}&amp;page={{ result.page - 1 }}">Previous</a>{% endif %}<span>Page {{ result.page }} of {{ result.pages }}</span>{% if result.page < result.pages %}<a href="?view={{ result.filters.view }}{% if result.filters.channel %}&amp;channel={{ result.filters.channel }}{% endif %}&amp;page={{ result.page + 1 }}">Next</a>{% endif %}</nav>{% endif %}
   </section>
   <section class="conversation-thread conversation-thread-empty"><div><span class="conversation-empty-icon">✉</span><h2>Select a conversation</h2><p>Choose a secure message or email to read and respond.</p></div></section>
