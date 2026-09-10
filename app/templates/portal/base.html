@@ -6,6 +6,7 @@
 <title>{% block title %}Client Portal{% endblock %} · 360Plus</title>
 <link rel="stylesheet" href="/static/css/main.css">
 <link rel="stylesheet" href="/static/css/portal.css">
+<link rel="stylesheet" href="/static/css/conversations.css">
 </head>
 <body class="portal">
 {% set path = request.url.path if request else '' %}
@@ -27,12 +28,9 @@
 <nav class="portal-nav" aria-label="Client portal">
   {% set nav = [
     ('/portal/', 'Dashboard'),
-    ('/portal/action-needed', 'Action Needed'),
-    ('/portal/documents', 'Documents'),
-    ('/portal/upload', 'Upload'),
+    ('/portal/action-needed', 'To Do'),
+    ('/portal/documents', 'Vault'),
     ('/portal/messages', 'Messages'),
-    ('/portal/requests', 'Requests'),
-    ('/portal/tasks', 'Tasks'),
     ('/portal/profile', 'Profile'),
   ] %}
   {# A link is rendered only if the SAME evaluation the middleware enforces would admit this

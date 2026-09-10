@@ -112,14 +112,22 @@ def test_the_route_takes_no_client_identifier_from_the_browser():
 
 # --- rendering -----------------------------------------------------------------------------------
 def test_a_authenticated_client_with_data_renders_the_dashboard(env, portal_messaging_on):
-    """The nav is gate-aware, so the Messages link is asserted with messaging switched ON."""
+    """The nav is gate-aware, so the Messages link is asserted with messaging switched ON.
+
+    Client navigation is now five destinations — Dashboard, To Do, Vault, Messages, Profile.
+    Tasks and Requests lost their tabs when their work moved under To Do; the ROUTES are
+    untouched, so an existing deep link still resolves. Only the nav consolidated."""
     _, principal, pid, _ = env.account()
     env.staff_doc(pid, client_visible=True)
     html = render(_open(principal))
     assert "Welcome, Portal Client" in html
-    assert 'href="/portal/documents"' in html      # existing navigation preserved
+    assert 'href="/portal/documents"' in html      # the Vault, under its client-facing name
+    assert ">Vault<" in html
     assert 'href="/portal/messages"' in html
-    assert 'href="/portal/tasks"' in html
+    assert 'href="/portal/action-needed"' in html  # To Do, where tasks and requests now live
+    assert ">To Do<" in html
+    assert 'href="/portal/tasks"' not in html      # folded into To Do, not a tab of its own
+    assert 'href="/portal/requests"' not in html
 
 
 def test_b_authenticated_client_with_no_data_renders_a_safe_empty_dashboard(env):

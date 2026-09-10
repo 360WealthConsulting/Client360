@@ -19,6 +19,25 @@
 {% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
 {% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
 
+<div class="conversation-shell staff-conversation-shell has-selection">
+  <aside class="conversation-channels" aria-label="Message views">
+    <strong>Conversations</strong>
+    <a class="active" href="/admin/client-portal/threads">◯ Client messages <span class="conversation-count">{{ threads|length }}</span></a>
+    <a href="/communications/inbox">✉ All communications</a>
+  </aside>
+  <section class="conversation-list" aria-label="Client conversations">
+    <div class="conversation-list-head"><strong>Client messages</strong><span>{{ threads|length }}</span></div>
+    {% for t in threads %}
+    <a class="conversation-row{{ ' active' if t.id == thread.id else '' }}{{ ' is-unread' if t.unread else '' }}" href="/admin/client-portal/threads/{{ t.id }}">
+      <span class="conversation-avatar">{{ (t.full_name or 'C')[0]|upper }}</span>
+      <span class="conversation-row-body"><strong>{{ t.subject }}</strong><small>{{ t.full_name or 'Client' }}{% if t.topic %} · {{ t.topic|title }}{% endif %}</small><span>{{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else 'No activity' }}</span></span>
+      {% if t.unread %}<span class="conversation-unread"></span>{% endif %}
+    </a>
+    {% endfor %}
+  </section>
+  <section class="conversation-thread staff-thread-pane">
+    <header class="conversation-thread-head"><div><h2>{{ thread.subject }}</h2><p>{{ client_name or 'Client' }}{% if thread.topic %} · {{ thread.topic|title }}{% endif %}</p></div><a class="conversation-mobile-back" href="/admin/client-portal/threads">← Back</a></header>
+
 <div class="card thread-header">
   <div class="stat-grid">
     <div class="thread-meta">
@@ -186,4 +205,6 @@
   </div>
   <div class="row"><button class="btn" type="submit">Send</button></div>
 </form>
+  </section>
+</div>
 {% endblock %}

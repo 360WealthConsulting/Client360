@@ -254,8 +254,16 @@ def portal_logout(request: Request, principal: PortalPrincipal = Depends(current
 # static path wins. Reads only through the canonical Exception Engine projection.
 @router.get("/portal/action-needed", response_class=HTMLResponse)
 def portal_action_needed(request: Request, principal: PortalPrincipal = Depends(current_portal)):
+    document_requests = (client_document_requests(principal)
+                         if _portal_can(principal, "/portal/requests") else [])
+    action_items = client_action_needed(principal)
+    if document_requests:
+        # A document request is already rendered below with its exact title and upload action.
+        # Suppress the generic exception projection that points to the old Requests page.
+        action_items = [item for item in action_items if item.get("action_url") != "/portal/requests"]
     return templates.TemplateResponse(request=request, name="portal/action_needed.html",
-        context={"action_items": client_action_needed(principal), "principal": principal})
+        context={"action_items": action_items, "document_requests": document_requests,
+                 "tasks": client_tasks(principal), "principal": principal})
 
 @router.get("/api/v1/portal/exceptions")
 def api_portal_exceptions(principal: PortalPrincipal = Depends(current_portal)):
@@ -612,6 +620,7 @@ def portal_message_thread_page(thread_id: int, request: Request,
         "principal": principal, "thread_id": thread_id,
         "subject": (row["subject"] if row else None) or "Conversation",
         "topic": row["topic"] if row else None, "messages": messages,
+        "threads": portal_hub.client_conversations(principal),
         "attachments": msg_attachments.attachments_for_messages(
             [m["id"] for m in messages], audience=msg_attachments.CLIENT),
         "linked_requests": portal_hub.linked_requests(thread_id),
