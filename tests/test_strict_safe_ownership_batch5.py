@@ -825,6 +825,179 @@ def test_batch1_constants_are_untouched():
     assert b1.EXPECTED_DISTINCT_PEOPLE == 205
 
 
+# --- the PRODUCTION contract, exercised synthetically -------------------------
+# Every apply test above patches the approved constants down to a 3-row batch, so none of them
+# proves that the REAL constants (55 rows / 36 people / {2: 55} / the frozen sha) are enforced.
+# The tests that did prove it read the production manifest, which is client-sensitive and absent
+# from CI. These rebuild a manifest of the production SHAPE from fabricated ids and names — no
+# client data, no database, fully deterministic — so the whole contract runs on every CI job.
+
+SYNTHETIC_ROWS = 55
+SYNTHETIC_PEOPLE = 36
+
+
+def _synthetic_rows(rows=SYNTHETIC_ROWS, people=SYNTHETIC_PEOPLE, corroborators=2):
+    """A manifest of the approved SHAPE, built from fabricated values only."""
+    out = []
+    for i in range(rows):
+        pid = 900000 + (i % people)          # first `people` rows are distinct, then repeats
+        out.append({
+            "document_id": 800000 + i,
+            "person_id": pid,
+            "person_name": f"Synthetic Person {pid}",
+            "corroborator_count": corroborators,
+            "original_name": f"synthetic-{i}.pdf",
+            "owner_proposal_fact_id": 700000 + i,
+            "owner_proposal_fact_version": 1,
+            "address_corroboration_used": "NO",
+            "zip_corroboration_used": "NO",
+            "shared_value_corroboration_used": "NO",
+            "document_fingerprint": f"{i:064x}",
+            "proposal_fingerprint": f"{i + 1000:064x}",
+            "classification_fingerprint": f"{i + 2000:064x}",
+            "target_person_fingerprint": f"{pid:064x}",
+        })
+    return out
+
+
+@pytest.fixture
+def synthetic(tmp_path):
+    rows = _synthetic_rows()
+    assert len(rows) == b5.EXPECTED_ROWS
+    assert len({r["person_id"] for r in rows}) == b5.EXPECTED_DISTINCT_PEOPLE
+    return _write_manifest(tmp_path, rows, name="synthetic.csv")
+
+
+def test_production_sha_is_enforced_by_default(synthetic):
+    """A manifest of the right shape but the wrong bytes is refused on the frozen SHA alone."""
+    with pytest.raises(b5.ManifestError, match="SHA256"):
+        b5.load_manifest(synthetic)
+
+
+def test_production_shape_constants_are_enforced_by_default(synthetic):
+    """With only the SHA relaxed, the default row/people/composition gates must still pass."""
+    rows = b5.load_manifest(synthetic, expect_sha=b5.sha256_of(synthetic))
+    assert len(rows) == 55
+    assert len({r["person_id"] for r in rows}) == 36
+
+
+def test_production_row_count_is_enforced_by_default(tmp_path):
+    path = _write_manifest(tmp_path, _synthetic_rows(rows=54, people=36), name="short.csv")
+    with pytest.raises(b5.ManifestError, match="54 rows, approved 55"):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+def test_production_distinct_people_is_enforced_by_default(tmp_path):
+    path = _write_manifest(tmp_path, _synthetic_rows(people=35), name="people.csv")
+    with pytest.raises(b5.ManifestError, match="35 distinct people, approved 36"):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+def test_production_composition_is_enforced_by_default(tmp_path):
+    rows = _synthetic_rows()
+    rows[0]["corroborator_count"] = 3
+    path = _write_manifest(tmp_path, rows, name="composition.csv")
+    with pytest.raises(b5.ManifestError, match="composition"):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+def test_production_duplicate_document_is_refused(tmp_path):
+    rows = _synthetic_rows()
+    rows[10]["document_id"] = rows[9]["document_id"]
+    path = _write_manifest(tmp_path, rows, name="dupe55.csv")
+    with pytest.raises(b5.ManifestError, match="duplicate document_id"):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+def test_production_below_minimum_corroborators_is_refused(tmp_path):
+    path = _write_manifest(tmp_path, _synthetic_rows(corroborators=1), name="one.csv")
+    with pytest.raises(b5.ManifestError, match="fewer than 2"):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+@pytest.mark.parametrize("column", ["address_corroboration_used", "zip_corroboration_used",
+                                    "shared_value_corroboration_used"])
+def test_every_evidence_policy_field_is_required_to_say_no(tmp_path, column):
+    rows = _synthetic_rows()
+    rows[3][column] = "YES"
+    path = _write_manifest(tmp_path, rows, name=f"{column}.csv")
+    with pytest.raises(b5.ManifestError, match=column):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+@pytest.mark.parametrize("column", ["document_fingerprint", "proposal_fingerprint",
+                                    "classification_fingerprint", "target_person_fingerprint"])
+def test_every_fingerprint_must_be_a_digest(tmp_path, column):
+    rows = _synthetic_rows()
+    rows[4][column] = "not-a-digest"
+    path = _write_manifest(tmp_path, rows, name=f"fp-{column}.csv")
+    with pytest.raises(b5.ManifestError, match=column):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+@pytest.mark.parametrize("column", list(b5.MANIFEST_REQUIRED_COLUMNS))
+def test_every_required_column_is_required(tmp_path, column):
+    rows = [{k: v for k, v in r.items() if k != column} for r in _synthetic_rows()]
+    cols = [c for c in MANIFEST_COLUMNS if c != column]
+    path = Path(tmp_path) / f"missing-{column}.csv"
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols, lineterminator="\n")
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+    with pytest.raises(b5.ManifestError, match=column):
+        b5.load_manifest(path, expect_sha=b5.sha256_of(path))
+
+
+def test_a_single_altered_byte_changes_the_manifest_hash(synthetic):
+    before = b5.sha256_of(synthetic)
+    text_ = synthetic.read_text(encoding="utf-8")
+    synthetic.write_text(text_.replace("synthetic-0.pdf", "synthetic-X.pdf"), encoding="utf-8")
+    assert b5.sha256_of(synthetic) != before
+
+
+def test_apply_defaults_pin_the_frozen_constants():
+    """The CLI's defaults are the approved values, so an operator cannot omit their way past them."""
+    import inspect
+    sig = inspect.signature(ap.run)
+    assert sig.parameters["apply_changes"].default is False       # dry run is the default
+    assert sig.parameters["confirm"].default is None
+    assert sig.parameters["actor_user_id"].default is None
+    # run() resolves each None to the frozen constant rather than to a caller-supplied value
+    assert b5.FROZEN_PLAN_DIGEST == "a3e68a9c02c388a7ff51950948abb286e2239ee03c252fd4cc9a0199e84e70cc"
+    assert b5.FROZEN_MANIFEST_SHA256 == \
+        "759de1e9394b05b39e69bf2d6d0596f473d2ad4472c5401c891a75d43160efea"
+
+
+def test_manifest_bound_by_construction():
+    """The apply builds its write set from the manifest, never from the recomputed plan.
+
+    The behavioural proof is test_qualifying_document_outside_the_manifest_is_never_assigned;
+    this is the structural companion, so a refactor that started iterating the plan would fail
+    here even if no qualifying stray document happened to exist when the suite ran.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(ap.run)))
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "resolve_document_ownership"]
+    assert calls, "the apply must call the canonical write path"
+
+    # Find the for-loop that encloses the assignment call and check what it iterates over.
+    enclosing = []
+    for loop in (n for n in ast.walk(tree) if isinstance(n, ast.For)):
+        if any(c in ast.walk(loop) for c in calls):
+            enclosing.append(loop)
+    assert enclosing, "the assignment must happen inside a loop over the manifest"
+    for loop in enclosing:
+        assert isinstance(loop.iter, ast.Name), "the write set must be a plain name, not an expression"
+        assert loop.iter.id == "rows", (
+            f"the assignment loop iterates {loop.iter.id!r}; the manifest ('rows') is the only "
+            "permitted source of rows")
+
+
 # --- FROZEN: the real production manifest -------------------------------------
 
 FROZEN_MANIFEST = Path(

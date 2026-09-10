@@ -174,6 +174,17 @@ def write_rollback_artifact(root, rows, pre, post, audit_ids, *, request_id, man
         for r in sorted(rows, key=lambda x: x["document_id"]):
             did = r["document_id"]
             a, b = pre[did], post[did]
+            # A CSV cannot distinguish SQL NULL from '' or from JSON null, so a NULL pre-image
+            # would silently come back as the wrong value on restore. Batch 5 can never carry
+            # one — verify_row requires review_status='not_required' — so refuse loudly here
+            # rather than let a future reuse of this writer corrupt what it claims to preserve.
+            if a["review_status"] is None:
+                raise RuntimeError(
+                    f"document {did} has a NULL review_status; this snapshot format cannot "
+                    "round-trip it")
+            if a["tags"] is None:
+                raise RuntimeError(
+                    f"document {did} has NULL tags; this snapshot format cannot round-trip it")
             w.writerow({
                 "document_id": did,
                 "original_name": a["original_name"] or "",
