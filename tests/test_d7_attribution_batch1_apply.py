@@ -598,17 +598,34 @@ def test_rollback_restores_the_exact_pre_image(applied, conn, monkeypatch):
 
 
 def test_rollback_deletes_only_the_links_it_recorded(applied, conn, monkeypatch):
+    """A link this batch did not create must survive, and only recorded ids may be deleted.
+
+    The bystander is built by the test — its own identifier, returns, contacts and entity — rather
+    than borrowed from whatever the database already held. An earlier version picked an arbitrary
+    unlinked Drake contact, which exists on a database with accumulated rows and does not exist on a
+    clean one, so the test passed locally and failed in CI. A test that needs a row creates it.
+    """
+    bystander = seed(conn)                   # absent from the manifest: the batch never touches it
     other = create_named_entity(conn, "business", f"OTHER {uuid.uuid4().hex[:6]}")
     survivor = conn.execute(text(
         "INSERT INTO entity_source_links (relationship_entity_id, source_contact_id, "
-        "match_method, match_score, confirmed) "
-        "SELECT :e, id, 'manual', 100.00, true FROM source_contacts "
-        "WHERE source_system = 'Drake' AND id NOT IN (SELECT source_contact_id "
-        "FROM entity_source_links) LIMIT 1 RETURNING id"), {"e": other}).scalar_one()
+        "match_method, match_score, confirmed) VALUES (:e, :c, 'manual', 100.00, true) "
+        "RETURNING id"), {"e": other, "c": bystander["contacts"][0]}).scalar_one()
+
+    payload = json.loads(
+        open(applied["report"]["rollback_manifest"], encoding="utf-8").read())
+    recorded = {int(i) for row in payload["rows"]
+                for i in row["created_entity_source_link_ids"]}
+    before = {int(i) for i in conn.execute(text("SELECT id FROM entity_source_links")).scalars()}
+    assert survivor in before
+    assert recorded <= before and len(recorded) == 7
+
     run(applied["report"]["rollback_manifest"], conn, monkeypatch, module=rb,
         apply_changes=True, confirm=rb.confirm_phrase(3))
-    assert conn.execute(text("SELECT count(*) FROM entity_source_links WHERE id = :i"),
-                        {"i": survivor}).scalar() == 1
+
+    after = {int(i) for i in conn.execute(text("SELECT id FROM entity_source_links")).scalars()}
+    assert before - after == recorded        # exactly the recorded ids went, and nothing else
+    assert survivor in after
 
 
 def test_rollback_keeps_the_attribution_audit_and_adds_a_compensating_one(
