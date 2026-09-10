@@ -27,7 +27,11 @@ from sqlalchemy import inspect, text
 from app.db import engine
 from app.importers.drake_client_csv import CLIENT_EXPORT_HEADER, read_client_rows
 from app.services import drake_entity_adjudication as adj
-from app.services.drake_identifier import identifier_digits, identifier_hash
+from app.services.drake_identifier import (
+    IdentifierHashKeyMissing,
+    identifier_digits,
+    identifier_hash,
+)
 from app.services.drake_return_identity import (
     NO_TAXPAYER_IDENTIFIER,
     assign_identities,
@@ -49,7 +53,27 @@ ESTATE_EIN = "99-7000001"
 TRUST_EIN = "99-7000002"
 
 
+#: A deterministic, obviously-not-production hashing secret for this module's tests.
+TEST_HASH_KEY = "adjudication-tests-not-a-production-key"
+
+
 # --- fixtures -------------------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def identifier_hash_key(monkeypatch):
+    """Give every test here its own hashing secret instead of inheriting the shell's.
+
+    CI does not set ``MICROSOFT_TOKEN_KEY``, and these tests originally read whatever the developer
+    had exported. That passed locally and failed in CI, which is precisely the class of hidden
+    dependency an isolated run exists to catch. Setting it here makes the value part of the test.
+
+    Tests that are ABOUT the absent or a specific secret override this with ``monkeypatch.delenv``
+    or ``setenv``; the same function-scoped ``monkeypatch`` applies both, so the test's own call
+    wins. Nothing about the product's fail-closed behaviour is relaxed — only the environment the
+    tests run in is made explicit.
+    """
+    monkeypatch.setenv("MICROSOFT_TOKEN_KEY", TEST_HASH_KEY)
+
 
 @pytest.fixture()
 def conn():
@@ -509,6 +533,30 @@ def test_an_identifier_with_no_digits_has_no_hash():
     assert identifier_hash("") is None
     assert identifier_hash(None) is None
     assert identifier_hash("no-digits-here") is None
+
+
+def test_the_canonical_hash_refuses_when_the_secret_is_absent(monkeypatch):
+    """Fail-closed at the source. No key means no identifier, never a hash of the empty key."""
+    monkeypatch.delenv("MICROSOFT_TOKEN_KEY", raising=False)
+
+    with pytest.raises(IdentifierHashKeyMissing):
+        identifier_hash(TRUST_EIN)
+
+
+def test_a_value_with_no_digits_needs_no_secret(monkeypatch):
+    """The early return happens before the key is read, so it holds even with no secret at all."""
+    monkeypatch.delenv("MICROSOFT_TOKEN_KEY", raising=False)
+
+    assert identifier_hash("no-digits-here") is None
+
+
+def test_adjudication_refuses_when_the_secret_is_absent(conn, actor, trust_entity, monkeypatch):
+    """The service derives its own hash, so it inherits the same fail-closed behaviour."""
+    contacts = [drake_contact(conn, name="Synthetic Trust", year=2022)]
+    monkeypatch.delenv("MICROSOFT_TOKEN_KEY", raising=False)
+
+    with pytest.raises(IdentifierHashKeyMissing):
+        adj.adjudicate_entity_identity(conn, request_for(trust_entity, contacts, actor))
 
 
 def test_the_adjudicated_hash_is_the_import_hash(conn, actor, trust_entity):
