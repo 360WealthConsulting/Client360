@@ -382,6 +382,15 @@ def test_the_code_is_never_placed_in_a_url():
     assert 'method="get"' not in verify_tpl.lower()
 
 
+def test_email_code_input_and_submit_button_have_equal_height():
+    """The verification row must not mix a browser-height input with a taller portal button."""
+    css = open("app/static/css/portal.css", encoding="utf-8").read()
+
+    assert ".portal-auth-form input" in css
+    assert ".portal-auth-form .btn" in css
+    assert css.count("height: 44px;") == 2
+
+
 def test_the_destination_address_comes_from_the_account_not_the_request(sent):
     """There is no parameter anywhere that can redirect a code to another mailbox."""
     import inspect
