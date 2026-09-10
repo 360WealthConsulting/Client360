@@ -7,6 +7,7 @@ absence of any policy-gated Advisor Intelligence content.
 """
 import uuid
 from datetime import datetime, time, timedelta
+from pathlib import Path
 
 from sqlalchemy import delete, insert
 from starlette.requests import Request
@@ -119,6 +120,101 @@ def test_nav_shows_workspace_for_client_read_only_advisor():
     nobody = Principal(2, "b@e.com", "B", frozenset({"work.read"}))
     html2 = templates.env.get_template("base.html").render(request=_req(), principal=nobody)
     assert 'href="/workspace"' not in html2
+
+
+CATEGORIES = ("priorities", "widgets", "attention", "meetings", "reviews",
+              "tasks", "exceptions", "intelligence", "activity")
+
+
+def _render_workspace():
+    """The rendered page, not the template source: an anchor that resolves in the file but not in
+    the output is exactly the defect these assertions exist to catch.
+
+    ``install_globals_on_all_templates`` is what ``app.main`` calls once every router is imported,
+    and it is what registers ``datefmt`` on the instance this route owns. Calling it here makes
+    these tests independent of whether some earlier test in the run happened to import app.main."""
+    from app.routes.workspace import workspace_dashboard
+    from app.templating import install_globals_on_all_templates
+    install_globals_on_all_templates()
+    advisor = Principal(1, "a@e.com", "A", ADVISOR_CAPS)
+    return workspace_dashboard(_req(), principal=advisor).body.decode()
+
+
+def test_every_category_link_has_a_target_that_exists():
+    html = _render_workspace()
+    assert 'aria-label="Workspace categories"' in html
+    for category in CATEGORIES:
+        assert f'href="#workspace-{category}"' in html, f"{category} has no navigator link"
+        assert f'id="workspace-{category}"' in html, f"#workspace-{category} resolves to nothing"
+    assert html.count("workspace-category workspace-anchor-section") == len(CATEGORIES)
+
+
+def test_the_navigator_is_a_list_of_real_links_so_it_is_keyboard_reachable():
+    """Anchors, not click handlers: Tab reaches them and Enter follows them with no JS at all.
+
+    The bar is also the only always-visible index of the page once the sections collapse, so it
+    must be a labelled landmark rather than a decorative strip."""
+    html = _render_workspace()
+    nav = html.split('aria-label="Workspace categories"', 1)[1].split("</nav>", 1)[0]
+    assert nav.count("<a href=") == len(CATEGORIES)
+    assert "onclick" not in nav and "javascript:" not in nav
+    assert "<button" not in nav                       # a button would need script to navigate
+
+
+def test_priorities_is_open_on_arrival_and_the_rest_collapse():
+    """The compaction must not cost the advisor the one panel they came for.
+
+    Everything else starts closed — that is the point of the redesign — but a collapsed
+    Priorities means a page that answers "is anything on fire?" only after a click."""
+    html = _render_workspace()
+    priorities = html.split('id="workspace-priorities"', 1)[1].split("</summary>", 1)[0]
+    assert priorities.lstrip().startswith('class="workspace-category workspace-anchor-section" open')
+    for category in CATEGORIES:
+        if category == "priorities":
+            continue
+        opening = html.split(f'id="workspace-{category}"', 1)[1].split(">", 1)[0]
+        assert " open" not in opening, f"{category} is a secondary section and should collapse"
+
+
+def test_collapsing_uses_native_details_rather_than_hidden_content():
+    """<details>/<summary> keeps a collapsed section findable by in-page search and reachable by
+    assistive technology. Content hidden with a class or `display:none` is neither."""
+    html = _render_workspace()
+    for category in CATEGORIES:
+        before = html.split(f'id="workspace-{category}"', 1)[0]
+        assert before.rstrip().endswith("<details"), f"{category} is not a native details element"
+    assert "<summary>" in html
+
+
+def test_the_long_lists_scroll_inside_their_own_panel():
+    """Contained scrolling is what keeps the page compact when a category holds hundreds of rows.
+    Priorities, Tasks, Exceptions and Activity are the four that grow without bound."""
+    html = _render_workspace()
+    for category in ("priorities", "tasks", "exceptions", "activity"):
+        body = html.split(f'id="workspace-{category}"', 1)[1].split("</details>", 1)[0]
+        assert "workspace-scroll-panel" in body, f"{category} can grow without bound"
+    css = (Path(__file__).parents[1] / "app/static/css/workspace.css").read_text(encoding="utf-8")
+    assert "max-height" in css and "overflow-y: auto" in css
+    assert "overscroll-behavior: contain" in css      # scrolling a panel must not scroll the page
+
+
+def test_the_workspace_is_usable_on_a_narrow_screen():
+    """The navigator scrolls sideways rather than wrapping into a wall of chips, and the layout
+    has an explicit narrow-screen rule instead of relying on the desktop padding."""
+    css = (Path(__file__).parents[1] / "app/static/css/workspace.css").read_text(encoding="utf-8")
+    nav_rule = css.split(".workspace-category-nav {", 1)[1].split("}", 1)[0]
+    assert "overflow-x: auto" in nav_rule
+    assert "position: sticky" in nav_rule             # stays reachable while the page scrolls
+    assert "@media (max-width: 700px)" in css
+
+
+def test_no_priority_information_is_hidden_behind_a_click():
+    """The counts on every summary mean a collapsed category still reports how much it holds, so
+    nothing disappears silently when the page compacts."""
+    html = _render_workspace()
+    for category in ("priorities", "attention", "tasks", "exceptions"):
+        summary = html.split(f'id="workspace-{category}"', 1)[1].split("</summary>", 1)[0]
+        assert "workspace-category-count" in summary, f"{category} collapses without a count"
 
 
 def test_route_renders_for_authorized_principal():

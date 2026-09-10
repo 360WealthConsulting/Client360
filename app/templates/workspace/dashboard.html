@@ -15,6 +15,18 @@
   <p class="subtle">{{ ws.date | datefmt("%A, %B %-d, %Y") }} · <a href="/workspace/assist">Advisor Assist ✨ (review required)</a></p>
 </header>
 
+<nav class="workspace-category-nav" aria-label="Workspace categories">
+  <a href="#workspace-priorities">Priorities</a>
+  <a href="#workspace-widgets">Workspace</a>
+  <a href="#workspace-attention">Attention</a>
+  <a href="#workspace-meetings">Meetings</a>
+  <a href="#workspace-reviews">Reviews</a>
+  <a href="#workspace-tasks">Tasks</a>
+  <a href="#workspace-exceptions">Exceptions</a>
+  <a href="#workspace-intelligence">Intelligence</a>
+  <a href="#workspace-activity">Activity</a>
+</nav>
+
 {# A tile reading 0 reports the ABSENCE of work in that domain, not a figure worth a card.
    Six of them filled the first band of the day's screen with the news that there is nothing
    to do, pushing Priorities below the fold. Each tile renders only when its domain has
@@ -37,6 +49,12 @@
 </section>
 {% endif %}
 
+{# Priorities opens with the page. The other eight collapse — that is what makes the day's screen
+   compact — but the highest-priority work is the reason the advisor opened it, and a category
+   navigator is not worth one extra click to find out whether anything is on fire. #}
+<details id="workspace-priorities" class="workspace-category workspace-anchor-section" open>
+<summary><span>Priorities</span><span class="workspace-category-count">{{ ws.priorities.entries|length }}</span></summary>
+<div class="workspace-category-body workspace-scroll-panel">
 <h2 class="section-title">Priorities</h2>
 <article class="card workspace-priorities">
   {# Semantic tint + a tick, not colour emoji: 🔴/🟡/🟢 render as full-colour glyphs
@@ -68,7 +86,12 @@
     </div>
   {% else %}{% call ui.empty("Nothing urgent", "No high or medium priority items right now.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
+<details id="workspace-widgets" class="workspace-category workspace-anchor-section">
+<summary><span>Your Workspace</span><span class="workspace-category-count">{{ ws.widgets|length }}</span></summary>
+<div class="workspace-category-body">
 <div class="workspace-toolbar">
   <h2 class="section-title u-m-0">Your Workspace</h2>
   {% if ws.can_personalize %}
@@ -126,7 +149,12 @@
 {% else %}
   {% call ui.empty("No widgets", "No workspace widgets are available to you.") %}{% endcall %}
 {% endif %}
+</div>
+</details>
 
+<details id="workspace-attention" class="workspace-category workspace-anchor-section">
+<summary><span>My clients needing attention</span><span class="workspace-category-count">{{ d.attention|length }}</span></summary>
+<div class="workspace-category-body">
 <h2 class="section-title">My clients needing attention</h2>
 <article class="card">
   {% if d.attention %}
@@ -144,7 +172,12 @@
   </table></div>
   {% else %}{% call ui.empty("Nothing needs attention", "No open exceptions for your clients right now.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
+<details id="workspace-meetings" class="workspace-category workspace-anchor-section">
+<summary><span>Meetings today</span><span class="workspace-category-count">{{ d.meetings|length }}</span></summary>
+<div class="workspace-category-body">
 <h2 class="section-title">Meetings today</h2>
 <article class="card">
   {% if d.meetings %}
@@ -153,7 +186,12 @@
   {% endfor %}
   {% else %}{% call ui.empty("No meetings today", "Nothing on the calendar for your clients today.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
+<details id="workspace-reviews" class="workspace-category workspace-anchor-section">
+<summary><span>Upcoming reviews</span><span class="workspace-category-count">{{ d.reviews|length }}</span></summary>
+<div class="workspace-category-body">
 <h2 class="section-title">Upcoming reviews</h2>
 <article class="card">
   {% if d.reviews %}
@@ -171,7 +209,12 @@
   </table></div>
   {% else %}{% call ui.empty("No reviews due", "No accounts are due for review.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
+<details id="workspace-tasks" class="workspace-category workspace-anchor-section">
+<summary><span>Tasks</span><span class="workspace-category-count">{{ d.tasks|length }}</span></summary>
+<div class="workspace-category-body workspace-scroll-panel">
 <h2 class="section-title">Tasks</h2>
 <article class="card">
   {% if d.tasks %}
@@ -189,7 +232,12 @@
   </table></div>
   {% else %}{% call ui.empty("No open tasks", "You have no open tasks for your clients.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
+<details id="workspace-exceptions" class="workspace-category workspace-anchor-section">
+<summary><span>Exceptions</span><span class="workspace-category-count">{{ d.exceptions|length }}</span></summary>
+<div class="workspace-category-body workspace-scroll-panel">
 <h2 class="section-title">Exceptions</h2>
 <article class="card">
   {% if d.exceptions %}
@@ -208,7 +256,12 @@
   </table></div>
   {% else %}{% call ui.empty("No open exceptions", "No open exceptions for your clients.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
+<details id="workspace-intelligence" class="workspace-category workspace-anchor-section">
+<summary><span>Advisor Intelligence</span></summary>
+<div class="workspace-category-body">
 <h2 class="section-title">Advisor Intelligence</h2>
 <article class="card">
   {# Deterministic, factual, propose-only signals + opportunities (Phase D.5B/D.5C),
@@ -216,7 +269,12 @@
      action controls. Rendered via the shared macro — never generated in-template. #}
   {{ intel.signals_panel(signals) }}
 </article>
+</div>
+</details>
 
+<details id="workspace-activity" class="workspace-category workspace-anchor-section">
+<summary><span>Recent client activity</span><span class="workspace-category-count">{{ d.activity|length }}</span></summary>
+<div class="workspace-category-body workspace-scroll-panel">
 <h2 class="section-title">Recent client activity</h2>
 <article class="card">
   {% if d.activity %}
@@ -225,4 +283,6 @@
   {% endfor %}
   {% else %}{% call ui.empty("No recent activity", "No recent timeline activity for your clients.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 {% endblock %}
