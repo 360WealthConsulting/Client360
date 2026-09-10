@@ -158,7 +158,7 @@ def test_api_list_and_html_render_and_parity():
     html = P.portal_action_needed(_req(), principal=portal)
     assert html.status_code == 200 and "text/html" in html.headers["content-type"]
     body = html.body.decode()
-    assert "Action Needed" in body and "Upload a requested document" in body
+    assert "To Do" in body and "Upload a requested document" in body
     assert "width=device-width" in body  # responsive/mobile viewport (inherited shell)
     # no internal terminology in the rendered client page
     for term in ("dedupe", "escalation", "exception.write", "COMPLIANCE_", "DOC_MISSING_OVERDUE"):
