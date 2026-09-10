@@ -55,7 +55,15 @@ def _mcp_enabled(monkeypatch):
 
 
 def _tag():
-    return uuid.uuid4().hex[:8]
+    """A unique suffix that can never be mistaken for a sensitive identifier.
+
+    ``uuid4().hex[:8]`` is all digits about once in every 43 draws, and 0.13.0's document-name
+    safety gate correctly scrubs an eight-digit run as an account number. When that happened,
+    ``list_client_documents`` reported "Joint 1040" for a document seeded as "Joint 1040 43018259"
+    and test_name_filter_matches_the_name_the_tool_reports failed — a ~2.3% flake with nothing
+    wrong in it but the fixture. A leading letter puts the tag out of that pattern's reach; the
+    gate itself is untouched, and the suite still asserts real redaction where it means to."""
+    return "t" + uuid.uuid4().hex[:7]
 
 
 @pytest.fixture

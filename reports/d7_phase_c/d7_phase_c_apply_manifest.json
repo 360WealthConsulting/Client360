@@ -1,0 +1,73 @@
+{
+  "alembic": "drake03",
+  "apply_manifest_sha256": "6f667cf85a2090abe179d6aa294dee17520532dc6d717794f271139bfc5ddfa4",
+  "batch": "D7-PHASE-C",
+  "by_cohort": {
+    "A": 111,
+    "B": 11
+  },
+  "by_subject_type": {
+    "business_entity": 121,
+    "estate_or_trust": 1
+  },
+  "case_7379": {
+    "identifier_hash": "1b71db7dfc6dff678a5264ffdba6bee4e4366618febc9b7342b36b544472f86f",
+    "included": true,
+    "natural_person_identity_fingerprint": "c6f90aed29ec26c6bcdee76c00ded191",
+    "natural_person_identity_outside_target_set": true
+  },
+  "destination_values": {
+    "confirmation_source": null,
+    "evidence_method": null,
+    "relationship_entity_id": null,
+    "trust_level": null
+  },
+  "excluded": {
+    "by_code": {
+      "PERSON_LINK_WITHOUT_PSL": 5,
+      "UNEXPECTED_DEPENDENCY": 6
+    },
+    "by_underlying_cohort": {
+      "B": 2,
+      "C": 8,
+      "D": 1
+    },
+    "note": "Refusal codes reflect CHECK ORDER, not cohort. The pending-candidate check runs before classification, so UNEXPECTED_DEPENDENCY masks the underlying cohort for 6 rows (2 B, 3 C, 1 D).",
+    "rows": 11
+  },
+  "exclusions_sha256": "23471c430c081a45b3382171de072b83a055a83fe3194573e71e77c97e712b7d",
+  "expected_writes": {
+    "audit_events_inserts": 122,
+    "drake_business_identity_inserts": 122,
+    "drake_identity_deletes": 122
+  },
+  "expected_zero_writes": {
+    "documents": 0,
+    "drake_client_returns": 0,
+    "drake_identity_match_candidates": 0,
+    "entity_source_links": 0,
+    "people": 0,
+    "person_source_links": 0,
+    "relationship_entities": 0,
+    "source_contacts": 0
+  },
+  "feature_base": "c563d31f9f2b81483be922278c51b9763c9c387a",
+  "feature_branch": "feat/d7-phase-c-identity-relocation",
+  "feature_head": "1cc337b0899f4ee3bf1c4582503401d397118837",
+  "invariants": {
+    "cohort_b_rows_with_backing_psl": 11,
+    "cohort_c_rows": 0,
+    "cohort_d_rows": 0,
+    "dbi_conflicts": 0,
+    "inbound_fks_to_drake_identity": 0,
+    "natural_person_subjects": 0,
+    "pending_candidates_among_targets": 0,
+    "unique_identifier_hashes": 122
+  },
+  "non_natural_backlog": 133,
+  "production_database": "client360",
+  "production_deployed_head": "c563d31f9f2b81483be922278c51b9763c9c387a",
+  "rollback_contract": "This is the PRE-APPLY manifest. drake_business_identity ids do not exist yet. A future authorized apply must capture every INSERT ... RETURNING id, build a POPULATED rollback manifest and SHA-256 it BEFORE COMMIT. These are two separate artifacts.",
+  "rows": 122,
+  "status": "FROZEN_PRE_APPLY — not a rollback receipt"
+}

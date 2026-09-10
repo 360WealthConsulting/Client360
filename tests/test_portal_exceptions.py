@@ -158,7 +158,7 @@ def test_api_list_and_html_render_and_parity():
     html = P.portal_action_needed(_req(), principal=portal)
     assert html.status_code == 200 and "text/html" in html.headers["content-type"]
     body = html.body.decode()
-    assert "Action Needed" in body and "Upload a requested document" in body
+    assert "To Do" in body and "Upload a requested document" in body
     assert "width=device-width" in body  # responsive/mobile viewport (inherited shell)
     # no internal terminology in the rendered client page
     for term in ("dedupe", "escalation", "exception.write", "COMPLIANCE_", "DOC_MISSING_OVERDUE"):
@@ -166,10 +166,60 @@ def test_api_list_and_html_render_and_parity():
 
 
 def test_empty_state_render():
-    u, p, h, portal, r = _case()
+    """"All caught up" now means all THREE lists are empty, not just the exception projection.
+
+    ``_case()`` builds a tax intake case, and an intake case carries a pending workflow task — so
+    since To Do began showing tasks and document requests, that fixture can no longer produce an
+    empty page. A bare portal account can."""
+    from tests._portal_util import seed_portal_account, seed_staff_user
+    _, portal, _, _ = seed_portal_account(seed_staff_user())
     html = P.portal_action_needed(_req(), principal=portal)
     assert html.status_code == 200
     assert "all caught up" in html.body.decode()
+
+
+def test_a_workflow_task_is_shown_under_to_do_and_suppresses_the_empty_state():
+    """The other half of the consolidation: tasks reach the client through To Do, not a Tasks tab."""
+    u, p, h, portal, r = _case()
+    body = P.portal_action_needed(_req(), principal=portal).body.decode()
+    assert "Tasks" in body
+    assert "all caught up" not in body
+
+
+def test_a_specific_document_request_suppresses_the_generic_one(portal_master_on):
+    """DOC_MISSING_OVERDUE renders as "Upload a requested document" pointing at the old Requests
+    page. Once the client can see the actual requests — each with its real title and its own
+    upload action — that generic pointer is noise sending them where they already are.
+
+    An intake case opens three document requests of its own, so raising the exception on top of
+    it is exactly the duplicate this suppression exists for."""
+    u, p, h, portal, r = _case()
+    _raise("DOC_MISSING_OVERDUE", u=u, r=r, p=p, h=h)
+    body = P.portal_action_needed(_req(), principal=portal).body.decode()
+    assert "Documents requested" in body              # the specific requests are on the page...
+    assert "Prior-year tax return" in body            # ...under their own titles
+    assert "Go to document requests" not in body      # ...so the generic duplicate is gone
+
+
+def test_the_generic_request_item_survives_when_the_client_cannot_see_requests():
+    """The other direction, and the one that matters for safety: with the requests surface closed
+    the page shows no specific requests, so suppressing the generic item would leave the client
+    with no indication at all that a document is outstanding."""
+    u, p, h, portal, r = _case()
+    _raise("DOC_MISSING_OVERDUE", u=u, r=r, p=p, h=h)
+    body = P.portal_action_needed(_req(), principal=portal).body.decode()
+    assert "Documents requested" not in body          # entitlement is unchanged: still closed
+    assert "Go to document requests" in body          # so the generic item is the only signal
+
+
+def test_deduplication_never_suppresses_an_unrelated_action(portal_master_on):
+    """Only items pointing at /portal/requests are dropped. Everything else must survive."""
+    u, p, h, portal, r = _case()
+    _raise("DOC_MISSING_OVERDUE", u=u, r=r, p=p, h=h)
+    _raise("CLIENT_ENGAGEMENT_UNSIGNED", u=u, r=r, p=p, h=h)
+    body = P.portal_action_needed(_req(), principal=portal).body.decode()
+    assert "Sign your engagement letter" in body      # a different action_url, untouched
+    assert "Go to document requests" not in body
 
 
 def test_navigation_link_present(portal_master_on):

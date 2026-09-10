@@ -1,0 +1,88 @@
+category,dbi_id,subject_name,target_entity_id,source_contact_count,source_contact_ids,reason,note
+A_ONE_CONTACT,520,a taste of china inc,5,1,8194,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,521,bonded permanent jewelry,29,1,10819,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,523,henry tobacco inc,156,1,8710,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,525,creckz llc,60,1,13296,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,539,skysworn consulting llc,58,1,12046,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,541,durga shakti llc,149,1,8713,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,545,mignard company llc,52,1,13635,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,550,robbins refrigeration,104,1,11865,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,559,sandeep nayyar corporation,120,1,8566,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,562,a shear experience inc,157,1,8492,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,566,someday legacy,90,1,12922,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,567,jerajh inc,122,1,8023,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,568,welcome valley properties llc,102,1,13177,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,570,arrington paving company inc,20,1,10574,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,571,airpark animal hospital ltd,13,1,12609,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,573,kevin & cindy smith llc,40,1,8338,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,574,raymond's construction,56,1,12724,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,575,full circle tn,41,1,13047,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,582,precision windows and doors inc,150,1,7973,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,584,sheltons homestead llc,81,1,11406,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,591,appalachian roofing llc,16,1,13636,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,594,blacksmith barber llc,22,1,13290,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,599,morgan & morgan construction inc,53,1,8088,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,603,amazing concepts inc,121,1,8899,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,605,griffith apparel llc,17,1,9337,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,610,oak mountain capital inc,38,1,8390,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,618,stiga equity llc,68,1,11814,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,619,akash inc,154,1,7953,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,622,esmeralda holdings llc,69,1,12159,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,624,td&k enterprises inc,148,1,8040,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,625,those clean bin guys llc,25,1,13197,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,627,akash infra inc,14,1,8398,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,630,arete builders,18,1,13119,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,634,arrington paving company inc,20,1,11761,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,635,ghfn property inc,151,1,8126,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+A_ONE_CONTACT,639,grow goodness llc,74,1,12731,HELD_SINGLE_SOURCE_CONTACT_FIRST_BATCH_POLICY,valid under the deployed service contract; outside this batch only
+B_MULTI_IDENTIFIER_ENTITY,570,arrington paving company inc,20,1,10574,ENTITY_20_WOULD_HOLD_2_DISTINCT_IDENTIFIERS,entity 'ARRINGTON PAVING COMPANY INC'; years 2023-2023
+B_MULTI_IDENTIFIER_ENTITY,634,arrington paving company inc,20,1,11761,ENTITY_20_WOULD_HOLD_2_DISTINCT_IDENTIFIERS,entity 'ARRINGTON PAVING COMPANY INC'; years 2024-2024
+B_MULTI_IDENTIFIER_ENTITY,521,bonded permanent jewelry,29,1,10819,ENTITY_29_WOULD_HOLD_2_DISTINCT_IDENTIFIERS,entity 'BONDED PERMANENT JEWELRY'; years 2023-2023
+B_MULTI_IDENTIFIER_ENTITY,557,bonded permanent jewelry,29,2,11805|12923,ENTITY_29_WOULD_HOLD_2_DISTINCT_IDENTIFIERS,entity 'BONDED PERMANENT JEWELRY'; years 2024-2025
+B_MULTI_IDENTIFIER_ENTITY,535,mignard company llc,52,4,8509|9685|10944|12170,ENTITY_52_WOULD_HOLD_2_DISTINCT_IDENTIFIERS,entity 'Mignard Company LLC'; years 2021-2024
+B_MULTI_IDENTIFIER_ENTITY,545,mignard company llc,52,1,13635,ENTITY_52_WOULD_HOLD_2_DISTINCT_IDENTIFIERS,entity 'Mignard Company LLC'; years 2025-2025
+C_PARTIAL_PROVENANCE,524,nelwyn c morris llc,36,2,9585|10831,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,526,tanell llc,112,3,8653|9834|11110,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,528,decked out boathouse inc,28,5,8413|9581|10827|12072|13138,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,530,sunderam inc,111,5,8119|9279|10498|11792|12909,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,531,keller williams realty roanoke,87,2,9672|10931,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,533,stripe a lot,6,3,8094|9247|10461,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,535,mignard company llc,52,4,8509|9685|10944|12170,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,536,mary mckay and co inc,46,5,8367|9527|10770|12021|13088,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,543,rjh inc,105,3,8295|9443|10682,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,544,4685 llc,4,3,8511|9686|10945,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,551,mac westland real estate,70,3,7966|9131|10321,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,552,annette smith estate,114,3,8959|10130|11458,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,553,newton & sullivan law,89,2,9275|10494,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,555,1 shabby chic llc,1,5,8424|9600|10846|12091|13155,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,558,simba inc,108,3,8540|9729|10990,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,563,haulmax trucking llc,78,2,9781|11052,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,569,rst construction llc,57,5,8147|9301|10522|11813|12929,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,576,bill henry plumbing,24,4,8145|9299|10520|11811,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,578,amerasia llc,119,5,8230|9372|10607|11882|12980,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,579,c2 business solutions llc,33,5,8811|9988|11287|12470|13479,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,583,murray clinic,45,2,9552|10794,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,585,4459 llc,3,3,8357|9512|10754,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,586,church and main llc,39,4,9560|10803|12050|13122,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,588,lavaca media inc,88,4,9753|11021|12234|13273,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,589,aashish llc,8,2,10080|11396,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,590,bloom west end llc,26,7,8483|9658|9659|10912|10913|12150|13201,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,592,bookconductors llc,30,3,8152|9305|10526,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,598,white willow homestead llc,82,5,8063|9222|10436|11750|12874,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,600,paragon yard and shed llc,100,2,10191|11528,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,601,comic sans assassin llc,21,4,9442|10679|11943|13025,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,602,stlp inc,110,3,7932|9095|10274,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,611,crossbow services llc,61,5,8174|9325|10553|11838|12945,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,616,roanoke music group llc,75,5,7957|9123|10310|11640|12787,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,620,homes by amy llc,15,2,10184|11519,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,629,smith communications,50,3,8785|9959|11255,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,632,calhoun construction llc,37,4,9494|10734|11988|13064,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,633,custom plumbing inc,62,5,8599|9785|11057|12264|13300,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,636,keen business brokers inc,31,3,10092|11409|12583,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+C_PARTIAL_PROVENANCE,637,the ivory elephant llc,66,3,10142|11470|12639,PROVENANCE_COVERS_ONLY_PART_OF_THE_CONTACT_SET,service accepts an intersection; this batch requires full coverage
+D_MULTIPLE_VALID_ENTITIES,529,belcher home team llc,23|159,3,8039|9200|10410,OWNERSHIP_CONTESTED_BETWEEN_MULTIPLE_VALID_ENTITIES,requires human adjudication
+E_NO_PROVENANCE_VALID_ENTITY,577,haulmax trucking llc,none,1,8671,NO_ENTITY_SATISFIES_THE_CANONICAL_PROVENANCE_CONTRACT,no entity anywhere passed; verified against all entities
+E_NO_PROVENANCE_VALID_ENTITY,595,4 z llc,none,3,11265|12448|13460,NO_ENTITY_SATISFIES_THE_CANONICAL_PROVENANCE_CONTRACT,no entity anywhere passed; verified against all entities
+E_NO_PROVENANCE_VALID_ENTITY,606,everbreeze acres inc,none,1,8437,NO_ENTITY_SATISFIES_THE_CANONICAL_PROVENANCE_CONTRACT,no entity anywhere passed; verified against all entities
+E_NO_PROVENANCE_VALID_ENTITY,626,occupational therapy & technology s,none,4,8053|9213|10427|11744,NO_ENTITY_SATISFIES_THE_CANONICAL_PROVENANCE_CONTRACT,no entity anywhere passed; verified against all entities
+E_NO_PROVENANCE_VALID_ENTITY,631,argentino asset management,none,1,8723,NO_ENTITY_SATISFIES_THE_CANONICAL_PROVENANCE_CONTRACT,no entity anywhere passed; verified against all entities

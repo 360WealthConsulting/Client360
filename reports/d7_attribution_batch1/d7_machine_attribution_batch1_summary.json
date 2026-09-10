@@ -1,0 +1,173 @@
+{
+  "alembic": "drake03",
+  "artifacts": {
+    "exclusions_csv": {
+      "bytes": 15194,
+      "path": "C:\\Users\\michael\\AppData\\Local\\Temp\\claude\\C--Client360-Docs-Workspace\\5a1cf654-36a7-4a5e-8f85-01cb6e107ca1\\scratchpad\\d7_attribution_batch1\\d7_machine_attribution_batch1_exclusions.csv",
+      "rows": 87,
+      "sha256": "282d686d56e09d124f30561e078a48365047a72762ae584d6f06484a945a49f2"
+    },
+    "manifest_csv": {
+      "bytes": 17918,
+      "path": "C:\\Users\\michael\\AppData\\Local\\Temp\\claude\\C--Client360-Docs-Workspace\\5a1cf654-36a7-4a5e-8f85-01cb6e107ca1\\scratchpad\\d7_attribution_batch1\\d7_machine_attribution_batch1_manifest.csv",
+      "rows": 39,
+      "sha256": "2cbfadecb448ce3be60abc8bcbe83aa181f3c347a8552d5a8f887623927bc6b4"
+    },
+    "manifest_json": {
+      "bytes": 76246,
+      "path": "C:\\Users\\michael\\AppData\\Local\\Temp\\claude\\C--Client360-Docs-Workspace\\5a1cf654-36a7-4a5e-8f85-01cb6e107ca1\\scratchpad\\d7_attribution_batch1\\d7_machine_attribution_batch1_manifest.json",
+      "sha256": "1a55d3dd50ca1c08712c84f849583e73282b9de8db5dc2919e8caeee12de219c"
+    }
+  },
+  "attribution_audits_after": 1,
+  "attribution_audits_before": 1,
+  "case_7379": {
+    "dbi_id": 532,
+    "entity": 153,
+    "in_manifest": false
+  },
+  "complete_provenance_multi_contact_before_multi_id_exclusions": 40,
+  "complete_provenance_one_contact_held": 36,
+  "complete_provenance_unique_total": 76,
+  "confirmation_phrase": "APPLY-D7-ATTRIB-BATCH1-39",
+  "contact_count_distribution": {
+    "2": 15,
+    "3": 18,
+    "4": 2,
+    "5": 4
+  },
+  "deployed_head": "c60f33b4da9988aeccdf58b4b05f3aac9c118d6b",
+  "distinct_target_entities": 39,
+  "exclusion_categories": {
+    "A_ONE_CONTACT": 36,
+    "B_MULTI_IDENTIFIER_ENTITY": 6,
+    "C_PARTIAL_PROVENANCE": 39,
+    "D_MULTIPLE_VALID_ENTITIES": 1,
+    "E_NO_PROVENANCE_VALID_ENTITY": 5
+  },
+  "expected_audit_inserts": 39,
+  "expected_dbi_inserts": 0,
+  "expected_dbi_updates": 39,
+  "expected_esl_inserts": 112,
+  "expected_other_writes": 0,
+  "final_batch1_count": 39,
+  "fingerprints_after": {
+    "documents": [
+      1,
+      "b34d5e0e02617e18714cf9a7bd37f4846d63b6449438046778e99e722eda11e3"
+    ],
+    "drake_business_identity": [
+      150,
+      "757a607196cee48236b5dc17bf435f74db8c91a5cceb5bf8ca6b294888613690"
+    ],
+    "drake_client_returns": [
+      3690,
+      "b4373102a82eeac07527eb14335c2073c641b7be184430f47bfac9275fe69e63"
+    ],
+    "drake_identity": [
+      1654,
+      "6bea46f0d60611467d50ce0f76a7c980765cc79f88e10c7298b6e5a4df565f83"
+    ],
+    "drake_identity_match_candidates": [
+      435,
+      "1b4696a843e199a761552713e0ea79bfb51d23c70507f8dfd1ac39bb55db8bc7"
+    ],
+    "entity_source_links": [
+      71,
+      "2d7119acafb8fc233ec63152b48a1a72afe89f143ecabe4883613880ca1a9d1c"
+    ],
+    "people": [
+      7782,
+      "c9396957d42d46d84f7c18e259b2e468d5f82910ef030aa541b3d9393c17cb29"
+    ],
+    "person_source_links": [
+      11081,
+      "f7bebbfaa0f29f04cc415cb4d86851562d7e85e9732ceeba2761348891865786"
+    ],
+    "relationship_entities": [
+      213,
+      "86be2b98d241abc4e59d722916fc5267533077f88ac1af15cd6bcfd792a6b182"
+    ],
+    "source_contacts": [
+      13686,
+      "5c6d6bd7d106a6cc462b8b35c311aeed742c45758949ba768c17584f90e315c2"
+    ]
+  },
+  "fingerprints_before": {
+    "documents": [
+      1,
+      "b34d5e0e02617e18714cf9a7bd37f4846d63b6449438046778e99e722eda11e3"
+    ],
+    "drake_business_identity": [
+      150,
+      "757a607196cee48236b5dc17bf435f74db8c91a5cceb5bf8ca6b294888613690"
+    ],
+    "drake_client_returns": [
+      3690,
+      "b4373102a82eeac07527eb14335c2073c641b7be184430f47bfac9275fe69e63"
+    ],
+    "drake_identity": [
+      1654,
+      "6bea46f0d60611467d50ce0f76a7c980765cc79f88e10c7298b6e5a4df565f83"
+    ],
+    "drake_identity_match_candidates": [
+      435,
+      "1b4696a843e199a761552713e0ea79bfb51d23c70507f8dfd1ac39bb55db8bc7"
+    ],
+    "entity_source_links": [
+      71,
+      "2d7119acafb8fc233ec63152b48a1a72afe89f143ecabe4883613880ca1a9d1c"
+    ],
+    "people": [
+      7782,
+      "c9396957d42d46d84f7c18e259b2e468d5f82910ef030aa541b3d9393c17cb29"
+    ],
+    "person_source_links": [
+      11081,
+      "f7bebbfaa0f29f04cc415cb4d86851562d7e85e9732ceeba2761348891865786"
+    ],
+    "relationship_entities": [
+      213,
+      "86be2b98d241abc4e59d722916fc5267533077f88ac1af15cd6bcfd792a6b182"
+    ],
+    "source_contacts": [
+      13686,
+      "5c6d6bd7d106a6cc462b8b35c311aeed742c45758949ba768c17584f90e315c2"
+    ]
+  },
+  "multi_identifier_entities": {
+    "20": [
+      "757d24f0bf874e2f6ec45da9566a047d9d485968b30064a3ffb12d2b8c858954",
+      "f9530e3231ab17d1a498d1dd26758995c6cdb7341ad5b993505f12b0e93c317e"
+    ],
+    "29": [
+      "07c10ba3dd28a2c7a94ecb9b75daa5d6105e40d46ab3e4b0aa129220b1bccc33",
+      "557067e7861ed1566538f4a218eca51fb7dfc3f8f0ad400bff25161c90c50741"
+    ],
+    "52": [
+      "2a8aa1003aef53c2589f05953c594070d585fbfd946532a8b9e7f15acd858c62",
+      "3daaec9d181a371cc7eecb2a450bf8c4059ebf73151e03672860fc5314a31e90"
+    ]
+  },
+  "multi_identifier_excluded": 1,
+  "multiple_valid_entity_held": 1,
+  "no_provenance_held": 5,
+  "partial_provenance_held": 39,
+  "plan_digest": "2b4066bdbe60650fbdefe763b497b5f7c2af7659c47e3e6a3f18a99b501894ec",
+  "production_database": "client360",
+  "provenance_forms": {
+    "details.canonical_repair.source_contact_ids": 1,
+    "details.source_contact_ids": 38
+  },
+  "return_types": {
+    "1065": 16,
+    "1120": 2,
+    "1120S": 19,
+    "990": 2
+  },
+  "subject_types": {
+    "business_entity": 39
+  },
+  "total_source_contacts": 112,
+  "unattributed_dbi_current": 121
+}
