@@ -1,62 +1,25 @@
 {% extends "portal/base.html" %}
 {% block title %}Messages{% endblock %}
-{% block flash %}
-  {% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}
-  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
-{% endblock %}
+{% block flash %}{% if notice %}<div class="flash success">{{ notice }}</div>{% endif %}{% if error %}<div class="flash error">{{ error }}</div>{% endif %}{% endblock %}
 {% block content %}
-<h1>Secure Messages</h1>
-<p class="portal-lead">A private, encrypted channel between you and your advisory team.</p>
-
-<details class="portal-card" {% if not threads %}open{% endif %}>
-  <summary style="cursor:pointer;font-weight:600;">Start a new conversation</summary>
-  {# enctype is required for the optional attachment; without it the browser posts the filename only. #}
-  <form method="post" action="/portal/messages/new" enctype="multipart/form-data" style="margin-top:1rem;">
-    <div class="field">
-      <label for="subject">Subject</label>
-      <input id="subject" name="subject" type="text" maxlength="200" required>
-    </div>
-    <div class="field">
-      <label for="topic">Topic</label>
-      <select id="topic" name="topic">
-        <option value="">General / Other</option>
-        {% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
-      </select>
-      <span class="hint">Helps us route your message to the right team.</span>
-    </div>
-    <div class="field">
-      <label for="body">Message</label>
-      <textarea id="body" name="body" required></textarea>
-    </div>
-    {# Offered only when the upload surface is switched on — the file goes through the SAME vault
-       upload as the Documents page, with the same size, type and content checks. #}
-    {% if portal_can(principal, '/portal/upload') %}
-    <div class="field">
-      <label for="attachment">Attach a file (optional)</label>
-      <input type="file" id="attachment" name="attachment">
-      <span class="hint">Your advisory team receives it with this message. It is also saved to your documents.</span>
-    </div>
-    {% endif %}
-    <div class="form-actions"><button class="btn" type="submit">Send message</button></div>
-  </form>
-</details>
-
-<h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem;">Your conversations</h2>
-<ul class="portal-list thread-list">
-{% for t in threads %}
-  <li><a class="portal-card" href="/portal/messages/{{ t.id }}">
-    <h3>{{ t.subject }}{% if t.unread %} <span class="pill stop">New reply</span>{% endif %}</h3>
-    <p class="meta">
-      {% if t.topic %}<span class="pill review">{{ t.topic|title }}</span> · {% endif %}
-      <span class="pill {{ 'ok' if t.status == 'resolved' else 'review' }}">{{ t.status|title }}</span>
-      {% if t.linked_requests %} · {{ t.linked_requests }} linked request(s){% endif %}
-      · Updated {{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</p>
-  </a></li>
-{% else %}
-  <li><div class="empty-state">
-    <h3>No conversations yet</h3>
-    <p>Start a secure conversation with your advisor using the form above.</p>
-  </div></li>
-{% endfor %}
-</ul>
+<div class="conversation-page-head">
+  <div><h1>Messages</h1><p class="portal-lead">Secure conversations with your advisory team.</p></div>
+  <details class="conversation-new"><summary class="btn">New message</summary>
+    <form method="post" action="/portal/messages/new" enctype="multipart/form-data" class="conversation-new-form">
+      <div class="field"><label for="subject">Subject</label><input id="subject" name="subject" maxlength="200" required></div>
+      <div class="field"><label for="topic">Topic</label><select id="topic" name="topic"><option value="">General / Other</option>{% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="body">Message</label><textarea id="body" name="body" required></textarea></div>
+      {% if portal_can(principal, '/portal/upload') %}<div class="field"><label for="attachment">Attach a file (optional)</label><input type="file" id="attachment" name="attachment"><span class="hint">Also saved in your Vault.</span></div>{% endif %}
+      <div class="form-actions"><button class="btn" type="submit">Send message</button></div>
+    </form>
+  </details>
+</div>
+<div class="conversation-shell portal-conversation-shell">
+  <aside class="conversation-channels" aria-label="Message channels"><strong>Conversations</strong><a class="active" href="/portal/messages"><span aria-hidden="true">◯</span> Messages <span class="conversation-count">{{ threads|length }}</span></a>{% if portal_can(principal, '/portal/upload') %}<a href="/portal/upload"><span aria-hidden="true">↥</span> Upload to Vault</a>{% endif %}</aside>
+  <section class="conversation-list" aria-label="Your conversations"><div class="conversation-list-head"><strong>All messages</strong><span>{{ threads|length }}</span></div>
+    {% for t in threads %}<a class="conversation-row{{ ' is-unread' if t.unread else '' }}" href="/portal/messages/{{ t.id }}"><span class="conversation-avatar">{{ (t.subject or 'M')[0]|upper }}</span><span class="conversation-row-body"><strong>{{ t.subject }}</strong><small>{% if t.topic %}{{ t.topic|title }} · {% endif %}{{ t.status|title }}</small><span>Updated {{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</span></span>{% if t.unread %}<span class="conversation-unread" title="New reply"></span>{% endif %}</a>
+    {% else %}<div class="conversation-empty"><strong>No conversations yet</strong><span>Choose New message to contact your advisor.</span></div>{% endfor %}
+  </section>
+  <section class="conversation-thread conversation-thread-empty"><div><span class="conversation-empty-icon" aria-hidden="true">✉</span><h2>Select a conversation</h2><p>Choose a message to read it or send a reply.</p></div></section>
+</div>
 {% endblock %}

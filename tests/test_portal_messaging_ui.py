@@ -43,6 +43,9 @@ def test_messages_page_lists_threads_and_compose_form():
     html = render(portal_messages_page(fake_request("/portal/messages"), principal))
     assert "Tax question" in html
     assert 'action="/portal/messages/new"' in html
+    assert 'class="conversation-shell portal-conversation-shell"' in html
+    assert "Select a conversation" in html
+    assert "Upload to Vault" in html
 
 
 def test_new_thread_prg_creates_thread_on_own_record():
@@ -70,6 +73,8 @@ def test_thread_page_shows_client_messages_but_not_internal_notes():
     assert "Client opening message" in html
     assert "Visible staff reply" in html
     assert "SECRET INTERNAL NOTE" not in html          # internal notes never reach the client
+    assert "conversation-shell portal-conversation-shell has-selection" in html
+    assert "Write a reply" in html
 
 
 def test_reply_prg_appends_message():
@@ -109,6 +114,8 @@ def test_staff_can_view_and_reply_when_in_scope():
     html = render(portal_admin_thread(thread_id, fake_request(
         f"/admin/client-portal/threads/{thread_id}", state_principal=staff), staff))
     assert "Hi" in html
+    assert "conversation-shell staff-conversation-shell has-selection" in html
+    assert "Client messages" in html
 
     # Reply to the client (visible) and add an internal note (staff-only).
     r1 = portal_admin_thread_reply(thread_id, request=fake_request("/x", "POST"),

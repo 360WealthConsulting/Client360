@@ -22,6 +22,7 @@
      497 of them expressed never rendered; these classes carry the same declarations. Loaded
      last so a utility can settle a conflict, which is what an inline style used to do. #}
   <link rel="stylesheet" href="/static/css/utilities.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/conversations.css?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 {% set p = principal if (principal is defined and principal) else (request.state.principal if request else None) %}

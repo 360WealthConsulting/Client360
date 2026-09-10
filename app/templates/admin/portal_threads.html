@@ -1,117 +1,25 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
-{% import "components/workspace.html" as wsx %}
-{% block title %}Secure Messages | 360Plus{% endblock %}
-{% block crumb %}Messages{% endblock %}
+{% block title %}Messages | 360Plus{% endblock %}{% block crumb %}Messages{% endblock %}
 {% block head %}<script src="/static/js/client_portal_admin.js" defer></script>{% endblock %}
 {% block content %}
-{# MESSAGES — staff to CLIENT. The audience band is the same one the client workspace
-   panel carries, so the boundary against Team Chat (staff to staff) and Inbox (what
-   needs your attention) is stated on every surface, not just one. #}
-{{ ui.page_head("Messages", eyebrow="Client Portal",
-   desc="Secure conversations you are authorised to service. Open one to read the full thread (including internal notes), reply, route, resolve, or link a request.") }}
-{{ wsx.audience("client") }}
-{% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}
-{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
-
-{# Start a conversation. The client picker is the EXISTING invite-form search: same element ids, so
-   app/static/js/client_portal_admin.js binds to it unchanged and selection goes through the one
-   select() implementation. The person id is hidden state the server re-resolves and re-authorizes
-   with write record scope in staff_start_thread — nothing here grants access. #}
-<details class="card portal-compose">
-  <summary><b>Start a conversation</b></summary>
-  {# Standard 360Plus form idiom: .stack for rhythm, .field for label+control, .input on every
-     control, .cols-2.aside-left for the Topic/Subject pair (it already collapses to one column on
-     narrow screens), .row for the action. No inline styles — the CSP forbids them. #}
-  <form method="post" action="/admin/client-portal/threads/new" class="stack portal-compose-form">
-    <div class="field">
-      <label for="thread-client">Client</label>
-      {# ONE client selector. It queries the SAME record-scoped endpoint the invite form uses
-         (/admin/client-portal/client-search?q=…), so results can only ever contain people this
-         principal may service. The person id is hidden state: never typed, never shown, and
-         re-resolved and re-authorized with write record scope by staff_start_thread on submit. #}
-      <div class="client-typeahead" data-client-typeahead>
-        <input class="input" id="thread-client" type="text" autocomplete="off" role="combobox"
-               aria-autocomplete="list" aria-expanded="false" aria-controls="thread-client-results"
-               placeholder="Start typing a client's name...">
-        <input type="hidden" name="person_id" data-client-typeahead-id>
-        <div id="thread-client-results" class="client-typeahead-results" role="listbox"
-             aria-label="Matching clients"></div>
-        <p class="subtle" data-client-typeahead-selected hidden></p>
-      </div>
-    </div>
-
+{% if notice %}<div class="banner good">{{ notice }}</div>{% endif %}{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+<div class="conversation-page-head"><div><p class="eyebrow">Client Portal</p><h1>Messages</h1><p class="subtle">Secure conversations with clients you are authorized to service.</p></div>
+  <details class="conversation-new"><summary class="btn">New conversation</summary><form method="post" action="/admin/client-portal/threads/new" class="stack portal-compose-form">
+    <div class="field"><label for="thread-client">Client</label><div class="client-typeahead" data-client-typeahead><input class="input" id="thread-client" type="text" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="thread-client-results" placeholder="Start typing a client's name..."><input type="hidden" name="person_id" data-client-typeahead-id><div id="thread-client-results" class="client-typeahead-results" role="listbox"></div><p class="subtle" data-client-typeahead-selected hidden></p></div></div>
     <div class="cols-2 aside-left">
-      <div class="field">
-        <label for="thread-topic">Topic</label>
-        <select class="input" id="thread-topic" name="topic">
-          <option value="">General</option>
-          {% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="thread-subject">Subject</label>
-        <input class="input" id="thread-subject" name="subject" maxlength="200" required>
-      </div>
+      <div class="field"><label for="thread-topic">Topic</label><select class="input" id="thread-topic" name="topic"><option value="">General</option>{% for tp in topics %}<option value="{{ tp }}">{{ tp|title }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="thread-subject">Subject</label><input class="input" id="thread-subject" name="subject" maxlength="200" required></div>
     </div>
 
-    <div class="field">
-      <label for="thread-body">Message</label>
-      <textarea class="input" id="thread-body" name="body" rows="5" maxlength="10000"
-                required></textarea>
-    </div>
-
-    <div class="row">
-      <button class="btn" type="submit">Send secure message</button>
-      <span class="portal-invite-error" data-client-typeahead-error role="alert" hidden></span>
-    </div>
-    <p class="subtle">The client reads this in their 360Plus portal. They must already have an
-    active portal account — this never creates one or sends an invitation.</p>
-  </form>
-</details>
-
-<nav class="msg-filters" aria-label="Filter conversations">
-  <span class="msg-filter-group">
-    <a class="chip{{ '' if active_filter or active_status else ' active' }}" href="/admin/client-portal/threads">All</a>
-    <a class="chip{{ ' active' if active_filter=='unread' else '' }}" href="?filter=unread">Unread</a>
-    <a class="chip{{ ' active' if active_filter=='mine' else '' }}" href="?filter=mine">Assigned to me</a>
-    <a class="chip{{ ' active' if active_filter=='unassigned' else '' }}" href="?filter=unassigned">Unassigned</a>
-  </span>
-  <span class="msg-filter-sep" aria-hidden="true"></span>
-  <span class="msg-filter-group">
-    <a class="chip{{ ' active' if active_status=='open' else '' }}" href="?status=open">Open</a>
-    <a class="chip{{ ' active' if active_status=='resolved' else '' }}" href="?status=resolved">Resolved</a>
-  </span>
-  {% if topics %}
-  <span class="msg-filter-sep" aria-hidden="true"></span>
-  <span class="msg-filter-group">
-    {% for tp in topics %}<a class="chip{{ ' active' if active_topic==tp else '' }}" href="?topic={{ tp }}">{{ tp|title }}</a>{% endfor %}
-  </span>
-  {% endif %}
-</nav>
-
-{% if threads %}
-<div class="table-wrap"><table class="data msg-table">
-  <thead><tr>
-    <th><span class="sr-only">Unread</span></th><th>Subject</th><th>Client</th><th>Topic</th>
-    <th>Assigned</th><th>Status</th><th>Last activity</th><th></th>
-  </tr></thead>
-  <tbody>
-  {% for t in threads %}
-    <tr class="{{ 'is-unread' if t.unread else '' }}">
-      <td>{% if t.unread %}<span class="unread-dot" title="Unread client message"></span><span class="sr-only">Unread</span>{% endif %}</td>
-      <td><a class="rowlink" href="/admin/client-portal/threads/{{ t.id }}">{{ t.subject }}</a></td>
-      <td>{{ t.full_name or '—' }}</td>
-      <td>{% if t.topic %}<span class="badge">{{ t.topic|title }}</span>{% else %}<span class="subtle">—</span>{% endif %}</td>
-      <td>{% if t.assigned_team_id %}Team{% elif t.assigned_user_id %}<span class="id-mono">#{{ t.assigned_user_id }}</span>{% else %}<span class="subtle">Unassigned</span>{% endif %}</td>
-      <td>{% if t.status == 'resolved' %}<span class="badge good">Resolved</span>{% else %}<span class="badge">{{ t.status|title }}</span>{% endif %}</td>
-      <td><span class="id-mono">{{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '—' }}</span></td>
-      <td class="msg-open"><a class="btn sm secondary" href="/admin/client-portal/threads/{{ t.id }}">Open</a></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table></div>
-{% else %}
-{% call ui.empty("No conversations here", "Nothing matches this filter inside your record scope. Clear the filters, or start a conversation above.") %}{% endcall %}
-{% endif %}
+    <div class="field"><label for="thread-body">Message</label><textarea class="input" id="thread-body" name="body" rows="5" required></textarea></div><div class="row"><button class="btn" type="submit">Send secure message</button><span data-client-typeahead-error role="alert" hidden></span></div>
+  </form></details>
+</div>
+<div class="conversation-shell staff-conversation-shell">
+  <aside class="conversation-channels" aria-label="Message views"><strong>Assigned to me</strong><a class="{{ 'active' if active_filter=='mine' else '' }}" href="?filter=mine">◯ My messages</a><a class="{{ 'active' if active_filter=='unread' else '' }}" href="?filter=unread">● Unread</a><strong>All conversations</strong><a class="{{ 'active' if not active_filter and not active_status and not active_topic else '' }}" href="/admin/client-portal/threads">◯ All</a><a class="{{ 'active' if active_filter=='unassigned' else '' }}" href="?filter=unassigned">◇ Unassigned</a><a class="{{ 'active' if active_status=='resolved' else '' }}" href="?status=resolved">✓ Resolved</a></aside>
+  <section class="conversation-list" aria-label="Client conversations"><div class="conversation-list-head"><strong>Client messages</strong><span>{{ threads|length }}</span></div>
+  {% for t in threads %}<a class="conversation-row{{ ' is-unread' if t.unread else '' }}" href="/admin/client-portal/threads/{{ t.id }}"><span class="conversation-avatar">{{ (t.full_name or 'C')[0]|upper }}</span><span class="conversation-row-body"><strong>{{ t.subject }}</strong><small>{{ t.full_name or 'Client' }}{% if t.topic %} · {{ t.topic|title }}{% endif %}</small><span>{{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else 'No activity' }}</span></span>{% if t.unread %}<span class="conversation-unread"></span>{% endif %}</a>{% else %}<div class="conversation-empty"><strong>No conversations here</strong><span>Nothing matches this view.</span></div>{% endfor %}
+  </section>
+  <section class="conversation-thread conversation-thread-empty"><div><span class="conversation-empty-icon">✉</span><h2>Select a conversation</h2><p>Choose a client message to read or reply.</p></div></section>
+</div>
 {% endblock %}

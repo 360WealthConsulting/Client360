@@ -612,6 +612,7 @@ def portal_message_thread_page(thread_id: int, request: Request,
         "principal": principal, "thread_id": thread_id,
         "subject": (row["subject"] if row else None) or "Conversation",
         "topic": row["topic"] if row else None, "messages": messages,
+        "threads": portal_hub.client_conversations(principal),
         "attachments": msg_attachments.attachments_for_messages(
             [m["id"] for m in messages], audience=msg_attachments.CLIENT),
         "linked_requests": portal_hub.linked_requests(thread_id),
