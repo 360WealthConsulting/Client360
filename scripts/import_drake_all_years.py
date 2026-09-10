@@ -31,8 +31,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
-import os
 import sys
 from pathlib import Path
 
@@ -45,6 +43,8 @@ load_dotenv(r"C:\Client360\app\.env")
 # lets ``--help``, argument parsing and year resolution work (and be tested) without a database.
 from app.importers.drake_client_csv import clean_value, read_client_rows  # noqa: E402
 from app.importers.drake_returns import upsert_return_rows  # noqa: E402
+from app.services.drake_identifier import hash_key as _hash_key  # noqa: E402
+from app.services.drake_identifier import identifier_hash  # noqa: E402
 
 ROOT = Path(r"C:\Client360\data\Drake")
 
@@ -54,23 +54,11 @@ MIN_YEAR, MAX_YEAR = 1900, 2999
 
 clean = clean_value
 
-
-def _hash_key() -> str:
-    """Read the hashing secret at call time, so importing this module needs no environment."""
-    key = os.getenv("MICROSOFT_TOKEN_KEY", "")
-    if not key:
-        raise RuntimeError("MICROSOFT_TOKEN_KEY is required.")
-    return key
-
-
-def identifier_hash(value):
-    """The salted SSN/EIN hash. The secret stays here, in the script that loads the environment."""
-    digits = "".join(ch for ch in clean(value) if ch.isdigit())
-    if not digits:
-        return None
-    return hashlib.sha256(
-        f"{_hash_key()}:{digits}".encode()
-    ).hexdigest()
+# ``_hash_key`` and ``identifier_hash`` used to be defined here. They now live in
+# ``app.services.drake_identifier`` and are imported above, unchanged: human-approved entity
+# adjudication needs the identical hash for an EIN this export never carried, and two copies of a
+# hashing rule that drift by one character produce two identities for one taxpayer. The names stay
+# bound here so this module's public surface — and ``main``'s fail-closed secret check — is the same.
 
 
 def read_header(path):
