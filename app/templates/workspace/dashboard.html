@@ -49,7 +49,10 @@
 </section>
 {% endif %}
 
-<details id="workspace-priorities" class="workspace-category workspace-anchor-section">
+{# Priorities opens with the page. The other eight collapse — that is what makes the day's screen
+   compact — but the highest-priority work is the reason the advisor opened it, and a category
+   navigator is not worth one extra click to find out whether anything is on fire. #}
+<details id="workspace-priorities" class="workspace-category workspace-anchor-section" open>
 <summary><span>Priorities</span><span class="workspace-category-count">{{ ws.priorities.entries|length }}</span></summary>
 <div class="workspace-category-body workspace-scroll-panel">
 <h2 class="section-title">Priorities</h2>
