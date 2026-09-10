@@ -1,4 +1,4 @@
-"""Portal UX integration — one coherent 360Plus client shell: branded nav across Documents / Upload /
+"""Portal UX integration — one coherent 360Plus client shell: branded nav across To Do / Vault /
 Messages / Profile / Logout, active-state highlighting, browser sign-out, and no leakage of internal
 identifiers, tokens, or stack traces to the client.
 """
@@ -19,16 +19,18 @@ def test_shell_nav_is_coherent_and_branded(portal_documents_upload_on, portal_me
     html = render(portal_page("", fake_request("/portal/"), principal))
     # 360Plus brand + the coherent primary nav + a sign-out control.
     assert "360Plus" in html
-    for label, href in [("Documents", "/portal/documents"), ("Upload", "/portal/upload"),
+    for label, href in [("To Do", "/portal/action-needed"), ("Vault", "/portal/documents"),
                         ("Messages", "/portal/messages"), ("Profile", "/portal/profile")]:
         assert f'href="{href}"' in html and f">{label}</a>" in html
+    for duplicate in (">Action Needed</a>", ">Requests</a>", ">Tasks</a>", ">Upload</a>"):
+        assert duplicate not in html
     assert 'action="/portal/logout"' in html and "Sign out" in html
 
 
 def test_active_nav_item_is_marked(portal_master_on):
     _, principal, _, _ = seed_portal_account(seed_staff_user())
     html = render(portal_documents_page(fake_request("/portal/documents"), principal))
-    assert '<a href="/portal/documents" class="active" aria-current="page">Documents</a>' in html
+    assert '<a href="/portal/documents" class="active" aria-current="page">Vault</a>' in html
 
 
 def test_browser_logout_revokes_session_and_redirects_to_login():
