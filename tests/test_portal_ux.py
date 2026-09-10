@@ -33,6 +33,25 @@ def test_active_nav_item_is_marked(portal_master_on):
     assert '<a href="/portal/documents" class="active" aria-current="page">Vault</a>' in html
 
 
+def test_the_consolidated_nav_fits_a_phone(portal_documents_upload_on, portal_messaging_on):
+    """Consolidation IS the mobile fix, so it is asserted as one.
+
+    With every surface switched on the client used to get eight tabs in a strip 360px wide, which
+    is why the strip scrolls sideways rather than wrapping. Five fit. The scrolling behaviour is
+    load-bearing either way and is pinned here so a later restyle cannot quietly drop it."""
+    from pathlib import Path
+    _, principal, _, _ = seed_portal_account(seed_staff_user())
+    html = render(portal_page("", fake_request("/portal/"), principal))
+    nav = html.split('class="portal-nav"', 1)[1].split("</nav>", 1)[0]
+    assert nav.count("<a href=") <= 5, "the client nav no longer fits a phone in one row"
+
+    css = Path("app/static/css/portal.css").read_text(encoding="utf-8")
+    nav_rule = css.split(".portal-nav {", 1)[1].split("}", 1)[0]
+    assert "overflow-x: auto" in nav_rule           # a long strip scrolls, never wraps or clips
+    assert "white-space: nowrap" in css.split(".portal-nav a {", 1)[1].split("}", 1)[0]
+    assert "@media (max-width: 640px)" in css       # and the shell has real narrow-screen padding
+
+
 def test_browser_logout_revokes_session_and_redirects_to_login():
     account_id, _, _, _ = seed_portal_account(seed_staff_user())
     token = create_portal_session(account_id, device_fingerprint="ux-logout")
