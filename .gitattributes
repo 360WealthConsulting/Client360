@@ -22,3 +22,9 @@ reports/document-filing-batch*/*_candidate.json       -text
 # CRLF and the reviewed hash could never be satisfied again.
 reports/d7_phase_c/*.csv                              -text
 reports/d7_phase_c/*.json                             -text
+
+# The D7 machine-attribution Batch 1 manifest is pinned by the same discipline: the apply runner
+# will hash the CSV byte-for-byte against the reviewed value, and the sidecar JSON carries that hash
+# plus the plan digest. Both must survive a checkout unchanged on every platform.
+reports/d7_attribution_batch1/*.csv                   -text
+reports/d7_attribution_batch1/*.json                  -text
