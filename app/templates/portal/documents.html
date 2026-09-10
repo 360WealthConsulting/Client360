@@ -7,11 +7,13 @@
 {% block content %}
 <div class="portal-section-head">
   <div>
-    <h1>Your Documents</h1>
-    <p class="portal-lead">Documents your advisor has shared with you, and the files you have uploaded.</p>
+    <h1>Your Vault</h1>
+    <p class="portal-lead">Secure documents your advisor has shared with you, and files you have uploaded.</p>
   </div>
   {% if portal_can(principal, '/portal/upload') %}
   <a class="btn" href="/portal/upload">Upload a document</a>
+  {% else %}
+  <p class="meta">Secure upload is not currently available. Contact your advisory team if you need to send a file.</p>
   {% endif %}
 </div>
 
