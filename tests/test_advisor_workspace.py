@@ -140,7 +140,8 @@ def test_workspace_has_compact_category_navigation():
         assert f'id="workspace-{category}"' in template
         assert f'href="#workspace-{category}"' in template
 
-    assert template.count('class="workspace-category workspace-anchor-section') == 7
+    assert template.count('class="workspace-category workspace-anchor-section') == 9
+    assert 'class="workspace-category workspace-anchor-section" open' not in template
 
 
 def test_route_renders_for_authorized_principal():
