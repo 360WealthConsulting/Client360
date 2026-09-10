@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,14 +12,28 @@ load_dotenv(r"C:\Client360\app\.env")
 
 from app.db import engine  # noqa: E402
 from app.importers.drake_client_csv import iter_client_rows  # noqa: E402
+from app.services import drake_identifier  # noqa: E402
+from app.services.drake_identifier import identifier_hash  # noqa: E402
 
 CLIENT_FILE = Path(r"C:\Client360\data\Drake\2025\2025.csv")
 EFILE_FILE = Path(r"C:\Client360\data\Drake\2025\2025EF.CSV")
 TAX_YEAR = 2025
 
-hash_key = os.getenv("MICROSOFT_TOKEN_KEY", "")
-if not hash_key:
-    raise RuntimeError("MICROSOFT_TOKEN_KEY is required for deterministic identifier hashing")
+# The salted identifier hash used to be defined here as well. It now comes from
+# ``app.services.drake_identifier``, so this importer, the all-years driver and human-approved entity
+# adjudication all derive one value from one expression: two copies that drift by a single character
+# would produce two identities for one taxpayer, silently and permanently. The expression is
+# unchanged, and the values are identical for every input.
+#
+# The IMPORT-TIME check below is deliberately kept. This module has always refused to load without
+# the secret — before it opens a file or a transaction — while the canonical hash reads the secret at
+# CALL time. Without this, the failure would move to the first row hashed, after work had begun. The
+# exception type and message are exactly what they were.
+try:
+    drake_identifier.hash_key()
+except drake_identifier.IdentifierHashKeyMissing as exc:
+    raise RuntimeError(
+        "MICROSOFT_TOKEN_KEY is required for deterministic identifier hashing") from exc
 
 
 def clean(value: str | None) -> str:
@@ -36,13 +48,6 @@ def normalized_name(first: str | None, last: str | None) -> str:
         for part in (clean(first), clean(last))
         if part
     )
-
-
-def identifier_hash(value: str | None) -> str | None:
-    digits = "".join(ch for ch in clean(value) if ch.isdigit())
-    if not digits:
-        return None
-    return hashlib.sha256(f"{hash_key}:{digits}".encode()).hexdigest()
 
 
 def parse_date(value: str | None) -> str | None:
