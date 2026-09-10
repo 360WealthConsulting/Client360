@@ -1,8 +1,9 @@
-{% extends "portal/base.html" %}{% block title %}Action Needed{% endblock %}{% block content %}
-<h1>Action Needed</h1>
-<p>These are the items your tax team needs from you. Completing them keeps your return on track.</p>
+{% extends "portal/base.html" %}{% block title %}To Do{% endblock %}{% block content %}
+<h1>To Do</h1>
+<p class="portal-lead">Everything your advisory and tax teams need from you, in one place.</p>
+{% if action_items %}<h2>Actions</h2>{% endif %}
 {% for item in action_items %}
-<article class="work-card">
+<article class="portal-card">
   <h3>{{ item.title }}</h3>
   <p>{{ item.explanation }}</p>
   <p>
@@ -13,7 +14,32 @@
   </p>
   <p><a href="{{ item.action_url }}">{{ item.action_label }} →</a></p>
 </article>
-{% else %}
-<div class="empty">You're all caught up — there's nothing that needs your attention right now.</div>
 {% endfor %}
+
+{% if document_requests %}<h2>Documents requested</h2>{% endif %}
+{% for row in document_requests %}
+<article class="portal-card">
+  <h3>{{ row.title }}</h3>
+  {% if row.description %}<p class="meta">{{ row.description }}</p>{% endif %}
+  <p class="meta"><span class="pill {{ 'ok' if row.status == 'uploaded' else 'pending' }}">{{ row.status|title }}</span>{% if row.due_date %} · Due {{ row.due_date }}{% endif %}</p>
+  {% if row.status != 'uploaded' and portal_can(principal, '/portal/upload') %}
+  <p><a class="btn secondary" href="/portal/upload?request_id={{ row.id }}">Upload document</a></p>
+  {% endif %}
+</article>
+{% endfor %}
+
+{% if tasks %}<h2>Tasks</h2>{% endif %}
+{% for row in tasks %}
+<article class="portal-card">
+  <h3>{{ row.name }}</h3>
+  <p class="meta">{{ row.workflow_name }} · <span class="pill pending">{{ row.status|title }}</span></p>
+</article>
+{% endfor %}
+
+{% if not action_items and not document_requests and not tasks %}
+<div class="empty-state">
+  <h3>You're all caught up</h3>
+  <p>There is nothing that needs your attention right now.</p>
+</div>
+{% endif %}
 {% endblock %}
