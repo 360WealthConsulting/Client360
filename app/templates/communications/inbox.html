@@ -1,98 +1,31 @@
 {% extends "base.html" %}
-{% import "components/ui.html" as ui %}
-{% block title %}Communications | 360Plus{% endblock %}
-{% block crumb %}Communications{% endblock %}
+{% block title %}Communications | 360Plus{% endblock %}{% block crumb %}Communications{% endblock %}
 {% block content %}
-{# The cross-client work queue (Batch 4e). A DERIVED view: every row is read from the secure-message
-   and canonical-email stores at request time, and opening this page writes nothing. Rows that need
-   attention come first, oldest wait first — see inbox._sort_key. #}
-{{ ui.page_head("Communications", eyebrow="Work queue",
-                desc="Client messages and email waiting on the firm, across every client you service.") }}
-
-{% if not result.authorized %}
-  {% call ui.empty("Not available",
-                   "Viewing client correspondence requires the secure-message read capability.") %}{% endcall %}
-{% else %}
+<div class="conversation-page-head"><div><p class="eyebrow">Work queue</p><h1>Communications</h1><p class="subtle">Client messages and email waiting on the firm.</p></div></div>
+{% if not result.authorized %}<div class="card"><strong>Not available</strong><p class="subtle">Viewing client correspondence requires the secure-message read capability.</p></div>{% else %}
 {% set c = result.counts %}
-{% set qs_channel %}{% if result.filters.channel %}&amp;channel={{ result.filters.channel }}{% endif %}{% endset %}
-{% set qs_view %}{% if result.filters.view != 'all' %}&amp;view={{ result.filters.view }}{% endif %}{% endset %}
-
-<section class="card filterbar">
-  <div><div class="subtle text-sm">Needs reply</div><div>{{ c.attention }}</div></div>
-  <div><div class="subtle text-sm">Unread</div><div>{{ c.unread }}</div></div>
-  <div><div class="subtle text-sm">Mine</div><div>{{ c.mine }}</div></div>
-  <div><div class="subtle text-sm">Unassigned</div><div>{{ c.unassigned }}</div></div>
-  <div><div class="subtle text-sm">In view</div><div>{{ result.total }}</div></div>
-</section>
-
-<nav class="card u-flex u-gap-8px u-wrap u-items-center" aria-label="Queue filters">
-  {% for f in filters %}
-    <a class="btn btn-ghost {% if result.filters.view == f %}active{% endif %}"
-       href="/communications/inbox?view={{ f }}{{ qs_channel }}">{{ filter_labels[f] }}</a>
-  {% endfor %}
-  <span class="u-ml-auto u-flex u-gap-8px">
-    <a class="btn btn-ghost {% if not result.filters.channel %}active{% endif %}"
-       href="/communications/inbox?view={{ result.filters.view }}">Both channels</a>
-    <a class="btn btn-ghost {% if result.filters.channel == 'secure_message' %}active{% endif %}"
-       href="/communications/inbox?view={{ result.filters.view }}&amp;channel=secure_message">Secure Messages
-      <span class="subtle">{{ c.secure_message }}</span></a>
-    <a class="btn btn-ghost {% if result.filters.channel == 'email' %}active{% endif %}"
-       href="/communications/inbox?view={{ result.filters.view }}&amp;channel=email">Email
-      <span class="subtle">{{ c.email }}</span></a>
-  </span>
-</nav>
-
-{% for r in result.rows %}
-<article class="card mb-3 c360-comm c360-comm--{{ r.channel }}">
-  <div class="u-flex u-gap-10px u-items-center u-wrap">
-    {{ ui.badge(r.channel_label, "info" if r.channel == "email" else "") }}
-    {% if r.attention %}{{ ui.badge(r.attention_reason, "warn") }}{% endif %}
-    {% if r.unread %}{{ ui.badge("Unread", "warn") }}{% endif %}
-    {% if r.status == "resolved" %}{{ ui.badge("Resolved", "good") }}{% endif %}
-    {% if r.client_url %}<a class="rowlink" href="{{ r.client_url }}"><strong>{{ r.client_name or "Client" }}</strong></a>
-    {% else %}<strong>{{ r.client_name or "Client" }}</strong>{% endif %}
-    <span class="subtle u-ml-auto u-fs-12px">{{ r.age_label }}
-      · {{ r.timestamp.strftime("%Y-%m-%d %H:%M") if r.timestamp else "" }}</span>
-  </div>
-  <div class="u-mt-6px"><strong>{{ r.subject }}</strong>
-    <span class="subtle u-fs-12px">· {{ r.direction|capitalize }} · {{ r.sender }}</span></div>
-  {% if r.preview %}<p class="u-prewrap c-m-8px-0-0">{{ r.preview }}</p>{% endif %}
-  <div class="u-mt-8px u-flex u-gap-8px u-items-center u-wrap">
-    <a class="btn btn-ghost" href="{{ r.conversation_url }}">Open conversation</a>
-    {% if r.client_url %}<a class="btn btn-ghost" href="{{ r.client_url }}">Open client</a>{% endif %}
-    {% if r.reply_url %}<a class="btn" href="{{ r.reply_url }}">{{ r.reply_label }}</a>{% endif %}
-    {% if r.attachment_count %}
-      <span class="subtle u-fs-12px">{{ r.attachment_count }} attachment{{ "s" if r.attachment_count != 1 else "" }}</span>
-    {% endif %}
-    <span class="subtle u-fs-12px u-ml-auto">
-      {% if r.assigned_name %}{{ r.assigned_name }}{% if r.assignment_source == "record" %} (record owner){% endif %}
-      {% else %}Unassigned{% endif %}
-    </span>
-  </div>
-</article>
-{% else %}
-  {% if result.filters.view == 'all' and not result.filters.channel %}
-    {% call ui.empty("Nothing waiting",
-                     "No client communications need your attention right now.") %}{% endcall %}
-  {% else %}
-    {% call ui.empty("No items match this filter",
-                     "Try another filter, or clear it to see everything.") %}{% endcall %}
-  {% endif %}
-{% endfor %}
-
-{% if result.pages > 1 %}
-<nav class="u-flex u-gap-8px u-items-center" aria-label="Queue pages">
-  {% if result.page > 1 %}
-  <a class="btn btn-ghost" href="/communications/inbox?view={{ result.filters.view }}{{ qs_channel }}&amp;page={{ result.page - 1 }}">Previous</a>
-  {% endif %}
-  <span class="subtle">Page {{ result.page }} of {{ result.pages }}</span>
-  {% if result.page < result.pages %}
-  <a class="btn btn-ghost" href="/communications/inbox?view={{ result.filters.view }}{{ qs_channel }}&amp;page={{ result.page + 1 }}">Next</a>
-  {% endif %}
-</nav>
-{% endif %}
-{% if result.window_reached %}
-<p class="subtle u-fs-12px">Showing the most recent correspondence only. Open a client for their full history.</p>
-{% endif %}
+<div class="conversation-shell staff-conversation-shell">
+  <aside class="conversation-channels" aria-label="Communication channels">
+    <strong>Assigned to me</strong>
+    <a class="{{ 'active' if result.filters.view == 'mine' else '' }}" href="?view=mine">◯ My inbox <span class="conversation-count">{{ c.mine }}</span></a>
+    <a class="{{ 'active' if result.filters.view == 'attention' else '' }}" href="?view=attention">△ Needs reply <span class="conversation-count">{{ c.attention }}</span></a>
+    <a class="{{ 'active' if result.filters.view == 'unread' else '' }}" href="?view=unread">● Unread <span class="conversation-count">{{ c.unread }}</span></a>
+    <strong>All accounts</strong>
+    <a class="{{ 'active' if result.filters.view == 'all' and not result.filters.channel else '' }}" href="/communications/inbox">◯ All <span class="conversation-count">{{ result.total }}</span></a>
+    <a class="{{ 'active' if result.filters.channel == 'secure_message' else '' }}" href="?view={{ result.filters.view }}&amp;channel=secure_message">▢ Secure messages <span class="conversation-count">{{ c.secure_message }}</span></a>
+    <a class="{{ 'active' if result.filters.channel == 'email' else '' }}" href="?view={{ result.filters.view }}&amp;channel=email">✉ Email <span class="conversation-count">{{ c.email }}</span></a>
+    <a class="{{ 'active' if result.filters.view == 'unassigned' else '' }}" href="?view=unassigned">◇ Unassigned <span class="conversation-count">{{ c.unassigned }}</span></a>
+    <a class="{{ 'active' if result.filters.view == 'resolved' else '' }}" href="?view=resolved">✓ Resolved</a>
+  </aside>
+  <section class="conversation-list" aria-label="Communication list">
+    <div class="conversation-list-head"><strong>{% if result.filters.channel == 'email' %}Emails{% elif result.filters.channel == 'secure_message' %}Secure messages{% else %}All communications{% endif %}</strong><span>{{ result.total }}</span></div>
+    {% for r in result.rows %}<a class="conversation-row{{ ' is-unread' if r.unread else '' }}" href="{{ r.conversation_url }}"><span class="conversation-avatar">{{ (r.client_name or 'C')[0]|upper }}</span><span class="conversation-row-body"><strong>{{ r.subject }}</strong><small>{{ r.client_name or 'Client' }} · {{ r.channel_label }}</small><span>{{ r.preview or r.sender }} · {{ r.age_label }}</span></span>{% if r.attention %}<span class="conversation-unread" title="{{ r.attention_reason }}"></span>{% endif %}</a>
+    {% else %}{# "nothing waiting" and "nothing matches this filter" are different facts for the reader. #}
+    {% if result.filters.view == 'all' and not result.filters.channel %}<div class="conversation-empty"><strong>Nothing waiting</strong><span>No client communications need your attention right now.</span></div>
+    {% else %}<div class="conversation-empty"><strong>No items match this filter</strong><span>Try another view, or clear it to see everything.</span></div>{% endif %}{% endfor %}
+    {% if result.pages > 1 %}<nav class="conversation-pagination">{% if result.page > 1 %}<a href="?view={{ result.filters.view }}{% if result.filters.channel %}&amp;channel={{ result.filters.channel }}{% endif %}&amp;page={{ result.page - 1 }}">Previous</a>{% endif %}<span>Page {{ result.page }} of {{ result.pages }}</span>{% if result.page < result.pages %}<a href="?view={{ result.filters.view }}{% if result.filters.channel %}&amp;channel={{ result.filters.channel }}{% endif %}&amp;page={{ result.page + 1 }}">Next</a>{% endif %}</nav>{% endif %}
+  </section>
+  <section class="conversation-thread conversation-thread-empty"><div><span class="conversation-empty-icon">✉</span><h2>Select a conversation</h2><p>Choose a secure message or email to read and respond.</p></div></section>
+</div>
 {% endif %}
 {% endblock %}

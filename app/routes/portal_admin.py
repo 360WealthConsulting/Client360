@@ -558,6 +558,7 @@ def portal_admin_thread(thread_id: int, request: Request,
         principal, person_id=thread["person_id"], household_id=thread["household_id"])
     return templates.TemplateResponse(request=request, name="admin/portal_thread.html", context={
         "thread": dict(thread), "messages": messages, "attachments": attachments,
+        "threads": hub.staff_inbox(principal),
         "attachable": attachable, "client_name": client_name,
         "assigned_name": hub.staff_name(thread["assigned_user_id"]),
         "linked_requests": hub.linked_requests(thread_id), "topics": hub.TOPICS,
