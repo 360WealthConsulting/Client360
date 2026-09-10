@@ -25,8 +25,8 @@ from app.routes.portal import (
 from app.services.features.portal_gate import surface_available
 from tests._portal_util import fake_request, render, seed_portal_account, seed_staff_user
 
-_NAV_HREFS = ("/portal/", "/portal/action-needed", "/portal/documents", "/portal/upload",
-              "/portal/messages", "/portal/requests", "/portal/tasks", "/portal/profile")
+_NAV_HREFS = ("/portal/", "/portal/action-needed", "/portal/documents",
+              "/portal/messages", "/portal/profile")
 
 
 def _dashboard(principal):
@@ -56,7 +56,8 @@ def test_nav_shows_messages_when_messaging_is_enabled(portal_messaging_on):
 def test_nav_shows_upload_when_uploads_are_enabled(portal_documents_upload_on):
     _, principal, _, _ = seed_portal_account(seed_staff_user())
     html = _dashboard(principal)
-    assert 'href="/portal/upload"' in html and ">Upload</a>" in html
+    assert 'href="/portal/upload"' in html and "Upload a document" in html
+    assert ">Upload</a>" not in html, "upload belongs inside the Vault, not primary navigation"
     assert 'href="/portal/messages"' not in html, "only uploads were enabled"
 
 
@@ -163,6 +164,7 @@ def test_documents_page_hides_upload_controls_when_uploads_are_off(portal_master
     html = render(portal_documents_page(fake_request("/portal/documents"), principal))
     assert 'href="/portal/upload"' not in html
     assert "Upload a document" not in html and "Upload your first document" not in html
+    assert "Secure upload is not currently available" in html
 
 
 def test_documents_page_shows_upload_controls_when_uploads_are_on(portal_documents_upload_on):
