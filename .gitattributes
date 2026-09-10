@@ -16,3 +16,9 @@ reports/strict-safe-ownership-batch*/*_manifest.json  -text
 # ``document_filing_batch2.CANDIDATE_CSV_SHA256`` — and need the same protection for the same reason.
 reports/document-filing-batch*/*_candidate.csv        -text
 reports/document-filing-batch*/*_candidate.json       -text
+
+# The D7 Phase C frozen manifest is SHA256-pinned the same way and needs the same protection: it is
+# pure LF, core.autocrlf is true, and without this rule a checkout would hand a Windows clone
+# CRLF and the reviewed hash could never be satisfied again.
+reports/d7_phase_c/*.csv                              -text
+reports/d7_phase_c/*.json                             -text
