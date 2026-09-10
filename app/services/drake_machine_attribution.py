@@ -222,13 +222,29 @@ _IDENTITY_UPSERT = """
         return_count           = EXCLUDED.return_count,
         subject_name           = EXCLUDED.subject_name,
         return_types           = EXCLUDED.return_types,
+        trust_level            =
+            COALESCE(drake_business_identity.trust_level, EXCLUDED.trust_level),
+        confirmation_source    =
+            COALESCE(drake_business_identity.confirmation_source, EXCLUDED.confirmation_source),
+        evidence_method        =
+            COALESCE(drake_business_identity.evidence_method, EXCLUDED.evidence_method),
         updated_at             = now()
     RETURNING id, (xmax = 0) AS inserted
 """
 
-# ``trust_level``, ``confirmation_source`` and ``evidence_method`` are absent from the DO UPDATE on
-# purpose: a re-run refreshes derived fields but must never restate — or downgrade — a trust level
-# that a human adjudication may since have raised on the same identifier.
+# The trust columns are COALESCED, never assigned outright, and the EXISTING value is the first
+# argument. So a re-run still cannot restate — or downgrade — a trust level that a human
+# adjudication may since have raised: that is the property
+# ``test_a_re_run_never_downgrades_a_human_approved_trust_level`` pins, and COALESCE keeps it.
+#
+# What changes is the case a bare omission did not consider: a row that already exists with NULL
+# trust. D7 Phase C relocates a mis-filed identity out of ``drake_identity`` into this table as a
+# TYPED BUT UNATTRIBUTED row — entity NULL, trust NULL — which is the same shape
+# ``drake_subject_routing._DBI_UPSERT`` already produces at ingestion. Attributing such a row under
+# the old statement set the entity while leaving the trust columns NULL forever, because omitting a
+# column preserves NULL just as faithfully as it preserves ``human_approved``. The row would then be
+# attributed by this service yet carry none of this service's evidence, contradicting the invariant
+# every other row in the table satisfies. COALESCE fills only what is genuinely absent.
 _LINK_UPSERT = """
     INSERT INTO entity_source_links (
         relationship_entity_id, source_contact_id, match_method, match_score, confirmed,

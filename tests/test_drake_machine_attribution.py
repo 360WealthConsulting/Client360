@@ -323,6 +323,114 @@ def test_a_re_run_never_downgrades_a_human_approved_trust_level(conn, case):
         {"e": case["entity"]}).scalars()) == {HUMAN_APPROVED}
 
 
+# --- attributing a row that D7 Phase C already relocated -----------------------------------------
+# Phase C moves a mis-filed identity out of drake_identity into this table as a TYPED BUT
+# UNATTRIBUTED row: entity NULL, trust NULL -- the same shape drake_subject_routing._DBI_UPSERT
+# produces at ingestion. These pin what attributing such a row does.
+
+def _approver(conn):
+    return conn.execute(text(
+        "INSERT INTO users (email, normalized_email, display_name, status) "
+        "VALUES (:e, :e, 'Approver', 'active') RETURNING id"),
+        {"e": f"coalesce-{uuid.uuid4().hex[:8]}@example.invalid"}).scalar_one()
+
+
+def _relocated_row(conn, case, **over):
+    """A pre-existing unattributed DBI row for the case's identifier, as Phase C would leave it.
+
+    ``ck_dbi_human_approval_attributed`` is checked on INSERT, so a simulated human approval must
+    carry its approver in the same statement rather than being patched in afterwards.
+    """
+    values = {"h": case["hash"], "n": f"relocated {case['hash'][:8]}",
+              "trust": None, "source": None, "method": None, "by": None, "at": None}
+    values.update(over)
+    if values["trust"] == HUMAN_APPROVED and values["by"] is None:
+        values["by"] = _approver(conn)
+    return conn.execute(text(
+        "INSERT INTO drake_business_identity ("
+        "  identifier_hash, subject_type, relationship_entity_id, first_year, last_year, "
+        "  return_count, subject_name, return_types, trust_level, confirmation_source, "
+        "  evidence_method, confirmed_by_user_id, confirmed_at) "
+        "VALUES (:h, 'business_entity', NULL, 2021, 2022, 2, :n, ARRAY['1120S'], "
+        "        :trust, :source, :method, :by, "
+        "        CASE WHEN :by IS NULL THEN NULL ELSE now() END) RETURNING id"),
+        values).scalar_one()
+
+
+def test_attributing_a_relocated_row_fills_its_null_trust(conn, case):
+    """The Phase C hand-off: an unattributed row must come out carrying this service's evidence."""
+    existing = _relocated_row(conn, case)
+    before = conn.execute(text(
+        "SELECT relationship_entity_id, trust_level, confirmation_source, evidence_method "
+        "FROM drake_business_identity WHERE id = :i"), {"i": existing}).mappings().one()
+    assert before["relationship_entity_id"] is None
+    assert (before["trust_level"], before["confirmation_source"],
+            before["evidence_method"]) == (None, None, None)
+
+    result = machine.attribute_entity_by_provenance(conn, request_for(case))
+
+    assert result.business_identity_id == existing      # updated in place, not duplicated
+    assert result.identity_created is False
+    after = conn.execute(text(
+        "SELECT relationship_entity_id, trust_level, confirmation_source, evidence_method "
+        "FROM drake_business_identity WHERE id = :i"), {"i": existing}).mappings().one()
+    assert after["relationship_entity_id"] == case["entity"]
+    assert after["trust_level"] == IDENTIFIER_VERIFIED
+    assert after["confirmation_source"] == machine.MACHINE
+    assert after["evidence_method"] == machine.EVIDENCE_METHOD
+    assert conn.execute(text(
+        "SELECT count(*) FROM drake_business_identity WHERE identifier_hash = :h"),
+        {"h": case["hash"]}).scalar() == 1
+
+
+def test_attributing_a_relocated_row_still_creates_its_links_and_audit(conn, case):
+    """Phase C writes no links, so the attribution must still produce all of them."""
+    _relocated_row(conn, case)
+    audits = conn.execute(text("SELECT count(*) FROM audit_events WHERE action = :a"),
+                          {"a": machine.AUDIT_ACTION}).scalar()
+
+    result = machine.attribute_entity_by_provenance(conn, request_for(case))
+
+    assert set(result.source_links_created) == set(case["contacts"])
+    assert conn.execute(text(
+        "SELECT count(*) FROM entity_source_links WHERE relationship_entity_id = :e"),
+        {"e": case["entity"]}).scalar() == 2
+    assert conn.execute(text("SELECT count(*) FROM audit_events WHERE action = :a"),
+                        {"a": machine.AUDIT_ACTION}).scalar() == audits + 1
+    assert result.changed is True
+
+
+@pytest.mark.parametrize("held", ["trust_level", "confirmation_source", "evidence_method"])
+def test_coalesce_is_per_column_and_never_overwrites_a_set_value(conn, case, held):
+    """A partially populated row keeps every value it has and gains only the ones it lacks."""
+    sentinel = {"trust_level": HUMAN_APPROVED, "confirmation_source": "human",
+                "evidence_method": "human_adjudicated_entity_identifier"}[held]
+    existing = _relocated_row(conn, case, **{
+        {"trust_level": "trust", "confirmation_source": "source",
+         "evidence_method": "method"}[held]: sentinel})
+
+    machine.attribute_entity_by_provenance(conn, request_for(case))
+
+    row = conn.execute(text(
+        "SELECT trust_level, confirmation_source, evidence_method "
+        "FROM drake_business_identity WHERE id = :i"), {"i": existing}).mappings().one()
+    assert row[held] == sentinel, "an existing value must survive"
+    filled = {"trust_level": IDENTIFIER_VERIFIED, "confirmation_source": machine.MACHINE,
+              "evidence_method": machine.EVIDENCE_METHOD}
+    for column, expected in filled.items():
+        if column != held:
+            assert row[column] == expected, f"{column} was NULL and should have been filled"
+
+
+def test_the_upsert_coalesces_rather_than_assigning_the_trust_columns():
+    """Read the statement itself: assignment would silently reintroduce the downgrade risk."""
+    sql = machine._IDENTITY_UPSERT
+    for column in ("trust_level", "confirmation_source", "evidence_method"):
+        assert f"COALESCE(drake_business_identity.{column}, EXCLUDED.{column})" in sql
+        assert f"{column}            = EXCLUDED.{column}" not in sql
+        assert f"{column}    = EXCLUDED.{column}" not in sql
+
+
 def test_each_call_writes_one_audit_entry(conn, case):
     """Stated, not hidden: rows are idempotent, the audit trail records every invocation."""
     before = conn.execute(text("SELECT count(*) FROM audit_events WHERE action = :a"),
