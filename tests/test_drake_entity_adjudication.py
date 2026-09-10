@@ -454,11 +454,12 @@ def test_the_derived_hash_matches_the_retired_2025_expression(monkeypatch):
         assert identifier_hash(value) == retired_2025(value), value
 
 
-# --- the 2025 importer is centralised too, pinned WITHOUT importing it --------------------------------
+# --- the 2025 importer is centralised too ------------------------------------------------------------
 
-# ``scripts/import_drake_2025`` runs its whole import at module import: it creates schema and writes
-# rows with no ``if __name__ == "__main__"`` guard. Importing it from a test would perform a real
-# import against whatever database is configured, so these read its source and never execute it.
+# These read the module's source rather than importing it. That used to be mandatory, because the
+# module ran its whole import at import time; it is now merely the narrowest way to assert a
+# structural fact. The import-safety contract itself lives in
+# ``tests/test_drake_2025_import_safety.py``, which imports the module for real.
 _IMPORT_2025 = Path(__file__).resolve().parent.parent / "scripts" / "import_drake_2025.py"
 _MISSING_SECRET_MESSAGE = "MICROSOFT_TOKEN_KEY is required for deterministic identifier hashing"
 
@@ -487,31 +488,25 @@ def test_the_2025_importer_defines_no_hash_of_its_own():
     assert "hashlib" not in modules, "a second hashing implementation has reappeared"
 
 
-def test_the_2025_importer_still_refuses_to_load_without_the_secret():
-    """Its fail-closed check must stay at IMPORT time, and keep its original message.
+def test_the_2025_importer_still_refuses_to_run_without_the_secret():
+    """The fail-closed refusal survives, with its original message.
 
-    The canonical hash reads the secret at call time. Without this guard the failure would move to
-    the first row hashed — which, in a module that imports and imports in one step, is after the
-    schema has been created.
+    Its POSITION moved — from module scope into ``main`` — when the import-time execution hazard was
+    removed. What must not change is that the refusal exists and still reads the same, so an operator
+    sees the message they always saw. That it fires ahead of every side effect is asserted
+    behaviourally in ``tests/test_drake_2025_import_safety.py``.
     """
     tree = _module_2025()
 
     checks = [node for node in ast.walk(tree)
               if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
               and node.func.attr == "hash_key"]
-    assert checks, "the import-time secret check is gone"
+    assert checks, "the secret check is gone"
 
     raised = [node for node in ast.walk(tree) if isinstance(node, ast.Raise)]
     messages = [arg.value for node in raised if isinstance(node.exc, ast.Call)
                 for arg in node.exc.args if isinstance(arg, ast.Constant)]
     assert _MISSING_SECRET_MESSAGE in messages, "the original refusal message changed"
-
-
-def test_the_2025_importer_never_runs_at_import_so_nothing_may_import_it():
-    """A guard on the guard: if this module ever gains a ``__main__`` block the tests may import it."""
-    source = _IMPORT_2025.read_text(encoding="utf-8")
-    assert "__main__" not in source, \
-        "import_drake_2025 now has a main guard — the AST-only tests above can become real imports"
 
 
 def test_the_all_years_importer_is_fail_closed_without_the_secret(monkeypatch, capsys):

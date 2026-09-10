@@ -1,3 +1,28 @@
+"""Import the Drake 2025 client and e-file exports.
+
+RUN IT, DO NOT IMPORT IT FOR EFFECT
+-----------------------------------
+Everything this module does happens inside :func:`main`, behind the usual ``__main__`` guard. That
+is not cosmetic. Until this change the entire import ran at MODULE IMPORT: reading the production
+env file, opening a transaction, creating tables and writing both exports were all top-level
+statements, so ``import scripts.import_drake_2025`` performed a real import against whatever database
+was configured. Nothing imported it, which is the only reason that never fired, and "nothing imports
+it" is a property of the repository today rather than a guarantee — a test collector, an editor's
+auto-import or a future caller would have been enough.
+
+Importing this module is now inert: it defines constants, SQL text and functions and touches nothing.
+``app.db`` in particular is imported inside :func:`main` rather than at module scope, because
+importing it opens a database connection and reflects the whole schema. That is the same rule
+``scripts/import_drake_all_years`` already follows, for the same reason.
+
+FAIL CLOSED, AT THE RIGHT MOMENT
+--------------------------------
+The missing-secret refusal is unchanged in type and message; only its position moved, from module
+import to the first statement of :func:`main`. It still runs before the env file is read, before any
+file is opened, before the engine exists and before a transaction begins, so no work can start
+without the hashing secret. What it no longer does is fire for someone who merely imported the
+module, which was never the point of the check.
+"""
 from __future__ import annotations
 
 import csv
@@ -8,32 +33,20 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-load_dotenv(r"C:\Client360\app\.env")
+from app.importers.drake_client_csv import iter_client_rows
+from app.services import drake_identifier
+from app.services.drake_identifier import identifier_hash
 
-from app.db import engine  # noqa: E402
-from app.importers.drake_client_csv import iter_client_rows  # noqa: E402
-from app.services import drake_identifier  # noqa: E402
-from app.services.drake_identifier import identifier_hash  # noqa: E402
-
+ENV_FILE = r"C:\Client360\app\.env"
 CLIENT_FILE = Path(r"C:\Client360\data\Drake\2025\2025.csv")
 EFILE_FILE = Path(r"C:\Client360\data\Drake\2025\2025EF.CSV")
 TAX_YEAR = 2025
 
-# The salted identifier hash used to be defined here as well. It now comes from
+# The salted identifier hash used to be defined here too. It now comes from
 # ``app.services.drake_identifier``, so this importer, the all-years driver and human-approved entity
 # adjudication all derive one value from one expression: two copies that drift by a single character
 # would produce two identities for one taxpayer, silently and permanently. The expression is
 # unchanged, and the values are identical for every input.
-#
-# The IMPORT-TIME check below is deliberately kept. This module has always refused to load without
-# the secret — before it opens a file or a transaction — while the canonical hash reads the secret at
-# CALL time. Without this, the failure would move to the first row hashed, after work had begun. The
-# exception type and message are exactly what they were.
-try:
-    drake_identifier.hash_key()
-except drake_identifier.IdentifierHashKeyMissing as exc:
-    raise RuntimeError(
-        "MICROSOFT_TOKEN_KEY is required for deterministic identifier hashing") from exc
 
 
 def clean(value: str | None) -> str:
@@ -410,20 +423,46 @@ def import_efile(connection) -> int:
     return count
 
 
-if not CLIENT_FILE.exists():
-    raise FileNotFoundError(CLIENT_FILE)
+def main() -> int:
+    """Run the 2025 import. Every step below used to execute at module import instead.
 
-if not EFILE_FILE.exists():
-    raise FileNotFoundError(EFILE_FILE)
+    The order is deliberate and unchanged apart from where it starts: refuse without the hashing
+    secret, then load the environment, then prove both exports exist, and only then open a
+    transaction. Nothing is created or written until all four have passed.
+    """
+    # The refusal that used to sit at module scope. Same exception type, same message, and still
+    # ahead of every side effect — it just no longer fires on a bare import.
+    try:
+        drake_identifier.hash_key()
+    except drake_identifier.IdentifierHashKeyMissing as exc:
+        raise RuntimeError(
+            "MICROSOFT_TOKEN_KEY is required for deterministic identifier hashing") from exc
 
-with engine.begin() as connection:
-    for statement in schema_sql.split(";"):
-        if statement.strip():
-            connection.execute(text(statement))
+    load_dotenv(ENV_FILE)
 
-    client_count = import_clients(connection)
-    efile_count = import_efile(connection)
+    if not CLIENT_FILE.exists():
+        raise FileNotFoundError(CLIENT_FILE)
 
-print(f"Imported {client_count} Drake client rows.")
-print(f"Imported {efile_count} Drake e-file rows.")
-print("Drake 2025 read-only import completed.")
+    if not EFILE_FILE.exists():
+        raise FileNotFoundError(EFILE_FILE)
+
+    # Imported here, not at module scope: importing ``app.db`` opens a connection and reflects the
+    # whole schema, which is exactly the kind of side effect a plain import must not have.
+    from app.db import engine
+
+    with engine.begin() as connection:
+        for statement in schema_sql.split(";"):
+            if statement.strip():
+                connection.execute(text(statement))
+
+        client_count = import_clients(connection)
+        efile_count = import_efile(connection)
+
+    print(f"Imported {client_count} Drake client rows.")
+    print(f"Imported {efile_count} Drake e-file rows.")
+    print("Drake 2025 read-only import completed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
