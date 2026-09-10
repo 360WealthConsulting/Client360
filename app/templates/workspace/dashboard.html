@@ -49,9 +49,11 @@
 </section>
 {% endif %}
 
-<section id="workspace-priorities" class="workspace-anchor-section">
+<details id="workspace-priorities" class="workspace-category workspace-anchor-section">
+<summary><span>Priorities</span><span class="workspace-category-count">{{ ws.priorities.entries|length }}</span></summary>
+<div class="workspace-category-body workspace-scroll-panel">
 <h2 class="section-title">Priorities</h2>
-<article class="card workspace-priorities workspace-scroll-panel">
+<article class="card workspace-priorities">
   {# Semantic tint + a tick, not colour emoji: 🔴/🟡/🟢 render as full-colour glyphs
      that vary by platform and read as consumer chat, not a wealth-management console.
      A band is shown only for a priority that HAS items: "High 0 · Medium 0 · Low 0" is
@@ -81,9 +83,12 @@
     </div>
   {% else %}{% call ui.empty("Nothing urgent", "No high or medium priority items right now.") %}{% endcall %}{% endif %}
 </article>
-</section>
+</div>
+</details>
 
-<section id="workspace-widgets" class="workspace-anchor-section">
+<details id="workspace-widgets" class="workspace-category workspace-anchor-section">
+<summary><span>Your Workspace</span><span class="workspace-category-count">{{ ws.widgets|length }}</span></summary>
+<div class="workspace-category-body">
 <div class="workspace-toolbar">
   <h2 class="section-title u-m-0">Your Workspace</h2>
   {% if ws.can_personalize %}
@@ -141,9 +146,10 @@
 {% else %}
   {% call ui.empty("No widgets", "No workspace widgets are available to you.") %}{% endcall %}
 {% endif %}
-</section>
+</div>
+</details>
 
-<details id="workspace-attention" class="workspace-category workspace-anchor-section" open>
+<details id="workspace-attention" class="workspace-category workspace-anchor-section">
 <summary><span>My clients needing attention</span><span class="workspace-category-count">{{ d.attention|length }}</span></summary>
 <div class="workspace-category-body">
 <h2 class="section-title">My clients needing attention</h2>
