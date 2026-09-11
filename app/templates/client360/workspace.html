@@ -8,7 +8,8 @@
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">
 <link rel="stylesheet" href="/static/css/documents_workspace.css">
 <script src="/static/js/documents.js" defer></script>
-<script src="/static/js/documents_screen.js" defer></script>{% endblock %}
+<script src="/static/js/documents_screen.js" defer></script>
+<script src="/static/js/client_profile.js" defer></script>{% endblock %}
 {% block body_class %}{{ " docsui" if active_tab == "documents" else "" }}{% endblock %}
 {% block nav_extra %}
 {# The Documents workspace carries its own primary navigation (views + categories, with counts)
@@ -73,6 +74,128 @@
   {% call ui.empty("Temporarily unavailable", sec.error) %}{% endcall %}
 
 {% elif active_tab == "dashboard" %}
+  {# The client's own particulars, above the work. Until this block existed the Overview showed
+     tasks, documents and meetings but no profile at all — a client whose phone was sitting in
+     people.primary_phone looked like they had none, because nothing here ever rendered one.
+     Every value is read-only and labelled with the system it came from, so staff can tell a
+     Client360 value from a Drake one instead of guessing which is authoritative. #}
+  {% set prof = ws.profile %}
+  {% if prof %}
+  <div class="c360-profile">
+    <article class="card c360-profile-contact">
+      <h2 class="section-title">Contact</h2>
+      {% if prof.contact.phones %}
+      <dl class="c360-facts">
+        {% for ph in prof.contact.phones %}
+        <div><dt>{{ ph.label|capitalize }}{% if ph.primary %} <span class="badge">Primary</span>{% endif %}</dt>
+          <dd><a href="tel:{{ ph.display }}">{{ ph.display }}</a>
+            <span class="meta">{{ ph.sources|join(" · ") }}{% if ph.verified %} · verified{% endif %}</span></dd></div>
+        {% endfor %}
+      </dl>
+      {% else %}<p class="meta">No phone number recorded.</p>{% endif %}
+
+      {% if prof.contact.emails %}
+      <dl class="c360-facts">
+        {% for em in prof.contact.emails %}
+        <div><dt>{{ "Email" if em.primary else "Also" }}{% if em.primary %} <span class="badge">Primary</span>{% endif %}</dt>
+          <dd><a href="{{ em.mailto }}">{{ em.display }}</a>
+            <a class="btn sm secondary" href="{{ em.mailto }}">Send email</a>
+            <span class="meta">{{ em.sources|join(" · ") }}{% if em.verified %} · verified{% endif %}</span></dd></div>
+        {% endfor %}
+      </dl>
+      {% else %}<p class="meta">No email address recorded.</p>{% endif %}
+
+      <dl class="c360-facts">
+        <div><dt>Mailing address</dt><dd>
+        {% if prof.contact.address %}
+          {% for line in prof.contact.address.lines %}{{ line }}<br>{% endfor %}
+          {{ prof.contact.address.city }}{% if prof.contact.address.city and prof.contact.address.state %}, {% endif %}
+          {{ prof.contact.address.state }} {{ prof.contact.address.postal_code or "" }}
+          <span class="meta">{{ prof.contact.address.source }}</span>
+        {% else %}<span class="meta">No mailing address recorded.</span>{% endif %}
+        </dd></div>
+      </dl>
+    </article>
+
+    <article class="card c360-profile-identity">
+      <h2 class="section-title">Identity</h2>
+      <dl class="c360-facts">
+        <div><dt>Date of birth</dt><dd>
+          {% if prof.identity.birth_date %}{{ prof.identity.birth_date.strftime("%b %-d, %Y") }}
+            <span class="meta">{{ prof.identity.birth_date_source }}</span>
+          {% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
+        <div><dt>SSN</dt><dd>
+          {# Only the last four are ever in this page. The eye control fetches the full number from
+             the audited endpoint on demand, so an unclicked page carries no SSN at all. #}
+          {% if prof.identity.ssn_last4 %}
+            <span class="c360-ssn" data-ssn-person="{{ ws.entity_id }}"
+                  data-ssn-masked="•••-••-{{ prof.identity.ssn_last4 }}">•••-••-{{ prof.identity.ssn_last4 }}</span>
+            <button type="button" class="btn sm secondary c360-ssn-reveal"
+                    data-ssn-person="{{ ws.entity_id }}"
+                    aria-label="Show full Social Security number" aria-pressed="false">Show</button>
+          {% elif prof.identity.ssn_on_file %}<span class="meta">On file.</span>
+          {% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
+        <div><dt>Household</dt><dd>
+          {% if prof.identity.household %}
+            <a href="/client/household/{{ prof.identity.household.id }}">{{ prof.identity.household.name }}</a>
+            <span class="meta">{{ prof.identity.household.member_count }} member{{ "" if prof.identity.household.member_count == 1 else "s" }}</span>
+          {% else %}<span class="meta">No household.</span>{% endif %}</dd></div>
+        <div><dt>Dependents</dt><dd>
+          {# Deliberately not "0": nothing in the schema records dependents, and a confident zero
+             on a client with three children is worse than an honest blank. #}
+          <span class="meta">Not tracked in Client360.</span></dd></div>
+      </dl>
+    </article>
+
+    <article class="card c360-profile-investments">
+      <h2 class="section-title">Investments</h2>
+      {% if prof.investments.custodians %}
+        <p class="c360-total">Total <strong>${{ "{:,.0f}".format(prof.investments.total_value) }}</strong>
+          <span class="meta">{{ prof.investments.account_count }} account{{ "" if prof.investments.account_count == 1 else "s" }}</span></p>
+        {% for group in prof.investments.custodians %}
+        <div class="c360-custodian">
+          <h3>{{ group.custodian }} <span class="meta">${{ "{:,.0f}".format(group.subtotal) }}</span></h3>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Account</th><th>Type</th><th>Status</th><th class="num">Balance</th></tr></thead>
+            <tbody>
+            {% for a in group.accounts %}
+              <tr><td>{{ a.name or "—" }}</td><td>{{ a.account_type or "—" }}</td>
+                  <td>{{ a.status or "—" }}</td>
+                  <td class="num">{% if a.value_available %}${{ "{:,.0f}".format(a.value) }}{% else %}<span class="meta">Not reported</span>{% endif %}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table></div>
+        </div>
+        {% endfor %}
+      {% else %}<p class="meta">No investment accounts on this record.</p>{% endif %}
+    </article>
+
+    <article class="card c360-profile-tax">
+      <h2 class="section-title">Tax snapshot</h2>
+      {% if prof.tax.tax_year %}
+      <dl class="c360-facts">
+        <div><dt>Latest tax year</dt><dd>{{ prof.tax.tax_year }}</dd></div>
+        <div><dt>AGI</dt><dd>{% if prof.tax.agi is not none %}${{ "{:,.0f}".format(prof.tax.agi|float) }}{% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
+        <div><dt>Filing status</dt><dd>{{ prof.tax.filing_status or "—" }}</dd></div>
+        <div><dt>Refund / owed</dt><dd>
+          {% if prof.tax.refund_amount is not none %}Refund ${{ "{:,.0f}".format(prof.tax.refund_amount|float) }}
+          {% elif prof.tax.balance_due is not none %}Owed ${{ "{:,.0f}".format(prof.tax.balance_due|float) }}
+          {% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
+        <div><dt>Dependents</dt><dd><span class="meta">Not tracked in Client360.</span></dd></div>
+        {% for level in ("federal", "state") %}
+        {% set ef = prof.tax[level] %}
+        <div><dt>{{ level|capitalize }} e-file</dt><dd>
+          {% if ef %}
+            <span class="pill {{ 'ok' if ef.status == 'accepted' else ('stop' if ef.status == 'rejected' else 'review') }}">{{ ef.status|replace("_", " ")|capitalize }}</span>
+            {% if ef.acknowledged_at %}<span class="meta">{{ ef.acknowledged_at.strftime("%b %-d, %Y") }}</span>{% endif %}
+          {% else %}<span class="meta">Not filed through Drake.</span>{% endif %}</dd></div>
+        {% endfor %}
+      </dl>
+      {% else %}<p class="meta">No Drake return linked to this client.</p>{% endif %}
+    </article>
+  </div>
+  {% endif %}
+
   {# The Client Workspace landing tab — cross-domain snapshot, each card one click into its tab. #}
   <div class="c360-dash">
     <article class="card">

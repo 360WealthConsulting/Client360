@@ -530,3 +530,28 @@ table.data.docscreen-grid { width:100%; min-width:820px; table-layout:fixed; }
   .docdrawer { position:static; max-height:none; }
   .docpanel-preview iframe { height:420px; }
 }
+
+/* --- Overview profile: Contact / Identity / Investments / Tax -------------------------------
+   Two columns on a desktop so the four blocks read as one band above the work, collapsing to one
+   column before the definition lists start wrapping. Colours come from the shell tokens rather
+   than the theme-flipping set, for the reason documented in conversations.css. */
+.c360-profile { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--s-gap-3,16px);
+  margin:0 0 var(--s-gap-3,16px); }
+.c360-profile > .card { margin:0; }
+.c360-facts { margin:0; }
+.c360-facts > div { display:grid; grid-template-columns:9.5rem minmax(0,1fr); gap:.5rem;
+  padding:.5rem 0; border-bottom:1px solid var(--s-line-2,#edf0f4); }
+.c360-facts > div:last-child { border-bottom:0; }
+.c360-facts dt { color:var(--s-ink-2,#374151); font-size:.82rem; font-weight:600; margin:0; }
+.c360-facts dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.c360-facts dd .meta { display:block; color:var(--s-mut,#6b7280); font-size:.75rem; margin-top:.15rem; }
+.c360-facts dd .btn.sm { margin-left:.5rem; }
+.c360-total { margin:0 0 .75rem; font-size:1.05rem; }
+.c360-custodian { margin:0 0 1rem; }
+.c360-custodian h3 { font-size:.9rem; margin:0 0 .4rem; }
+.c360-custodian h3 .meta { color:var(--s-mut,#6b7280); font-weight:500; margin-left:.4rem; }
+.c360-profile .num { text-align:right; font-variant-numeric:tabular-nums; }
+/* The masked value is monospaced so the four digits stay legible and the reveal does not reflow. */
+.c360-ssn { font-family:var(--font-mono, ui-monospace, Menlo, Consolas, monospace); letter-spacing:.02em; }
+@media (max-width:1100px) { .c360-profile { grid-template-columns:1fr; } }
+@media (max-width:640px) { .c360-facts > div { grid-template-columns:1fr; gap:.15rem; } }
