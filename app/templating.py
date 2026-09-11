@@ -131,12 +131,35 @@ def human_datetime(value):
     return format_datetime(value, "%b %-d, %Y")
 
 
+def dial_link(value) -> str | None:
+    """Click-to-call URI for a stored phone number, using the configured 3CX handler scheme.
+
+    A template must not build ``tel:{{ person.primary_phone }}`` by hand: a stored number carries
+    whatever punctuation the importer or the member of staff typed, and URI handlers disagree
+    about what they strip, so the same link dials from one desk and does nothing at the next. This
+    filter produces the one form the 3CX desktop handler reliably answers — see
+    :func:`app.services.communications.phone_numbers.dial_uri`.
+
+    Returns ``None`` for a number with no digits, so a template can fall back to plain text rather
+    than render a link that cannot dial.
+    """
+    # Imported at call time: both modules are dependency-free, but the templating layer is imported
+    # very early and should not pull integration configuration in at module scope.
+    from app.integrations.threecx.config import dial_scheme
+    from app.services.communications.phone_numbers import dial_uri
+    return dial_uri(value, dial_scheme())
+
+
 def install_filters(instance: Jinja2Templates) -> None:
     """Register Client360's shared Jinja filters on a Jinja2Templates instance."""
     instance.env.filters["humandt"] = human_datetime
     #: Portable strftime for templates that need their own format string. Use this instead of
     #: calling .strftime() directly whenever the format contains a %-X directive.
     instance.env.filters["datefmt"] = format_datetime
+    #: Click-to-call. Registered here, with the others, because 63 route modules build their own
+    #: Jinja2Templates and a filter installed on only one of them works on some pages and raises
+    #: on the rest.
+    instance.env.filters["dial"] = dial_link
     install_template_globals(instance)
 
 

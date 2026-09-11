@@ -54,6 +54,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from app.services.communications import phone_numbers
+
 #: Provenance namespace. The provider slug is part of it so two vendors can never collide on a
 #: message id, and a vendor change does not retroactively reinterpret old rows.
 SOURCE_SYSTEM_PREFIX = "sms"
@@ -80,25 +82,13 @@ def _now():
     return datetime.now(UTC)
 
 
-def normalize_phone(value) -> str | None:
-    """Digits only, with a leading US country code dropped — the repository's EXISTING convention.
-
-    This is deliberately NOT E.164. ``people.normalized_phone`` is the only indexed client phone
-    column in the schema and it is populated by the AssetMark, Schwab and Wealthbox importers, all
-    three of which normalize exactly this way. Matching an inbound text against clients means
-    agreeing with that column; a "better" E.164 normalizer here would simply match nothing.
-    ``tests/test_sms_ingest.py`` pins the agreement with all three importers so the two cannot drift.
-
-    A number that is not a 10-digit NANP number after stripping is returned as its digits, so an
-    international sender is still recorded and compared consistently — it just will not match a
-    client whose stored number was normalized under the same rule.
-    """
-    if value is None:
-        return None
-    digits = re.sub(r"\D", "", str(value))
-    if len(digits) == 11 and digits.startswith("1"):
-        digits = digits[1:]
-    return digits or None
+#: The repository's phone convention, re-exported rather than re-implemented. It used to be defined
+#: here, and this module's warning against a second "better" normalizer still stands — so when the
+#: 3CX connector became its second caller the function moved to
+#: :mod:`app.services.communications.phone_numbers` and both callers now share one definition.
+#: Behaviour is unchanged, and ``tests/test_sms_ingest.py`` still pins it against all three
+#: importers through this name.
+normalize_phone = phone_numbers.normalize_phone
 
 
 def classify_keyword(body) -> str | None:

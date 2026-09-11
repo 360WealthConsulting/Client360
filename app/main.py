@@ -123,6 +123,7 @@ from app.routes.tax import router as tax_router
 from app.routes.tax_documents import router as tax_documents_router
 from app.routes.tax_intake import router as tax_intake_router
 from app.routes.tax_returns import router as tax_returns_router
+from app.routes.threecx import router as threecx_router
 from app.routes.timeline import router as timeline_router
 from app.routes.vault import router as vault_router
 from app.routes.vendor_management import router as vendor_management_router
@@ -223,6 +224,10 @@ app.include_router(governance_router)
 app.include_router(integration_router)
 app.include_router(security_router)
 app.include_router(sharepoint_webhook_router)
+# The 3CX custom-CRM connector. Mounting it grants nothing on its own: both endpoints 404 unless
+# CLIENT360_3CX_ENABLED is set AND a dedicated integration secret is provisioned, and each request
+# is authenticated by that secret rather than by a staff session. See docs/THREECX_INTEGRATION.md.
+app.include_router(threecx_router)
 app.include_router(observability_router)
 app.include_router(configuration_router)
 app.include_router(runtime_router)
