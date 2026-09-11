@@ -300,6 +300,10 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
             return RedirectResponse(f"/client/{survivor_id}", status_code=303)
         return render_error(request, 404, detail="Client not found.")
     ws["drake_returns"] = _drake_returns_for_person(person_id)
+    # Overview profile (Contact / Identity / Investments / Tax). Read-only, scoped inside the
+    # service, and carrying only the SSN's last four digits — never the whole number.
+    from app.services.client360.profile_overview import overview_profile
+    ws["profile"] = overview_profile(person_id, principal)
     return _render(request, ws, principal, tab)
 
 
