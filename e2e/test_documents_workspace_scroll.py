@@ -37,6 +37,12 @@ DESKTOP = {"width": 1440, "height": 900}
 # One row carries a distinctive token so filtering has something unambiguous to narrow to.
 NEEDLE = "Zzyzx"
 
+# A row offers TWO controls that open the document in the preview pane: the filename itself and the
+# "Open" link in the Actions cell. Both carry `data-doc-open`, so that attribute alone is ambiguous
+# and Playwright refuses it under strict mode. These tests drive the filename, which is the control
+# a staff member actually clicks when working down a list.
+OPEN_BY_NAME = "[data-doc-row] a.docrow-name[data-doc-open]"
+
 
 @pytest.fixture(scope="module")
 def client_with_many_documents():
@@ -96,7 +102,13 @@ def _in_viewport(page, locator) -> bool:
 
 
 def test_the_shell_fits_the_viewport_and_the_page_does_not_scroll(documents_tab):
-    """The whole application is inside the window, so there is no page-level scrollbar to hunt."""
+    """The whole application is inside the window, so there is no page-level scrollbar to hunt.
+
+    Both halves are asserted because they failed for different reasons. The document's scroll area
+    grew past the window on a single absolutely positioned `.sr-only` label that escaped every clip
+    above it, and the consequence was not theoretical: the window really could be scrolled, taking
+    the entire shell off screen and leaving blank canvas behind it.
+    """
     page = documents_tab
     assert _zoom(page) == 1
     measured = page.evaluate("""() => ({
@@ -104,6 +116,14 @@ def test_the_shell_fits_the_viewport_and_the_page_does_not_scroll(documents_tab)
         page: document.scrollingElement.scrollHeight,
     })""")
     assert measured["page"] <= measured["viewport"] + 1, measured
+
+    moved = page.evaluate("""() => {
+        window.scrollTo(0, 5000);
+        const y = window.scrollY;
+        window.scrollTo(0, 0);
+        return y;
+    }""")
+    assert moved == 0, f"the window scrolled {moved}px, carrying the shell off screen"
 
 
 def test_the_document_list_overflows_and_scrolls_on_its_own(documents_tab):
@@ -141,7 +161,7 @@ def test_the_preview_pane_scrolls_independently_of_the_list(documents_tab):
     page.eval_on_selector(".docws-list", "el => { el.scrollTop = 240; }")
     # Clicked in the page rather than through Playwright, which would scroll the row into view
     # first and destroy the very measurement this test is making.
-    page.eval_on_selector("[data-doc-row] [data-doc-open]", "el => el.click()")
+    page.eval_on_selector(OPEN_BY_NAME, "el => el.click()")
     page.wait_for_selector("[data-docdrawer-body]")
 
     assert page.eval_on_selector(".docws-list", "el => el.scrollTop") == 240, (
@@ -161,8 +181,10 @@ def test_selecting_a_row_still_marks_it_and_fills_the_drawer(documents_tab):
     """Row selection is unchanged: the row is marked and the panel loads that document."""
     page = documents_tab
     row = page.locator("[data-doc-row][data-panel-url]").first
-    name = row.locator(".docrow-name").inner_text()
-    row.locator("[data-doc-open]").click()
+    opener = row.locator("a.docrow-name[data-doc-open]")
+    assert opener.count() == 1, "the filename link is no longer the unambiguous way to open a row"
+    name = opener.inner_text()
+    opener.click()
     page.wait_for_selector("[data-doc-row].is-selected")
 
     assert "is-selected" in (row.get_attribute("class") or "")

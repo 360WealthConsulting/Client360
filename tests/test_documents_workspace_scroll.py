@@ -43,6 +43,12 @@ SURFACES = ["client360/workspace.html", "client360/household.html"]
 
 SCREEN_INCLUDE = '{% include "client360/_documents_screen.html" %}'
 
+# The document table, the thing the centre pane exists to scroll.
+TABLE_MARKER = '<table class="data docs-table docws-grid">'
+
+# The centre pane: the element that owns the vertical scrollbar for the rows.
+SCROLLER = "section.docws-list"
+
 # The three panes. Each scrolls independently; between them they are the whole workspace.
 PANES = [".docws-rail", ".docws-list", ".docws-panel"]
 
@@ -67,6 +73,10 @@ _RULE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.S)
 def _open_elements_at(template: str, marker: str) -> list[str]:
     """The elements still open at ``marker``, outermost first, as ``tag`` or ``tag.class``.
 
+    The class kept is the LAST one written, which is this codebase's module-specific name — the
+    documents card is ``class="card table-wrap docws-tablewrap"`` and it is the ``docws-tablewrap``
+    rule that governs it here.
+
     Jinja is blanked rather than removed so an ``{% if %}`` body cannot be mistaken for markup.
     Every branch of the workspace templates' tab chain is balanced HTML, so the stack standing at
     the Documents branch is the real ancestor list.
@@ -88,7 +98,8 @@ def _open_elements_at(template: str, marker: str) -> list[str]:
                     break
             continue
         found = re.search(r'class="([^"]*)"', attrs)
-        stack.append((name, found.group(1).split()[0] if found and found.group(1).split() else ""))
+        classes = found.group(1).split() if found else []
+        stack.append((name, classes[-1] if classes else ""))
     return [f"{tag}.{cls}" if cls else tag for tag, cls in stack]
 
 
@@ -101,6 +112,17 @@ def _chain(surface: str) -> list[str]:
     return (_open_elements_at("base.html", "{% block content %}")
             + _open_elements_at(surface, SCREEN_INCLUDE)
             + ["div.docws"])
+
+
+def _chain_to_the_table(surface: str) -> list[str]:
+    """The same chain, carried all the way down to the document table itself.
+
+    Stopping at ``.docws`` was not far enough. The frame was given its height correctly and the
+    list pane still could not scroll, because two more elements sit between the pane and the rows
+    and one of them was collapsing. A guard that stops at the pane cannot see that.
+    """
+    below = _open_elements_at("client360/_documents_screen.html", TABLE_MARKER)
+    return _chain(surface)[:-1] + below + ["table.docws-grid"]
 
 
 def _selector(element: str) -> str:
@@ -212,6 +234,46 @@ def test_every_ancestor_forwards_height_to_the_three_pane_frame(surface):
             f"{surface}: {child} keeps its min-content floor and will overflow {parent}")
         assert _sized_by_its_parent(below), (
             f"{surface}: {child} does not take the height {parent} has to give")
+
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_nothing_between_the_scrolling_pane_and_the_table_collapses(surface):
+    """Below the pane the rule inverts: its children must NOT shrink, or there is nothing to scroll.
+
+    Giving the pane its height is only half the job. The table's card is a flex item of the pane,
+    `flex-shrink` defaults to 1, and the card's `overflow:hidden` removes the automatic minimum size
+    that would otherwise hold a flex item at its content height. So the card shrank to the space
+    left in the pane — 570px against 6241px of table — and clipped the rest. The pane's content then
+    fitted exactly, the pane never overflowed, and its correct `overflow-y:auto` had nothing to
+    scroll. Every row past the fold stayed unreachable even though every ancestor above was right.
+
+    An element that must not shrink must say so, and must not clip what it is then tall enough to
+    show.
+    """
+    links = _chain_to_the_table(surface)
+    links = links[links.index(SCROLLER):]
+    for parent, child in zip(links, links[1:], strict=False):
+        above = _declarations(_selector(parent))
+        if above.get("display") != "flex":
+            continue  # not a flex item, so it cannot be shrunk by its parent
+        below = _declarations(_selector(child))
+        assert below.get("flex", "").startswith("0 0"), (
+            f"{surface}: {child} can shrink inside the scrolling {parent}, which collapses it "
+            f"instead of giving {parent} something to scroll")
+        assert below.get("overflow", "visible") == "visible", (
+            f"{surface}: {child} clips its own content inside the scrolling {parent}")
+
+
+def test_the_scrolling_pane_contains_its_absolutely_positioned_descendants():
+    """An abspos box inside the pane must be contained BY the pane, not by the initial box.
+
+    `.sr-only` is `position:absolute`, and the pager carries one. With no positioned ancestor on
+    this screen its containing block was the initial one — the single box that an `overflow`
+    further up cannot clip. Its static position sits below a table thousands of pixels tall, so
+    that one label extended the document's scrollable area to 6513px under a shell pinned at 900,
+    and the window really could be scrolled, carrying the whole application off screen.
+    """
+    assert _declarations(".docws-list").get("position") == "relative"
 
 
 def test_each_pane_scrolls_on_its_own():
