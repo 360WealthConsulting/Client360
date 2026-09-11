@@ -232,3 +232,86 @@ def test_the_client_portal_theme_is_untouched():
         if not rule or rule.startswith("/*"):
             continue
         assert "body.c360" in rule, f"rule escapes the staff scope and could reach the portal: {rule[:70]}"
+
+
+# --- the shell-wide contract: one palette, pinned ------------------------------------------------
+#
+# Scoping the conversation surface fixed that surface. It did not fix the rest of the shell: the
+# header still rendered #EDF2F0 on #FFFFFF at 1.13:1, because app.css flipped and shell360.css —
+# which owns the staff look and has no dark palette at all — did not. The shell now pins the design
+# system's own light theme, so both stylesheets agree everywhere rather than surface by surface.
+
+BASE_HTML = (Path(__file__).parents[1] / "app/templates/base.html").read_text(encoding="utf-8")
+PORTAL_BASE = (Path(__file__).parents[1] / "app/templates/portal/base.html").read_text(encoding="utf-8")
+
+
+def test_the_staff_shell_pins_the_light_theme():
+    html_tag = re.search(r"<html[^>]*>", BASE_HTML).group(0)
+    assert 'data-theme="light"' in html_tag, (
+        "the staff shell no longer pins a theme; app.css will flip under a dark OS while "
+        "shell360.css stays light, and the header returns to 1.13:1")
+    scheme = re.search(r'<meta name="color-scheme" content="([^"]+)"', BASE_HTML)
+    assert scheme and scheme.group(1).strip() == "light", (
+        "color-scheme must be pinned with the palette, or the browser's own widgets — scrollbars, "
+        "form controls, the canvas behind the page — follow the OS independently")
+
+
+def test_pinning_beats_the_dark_media_query_by_specificity():
+    """`:root[data-theme="light"]` (0,2,0) outranks the `:root` inside the media query (0,1,0), so
+    the pin wins regardless of source order. If that block is ever removed the pin does nothing."""
+    assert ':root[data-theme="light"]' in APP_CSS
+    light_block = re.search(r':root\[data-theme="light"\]\s*\{(.*?)\}', APP_CSS, re.S).group(1)
+    light = _tokens(light_block)
+    for name in ("--surface", "--text", "--border", "--muted"):
+        assert name in light, f"the pinned light palette no longer defines {name}"
+    assert _luminance(_rgb(light["--surface"])) > 0.9
+    assert _luminance(_rgb(light["--text"])) < 0.1
+
+
+def test_the_pinned_palette_is_readable_against_the_shell_it_sits_on():
+    """The failure was never within one palette — it was the two disagreeing. With the pin, app.css
+    ink has to be readable on shell360.css surfaces, since that is what the header actually is."""
+    light = _tokens(re.search(r':root\[data-theme="light"\]\s*\{(.*?)\}', APP_CSS, re.S).group(1))
+    for ink in ("--text", "--text-2"):
+        for surface in ("--s-card", "--s-page"):
+            ratio = contrast(light[ink], SHELL_TOKENS[surface])
+            assert ratio >= 4.5, f"{ink} on {surface} is {ratio}:1 under the pinned palette"
+
+
+def test_the_permanently_dark_nav_uses_its_own_ink_not_the_page_palette():
+    """The rail is navy in every theme, but its icons drew from the general --muted and, when
+    active, --accent — both chosen against a light page. Resting glyphs measured 3.18:1 on
+    #101B36 and the active glyph 1.18:1 on the blue pill."""
+    rule = re.search(r"body\.c360 \.app-nav \.nav-item \.ico\s*\{(.*?)\}", SHELL360, re.S)
+    assert rule, "the nav icons are unscoped and inherit the page palette"
+    colour = _resolve(re.search(r"color:\s*([^;]+)", rule.group(1)).group(1))
+    assert contrast(colour, SHELL_TOKENS["--s-nav"]) >= 4.5
+
+    active = re.search(r"body\.c360 \.app-nav \.nav-item\.active \.ico\s*\{(.*?)\}", SHELL360, re.S)
+    assert active, "the active nav icon has no explicit colour"
+    active_colour = _resolve(re.search(r"color:\s*([^;]+)", active.group(1)).group(1))
+    assert contrast(active_colour, SHELL_TOKENS["--s-blue"]) >= 4.5
+
+
+def test_the_breadcrumb_separator_is_decorative_and_visible():
+    assert 'class="sep" aria-hidden="true"' in BASE_HTML, (
+        "the separator is punctuation between two real links; screen readers should skip it")
+    rule = re.search(r"body\.c360 \.app-header \.crumbs \.sep\s*\{(.*?)\}", SHELL360, re.S)
+    colour = re.search(r"color:\s*(#[0-9A-Fa-f]{3,6})", rule.group(1)).group(1)
+    ratio = contrast(colour, SHELL_TOKENS["--s-card"])
+    assert ratio >= 2.0, f"separator at {ratio}:1 is invisible on white"
+
+
+def test_the_pin_cannot_reach_the_client_portal():
+    """The portal is a separate shell and never loads app.css, so the theme variables — and the
+    pin — do not exist there at all."""
+    assert "data-theme" not in PORTAL_BASE
+    assert "app.css" not in PORTAL_BASE
+    assert "shell360.css" not in PORTAL_BASE
+
+
+def test_dark_mode_machinery_survives_for_a_future_theme_control():
+    """Pinning is a product decision, not a deletion. Re-enabling dark means giving shell360.css a
+    dark palette and swapping one attribute, so the dark block must stay intact."""
+    assert ':root[data-theme="dark"]' in APP_CSS
+    assert "@media (prefers-color-scheme: dark)" in APP_CSS

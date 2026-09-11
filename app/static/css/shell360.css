@@ -121,13 +121,27 @@ body.c360 .app-nav .nav-item {
   text-decoration:none;
   transition:background .12s ease, color .12s ease;
 }
-body.c360 .app-nav .nav-item .ico { width:17px; text-align:center; opacity:.72; font-size:13px; }
+/* The icons inherited app.css's general --muted and, when active, its --accent. Both are palette
+   tokens chosen against a LIGHT page, and this rail is permanently dark navy — so the resting
+   glyphs sat at 3.2:1 on #101B36 and the active glyph rendered teal #0E6E63 on the blue pill at
+   1.18:1, effectively invisible. The rail has its own ink tokens; using them keeps the glyphs
+   legible no matter what the page palette does. */
+body.c360 .app-nav .nav-item .ico {
+  width:17px; text-align:center; font-size:13px;
+  color:var(--s-nav-dim); opacity:1;
+}
 body.c360 .app-nav .nav-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+body.c360 .app-nav .nav-item:hover .ico { color:#fff; }
 body.c360 .app-nav .nav-item.active {
   background:var(--s-blue); color:#fff; font-weight:600;
   box-shadow:0 1px 2px rgba(37,99,235,.45);
 }
-body.c360 .app-nav .nav-item.active .ico { opacity:1; }
+body.c360 .app-nav .nav-item.active .ico { color:#fff; opacity:1; }
+
+/* The breadcrumb separator is decoration between two real links, and app.css dims it to .5
+   opacity. It is hidden from assistive technology in base.html; the visible contrast is set
+   where the header already colours it, further down this file. */
+body.c360 .crumbs .sep { opacity:1; }
 
 /* Nested navigation — the shared treatment for any module that needs sub-entries. */
 body.c360 .nav-subnav {
@@ -158,7 +172,9 @@ body.c360 .app-header .crumbs { font-size:14px; color:var(--s-mut); }
 body.c360 .app-header .crumbs a { color:var(--s-mut); text-decoration:none; }
 body.c360 .app-header .crumbs a:hover { color:var(--s-blue); }
 body.c360 .app-header .crumbs b { color:var(--s-ink); font-weight:600; }
-body.c360 .app-header .crumbs .sep { color:#C3C9D4; margin:0 7px; }
+/* #C3C9D4 at the inherited .5 opacity measured 1.66:1 on white — the separator was there but
+   nobody could see it. Same role, enough contrast to read as a divider. */
+body.c360 .app-header .crumbs .sep { color:#9AA3B2; margin:0 7px; }
 
 body.c360 .app-search { margin-left:auto; position:relative; }
 body.c360 .app-search input {

@@ -1,9 +1,33 @@
 <!doctype html>
-<html lang="en">
+{# THE STAFF SHELL IS PINNED LIGHT, DELIBERATELY.
+
+   app.css ships three palettes: a light `:root`, a dark `@media (prefers-color-scheme: dark)`
+   override, and explicit `:root[data-theme="light"]` / `[data-theme="dark"]` blocks written so the
+   choice can be pinned. shell360.css, which loads afterwards and owns the actual staff look
+   (--s-card/--s-page/--s-ink/--s-line), has no dark palette at all.
+
+   With nothing pinned, those two disagreed: on an operator whose OS prefers dark, app.css flipped
+   and shell360.css did not. The result was not a dark theme but half of one — light text on white
+   in the header (measured 1.13:1), dark panes behind light shell chrome, and message bubbles at
+   1.20:1. Every surface that had its own hard-coded colour stayed light while every surface
+   driven by a variable went dark.
+
+   Pinning `light` selects the design system's own light palette, so both stylesheets agree and the
+   whole shell renders as designed. This is a real product decision, not a workaround: there is no
+   theme control anywhere in the product, and shell360.css was authored light throughout. Adding a
+   dark theme later means giving shell360.css a dark palette and swapping this attribute — the
+   machinery is already here and `:root[data-theme="dark"]` is still intact.
+
+   `color-scheme` is pinned with it so the browser's own widgets — scrollbars, form controls, the
+   canvas behind the page — match the palette rather than following the OS independently.
+
+   The client portal is a separate shell (portal/base.html) and never loads app.css, so none of
+   this reaches it. #}
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <title>{% block title %}360Plus{% endblock %}</title>
   {# ?v=<asset digest> — deterministic, computed once from the asset bytes themselves
      (app/templating.py::_asset_version), so it is identical across workers and changes if
@@ -183,7 +207,7 @@
   <div class="app-main">
     <header class="app-header">
       <label for="c360-nav" class="icon-btn nav-toggle-btn" title="Menu" role="button" tabindex="0" aria-controls="c360-nav" aria-expanded="false" aria-label="Toggle navigation">☰</label>
-      <div class="crumbs"><a href="/">360Plus</a><span class="sep">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
+      <div class="crumbs"><a href="/">360Plus</a><span class="sep" aria-hidden="true">/</span><b>{% block crumb %}Workspace{% endblock %}</b></div>
       {# Gated on what /search actually enforces. The route needs client.read from the RULES
          map AND record.read_all, because `search` is in FIRM_WIDE_COLLECTION — together that
          is exactly `firm_client`. The box used to render for every signed-in staff member,
