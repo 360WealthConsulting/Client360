@@ -202,7 +202,17 @@ def test_workspace_html_contains_both_release_and_server_changes():
     assert "c360-backnav" in ws
     assert "a.entity_label" in ws and "a.actor_name" in ws
     # server (Drake tax section + vault upload)
-    assert "Drake Tax" in ws and "vault-upload-toggle" in ws
+    #
+    # The Drake section moved OUT of workspace.html into client360/_drake_tax.html, so that it
+    # renders inside the Tax tab instead of above the tab bar on every tab. The guard's point is
+    # that the merge-forward did not LOSE the section, so it now checks the section still exists
+    # and is still reached from this workspace — which is a stricter check than the literal was.
+    drake = (REPO / "app/templates/client360/_drake_tax.html").read_text()
+    assert "Drake Tax" in drake, "the Drake tax section itself was lost"
+    assert "client360/_drake_tax.html" in ws, "workspace.html no longer imports the Drake section"
+    assert "drake.drake_tax_detail(ws.drake_returns)" in ws, (
+        "workspace.html imports the Drake section but never renders it")
+    assert "vault-upload-toggle" in ws
 
 
 # --- 7. advisor capability boundary unchanged --------------------------------

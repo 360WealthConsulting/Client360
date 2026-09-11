@@ -308,6 +308,9 @@ def _vault_row(d):
         "sha256": d.get("checksum_sha256"),
         "download_url": f"/api/vault/documents/{d['id']}/download",
         "vault_document_id": d["id"],
+        # Whether the CLIENT can actually read this in the portal. A Vault record exists for staff
+        # either way; ``client_visible`` is the flag the portal itself honours.
+        "portal_visible": bool(d.get("client_visible")),
     }
 
 
@@ -335,8 +338,18 @@ def _merge_documents(canonical, vault):
     """Canonical documents + Vault documents in one list. Deduped where deterministically possible: a
     vault document whose checksum matches a canonical document's SHA-256 is the same underlying file and
     is dropped in favor of the canonical record (its richer pipeline)."""
+    # A canonical document is staff-only unless a Vault record publishes it, so the default is
+    # explicit rather than absent — the screen states "Internal only" as a fact, not a blank.
+    merged = [{"portal_visible": False, **r} for r in canonical]
+    # Where a Vault record IS the same underlying file, the canonical row wins (richer pipeline)
+    # but must inherit the portal flag, otherwise dropping the duplicate would also drop the only
+    # evidence that the client can see this document.
+    published = {v["sha256"] for v in vault if v.get("sha256") and v.get("portal_visible")}
+    for r in merged:
+        if r.get("sha256") and r["sha256"] in published:
+            r["portal_visible"] = True
+
     canon_sha = {r.get("sha256") for r in canonical if r.get("sha256")}
-    merged = list(canonical)
     for v in vault:
         if v.get("sha256") and v["sha256"] in canon_sha:
             continue

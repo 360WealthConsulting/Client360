@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui %}
 {% import "components/workspace.html" as wsx %}
+{# Drake's return record renders inside the Tax tab, not above the tab bar. See _drake_tax.html. #}
+{% import "client360/_drake_tax.html" as drake with context %}
 {% block title %}{{ ws.display_name }} · Client 360 | 360Plus{% endblock %}
 {% block crumb %}{{ ws.display_name }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">
@@ -59,68 +61,6 @@
   {% if s.compliance %}{{ ui.signal("Open reviews", s.compliance.open_reviews, "warn") }}{% endif %}
 </section>
 
-{% if ws.drake_returns %}
-<section class="card section">
-  {{ ui.card_head("Drake Tax") }}
-
-  {% for d in ws.drake_returns %}
-    <div class="detail-row">
-      <span>
-        <strong>{{ d.tax_year }} {{ d.return_type or "Return" }}</strong>
-        <span class="subtle">
-          · {{ d.taxpayer_first_name }} {{ d.taxpayer_last_name }}
-          {% if d.spouse_first_name %}
-            &amp; {{ d.spouse_first_name }}
-            {{ d.spouse_last_name or d.taxpayer_last_name }}
-          {% endif %}
-        </span>
-      </span>
-
-      <strong>
-        {% if d.federal_ack_code == "A" %}
-          Federal accepted
-        {% elif d.federal_ack_code %}
-          Federal status: {{ d.federal_ack_code }}
-        {% else %}
-          No federal acknowledgement
-        {% endif %}
-      </strong>
-    </div>
-
-    <div class="detail-row">
-      <span>AGI</span>
-      <strong>
-        {{ "${:,.0f}".format(d.agi|float) if d.agi is not none else "—" }}
-      </strong>
-    </div>
-
-    <div class="detail-row">
-      <span>Preparer</span>
-      <strong>{{ d.preparer_code or "—" }}</strong>
-    </div>
-
-    {% if d.federal_product %}
-    <div class="detail-row">
-      <span>Federal return</span>
-      <strong>
-        {{ d.federal_product }}
-        {% if d.federal_ack_date %} · {{ d.federal_ack_date }}{% endif %}
-      </strong>
-    </div>
-    {% endif %}
-
-    {% if d.state_product %}
-    <div class="detail-row">
-      <span>State return</span>
-      <strong>
-        {{ d.state_product }}
-        {% if d.state_ack_date %} · {{ d.state_ack_date }}{% endif %}
-      </strong>
-    </div>
-    {% endif %}
-  {% endfor %}
-</section>
-{% endif %}
 
 {# Role-aware tabs — a section is shown only where the principal has capability. #}
 {% include "client360/_section_nav.html" %}
@@ -545,6 +485,11 @@
   <article class="card">{% for w in sec.work_items %}<div class="detail-row"><span><a href="/advisor-work/{{ w.id }}">{{ w.title or w.recommendation_type or ("Work " ~ w.id) }}</a></span><strong class="subtle">{{ w.status }}</strong></div>{% else %}{% call ui.empty("No open work") %}{% endcall %}{% endfor %}</article>
 
 {% elif active_tab == "tax" %}
+  {# Drake's own return record — taxpayer/spouse, AGI, preparer and the federal/state
+     acknowledgement codes and dates. It sits at the TOP of the Tax tab because it is the most
+     specific tax fact the firm holds, and because this is the tab a preparer opens to find it. #}
+  {% if ws.drake_returns %}{{ drake.drake_tax_detail(ws.drake_returns) }}{% endif %}
+
   {% set ss = sec.status_summary %}
   <h2 class="section-title">Tax status</h2>
   {% if not ss or ss.status == "no_data" %}
