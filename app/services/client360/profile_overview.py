@@ -28,10 +28,13 @@ client who has three is worse than an honest blank.
 SCOPE AND PII
 -------------
 Every entry point takes a principal and verifies record scope before reading anything; an
-out-of-scope caller gets empty blocks, never a partial one. The SSN is the sharp edge and is
-handled in :func:`identity_block`: this module derives only the last four digits, in SQL, so the
-full value never enters application memory. Revealing the whole number is a separate, capability
-gated, audited route — see ``app/routes/client360.py``.
+out-of-scope caller gets empty blocks, never a partial one.
+
+The SSN is the sharp edge. This module derives only the last four digits, and derives them IN SQL,
+so the complete number never enters application memory, never reaches a template, and cannot appear
+in a log line or a traceback. There is deliberately no way to obtain the rest through the
+application: no reveal control, no endpoint behind one, and no script that could fetch it. The full
+value stays in Postgres, where the Drake import left it.
 """
 from __future__ import annotations
 
@@ -236,8 +239,9 @@ def identity_block(person_id: int, principal) -> dict:
     THE SSN NEVER LEAVES POSTGRES IN FULL. Drake's import keeps the original CSV row verbatim, so
     ``raw_data->>'TP_Social'`` is a real nine-digit number. The query below slices the last four
     server-side and returns only those, so the complete value is never materialised in Python, never
-    reaches a template, and cannot appear in a log line or a traceback. Revealing the whole number
-    is a deliberate, separate, audited act — see ``client360.reveal_ssn``.
+    reaches a template, and cannot appear in a log line or a traceback. Nothing in the application
+    can obtain the remaining five digits — that is the point, and it is what the ``ssn`` tests in
+    ``tests/test_client_profile_overview.py`` hold the whole app to.
 
     ``dependents`` is ``None``, not ``0``. No table, column or Drake key records dependents, and a
     confident zero on a client with three children is worse than an honest blank.

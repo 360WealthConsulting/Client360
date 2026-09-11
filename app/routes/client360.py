@@ -307,61 +307,6 @@ def client_workspace(request: Request, person_id: int, tab: str = "summary",
     return _render(request, ws, principal, tab)
 
 
-@router.get("/{person_id}/ssn")
-def reveal_ssn(request: Request, person_id: int,
-               principal: Principal = Depends(require_capability("tax.read"))):
-    """Reveal one client's full SSN. Deliberately a route, not a page field.
-
-    THE PAGE NEVER CARRIES THE FULL NUMBER. The Overview renders the last four digits only, and the
-    eye control calls this endpoint on demand. Putting the whole value in the HTML and hiding it
-    behind a CSS toggle would mean every page load shipped an SSN to the browser, into its cache and
-    into any proxy in between, whether or not anyone clicked — visually masked but fully rendered.
-    Fetching on demand keeps the page free of it and makes each reveal a single, attributable act.
-
-    Three gates, all of which must pass:
-      * ``tax.read`` — narrower than ``client.read``, which the workspace page itself uses, so
-        opening a client does not imply the authority to unmask their identifier;
-      * record scope on the person, so the capability alone cannot reach a client outside the
-        caller's book;
-      * an audit entry written BEFORE the value is returned, so a reveal is recorded even if the
-        response never reaches the caller.
-
-    The id is never placed in a query string and the value is never logged.
-    """
-    from fastapi import HTTPException
-
-    from app.security.audit import write_audit_event
-    from app.security.authorization import record_in_scope
-    if not record_in_scope(principal, "person", person_id):
-        raise HTTPException(404, "Not found")
-
-    with engine.connect() as connection:
-        if connection.execute(text("SELECT to_regclass('public.drake_client_returns')")).scalar() is None:
-            raise HTTPException(404, "Not found")
-        row = connection.execute(text("""
-            SELECT regexp_replace(coalesce(d.raw_data::jsonb->>'TP_Social',''), '[^0-9]', '', 'g') AS ssn
-            FROM people p
-            JOIN drake_client_returns d
-              ON lower(trim(d.taxpayer_first_name)) = lower(trim(p.first_name))
-             AND lower(trim(d.taxpayer_last_name))  = lower(trim(p.last_name))
-            WHERE p.id = :id AND d.raw_data IS NOT NULL
-            ORDER BY d.tax_year DESC, d.id DESC LIMIT 1
-        """), {"id": person_id}).mappings().first()
-
-    ssn = (row or {}).get("ssn") or ""
-    if len(ssn) != 9:
-        raise HTTPException(404, "Not found")
-
-    # Audited before the response is built: an unrecorded reveal must not be possible.
-    # `metadata` deliberately carries no part of the number.
-    write_audit_event(action="client.ssn.revealed", entity_type="person", entity_id=person_id,
-                      actor_user_id=getattr(principal, "user_id", None),
-                      request_id=getattr(getattr(request, "state", None), "request_id", None),
-                      metadata={"surface": "client360.overview"})
-    return JSONResponse({"ssn": f"{ssn[:3]}-{ssn[3:5]}-{ssn[5:]}"},
-                        headers={"Cache-Control": "no-store"})
-
-
 @router.get("/{person_id}/snapshot")
 def client_snapshot(person_id: int,
                     principal: Principal = Depends(require_capability("client.read"))):

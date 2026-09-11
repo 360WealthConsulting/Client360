@@ -8,8 +8,7 @@
 {% block head %}<link rel="stylesheet" href="/static/css/client360.css">
 <link rel="stylesheet" href="/static/css/documents_workspace.css">
 <script src="/static/js/documents.js" defer></script>
-<script src="/static/js/documents_screen.js" defer></script>
-<script src="/static/js/client_profile.js" defer></script>{% endblock %}
+<script src="/static/js/documents_screen.js" defer></script>{% endblock %}
 {% block body_class %}{{ " docsui" if active_tab == "documents" else "" }}{% endblock %}
 {% block nav_extra %}
 {# The Documents workspace carries its own primary navigation (views + categories, with counts)
@@ -125,16 +124,13 @@
             <span class="meta">{{ prof.identity.birth_date_source }}</span>
           {% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
         <div><dt>SSN</dt><dd>
-          {# Only the last four are ever in this page. The eye control fetches the full number from
-             the audited endpoint on demand, so an unclicked page carries no SSN at all. #}
+          {# Masked, always, with no way to unmask it. The last four digits are the most this
+             surface will ever carry: there is no reveal control, no endpoint behind one, and no
+             script that could fetch the rest. The full number stays in Postgres. #}
           {% if prof.identity.ssn_last4 %}
-            <span class="c360-ssn" data-ssn-person="{{ ws.entity_id }}"
-                  data-ssn-masked="•••-••-{{ prof.identity.ssn_last4 }}">•••-••-{{ prof.identity.ssn_last4 }}</span>
-            <button type="button" class="btn sm secondary c360-ssn-reveal"
-                    data-ssn-person="{{ ws.entity_id }}"
-                    aria-label="Show full Social Security number" aria-pressed="false">Show</button>
-          {% elif prof.identity.ssn_on_file %}<span class="meta">On file.</span>
-          {% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
+            <span class="c360-ssn">***-**-{{ prof.identity.ssn_last4 }}</span>
+          {% elif prof.identity.ssn_on_file %}<span class="meta">SSN on file</span>
+          {% else %}<span class="meta">Not available</span>{% endif %}</dd></div>
         <div><dt>Household</dt><dd>
           {% if prof.identity.household %}
             <a href="/client/household/{{ prof.identity.household.id }}">{{ prof.identity.household.name }}</a>

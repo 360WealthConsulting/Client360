@@ -18,6 +18,7 @@ client's details.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import date
 
@@ -299,66 +300,91 @@ def test_an_out_of_scope_caller_gets_no_ssn_digits_at_all(seeded):
     assert FAKE_SSN not in blob
 
 
-# --- the reveal route ------------------------------------------------------------------------------
-
-def test_revealing_an_ssn_requires_the_tax_capability_not_merely_client_read():
-    """Opening a client is client.read. Unmasking their identifier is a narrower authority, so the
-    route declares tax.read — otherwise every reader of a record could unmask it."""
-    import inspect
-
-    from app.routes.client360 import reveal_ssn
-    source = inspect.getsource(reveal_ssn)
-    assert 'require_capability("tax.read")' in source
-
-
-def test_revealing_an_ssn_is_record_scoped_and_audited_before_it_answers():
-    import inspect
-
-    from app.routes.client360 import reveal_ssn
-    source = inspect.getsource(reveal_ssn)
-    assert "record_in_scope" in source
-    assert "write_audit_event" in source
-    assert source.index("write_audit_event") < source.index("return JSONResponse"), \
-        "the audit entry must be written before the value is returned"
-
-
-def test_the_reveal_response_is_not_cacheable():
-    import inspect
-
-    from app.routes.client360 import reveal_ssn
-    assert "no-store" in inspect.getsource(reveal_ssn)
-
-
-def test_the_audit_entry_carries_no_part_of_the_number():
-    import inspect
-
-    from app.routes.client360 import reveal_ssn
-    source = inspect.getsource(reveal_ssn)
-    metadata = source.split("metadata={", 1)[1].split("}", 1)[0]
-    assert "ssn" not in metadata.lower()
-
-
-def test_the_reveal_route_takes_the_person_from_the_path_not_a_query_string():
-    """A client id in a query string ends up in access logs and referrers; a path parameter is the
-    same information but is at least not appended to every outbound link."""
-    import inspect
-
-    from app.routes.client360 import reveal_ssn
-    assert "person_id: int" in inspect.getsource(reveal_ssn)
-
-
 # --- the rendered page -----------------------------------------------------------------------------
 
-def test_the_template_renders_only_the_masked_value_and_fetches_the_rest(seeded):
-    """A CSS eye-toggle would put the whole number in every page load. The template must emit the
-    mask, and the reveal must be a fetch."""
+def test_the_template_shows_the_mask_and_offers_no_way_past_it(seeded):
+    """Masked, always. The last four digits are the most this surface carries."""
     from pathlib import Path
     markup = Path("app/templates/client360/workspace.html").read_text(encoding="utf-8")
     assert "ssn_last4" in markup
-    assert "prof.identity.ssn" in markup
+    assert "***-**-" in markup, "the mask itself must be in the markup"
     assert "TP_Social" not in markup, "the template must never read the raw identifier"
-    script = Path("app/static/js/client_profile.js").read_text(encoding="utf-8")
-    assert "/ssn" in script and "fetch(" in script
+
+
+def test_there_is_no_reveal_control_anywhere(seeded):
+    """The full-SSN reveal was removed deliberately. This fails if any part of it comes back: the
+    control, a route behind it, or a script that could fetch one."""
+    from pathlib import Path
+    markup = Path("app/templates/client360/workspace.html").read_text(encoding="utf-8")
+    for gone in ("c360-ssn-reveal", "data-ssn-person", "data-ssn-masked", "aria-pressed"):
+        assert gone not in markup, f"a reveal control returned to the template: {gone}"
+
+    routes = Path("app/routes/client360.py").read_text(encoding="utf-8")
+    assert "reveal_ssn" not in routes and '"/{person_id}/ssn"' not in routes, \
+        "the reveal endpoint returned"
+    assert "TP_Social" not in routes, "a route reads the raw identifier again"
+
+    assert not Path("app/static/js/client_profile.js").exists(), \
+        "the reveal script returned"
+
+
+def test_no_javascript_anywhere_requests_or_renders_a_full_ssn():
+    """Swept across every script the app ships, not just the one that used to do this."""
+    from pathlib import Path
+    for script in Path("app/static/js").glob("*.js"):
+        body = script.read_text(encoding="utf-8")
+        for forbidden in ("/ssn", "TP_Social", "SP_Social", "ssn_full"):
+            assert forbidden not in body, f"{script.name} references {forbidden}"
+
+
+def test_no_route_in_the_application_returns_a_full_ssn():
+    """The app-wide guarantee. Any handler that selected the raw identifier would show up here."""
+    from pathlib import Path
+    for module in Path("app/routes").rglob("*.py"):
+        body = module.read_text(encoding="utf-8")
+        for forbidden in ("TP_Social", "SP_Social"):
+            assert forbidden not in body, f"{module.name} reads the raw identifier"
+
+
+def test_the_rendered_identity_block_carries_four_digits_and_no_more(seeded):
+    """Renders the real block through Jinja and searches the OUTPUT, because a template that looks
+    right can still be handed a value that is not."""
+    from jinja2 import Environment
+    block = po.identity_block(seeded["pid"], FIRM)
+    template = Environment(autoescape=True).from_string(
+        '{% if i.ssn_last4 %}<span class="c360-ssn">***-**-{{ i.ssn_last4 }}</span>'
+        '{% elif i.ssn_on_file %}SSN on file{% else %}Not available{% endif %}')
+    html = template.render(i=block)
+    assert html == '<span class="c360-ssn">***-**-1234</span>'
+    for shape in (FAKE_SSN, "900-00-1234", "900 00 1234"):
+        assert shape not in html
+    # Count digits in the VISIBLE TEXT only. Markup carries its own ("c360-ssn"), and counting
+    # those would measure the class name rather than what a reader can see.
+    visible = re.sub(r"<[^>]+>", "", html)
+    digits = "".join(ch for ch in visible if ch.isdigit())
+    assert digits == FAKE_SSN_LAST4, f"the rendered block showed {len(digits)} digits, not 4"
+
+
+def test_the_person_id_is_the_only_identifier_in_any_profile_url(seeded):
+    """Nothing about the client's identifiers may travel in a query string, where it would reach
+    access logs and outbound referrers."""
+    profile = po.overview_profile(seeded["pid"], FIRM)
+    blob = json.dumps(profile, default=str)
+    for url in re.findall(r'"(?:mailto:|tel:|/)[^"]*"', blob):
+        assert "ssn" not in url.lower()
+        assert FAKE_SSN not in url and FAKE_SSN_LAST4 not in url
+
+
+def test_nothing_the_profile_returns_would_carry_an_ssn_into_a_log_line(seeded):
+    """Log lines are built from these structures. If the full number is not in them it cannot be
+    logged by accident, which is why the SQL slices it rather than Python."""
+    import inspect
+    source = inspect.getsource(po.identity_block)
+    assert "right(regexp_replace" in source, \
+        "the last four must be sliced in SQL; selecting the whole value into Python is the risk"
+    profile = po.overview_profile(seeded["pid"], FIRM)
+    assert FAKE_SSN not in repr(profile)
+    assert FAKE_SSN not in str(profile)
 
 
 def test_the_overview_renders_contact_details_at_all(seeded):
