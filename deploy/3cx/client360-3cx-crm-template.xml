@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Client360 custom CRM template for 3CX Phone System v20 (server side).
+
+  GENERATED FILE - do not edit by hand. It is rendered by app/integrations/threecx/template.py
+  from the live endpoint definitions, and tests/test_threecx_connector.py fails if this copy and
+  that renderer disagree. Edit the renderer, re-render, and commit both.
+
+  Install: 3CX Management Console > Settings > CRM > Server side > Add, then set the three
+  parameters below. See docs/THREECX_INTEGRATION.md.
+-->
+<Crm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+     Country="US" Name="Client360" Version="1"
+     SupportsEmojis="false">
+  <Number Prefix="Zeros" MaxLength="256" />
+  <Connection MaxConcurrentRequests="2" />
+  <Parameters>
+    <Parameter Name="BaseUrl" Type="String" Parent="General Configuration" Editor="String"
+               Title="Client360 base URL (https://host, no trailing slash)" />
+    <!-- The DEDICATED integration secret. Not a Client360 login: 3CX stores template parameters
+         as readable configuration, so this value is visible to PBX administrators and grants
+         nothing beyond the two connector endpoints. -->
+    <Parameter Name="IntegrationSecret" Type="String" Parent="General Configuration" Editor="String"
+               Title="Client360 integration secret" />
+    <Parameter Name="ReportCallEnabled" Type="Boolean" Parent="General Configuration" Editor="String"
+               Title="Enable call journaling" Default="True" />
+  </Parameters>
+  <!-- "No" plus an explicit Authorization header is the documented way to send a bearer
+       credential; Basic would put the secret in a base64 user:password pair it is not. -->
+  <Authentication Type="No" />
+  <Scenarios>
+    <!-- CONTACT LOOKUP BY NUMBER. The default scenario (Id="") is the one 3CX runs on an
+         incoming or outgoing call to decide what to pop.
+
+         Client360 answers with a "contacts" array holding EXACTLY ONE entry when the number
+         matches one active client, and an EMPTY array for both no match and several matches.
+         That is what makes the "never pop on an ambiguous number" rule structural rather than
+         advisory: Rule Type="Any" simply does not fire on an empty array, so 3CX has nothing to
+         open and no name to display. -->
+    <Scenario Id="" Type="REST">
+      <Request Url="[BaseUrl]/api/integrations/3cx/lookup" MessagePasses="0" Message=""
+               RequestContentType="" RequestEncoding="Json"
+               RequestType="Post" ResponseType="Json">
+        <Headers>
+          <Value Key="Authorization">Bearer [IntegrationSecret]</Value>
+        </Headers>
+        <PostValues>
+          <Object Key="">
+            <Value Key="number" Type="String" Passes="0">[Number]</Value>
+          </Object>
+        </PostValues>
+      </Request>
+      <Rules>
+        <Rule Type="Any">contacts</Rule>
+      </Rules>
+      <Variables>
+        <Variable Name="PersonId" Path="contacts.person_id"><Filter /></Variable>
+        <Variable Name="ClientFirstName" Path="contacts.first_name"><Filter /></Variable>
+        <Variable Name="ClientLastName" Path="contacts.last_name"><Filter /></Variable>
+        <Variable Name="ClientEmail" Path="contacts.email"><Filter /></Variable>
+        <Variable Name="ClientUrl" Path="contacts.contact_url"><Filter /></Variable>
+      </Variables>
+      <!-- AllowEmpty="false": an entry with no name is not a contact, so 3CX pops nothing. -->
+      <Outputs AllowEmpty="false">
+        <Output Type="FirstName" Passes="0" Value="[ClientFirstName]" />
+        <Output Type="LastName" Passes="0" Value="[ClientLastName]" />
+        <Output Type="Email" Passes="0" Value="[ClientEmail]" />
+        <!-- No phone number is echoed back. 3CX already holds the number it asked about, so
+             returning it would add nothing and put one more copy of client contact data on the
+             wire. The staff profile page this call pops open: -->
+        <Output Type="ContactUrl" Passes="0" Value="[ClientUrl]" />
+        <Output Type="EntityType" Passes="0" Value="person" />
+        <Output Type="EntityId" Passes="0" Value="[PersonId]" />
+      </Outputs>
+    </Scenario>
+
+    <!-- CALL JOURNALING. Reserved Id; 3CX runs exactly one of these when a call ends.
+
+         No call-id variable exists in v20, so none is sent. Client360 derives a stable identity
+         from the start instant, agent, number and direction, and the endpoint is idempotent: a
+         3CX retry returns the original record and writes nothing. -->
+    <Scenario Id="ReportCall" Type="REST">
+      <Request SkipIf="[ReportCallEnabled]!=True||[EntityId]==&quot;&quot;||[CallType]==&quot;Missed&quot;||[CallType]==&quot;Notanswered&quot;"
+               Url="[BaseUrl]/api/integrations/3cx/calls" MessagePasses="0" Message=""
+               RequestContentType="" RequestEncoding="Json"
+               RequestType="Post" ResponseType="Json">
+        <Headers>
+          <Value Key="Authorization">Bearer [IntegrationSecret]</Value>
+        </Headers>
+        <PostValues>
+          <Object Key="">
+            <Value Key="call_type" Type="String" Passes="0">[CallType]</Value>
+            <Value Key="number" Type="String" Passes="0">[Number]</Value>
+            <Value Key="agent" Type="String" Passes="0">[Agent]</Value>
+            <Value Key="duration" Type="String" Passes="0">[Duration]</Value>
+            <Value Key="started_at_utc" Type="String" Passes="0">[[CallStartTimeUTC].ToString("yyyy-MM-ddTHH:mm:ssZ")]</Value>
+            <Value Key="entity_id" Type="String" Passes="0">[EntityId]</Value>
+          </Object>
+        </PostValues>
+      </Request>
+      <Rules />
+      <Variables />
+      <!-- Nothing is read back and no scenario is chained: journaling is the end of the flow. -->
+      <Outputs AllowEmpty="true" />
+    </Scenario>
+  </Scenarios>
+</Crm>

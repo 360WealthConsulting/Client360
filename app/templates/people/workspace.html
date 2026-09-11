@@ -39,7 +39,15 @@
     <p class="cp-contactline">
       {% if person.primary_email %}<span class="ico" aria-hidden="true">&#9993;</span><a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a>{% endif %}
       {% if person.primary_email and person.primary_phone %}<span class="dot" aria-hidden="true">&middot;</span>{% endif %}
-      {% if person.primary_phone %}<span class="ico" aria-hidden="true">&#9742;</span><a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a>{% endif %}
+      {# CLICK TO CALL. The href is built by the `dial` filter, not by concatenating the stored
+         number: 3CX's desktop handler needs punctuation-free digits with a country code, and a
+         raw `tel:(555) 010-0000` dials on some desks and silently does nothing on others. A
+         number with no digits renders as plain text rather than a link that cannot dial. #}
+      {% if person.primary_phone %}<span class="ico" aria-hidden="true">&#9742;</span>
+        {% set _dial = person.primary_phone|dial %}
+        {% if _dial %}<a href="{{ _dial }}" title="Call with 3CX">{{ person.primary_phone }}</a>
+        {% else %}<span>{{ person.primary_phone }}</span>{% endif %}
+      {% endif %}
       {% set _loc = [person.city, person.state]|select|join(", ") %}
       {% if _loc and (person.primary_email or person.primary_phone) %}<span class="dot" aria-hidden="true">&middot;</span>{% endif %}
       {% if _loc %}<span class="ico" aria-hidden="true">&#9678;</span><span>{{ _loc }}</span>{% endif %}
@@ -644,7 +652,9 @@
                 {% if person.primary_email %}
                   <dt>Email</dt><dd><a href="mailto:{{ person.primary_email }}">{{ person.primary_email }}</a></dd>{% endif %}
                 {% if person.primary_phone %}
-                  <dt>Phone</dt><dd><a href="tel:{{ person.primary_phone }}">{{ person.primary_phone }}</a></dd>{% endif %}
+                  {% set _dial2 = person.primary_phone|dial %}
+                  <dt>Phone</dt><dd>{% if _dial2 %}<a href="{{ _dial2 }}" title="Call with 3CX">{{ person.primary_phone }}</a>
+                    {% else %}{{ person.primary_phone }}{% endif %}</dd>{% endif %}
                 {% if _loc2 %}<dt>Location</dt><dd>{{ _loc2 }}</dd>{% endif %}
               {% else %}
                 <dt>Contact</dt><dd><span class="cp-none">Not recorded</span></dd>

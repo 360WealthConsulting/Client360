@@ -41,7 +41,13 @@ PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/readiness", "/auth/login"
     # "Public" here means "no session cookie required": the route itself authenticates every request
     # (app.mcp.auth.authenticate) and denies by default, and the endpoint 404s entirely unless
     # CLIENT360_MCP_ENABLED is set. Honouring no ambient credential, it is not CSRF-reachable.
-    "/mcp"})
+    "/mcp",
+    # The 3CX custom-CRM connector (app/routes/threecx.py) — the same arrangement again. A PBX is a
+    # machine caller with no staff session; it presents a DEDICATED integration secret as a Bearer
+    # token, which app.integrations.threecx.auth.authenticate checks on every request before any
+    # query runs. Both endpoints 404 entirely unless CLIENT360_3CX_ENABLED is set and that secret
+    # is provisioned. They honour no cookie, so they are not CSRF-reachable.
+    "/api/integrations/3cx/lookup", "/api/integrations/3cx/calls"})
 RULES = (
     # Approval / review decisions use dedicated segregation-of-duty capabilities
     # (work.approve, tax.review). These carve-outs must precede the generic
