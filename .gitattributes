@@ -28,3 +28,9 @@ reports/d7_phase_c/*.json                             -text
 # plus the plan digest. Both must survive a checkout unchanged on every platform.
 reports/d7_attribution_batch1/*.csv                   -text
 reports/d7_attribution_batch1/*.json                  -text
+
+# The document-verified batch pins four artifacts, and the runner checks all four: the manifest, the
+# sidecar that pins it, the summary, and the evidence review the sidecar cites. A checkout that
+# changed any of their bytes would make the reviewed hashes unsatisfiable.
+reports/d7_document_verified/*.csv                    -text
+reports/d7_document_verified/*.json                   -text
