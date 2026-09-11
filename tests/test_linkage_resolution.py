@@ -81,6 +81,34 @@ def _household(name):
     return hid
 
 
+def _household_without_entity_twin(name):
+    """A household whose id is PROVED absent from ``relationship_entities``.
+
+    ``test_target_validation`` asserts that a household id is refused as a *business* target, and
+    the validation refuses only when no ``relationship_entities`` row carries that number. Letting
+    ``households_id_seq`` and ``relationship_entities_id_seq`` choose the id made the assertion
+    depend on two independent sequences never colliding — which they legitimately do: this schema
+    already holds thousands of household ids that are also entity ids. Any test that advances the
+    entity sequence can shift the alignment until the household lands on a real entity, at which
+    point the target really is valid and the refusal correctly does not happen.
+
+    So the id is allocated explicitly above both tables' maxima, where neither sequence will reach
+    it, and its absence from ``relationship_entities`` is asserted rather than assumed.
+    """
+    with engine.begin() as c:
+        ceiling = max(c.execute(select(func.max(households.c.id))).scalar() or 0,
+                      c.execute(select(func.max(relationship_entities.c.id))).scalar() or 0)
+        hid = ceiling + 1_000_000
+        c.execute(households.insert().values(id=hid, name=name))
+        twin = c.execute(select(relationship_entities.c.id)
+                         .where(relationship_entities.c.id == hid)).scalar_one_or_none()
+    _C["households"].append(hid)
+    assert twin is None, (
+        f"household {hid} has a relationship_entities twin, so it is a valid business target and "
+        "cannot exercise wrong-scope rejection")
+    return hid
+
+
 def _business(name):
     with engine.begin() as c:
         eid = c.execute(relationship_entities.insert().values(
@@ -250,8 +278,9 @@ def test_target_validation():
     eid = _make_exception(folder)
     with pytest.raises(LinkageResolutionError):
         resolve_linkage_exception(eid, "link_person", principal=_PRINCIPAL, target_entity_id=999_000_777)
-    # wrong entity type: a household id used for a business link
-    hid = _household(f"HH For BadType {_TAG}")
+    # wrong entity type: a household id used for a business link. The id is allocated so that no
+    # relationship_entities row can share it, otherwise the target would be legitimately valid.
+    hid = _household_without_entity_twin(f"HH For BadType {_TAG}")
     with pytest.raises(LinkageResolutionError):
         resolve_linkage_exception(eid, "link_business", principal=_PRINCIPAL, target_entity_id=hid)
 
