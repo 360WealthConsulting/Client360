@@ -188,3 +188,92 @@ def test_discover_drives_retains_sharepoint_site_libraries(monkeypatch):
     out = mds.discover_drives("token")
     assert {d["id"] for d in out} == {"sp-1", "sp-2"}         # both SharePoint site libraries retained
     assert "od-docs" not in {d["id"] for d in out}            # personal OneDrive excluded
+
+
+# --- composite site-id parsing -------------------------------------------------------------------
+# A Graph composite site id is ``hostname,siteGuid,webGuid`` — it CONTAINS commas. Splitting the
+# configured scope on commas turned one valid id into three invalid lookups, and the trailing
+# web-guid fragment answered 404, which aborted discovery entirely.
+
+COMPOSITE = "contoso.sharepoint.com,11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222"
+COMPOSITE_2 = "contoso.sharepoint.com,33333333-3333-3333-3333-333333333333,44444444-4444-4444-4444-444444444444"
+
+
+def test_parse_site_ids_keeps_one_composite_whole():
+    from app.jobs.microsoft_document_sync import parse_site_ids
+    assert parse_site_ids(COMPOSITE) == [COMPOSITE]          # never split on internal commas
+
+
+def test_parse_site_ids_supports_multiple_sites_via_json_array():
+    # The configuration system's existing ``json`` value type is the unambiguous outer format.
+    from app.jobs.microsoft_document_sync import parse_site_ids
+    assert parse_site_ids([COMPOSITE, COMPOSITE_2]) == [COMPOSITE, COMPOSITE_2]   # list from a json item
+    assert parse_site_ids(f'["{COMPOSITE}", "{COMPOSITE_2}"]') == [COMPOSITE, COMPOSITE_2]  # still encoded
+
+
+def test_parse_site_ids_handles_malformed_input():
+    from app.jobs.microsoft_document_sync import parse_site_ids
+    assert parse_site_ids(None) == []                        # unset
+    assert parse_site_ids("") == []                          # blank
+    assert parse_site_ids("   ") == []                        # whitespace only
+    assert parse_site_ids([]) == []                          # empty array
+    assert parse_site_ids([" ", ""]) == []                    # array of blanks
+    assert parse_site_ids("[not json") == ["[not json"]       # unparseable -> one opaque id, no crash
+    assert parse_site_ids('{"a": 1}') == ['{"a": 1}']         # json object -> one opaque id
+
+
+def test_discover_drives_sends_the_whole_composite_to_graph(monkeypatch):
+    # Proves the composite reaches Graph unchanged: exactly one /sites/{id}/drives call, whose URL
+    # carries the full id including both internal commas.
+    import app.jobs.microsoft_document_sync as mds
+    _stub_scope_site(monkeypatch, site_id=COMPOSITE)
+    seen = []
+
+    def pages(url, access_token, params=None):
+        seen.append(url)
+        if "/me/drives" in url:
+            return ([], None)
+        return ([{"id": "sp-360data", "name": "Documents"}], None)
+    monkeypatch.setattr(mds, "_graph_pages", pages)
+
+    out = mds.discover_drives("token")
+    site_calls = [u for u in seen if "/sites/" in u]
+    assert len(site_calls) == 1                                          # one id -> one lookup
+    assert site_calls[0] == f"{mds.GRAPH_BASE_URL}/sites/{COMPOSITE}/drives"
+    assert site_calls[0].count(",") == 2                                 # both commas survived
+    assert [d["id"] for d in out] == ["sp-360data"]
+    assert out[0]["site_id"] == COMPOSITE                                # recorded whole
+
+
+def test_discover_drives_isolates_a_failing_site(monkeypatch):
+    # A 404 (or any error) from one configured site must not discard drives already discovered
+    # from the others.
+    import requests
+
+    import app.jobs.microsoft_document_sync as mds
+    _stub_scope_site(monkeypatch, site_id=[COMPOSITE, COMPOSITE_2])
+
+    def pages(url, access_token, params=None):
+        if "/me/drives" in url:
+            return ([], None)
+        if COMPOSITE_2 in url:
+            raise requests.exceptions.HTTPError("404 Client Error: Not Found")
+        return ([{"id": "sp-good", "name": "Documents"}], None)
+    monkeypatch.setattr(mds, "_graph_pages", pages)
+
+    out = mds.discover_drives("token")
+    assert [d["id"] for d in out] == ["sp-good"]              # good site survives the bad one
+
+
+def test_discover_drives_excludes_personal_onedrive_with_a_composite_scope(monkeypatch):
+    # The real production shape: a composite scope plus personal drives that must stay excluded.
+    import app.jobs.microsoft_document_sync as mds
+    _stub_scope_site(monkeypatch, site_id=COMPOSITE)
+    _stub_graph(monkeypatch,
+                me_drives=[{"id": "od-docs", "name": "OneDrive"},
+                           {"id": "od-cache", "name": "PersonalCacheLibrary"}],
+                site_drives=[{"id": "sp-360data", "name": "Documents"}],
+                site_id=COMPOSITE)
+    out = mds.discover_drives("token")
+    assert {d["id"] for d in out} == {"sp-360data"}           # only the team-site library
+    assert all(d["source_type"] == "sharepoint" for d in out)
