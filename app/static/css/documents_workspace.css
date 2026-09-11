@@ -336,6 +336,28 @@ body.docsui .docrow-file {
 body.docsui .docrow-note { color:var(--dw-mut); font-size:11px; }
 body.docsui .docrow-note--flag { color:#B45309; font-weight:600; }
 
+/* Portal visibility. Two states, both always stated: on a screen where staff choose what a client
+   may read, an absent badge would be indistinguishable from "nobody has decided yet". Published is
+   the notable state and carries the colour; internal is quiet but still explicit. */
+body.docsui .docrow-vis {
+  display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px;
+  font-size:10.5px; font-weight:600; white-space:nowrap; cursor:help;
+}
+body.docsui .docrow-vis--published { background:#DCFCE7; color:#166534; }
+body.docsui .docrow-vis--internal  { background:var(--dw-line-2); color:var(--dw-mut); }
+
+/* Category / year grouping headings inside the document table. A heading row, not a data row:
+   it repeats the category label the tabs use so the two can never disagree. */
+body.docsui tr.docws-group > th {
+  position:sticky; top:0; z-index:1;
+  padding:7px 10px; text-align:left; font-size:11px; font-weight:700;
+  letter-spacing:.02em; text-transform:uppercase;
+  background:var(--dw-line-2); color:var(--dw-ink-2);
+  border-top:1px solid var(--dw-line); border-bottom:1px solid var(--dw-line);
+}
+body.docsui .docws-group-sep { margin:0 6px; opacity:.5; }
+body.docsui .docws-group-year { font-weight:600; text-transform:none; letter-spacing:0; }
+
 /* Why a row is on the worklist. Only rendered in the Needs Review view, where it is
    the point of the row rather than decoration. */
 body.docsui .docrow-why { display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }

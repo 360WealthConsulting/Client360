@@ -250,7 +250,25 @@
           <th class="docs-actions">Actions</th>
         </tr></thead>
         <tbody>
+        {# Category/year grouping. The list is already sorted by the chosen column; this only emits
+           a heading row when the (category, year) pair changes, so it partitions the page without
+           reordering it and the visible row count is unchanged. `screen.groups` carries the same
+           partition for callers that want it structurally. #}
+        {% set _ncols = (screen.sort_columns | map(attribute="key")
+                         | reject("in", _hidden_cols) | list | length) + 1 %}
+        {% set grp = namespace(key=None) %}
         {% for d in screen.rows %}
+          {% set _gkey = (d.tab, d.year) %}
+          {% if _gkey != grp.key %}
+            {% set grp.key = _gkey %}
+            <tr class="docws-group">
+              <th colspan="{{ _ncols }}" scope="colgroup">
+                <span class="docws-group-cat">{{ screen.group_labels.get(d.tab, "Other") }}</span>
+                <span class="docws-group-sep" aria-hidden="true">·</span>
+                <span class="docws-group-year">{{ d.year or "No year" }}</span>
+              </th>
+            </tr>
+          {% endif %}
           {# The panel is a read of the CURRENT client's set, so it hangs off this workspace. The
              delete action is anchored to the document's OWN owner: document_delete._owns refuses a
              household document removed through a person route, and rightly so.
@@ -288,6 +306,17 @@
                   {% elif d.needs_version_review %}
                     <span class="docrow-note docrow-note--flag"
                           title="{{ d.version_review_reason }}">⚑ needs review</span>
+                  {% endif %}
+                  {# Who can SEE this document. Stated on every row in both directions, because a
+                     badge only on published rows would leave "internal" looking like "not checked"
+                     on the screen where staff decide what a client may read. Being filed against a
+                     client does not publish it: only a Vault record with client_visible does. #}
+                  {% if d.portal %}
+                    <span class="docrow-vis docrow-vis--{{ d.portal.tone }}"
+                          title="{{ 'Published to the client portal — the client can open this.'
+                                    if d.portal.published
+                                    else 'Staff only — this is not published to the client portal.' }}">
+                      {{ d.portal.label }}</span>
                   {% endif %}
 
                   {# On a worklist ONLY, the row states why it is here and which of its cells are

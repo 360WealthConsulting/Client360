@@ -1,0 +1,71 @@
+{# Drake's own tax return record for this client: taxpayer/spouse, AGI, preparer, and the
+   federal/state acknowledgement codes and dates.
+
+   This used to render in workspace.html ABOVE the tab bar, so it appeared on every tab and
+   pushed the tab bar roughly a screen down the page. It is one client domain, so it now lives
+   in the Tax tab with the rest of the tax record. Nothing was dropped - the same rows and the
+   same fields render, just in the tab a preparer would look in.
+
+   Expects: `returns` (ws.drake_returns) and the `ui` macros. #}
+{% macro drake_tax_detail(returns) %}
+<section class="card section">
+  {{ ui.card_head("Drake Tax") }}
+
+  {% for d in returns %}
+    <div class="detail-row">
+      <span>
+        <strong>{{ d.tax_year }} {{ d.return_type or "Return" }}</strong>
+        <span class="subtle">
+          · {{ d.taxpayer_first_name }} {{ d.taxpayer_last_name }}
+          {% if d.spouse_first_name %}
+            &amp; {{ d.spouse_first_name }}
+            {{ d.spouse_last_name or d.taxpayer_last_name }}
+          {% endif %}
+        </span>
+      </span>
+
+      <strong>
+        {% if d.federal_ack_code == "A" %}
+          Federal accepted
+        {% elif d.federal_ack_code %}
+          Federal status: {{ d.federal_ack_code }}
+        {% else %}
+          No federal acknowledgement
+        {% endif %}
+      </strong>
+    </div>
+
+    <div class="detail-row">
+      <span>AGI</span>
+      <strong>
+        {{ "${:,.0f}".format(d.agi|float) if d.agi is not none else "—" }}
+      </strong>
+    </div>
+
+    <div class="detail-row">
+      <span>Preparer</span>
+      <strong>{{ d.preparer_code or "—" }}</strong>
+    </div>
+
+    {% if d.federal_product %}
+    <div class="detail-row">
+      <span>Federal return</span>
+      <strong>
+        {{ d.federal_product }}
+        {% if d.federal_ack_date %} · {{ d.federal_ack_date }}{% endif %}
+      </strong>
+    </div>
+    {% endif %}
+
+    {% if d.state_product %}
+    <div class="detail-row">
+      <span>State return</span>
+      <strong>
+        {{ d.state_product }}
+        {% if d.state_ack_date %} · {{ d.state_ack_date }}{% endif %}
+      </strong>
+    </div>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endmacro %}

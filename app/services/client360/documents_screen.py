@@ -546,7 +546,65 @@ def shape_row(row, *, member_names, household_name, now=None):
         "is_recent": _is_recent(when, now),
         "date_label": when.strftime("%b %d, %Y") if when else "—",
         "size_label": _size_label(row.get("size_bytes")),
+        "portal": _portal(row),
     }
+
+
+def _portal(row) -> dict:
+    """Whether this document is published to the client portal, or staff-only.
+
+    A canonical document is internal by default: being filed against a client does NOT publish it.
+    Only a Vault record with ``client_visible`` true is actually readable in the portal, so that
+    flag is the single source of truth. ``portal_visible`` is set by the Documents-tab merge, which
+    carries the flag onto a canonical row when a Vault record is the same underlying file.
+
+    Stated positively in both directions, because "no badge" would read as "not checked" on a
+    screen where staff are deciding what a client may see.
+    """
+    published = bool(row.get("portal_visible"))
+    return {
+        "published": published,
+        "label": "Client portal" if published else "Internal only",
+        "tone": "published" if published else "internal",
+    }
+
+
+#: Category label for a grouping header, by tab key. Mirrors ``TABS`` so a group heading and the
+#: tab that filters to it can never disagree about what a category is called.
+_TAB_LABEL = {t["key"]: t["label"] for t in TABS}
+
+
+def group_rows(rows) -> list[dict]:
+    """The page's rows grouped by category, then by year, preserving the caller's sort ORDER.
+
+    Staff read a client's file as "the tax folder, by year", so a flat list of 200 rows sorted by
+    date buries the shape of the file. Grouping is presentation only: it partitions exactly the
+    rows it is given, adds nothing and drops nothing, so ``sum(len(g.rows))`` always equals
+    ``len(rows)`` and the screen's counts stay true.
+
+    Rows carrying no year group under "No year" LAST within their category, because an undated
+    document is a gap to close rather than the oldest item on file.
+    """
+    order, buckets = [], {}
+    for r in rows:
+        key = (r.get("tab") or "other", r.get("year") or "")
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(r)
+
+    # Category in TABS order (the order staff see above the list), year newest first, undated last.
+    cat_order = {t["key"]: i for i, t in enumerate(TABS)}
+
+    def _sort_key(key):
+        cat, year = key
+        return (cat_order.get(cat, len(cat_order)), 0 if year else 1, -(int(year) if year.isdigit() else 0))
+
+    return [{"category": cat, "category_label": _TAB_LABEL.get(cat, cat.title()),
+             "year": year or None, "year_label": year or "No year",
+             "count": len(buckets[key]), "rows": buckets[key]}
+            for key in sorted(order, key=_sort_key)
+            for cat, year in [key]]
 
 
 def _matches(row, *, q, tab, year, type_code, related, needs_review, recent=False,
@@ -648,6 +706,9 @@ def build(rows, *, member_names=None, household_name=None, q=None, tab="all", ye
 
     return {
         "rows": window,
+        "groups": group_rows(window),
+        # Category key -> the label the tabs use, so a group heading and its tab always agree.
+        "group_labels": dict(_TAB_LABEL),
         "tabs": tabs,
         "total": total,
         "total_all": len(shaped),
