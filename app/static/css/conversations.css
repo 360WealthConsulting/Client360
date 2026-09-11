@@ -6,3 +6,123 @@
 .conversation-pagination{display:flex;align-items:center;justify-content:center;gap:1rem;padding:.8rem;font-size:.8rem}
 @media(max-width:1050px){.conversation-shell{grid-template-columns:11rem minmax(16rem,20rem) minmax(22rem,1fr)}}
 @media(max-width:800px){.conversation-shell{grid-template-columns:1fr;height:auto;min-height:30rem}.conversation-channels{display:none}.conversation-list{border-right:0}.conversation-thread-empty{display:none}.conversation-shell.has-selection .conversation-list{display:none}.conversation-shell.has-selection .conversation-thread{min-height:34rem}.conversation-mobile-back{display:inline}.conversation-page-head{align-items:flex-start}.conversation-new>form{position:fixed;top:5rem;right:1rem;left:1rem;width:auto;max-height:calc(100vh - 6rem);overflow:auto}.staff-thread-pane{padding:0 .75rem .75rem}}
+
+/* ------------------------------------------------------------------ staff shell theme ------
+   WHY THIS BLOCK EXISTS
+
+   The staff shell composes two palettes that disagree about theme:
+
+     app.css      defines --surface/--surface-2/--text/--text-2/--muted/--border/--accent* and
+                  IS theme-aware — a `@media (prefers-color-scheme: dark)` block flips them to
+                  near-black (--surface:#141D1B).
+     shell360.css defines --s-card/--s-page/--s-ink/--s-line/... , loads AFTER app.css, is NOT
+                  theme-aware, and paints `body.c360` and `body.c360 .card` from those fixed
+                  light values.
+
+   base.html sets no `data-theme`, so nothing pins the choice: on an operator whose OS is dark,
+   app.css flips and shell360.css does not. Everything drawn from the app.css variables turns
+   dark (or light-on-white) while the surfaces beneath it stay white. Measured on the staff
+   thread page in dark mode, `.thread-header` rendered #EDF2F0 text on a #FFFFFF card — a
+   contrast ratio of 1.13:1, which is invisible.
+
+   conversations.css draws entirely from the app.css variables, so the whole conversation
+   workspace inherits the dark half of that split. Its hard-coded values (#dce9ff avatars,
+   #fffbeb linked-request strip) were authored for a light surface and stayed light, which is
+   what made the result incoherent rather than merely dark.
+
+   THE FIX: re-point those variables at the shell's own light tokens, scoped to the conversation
+   surface only. Every existing rule then resolves against one coherent palette with no
+   rule-by-rule rewrite, no !important, and no global override. The client portal is untouched —
+   it renders under `body.portal`, which never matches this selector.
+   -------------------------------------------------------------------------------------------- */
+body.c360 .conversation-page-head,
+body.c360 .conversation-shell {
+  --surface:var(--s-card,#fff);
+  --surface-2:var(--s-page,#f7f8fa);
+  --text:var(--s-ink,#111827);
+  --text-2:var(--s-ink-2,#374151);
+  --muted:var(--s-mut,#6b7280);
+  --border:var(--s-line,#e5e7eb);
+  --accent:var(--s-blue,#2563eb);
+  --accent-soft:var(--s-blue-soft,#eff4ff);
+  /* The semantic tints flip too, and they are not decoration here: `.thread-msg.staff` fills
+     from --info-soft and `.thread-msg.internal` from --warn-soft, so in dark mode a staff reply
+     rendered #111827 on #17293B (1.2:1) and an internal note #111827 on #33280F (1.23:1) —
+     both unreadable. Mapping the whole semantic set keeps every badge and bubble on one palette. */
+  --good:var(--s-ok,#15803d);   --good-soft:var(--s-ok-soft,#dcfce7);
+  --warn:var(--s-warn,#b45309); --warn-soft:var(--s-warn-soft,#fef3c7);
+  --crit:var(--s-err,#b42318);  --crit-soft:var(--s-err-soft,#fee2e2);
+  --info:var(--s-info,#0369a1); --info-soft:var(--s-info-soft,#e0f2fe);
+  color:var(--s-ink,#111827);
+}
+
+/* The selected row must not read as merely hovered. Hover is the pale wash; selection adds a
+   solid accent edge and a heavier title, so the two stay distinguishable without the block of
+   saturated colour that overwhelmed the content. */
+body.c360 .conversation-row:hover { background:var(--s-line-2,#edf0f4); }
+body.c360 .conversation-row.active {
+  background:var(--s-blue-soft,#eff4ff);
+  box-shadow:inset 3px 0 0 var(--s-blue,#2563eb);
+}
+body.c360 .conversation-row.active .conversation-row-body strong { font-weight:750; }
+
+/* Cards inside the thread pane are shell cards: shell360 paints them white, so their text has
+   to come from the shell ink rather than the flipped --text. */
+body.c360 .conversation-shell .card { background:var(--s-card,#fff); color:var(--s-ink,#111827); }
+body.c360 .conversation-shell .card :is(h2,h3) { color:var(--s-ink,#111827); }
+/* Secondary text sits on tinted bubbles as often as on white, and --s-mut (#6B7280) lands at
+   4.2:1 against the pale blue reply fill — under AA for body-size text. --s-ink-2 stays clearly
+   secondary against the #111827 primary while measuring above 7:1 on every fill used here. */
+body.c360 .conversation-shell :is(.meta,.subtle,.thread-meta,.msg-meta,.thread-msg-meta),
+body.c360 .conversation-shell .conversation-row-body > span,
+body.c360 .conversation-shell .conversation-list-head span {
+  color:var(--s-ink-2,#374151);
+}
+
+/* The count chip inherited its text colour from the rail, which on the pale accent fill left
+   foreground and background identical (1:1 — the number was there but invisible). */
+body.c360 .conversation-shell .conversation-count,
+body.c360 .conversation-page-head .conversation-count {
+  background:var(--s-blue-soft,#eff4ff);
+  color:var(--s-blue-2,#1d4ed8);
+  font-weight:650;
+}
+
+/* Form controls: white field, dark value, visible edge. Without this they inherited the flipped
+   surface and rendered dark-on-dark. */
+body.c360 .conversation-shell :is(input,textarea,select) {
+  background:var(--s-card,#fff);
+  color:var(--s-ink,#111827);
+  border:1px solid var(--s-line,#e5e7eb);
+}
+body.c360 .conversation-shell :is(input,textarea,select)::placeholder { color:var(--s-mut,#6b7280); }
+
+/* Focus has to be visible against a light field, and the default flipped accent was not. */
+body.c360 .conversation-shell :is(a,button,input,textarea,select,summary):focus-visible {
+  outline:2px solid var(--s-blue,#2563eb);
+  outline-offset:2px;
+}
+
+/* The thread pane scrolls inside the shell, so its sticky heading pins to the pane — not to the
+   application header. Giving it the pane's own background stops page content showing through it,
+   which is what made the title look half-hidden. */
+body.c360 .staff-thread-pane > .conversation-thread-head {
+  background:var(--s-card,#fff);
+  border-bottom:1px solid var(--s-line,#e5e7eb);
+}
+body.c360 .conversation-shell .conversation-list-head { background:var(--s-card,#fff); }
+
+/* The staff shell gives 236px to the navigation before the workspace gets any width, so it meets
+   the three-column squeeze roughly a sidebar earlier than the client portal does. At a 1024px
+   viewport the existing <=1050px track sizes (11rem + 16rem + 22rem = 784px minimum) exceeded the
+   711px actually available and the shell scrolled sideways, pushing the reply controls out of
+   reach. Tightening the tracks for the staff shell alone keeps all three panes — the structure is
+   unchanged — and leaves the client portal, which has no sidebar, on the shared sizing. */
+@media (max-width:1100px) {
+  body.c360 .conversation-shell {
+    grid-template-columns:10rem minmax(13rem,16rem) minmax(16rem,1fr);
+  }
+  body.c360 .conversation-channels { padding:.75rem .5rem; }
+  body.c360 .conversation-channels > a { padding:.55rem .5rem; font-size:.83rem; gap:.4rem; }
+  body.c360 .conversation-row { padding:.75rem .7rem; grid-template-columns:2rem minmax(0,1fr) .5rem; }
+}
