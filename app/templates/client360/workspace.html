@@ -120,7 +120,7 @@
       <h2 class="section-title">Identity</h2>
       <dl class="c360-facts">
         <div><dt>Date of birth</dt><dd>
-          {% if prof.identity.birth_date %}{{ prof.identity.birth_date.strftime("%b %-d, %Y") }}
+          {% if prof.identity.birth_date %}{{ prof.identity.birth_date | datefmt("%b %-d, %Y") }}
             <span class="meta">{{ prof.identity.birth_date_source }}</span>
           {% else %}<span class="meta">Not recorded.</span>{% endif %}</dd></div>
         <div><dt>SSN</dt><dd>
@@ -183,7 +183,7 @@
         <div><dt>{{ level|capitalize }} e-file</dt><dd>
           {% if ef %}
             <span class="pill {{ 'ok' if ef.status == 'accepted' else ('stop' if ef.status == 'rejected' else 'review') }}">{{ ef.status|replace("_", " ")|capitalize }}</span>
-            {% if ef.acknowledged_at %}<span class="meta">{{ ef.acknowledged_at.strftime("%b %-d, %Y") }}</span>{% endif %}
+            {% if ef.acknowledged_at %}<span class="meta">{{ ef.acknowledged_at | datefmt("%b %-d, %Y") }}</span>{% endif %}
           {% else %}<span class="meta">Not filed through Drake.</span>{% endif %}</dd></div>
         {% endfor %}
       </dl>
