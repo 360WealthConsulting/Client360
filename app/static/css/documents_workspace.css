@@ -73,6 +73,20 @@ body.docsui .app-content {
   padding:0; flex:1 1 auto; min-height:0;
   display:flex; flex-direction:column; overflow:hidden;
 }
+/* The client workspace wraps EVERY tab's body in `.c360-panel` (client360.css gives it nothing but
+   `margin-top:8px`), so on this screen that wrapper sits between the flex column above and the
+   three-pane frame below. A content-sized block cannot pass a height down: the panes each asked
+   correctly for `min-height:0; overflow-y:auto`, and `.docws` for `flex:1 1 auto`, but they were
+   measuring against a parent with no height of its own. The frame therefore grew to its full
+   content height, `.app-content`'s clip cut it at the viewport, and every row past the fold became
+   unreachable — no scrollbar anywhere, and visible again only by zooming out. This is the one
+   ancestor between the viewport clamp and the panes that was not already forwarding height; making
+   it the same flex column closes the chain and nothing below it changes. `margin:0` because the
+   8px would otherwise push the frame down by the height it was just given. */
+body.docsui .c360-panel {
+  margin:0; flex:1 1 auto; min-height:0;
+  display:flex; flex-direction:column; overflow:hidden;
+}
 body.docsui .dw-clienthead { flex:0 0 auto; padding:18px 24px 16px; margin:0; background:var(--dw-card); border-bottom:1px solid var(--dw-line); }
 body.docsui .docs-head { display:none; }        /* replaced by the shared page header */
 
@@ -167,8 +181,10 @@ body.docsui .docws-scopenote dd { margin:2px 0 0; line-height:1.45; }
 /* Side padding is 14px, not 20px: this pane's job is to be wide. Twelve pixels of gutter is twelve
    pixels a filename does not get, and the pane already has a border and a colour change on both
    sides to separate it from its neighbours. */
+/* `overscroll-behavior:contain` keeps a wheel gesture that reaches the end of the list in the list,
+   rather than handing the rest of it to whatever ancestor can still move. */
 body.docsui .docws-list {
-  min-height:0; overflow-y:auto;
+  min-height:0; overflow-y:auto; overscroll-behavior:contain;
   display:flex; flex-direction:column;
   padding:16px 14px 24px;
 }
@@ -695,8 +711,14 @@ body.docsui .docs-upload-cancel:hover { color:var(--dw-ink); text-decoration:und
   body.docsui .docws-navitem--reason { font-size:11.5px; }
 }
 @media (max-width:1024px) {
+  /* One scrolling column, so every viewport clamp above it has to be released — `body` included.
+     It was not: the shell and the panes went back to auto height while `body` kept `height:100vh;
+     overflow:hidden`, which clipped the single column at the fold with nothing able to scroll it.
+     Same defect as the desktop one, reached by narrowing the window instead of by the wrapper. */
+  body.docsui { height:auto; overflow:visible; }
   body.docsui .app-shell, body.docsui .app-main { height:auto; overflow:visible; }
   body.docsui .app-content { overflow:visible; }
+  body.docsui .c360-panel { display:block; overflow:visible; }
   body.docsui .docws { grid-template-columns:1fr; }
   body.docsui .docws-rail {
     display:flex; gap:14px; overflow-x:auto; overflow-y:visible;
