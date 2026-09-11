@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 import re
 from collections.abc import Callable, Iterable, Mapping
@@ -18,6 +20,8 @@ from app.db import (
 )
 from app.services.microsoft_identity import get_microsoft_access_token, record_sync_health
 from app.services.timeline import add_timeline_event
+
+logger = logging.getLogger(__name__)
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 
@@ -216,6 +220,40 @@ def _graph_pages(url: str, access_token: str, params=None):
     return items, delta_link
 
 
+def parse_site_ids(raw: Any) -> list[str]:
+    """Parse the configured SharePoint scope into individual Microsoft Graph site ids.
+
+    A Graph composite site id is ``hostname,siteGuid,webGuid`` — it CONTAINS commas, so the
+    configured value must never be split on them. Doing so produced three invalid lookups from
+    one valid id, and the trailing web-guid fragment returned 404.
+
+    The parsing contract:
+
+    * a list/tuple -> each element is exactly one site id. This is how the configuration
+      system's existing ``json`` value type (a JSON array) arrives, and it is the unambiguous
+      outer format for configuring several sites. No new configuration contract is introduced.
+    * a string that looks like a JSON array -> parsed as that array (a ``json`` item whose value
+      reaches us still encoded).
+    * any other string -> exactly ONE site id, used verbatim, commas included.
+    * ``None``/blank -> no sites.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [str(value).strip() for value in raw if str(value).strip()]
+    text = str(raw).strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            return [text]
+        if isinstance(parsed, list):
+            return [str(value).strip() for value in parsed if str(value).strip()]
+    return [text]
+
+
 def discover_drives(access_token: str) -> list[dict[str, Any]]:
     drives, _ = _graph_pages(f"{GRAPH_BASE_URL}/me/drives", access_token)
     discovered = [{**drive, "source_type": "onedrive", "site_id": None} for drive in drives]
@@ -229,14 +267,17 @@ def discover_drives(access_token: str) -> list[dict[str, Any]]:
     _raw_site_ids = policy_evaluate(
         "microsoft365.sharepoint_scope",
         default=os.getenv("MICROSOFT_SHAREPOINT_SITE_IDS", "")).decision
-    if isinstance(_raw_site_ids, (list, tuple)):
-        site_ids = [str(v).strip() for v in _raw_site_ids if str(v).strip()]
-    else:
-        site_ids = [value.strip() for value in str(_raw_site_ids or "").split(",") if value.strip()]
+    site_ids = parse_site_ids(_raw_site_ids)
     for site_id in site_ids:
-        site_drives, _ = _graph_pages(
-            f"{GRAPH_BASE_URL}/sites/{site_id}/drives", access_token
-        )
+        # Isolate per-site failures: one unreachable or mistyped site must not discard the drives
+        # already discovered from the other configured sites.
+        try:
+            site_drives, _ = _graph_pages(
+                f"{GRAPH_BASE_URL}/sites/{site_id}/drives", access_token
+            )
+        except Exception:
+            logger.exception("SharePoint drive discovery failed for a configured site; skipping it.")
+            continue
         discovered.extend(
             {**drive, "source_type": "sharepoint", "site_id": site_id}
             for drive in site_drives
