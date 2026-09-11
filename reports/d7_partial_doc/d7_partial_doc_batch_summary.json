@@ -1,0 +1,135 @@
+{
+  "attribution_audits_after": 47,
+  "attribution_audits_before": 47,
+  "batch": "d7_partial_provenance_document_corroborated",
+  "census_artifact_sha256": {
+    "document_ready": "b7993313e4b25b04cfec28781369963c4d2b671c7c03b30d991bfc2d729a5428",
+    "hold": "ab5f3ce3b77e0fab44da803b8782cdfd22090ba7314a0c74c073b81d54ef9c0f",
+    "review": "3dacf83fe8474b80a518a8db5d202159f7da383a6bd51e7aafbe64644d8666ef",
+    "summary": "92c0777d032be0d83365e2dbed6eac7b6fc89190c7b1e5207db4a22fbfd92fe3"
+  },
+  "confirmation_phrase": "APPLY-D7-PARTIALDOC-29",
+  "contradiction_rows": [
+    555,
+    578,
+    620
+  ],
+  "coverage_distribution": {
+    "1/2": 4,
+    "1/3": 9,
+    "2/3": 1,
+    "2/4": 1,
+    "3/4": 4,
+    "3/5": 9,
+    "6/7": 1
+  },
+  "distinct_entities": 29,
+  "expected_audit_inserts": 29,
+  "expected_dbi_inserts": 0,
+  "expected_dbi_updates": 29,
+  "expected_esl_inserts": 110,
+  "expected_other_writes": 0,
+  "fingerprints_after": {
+    "document_ocr": [
+      1,
+      "aa8a28ff67b6eae3ec41b50d3a8e1b34452bac0f38609622846a3c291bedcac2"
+    ],
+    "documents": [
+      1,
+      "b34d5e0e02617e18714cf9a7bd37f4846d63b6449438046778e99e722eda11e3"
+    ],
+    "drake_business_identity": [
+      150,
+      "88196925c103c0dfb6b4735e20a839e672e087452c70bdf40e3625c661637c50"
+    ],
+    "drake_client_returns": [
+      3690,
+      "b4373102a82eeac07527eb14335c2073c641b7be184430f47bfac9275fe69e63"
+    ],
+    "drake_identity": [
+      1654,
+      "6bea46f0d60611467d50ce0f76a7c980765cc79f88e10c7298b6e5a4df565f83"
+    ],
+    "drake_identity_match_candidates": [
+      435,
+      "1b4696a843e199a761552713e0ea79bfb51d23c70507f8dfd1ac39bb55db8bc7"
+    ],
+    "entity_source_links": [
+      190,
+      "bbd562b37d8ab080ea31615600573de4965e06a7f3c42f29deb901a3621aaf37"
+    ],
+    "people": [
+      7782,
+      "c9396957d42d46d84f7c18e259b2e468d5f82910ef030aa541b3d9393c17cb29"
+    ],
+    "person_source_links": [
+      11081,
+      "f7bebbfaa0f29f04cc415cb4d86851562d7e85e9732ceeba2761348891865786"
+    ],
+    "relationship_entities": [
+      213,
+      "86be2b98d241abc4e59d722916fc5267533077f88ac1af15cd6bcfd792a6b182"
+    ],
+    "source_contacts": [
+      13686,
+      "5c6d6bd7d106a6cc462b8b35c311aeed742c45758949ba768c17584f90e315c2"
+    ]
+  },
+  "fingerprints_before": {
+    "document_ocr": [
+      1,
+      "aa8a28ff67b6eae3ec41b50d3a8e1b34452bac0f38609622846a3c291bedcac2"
+    ],
+    "documents": [
+      1,
+      "b34d5e0e02617e18714cf9a7bd37f4846d63b6449438046778e99e722eda11e3"
+    ],
+    "drake_business_identity": [
+      150,
+      "88196925c103c0dfb6b4735e20a839e672e087452c70bdf40e3625c661637c50"
+    ],
+    "drake_client_returns": [
+      3690,
+      "b4373102a82eeac07527eb14335c2073c641b7be184430f47bfac9275fe69e63"
+    ],
+    "drake_identity": [
+      1654,
+      "6bea46f0d60611467d50ce0f76a7c980765cc79f88e10c7298b6e5a4df565f83"
+    ],
+    "drake_identity_match_candidates": [
+      435,
+      "1b4696a843e199a761552713e0ea79bfb51d23c70507f8dfd1ac39bb55db8bc7"
+    ],
+    "entity_source_links": [
+      190,
+      "bbd562b37d8ab080ea31615600573de4965e06a7f3c42f29deb901a3621aaf37"
+    ],
+    "people": [
+      7782,
+      "c9396957d42d46d84f7c18e259b2e468d5f82910ef030aa541b3d9393c17cb29"
+    ],
+    "person_source_links": [
+      11081,
+      "f7bebbfaa0f29f04cc415cb4d86851562d7e85e9732ceeba2761348891865786"
+    ],
+    "relationship_entities": [
+      213,
+      "86be2b98d241abc4e59d722916fc5267533077f88ac1af15cd6bcfd792a6b182"
+    ],
+    "source_contacts": [
+      13686,
+      "5c6d6bd7d106a6cc462b8b35c311aeed742c45758949ba768c17584f90e315c2"
+    ]
+  },
+  "hold_rows": 9,
+  "manifest_csv_sha256": "6df4bc90a1ffc5ee8ea7e2a14d5bfa40d86a158895a855806f585e25b261d08a",
+  "manifest_json_sha256": "1ef7367cd41f305c8215abf1ec4fd9974ac334ae3ad1ce6e68601854b8255ffb",
+  "pdfs_scanned": 1627,
+  "plan_digest": "162155d553791a548410842b0e46df6071cece0a91b5f4e1f54345a8e1739feb",
+  "row_count": 29,
+  "rows_where_document_covers_missing_year": 27,
+  "total_document_evidence": 229,
+  "total_document_occurrences": 1653,
+  "total_missing_contacts": 48,
+  "total_source_contacts": 110
+}

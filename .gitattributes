@@ -34,3 +34,8 @@ reports/d7_attribution_batch1/*.json                  -text
 # changed any of their bytes would make the reviewed hashes unsatisfiable.
 reports/d7_document_verified/*.csv                    -text
 reports/d7_document_verified/*.json                   -text
+
+# The partial-provenance batch is pinned the same way. Its sidecar additionally names the 229
+# documents that authorize the batch, so its bytes carry the evidence itself, not just the plan.
+reports/d7_partial_doc/*.csv                          -text
+reports/d7_partial_doc/*.json                         -text
