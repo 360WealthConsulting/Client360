@@ -1,0 +1,129 @@
+{
+  "adjacent_year_rows": [
+    523,
+    562,
+    582,
+    619,
+    635
+  ],
+  "artifacts": {
+    "manifest_csv": {
+      "bytes": 4162,
+      "path": "C:\\Users\\michael\\AppData\\Local\\Temp\\claude\\C--Client360-Docs-Workspace\\5a1cf654-36a7-4a5e-8f85-01cb6e107ca1\\scratchpad\\d7_one_contact_review\\d7_one_contact_document_verified_batch_manifest.csv",
+      "sha256": "389824c9c383107fb4df7d9a60bac49e58bb7d842c36ed5ec53a9a0480a5ab98"
+    },
+    "manifest_json": {
+      "bytes": 27123,
+      "path": "C:\\Users\\michael\\AppData\\Local\\Temp\\claude\\C--Client360-Docs-Workspace\\5a1cf654-36a7-4a5e-8f85-01cb6e107ca1\\scratchpad\\d7_one_contact_review\\d7_one_contact_document_verified_batch_manifest.json",
+      "sha256": "eabcb78df49208e2f05f5c96831bd8c6af5f3d02853eec8bfa553b1a0d3bce32"
+    }
+  },
+  "attribution_audits_after": 40,
+  "attribution_audits_before": 40,
+  "batch": "d7_one_contact_document_verified",
+  "confirmation_phrase": "APPLY-D7-DOCVERIFIED-7",
+  "confirmation_source": "machine",
+  "contemporaneous_rows": [
+    541,
+    624
+  ],
+  "document_corroborated": 7,
+  "document_drift": [],
+  "evidence_method": "drake_entity_provenance",
+  "expected_audit_inserts": 7,
+  "expected_dbi_inserts": 0,
+  "expected_dbi_updates": 7,
+  "expected_esl_inserts": 7,
+  "expected_other_writes": 0,
+  "fingerprints_after": {
+    "documents": [
+      1,
+      "b34d5e0e02617e18714cf9a7bd37f4846d63b6449438046778e99e722eda11e3"
+    ],
+    "drake_business_identity": [
+      150,
+      "a22815ee87aa2e056fb73de09335d3ff64be5ea30690f0ffc5f7a2286f1a073d"
+    ],
+    "drake_client_returns": [
+      3690,
+      "b4373102a82eeac07527eb14335c2073c641b7be184430f47bfac9275fe69e63"
+    ],
+    "drake_identity": [
+      1654,
+      "6bea46f0d60611467d50ce0f76a7c980765cc79f88e10c7298b6e5a4df565f83"
+    ],
+    "drake_identity_match_candidates": [
+      435,
+      "1b4696a843e199a761552713e0ea79bfb51d23c70507f8dfd1ac39bb55db8bc7"
+    ],
+    "entity_source_links": [
+      183,
+      "2798f63d58d6fc4b06c2e93bb65ea109064896edfdc2b7de52f4fc08b5bf6d4b"
+    ],
+    "people": [
+      7782,
+      "c9396957d42d46d84f7c18e259b2e468d5f82910ef030aa541b3d9393c17cb29"
+    ],
+    "person_source_links": [
+      11081,
+      "f7bebbfaa0f29f04cc415cb4d86851562d7e85e9732ceeba2761348891865786"
+    ],
+    "relationship_entities": [
+      213,
+      "86be2b98d241abc4e59d722916fc5267533077f88ac1af15cd6bcfd792a6b182"
+    ],
+    "source_contacts": [
+      13686,
+      "5c6d6bd7d106a6cc462b8b35c311aeed742c45758949ba768c17584f90e315c2"
+    ]
+  },
+  "fingerprints_before": {
+    "documents": [
+      1,
+      "b34d5e0e02617e18714cf9a7bd37f4846d63b6449438046778e99e722eda11e3"
+    ],
+    "drake_business_identity": [
+      150,
+      "a22815ee87aa2e056fb73de09335d3ff64be5ea30690f0ffc5f7a2286f1a073d"
+    ],
+    "drake_client_returns": [
+      3690,
+      "b4373102a82eeac07527eb14335c2073c641b7be184430f47bfac9275fe69e63"
+    ],
+    "drake_identity": [
+      1654,
+      "6bea46f0d60611467d50ce0f76a7c980765cc79f88e10c7298b6e5a4df565f83"
+    ],
+    "drake_identity_match_candidates": [
+      435,
+      "1b4696a843e199a761552713e0ea79bfb51d23c70507f8dfd1ac39bb55db8bc7"
+    ],
+    "entity_source_links": [
+      183,
+      "2798f63d58d6fc4b06c2e93bb65ea109064896edfdc2b7de52f4fc08b5bf6d4b"
+    ],
+    "people": [
+      7782,
+      "c9396957d42d46d84f7c18e259b2e468d5f82910ef030aa541b3d9393c17cb29"
+    ],
+    "person_source_links": [
+      11081,
+      "f7bebbfaa0f29f04cc415cb4d86851562d7e85e9732ceeba2761348891865786"
+    ],
+    "relationship_entities": [
+      213,
+      "86be2b98d241abc4e59d722916fc5267533077f88ac1af15cd6bcfd792a6b182"
+    ],
+    "source_contacts": [
+      13686,
+      "5c6d6bd7d106a6cc462b8b35c311aeed742c45758949ba768c17584f90e315c2"
+    ]
+  },
+  "human_approver": null,
+  "note": "The document review that corroborates these rows was performed by software, not by a person. Trust is recorded as machine. No confirmed_by_user_id is set.",
+  "plan_digest": "53ae4b9c6629e22d50b2de955ad4b7e013329c07626ae2861588d5751b3e5e99",
+  "row_count": 7,
+  "service_dry_run_pass": 7,
+  "total_corroborating_documents": 32,
+  "trust_level": "identifier_verified"
+}
