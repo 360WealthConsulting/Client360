@@ -266,16 +266,24 @@ def test_reimport_without_the_migration_would_have_duplicated_the_row(tmp_path, 
     assert len(rows) == 2, "the un-migrated row and its corrected twin — exactly the duplication"
 
 
-def test_drake03_descends_from_the_previous_head_and_is_the_only_one():
-    """The re-key must sit on top of ``dbi01``, and must not fork the graph."""
+def test_drake03_descends_from_the_previous_head_and_does_not_fork_the_graph():
+    """The re-key must sit on top of ``dbi01``, and must not fork the graph.
+
+    ``drake03`` is no longer the head — later migrations stack on top of it — so what is asserted is
+    the property that actually matters: the graph still has exactly ONE head, and ``drake03`` is on
+    the path from it back to base. A fork would leave ``drake03`` stranded on a branch nothing
+    upgrades through, and that must fail here rather than at deploy."""
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
     root = Path(__file__).resolve().parents[1]
     scripts = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
 
-    assert set(scripts.get_heads()) == {"drake03"}
+    heads = scripts.get_heads()
+    assert len(heads) == 1, f"expected exactly one head, found {sorted(heads)}"
     assert scripts.get_revision("drake03").down_revision == "dbi01"
+    chain = {revision.revision for revision in scripts.iterate_revisions(heads[0], "base")}
+    assert "drake03" in chain, "drake03 is not on the path from the head to base"
 
 
 # --- the migration's guards ------------------------------------------------------------------------

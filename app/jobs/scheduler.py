@@ -96,6 +96,36 @@ def run_ocr_retry_sweep() -> None:
         logger.exception("OCR retry sweep failed.")
 
 
+def run_document_pipeline_tick() -> None:
+    """Drive one continuous-document-pipeline tick: discover new/changed documents, then drain what is
+    queued. Gated OFF by default. Failure-isolated — a tick crash never propagates, and the next tick
+    resumes from the persisted cursor and the untouched queue."""
+    try:
+        from app.services.document_pipeline_continuous import service as pipeline
+        result = pipeline.tick()
+        found, processed = result["discovery"], result["processing"]
+        if found.get("enqueued") or found.get("requeued") or processed.get("completed"):
+            logger.info("Document pipeline tick: discovered=%s requeued=%s completed=%s "
+                        "review=%s blocked=%s retried=%s", found.get("enqueued"),
+                        found.get("requeued"), processed.get("completed"), processed.get("review"),
+                        processed.get("blocked"), processed.get("retried"))
+    except Exception:
+        logger.exception("Document pipeline tick failed.")
+
+
+def run_document_pipeline_monitor() -> None:
+    """Check whether the document pipeline is still progressing and alert when it is not. Read-only
+    apart from the alert it may raise. Failure-isolated."""
+    try:
+        from app.services.document_pipeline_continuous import service as pipeline
+        status = pipeline.monitor()
+        if not status.get("healthy") and status.get("status") not in ("not_installed", "idle"):
+            logger.error("Document pipeline health: %s — %s", status.get("status"),
+                         status.get("reason"))
+    except Exception:
+        logger.exception("Document pipeline monitor failed.")
+
+
 def run_workflow_sla_automation() -> None:
     try:
         logger.info("Workflow SLA escalation result: %s", evaluate_sla())
@@ -367,6 +397,27 @@ def start_scheduler() -> None:
         _scheduler.add_job(
             run_runtime_stale_cleanup, trigger="interval", seconds=max(30, runtime_worker_ttl_seconds()),
             id="runtime-stale-cleanup", replace_existing=True, max_instances=1, coalesce=True,
+        )
+
+    # Continuous document pipeline — gated OFF by default. When enabled, the tick discovers new and
+    # changed documents and drains the durable queue; the monitor raises an alert if the pipeline
+    # stops progressing. Both are single-instance and coalesced, and the pipeline's own per-document
+    # leases mean a tick overlapping a dedicated service host still cannot double-process a document.
+    from app.config import (
+        document_pipeline_enabled,
+        document_pipeline_monitor_interval_seconds,
+        document_pipeline_tick_interval_seconds,
+    )
+    if document_pipeline_enabled():
+        _scheduler.add_job(
+            run_document_pipeline_tick, trigger="interval",
+            seconds=document_pipeline_tick_interval_seconds(),
+            id="document-pipeline-tick", replace_existing=True, max_instances=1, coalesce=True,
+        )
+        _scheduler.add_job(
+            run_document_pipeline_monitor, trigger="interval",
+            seconds=document_pipeline_monitor_interval_seconds(),
+            id="document-pipeline-monitor", replace_existing=True, max_instances=1, coalesce=True,
         )
 
     _scheduler.start()

@@ -482,6 +482,44 @@ def _write_state(doc_id, *, status, text=None, engine_name=None, page_count=None
         conn.execute(documents.update().where(documents.c.id == doc_id).values(ocr_status=status))
 
 
+def record_extracted_text(document_id, *, text, engine_name, source_hash=None, page_count=None,
+                          status=_TERMINAL_OK) -> str:
+    """Record text that was extracted WITHOUT running the OCR engine, as a terminal OCR state.
+
+    Two callers need this and neither is doing OCR. The continuous document pipeline extracts a PDF's
+    native text layer (and Excel/Word/plaintext content) before it ever considers OCR, and it reuses a
+    byte-identical document's already-extracted text instead of OCR'ing the same bytes twice. Both are
+    genuine, finished text extractions for the document, so both belong in ``document_ocr`` where the
+    Documents tab and Universal Search read them — but neither should be attributed to the OCR engine,
+    which is why ``engine_name`` is the caller's ('pdf-text-layer', 'excel', 'reused:1234', …).
+
+    Idempotent through the same upsert every other state write uses: one ``document_ocr`` row per
+    canonical document, and the status mirrored onto ``documents.ocr_status``. Returns the status
+    written. Never raises — a failure to cache extracted text must not fail the extraction."""
+    try:
+        clean = (text or "").strip()
+        _write_state(document_id, status=status, text=clean, engine_name=engine_name,
+                     page_count=page_count, source_hash=source_hash,
+                     completed=(status == _TERMINAL_OK))
+        return status
+    except Exception as exc:      # noqa: BLE001 — see docstring
+        _log.warning("could not record extracted text for document %s: %s", document_id, exc)
+        return "error"
+
+
+def record_not_extractable(document_id, *, reason, source_hash=None) -> None:
+    """Record that a document's type carries no extractable text at all (a .zip, a .msg container).
+
+    Persisted as ``unsupported`` — the truthful terminal state for "OCR does not apply here", as
+    opposed to ``failed``, which means "it should have worked and did not" and would put the document
+    back in a retry queue it can never leave. Never raises."""
+    try:
+        _write_state(document_id, status="unsupported", engine_name=None, source_hash=source_hash,
+                     last_error=str(reason)[:2000], bump_attempt=False)
+    except Exception as exc:      # noqa: BLE001
+        _log.warning("could not record unsupported state for document %s: %s", document_id, exc)
+
+
 def record_ocr_unavailable(document_id, reason):
     """Record that OCR was REQUIRED for a document but the backend could not be built/configured (engine
     or libraries not installed on this host). Writes a truthful, RETRYABLE 'failed' state — never a silent

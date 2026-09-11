@@ -232,6 +232,100 @@ def runtime_worker_ttl_seconds() -> int:
     return max(30, _int_env("RUNTIME_WORKER_TTL_SECONDS", 120))
 
 
+def _float_env(name, default):
+    try:
+        return float(os.getenv(name, "").strip() or default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+# --- continuous document pipeline -------------------------------------------------------------
+# The pipeline ships OFF. Turning it on starts background workers that read every document in the
+# corpus and can write ownership, so it is an explicit operational decision on each host — never a
+# side effect of deploying the code. See docs/CONTINUOUS_DOCUMENT_PIPELINE.md.
+
+def document_pipeline_enabled() -> bool:
+    """Whether the continuous document pipeline runs as a scheduler job.
+
+    Default OFF (same posture as the outbox dispatcher and the automation tick): the pipeline,
+    its queue and its operations surfaces ship, but nothing runs in the background unless a host
+    explicitly enables it. Merging the pipeline therefore changes no runtime behaviour anywhere.
+    """
+    return os.getenv("DOCUMENT_PIPELINE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def document_pipeline_tick_interval_seconds() -> int:
+    # Cadence of the scheduler-hosted tick (discover + drain). Minimum 10s to avoid a hot loop.
+    return max(10, _int_env("DOCUMENT_PIPELINE_TICK_INTERVAL_SECONDS", 60))
+
+
+def document_pipeline_monitor_interval_seconds() -> int:
+    # Cadence of the stall check. Minimum 30s — it is a few counting queries, but only a few.
+    return max(30, _int_env("DOCUMENT_PIPELINE_MONITOR_INTERVAL_SECONDS", 300))
+
+
+def document_pipeline_worker_count() -> int:
+    """Parallel workers in the dedicated service host.
+
+    Two by default. OCR is the heaviest thing this machine does and each worker can have a child
+    process extracting a large scan, so the default leaves the box usable for the staff-facing
+    application; raise it deliberately, after watching the CPU and memory gates."""
+    return max(1, _int_env("DOCUMENT_PIPELINE_WORKERS", 2))
+
+
+def document_pipeline_batch_size() -> int:
+    """Documents a worker claims per pass.
+
+    One by default, on purpose: a worker holds a lease on everything it claims, so a large batch
+    means a crash strands more documents until their leases lapse. Throughput comes from more
+    workers, not from bigger claims."""
+    return max(1, _int_env("DOCUMENT_PIPELINE_BATCH_SIZE", 1))
+
+
+def document_pipeline_lease_seconds() -> int:
+    # How long a claim is honoured without a heartbeat. Long enough for a large scan, short enough
+    # that a crashed worker's documents come back promptly. Minimum 60s.
+    return max(60, _int_env("DOCUMENT_PIPELINE_LEASE_SECONDS", 600))
+
+
+def document_pipeline_max_attempts() -> int:
+    # Attempts before a document leaves the queue for the blocker queue. Minimum 1.
+    return max(1, _int_env("DOCUMENT_PIPELINE_MAX_ATTEMPTS", 5))
+
+
+def document_pipeline_discovery_page_size() -> int:
+    # Rows per discovery page. This paginates the walk; it does NOT cap the backlog.
+    return max(1, _int_env("DOCUMENT_PIPELINE_DISCOVERY_PAGE_SIZE", 1000))
+
+
+def document_pipeline_stall_seconds() -> int:
+    # No completion and no heartbeat for this long, with work waiting, is a stall. Minimum 60s.
+    return max(60, _int_env("DOCUMENT_PIPELINE_STALL_SECONDS", 900))
+
+
+def document_pipeline_worker_timeout_seconds() -> int:
+    # A worker unheard from for this long is not counted as live. Minimum 60s.
+    return max(60, _int_env("DOCUMENT_PIPELINE_WORKER_TIMEOUT_SECONDS", 300))
+
+
+def document_pipeline_cpu_limit_percent() -> float:
+    # Start no new work above this system CPU load (requires psutil; skipped without it).
+    return max(1.0, min(100.0, _float_env("DOCUMENT_PIPELINE_CPU_LIMIT_PERCENT", 85.0)))
+
+
+def document_pipeline_memory_limit_percent() -> float:
+    # Start no new work above this system memory usage (requires psutil; skipped without it).
+    return max(1.0, min(100.0, _float_env("DOCUMENT_PIPELINE_MEMORY_LIMIT_PERCENT", 85.0)))
+
+
+def document_pipeline_db_headroom() -> int:
+    """Connections that must stay free in the pool for the rest of the application.
+
+    This gate protects the staff-facing pages, not the pipeline: exhausting the pool makes the
+    application hang, and a document that waits thirty seconds costs nobody anything."""
+    return max(0, _int_env("DOCUMENT_PIPELINE_DB_HEADROOM", 5))
+
+
 def is_production_now() -> bool:
     """Environment read at call time (not import), so tests exercise both postures."""
     return os.getenv("CLIENT360_ENVIRONMENT", "development").strip().lower() == "production"
