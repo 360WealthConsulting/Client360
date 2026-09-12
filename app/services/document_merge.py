@@ -151,6 +151,12 @@ _STRATEGY: dict[str, str] = {
     "document_relationships": "dedup_keyed",
     "document_events": "reassign",
     "document_versions": "reassign",
+    # Client publication grants (docpub01). Two documents that merge are the same content, so a
+    # grant against the duplicate is a grant against the survivor — reassigning preserves the
+    # client's access, where doing nothing would revoke it the moment the duplicate row cascaded
+    # away. The append-only publication ledger is unaffected either way: its document_id carries no
+    # FK, so the record of who could see what survives the merge.
+    "document_publications": "reassign",
     "tax_document_links": "reassign",
     "tax_document_classifications": "reassign",
     "tax_checklist_items": "reassign",

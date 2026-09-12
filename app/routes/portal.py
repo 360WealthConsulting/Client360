@@ -453,6 +453,43 @@ def api_portal_document_download(request: Request, document_id: int,
     return FileResponse(str(path), media_type=mime or "application/octet-stream", filename=filename)
 
 
+@router.get("/api/v1/portal/publications/{publication_id}/download")
+def api_portal_publication_download(request: Request, publication_id: int,
+                                    principal: PortalPrincipal = Depends(current_portal)):
+    """Deliver a PUBLISHED canonical document — the client's own file, from the one canonical row.
+
+    Separate from the vault download because the two stores authorize differently: the vault asks
+    "is this document client-visible and linked to a person you reach"; a publication asks "is this
+    grant live, visible, addressed to an audience you reach, and is its canonical document still
+    readable". One shared route would have to pick one of those rules and would get the other
+    audience wrong.
+
+    The path parameter is a PUBLICATION id, so it names a grant made to this client rather than a
+    shared document. Authorization lives entirely in ``portal_vault.download_publication``; there is
+    no fallback that resolves a document id directly, so a publication miss fails closed exactly as
+    a vault miss does.
+
+    Denial contract, identical to the vault route: every resource-level failure returns the same
+    generic 404 — unknown id, revoked, archived, visibility withdrawn, out of audience, canonical
+    document deleted or archived, missing file — so a client cannot distinguish "does not exist"
+    from "exists but is not yours". The surface gate stays 403, which is a different fact.
+    """
+    from fastapi.responses import FileResponse
+
+    if not portal_runtime_gate("portal.documents.download_enabled"):
+        raise HTTPException(403, "This part of the portal isn't available right now. Please contact your advisor if you need it.")
+    try:
+        path, filename, mime = portal_vault.download_publication(
+            principal, publication_id,
+            request_id=getattr(request.state, "request_id", "portal"),
+            ip_address=request.client.host if request.client else None)
+    except PermissionError as exc:
+        raise HTTPException(404, "Document not found") from exc
+    if not path.is_file():
+        raise HTTPException(404, "Document not found")
+    return FileResponse(str(path), media_type=mime or "application/octet-stream", filename=filename)
+
+
 # --- Browser (HTML) client surfaces over the EXISTING portal services --------
 # These render polished pages and use Post/Redirect/Get for mutations. They reuse the
 # same scoped, audited services as the JSON APIs — no parallel implementation. Declared

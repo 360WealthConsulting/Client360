@@ -82,7 +82,15 @@ def test_the_suite_guard_rejects_production_and_accepts_a_disposable_database():
     with pytest.raises(SuiteSafetyError):
         assert_test_database("postgresql://u:p@localhost:5432/client360")
 
-    assert assert_test_database("postgresql://u:p@localhost:5432/client360_test") == "client360_test"
+    # ``client360_test`` used to be the example of an accepted name. It is now on
+    # app.safety.FORBIDDEN_DATABASES: it carries a disposable suffix, so the suffix rule admits it,
+    # but every suite run drops and recreates its schema and two sessions sharing it corrupt each
+    # other's run. A branch points DATABASE_URL at its own disposable database instead.
+    with pytest.raises(SuiteSafetyError):
+        assert_test_database("postgresql://u:p@localhost:5432/client360_test")
+
+    assert assert_test_database(
+        "postgresql://u:p@localhost:5432/client360_drakecli_test") == "client360_drakecli_test"
 
 
 def test_cli_help_and_year_validation_need_no_database(monkeypatch, tmp_path):

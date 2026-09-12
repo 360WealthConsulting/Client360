@@ -44,10 +44,16 @@
     {% elif doc.client_status == 'Rejected' %}<span class="pill stop">{{ doc.client_status }}</span>
     {% else %}<span class="pill review">{{ doc.client_status }}</span>{% endif %}
     · {{ doc.category|title }}
+    {% if doc.tax_year %} · {{ doc.tax_year }}{% endif %}
     {% if doc.uploaded_by_client %} · Uploaded by you{% endif %}
   </p>
+  {# The href comes from the row, not from this template. It was hard-coded as
+     "/api/portal/documents/{id}/download" — a real route, but the VAULT one, and this list is now
+     backed by two stores with two authorizing routes. A template cannot tell which store a row
+     came from, so it cannot pick the right route; the service that built the row can. Vault rows
+     keep the equivalent "/api/v1/portal/..." path, which carries the fuller denial contract. #}
   {% if doc.downloadable %}
-  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/api/portal/documents/{{ doc.id }}/download">Download</a></p>
+  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="{{ doc.download_url }}">Download</a></p>
   {% endif %}
 </article>
 {% else %}

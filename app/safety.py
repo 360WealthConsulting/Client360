@@ -9,9 +9,13 @@ This generalises the guard that Developer Demo Mode has used since 0.9.9
 (`app/demo/safety.py`, which now delegates here) so the test harness and the
 restore rehearsal can reuse it rather than copy it.
 
-The suffix is the whole point: `client360_test` is obviously disposable,
+The suffix is the whole point: a name ending `_test` is obviously disposable,
 `client360` obviously is not, and the difference is mechanical rather than a
 matter of remembering.
+
+A suffix cannot express "that one is spoken for", so :data:`FORBIDDEN_DATABASES`
+names the two that no tooling may touch: `client360` (production) and
+`client360_test` (shared between sessions, and reset by every run).
 """
 from __future__ import annotations
 
@@ -43,6 +47,20 @@ DISPOSABLE_SUFFIXES = ("_test", "_ci", "_restore_rehearsal")
 
 REHEARSAL_SUFFIXES = ("_restore_rehearsal", "_test", "_ci")
 
+# Databases no tooling may touch, whatever their name looks like. The suffix rule above is a
+# shape check, and a shape check cannot express "this particular database is spoken for":
+#
+#   client360        the production database. It carries no disposable suffix, so the suffix rule
+#                    already refuses it — this makes the refusal explicit and name-based rather
+#                    than an emergent property of its spelling.
+#   client360_test   the SHARED local test database. It ends in ``_test``, so the suffix rule
+#                    admits it, and any session running the suite will drop and recreate its
+#                    schema. Two sessions sharing it corrupt each other's run.
+#
+# A branch that needs isolation points DATABASE_URL at its OWN disposable database. This denylist
+# is what makes "use your own" mechanical instead of a matter of remembering.
+FORBIDDEN_DATABASES = frozenset({"client360", "client360_test"})
+
 
 def database_name(database_url: str) -> str:
     """Extract the database name from a SQLAlchemy/PostgreSQL URL."""
@@ -56,7 +74,7 @@ def assert_database_suffix(
     database_url: str | None = None,
     tool: str = "this tooling",
     error_cls: type[DatabaseSafetyError] = DatabaseSafetyError,
-    example: str = "client360_test",
+    example: str = "client360_mybranch_test",
 ) -> str:
     """Return the target database name, or raise if it is unsafe to touch.
 
@@ -80,6 +98,15 @@ def assert_database_suffix(
     if not name:
         raise error_cls(f"Could not determine a database name from: {url!r}")
 
+    # Checked BEFORE the suffix rule, because the point of the denylist is to refuse names the
+    # suffix rule would otherwise wave through (``client360_test`` ends in ``_test``).
+    if name in FORBIDDEN_DATABASES:
+        raise error_cls(
+            f"Refusing to operate on database {name!r}: it is on the forbidden list "
+            f"({', '.join(sorted(FORBIDDEN_DATABASES))}). {tool} must use its own disposable "
+            f"database — point DATABASE_URL at e.g. postgresql://localhost/{example}."
+        )
+
     if not name.endswith(tuple(required_suffixes)):
         raise error_cls(
             f"Refusing to operate on database {name!r}: {tool} only touches a database "
@@ -97,7 +124,7 @@ def assert_test_database(database_url: str | None = None) -> str:
         database_url=database_url,
         tool="the test suite",
         error_cls=SuiteSafetyError,
-        example="client360_test",
+        example="client360_mybranch_test",
     )
 
 
