@@ -272,13 +272,49 @@ def resolve(conn, document_id: int, *, proposal=None, actor_user_id=None,
     ``proposal`` is the sanitised owner proposal the classify stage already persisted (see
     ``document_pipeline.proposal_for_document``). Passing it in is what keeps this stage cheap: the
     text was extracted once, upstream, and is never read again here."""
+    from app.services.document_pipeline_continuous import source_authority
+
     row = current_owner(conn, document_id)
     if row is None:
         return {"outcome": OUTCOME_UNRESOLVED, "lane": None, "reason_code": "document_not_found"}
     lane = detect_lane(conn, document_id)
+    identity = source_authority.source_identity(conn, document_id)
+
+    # A VERIFIED source mapping answers before anything else looks at the document — including before
+    # the already-owned branch decides what "conflict" means. The whole point of an authoritative
+    # source is that its answer does not get re-derived from a filename or an OCR result every time a
+    # document arrives.
+    mapping = source_authority.lookup_mapping(conn, identity) if identity else None
+    if mapping is not None:
+        if _is_owned(row):
+            if conflicts_with_stored_owner(row, mapping["entity_type"], mapping["entity_id"]):
+                return _source_review(conn, identity, document_id, lane=lane,
+                                      reason_code="mapping_conflicts_with_stored_owner",
+                                      evidence=[f"{identity.system} identity maps to "
+                                                f"{mapping['entity_type']} {mapping['entity_id']}"],
+                                      actor_user_id=actor_user_id, request_id=request_id)
+            return {"outcome": OUTCOME_ALREADY_OWNED, "lane": lane,
+                    "reason_code": "already_owned_matches_mapping"}
+        verdict = _apply_link(conn, document_id, row, lane=lane,
+                              entity_type=mapping["entity_type"], entity_id=mapping["entity_id"],
+                              entity_name=None, evidence=["persisted source mapping"],
+                              actor_user_id=actor_user_id, request_id=request_id)
+        verdict["from_persisted_mapping"] = True
+        verdict["reason_code"] = verdict.get("reason_code") or "inherited_source_mapping"
+        return verdict
+
     if _is_owned(row):
         entity_type, entity_id, _name = _proposed_entity(proposal or {})
         if entity_id is not None and _conflicts(row, entity_type, int(entity_id)):
+            # An authoritative source disagreeing with the stored owner is a question about a CLIENT,
+            # so it is asked once per source identity. 121 documents from one folder are one
+            # decision, not 121 restatements of it.
+            if identity is not None:
+                return _source_review(conn, identity, document_id, lane=lane,
+                                      reason_code="ownership_conflict",
+                                      evidence=(proposal or {}).get("evidence") or [],
+                                      candidates=(proposal or {}).get("best_candidates") or [],
+                                      actor_user_id=actor_user_id, request_id=request_id)
             return _review(conn, document_id, lane=lane, reason_code="ownership_conflict",
                            evidence=(proposal or {}).get("evidence") or [],
                            request_id=request_id)
@@ -288,5 +324,28 @@ def resolve(conn, document_id: int, *, proposal=None, actor_user_id=None,
         from app.services.document_pipeline import proposal_for_document
         proposal = proposal_for_document(document_id) or {}
 
-    return _LANES[lane](conn, document_id, row, proposal, actor_user_id=actor_user_id,
-                        request_id=request_id)
+    verdict = _LANES[lane](conn, document_id, row, proposal, actor_user_id=actor_user_id,
+                           request_id=request_id)
+
+    # An authoritative lane that just resolved a client is knowledge worth keeping. Persisting it
+    # here is what makes the NEXT document in the same folder free, and immune to a later rename.
+    if (identity is not None and verdict.get("outcome") == OUTCOME_LINKED
+            and verdict.get("entity_type") and verdict.get("entity_id")):
+        verdict["mapping_id"] = source_authority.persist_mapping(
+            conn, identity, entity_type=verdict["entity_type"], entity_id=verdict["entity_id"],
+            evidence=[f"resolved by the {verdict.get('lane')} lane"],
+            match_reason=f"{verdict.get('lane')} lane", actor=str(actor_user_id or ""))
+    return verdict
+
+
+def _source_review(conn, identity, document_id, *, lane, reason_code, evidence=None,
+                   candidates=None, actor_user_id=None, request_id=None) -> dict:
+    """Aggregate this document onto the ONE open review for its source identity."""
+    from app.services.document_pipeline_continuous import source_authority
+
+    review_id = source_authority.open_source_review(
+        conn, identity, document_id=document_id, reason_code=reason_code,
+        evidence=(evidence or [])[:_MAX_EVIDENCE], candidates=(candidates or [])[:_MAX_CANDIDATES],
+        actor_user_id=actor_user_id, request_id=request_id)
+    return {"outcome": OUTCOME_REVIEW, "lane": lane, "reason_code": reason_code,
+            "source_review_id": review_id, "aggregated": True}

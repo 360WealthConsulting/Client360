@@ -194,6 +194,12 @@ _STRATEGY: dict[str, str] = {
     # quietly become NULL and lose the provenance; collapsed as ``singular`` it would take the whole
     # task row with it.
     "document_pipeline_tasks.reused_ocr_from_document_id": "reassign",
+    # Source-level review membership (docpipe02). UNIQUE(review_id, document_id): a document belongs
+    # to a review once, and may belong to several reviews over time. So it is ``dedup_keyed`` on
+    # review_id — reassign to the survivor, and where the survivor is already in that review the
+    # duplicate's row asserts the same membership and is redundant. Collapsing it as ``singular``
+    # would silently drop the survivor's membership of every OTHER review.
+    "document_pipeline_source_review_documents": "dedup_keyed",
 }
 
 #: Every FK to documents.id, read from the LIVE catalog on each call  -  still true runtime

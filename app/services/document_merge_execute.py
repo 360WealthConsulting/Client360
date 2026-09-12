@@ -286,6 +286,11 @@ _DEDUP_KEYS = {
     "document_facts": (("fact_type", "fact_value"), "is_current"),
     "document_relationships": (("entity_type", "entity_id"), None),
     "document_derivatives": (("kind",), None),
+    # Source-level review membership (docpipe02): UNIQUE(review_id, document_id). Repoint to the
+    # survivor; where the survivor is already in that review, the duplicate's row asserts the same
+    # membership and is redundant. Memberships of OTHER reviews move across untouched, which is why
+    # this is keyed rather than singular.
+    "document_pipeline_source_review_documents": (("review_id",), None),
 }
 
 #: UNIQUE(document_id): one row per document. A duplicate's row is dropped ONLY when it is
