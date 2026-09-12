@@ -78,6 +78,62 @@ def active_unarchived_clause():
                 documents.c.status.is_distinct_from(ARCHIVED_STATUS))
 
 
+#: The sentinel ``documents.status`` value meaning a normal, in-use document.
+ACTIVE_STATUS = "active"
+
+#: The four columns that, together, say a document is live work for a PROCESSING pipeline.
+#: Named so a reader can find every consumer, and so the regression tests can pin them by name.
+LIVE_DOCUMENT_CONDITIONS = ("status = 'active'", "deleted_at IS NULL",
+                            "archived = false", "archived_at IS NULL")
+
+
+def live_document_clause():
+    """SQL restriction to the documents a BACKGROUND PIPELINE should act on.
+
+    Stricter than :func:`active_unarchived_clause`, in two deliberate ways, because the question is
+    different. A client-facing list asks "what should this person see"; a pipeline asks "what should
+    I spend an OCR engine on and then write an owner to". The second must not touch a document that
+    anything in the system has retired, however it was retired:
+
+    * it requires ``status = 'active'`` POSITIVELY rather than "not deleted and not archived". A
+      status nobody has thought about yet — a future 'quarantined', 'pending_review', 'legal_hold' —
+      is then excluded by default instead of silently processed. For a read surface that default
+      would hide rows and be wrong; for a writer it is the only safe direction.
+    * it checks ``archived_at`` as well as ``archived``. Archiving is written two independent ways
+      (see :func:`active_unarchived_clause`), and a pipeline that writes ownership must not be the
+      thing that discovers they disagreed.
+
+    That difference is not hypothetical. The production census over 121,865 documents found exactly
+    50 rows where ``status`` still said ``'active'`` while another column said otherwise:
+
+    * 49 with ``deleted_at`` set AND ``archived = true`` — the half-retired rows this module's
+      header describes, left behind when a merge run was interrupted between its two statements;
+    * 1 with ``archived = true`` and ``archived_at`` stamped, archived through the older
+      ``services.documents.archive_document`` path that never touches ``status``.
+
+    A pipeline filtering on ``status`` alone would have processed all 50 and could have written an
+    owner onto a document the firm had already put away.
+
+    This carries no authority: it says what is live work, never who may see it.
+    """
+    return and_(documents.c.status == ACTIVE_STATUS,
+                documents.c.deleted_at.is_(None),
+                documents.c.archived.is_(False),
+                documents.c.archived_at.is_(None))
+
+
+def is_live_document(row) -> bool:
+    """The Python reading of :func:`live_document_clause`, for code holding a row rather than a query.
+
+    Kept beside the SQL version on purpose — one rule, two places it has to be expressed, and
+    ``tests/test_live_document_predicate.py`` pins them to the same answer so they cannot drift.
+    """
+    return (row.get("status") == ACTIVE_STATUS
+            and row.get("deleted_at") is None
+            and not row.get("archived")
+            and row.get("archived_at") is None)
+
+
 #: The ``documents.review_status`` sentinel for the deferred-ownership lane. Defined here beside the
 #: other lifecycle sentinels so a reader finds every "which documents count" marker in one file; the
 #: rules for entering and leaving the lane live in ``app.services.document_deferral``.

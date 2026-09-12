@@ -43,6 +43,7 @@ from app.services.document_pipeline_continuous.model import (
     PipelinePermanentError,
     PipelineTransientError,
 )
+from app.services.document_platform.lifecycle import is_live_document
 
 log = logging.getLogger(__name__)
 
@@ -67,12 +68,18 @@ class StageResult:
 
 
 def _document_row(conn, document_id: int):
+    """The document, with every column the lifecycle predicate needs so the stage can re-check it.
+
+    A task can sit in the queue for a while, and the document can be deleted or archived in the
+    meantime. Selecting ``deleted_at``/``archived``/``archived_at`` alongside ``status`` is what lets
+    the extract stage apply the SAME rule discovery applied, instead of a weaker one."""
     return conn.execute(
         select(documents.c.id, documents.c.original_name, documents.c.status, documents.c.sha256,
                documents.c.storage_uri, documents.c.storage_path, documents.c.content_type,
                documents.c.tags, documents.c.person_id, documents.c.household_id,
                documents.c.organization_id, documents.c.category, documents.c.classification,
-               documents.c.subcategory)
+               documents.c.subcategory, documents.c.deleted_at, documents.c.archived,
+               documents.c.archived_at)
         .where(documents.c.id == document_id)).mappings().first()
 
 
@@ -93,9 +100,15 @@ def run_extract(conn, task) -> StageResult:
     row = _document_row(conn, document_id)
     if row is None:
         raise PipelinePermanentError("document_missing", f"document {document_id} no longer exists")
-    if (row["status"] or "") == "deleted":
-        raise PipelinePermanentError("document_deleted",
-                                     f"document {document_id} was deleted after it was queued")
+    if not is_live_document(row):
+        # Retired between discovery and now — deleted, archived, or moved to a status a pipeline has
+        # no business acting on. The SAME rule discovery used, so a document cannot slip through by
+        # being retired one way rather than another.
+        raise PipelinePermanentError(
+            "document_not_live",
+            f"document {document_id} was retired after it was queued "
+            f"(status={row['status']!r}, deleted_at={row['deleted_at'] is not None}, "
+            f"archived={bool(row['archived'])}, archived_at={row['archived_at'] is not None})")
 
     from app.services.document_owner_proposal import extract_document_text
 

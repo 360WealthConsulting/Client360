@@ -20,6 +20,26 @@ It ships **disabled**. Nothing below happens on any host until somebody sets
 | `classify` | Document type, year, and a non-authoritative owner proposal. | `document_pipeline.analyze_and_persist` |
 | `ownership` | The three lanes below. The only stage that can write an owner. | `households.resolve_document_ownership` |
 
+### Which documents it acts on
+
+One definition, in `app/services/document_platform/lifecycle.py`, imported by discovery, by the
+extract stage's re-check, and by the read-only planner:
+
+```
+status = 'active'  AND  deleted_at IS NULL  AND  archived = false  AND  archived_at IS NULL
+```
+
+All four, because a document can be retired four ways and the markers do not always agree. On the
+live corpus, filtering on `status` alone accepted 50 already-retired documents: 49 with `deleted_at`
+stamped while `status` still said `active` (a merge interrupted between its two statements), and 1
+archived through the path that sets `archived_at` and never touches `status`. A listing that gets
+this wrong shows a stale row; a pipeline that gets it wrong writes an owner onto filed-away
+paperwork.
+
+This is stricter than `active_unarchived_clause`, which client-facing lists use. It demands
+`status = 'active'` positively, so a status nobody has thought about yet is excluded by default
+rather than silently processed.
+
 ### Ownership lanes
 
 Consulted in order of authority. The first lane that applies decides; nothing weaker gets a second say.

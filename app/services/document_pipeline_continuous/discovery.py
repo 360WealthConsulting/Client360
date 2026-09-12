@@ -27,11 +27,12 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import func, select
 
-from app.db import engine
+from app.db import documents, engine
 from app.services.document_pipeline_continuous import queue
 from app.services.document_pipeline_continuous.model import DISCOVERY_CHECKPOINT
+from app.services.document_platform.lifecycle import live_document_clause
 
 log = logging.getLogger(__name__)
 
@@ -48,14 +49,14 @@ def discover_new_page(conn, *, page_size: int = DEFAULT_PAGE_SIZE, priority: int
     shorter than ``page_size``, i.e. there is nothing past the cursor right now."""
     checkpoint = queue.read_checkpoint(conn, DISCOVERY_CHECKPOINT)
     cursor = int(checkpoint.get("cursor_document_id") or 0)
-    rows = conn.execute(text("""
-        SELECT id, sha256
-          FROM documents
-         WHERE id > :cursor
-           AND status IS DISTINCT FROM 'deleted'
-         ORDER BY id
-         LIMIT :page_size
-    """), {"cursor": cursor, "page_size": int(page_size)}).mappings().all()
+    # ``live_document_clause`` is the SHARED definition (app/services/document_platform/lifecycle.py)
+    # of what a pipeline may act on. Filtering on ``status`` alone here would have enqueued 50
+    # already-retired production documents — see that clause's docstring.
+    rows = conn.execute(
+        select(documents.c.id, documents.c.sha256)
+        .where(documents.c.id > cursor, live_document_clause())
+        .order_by(documents.c.id)
+        .limit(int(page_size))).mappings().all()
 
     enqueued = 0
     highest = cursor
@@ -76,17 +77,16 @@ def discover_changed_page(conn, *, page_size: int = DEFAULT_PAGE_SIZE) -> dict:
     Only tasks AT REST are considered — a leased task belongs to a live worker and is left alone (see
     :func:`queue.requeue`). Deleted documents are re-queued by nobody; their tasks are closed out by
     the extract stage the next time they are touched."""
-    rows = conn.execute(text("""
-        SELECT task.document_id, document.sha256
-          FROM document_pipeline_tasks AS task
-          JOIN documents AS document ON document.id = task.document_id
-         WHERE task.state IN ('succeeded', 'blocked', 'review')
-           AND document.status IS DISTINCT FROM 'deleted'
-           AND document.sha256 IS NOT NULL
-           AND task.content_sha256 IS DISTINCT FROM document.sha256
-         ORDER BY task.document_id
-         LIMIT :page_size
-    """), {"page_size": int(page_size)}).mappings().all()
+    tasks = queue.tables()["tasks"]
+    rows = conn.execute(
+        select(tasks.c.document_id, documents.c.sha256)
+        .select_from(tasks.join(documents, documents.c.id == tasks.c.document_id))
+        .where(tasks.c.state.in_(("succeeded", "blocked", "review")),
+               live_document_clause(),
+               documents.c.sha256.isnot(None),
+               tasks.c.content_sha256.is_distinct_from(documents.c.sha256))
+        .order_by(tasks.c.document_id)
+        .limit(int(page_size))).mappings().all()
 
     requeued = 0
     for row in rows:
@@ -150,10 +150,9 @@ def backlog_estimate(conn) -> dict:
     high means discovery, not processing, is the bottleneck."""
     checkpoint = queue.read_checkpoint(conn, DISCOVERY_CHECKPOINT)
     cursor = int(checkpoint.get("cursor_document_id") or 0)
-    undiscovered = int(conn.execute(text("""
-        SELECT count(*) FROM documents
-         WHERE id > :cursor AND status IS DISTINCT FROM 'deleted'
-    """), {"cursor": cursor}).scalar() or 0)
+    undiscovered = int(conn.execute(
+        select(func.count()).select_from(documents)
+        .where(documents.c.id > cursor, live_document_clause())).scalar() or 0)
     return {"cursor_document_id": cursor, "undiscovered": undiscovered,
             "pending": queue.pending_count(conn),
             "documents_seen": int(checkpoint.get("documents_seen") or 0),

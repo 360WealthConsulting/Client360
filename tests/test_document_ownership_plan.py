@@ -105,11 +105,22 @@ def test_assert_read_only_refuses_a_writable_connection():
 
 
 def test_the_planner_never_writes():
-    """No mutation verb anywhere in the file — belt as well as the server's braces."""
+    """No DATABASE mutation anywhere in the file — belt as well as the server's braces.
+
+    The tokens are SQL-shaped on purpose. An earlier version of this test banned any ``.insert(``
+    and tripped over ``sys.path.insert`` — a guard that fires on a Python list operation teaches
+    people to weaken the guard, which is worse than not having one."""
     source = _SCRIPT.read_text(encoding="utf-8")
-    for forbidden in ("engine.begin(", ".insert(", ".update(", ".delete(",
-                      "resolve_document_ownership", "run_ocr(", "record_extracted_text"):
-        assert forbidden not in source, f"the plan must not be able to {forbidden}"
+    forbidden = (
+        "engine.begin(",                 # a write transaction
+        ".insert().values(", ".update().values(", ".delete().where(",
+        "documents.insert(", "documents.update(", "documents.delete(",
+        "INSERT INTO", "DELETE FROM", "UPDATE documents",
+        "resolve_document_ownership",    # the ownership write path
+        "run_ocr(", "record_extracted_text", "record_blocker", "record_review",
+    )
+    for token in forbidden:
+        assert token not in source, f"the plan must not be able to {token}"
 
 
 # --- it predicts the pipeline ---------------------------------------------------------------------
@@ -248,13 +259,21 @@ def test_a_document_with_no_ocr_row_yet_is_awaiting_ocr_not_a_failure():
 
 # --- deleted documents are not outstanding work --------------------------------------------------------
 
-def test_deleted_documents_are_excluded_from_every_lane_total(tmp_path):
-    """Discovery skips ``status = 'deleted'``, so counting those as unmatched reports work that
-    nothing will ever do. On the live corpus that mistake was worth 48,549 documents."""
+@pytest.mark.parametrize("retirement", [
+    {"status": "deleted"},
+    {"deleted_at": sa.func.now()},
+    {"archived": True},
+    {"archived_at": sa.func.now()},
+])
+def test_retired_documents_are_excluded_from_every_lane_total(tmp_path, retirement):
+    """Each of the four conditions, one at a time, must take a document out of the plan's totals.
+
+    Discovery will not enqueue these, so counting them as unmatched reports work nothing will ever
+    do. On the live corpus a status-only filter got this wrong by 50 documents."""
     live = _doc(name="live.pdf")
-    dead = _doc(name="dead.pdf")
+    retired = _doc(name="retired.pdf")
     with engine.begin() as c:
-        c.execute(documents.update().where(documents.c.id == dead).values(status="deleted"))
+        c.execute(documents.update().where(documents.c.id == retired).values(**retirement))
 
     plan = plan_module.run(
         out_path=tmp_path / "plan.json", checkpoint_path=tmp_path / "plan.checkpoint.json",
@@ -263,11 +282,21 @@ def test_deleted_documents_are_excluded_from_every_lane_total(tmp_path):
 
     with engine.connect() as c:
         corpus = c.execute(sa.text("SELECT count(*) FROM documents")).scalar()
-    assert plan["excluded_deleted"] >= 1
-    # Every document is accounted for exactly once: planned, or excluded as deleted.
-    assert plan["documents_planned"] + plan["excluded_deleted"] == corpus
+    assert plan["excluded_retired"] >= 1
+    # Every document is accounted for exactly once: planned, or excluded as retired.
+    assert plan["documents_planned"] + plan["excluded_retired"] == corpus
     assert sum(plan["by_lane"].values()) == plan["documents_planned"]
-    assert live and dead      # both existed for the run
+    assert live and retired      # both existed for the run
+
+
+def test_the_plan_reports_the_four_conditions_it_used():
+    """A count is only auditable if it says what it counted."""
+    from app.services.document_platform.lifecycle import LIVE_DOCUMENT_CONDITIONS
+
+    conditions, _predicate = plan_module._live_document_rules()
+    assert conditions == LIVE_DOCUMENT_CONDITIONS
+    assert set(conditions) == {"status = 'active'", "deleted_at IS NULL",
+                               "archived = false", "archived_at IS NULL"}
 
 
 def test_every_planned_document_lands_in_exactly_one_bucket(tmp_path):

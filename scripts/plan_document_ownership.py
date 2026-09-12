@@ -77,6 +77,19 @@ _TEXT_EXT = {"pdf", "tif", "tiff", "png", "jpg", "jpeg", "heic", "heif", "xlsx",
              "docx", "txt", "csv", "md", "log", "ics", "eml"}
 
 
+def _live_document_rules():
+    """The shared live-document predicate, imported rather than restated.
+
+    The planner exists to predict what discovery will do. If it kept its own idea of which documents
+    are live, the first thing it would mispredict is which documents exist — which is exactly what
+    happened: a ``status``-only filter counted 50 already-retired production documents as work."""
+    from app.services.document_platform.lifecycle import (
+        LIVE_DOCUMENT_CONDITIONS,
+        is_live_document,
+    )
+    return LIVE_DOCUMENT_CONDITIONS, is_live_document
+
+
 def _lower_priority() -> str:
     """Yield the CPU to whatever else is running. Never fails the run."""
     try:
@@ -137,15 +150,24 @@ def assert_read_only(conn) -> None:
 # --- per-chunk reads ------------------------------------------------------------------------------
 
 def _documents_chunk(conn, after_id: int, chunk_size: int):
-    return conn.execute(sa.text("""
-        SELECT id, original_name, status, size_bytes, sha256, storage_uri, storage_path,
-               person_id, household_id, organization_id, tags, category, classification,
-               subcategory, ocr_status
-          FROM documents
-         WHERE id > :after
-         ORDER BY id
-         LIMIT :chunk
-    """), {"after": after_id, "chunk": chunk_size}).mappings().all()
+    """One page of the corpus, INCLUDING retired rows.
+
+    Retired documents are fetched deliberately rather than filtered in SQL, so the plan can report
+    how many there are and why, instead of silently narrowing the corpus it claims to have walked.
+    :func:`run` counts them and excludes them from every lane total using the same shared predicate
+    discovery uses."""
+    from app.db import documents
+
+    return conn.execute(
+        sa.select(documents.c.id, documents.c.original_name, documents.c.status,
+                  documents.c.size_bytes, documents.c.sha256, documents.c.storage_uri,
+                  documents.c.storage_path, documents.c.person_id, documents.c.household_id,
+                  documents.c.organization_id, documents.c.tags, documents.c.category,
+                  documents.c.classification, documents.c.subcategory, documents.c.ocr_status,
+                  documents.c.deleted_at, documents.c.archived, documents.c.archived_at)
+        .where(documents.c.id > after_id)
+        .order_by(documents.c.id)
+        .limit(chunk_size)).mappings().all()
 
 
 def _sources_for(conn, ids):
@@ -190,6 +212,24 @@ def _source_path(row):
     if path:
         return Path(path)
     return None
+
+
+def _retired_reason(row) -> str:
+    """WHICH of the four live-document conditions rejected this row. Often more than one.
+
+    Reported rather than lumped together, because the categories mean different things: a row with
+    ``deleted_at`` set but ``status`` still 'active' is a half-written soft delete worth fixing,
+    while an ordinary archived document is simply filed away."""
+    parts = []
+    if row.get("status") != "active":
+        parts.append(f"status={row.get('status')}")
+    if row.get("deleted_at") is not None:
+        parts.append("deleted_at set")
+    if row.get("archived"):
+        parts.append("archived=true")
+    if row.get("archived_at") is not None:
+        parts.append("archived_at set")
+    return " + ".join(parts) or "(none)"
 
 
 def _owned(row):
@@ -399,7 +439,8 @@ def _empty_totals() -> dict:
         # Deleted documents are counted and then EXCLUDED from every lane total. Discovery skips
         # ``status = 'deleted'``, so the pipeline will never touch them; folding them into "unmatched"
         # would report tens of thousands of documents as outstanding work that nothing will ever do.
-        "excluded_deleted": 0,
+        "excluded_retired": 0,
+        "retired_reason": Counter(),
         "by_lane": Counter(),
         "high_confidence": Counter(),      # lane -> documents with an authoritative/HIGH proposal
         "ambiguous": Counter(),            # lane -> documents needing a human decision
@@ -451,6 +492,7 @@ def run(*, out_path: Path, checkpoint_path: Path, chunk_size: int, resume: bool,
     priority = _lower_priority()
     url = _database_url(database_url)
     engine = read_only_engine(url)
+    LIVE_DOCUMENT_CONDITIONS, is_live_document = _live_document_rules()
 
     started = time.time()
     totals = _empty_totals()
@@ -492,11 +534,13 @@ def run(*, out_path: Path, checkpoint_path: Path, chunk_size: int, resume: bool,
                 systems = sources.get(document_id, set())
                 ocr = ocr_rows.get(document_id)
 
-                # A deleted document is not work. Discovery's ``status IS DISTINCT FROM 'deleted'``
-                # means the pipeline never sees it, so counting it anywhere but here would report
-                # outstanding work that nothing will ever do.
-                if (row.get("status") or "") == "deleted":
-                    totals["excluded_deleted"] += 1
+                # A retired document is not work. The SHARED predicate
+                # (document_platform.lifecycle.live_document_clause) is what discovery enqueues on,
+                # so anything it rejects is counted here and nowhere else — otherwise the plan
+                # reports outstanding work that nothing will ever do.
+                if not is_live_document(row):
+                    totals["excluded_retired"] += 1
+                    totals["retired_reason"][_retired_reason(row)] += 1
                     continue
 
                 verdict = planner.plan_document(row, systems, ocr)
@@ -564,7 +608,9 @@ def run(*, out_path: Path, checkpoint_path: Path, chunk_size: int, resume: bool,
         "read_only": True,
         "elapsed_seconds": round(elapsed, 1),
         "documents_planned": totals["documents"],
-        "excluded_deleted": totals["excluded_deleted"],
+        "excluded_retired": totals["excluded_retired"],
+        "retired_reason": dict(totals["retired_reason"]),
+        "live_document_conditions": list(LIVE_DOCUMENT_CONDITIONS),
         "by_lane": dict(totals["by_lane"]),
         "high_confidence_unmatched_documents": dict(totals["high_confidence"]),
         "high_confidence_unique_owners": {lane: len(owners) for lane, owners in unique_owners.items()},
@@ -596,8 +642,11 @@ def _print_summary(plan: dict) -> None:
     print("=" * 78)
     print(f"OWNERSHIP PLAN — {plan['documents_planned']:,} live documents, read-only, "
           f"{plan['elapsed_seconds']}s")
-    print(f"({plan.get('excluded_deleted', 0):,} deleted documents excluded — discovery skips them, "
+    print(f"({plan.get('excluded_retired', 0):,} retired documents excluded — discovery skips them, "
           "so they are not outstanding work)")
+    print("  live = " + " AND ".join(plan.get("live_document_conditions", [])))
+    for reason, count in sorted(plan.get("retired_reason", {}).items(), key=lambda kv: -kv[1]):
+        print(f"    {reason:<58}{count:>10,}")
     print("=" * 78)
     print(f"{'lane':<14}{'docs':>10}{'high-conf':>12}{'ambiguous':>12}{'conflict':>11}{'unmatched':>12}")
     for lane in ("drake", "taxdome", "sharepoint"):

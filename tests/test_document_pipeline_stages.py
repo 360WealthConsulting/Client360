@@ -126,13 +126,15 @@ def test_extract_reuses_text_already_cached_without_re_extracting(tmp_path):
     assert result.detail["method"] == "ocr_cache"
 
 
-def test_extract_refuses_a_document_deleted_after_it_was_queued():
+def test_extract_refuses_a_document_retired_after_it_was_queued():
+    """Any of the four retirement markers stops the stage — see tests/test_live_document_predicate.py
+    for the per-condition coverage and the 50 production rows that motivated it."""
     did = _doc(name="gone.txt")
     with engine.begin() as c:
         c.execute(documents.update().where(documents.c.id == did).values(status="deleted"))
         with pytest.raises(PipelinePermanentError) as exc:
             stages.run_extract(c, _task_for(did, model.STAGE_EXTRACT))
-    assert exc.value.reason_code == "document_deleted"
+    assert exc.value.reason_code == "document_not_live"
 
 
 # --- ocr -------------------------------------------------------------------------------------------
