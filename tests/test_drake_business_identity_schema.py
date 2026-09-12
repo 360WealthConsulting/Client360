@@ -340,9 +340,9 @@ def test_the_migration_graph_has_exactly_one_head():
 
     # The pin moves with every migration added on top — that is the point: a second head has to be
     # noticed deliberately, not absorbed by a laxer assertion. ``dbi01`` -> ``drake03`` (the 1120S
-    # short-row re-key) -> ``docpipe01`` (the continuous document pipeline); see the next test and
+    # short-row re-key) -> ``docpipe01`` -> ``docpub01`` -> ``docpipe02`` (source-level review); see
     # ``tests/test_drake_1120s_short_row_repair.py``.
-    assert heads == {"docpub01"}, f"expected exactly one head (docpub01), found {sorted(heads)}"
+    assert heads == {"docpipe02"}, f"expected exactly one head (docpipe02), found {sorted(heads)}"
 
 
 def test_dbi01_descends_from_the_previous_head():

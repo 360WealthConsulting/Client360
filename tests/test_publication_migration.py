@@ -65,23 +65,34 @@ def schema_restored():
 
 # --- the revision sits where it claims to ------------------------------------
 
-def test_revision_is_the_single_head_and_follows_drake03():
+def test_revision_is_on_the_single_head_chain_and_follows_docpipe01():
+    """docpub01 need not be the head, but it must sit on the one chain, directly above docpipe01.
+
+    It was the head when it was written. Anything merged after it stacks on top, so pinning the
+    head here would break on every later migration while saying nothing about docpub01. What has
+    to stay true is the shape: one head, and docpub01 an ancestor of it at its declared position.
+    """
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(_alembic_config())
     heads = list(script.get_heads())
-    assert heads == [REVISION], f"expected a single head {REVISION!r}, found {heads}"
+    assert len(heads) == 1, f"expected a single head, found {heads}"
     assert script.get_revision(REVISION).down_revision == PREVIOUS
 
+    ancestry = {r.revision for r in script.iterate_revisions(heads[0], "base")}
+    assert REVISION in ancestry, f"{REVISION!r} is not an ancestor of head {heads[0]!r}"
 
-def test_manifest_records_the_new_head():
+
+def test_manifest_records_the_current_head():
     from pathlib import Path
 
     import yaml
+    from alembic.script import ScriptDirectory
 
+    (head,) = ScriptDirectory.from_config(_alembic_config()).get_heads()
     manifest = yaml.safe_load(Path("docs/platform_architecture_manifest.yaml").read_text(
         encoding="utf-8"))
-    assert manifest["meta"]["migration_head"] == REVISION
+    assert manifest["meta"]["migration_head"] == head
 
 
 # --- upgrade / downgrade / upgrade -------------------------------------------
@@ -109,6 +120,9 @@ def test_running_a_migration_here_does_not_disable_other_loggers(schema_restored
 
 def test_upgrade_downgrade_upgrade_round_trips(schema_restored):
     assert TABLES[0] in _table_names(), "suite should start at head"
+    # Take off whatever now sits above docpub01 first. This test is about docpub01's own DDL, and
+    # the comparison below is only meaningful between two states that differ by that one revision.
+    command.downgrade(_alembic_config(), REVISION)
     before = _table_names()
 
     command.downgrade(_alembic_config(), PREVIOUS)
@@ -125,6 +139,8 @@ def test_upgrade_downgrade_upgrade_round_trips(schema_restored):
 
 
 def test_downgrade_removes_only_this_revisions_tables(schema_restored):
+    # As above: isolate docpub01 by stepping down to it before measuring what its own downgrade takes.
+    command.downgrade(_alembic_config(), REVISION)
     before = _table_names()
     command.downgrade(_alembic_config(), PREVIOUS)
     removed = before - _table_names()

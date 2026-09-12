@@ -1246,6 +1246,10 @@ _KNOWN_STRUCTURAL = {
     "document_pipeline_tasks": {"stage", "state", "outcome", "last_error_class", "lease_owner"},
     "document_pipeline_blockers": {"stage", "reason_code", "status"},
     "document_pipeline_ownership_reviews": {"lane", "reason_code", "status"},
+    # Source-level review membership (docpipe02) is a pure join row: two ids and a timestamp, and
+    # deliberately no free-text column. Anything a reviewer writes belongs on the review itself,
+    # once, which is the entire point of aggregating by source identity.
+    "document_pipeline_source_review_documents": set(),
 }
 
 
