@@ -373,6 +373,42 @@ def test_losing_a_race_to_another_writer_never_overwrites_the_winner():
     assert _owner(did) == (winner, None, None)
 
 
+def test_a_household_proposal_agrees_with_a_document_owned_by_person_and_household():
+    """The 800-vs-474 bug, pinned.
+
+    A document routinely carries a person AND that person's household. Asking "who owns this" and
+    taking the first non-null answer returns the person, so a folder that correctly maps to the
+    household reads as a conflict with an owner it agrees with. The comparison must be per entity
+    type, against the matching column."""
+    row = {"person_id": 11, "household_id": 22, "organization_id": None}
+
+    assert ownership.conflicts_with_stored_owner(row, "household", 22) is False
+    assert ownership.conflicts_with_stored_owner(row, "person", 11) is False
+    assert ownership.conflicts_with_stored_owner(row, "household", 99) is True
+    assert ownership.conflicts_with_stored_owner(row, "person", 99) is True
+
+
+def test_the_planner_and_the_runtime_agree_on_what_a_conflict_is():
+    """The plan is only worth reading if it predicts the pipeline. One rule, one answer."""
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "plan_document_ownership.py"
+    spec = importlib.util.spec_from_file_location("plan_conflict_parity", script)
+    planner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(planner)
+
+    row = {"person_id": 11, "household_id": 22, "organization_id": None}
+    for entity_type, entity_id in (("household", 22), ("person", 11),
+                                   ("household", 99), ("person", 99)):
+        assert planner._conflicts(row, (entity_type, entity_id)) == \
+            ownership.conflicts_with_stored_owner(row, entity_type, entity_id)
+
+    # An unowned document can never conflict, whatever is proposed.
+    unowned = {"person_id": None, "household_id": None, "organization_id": None}
+    assert planner._conflicts(unowned, ("person", 11)) is False
+
+
 def test_a_missing_document_is_reported_not_guessed_at():
     with engine.begin() as c:
         verdict = ownership.resolve(c, 2_147_000_001, proposal={})

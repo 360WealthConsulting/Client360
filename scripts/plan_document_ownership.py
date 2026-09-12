@@ -245,11 +245,20 @@ def _owner_key(row):
 
 
 def _conflicts(row, proposed):
-    """An existing owner that disagrees with the lane's proposal. Same owner is agreement."""
+    """An existing owner that disagrees with the lane's proposal, decided by the RUNTIME rule.
+
+    Delegates to ``ownership.conflicts_with_stored_owner`` rather than comparing owner tuples. The
+    tuple comparison this replaced took the first non-null owner, so a document owned at both person
+    and household level looked like a conflict whenever the folder mapped to its household — which
+    over-reported TaxDome conflicts as 800 when 474 of them were genuine."""
     if proposed is None:
         return False
-    existing = _owner_key(row)
-    return existing is not None and existing != proposed
+    if not _owned(row):
+        return False
+    from app.services.document_pipeline_continuous.ownership import conflicts_with_stored_owner
+
+    entity_type, entity_id = proposed
+    return conflicts_with_stored_owner(row, entity_type, entity_id)
 
 
 # --- the three lanes ------------------------------------------------------------------------------

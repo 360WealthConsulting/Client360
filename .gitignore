@@ -35,3 +35,8 @@ documents/
 
 # Rollback / pre-migration database backups (scripts/rollback.sh, CLIENT360_BACKUP_DIR default)
 /backups/
+
+# Generated ownership-conflict reports. The CSV carries `taxdome_folder`, which is a CLIENT NAME,
+# so these are produced on demand and never committed — git history is not a place to put PII.
+# Regenerate with: python scripts/report_taxdome_ownership_conflicts.py
+reports/taxdome_conflicts/

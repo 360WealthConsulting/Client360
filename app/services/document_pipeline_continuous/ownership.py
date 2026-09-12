@@ -104,9 +104,19 @@ def _proposed_entity(proposal) -> tuple[str | None, int | None, str | None]:
             proposal.get("entity_name") or proposal.get("proposed_entity_name"))
 
 
-def _conflicts(row, entity_type, entity_id) -> bool:
+def conflicts_with_stored_owner(row, entity_type, entity_id) -> bool:
     """Does an existing owner disagree with what a lane proposed? Same owner is agreement, not
-    conflict — a re-run that reaches the conclusion already recorded is the pipeline working."""
+    conflict — a re-run that reaches the conclusion already recorded is the pipeline working.
+
+    The comparison is PER ENTITY TYPE, against the matching column, and that detail is the whole
+    function. A document routinely carries a person AND the household that person belongs to. Asking
+    "who owns this document" and taking the first non-null answer returns the person, so a folder that
+    correctly maps to the household reads as a disagreement with an owner it actually agrees with. On
+    the production corpus that mistake turned 474 genuine TaxDome conflicts into 800.
+
+    PUBLIC because the read-only planner and the conflict report both have to predict this exact
+    answer; a second copy of the rule is a second answer waiting to happen.
+    """
     if entity_type is None or entity_id is None:
         return False
     column = {"person": "person_id", "household": "household_id",
@@ -114,6 +124,10 @@ def _conflicts(row, entity_type, entity_id) -> bool:
     if column is None:
         return True
     return row.get(column) != entity_id
+
+
+#: Back-compat alias for the module-internal callers below.
+_conflicts = conflicts_with_stored_owner
 
 
 def _link(conn, document_id: int, *, entity_type: str, entity_id: int, actor_user_id=None,
