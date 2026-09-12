@@ -56,7 +56,73 @@ def _person_household_ids(connection, person_ids):
     return found
 
 
-def get_business_workspace(business_id: int) -> dict | None:
+#: Documents per page on the organization profile.
+#:
+#: This is a PAGE SIZE, not a cap. Every document an organization owns is reachable by paging; the
+#: previous ``limit(200)`` was a cap, and 16 production documents on two organizations sat past it
+#: with no control that could reach them and nothing on the screen saying so. The heading has always
+#: rendered the true total, so the profile showed "Documents (514)" above 200 rows — the count and
+#: the list disagreed, and the count was the honest one.
+DOCUMENTS_PER_PAGE = 100
+
+
+def _document_page(c, business_id, page):
+    """One page of an organization's documents, plus the paging facts the screen needs.
+
+    ORDERING IS A TOTAL ORDER, deliberately. ``created_at DESC`` alone is not: TaxDome and Drake
+    imports stamp many rows in the same second, and PostgreSQL may return tied rows in any order it
+    likes, differently per query. Under a LIMIT/OFFSET that is not cosmetic — a row can appear on
+    two pages while another appears on none. ``id DESC`` breaks every tie, so the sequence is stable
+    across pages and across repeated reads.
+
+    Isolation and lifecycle are unchanged and applied to BOTH the page and the count: the same
+    ``organization_id`` equality and the same ``active_unarchived_clause`` that governed the capped
+    read, so pagination widens reachability without widening what is visible.
+    """
+    where = (documents.c.organization_id == business_id, active_unarchived_clause())
+    total = c.scalar(select(func.count()).select_from(documents).where(*where)) or 0
+
+    page_count = max(1, -(-total // DOCUMENTS_PER_PAGE))     # ceiling division
+    # Clamp rather than 404: a bookmarked deep link, or a page whose documents were archived since,
+    # should land on the last real page instead of an empty screen that looks like data loss.
+    page = max(1, min(int(page or 1), page_count))
+
+    rows = c.execute(
+        select(documents.c.id, documents.c.original_name, documents.c.display_name,
+               documents.c.household_id, documents.c.person_id, documents.c.created_at)
+        .where(*where)
+        .order_by(documents.c.created_at.desc(), documents.c.id.desc())
+        .limit(DOCUMENTS_PER_PAGE).offset((page - 1) * DOCUMENTS_PER_PAGE)
+    ).mappings().all()
+
+    return rows, {
+        "document_count": total,
+        "page": page,
+        "per_page": DOCUMENTS_PER_PAGE,
+        "page_count": page_count,
+        "has_prev": page > 1,
+        "has_next": page < page_count,
+        "first_index": (page - 1) * DOCUMENTS_PER_PAGE + 1 if total else 0,
+        "last_index": (page - 1) * DOCUMENTS_PER_PAGE + len(rows),
+    }
+
+
+def _document_household_ids(c, business_id):
+    """Households referenced by ANY of this organization's documents, not just the current page.
+
+    Related households are a property of the organization, so they must not change as a reader pages
+    through the document list. The capped read happened to compute them from the rows it had; with
+    paging that would have made the Related-households panel flicker between pages, which reads as
+    the relationship graph changing under you.
+    """
+    return set(c.scalars(
+        select(documents.c.household_id).where(
+            documents.c.organization_id == business_id,
+            documents.c.household_id.isnot(None),
+            active_unarchived_clause()).distinct()))
+
+
+def get_business_workspace(business_id: int, *, page: int = 1) -> dict | None:
     fe = relationship_entities.alias("owner_entity")
     with engine.connect() as c:
         ent = c.execute(
@@ -116,18 +182,8 @@ def get_business_workspace(business_id: int) -> dict | None:
         related_household_ids |= _person_household_ids(
             c, {o["person_id"] for o in owners if o["person_id"]})
 
-        docs = c.execute(
-            select(documents.c.id, documents.c.original_name, documents.c.display_name,
-                   documents.c.household_id, documents.c.person_id, documents.c.created_at)
-            .where(documents.c.organization_id == business_id, active_unarchived_clause())
-            .order_by(documents.c.created_at.desc()).limit(200)
-        ).mappings().all()
-        doc_total = c.scalar(select(func.count()).select_from(documents)
-                             .where(documents.c.organization_id == business_id,
-                                    active_unarchived_clause())) or 0
-        for d in docs:
-            if d["household_id"]:
-                related_household_ids.add(d["household_id"])
+        docs, paging = _document_page(c, business_id, page)
+        related_household_ids |= _document_household_ids(c, business_id)
 
         households_out = []
         if related_household_ids:
@@ -149,6 +205,9 @@ def get_business_workspace(business_id: int) -> dict | None:
             "documents": [{"id": d["id"], "name": document_display_name(d),
                            "original_name": d["original_name"], "source_kind": "canonical",
                            "download_url": f"/documents/{d['id']}/download"} for d in docs],
-            "document_count": doc_total,
+            # ``document_count`` is the organization's TRUE total and always has been — the heading
+            # rendered it while the list showed at most 200 rows, so the two disagreed and only the
+            # count was right. The rest of ``paging`` is what lets the list catch up with it.
+            **paging,
             "provenance": sorted({o["evidence_source"] for o in owners if o["evidence_source"]}),
         }
