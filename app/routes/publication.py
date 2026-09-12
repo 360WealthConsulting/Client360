@@ -118,8 +118,8 @@ def document_publications(document_id: int,
 
 
 @router.get("/publications/preview")
-def publication_preview(source_systems: str | None = None,
-                        principal: Principal = Depends(require_capability("vault.view"))):
+def corpus_publication_preview(source_systems: str | None = None,
+                               principal: Principal = Depends(require_capability("vault.view"))):
     """Read-only band counts for the corpus. Publishes nothing.
 
     ``source_systems`` is a comma-separated override of the default Drake + TaxDome scope. It selects
