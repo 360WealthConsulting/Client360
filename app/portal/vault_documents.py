@@ -1,15 +1,32 @@
-"""Portal ↔ Vault document bridge.
+"""Portal ↔ Vault document bridge — the client-facing view of everything published to a client.
 
-The Vault (``app.services.vault``) is staff-RBAC only. This module is the *client-facing* view
-of the Vault: a portal client sees ONLY vault documents that (a) are linked to a person the
-portal account may reach (``portal_scope``) AND (b) are explicitly ``client_visible``. Clients can
-download *approved* documents (or their own pending upload) and upload documents, which land as
-**pending** vault documents (``status='uploaded'``, ``uploaded_by_portal_account_id`` set) that an
-employee must approve before they become official. Every action writes an audit event.
+TWO BACKING STORES, ONE LIST. A client's Vault page now draws from both:
 
-Staff transitions (approve, toggle visibility) go through the Vault service (``vault.manage`` +
-category), so the existing RBAC governs who can make a client upload official — Lauren/Michael
-(full) can; department roles cannot.
+``vault``        vault documents linked to a reachable person and marked ``client_visible``. This is
+                 the original store and its rules are unchanged — client uploads still land here as
+                 pending rows an employee must approve.
+``publication``  CANONICAL ``documents`` rows published to a reachable audience through
+                 ``app.services.publication``. No bytes were copied to get them here: a publication
+                 is a reference plus a decision, so the file keeps its OCR, classification and
+                 version history in the one canonical row.
+
+The second store is what makes an ingested Drake or TaxDome document reachable by its own client at
+all. Before it, the portal read ``vault_documents`` exclusively while every importer wrote to
+``documents``, and the two shared no rows — so a correctly owned, correctly filed client document
+was structurally invisible to the client it belonged to.
+
+AUDIENCE, NOT OWNER. Publication access is resolved from the publication's audience against the
+portal grant's scope — person publications against the account's reachable persons, household
+publications against the account's granted households. It is never resolved from
+``documents.person_id``: the canonical resolver deduplicates by content hash and fills only NULL
+ownership, so one row can be the same file for two unrelated clients while carrying one owner.
+
+Every row carries a ``source`` discriminator and its own ``download_url``, because the two stores
+authorize downloads differently and a shared generic path would have to pick one of the two rules.
+
+Staff transitions (approve, toggle vault visibility) go through the Vault service (``vault.manage`` +
+category); publication decisions go through the publication service (``vault.manage`` + record
+scope). Both write audit events.
 """
 from __future__ import annotations
 
@@ -29,12 +46,30 @@ from app.db import (
 from app.portal.gate import gate
 from app.portal.service import portal_scope
 from app.security.audit import write_audit_event
+from app.services.publication import service as publication
 from app.services.vault import service as vault
 from app.services.vault import storage
 from app.services.vault.naming import (
     safe_vault_delivery_filename,
     safe_vault_label,
 )
+
+#: Which store a client-facing row came from. The portal renders one list; the two stores keep
+#: separate download routes because they have separate authorization rules.
+SOURCE_VAULT = "vault"
+SOURCE_PUBLICATION = "publication"
+
+
+def store_of(row) -> str:
+    """Which store a client-facing row came from, derived from the route that authorizes it.
+
+    Deliberately NOT a field on the row. The client payload must disclose nothing about internal
+    provenance — ``source`` is on the portal disclosure contract's forbidden-field list
+    (tests/test_portal_task_tax_visibility.py) — and a client has no use for the answer anyway:
+    ``download_url`` already routes them correctly. Staff-side callers and tests that genuinely need
+    the distinction derive it here rather than reading it off a leaked key.
+    """
+    return SOURCE_PUBLICATION if "/publications/" in row["download_url"] else SOURCE_VAULT
 
 # Vault status -> client-facing label (task vocabulary: Requested/Received/Under Review/Approved/
 # Rejected/Archived). "Requested" is modeled by portal_document_requests, not a vault status.
@@ -58,11 +93,46 @@ def _client_view(row, *, downloads_enabled=True) -> dict:
         # control that download_document() would then refuse with a 403.
         "downloadable": downloads_enabled and row["client_visible"] and (
             row["status"] in _DOWNLOADABLE or row["uploaded_by_portal_account_id"] is not None),
+        # The route that authorizes THIS row. The template used to hard-code
+        # "/api/portal/documents/{id}/download" — a registered route, and the right one while the
+        # vault was the only store. It is the wrong one for a publication, and a template cannot
+        # tell the two apart. Naming the route here, where the store is known, is what keeps the
+        # rendered link and the authorizing route from diverging.
+        #
+        # Two equivalent vault download paths exist: this v1 one (app/routes/portal.py) and the
+        # older /api/portal one (app/routes/portal_api.py). Both delegate to download_document, so
+        # this is not a behaviour change; v1 is chosen because it carries the fuller denial
+        # contract, and the duplication is left for a separate consolidation.
+        "download_url": f"/api/v1/portal/documents/{row['id']}/download",
     }
 
 
-def _portal_audit(*, action, document_id, account_id, request_id="portal", ip_address=None, metadata=None):
-    write_audit_event(action=action, entity_type="vault_document", entity_id=document_id,
+def _publication_client_view(row, *, downloads_enabled=True) -> dict:
+    """One published canonical document, in the same shape the template already renders.
+
+    A published canonical document has no vault workflow status — it was not uploaded for approval,
+    it was deliberately released by a member of staff — so its client status is simply Shared. It is
+    downloadable whenever the firm-wide gate allows: the publication IS the approval, and
+    ``client_publications`` has already excluded every revoked, archived, withdrawn and deleted case.
+    """
+    name = row["display_name"] or row["original_name"]
+    return {
+        "id": row["publication_id"], "display_name": name,
+        "category": row["category"] or "general",
+        "document_type": row["document_type"], "status": "published",
+        "client_status": "Shared", "pending_approval": False,
+        "file_size": row["size_bytes"], "version": None,
+        "uploaded_by_client": False,
+        "created_at": row["published_at"].isoformat() if row["published_at"] else None,
+        "tax_year": row["tax_year"],
+        "downloadable": downloads_enabled,
+        "download_url": f"/api/v1/portal/publications/{row['publication_id']}/download",
+    }
+
+
+def _portal_audit(*, action, document_id, account_id, request_id="portal", ip_address=None,
+                  metadata=None, entity_type="vault_document"):
+    write_audit_event(action=action, entity_type=entity_type, entity_id=document_id,
                       actor_user_id=None, request_id=request_id, ip_address=ip_address,
                       metadata={"portal_account_id": account_id, **(metadata or {})})
 
@@ -70,21 +140,45 @@ def _portal_audit(*, action, document_id, account_id, request_id="portal", ip_ad
 # --- client reads ------------------------------------------------------------
 
 def portal_documents(principal, scope=None) -> list[dict]:
-    """Client-visible vault documents linked to the portal account's reachable persons."""
+    """Everything shared with this client: vault documents plus published canonical documents.
+
+    Both stores are filtered by the SAME grant scope. A vault document is reachable through its
+    person link; a publication is reachable through its audience — person publications against the
+    account's reachable persons, household publications against the households the grant names.
+
+    An account with neither reachable persons nor granted households gets an empty list rather than
+    an unfiltered query, because an empty IN-list must never widen to "all".
+    """
     scope = scope or portal_scope(principal.account_id, permission="documents")
     person_ids = scope["person_ids"]
-    if not person_ids:
+    household_ids = scope.get("household_ids") or set()
+    organization_ids = scope.get("organization_ids") or set()
+    if not person_ids and not household_ids and not organization_ids:
         return []
-    with engine.connect() as conn:
-        rows = conn.execute(
-            select(vault_documents)
-            .select_from(vault_documents.join(
-                vault_document_links, vault_document_links.c.document_id == vault_documents.c.id))
-            .where(vault_document_links.c.person_id.in_(person_ids),
-                   vault_documents.c.client_visible.is_(True))
-            .distinct().order_by(vault_documents.c.created_at.desc())).mappings().all()
+
     downloads_enabled = gate("portal.documents.download_enabled")   # evaluated once, not per row
-    return [_client_view(r, downloads_enabled=downloads_enabled) for r in rows]
+
+    rows: list[dict] = []
+    if person_ids:
+        with engine.connect() as conn:
+            vault_rows = conn.execute(
+                select(vault_documents)
+                .select_from(vault_documents.join(
+                    vault_document_links,
+                    vault_document_links.c.document_id == vault_documents.c.id))
+                .where(vault_document_links.c.person_id.in_(person_ids),
+                       vault_documents.c.client_visible.is_(True))
+                .distinct().order_by(vault_documents.c.created_at.desc())).mappings().all()
+        rows.extend(_client_view(r, downloads_enabled=downloads_enabled) for r in vault_rows)
+
+    # Publications carry their own exclusions (revoked / archived / withdrawn / document deleted or
+    # archived) inside client_publications, so there is nothing to re-apply here.
+    published = publication.client_publications(
+        person_ids=person_ids, household_ids=household_ids, organization_ids=organization_ids)
+    rows.extend(_publication_client_view(r, downloads_enabled=downloads_enabled) for r in published)
+
+    rows.sort(key=lambda r: (r["created_at"] or ""), reverse=True)
+    return rows
 
 
 def _reachable_document(conn, principal, document_id, scope):
@@ -126,6 +220,49 @@ def download_document(principal, document_id, *, request_id="portal", ip_address
     _portal_audit(action="portal.document.downloaded", document_id=document_id,
                   account_id=principal.account_id, request_id=request_id, ip_address=ip_address)
     return path, safe_vault_delivery_filename(doc), doc["mime_type"]
+
+
+def download_publication(principal, publication_id, *, request_id="portal", ip_address=None):
+    """Authorize + return (path, filename, mime) for a PUBLISHED canonical document.
+
+    Keyed on the publication id, not the document id. The publication is the grant, so the id the
+    client holds names something decided for them specifically; a document id would name a shared
+    object and invite enumeration against it. Either way authorization is re-derived here and the
+    client's claim is never trusted.
+
+    Every refusal — unknown id, revoked, archived, visibility withdrawn, out of audience, canonical
+    document deleted or archived — raises the SAME PermissionError with the same message, so a client
+    cannot tell "does not exist" from "exists but is not yours". The route maps all of them to one
+    generic 404, matching the vault download's denial contract.
+
+    The firm-wide download gate is checked FIRST, before the publication is resolved, so a disabled
+    gate leaks neither existence nor storage path.
+    """
+    if not gate("portal.documents.download_enabled"):
+        raise PermissionError("Document download is not available.")
+    scope = portal_scope(principal.account_id, permission="documents")
+    row = publication.authorized_publication(
+        publication_id,
+        person_ids=scope["person_ids"],
+        household_ids=scope.get("household_ids") or set(),
+        organization_ids=scope.get("organization_ids") or set())
+    if row is None:
+        raise PermissionError("Document is not available to this portal account.")
+
+    # Same resolution rule the staff canonical download uses: an absolute storage_uri wins, and a
+    # legacy repo-relative storage_path is the fallback. No second copy of the bytes exists to
+    # resolve differently.
+    from pathlib import Path
+    uri = row["storage_uri"]
+    path = Path(uri) if uri and Path(uri).is_absolute() else Path(row["storage_path"])
+
+    from app.services.document_naming import document_delivery_filename
+    filename = document_delivery_filename(row)
+    _portal_audit(action="portal.publication.downloaded", document_id=publication_id,
+                  account_id=principal.account_id, request_id=request_id, ip_address=ip_address,
+                  entity_type="document_publication",
+                  metadata={"document_id": row["document_id"]})
+    return path, filename, row["content_type"]
 
 
 # --- client upload (pending employee approval) -------------------------------

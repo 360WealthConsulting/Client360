@@ -46,6 +46,14 @@ vault_document_versions = metadata.tables["vault_document_versions"]
 vault_document_links = metadata.tables["vault_document_links"]
 vault_document_audit_events = metadata.tables["vault_document_audit_events"]
 
+# Canonical document publication (migration docpub01) — the explicit grant from a ``documents`` row
+# to a client audience, and its append-only decision ledger. No document bytes live here: a
+# publication is a reference plus a visibility decision. Tolerant bind, like the MDM-1 tables above,
+# so an environment that has not applied docpub01 yet still imports; app/services/publication checks
+# for None and fails CLOSED (no publication is readable) rather than KeyError-ing at import.
+document_publications = metadata.tables.get("document_publications")
+document_publication_events = metadata.tables.get("document_publication_events")
+
 # ChatGPT/MCP read-only interface (migration mcp01). Tolerant bind like the MDM-1 tables above: an
 # environment that has not applied mcp01 yet imports cleanly, and app/mcp/tokens.py checks for None
 # and fails CLOSED (every MCP request is denied) rather than KeyError-ing at import.

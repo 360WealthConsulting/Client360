@@ -126,6 +126,7 @@ from app.routes.tax_intake import router as tax_intake_router
 from app.routes.tax_returns import router as tax_returns_router
 from app.routes.threecx import router as threecx_router
 from app.routes.timeline import router as timeline_router
+from app.routes.publication import router as publication_router
 from app.routes.vault import router as vault_router
 from app.routes.vendor_management import router as vendor_management_router
 from app.routes.wealth import router as wealth_router
@@ -282,6 +283,7 @@ app.include_router(billing_router)
 app.include_router(business_router)
 app.include_router(ai_assist_router)
 app.include_router(vault_router)
+app.include_router(publication_router)
 app.include_router(auth_router)
 # Development-only sign-in provider. dev_auth_enabled() is False in production (and
 # whenever CLIENT360_DEV_AUTH is unset), so this router is simply never mounted there.

@@ -186,6 +186,14 @@ _REGISTRY = [
     ("drake_identity_match_candidates", "person_id", "dedup", ("identifier_hash",)),
     ("portal_access_grants", "person_id", "dedup",
      ("portal_account_id", "household_id", "access_type", "effective_date")),
+    # Partial UNIQUE(document_id, person_id) WHERE live — both people may legitimately hold their
+    # own live publication of the same canonical document, which is the whole point of publishing a
+    # deduplicated row to two audiences. Merging them collapses the pair: one grant survives, the
+    # colliding one is deleted and counted. The survivor keeps access, which is the correct outcome,
+    # and the append-only publication ledger is unaffected (its document_id carries no FK and its
+    # publication_id is ON DELETE SET NULL), so the record that both grants once existed survives
+    # the merge even though one row does not.
+    ("document_publications", "person_id", "dedup", ("document_id",)),
     # --- C. Singular / conflict-sensitive ownership ---------------------------------------
     ("relationship_entities", "person_id", "conflict_singular", None),   # UNIQUE(person_id)
     ("portal_accounts", "person_id", "conflict_singular", None),         # one portal account per person

@@ -47,7 +47,7 @@ def test_test_suite_refuses_any_non_disposable_database(url):
 @pytest.mark.parametrize(
     "url",
     [
-        "postgresql://localhost/client360_test",                          # scripts/test.sh
+        "postgresql://localhost/client360_pubbridge_test",                # a branch's own database
         "postgresql://postgres:postgres@localhost:5432/client360_ci",     # .github/workflows/ci.yml
         "postgresql://localhost/client360_restore_rehearsal",             # scripts/restore_rehearsal.sh
     ],
@@ -57,6 +57,11 @@ def test_test_suite_accepts_every_real_disposable_context(url):
 
     If this list shrinks, CI or the restore rehearsal breaks — both run pytest
     against a database that is not named `*_test`.
+
+    ``client360_test`` is deliberately absent. It carries a disposable suffix, so the suffix rule
+    admits it, but it is on ``app.safety.FORBIDDEN_DATABASES`` because it is SHARED and every run
+    resets its schema — two sessions using it corrupt each other. A branch points DATABASE_URL at
+    its own ``*_test`` database, which is what the first entry stands for.
     """
     assert assert_test_database(url) == database_name(url)
     assert is_test_database(url) is True
@@ -75,8 +80,8 @@ def test_guard_refuses_when_database_url_is_absent(monkeypatch):
 
 
 def test_guard_reads_the_ambient_database_url(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/client360_test")
-    assert assert_test_database() == "client360_test"
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/client360_pubbridge_test")
+    assert assert_test_database() == "client360_pubbridge_test"
     monkeypatch.setenv("DATABASE_URL", REAL)
     with pytest.raises(SuiteSafetyError):
         assert_test_database()
