@@ -25,6 +25,22 @@ from app.safety import (
 FORBIDDEN_URLS = [f"postgresql://localhost/{name}" for name in sorted(FORBIDDEN_DATABASES)]
 
 
+@pytest.fixture(autouse=True)
+def _not_production(monkeypatch):
+    """Pin the environment these tests actually mean to exercise.
+
+    ``assert_database_suffix`` refuses a production ENVIRONMENT before it looks at the database name
+    at all, and rightly so. Without this fixture every assertion here would silently depend on
+    whatever a neighbouring test left in ``os.environ`` — which is exactly what happened: under CI's
+    randomised order these tests met ``CLIENT360_ENVIRONMENT=production`` leaked from elsewhere and
+    got the environment refusal instead of the name refusal they were written to check.
+
+    Precedence itself is asserted separately, in
+    :func:`test_a_production_environment_is_refused_before_the_name_is_examined`.
+    """
+    monkeypatch.setenv("CLIENT360_ENVIRONMENT", "development")
+
+
 def test_the_denylist_names_production_and_the_shared_test_database():
     assert FORBIDDEN_DATABASES == frozenset({"client360", "client360_test"})
 
@@ -49,6 +65,14 @@ def test_client360_test_is_refused_despite_carrying_a_disposable_suffix():
 def test_the_rehearsal_guard_refuses_them_too(url):
     with pytest.raises(RehearsalSafetyError):
         assert_rehearsal_database(url)
+
+
+def test_a_production_environment_is_refused_before_the_name_is_examined(monkeypatch):
+    """The one precedence that outranks the denylist: a production environment stops everything,
+    including a database name that would otherwise be perfectly acceptable."""
+    monkeypatch.setenv("CLIENT360_ENVIRONMENT", "production")
+    with pytest.raises(SuiteSafetyError, match="production"):
+        assert_test_database("postgresql://localhost/client360_pubbridge_test")
 
 
 def test_the_refusal_is_checked_before_the_suffix_rule():
