@@ -22,9 +22,15 @@ install_filters(templates)
 
 
 @router.get("/business/{organization_id}", response_class=HTMLResponse)
-def business_workspace(request: Request, organization_id: int,
+def business_workspace(request: Request, organization_id: int, page: int = 1,
                        principal: Principal = Depends(require_capability("client.read"))):
-    ws = get_business_workspace(organization_id)
+    """The organization profile. ``page`` selects a page of its documents and nothing else.
+
+    Out-of-range and nonsense values are clamped in the service rather than rejected here, so a
+    stale bookmark lands on the last real page instead of a 404 or an empty list that reads as
+    missing data. The page number selects rows within ONE organization; it cannot widen the read.
+    """
+    ws = get_business_workspace(organization_id, page=page)
     if ws is None:
         return render_error(request, 404, detail="Business not found.")
     return templates.TemplateResponse(

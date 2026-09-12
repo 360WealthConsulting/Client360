@@ -72,6 +72,19 @@
     <tr><td><a href="{{ d.download_url }}">{{ d.name }}</a></td><td><a href="{{ d.download_url }}">Open</a>{% if d.source_kind == "canonical" and principal and principal.can("communications.send") %} · <a href="/documents/{{ d.id }}/email">Email</a>{% endif %}{% if d.source_kind == "canonical" and principal and principal.can("documents.delete") %} · <form class="inline" method="post" action="/business/{{ ws.id }}/documents/{{ d.id }}/delete"><input type="hidden" name="confirm" value="yes"><button class="linklike" type="submit" title="Remove this document from the workspace">Delete</button></form>{% endif %}</td></tr>
     {% endfor %}
   </tbody></table>
+  {# Pager. Rendered only when there is more than one page, so a small organization looks exactly as
+     it did before. The range line is what the old screen lacked: the heading showed the true total
+     while the table showed at most 200 rows, and nothing said the list was partial. #}
+  {% if ws.page_count > 1 %}
+  <nav class="row u-gap-8px u-items-center u-mt-10px" aria-label="Document pages">
+    <span class="meta">Showing {{ ws.first_index }}–{{ ws.last_index }} of {{ ws.document_count }}</span>
+    {% if ws.has_prev %}<a class="btn secondary" href="/business/{{ ws.id }}?page={{ ws.page - 1 }}" rel="prev">Previous</a>
+    {% else %}<span class="btn secondary is-disabled" aria-disabled="true">Previous</span>{% endif %}
+    <span class="meta">Page {{ ws.page }} of {{ ws.page_count }}</span>
+    {% if ws.has_next %}<a class="btn secondary" href="/business/{{ ws.id }}?page={{ ws.page + 1 }}" rel="next">Next</a>
+    {% else %}<span class="btn secondary is-disabled" aria-disabled="true">Next</span>{% endif %}
+  </nav>
+  {% endif %}
   {% else %}{% call ui.empty("No documents", "No documents are assigned to this business.") %}{% endcall %}{% endif %}
 </section>
 
