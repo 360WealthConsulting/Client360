@@ -218,12 +218,19 @@ def reclaim_expired_leases(conn, *, limit: int = 500) -> int:
 # --- stage transitions ---------------------------------------------------------------------------
 
 def advance(conn, task_id: int, *, worker_id: str, next_stage: str, note: str | None = None,
-            lease_seconds: int = DEFAULT_LEASE_SECONDS) -> bool:
+            lease_seconds: int = DEFAULT_LEASE_SECONDS, reused_from: int | None = None) -> bool:
     """Record that the current stage finished and move the task to ``next_stage``, keeping the lease.
 
     The stage is persisted the moment it completes, which is what makes a restart resume rather than
     restart: a worker killed during ``ownership`` comes back to a task already past ``extract``,
-    ``ocr`` and ``classify``, and re-runs only the stage that did not finish."""
+    ``ocr`` and ``classify``, and re-runs only the stage that did not finish.
+
+    ``reused_from`` records the document this one's OCR text was copied from, as a real foreign key.
+    ``document_ocr.engine`` also says ``'reused:<id>'``, but that is one row per DOCUMENT and is
+    overwritten the next time the document is extracted — so it answers "where does the text on this
+    document come from now", not "what did this task do". The task's own column is the retry lineage,
+    it survives a later re-OCR, and being a foreign key it cannot dangle. COALESCE so a later stage
+    advancing the same task does not erase it."""
     t = tables()["tasks"]
     entry = {"at": _now().isoformat(), "event": "advance", "to": next_stage}
     if note:
@@ -232,12 +239,14 @@ def advance(conn, task_id: int, *, worker_id: str, next_stage: str, note: str | 
         UPDATE {t.name}
            SET stage = :next_stage, stage_attempts = 0,
                lease_expires_at = now() + make_interval(secs => :lease_seconds),
+               reused_ocr_from_document_id =
+                   COALESCE(CAST(:reused_from AS integer), reused_ocr_from_document_id),
                stage_history = stage_history || CAST(:entry AS jsonb),
                updated_at = now()
          WHERE id = :task_id AND state = :leased AND lease_owner = :worker_id
     """), {"task_id": task_id, "next_stage": next_stage, "leased": STATE_LEASED,
            "worker_id": worker_id, "lease_seconds": int(lease_seconds),
-           "entry": json.dumps([entry])})
+           "reused_from": reused_from, "entry": json.dumps([entry])})
     return bool(result.rowcount)
 
 

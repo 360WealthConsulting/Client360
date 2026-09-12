@@ -105,8 +105,12 @@ def upgrade() -> None:
         sa.Column("lease_owner", sa.Text),
         _ts("leased_at"),
         _ts("lease_expires_at"),
-        # Set when this document's OCR was satisfied by an identical (same sha256) completed document
-        # rather than by running the engine again.
+        # Which document this one's OCR text was reused from (SHA-256 dedupe). A PROVENANCE pointer,
+        # not ownership: many tasks may point at the same source document, so it is the one column in
+        # this table that can legitimately coexist after a merge. ON DELETE SET NULL is the schema's
+        # last resort; the merge path REPOINTS it to the survivor instead (see document_merge's
+        # per-column strategy), so a completed merge never leaves a task pointing at a document that
+        # no longer exists, and never silently forgets where the text came from.
         sa.Column("reused_ocr_from_document_id", sa.Integer,
                   sa.ForeignKey("documents.id", ondelete="SET NULL")),
         sa.Column("outcome", sa.Text),

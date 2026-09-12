@@ -291,7 +291,13 @@ _DEDUP_KEYS = {
 #: UNIQUE(document_id): one row per document. A duplicate's row is dropped ONLY when it is
 #: byte-identical to the survivor's on every column except id/document_id/timestamps - see
 #: _plan_singular. Anything else is refused, so a dropped row is always trivially reconstructible.
-_SINGULAR = ("document_ocr", "document_classifications", "rm_document_status")
+_SINGULAR = ("document_ocr", "document_classifications", "rm_document_status",
+             # Continuous document pipeline (docpipe01): UNIQUE(document_id) on all three, so a
+             # duplicate's row cannot be repointed onto the survivor. Same treatment, and the same
+             # fail-closed rule — a row is dropped only when it is identical to the survivor's, and
+             # anything else refuses the merge rather than choosing for the operator.
+             "document_pipeline_tasks", "document_pipeline_blockers",
+             "document_pipeline_ownership_reviews")
 
 #: Columns holding DOCUMENT-DERIVED CONTENT: extracted body text and values lifted out of the
 #: document itself. These never enter the run result or the hash-chained audit metadata. They do
@@ -303,6 +309,13 @@ _CONTENT_COLUMNS = {
     "document_ocr": ("text", "last_error"),
     "document_facts": ("fact_value",),
     "document_derivatives": ("last_error",),
+    # Continuous document pipeline. The error/detail columns carry the exception text from a real
+    # extraction attempt, which routinely embeds the document's own filename and storage path — a
+    # client's name is frequently in both. ``resolution_note`` is free text a reviewer typed about a
+    # specific client's document, which is the most document-derived thing on the row.
+    "document_pipeline_tasks": ("last_error",),
+    "document_pipeline_blockers": ("detail", "resolution_note"),
+    "document_pipeline_ownership_reviews": ("resolution_note",),
 }
 
 #: Columns excluded when comparing two singular rows for identity: the surrogate key, the FK being

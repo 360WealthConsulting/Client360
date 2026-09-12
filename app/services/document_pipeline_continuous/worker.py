@@ -199,7 +199,10 @@ class Worker:
                                 outcome=result.outcome, state=state, note=result.note)
         return queue.advance(conn, int(task["id"]), worker_id=self.worker_id,
                              next_stage=result.next_stage, note=result.note,
-                             lease_seconds=self.lease_seconds)
+                             lease_seconds=self.lease_seconds,
+                             # The OCR stage reports which document it copied text from; that is
+                             # retry lineage and belongs on the task row, not only in the note.
+                             reused_from=result.detail.get("reused_from"))
 
     def _record_failure(self, task, exc: BaseException) -> None:
         """Classify a stage failure and either schedule a retry or file a blocker. Never raises."""
