@@ -254,6 +254,37 @@ def document_pipeline_enabled() -> bool:
     return os.getenv("DOCUMENT_PIPELINE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+#: The ownership lanes, in authority order. Not configuration — the set the switch below selects
+#: FROM, so a typo in an environment variable cannot invent a lane that does not exist.
+OWNERSHIP_LANES = ("drake", "taxdome", "sharepoint")
+
+
+def document_pipeline_ownership_sources() -> frozenset[str]:
+    """Which lanes the ownership stage may act on. Everything else is discovered but never owned.
+
+    Rollout happens in phases, and the phases are not about code readiness — they are about which
+    sources have an authoritative identity behind them. Drake and TaxDome do; SharePoint is evidence,
+    and evidence is worth more once the authoritative mappings exist, because a folder already
+    resolved to a client stops being a guess. So Phase 1 runs Drake and TaxDome only:
+
+        DOCUMENT_PIPELINE_OWNERSHIP_SOURCES=drake,taxdome
+
+    Unset means every lane, which is the behaviour before this switch existed: adding it changes
+    nothing until a host asks it to. An unrecognised name is dropped with a warning rather than
+    silently widening or narrowing the scope. An empty-but-present value means no lane owns anything
+    — a legitimate way to run discovery and OCR with ownership entirely off.
+    """
+    raw = os.getenv("DOCUMENT_PIPELINE_OWNERSHIP_SOURCES")
+    if raw is None:
+        return frozenset(OWNERSHIP_LANES)
+    names = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    unknown = [n for n in names if n not in OWNERSHIP_LANES]
+    if unknown:
+        logger.warning("ignoring unknown DOCUMENT_PIPELINE_OWNERSHIP_SOURCES value(s): %s",
+                       ", ".join(sorted(set(unknown))))
+    return frozenset(n for n in names if n in OWNERSHIP_LANES)
+
+
 def document_pipeline_tick_interval_seconds() -> int:
     # Cadence of the scheduler-hosted tick (discover + drain). Minimum 10s to avoid a hot loop.
     return max(10, _int_env("DOCUMENT_PIPELINE_TICK_INTERVAL_SECONDS", 60))

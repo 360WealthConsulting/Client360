@@ -284,6 +284,135 @@ def open_source_review(conn, identity: SourceIdentity, *, document_id, reason_co
     return int(row)
 
 
+# --- establishing a mapping from agreement that already exists ------------------------------------
+
+def documents_for_identity(conn, identity: SourceIdentity, *, live_only: bool = True) -> list[dict]:
+    """Every document carrying this source identity, with its stored owner.
+
+    The account id is preferred over the folder name for the same reason ``source_identity`` prefers
+    it: a folder can be renamed and an account cannot.
+    """
+    ds = metadata.tables.get("document_sources")
+    if ds is None:
+        return []
+    if identity.subject_type == SUBJECT_TAXDOME_FOLDER:
+        key_sql = "d.tags->>'taxdome_folder'"
+        system = TAXDOME_SOURCE
+    elif identity.subject_type == SUBJECT_TAXDOME_ACCOUNT:
+        key_sql = "s.source_external_id"
+        system = TAXDOME_SOURCE
+    elif identity.subject_type == SUBJECT_DRAKE_CLIENT:
+        key_sql = "s.source_external_id"
+        system = DRAKE_SOURCE
+    else:
+        return []
+
+    live = ("AND d.status = 'active' AND d.deleted_at IS NULL"
+            " AND d.archived = false AND d.archived_at IS NULL") if live_only else ""
+    rows = conn.execute(text(f"""
+        SELECT DISTINCT d.id, d.person_id, d.household_id, d.organization_id, {key_sql} AS raw_key
+          FROM documents d
+          JOIN {ds.name} s ON s.document_id = d.id
+         WHERE s.source_system = :system {live}
+    """), {"system": system}).mappings().all()
+    # Normalising in Python rather than SQL keeps ONE definition of what a key is — the same function
+    # that produced identity.key in the first place. A second normalisation written in SQL is a
+    # second answer waiting to disagree with the first.
+    return [dict(r) for r in rows if normalise_key(r["raw_key"]) == identity.key]
+
+
+def unique_compatible_owner(rows) -> tuple[str, int] | None:
+    """The one owner every already-owned document here agrees on, or None.
+
+    Compatibility is not equality. A document filed to a PERSON and another filed to that person's
+    HOUSEHOLD are the same client, recorded at two levels, and the established rule — the one
+    ``taxdome_drive.resolve_folder`` already follows and ``conflicts_with_stored_owner`` already
+    honours — is that the household is the answer when there is one. So:
+
+    * one distinct household, and every person present belongs to it  -> that household;
+    * no household at all and exactly one distinct person             -> that person;
+    * no household or person and exactly one organization             -> that organization;
+    * anything else                                                   -> None, meaning ambiguous.
+
+    Returning None is the safe direction: it leaves the identity unmapped and answerable by a human,
+    rather than guessing which of two clients a folder belongs to.
+    """
+    owned = [r for r in rows if r.get("person_id") or r.get("household_id")
+             or r.get("organization_id")]
+    if not owned:
+        return None
+    households = {r["household_id"] for r in owned if r.get("household_id")}
+    persons = {r["person_id"] for r in owned if r.get("person_id")}
+    orgs = {r["organization_id"] for r in owned if r.get("organization_id")}
+
+    if len(households) == 1 and not orgs:
+        return ("household", int(next(iter(households))))
+    if not households and not orgs and len(persons) == 1:
+        return ("person", int(next(iter(persons))))
+    if not households and not persons and len(orgs) == 1:
+        return ("organization", int(next(iter(orgs))))
+    return None
+
+
+def establish_mapping_from_existing_owners(conn, identity: SourceIdentity, *, actor=None,
+                                           request_id=None) -> dict:
+    """Record the mapping that this source identity's OWN documents already agree on.
+
+    The pipeline learned mappings only as a side effect of writing ownership, so an identity whose
+    documents were all filed correctly years ago — and which therefore needs no write at all — stayed
+    unmapped, and the next document arriving under it went back through inference. That is exactly
+    backwards: the best-established clients were the ones getting the least benefit.
+
+    This records nothing new about the world. It reads agreement that already exists and writes it
+    down once, so it stops being re-derived. It never assigns ownership, never creates an entity, and
+    never supersedes an existing mapping.
+    """
+    existing = lookup_mapping(conn, identity)
+    if existing is not None:
+        return {"status": "already_mapped", "entity_type": existing["entity_type"],
+                "entity_id": existing["entity_id"], "documents": 0}
+
+    rows = documents_for_identity(conn, identity)
+    owned = [r for r in rows if r.get("person_id") or r.get("household_id")
+             or r.get("organization_id")]
+    if not owned:
+        return {"status": "no_owned_documents", "documents": len(rows)}
+
+    answer = unique_compatible_owner(owned)
+    if answer is None:
+        return {"status": "ambiguous", "documents": len(rows), "owned": len(owned)}
+
+    entity_type, entity_id = answer
+    persons = {r["person_id"] for r in owned if r.get("person_id")}
+    if entity_type == "household" and persons:
+        # A folder owned partly by a person and partly by a household is the one case structure
+        # cannot settle: usually one client at two levels, occasionally two clients sharing a
+        # folder. Phase 1 does not guess — it requires Drake to confirm the couple files jointly,
+        # and sends everything else to one folder-level review.
+        from app.services.document_pipeline_continuous import household_policy
+
+        verdict = household_policy.household_mapping_allowed(
+            conn,
+            person_ids=persons,
+            household_ids={r["household_id"] for r in owned if r.get("household_id")},
+            organization_ids={r["organization_id"] for r in owned if r.get("organization_id")})
+        if not verdict.mapped:
+            return {"status": "ambiguous", "reason": verdict.condition,
+                    "policy_detail": verdict.detail,
+                    "documents": len(rows), "owned": len(owned)}
+        entity_type, entity_id = verdict.entity_type, verdict.entity_id
+
+    decision_id = persist_mapping(
+        conn, identity, entity_type=entity_type, entity_id=entity_id,
+        evidence=[f"{len(owned)} already-owned document(s) under this identity agree"],
+        match_reason="established from existing agreement", actor=actor)
+    if decision_id is None:
+        return {"status": "refused", "entity_type": entity_type, "entity_id": entity_id,
+                "documents": len(rows), "owned": len(owned)}
+    return {"status": "established", "entity_type": entity_type, "entity_id": entity_id,
+            "mapping_id": decision_id, "documents": len(rows), "owned": len(owned)}
+
+
 def source_review_documents(conn, review_id) -> list[int]:
     _reviews_t, members = _reviews()
     return [int(r[0]) for r in conn.execute(
