@@ -1239,6 +1239,13 @@ _KNOWN_STRUCTURAL = {
                              "derivative_path", "engine"},
     # A disposable read-model projection: lifecycle/status labels, no document content.
     "rm_document_status": {"status", "classification", "last_event_type"},
+    # Continuous document pipeline (docpipe01). Queue vocabulary — stage/state/outcome names, the
+    # blocker reason and review lane, and the worker's own "host:pid:timestamp" identity. None of it
+    # comes from the document. The columns that DO echo the document (the exception text in
+    # last_error/detail, and a reviewer's free-text note) are declared in _CONTENT_COLUMNS instead.
+    "document_pipeline_tasks": {"stage", "state", "outcome", "last_error_class", "lease_owner"},
+    "document_pipeline_blockers": {"stage", "reason_code", "status"},
+    "document_pipeline_ownership_reviews": {"lane", "reason_code", "status"},
 }
 
 

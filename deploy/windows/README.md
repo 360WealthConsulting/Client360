@@ -56,6 +56,7 @@ path of the file it actually loaded.
 | --- | --- |
 | `Deploy-Client360.ps1` | Full deployment sequence. Runs `validate_production_env.ps1 -RequireService` at step 6b — **after** installing the service and **before** restarting it — so a service pointed at the wrong env file fails the deploy instead of being started into production. |
 | `Install-Client360Service.ps1` | Installs/manages the service. `-EnvFile` defaults to `C:\Client360\app\.env` and `-Action install` **refuses** any other path unless `-AllowNonCanonicalEnvFile` is passed (non-production hosts only). |
+| `Install-DocumentPipelineService.ps1` | Installs/manages the **continuous document pipeline** as its own service (`app.jobs.document_pipeline_runner run`), separate from the application service. Loads the pipeline's settings out of `C:\Client360\app\.env` and refuses a non-canonical `-EnvFile` the same way. `-Action health` is a read-only probe: exit `0` healthy or idle, `1` stalled or stopped. See `docs/CONTINUOUS_DOCUMENT_PIPELINE.md`. |
 | `validate_production_env.ps1` | Read-only validator. Exit codes: `0` ok, `2` service/env-path mismatch, `3` env file missing/unreadable, `4` service configuration unreadable (with `-RequireService`). |
 | `client360.env.example` | Placeholder template. Contains no real values. Copy to `C:\Client360\app\.env`. |
 

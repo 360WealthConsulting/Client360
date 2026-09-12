@@ -169,6 +169,25 @@ _STRATEGY: dict[str, str] = {
     "operational_tasks": "reassign",
     "exceptions": "reassign",
     "rm_document_status": "read_model",
+    # Continuous document pipeline (docpipe01). The three ``document_id`` columns are all
+    # UNIQUE(document_id) — one task, one open blocker, one open review per document — so they are
+    # ``singular`` for the same reason document_ocr is: at most one row can survive the merge, and
+    # two rows that disagree are a question for a person rather than something to resolve by picking
+    # one. They are operational queue state, re-derivable by discovery, so a disagreement is worth
+    # surfacing but is never data loss.
+    #
+    # Registered while the pipeline ships disabled and the tables are empty, so the merge system is
+    # already correct on the day it is switched on rather than meeting three unknown references
+    # mid-merge.
+    "document_pipeline_tasks": "singular",
+    "document_pipeline_blockers": "singular",
+    "document_pipeline_ownership_reviews": "singular",
+    # The one PER-COLUMN registration (see strategy_for). Not the task's subject but a note of which
+    # document its OCR text was reused from: many tasks may share one source, nothing is unique about
+    # it, and it must be REPOINTED to the survivor. Left to the schema's ON DELETE SET NULL it would
+    # quietly become NULL and lose the provenance; collapsed as ``singular`` it would take the whole
+    # task row with it.
+    "document_pipeline_tasks.reused_ocr_from_document_id": "reassign",
 }
 
 #: Every FK to documents.id, read from the LIVE catalog on each call  -  still true runtime
@@ -198,16 +217,34 @@ ORDER BY c.relname, a.attname
 _SOFT_REFERENCES = (("rm_document_status", "document_id"),)
 
 
+def strategy_for(table: str, column: str) -> str | None:
+    """The strategy for ONE reference: per-column if registered, else the table's.
+
+    Most tables reference ``documents`` once, and a table-level registration says everything there is
+    to say. ``document_pipeline_tasks`` does not: ``document_id`` is the task's subject and is UNIQUE,
+    so at most one row can survive a merge, while ``reused_ocr_from_document_id`` is a PROVENANCE
+    pointer that many tasks may share and that must simply be repointed. Those are opposite
+    behaviours, and collapsing them into one per-table answer would be wrong whichever answer was
+    chosen — repointing the subject breaks the unique constraint, and collapsing the provenance
+    pointer throws away where the text came from.
+
+    So a key may be either ``"table"`` or ``"table.column"``, with the column form winning. Every
+    existing registration is a bare table name and keeps its exact meaning.
+    """
+    return _STRATEGY.get(f"{table}.{column}", _STRATEGY.get(table))
+
+
 def _dependencies(conn) -> list[dict]:
     """Every reference to documents.id, read from the LIVE schema and paired with its strategy.
 
     ``strategy=None`` marks a reference the registry does not know about; the caller BLOCKS on it."""
-    deps = [{"table": t, "column": c, "delete_rule": rule, "strategy": _STRATEGY.get(t)}
+    deps = [{"table": t, "column": c, "delete_rule": rule, "strategy": strategy_for(t, c)}
             for t, c, rule in conn.execute(text(_FK_SQL)).fetchall()]
     known = {(d["table"], d["column"]) for d in deps}
     for t, c in _SOFT_REFERENCES:
         if (t, c) not in known and _table_exists(conn, t):
-            deps.append({"table": t, "column": c, "delete_rule": "SOFT", "strategy": _STRATEGY.get(t)})
+            deps.append({"table": t, "column": c, "delete_rule": "SOFT",
+                         "strategy": strategy_for(t, c)})
     return deps
 
 

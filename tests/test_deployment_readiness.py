@@ -105,7 +105,7 @@ def test_migrate_plan_reports_current_and_target():
 
 def test_current_and_target_head_resolve():
     assert migrate.current_revision() is not None
-    assert migrate.target_head() == "drake03"  # Drake 1120S short-row re-key (… -> emailnorm01 -> dbi01 -> drake03)
+    assert migrate.target_head() == "docpipe01"  # continuous document pipeline (… -> dbi01 -> drake03 -> docpipe01)
 
 
 def test_migrate_is_upgrade_only_no_destructive_calls():
