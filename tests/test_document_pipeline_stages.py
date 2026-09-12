@@ -13,7 +13,13 @@ import pytest
 from sqlalchemy import select, text
 
 from app.db import documents, engine, people
-from app.services.document_pipeline_continuous import model, ownership, queue, stages
+from app.services.document_pipeline_continuous import (
+    model,
+    ownership,
+    queue,
+    source_authority,
+    stages,
+)
 from app.services.document_pipeline_continuous.model import (
     PipelinePermanentError,
     PipelineTransientError,
@@ -286,6 +292,12 @@ def test_taxdome_folder_mapping_is_authoritative_and_links_the_person():
 
 
 def test_an_unresolved_taxdome_folder_goes_to_review_not_to_a_content_guess():
+    """The subject is the refusal: content evidence must not decide an authoritative lane.
+
+    Where the review LANDS changed — an unresolved folder now aggregates onto the one open review
+    for its source identity rather than opening a row per document, because the folder is one
+    question however many files sit in it. The refusal itself is unchanged and is what this pins.
+    """
     did = _doc(source_system="TaxDome Drive",
                tags={"source_system": "TaxDome Drive",
                      "taxdome_folder": f"Nobody {_TAG} Whatsoever"})
@@ -294,9 +306,13 @@ def test_an_unresolved_taxdome_folder_goes_to_review_not_to_a_content_guess():
             # Content evidence that WOULD have linked in the SharePoint lane. The authoritative lane
             # must not let it decide.
             "confidence": "HIGH", "entity_type": "person", "entity_id": _person(f"Decoy {_TAG}")})
-        rows = [r for r in queue.open_reviews(c, limit=100) if r["document_id"] == did]
+        per_document = [r for r in queue.open_reviews(c, limit=100) if r["document_id"] == did]
+        members = source_authority.source_review_documents(c, verdict["source_review_id"])
     assert verdict["outcome"] == model.OUTCOME_REVIEW
-    assert rows[0]["reason_code"] == "taxdome_folder_unresolved"
+    assert verdict["reason_code"] == "taxdome_folder_unresolved"
+    assert verdict["aggregated"] is True
+    assert did in members, "the document must hang off the folder's review"
+    assert per_document == [], "the aggregated path must not also open a per-document review"
     assert _owner(did) == (None, None, None)
 
 
