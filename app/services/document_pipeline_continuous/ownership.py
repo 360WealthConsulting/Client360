@@ -151,8 +151,13 @@ def _review(conn, document_id: int, *, lane: str, reason_code: str, evidence=Non
 
 # --- lanes ---------------------------------------------------------------------------------------
 
-def _drake_lane(conn, document_id, row, proposal, *, actor_user_id, request_id) -> dict:
-    """Drake identity attribution is authoritative: it links, holds, or nothing else answers."""
+def _drake_lane(conn, document_id, row, proposal, *, actor_user_id, request_id,
+                identity=None) -> dict:
+    """Drake identity attribution is authoritative: it links, holds, or nothing else answers.
+
+    ``identity`` is accepted so every lane has one dispatch signature; Drake does not aggregate.
+    A Drake hold or ambiguity is a question about one return, not about a whole client folder.
+    """
     confidence = (proposal or {}).get("confidence")
     entity_type, entity_id, entity_name = _proposed_entity(proposal or {})
     evidence = (proposal or {}).get("evidence") or []
@@ -173,7 +178,8 @@ def _drake_lane(conn, document_id, row, proposal, *, actor_user_id, request_id) 
     return {"outcome": OUTCOME_UNRESOLVED, "lane": LANE_DRAKE, "reason_code": "drake_no_match"}
 
 
-def _taxdome_lane(conn, document_id, row, proposal, *, actor_user_id, request_id) -> dict:
+def _taxdome_lane(conn, document_id, row, proposal, *, actor_user_id, request_id,
+                  identity=None) -> dict:
     """The TaxDome account/folder mapping is authoritative; content evidence never overrides it."""
     folder = (row.get("tags") or {}).get("taxdome_folder")
     if not folder:
@@ -200,14 +206,32 @@ def _taxdome_lane(conn, document_id, row, proposal, *, actor_user_id, request_id
                       for c in taxdome_drive.suggest_people(conn, folder, limit=_MAX_CANDIDATES)]
     except Exception:      # noqa: BLE001 — suggestions are a convenience, never a requirement
         log.debug("taxdome suggestions unavailable for folder %r", folder)
+    # "Which client is this folder?" is ONE question about a folder, not one question per file in it.
+    # A folder that resolves to nobody is the same unanswered question for every document it holds,
+    # so it aggregates onto the single open review for its source identity — the same treatment an
+    # ownership conflict already gets, and for the same reason. Without this, 3,259 documents across
+    # 51 folders on the production corpus would open 3,259 reviews of 51 distinct questions.
+    if identity is not None:
+        return _source_review(conn, identity, document_id, lane=LANE_TAXDOME,
+                              reason_code="taxdome_folder_unresolved",
+                              evidence=[f"TaxDome folder {folder!r} does not resolve to one client"],
+                              candidates=candidates, actor_user_id=actor_user_id,
+                              request_id=request_id)
+    # No stable identity — nothing to aggregate ONTO, so the document keeps its own review rather
+    # than being dropped. In practice this needs a folder tag whose normalised key is empty.
     return _review(conn, document_id, lane=LANE_TAXDOME, reason_code="taxdome_folder_unresolved",
                    evidence=[f"TaxDome folder {folder!r} does not resolve to one client"],
                    candidates=candidates, request_id=request_id)
 
 
 def _sharepoint_lane(conn, document_id, row, proposal, *, actor_user_id, request_id,
-                     lane: str = LANE_SHAREPOINT) -> dict:
-    """Evidence lane. HIGH links; MEDIUM/AMBIGUOUS are the ambiguous documents the review queue is for."""
+                     lane: str = LANE_SHAREPOINT, identity=None) -> dict:
+    """Evidence lane. HIGH links; MEDIUM/AMBIGUOUS are the ambiguous documents the review queue is for.
+
+    ``identity`` is accepted for a uniform dispatch signature and deliberately unused. Evidence is
+    about one document's content, so it stays one review per document: two files in a folder can be
+    ambiguous for entirely different reasons, and collapsing them would merge two questions into one.
+    """
     proposal = proposal or {}
     confidence = proposal.get("confidence")
     route = proposal.get("route")
@@ -325,7 +349,7 @@ def resolve(conn, document_id: int, *, proposal=None, actor_user_id=None,
         proposal = proposal_for_document(document_id) or {}
 
     verdict = _LANES[lane](conn, document_id, row, proposal, actor_user_id=actor_user_id,
-                           request_id=request_id)
+                           request_id=request_id, identity=identity)
 
     # An authoritative lane that just resolved a client is knowledge worth keeping. Persisting it
     # here is what makes the NEXT document in the same folder free, and immune to a later rename.
