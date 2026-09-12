@@ -8,7 +8,7 @@
                  separate so a surface can point the drawer elsewhere without rewriting the links)
    The page header and the upload disclosure belong to the parent template, not here.
 
-   THREE PANES, left to right: the view/category rail, the document list, the preview + details
+   TWO PANES, left to right: the document list and the preview + details
    panel. Every control is a real GET form or link against `base`, so filtering, sorting, paging
    and opening a document all work with JavaScript disabled. documents_screen.js upgrades row
    selection into the right-hand panel; it adds no behaviour that is otherwise unreachable.
@@ -17,105 +17,11 @@
    `documents_screen` already shaped, and a derived one arrives flagged as derived. #}
 
 {% set is_review = screen.filters.needs_review %}
+{# Every filter link below keeps whatever else is set. `query_keep_no_view` drops the worklist view
+   so the Needs-attention chip can toggle itself off; `query_keep` keeps everything. #}
 {% set viewbase = base ~ "?tab=documents&amp;dtab=" ~ screen.filters.tab ~ screen.query_keep_no_view %}
 
 <div class="docws" data-docscreen>
-
-  {# ============================================================================ LEFT: rail ==
-     The primary navigation for this client's file: the three worklist views, then the category
-     buckets. Every count is computed against the OTHER active filters, so a number on the rail is
-     what that entry will actually show when it is clicked. #}
-  <aside class="docws-rail" aria-label="Document views">
-
-    <nav class="docws-nav" aria-label="Views">
-      <div class="docws-navlabel">Views</div>
-
-      <a class="docws-navitem{{ ' on' if screen.view == 'all' else '' }}" href="{{ viewbase }}"
-         title="All Documents"{% if screen.view == 'all' %} aria-current="page"{% endif %}>
-        <span class="ico" aria-hidden="true">▤</span>
-        <span class="lbl">All Documents</span>
-        <span class="n">{{ screen.total_all }}</span>
-      </a>
-
-      {# Needs Review is a worklist, not a filter buried in the toolbar. Its count is the number of
-         documents actually carrying an unsettled review_status — 0 is shown as 0, never hidden. #}
-      <a class="docws-navitem{{ ' on' if screen.view == 'review' else '' }}"
-         href="{{ viewbase }}&amp;review=1"
-         title="Needs Review"{% if screen.view == 'review' %} aria-current="page"{% endif %}>
-        <span class="ico" aria-hidden="true">⚑</span>
-        <span class="lbl">Needs Review</span>
-        <span class="n{{ ' n--flag' if screen.needs_review_count else ' zero' }}">{{ screen.needs_review_count }}</span>
-      </a>
-
-      {# Incomplete metadata is the SECOND tier, and it is deliberately its own view rather than
-         more rows in Needs Review. On this client's file the bulk gaps outnumber the actionable
-         problems by an order of magnitude — merged, the handful of documents genuinely waiting on
-         a person would be invisible. This is bulk work: a backfill or a rule, not per-document
-         triage. #}
-      <a class="docws-navitem{{ ' on' if screen.view == 'incomplete' else '' }}"
-         href="{{ viewbase }}&amp;dincomplete=1"
-         title="Incomplete metadata"{% if screen.view == 'incomplete' %} aria-current="page"{% endif %}>
-        <span class="ico" aria-hidden="true">◌</span>
-        <span class="lbl">Incomplete</span>
-        <span class="n{{ '' if screen.incomplete_count else ' zero' }}">{{ screen.incomplete_count }}</span>
-      </a>
-
-      {# "Recent" is a window over the SOURCE date the Date column already shows, so the view and
-         the cell can never disagree about what is recent. #}
-      <a class="docws-navitem{{ ' on' if screen.view == 'recent' else '' }}"
-         href="{{ viewbase }}&amp;drecent=1"
-         title="Recent"{% if screen.view == 'recent' %} aria-current="page"{% endif %}>
-        <span class="ico" aria-hidden="true">◷</span>
-        <span class="lbl">Recent</span>
-        <span class="n{{ '' if screen.recent_count else ' zero' }}">{{ screen.recent_count }}</span>
-      </a>
-    </nav>
-
-    {# ---- reason drill-downs -------------------------------------------------------------------
-       One counted entry per reason, grouped by tier, built from the SAME table that flags the rows
-       — so a reason can never appear as a chip on a document and be missing from this navigation.
-       Zero-count entries stay: a reviewer needs to see that a queue is EMPTY, which is a different
-       fact from the queue not existing. #}
-    {% for group in screen.reason_views %}
-      <nav class="docws-nav" aria-label="{{ group.label }}">
-        <div class="docws-navlabel">{{ group.label }}</div>
-        {% for item in group.reasons %}
-          {% set on = screen.view == "flag:" ~ item.key %}
-          <a class="docws-navitem docws-navitem--reason{{ ' on' if on else '' }}{{ ' zerorow' if not item.count and not on else '' }}"
-             href="{{ viewbase }}&amp;dflag={{ item.key|urlencode }}"
-             title="{{ item.what }} — {{ item.basis }}"{% if on %} aria-current="page"{% endif %}>
-            <span class="ico reason-dot reason-dot--{{ item.kind }}" aria-hidden="true">•</span>
-            <span class="lbl">{{ item.what }}</span>
-            <span class="n{{ ' n--flag' if item.count and group.tier == 'actionable' else ('' if item.count else ' zero') }}">{{ item.count }}</span>
-          </a>
-        {% endfor %}
-      </nav>
-    {% endfor %}
-
-    {# What the counts above deliberately leave out, stated rather than silently absent. A reviewer
-       who reads "Needs Review: 17" is entitled to know where the excluded work actually lives. #}
-    <details class="docws-scopenote">
-      <summary>What these counts exclude</summary>
-      <dl>
-        {% for title, note in screen.excluded_notes %}
-          <dt>{{ title }}</dt><dd>{{ note }}</dd>
-        {% endfor %}
-      </dl>
-    </details>
-
-    <nav class="docws-nav" aria-label="Document categories">
-      <div class="docws-navlabel">Categories</div>
-      {% for t in screen.tabs if t.key != "all" %}
-        <a class="docws-navitem{{ ' on' if t.active else '' }}"
-           href="{{ base }}?tab=documents&amp;dtab={{ t.key }}{{ screen.query_keep }}"
-           title="{{ t.label }}"{% if t.active %} aria-current="page"{% endif %}>
-          <span class="ico" aria-hidden="true">{{ t.icon }}</span>
-          <span class="lbl">{{ t.label }}</span>
-          <span class="n{{ '' if t.count else ' zero' }}">{{ t.count }}</span>
-        </a>
-      {% endfor %}
-    </nav>
-  </aside>
 
   {# ========================================================================== CENTER: list == #}
   <section class="docws-list" aria-label="Documents">
@@ -125,7 +31,8 @@
        category ride along as hidden inputs so narrowing never drops the list the user is in. #}
     <form class="docws-toolbar" method="get" action="{{ base }}" role="search">
       <input type="hidden" name="tab" value="documents">
-      <input type="hidden" name="dtab" value="{{ screen.filters.tab }}">
+      {# `dtab` is NOT hidden here any more: the Category select below carries it. Two controls with
+         one name would submit it twice and the stale hidden copy would win. #}
       {% if is_review %}<input type="hidden" name="review" value="1">{% endif %}
       {% if screen.filters.recent %}<input type="hidden" name="drecent" value="1">{% endif %}
       {% if screen.filters.incomplete %}<input type="hidden" name="dincomplete" value="1">{% endif %}
@@ -158,6 +65,17 @@
         {% endfor %}
       </select>
 
+      {# Category. This used to be the bottom half of the rail, as a column of buckets with counts.
+         It is a filter, not navigation, so on a client profile it belongs beside the other filters
+         — the counts it carried were the operational view of the whole file, which is the Document
+         Workspace's job. #}
+      <label class="sr-only" for="doc-category">Category</label>
+      <select class="input" id="doc-category" name="dtab" data-autosubmit>
+        {% for t in screen.tabs %}
+          <option value="{{ t.key }}" {{ 'selected' if t.active else '' }}>{{ t.label }}</option>
+        {% endfor %}
+      </select>
+
       <label class="sr-only" for="doc-related">Related To</label>
       <select class="input" id="doc-related" name="related" data-autosubmit>
         <option value="">Client / Household: All</option>
@@ -178,6 +96,26 @@
         {%- else -%}0 documents{%- endif -%}
       </span>
     </form>
+
+    {# ---- needs attention ---------------------------------------------------------------------
+       ONE chip, and only when there is something to act on. The rail used to show this as a
+       permanent worklist beside four more counters that were zero most of the time, which made a
+       client's own file read as a cleanup queue. A count of nothing is not news, so nothing is
+       rendered; a real count is a single toggle back and forth. #}
+    {% if screen.needs_review_count or is_review %}
+      <div class="docws-attention">
+        {% if is_review %}
+          <a class="attn attn--on" href="{{ viewbase }}" aria-current="true">
+            <span aria-hidden="true">⚑</span> Needs attention · {{ screen.needs_review_count }}
+            <span class="attn-off">Show all</span>
+          </a>
+        {% else %}
+          <a class="attn" href="{{ viewbase }}&amp;review=1">
+            <span aria-hidden="true">⚑</span> {{ screen.needs_review_count }} need{{ "s" if screen.needs_review_count == 1 else "" }} attention
+          </a>
+        {% endif %}
+      </div>
+    {% endif %}
 
     {# ---- Needs Review banner ---------------------------------------------------------------
        The worklist explains itself. It states what the queue IS and, just as importantly, what

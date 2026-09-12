@@ -349,21 +349,29 @@ def _render(screen) -> str:
         is_canonical=True, principal=None, delete_url=None, asset_version="t")
 
 
-def test_the_rail_renders_every_reason_group():
+def test_every_reason_group_survives_the_jinja_items_trap():
     """A render-level guard, not a duplicate of the view-model tests above.
 
     ``reason_views`` groups are keyed ``reasons`` rather than ``items`` because Jinja resolves
     ``group.items`` to the dict's own built-in method before it looks for a key of that name — the
     loop then dies with "object is not iterable" at request time while every view-model test still
     passes. This test is what catches that.
+
+    It used to assert this through the cleanup RAIL, which listed every reason as a drill-down link.
+    The rail is gone from client profiles (see ``tests/test_client_profile_documents_cleanup.py``),
+    but the trap is not: the template still walks every group and every reason to render the banner
+    for a ``dflag`` deep link arriving from the Document Workspace. One render with a flag set walks
+    all of them, so a broken key still fails here.
     """
-    html = _render(_screen([SETTLED, {**SETTLED, "id": 2, "ocr_status": "failed"}]))
+    html = _render(_screen([SETTLED, {**SETTLED, "id": 2, "ocr_status": "failed"}],
+                           flag="ocr_failed"))
+    assert "docws-reviewbar" in html, "the deep-linked reason banner did not render"
+
+    # The reason catalogue itself is still complete; it is what the Document Workspace navigates by.
+    screen = _screen([SETTLED, {**SETTLED, "id": 2, "ocr_status": "failed"}])
+    catalogued = {item["key"] for group in screen["reason_views"] for item in group["reasons"]}
     for reason in ds.REVIEW_REASONS:
-        assert f"dflag={reason.key}" in html, reason.key
-    assert "Needs review" in html and "Incomplete metadata" in html
-    assert "dincomplete=1" in html
-    # The deliberate omissions are on the screen, not only in a docstring.
-    assert "Unassigned Documents" in html
+        assert reason.key in catalogued, reason.key
 
 
 def test_a_reason_view_renders_its_own_banner():
