@@ -53,6 +53,29 @@ _PRODUCTION_FACTORY = "app.services.ocr_backend.build_production_extractor"
 
 DEFAULT_BATCH = 10
 DEFAULT_IDLE_SLEEP = 5.0
+
+#: Consecutive empty claim batches a corpus lane tolerates before declaring itself drained, and the
+#: pause between those attempts.
+#:
+#: WHY THIS EXISTS. ``claim_batch`` selects ``ORDER BY d.id LIMIT <batch>`` and the claim is won per
+#: row, so under contention a worker can win ZERO rows while the lane still holds thousands of
+#: documents — its docstring says exactly that, and says to call again. ``worker_loop`` instead read
+#: one empty batch as "lane empty" and exited for good. In the 2026-09-13 18:21 cutover that ended
+#: lane ocr1 after 8 minutes with 13,589 documents outstanding: it had completed every claim it held
+#: (done=100, claimed=0, a clean batch boundary), the other three lanes carried on, and nothing
+#: replaced it. Four workers racing one ordered window makes a zero-win batch ordinary, not terminal.
+#:
+#: WHY THESE VALUES. A losing worker only needs the winners to move past its window, which takes
+#: milliseconds; a 2 second pause is far longer than required while staying cheap. Requiring FOUR
+#: consecutive empties (3 retries) makes a spurious exhaustion vanishingly unlikely — every one of a
+#: worker's selected rows must be taken by others, four times in a row — and costs at most ~6 seconds
+#: per worker once the lane is genuinely drained, against passes measured in hours.
+#:
+#: The retry is BOUNDED on purpose. Polling forever would be worse than the bug: ``run_parallel``
+#: joins its workers, so a lane that never returns would stop the supervisor from ever recounting and
+#: advancing to the retry and classification lanes.
+LANE_EMPTY_RETRIES = 3
+DEFAULT_EMPTY_SLEEP = 2.0
 DEFAULT_THROTTLE_SLEEP = 30.0
 
 
@@ -110,7 +133,8 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
                 max_attempts=3, max_batches=None, extractor=None, factory_ref=_PRODUCTION_FACTORY,
                 stop_when_empty=True, on_batch=None, document_ids=None,
                 max_throttle_waits=None, throttle_sleep=DEFAULT_THROTTLE_SLEEP,
-                min_free_mb=None, max_cpu_percent=None, health_urls=None) -> dict:
+                min_free_mb=None, max_cpu_percent=None, health_urls=None,
+                empty_batch_retries=0, empty_batch_sleep=DEFAULT_EMPTY_SLEEP) -> dict:
     """One worker: claim, OCR, complete, repeat until the lane is empty.
 
     Returns accumulated counts. Tests inject ``extractor`` with ``factory_ref=None`` to stay
@@ -123,6 +147,13 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
     run. All default to None, meaning the environment's values and then the production defaults, so
     omitting them changes nothing. They exist so a caller can be explicit about the resource bounds
     instead of inheriting whatever the box happens to be doing.
+
+    ``empty_batch_retries`` is how many CONSECUTIVE empty claim batches this worker tolerates before
+    it reports ``lane_empty`` and returns. It DEFAULTS TO 0, which is the historical behaviour — the
+    first empty batch ends the worker — so every existing caller is unaffected. A corpus sweep across
+    several workers passes :data:`LANE_EMPTY_RETRIES`, because there an empty batch usually means
+    "another worker won the rows I selected", not "the lane is drained". The counter resets to zero
+    the moment a batch is won, so only an UNBROKEN run of empties can end the lane.
     """
     from app.db import engine
     from app.services import document_ocr
@@ -133,6 +164,9 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
               "timed_out": 0, "skipped": 0, "unsupported": 0, "encrypted": 0, "lost_claims": 0,
               "throttled_waits": 0, "chars_extracted": 0, "failed_unrecorded": 0,
               "startup_failures": 0,
+              # consecutive_empty is the live counter; empty_retries is the run total, so an operator
+              # can see how much contention a lane actually met.
+              "consecutive_empty": 0, "empty_retries": 0,
               # Why a worker stopped, always recorded. A worker that does nothing must say so:
               # a silent zero is indistinguishable from "the lane was empty", and that ambiguity
               # turned an admission stall into a confusing count mismatch instead of a clear stop.
@@ -161,12 +195,25 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
                                             max_attempts=max_attempts,
                                             document_ids=document_ids)
         if not claims:
-            if stop_when_empty:
-                totals["stopped_because"] = "lane_empty"
-                break
-            time.sleep(DEFAULT_IDLE_SLEEP)
+            # An empty batch is ambiguous: either the lane really is drained, or every row this
+            # worker selected was won by a competing worker in the same instant. Only an UNBROKEN run
+            # of empties distinguishes the two, so count consecutive misses rather than trusting one.
+            totals["consecutive_empty"] += 1
+            if totals["consecutive_empty"] > empty_batch_retries:
+                if stop_when_empty:
+                    totals["stopped_because"] = "lane_empty"
+                    break
+                time.sleep(DEFAULT_IDLE_SLEEP)
+                continue
+            totals["empty_retries"] += 1
+            log.info("worker %s won no rows (consecutive empty %d/%d); retrying in %.1fs",
+                     worker_id, totals["consecutive_empty"], empty_batch_retries + 1,
+                     empty_batch_sleep)
+            time.sleep(empty_batch_sleep)
             continue
 
+        # Winning ANY rows proves the lane is not drained: forget every earlier miss.
+        totals["consecutive_empty"] = 0
         totals["claimed"] += len(claims)
         ids = [c.document_id for c in claims]
         keeper.start(ids)
