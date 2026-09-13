@@ -39,6 +39,57 @@ def _dash_tasks(ctx, *, limit=8):
     return [dict(r) for r in rows]
 
 
+#: How many rows each Overview list shows before deferring to its own tab.
+OVERVIEW_LIST_LIMIT = 5
+
+
+def _overdue(task) -> bool:
+    """A task past its due date. A task with no due date is open work, not overdue."""
+    from datetime import date, datetime
+
+    due = task.get("due_date")
+    if due is None:
+        return False
+    if isinstance(due, datetime):
+        due = due.date()
+    return isinstance(due, date) and due < date.today()
+
+
+def _needs_attention(card: dict) -> list[dict]:
+    """The five "something is wrong here" cards, folded into one ordered list.
+
+    Built from the card dict the caller already populated under capability gates, so this adds no
+    read and cannot widen what the principal sees. Each entry keeps the link its own card used, so
+    clicking through lands exactly where it did before.
+
+    Order is by how much the firm should care, not by source: compliance first, then overdue work,
+    then documents that need a decision. Within a kind, source order is preserved.
+    """
+    out: list[dict] = []
+    for issue in card.get("compliance_issues") or []:
+        out.append({"kind": "compliance", "label": "Compliance",
+                    "title": issue.get("title") or issue.get("name") or "Compliance issue",
+                    "href": issue.get("link") or issue.get("href")})
+    for item in card.get("missing_tax_items") or []:
+        out.append({"kind": "tax", "label": "Tax",
+                    "title": item.get("title") or item.get("message") or "Missing tax item",
+                    "href": item.get("link") or item.get("href")})
+    for task in card.get("open_tasks") or []:
+        if _overdue(task):
+            out.append({"kind": "task", "label": "Overdue task",
+                        "title": task.get("title") or "Task",
+                        "href": f"/tasks?task={task['id']}" if task.get("id") else "/tasks"})
+    for doc in card.get("documents_needing_review") or []:
+        out.append({"kind": "review", "label": "Needs review",
+                    "title": doc.get("name") or doc.get("display_name") or "Document",
+                    "href": doc.get("link") or doc.get("href")})
+    for doc in card.get("missing_document_alerts") or []:
+        out.append({"kind": "unidentified", "label": "Unidentified",
+                    "title": doc.get("name") or doc.get("display_name") or "Document",
+                    "href": doc.get("link") or doc.get("href")})
+    return out
+
+
 def dashboard(principal, ctx):
     """The Client Workspace landing tab (the "Dashboard"). A compact cross-domain snapshot composed from
     the SAME authoritative section builders — never a second data source, never new ownership/domain
@@ -60,10 +111,11 @@ def dashboard(principal, ctx):
         "newly_classified": [], "missing_document_alerts": [], "compliance_issues": [],
     }
     if principal.can("timeline.read"):
-        card["recent_activity"] = _safe(lambda: timeline(principal, ctx).get("rows", [])[:8], [])
+        card["recent_activity"] = _safe(
+            lambda: timeline(principal, ctx).get("rows", [])[:OVERVIEW_LIST_LIMIT], [])
     if principal.can("documents.view"):
         docs = _safe(lambda: documents(principal, ctx).get("documents", []), [])
-        card["recent_documents"] = docs[:8]
+        card["recent_documents"] = docs[:OVERVIEW_LIST_LIMIT]
         card["documents_needing_review"] = [
             d for d in docs if str(d.get("review_status") or "").lower()
             in ("pending", "in_review", "needs_review", "review")][:8]
@@ -103,6 +155,11 @@ def dashboard(principal, ctx):
                                 "severity": e.get("severity")})
             return out[:12]
         card["alerts"] = _safe(_alerts, [])
+
+    # ONE "Needs Attention" list, folded from the cards that were five separate near-empty boxes.
+    # Composed from what is ALREADY in `card`, so nothing here re-reads a source or escapes the
+    # capability gate above: a card the principal could not populate contributes nothing.
+    card["needs_attention"] = _needs_attention(card)
     return card
 
 

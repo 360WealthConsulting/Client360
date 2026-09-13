@@ -120,7 +120,11 @@ def test_household_workspace_renders_with_backnav(client):
 def test_dashboard_renders(client):
     html = _html(client_workspace(_req(f"/client/{client['pids'][0]}"), client["pids"][0],
                                   tab="dashboard", principal=_principal()))
-    assert "Newly classified documents" in html and "500" not in html[:50]
+    # This used to look for the "Newly classified documents" card. That card is gone with the rest
+    # of the ten-card grid: a recently auto-classified document is news, not a thing to act on, and
+    # the Documents tab is where the list belongs. What this test is actually for is that the
+    # Overview RENDERS rather than erroring, so it now pins the block that is always present.
+    assert "Client summary" in html and "500" not in html[:50]
 
 
 def test_documents_human_readable_states(client):

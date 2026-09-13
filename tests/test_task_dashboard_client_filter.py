@@ -367,6 +367,10 @@ def test_no_other_quick_action_capability_changed():
         "schedule_meeting": "scheduling.view",
         "upload_document": "documents.view",
         "add_note": "client.read",
+        # The only WRITE action in the list, and deliberately so: it opens the profile edit form,
+        # whose POST the middleware gates on client.write. A read-only capability here would offer
+        # staff a button the save then refuses.
+        "edit_profile": "client.write",
         "create_task": "task.read",
         "start_tax_return": "tax.read",
         "create_opportunity": "opportunity.view",

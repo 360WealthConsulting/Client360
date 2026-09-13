@@ -4,23 +4,83 @@
 {% block crumb %}{{ person.full_name }} · Edit{% endblock %}
 {% block content %}
 {% call ui.page_head("Edit client details", eyebrow="Client", desc=("Canonical person record #" ~ person.id)) %}
-  <a class="btn secondary" href="/people/{{ person.id }}">Back to profile</a>
+  <a class="btn secondary" href="/client/{{ person.id }}">Back to profile</a>
 {% endcall %}
-<p class="subtle u-mt--6px u-maxw-640px">Correct this client's contact and address details. Changes are audited and added to the timeline. Name changes are handled separately.</p>
+<p class="subtle u-mt--6px u-maxw-640px">Correct this client's details. Every change is audited and added to the timeline; the audit trail records which fields changed, never their values.</p>
+
+{% if errors %}
+{# Nothing was saved: the form validates before any service is called, so a rejected edit never
+   leaves some fields written and others not. #}
+<div class="banner warn u-maxw-640px">
+  <strong>Nothing was saved.</strong>
+  <ul class="u-m-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if sharing %}
+{# A WARNING, never an action. A shared mailbox is legitimate — spouses, an assistant, a family
+   address — so the edit is allowed. What must never happen silently is correspondence being
+   re-pointed from one of these people to another, which is why this names them and stops. #}
+<div class="banner warn u-maxw-640px">
+  <strong>This email address is already on another client record.</strong>
+  <p class="u-m-0">Also held by
+    {% for s in sharing %}<a href="/client/{{ s.person_id }}">{{ s.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+    Saving is allowed and changes nothing on their record — no messages are moved and no records are merged.
+    If these are the same person, merge them explicitly instead.</p>
+</div>
+{% endif %}
+
 <form method="post" action="/people/{{ person.id }}/edit" class="u-maxw-640px">
-  <div class="field"><label>Preferred name</label><input class="input" name="preferred_name" value="{{ person.preferred_name or '' }}"></div>
-  <div class="field"><label>Email</label><input class="input" type="email" name="primary_email" value="{{ person.primary_email or '' }}"></div>
-  <div class="field"><label>Phone</label><input class="input" name="primary_phone" value="{{ person.primary_phone or '' }}"></div>
-  <div class="field"><label>Address line 1</label><input class="input" name="address_line_1" value="{{ person.address_line_1 or '' }}"></div>
-  <div class="field"><label>Address line 2</label><input class="input" name="address_line_2" value="{{ person.address_line_2 or '' }}"></div>
+  <h2 class="section-title">Identity</h2>
+  {# Legal name and date of birth go through their own governed correction services — changing who
+     someone IS is never a side effect of correcting how to reach them. #}
+  <div class="field"><label for="full_name">Legal name</label>
+    <input class="input" id="full_name" name="full_name" value="{{ person.full_name or '' }}" required></div>
+  <div class="field"><label for="preferred_name">Preferred name</label>
+    <input class="input" id="preferred_name" name="preferred_name" value="{{ person.preferred_name or '' }}"></div>
+  <div class="field"><label for="birth_date">Date of birth</label>
+    <input class="input" id="birth_date" name="birth_date" type="date"
+           value="{{ person.birth_date.isoformat() if person.birth_date else '' }}">
+    <span class="hint">Leave blank if not known. Stored exactly as entered — never guessed from a document.</span></div>
+
+  <h2 class="section-title">Contact</h2>
+  <div class="field"><label for="primary_email">Email</label>
+    <input class="input" id="primary_email" type="email" name="primary_email" value="{{ person.primary_email or '' }}"></div>
+  <div class="field"><label for="primary_phone">Phone</label>
+    <input class="input" id="primary_phone" name="primary_phone" value="{{ person.primary_phone or '' }}"></div>
+
+  <h2 class="section-title">Mailing address</h2>
+  <div class="field"><label for="address_line_1">Address line 1</label>
+    <input class="input" id="address_line_1" name="address_line_1" value="{{ person.address_line_1 or '' }}"></div>
+  <div class="field"><label for="address_line_2">Address line 2</label>
+    <input class="input" id="address_line_2" name="address_line_2" value="{{ person.address_line_2 or '' }}"></div>
   <div class="row u-gap-10px u-wrap">
-    <div class="field"><label>City</label><input class="input" name="city" value="{{ person.city or '' }}"></div>
-    <div class="field"><label>State</label><input class="input" name="state" value="{{ person.state or '' }}"></div>
-    <div class="field"><label>Postal code</label><input class="input" name="postal_code" value="{{ person.postal_code or '' }}"></div>
+    <div class="field"><label for="city">City</label>
+      <input class="input" id="city" name="city" value="{{ person.city or '' }}"></div>
+    <div class="field"><label for="state">State</label>
+      <input class="input" id="state" name="state" value="{{ person.state or '' }}"></div>
+    <div class="field"><label for="postal_code">Postal code</label>
+      <input class="input" id="postal_code" name="postal_code" value="{{ person.postal_code or '' }}"></div>
   </div>
+
+  <h2 class="section-title">Household</h2>
+  <div class="field"><label for="household_id">Household</label>
+    {# Every option names one existing household by id, and exactly that household is assigned.
+       Nothing here creates a household or infers one from a spouse or a surname. The person's
+       current household is always in this list and pre-selected, so leaving the form alone cannot
+       move them. #}
+    <select class="input" id="household_id" name="household_id">
+      <option value="{{ no_household }}" {% if not person.household_id %}selected{% endif %}>No household</option>
+      {% for h in household_choices %}
+      <option value="{{ h.id }}" {% if h.id == person.household_id %}selected{% endif %}>{{ h.name }}</option>
+      {% endfor %}
+    </select>
+    <span class="hint">Assigns this one person to the household you pick, and nobody else. Choosing
+      “No household” removes their assignment — a deliberate, audited change, not a blank field.</span></div>
+
   <div class="u-mt-14px u-flex u-gap-10px">
     <button class="btn" type="submit">Save changes</button>
-    <a class="btn secondary" href="/people/{{ person.id }}">Cancel</a>
+    <a class="btn secondary" href="/client/{{ person.id }}">Cancel</a>
   </div>
 </form>
 {% endblock %}
