@@ -23,6 +23,13 @@
 .PARAMETER Workers
     Parallel OCR workers. Capped at 4 by the supervisor regardless of what is passed here.
 
+.PARAMETER AttestUncRoot
+    A UNC root (\\server\share) the MACHINE account has been granted access to. An S4U task carries
+    no network credentials, so a required UNC root fails closed by default: testing it interactively
+    proves only that the OPERATOR can reach it. This attests the credential question and nothing
+    else - the share is still checked for existence and readability, so it can never be used to skip
+    missing-source validation. Repeatable.
+
 .PARAMETER WhatIf
     Show what would happen and export the backup, without registering anything.
 
@@ -41,7 +48,8 @@ param(
     [string] $TaskName     = 'Client360 OCR Parallel Supervisor',
     [string] $LegacyTask   = 'Client360 OCR Full Corpus',
     [string] $BackupDir    = 'C:\Client360Data\ocr-parallel\task-backups',
-    [string] $RunAsUser    = $env:USERNAME
+    [string] $RunAsUser    = $env:USERNAME,
+    [string[]] $AttestUncRoot = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,33 +93,37 @@ Pop-Location
 Write-Host "  $dbResult"
 if ($dbExit -ne 0) { throw "S4U preflight failed: PostgreSQL is not reachable from this context." }
 
-# (b) Storage. Every drive holding OCR sources must be a LOCAL disk (DriveType 3). A network drive
-#     (4) or a drive that is absent entirely is invisible to an S4U task.
-$required = @('C', 'D', 'T')
-$volumes = Get-CimInstance Win32_LogicalDisk | Group-Object -AsHashTable -Property DeviceID
-$storageProblems = @()
-foreach ($letter in $required) {
-    $vol = $volumes["${letter}:"]
-    if (-not $vol) { $storageProblems += "${letter}: is not present on this host"; continue }
-    $type = @($vol)[0].DriveType
-    if ($type -ne 3) {
-        $storageProblems += "${letter}: is DriveType $type (not a local disk); an S4U task cannot reach it"
-    } else {
-        Write-Host "  OK ${letter}: local disk"
-    }
-}
-if ($storageProblems.Count -gt 0) {
-    $storageProblems | ForEach-Object { Write-Warning "  $_" }
-    throw "S4U preflight failed: one or more OCR source drives are not local. Stopping."
-}
+# (b) Storage. The roots that must be readable are the ones CONFIGURATION declares as permanent OCR
+#     storage and the ones the DATABASE actually references - NOT a list of drive letters. The list
+#     this block used to carry, @('C','D','T'), was an inventory of letters someone once used: nothing
+#     else in the tree mentions T:, so the check could fail a host that was perfectly able to run the
+#     supervisor, while passing one that was not (a required UNC share, which Win32_LogicalDisk cannot
+#     even see). app.deploy.ocr_source_roots is the authority and explains each verdict; this block's
+#     only job is to hand it the host volume table, which is the part that genuinely needs CIM.
+$logicalDisks = @(Get-CimInstance Win32_LogicalDisk -ErrorAction Stop)
+$mappedDisks   = @(Get-CimInstance Win32_MappedLogicalDisk -ErrorAction SilentlyContinue)
+$inventory = @{
+    volumes = @($logicalDisks | ForEach-Object {
+        @{ anchor        = $_.DeviceID
+           drive_type    = [int]$_.DriveType
+           provider_name = $_.ProviderName
+           file_system   = $_.FileSystem }
+    })
+    # A drive present in Win32_MappedLogicalDisk belongs to THIS interactive logon session. It is
+    # enumerated separately because a mapping can be reported with a DriveType that looks benign.
+    mapped_anchors = @($mappedDisks | ForEach-Object { $_.DeviceID })
+} | ConvertTo-Json -Depth 5 -Compress
 
-# (c) Known exception: documents stored on a mapped Z: drive. They are already unreadable whenever
-#     that mapping is absent, under ANY task type, so they are reported rather than treated as a
-#     blocker. They remain recoverable failures; nothing here claims full source compatibility.
-if (-not $volumes['Z:']) {
-    Write-Host "  NOTE Z: is not mapped. Documents stored under Z: are unreadable today and will"
-    Write-Host "       remain recoverable OCR failures under S4U. This is not a regression: a"
-    Write-Host "       mapped drive belongs to an interactive logon session and never survives S4U."
+$rootArgs = @('-m', 'app.deploy.ocr_source_roots', '--project-root', $ProjectRoot)
+foreach ($unc in $AttestUncRoot) { $rootArgs += @('--attest-unc', $unc) }
+
+Push-Location $ProjectRoot
+$rootResult = $inventory | & $python @rootArgs
+$rootExit = $LASTEXITCODE
+Pop-Location
+$rootResult | ForEach-Object { Write-Host "  $_" }
+if ($rootExit -ne 0) {
+    throw "S4U preflight failed: one or more REQUIRED OCR source roots cannot be read by an S4U task. Stopping."
 }
 Write-Host "== preflight passed =="
 Write-Host ""
@@ -155,8 +167,25 @@ $settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries
 
 if ($PSCmdlet.ShouldProcess($TaskName, 'Register scheduled task')) {
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers `
-        -Principal $principal -Settings $settings -Force | Out-Null
+    # Registration must TERMINATE on failure and must never be reported as success it did not have.
+    # The old line piped the result to Out-Null and then printed "Registered ..." unconditionally, so
+    # an operator lacking the rights to register a task was told the task existed. The ScheduledTasks
+    # cmdlets are CIM-backed and do not all surface a failure as a terminating error, so this does not
+    # lean on $ErrorActionPreference: it asks for -ErrorAction Stop, catches and rethrows, KEEPS the
+    # returned object instead of discarding it, and re-queries the scheduler before claiming anything.
+    try {
+        $registered = Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers `
+            -Principal $principal -Settings $settings -Force -ErrorAction Stop
+    } catch {
+        throw "Failed to register '$TaskName': $($_.Exception.Message)"
+    }
+    if (-not $registered) {
+        throw "Failed to register '$TaskName': the scheduler returned no task (commonly Access Denied - re-run as Administrator)."
+    }
+    $verified = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $verified) {
+        throw "Registration of '$TaskName' reported no error but the task does not exist. Nothing was installed."
+    }
     Write-Host "Registered '$TaskName' (workers=$Workers, S4U, IgnoreNew, restart every 5m)"
     Write-Host "NOTE: this script does NOT start the task and does NOT disable '$LegacyTask'."
     Write-Host "      Disable the legacy task first, then start this one:"

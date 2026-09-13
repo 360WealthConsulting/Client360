@@ -414,15 +414,18 @@ def test_the_installer_is_reversible_and_does_not_touch_the_live_task():
 
 def test_the_installer_validates_s4u_viability_before_registering():
     """S4U has no network credentials and no mapped drives. The installer must PROVE the database
-    and every OCR source drive are reachable without them, and stop rather than register a task that
-    silently cannot read."""
+    and every REQUIRED OCR source root are reachable without them, and stop rather than register a
+    task that silently cannot read.
+
+    Which roots are required is no longer decided here: it is derived from configuration and from the
+    documents that actually exist, by app.deploy.ocr_source_roots. See tests/test_ocr_source_roots.py
+    for the classification itself — this only pins that the installer still gates on it."""
     s = _installer_text()
     assert "S4U viability preflight" in s
     assert "DATABASE_URL" in s and "database unreachable" in s, "must prove PostgreSQL is reachable"
-    assert "DriveType" in s, "must prove the source drives are local disks, not network"
+    assert "app.deploy.ocr_source_roots" in s, "source roots must come from the authority, not a list"
+    assert "Win32_LogicalDisk" in s, "the host volume table is what CIM is still needed for"
     assert "throw \"S4U preflight failed" in s, "a failed preflight must stop, not warn and continue"
-    # The known Z: exception is reported honestly rather than claimed as compatible.
-    assert "remain recoverable OCR failures under S4U" in s
 
 
 def test_paths_and_arguments_are_quoted():
