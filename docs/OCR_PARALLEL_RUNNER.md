@@ -67,8 +67,16 @@ because they stay where they already live:
    chunk today.
 7. **BELOW_NORMAL process priority** — set per worker process at startup.
 
-`run_sweep`'s per-batch advisory lock (`511005002`) is **not** used. Per-document claiming is a
-strictly stronger guarantee, and keeping the coarse lock would serialise the workers.
+`run_sweep`'s per-batch advisory lock (`511005002`) is **not** taken per batch here: that would
+serialise the workers and defeat the exercise. Per-document claiming is a stronger guarantee **among
+claim participants**, and `ocr_parallel` relies on it for worker-to-worker exclusion.
+
+It is *not* stronger against a non-participant. The in-app `ocr-incremental-sweep` job never reads or
+writes `ocr_document_claims`, so a claim excludes it from nothing. **`app.jobs.ocr_supervisor`
+therefore holds `511005002` for its entire lifetime** — see "Lifetime locks" below. Anything that
+drives `ocr_parallel` without that lock (a bare `python -m app.jobs.ocr_parallel` on a host whose
+application scheduler is running) has no protection against the sweep and should be used for
+diagnostics only.
 
 ## Admission control
 
@@ -101,8 +109,43 @@ batch size of 200**, publishes heartbeat and counters, then repeats. Classificat
 not parallelised: `run_knowledge_pipeline` has no claim system and nothing establishes that
 concurrent invocations are safe, so it keeps exactly the behaviour it had.
 
-A second supervisor exits immediately on its own advisory lock (`511005888`), which PostgreSQL
-releases when the process dies, so a crash needs no cleanup.
+### Lifetime locks
+
+The supervisor owns **two** session advisory locks, on one session it holds for its whole life:
+
+| Key | Meaning | Refusal status |
+|-----|---------|----------------|
+| `511005888` | A supervisor is running. A second copy exits immediately. | `already_running` |
+| `511005002` | `ocr_runner`'s sweep lock — excludes the in-app `ocr-incremental-sweep`. | `sweep_lock_unavailable` |
+
+**Acquisition order is `511005888` then `511005002`, released in reverse.** Deadlock is already
+impossible (both are `pg_try_advisory_lock`, which never waits), but the order is fixed so it stays
+impossible if either ever becomes a blocking acquire — and it keeps diagnostics honest: taking the
+sweep lock first would make a second supervisor report a sweep conflict when the truth is that a
+supervisor is already running.
+
+Acquisition is **all-or-nothing and happens before any worker is spawned**. If either lock is
+unavailable the supervisor starts **zero** workers, releases whatever it took, and exits non-zero;
+the scheduled task's restart policy retries in five minutes, by which time a 30-minute sweep has long
+finished. This is deliberately fail-closed — running beside the sweep is the defect the lock prevents.
+
+Why `511005002` matters: the in-app sweep runs `ocr_runner.run_sweep` → `document_ocr.run_ocr` and
+never touches `ocr_document_claims`, while its candidate predicate (`document_ocr.document_id IS NULL
+OR status IN ('pending','processing')`) is the same population the supervisor's initial lane sweeps.
+The legacy `worker.py` was safe only because it performed OCR *through* `run_sweep` and so took this
+lock per chunk. A parallel runner calling `run_ocr` directly never takes it — without this, the
+scheduled sweep would OCR documents the workers held claims on, double-bumping `attempts` and
+spawning extraction subprocesses outside `ocr_throttle`'s admission control. **No duplicate-claim
+check can detect that**, because the sweep takes no claim at all.
+
+PostgreSQL releases both when the process dies, so a crash still needs no cleanup. Verify with:
+
+```sql
+SELECT (classid::bigint<<32)|objid::bigint AS key, pid
+FROM pg_locks WHERE locktype='advisory';
+```
+
+`511005888` and `511005002` held by the same pid is a healthy running supervisor.
 
 ```bash
 python -m app.jobs.ocr_supervisor --workers 4 --keep-running
