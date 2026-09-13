@@ -200,6 +200,13 @@ _STRATEGY: dict[str, str] = {
     # duplicate's row asserts the same membership and is redundant. Collapsing it as ``singular``
     # would silently drop the survivor's membership of every OTHER review.
     "document_pipeline_source_review_documents": "dedup_keyed",
+    # Parallel-OCR work claims (ocrclaim01). ``singular`` for exactly the reason document_ocr is:
+    # document_id is UNIQUE, so at most one row can survive a merge, and repointing a second claim
+    # onto the survivor would violate that constraint. A claim is scheduling state — who is currently
+    # allowed to OCR this document, and until when — not a result. It is re-derived on the next
+    # claim, so collapsing one is never data loss, and two claims that disagree are worth surfacing
+    # rather than resolving by silently picking one.
+    "ocr_document_claims": "singular",
 }
 
 #: Every FK to documents.id, read from the LIVE catalog on each call  -  still true runtime
