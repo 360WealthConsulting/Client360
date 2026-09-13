@@ -28,9 +28,20 @@ def _clean():
                           {"i": ids})
                 c.execute(delete(document_ocr).where(document_ocr.c.document_id.in_(ids)))
                 c.execute(delete(documents).where(documents.c.id.in_(ids)))
+    _POOL.clear()
     _wipe()
     yield
     _wipe()
+    _POOL.clear()
+
+
+#: The documents the test under way created. Every claim in this module is scoped to it.
+#:
+#: Claiming is otherwise corpus-wide and ordered by document id, so in a shared database a test that
+#: claimed unscoped would take whatever documents other modules had left behind and never reach its
+#: own. That is not hypothetical: it is what made this file pass against an empty local database and
+#: fail in CI, where the first worker claimed twenty documents and none of them were the test's.
+_POOL: list[int] = []
 
 
 def _docs(n, *, ext="pdf"):
@@ -42,6 +53,7 @@ def _docs(n, *, ext="pdf"):
                 storage_path="/x", storage_provider="Client360 Local", storage_uri="/x",
                 size_bytes=10, sha256=uuid.uuid4().hex + uuid.uuid4().hex, status="active",
                 archived=False).returning(documents.c.id)).scalar_one())
+    _POOL.extend(ids)
     return ids
 
 
@@ -49,10 +61,11 @@ def _ok(text_out="extracted"):
     return lambda row, path: {"text": text_out, "engine": "fake", "page_count": 1}
 
 
-def _claim(worker, *, limit=10, mode="initial", lease=900):
+def _claim(worker, *, limit=10, mode="initial", lease=900, ids=None):
     with engine.begin() as c:
         return ocr_claims.claim_batch(c, worker_id=worker, mode=mode, limit=limit,
-                                      lease_seconds=lease)
+                                      lease_seconds=lease,
+                                      document_ids=list(ids) if ids is not None else list(_POOL))
 
 
 def _expire(document_ids):
@@ -90,6 +103,20 @@ def test_claim_batch_never_claims_more_than_it_returns():
              WHERE d.original_name LIKE :tag AND cl.state = 'claimed'"""),
             {"tag": f"%{_TAG}%"}).scalar()
     assert locked == 5, f"claimed {locked} rows but handed back 5"
+
+
+def test_claiming_can_be_scoped_to_an_explicit_document_set():
+    """Regression: claiming is corpus-wide and ordered by id, so an unscoped claim in a populated
+    database takes other documents entirely. A targeted run over a manifest must claim only its own
+    documents, and an empty scope must claim nothing rather than everything."""
+    pool = _docs(10)
+    half = pool[:4]
+    got = [c.document_id for c in _claim("scoped", limit=10, ids=half)]
+    assert sorted(got) == sorted(half), "a scoped claim must stay inside its set"
+
+    with engine.begin() as c:
+        assert ocr_claims.claim_batch(c, worker_id="empty", mode="initial", limit=10,
+                                      document_ids=[]) == []
 
 
 def test_concurrent_claiming_produces_no_overlap():
@@ -348,9 +375,10 @@ def test_worker_count_is_configurable(monkeypatch):
 # --- the worker loop end to end -------------------------------------------------------------------
 
 def test_worker_loop_drains_its_lane_and_stops():
-    _docs(7)
+    pool = _docs(7)
     totals = ocr_parallel.worker_loop(worker_id="loop-1", mode="initial", batch=3,
-                                      extractor=_ok(), factory_ref=None, stop_when_empty=True)
+                                      extractor=_ok(), factory_ref=None, stop_when_empty=True,
+                                      document_ids=pool)
     with engine.connect() as c:
         done = c.execute(text("""
             SELECT count(*) FROM document_ocr o JOIN documents d ON d.id = o.document_id

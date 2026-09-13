@@ -82,6 +82,7 @@ WITH candidate AS (
       LEFT JOIN ocr_document_claims c ON c.document_id = d.id
      WHERE {active}
        AND {mode_predicate}
+       AND (:scoped = false OR d.id = ANY(:document_ids))
        AND (
              c.document_id IS NULL                                   -- never claimed
           OR (c.state = 'claimed' AND c.lease_expires_at < now())    -- lease lapsed: recoverable
@@ -114,18 +115,26 @@ SELECT candidate.id, :worker_id, 'claimed', 1, now(), now(),
 
 
 def claim_batch(conn, *, worker_id, mode="initial", limit=25,
-                lease_seconds=DEFAULT_LEASE_SECONDS, max_attempts=3):
+                lease_seconds=DEFAULT_LEASE_SECONDS, max_attempts=3, document_ids=None):
     """Atomically claim up to ``limit`` documents. Returns exactly the claims won.
 
     Under contention the winner count can be lower than ``limit``: two workers may select the same
     candidates, but only one can take each. That is the design working, not an error — call again.
     Every document this statement claims is returned to the caller, so a claim can never be taken
     and then forgotten.
+
+    ``document_ids`` restricts claiming to an explicit set, mirroring ``run_ocr(document_ids=...)``.
+    Without it a worker takes whatever is next by id across the whole corpus, which is right for a
+    sweep and wrong for a targeted run over a manifest of specific documents.
     """
     if mode not in _MODE_PREDICATE:
         raise ValueError(f"unknown claim mode {mode!r}")
+    scoped = document_ids is not None
+    if scoped and not document_ids:
+        return []                       # an empty scope claims nothing rather than everything
     sql = _CLAIM_SQL.format(active=ACTIVE, mode_predicate=_MODE_PREDICATE[mode])
-    params = {"worker_id": worker_id, "lease_seconds": float(lease_seconds), "limit": int(limit)}
+    params = {"worker_id": worker_id, "lease_seconds": float(lease_seconds), "limit": int(limit),
+              "scoped": scoped, "document_ids": list(document_ids) if scoped else []}
     if mode == "retry":
         params["max_attempts"] = int(max_attempts)
     rows = conn.execute(text(sql), params).fetchall()

@@ -106,11 +106,14 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
                 lease_seconds=ocr_claims.DEFAULT_LEASE_SECONDS,
                 heartbeat_seconds=ocr_claims.DEFAULT_HEARTBEAT_SECONDS,
                 max_attempts=3, max_batches=None, extractor=None, factory_ref=_PRODUCTION_FACTORY,
-                stop_when_empty=True, on_batch=None) -> dict:
+                stop_when_empty=True, on_batch=None, document_ids=None) -> dict:
     """One worker: claim, OCR, complete, repeat until the lane is empty.
 
     Returns accumulated counts. Tests inject ``extractor`` with ``factory_ref=None`` to stay
     in-process; production uses the isolated subprocess path.
+
+    ``document_ids`` confines the worker to an explicit set — a targeted run over a manifest rather
+    than a corpus sweep. Omitted, the worker claims whatever is next across the whole lane.
     """
     from app.db import engine
     from app.services import document_ocr
@@ -133,7 +136,8 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
         with engine.begin() as conn:
             claims = ocr_claims.claim_batch(conn, worker_id=worker_id, mode=mode, limit=batch,
                                             lease_seconds=lease_seconds,
-                                            max_attempts=max_attempts)
+                                            max_attempts=max_attempts,
+                                            document_ids=document_ids)
         if not claims:
             if stop_when_empty:
                 break
