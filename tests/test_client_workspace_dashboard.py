@@ -76,7 +76,14 @@ def test_dashboard_tab_renders(person):
     resp = client_workspace(req, person_id=person, tab="dashboard", principal=_principal())
     html = resp.body.decode()
     assert resp.status_code == 200
-    assert "c360-dash" in html and "Open tasks" in html and "Follow up" in html
+    # The flat `c360-dash` grid of ten cards is gone. The Overview is now named blocks in a fixed
+    # order (Client summary, Needs attention, Financial snapshot, Recent documents, Recent
+    # activity), and the ones with nothing in them are not rendered at all.
+    assert "c360-overview-block" in html and "Client summary" in html
+    # An OPEN task is no longer an Overview card: only an OVERDUE one reaches Needs attention, and
+    # this fixture's task has no due date. The full list lives on /tasks, which is where the
+    # Needs attention entries link.
+    assert "Follow up" not in html
     # Dashboard is the first/active tab
     assert 'class="c360-tab active"' in html
 
