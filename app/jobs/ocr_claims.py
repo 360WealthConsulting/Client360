@@ -9,7 +9,7 @@ preventing two workers from OCR-ing the same document, and it costs all parallel
 This module replaces it with a claim per document. The guarantees, and what provides each:
 
 * **No duplicate processing** — a claim is one ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING``
-  statement. Concurrent claims for the same document serialise on the primary key; the loser's
+  statement. Concurrent claims for the same document serialise on the UNIQUE index; the loser's
   ``DO UPDATE`` is gated on the lease having expired, so it updates nothing and the document is not
   returned to it. Exactly one worker ever holds a live claim.
 * **Short claims** — claiming touches only this table, never ``document_ocr``, and holds no lock

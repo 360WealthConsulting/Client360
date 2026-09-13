@@ -201,8 +201,8 @@ _STRATEGY: dict[str, str] = {
     # would silently drop the survivor's membership of every OTHER review.
     "document_pipeline_source_review_documents": "dedup_keyed",
     # Parallel-OCR work claims (ocrclaim01). ``singular`` for exactly the reason document_ocr is:
-    # document_id is the PRIMARY KEY, so at most one row can survive a merge, and repointing a second
-    # claim onto the survivor would violate that key. A claim is scheduling state — who is currently
+    # document_id is UNIQUE, so at most one row can survive a merge, and repointing a second claim
+    # onto the survivor would violate that constraint. A claim is scheduling state — who is currently
     # allowed to OCR this document, and until when — not a result. It is re-derived on the next
     # claim, so collapsing one is never data loss, and two claims that disagree are worth surfacing
     # rather than resolving by silently picking one.

@@ -32,11 +32,17 @@ _STATES = "('claimed','done','released')"
 def upgrade() -> None:
     op.create_table(
         "ocr_document_claims",
-        # One row per document: the PK is the mutual-exclusion primitive. Two concurrent claims for
-        # the same document serialise on this index, so exactly one can win.
+        # Surrogate key. Every table referencing documents.id carries one, and the document-merge
+        # executor depends on it: it reads dependent rows with `SELECT * FROM <t> ... ORDER BY id`.
+        # A table keyed only on document_id parses fine and then fails that read at merge time.
+        sa.Column("id", sa.Integer, primary_key=True),
+        # One row per document. The UNIQUE constraint is the mutual-exclusion primitive: two
+        # concurrent claims for the same document serialise on this index, so exactly one can win.
+        # UNIQUE rather than PRIMARY KEY only so the surrogate id above can be the key; ON CONFLICT
+        # (document_id) arbitrates identically against either.
         sa.Column("document_id", sa.Integer,
                   sa.ForeignKey("documents.id", ondelete="CASCADE"),
-                  primary_key=True),
+                  nullable=False),
         sa.Column("worker_id", sa.Text, nullable=False),
         sa.Column("state", sa.Text, nullable=False, server_default="claimed"),
         # Bumped on every (re)claim. A result write carrying a stale claim_seq is from a worker whose
@@ -51,6 +57,7 @@ def upgrade() -> None:
         sa.Column("lease_expires_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("outcome", sa.Text),
         sa.CheckConstraint(f"state IN {_STATES}", name="ck_ocr_document_claims_state"),
+        sa.UniqueConstraint("document_id", name="uq_ocr_document_claims_document"),
     )
     # The claim hot path: find rows that are reclaimable (expired lease, not done).
     op.create_index("ix_ocr_document_claims_lease", "ocr_document_claims",
