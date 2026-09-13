@@ -96,7 +96,7 @@ def _person_row(connection, person_id: int):
     return connection.execute(text("""
         SELECT id, household_id, first_name, last_name, full_name,
                primary_email, normalized_email, primary_phone, normalized_phone,
-               address_line_1, address_line_2, city, state, birth_date
+               address_line_1, address_line_2, city, state, postal_code, birth_date
         FROM people WHERE id = :id
     """), {"id": person_id}).mappings().first()
 
@@ -153,7 +153,10 @@ def contact_block(person_id: int, principal) -> dict:
     rather than shown twice. ``sources`` on each row names every system that supplied it, which is
     what tells staff a value is corroborated rather than merely present.
     """
-    empty = {"phones": [], "emails": [], "address": None, "in_scope": False}
+    # Every key the populated shape carries, so an out-of-scope caller and a caller looking at a
+    # client with nothing on file take the same code path through the template.
+    empty = {"phones": [], "emails": [], "address": None, "preferred_contact_method": None,
+             "household": None, "in_scope": False}
     if not record_in_scope(principal, "person", person_id):
         return empty
 
@@ -216,9 +219,11 @@ def contact_block(person_id: int, principal) -> dict:
         # --- mailing address: Client360's, else Drake's
         address = None
         if person["address_line_1"]:
+            # ``people.postal_code`` is a real column and was previously discarded here, so a
+            # Client360 address rendered without its ZIP while a Drake-sourced one kept it.
             address = {"lines": [x for x in (person["address_line_1"], person["address_line_2"]) if x],
                        "city": person["city"], "state": person["state"],
-                       "postal_code": None, "source": "Client360"}
+                       "postal_code": person["postal_code"], "source": "Client360"}
         elif _raw_get(raw, "Address"):
             # `City`/`State` are the populated pair (3,682 rows); the `Res_*` variants are a
             # residency override Drake fills on only 26, so they are the fallback, not the default.
@@ -227,8 +232,33 @@ def contact_block(person_id: int, principal) -> dict:
                        "state": _raw_get(raw, "State") or _raw_get(raw, "Res_State"),
                        "postal_code": _raw_get(raw, "Zip"), "source": "Drake"}
 
+        # Preferred contact method is recorded on the PORTAL ACCOUNT, not on the person: it is a
+        # statement about how this client wants the portal to reach them, and a client with no
+        # portal account has never been asked. Read rather than inferred — nothing here guesses a
+        # preference from which channel happens to have the most traffic.
+        preferred = connection.execute(text("""
+            SELECT preferred_contact_method FROM portal_accounts
+            WHERE person_id = :id AND preferred_contact_method IS NOT NULL
+            ORDER BY id DESC LIMIT 1
+        """), {"id": person_id}).scalar()
+
+        # Household membership, shown beside the contact details because "who else is on this
+        # record" is a contact question. It is the same value identity_block returns; the Overview
+        # renders it here only, so one screen does not state the same fact twice.
+        household = None
+        if person["household_id"]:
+            row = connection.execute(text("""
+                SELECT h.id, h.name, (SELECT count(*) FROM people m
+                                      WHERE m.household_id = h.id AND m.active) AS member_count
+                FROM households h WHERE h.id = :hid
+            """), {"hid": person["household_id"]}).mappings().first()
+            if row:
+                household = {"id": row["id"], "name": row["name"],
+                             "member_count": row["member_count"]}
+
     return {"phones": list(phones.values()), "emails": list(emails.values()),
-            "address": address, "in_scope": True}
+            "address": address, "preferred_contact_method": preferred,
+            "household": household, "in_scope": True}
 
 
 # --- Identity ------------------------------------------------------------------------------------
