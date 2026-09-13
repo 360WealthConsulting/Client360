@@ -555,3 +555,15 @@ table.data.docscreen-grid { width:100%; min-width:820px; table-layout:fixed; }
 .c360-ssn { font-family:var(--font-mono, ui-monospace, Menlo, Consolas, monospace); letter-spacing:.02em; }
 @media (max-width:1100px) { .c360-profile { grid-template-columns:1fr; } }
 @media (max-width:640px) { .c360-facts > div { grid-template-columns:1fr; gap:.15rem; } }
+
+/* --- Overview blocks: Client summary / Needs attention / Financial snapshot / Recent ---------
+   Each named section is a titled band rather than a loose card in a grid, so the five parts of
+   the Overview read in a fixed order instead of reflowing into whatever fits. The blocks that can
+   be empty are not rendered at all (see workspace.html), which is why there is no empty state
+   styled here — a section with nothing in it should occupy no space, not a large blank card. */
+.c360-overview-block { margin: 0 0 var(--s-gap-4, 22px); }
+.c360-overview-block > .section-title { margin: 0 0 var(--s-gap-2, 10px); }
+.c360-block-head { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; margin: 0 0 var(--s-gap-2, 10px); }
+.c360-block-head > .section-title { margin: 0; }
+.c360-overview-block .detail-row .badge { margin-right: .45rem; }

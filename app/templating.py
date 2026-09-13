@@ -9,7 +9,7 @@ import hashlib
 import os
 import pathlib
 import sys
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -99,6 +99,29 @@ _NO_PAD = {
 }
 
 
+def _coerce_temporal(value):
+    """An ISO-8601 string becomes the datetime/date it spells; everything else is returned as is.
+
+    Services that serialize their rows — ``to_dict()`` on a timeline event, anything that has been
+    through JSON — hand templates a string like ``2026-09-10T14:20:35-04:00``. Without this the
+    filter's ``except AttributeError`` fallback printed that string verbatim, so a screen that
+    looked fully formatted still showed machine timestamps in the rows fed by those services.
+    Parsing here fixes them all at once rather than asking each template to know which of its
+    values survived as a real datetime.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.endswith(("Z", "z")):  # fromisoformat accepts 'Z' only from 3.11 on.
+        text = text[:-1] + "+00:00"
+    for parse in (datetime.fromisoformat, date.fromisoformat):
+        try:
+            return parse(text)
+        except ValueError:
+            continue
+    return value
+
+
 def format_datetime(value, fmt):
     """``strftime`` that accepts glibc's ``%-X`` directives on every platform.
 
@@ -108,6 +131,7 @@ def format_datetime(value, fmt):
     """
     if not value:
         return ""
+    value = _coerce_temporal(value)
     try:
         for token, get in _NO_PAD.items():
             if token in fmt:
@@ -126,6 +150,7 @@ def human_datetime(value):
     """
     if not value:
         return ""
+    value = _coerce_temporal(value)
     if isinstance(value, datetime):
         return format_datetime(value, "%b %-d, %Y %-I:%M %p")
     return format_datetime(value, "%b %-d, %Y")

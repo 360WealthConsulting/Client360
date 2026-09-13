@@ -84,6 +84,10 @@
      Client360 value from a Drake one instead of guessing which is authoritative. #}
   {% set prof = ws.profile %}
   {% if prof %}
+  {# CLIENT SUMMARY — who this person is and how to reach them. Always shown: a client with
+     nothing on file still needs the card that says so. #}
+  <section class="c360-overview-block">
+    <h2 class="section-title">Client summary</h2>
   <div class="c360-profile">
     <article class="card c360-profile-contact">
       <h2 class="section-title">Contact</h2>
@@ -163,6 +167,45 @@
       </dl>
     </article>
 
+  </div>
+  </section>
+
+  {% endif %}
+
+  {# NEEDS ATTENTION — one list, folded from what used to be five separate cards (documents
+     awaiting review, missing tax items, overdue tasks, compliance issues, unidentified documents)
+     plus the domain alerts card. Each was its own box that on a healthy client read "nothing here",
+     so the first screenful of the record was mostly reassurance. Composed in sections.dashboard
+     from data already gathered under the same capability gates — every link is the one its
+     original card used. Hidden entirely when there is nothing to attend to.
+
+     Second on the page, directly under the summary, because it is the only block that asks
+     someone to DO something; the money and the file lists can wait a scroll. #}
+  {% set attention = sec.needs_attention or [] %}
+  {% if attention or sec.alerts %}
+  <section class="c360-overview-block">
+    <h2 class="section-title">Needs attention</h2>
+    <article class="card">
+      {% for item in attention %}
+        <div class="detail-row">
+          <span><span class="badge">{{ item.label }}</span>
+            {% if item.href %}<a href="{{ item.href }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</span>
+        </div>
+      {% endfor %}
+      {% for al in sec.alerts %}
+        <div class="detail-row"><span><span class="badge">{{ al.domain|title }}</span> {{ al.title }}</span>
+          <span class="subtle">{{ al.severity or "" }}</span></div>
+      {% endfor %}
+    </article>
+  </section>
+  {% endif %}
+
+  {# FINANCIAL SNAPSHOT — investments and the tax position. Hidden when the client has neither,
+     rather than two large cards both reporting nothing. #}
+  {% if prof and (prof.investments.custodians or prof.tax.tax_year) %}
+  <section class="c360-overview-block">
+    <h2 class="section-title">Financial snapshot</h2>
+  <div class="c360-profile">
     <article class="card c360-profile-investments">
       <h2 class="section-title">Investments</h2>
       {% if prof.investments.custodians %}
@@ -210,80 +253,40 @@
       {% else %}<p class="meta">No Drake return linked to this client.</p>{% endif %}
     </article>
   </div>
+  </section>
   {% endif %}
 
-  {# The Client Workspace landing tab — cross-domain snapshot, each card one click into its tab. #}
-  <div class="c360-dash">
-    <article class="card">
-      <h2 class="section-title">Open tasks</h2>
-      {% for t in sec.open_tasks %}
-        <div class="detail-row"><span>{{ t.title }}</span><span class="subtle">{{ t.due_date or t.status }}</span></div>
-      {% else %}{% call ui.empty("No open tasks") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Documents needing review</h2>
-      {% for d in sec.documents_needing_review %}
-        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.storage_provider }}</span></div>
-      {% else %}{% call ui.empty("Nothing awaiting review") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Missing tax items</h2>
-      {% for e in sec.missing_tax_items %}
-        <div class="detail-row"><span>{{ e.title or e.message or e.category }}</span><span class="subtle">{{ e.severity or "" }}</span></div>
-      {% else %}{% call ui.empty("No missing tax items") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
+  {# RECENT DOCUMENTS — five, then the tab that holds them all. #}
+  {% if sec.recent_documents %}
+  <section class="c360-overview-block">
+    <div class="c360-block-head">
       <h2 class="section-title">Recent documents</h2>
+      <a class="btn sm secondary" href="{{ base }}?tab=documents">View all</a>
+    </div>
+    <article class="card">
       {% for d in sec.recent_documents %}
-        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.storage_provider }}</span></div>
-      {% else %}{% call ui.empty("No documents yet") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Upcoming meetings</h2>
-      {% for m in sec.upcoming_meetings %}
-        <div class="detail-row"><span>{{ m.title }}</span><span class="subtle">{{ m.event_time }}</span></div>
-      {% else %}{% call ui.empty("No upcoming meetings") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Planning opportunities</h2>
-      {% for r in sec.planning_opportunities %}
-        <div class="detail-row"><span>{{ r.title or r.summary or r.message }}</span></div>
-      {% else %}{% call ui.empty("No planning opportunities") %}{% endcall %}{% endfor %}
-    </article>
-    {# Knowledge layer (Phase 6A): document intelligence surfaced on the existing Dashboard. #}
-    <article class="card">
-      <h2 class="section-title">Newly classified documents</h2>
-      {% for d in sec.newly_classified %}
-        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.doc_type|replace("_"," ") }} · {{ (d.confidence * 100)|round|int }}%</span></div>
-      {% else %}{% call ui.empty("No newly classified documents") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Possible compliance issues</h2>
-      {% for d in sec.compliance_issues %}
-        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">{{ d.doc_type|replace("_"," ") }}</span></div>
-      {% else %}{% call ui.empty("No compliance notices identified") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Missing / unidentified documents</h2>
-      {% for d in sec.missing_document_alerts %}
-        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a><span class="subtle">needs identification</span></div>
-      {% else %}{% call ui.empty("No unidentified documents") %}{% endcall %}{% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="section-title">Recent activity</h2>
-      {% for a in sec.recent_activity %}
-        <div class="detail-row"><span>{{ a.title or a.event_type }}</span><span class="subtle">{{ a.occurred_at or a.event_time or "" }}</span></div>
-      {% else %}{% call ui.empty("No recent activity") %}{% endcall %}{% endfor %}
-    </article>
-    {% if sec.alerts %}
-    <article class="card">
-      <h2 class="section-title">Alerts</h2>
-      {% for al in sec.alerts %}
-        <div class="detail-row"><span>{{ al.title }}</span><span class="subtle">{{ al.domain }}{% if al.severity %} · {{ al.severity }}{% endif %}</span></div>
+        <div class="detail-row"><a href="/documents/{{ d.id }}/download">{{ d.original_name }}</a>
+          <span class="subtle">{{ d.created_at | datefmt("%b %-d, %Y") if d.created_at else d.storage_provider }}</span></div>
       {% endfor %}
     </article>
-    {% endif %}
-  </div>
+  </section>
+  {% endif %}
+
+  {# RECENT ACTIVITY — same shape. The timeline tab carries the full history. #}
+  {% if sec.recent_activity %}
+  <section class="c360-overview-block">
+    <div class="c360-block-head">
+      <h2 class="section-title">Recent activity</h2>
+      <a class="btn sm secondary" href="{{ base }}?tab=timeline">View all</a>
+    </div>
+    <article class="card">
+      {% for a in sec.recent_activity %}
+        <div class="detail-row"><span>{{ a.title or a.event_type }}</span>
+          <span class="subtle">{{ (a.occurred_at or a.event_time) | datefmt("%b %-d, %Y") if (a.occurred_at or a.event_time) else "" }}</span></div>
+      {% endfor %}
+    </article>
+  </section>
+  {% endif %}
 
 {% elif active_tab == "summary" %}
   <article class="card">

@@ -100,6 +100,13 @@ QUICK_ACTIONS = (
                                     else "/document-library"))),
     QuickAction("add_note", "Add Note", "client.read",
                 lambda p, h: (f"/people/{p}/notes" if p else "/people")),
+    # Beside Add Note, and gated on client.write rather than client.read: the canonical edit form
+    # has always existed at /people/{id}/edit, but nothing in the client workspace linked to it, so
+    # staff looking at a client had no way to reach it. The capability matches what the POST
+    # actually requires, so the button is never shown to someone the save would then refuse.
+    # Person-only: a household has no contact record of its own to correct.
+    QuickAction("edit_profile", "Edit Profile", "client.write",
+                lambda p, h: (f"/people/{p}/edit" if p else None)),
     # /tasks -- the canonical staff dashboard over the authoritative client `tasks` table
     # (ADR-025). This used to point into Operations (/operations/items, then
     # /operations/task-list), which reads `operational_tasks` -- a DIFFERENT store that cannot hold
@@ -126,5 +133,12 @@ def visible_sections(principal):
 
 
 def visible_quick_actions(principal, person_id, household_id):
-    return [{"key": a.key, "label": a.label, "href": a.href(person_id, household_id)}
-            for a in QUICK_ACTIONS if principal.can(a.capability)]
+    """Capability-gated actions, minus any whose target does not exist for this entity.
+
+    An action may return ``None`` to say "not applicable here" — Edit Profile does, because a
+    household has no contact record of its own to correct. Those are dropped rather than rendered
+    as a button that goes nowhere.
+    """
+    actions = [{"key": a.key, "label": a.label, "href": a.href(person_id, household_id)}
+               for a in QUICK_ACTIONS if principal.can(a.capability)]
+    return [a for a in actions if a["href"]]
