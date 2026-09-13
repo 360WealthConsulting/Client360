@@ -24,6 +24,14 @@ _DBL = "tests.ocr_doubles"
 
 
 @pytest.fixture(autouse=True)
+def _health_gate_off(monkeypatch):
+    """No Client360 listens during the suite and the health gate fails closed by design, so opt out
+    the supported way. Spawned workers inherit os.environ, so this reaches them too. Tests that are
+    ABOUT the gate delete this variable themselves."""
+    monkeypatch.setenv("OCR_HEALTH_GATE", "0")
+
+
+@pytest.fixture(autouse=True)
 def _clean():
     def _wipe():
         with engine.begin() as c:

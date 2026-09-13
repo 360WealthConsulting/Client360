@@ -10,7 +10,8 @@ lives, unchanged:
 * existing OCR results — ``run_ocr`` skips a completed, content-unchanged document,
 * the database-authoritative checkpoint — candidates are recomputed from the database every claim,
 * unsupported / encrypted / timeout handling — untouched inside ``_ocr_one``,
-* the classification and retry lanes — same modes, same predicates,
+* the retry lane — same mode, same predicate (NOTE: this module drains ONE lane and exits; the
+  continuous initial -> retry -> classification service is app.jobs.ocr_supervisor),
 * duplicate-hash reuse — the ``reused``/``skipped`` path is ``run_ocr``'s,
 * audit behaviour — one audit row per ``run_ocr`` call, the same granularity as a 50-document chunk
   today,

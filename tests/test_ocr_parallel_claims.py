@@ -18,6 +18,14 @@ _TAG = "OCRPAR"
 
 
 @pytest.fixture(autouse=True)
+def _health_gate_off(monkeypatch):
+    """No Client360 listens during the suite and the health gate fails closed by design, so opt out
+    the supported way. Spawned workers inherit os.environ, so this reaches them too. Tests that are
+    ABOUT the gate delete this variable themselves."""
+    monkeypatch.setenv("OCR_HEALTH_GATE", "0")
+
+
+@pytest.fixture(autouse=True)
 def _clean():
     def _wipe():
         with engine.begin() as c:
@@ -340,16 +348,30 @@ def test_global_totals_reconcile():
 
 # --- admission control ---------------------------------------------------------------------------
 
-def test_health_gate_blocks_new_claims_when_configured_and_failing():
-    bad = ocr_throttle.may_claim(health_url="http://127.0.0.1:9/健", min_free_mb=0,
+def test_health_gate_blocks_new_claims_when_configured_and_failing(monkeypatch):
+    monkeypatch.delenv("OCR_HEALTH_GATE", raising=False)      # this test is ABOUT the gate
+    bad = ocr_throttle.may_claim(health_url="http://127.0.0.1:9/health", min_free_mb=0,
                                  max_cpu_percent=100.0)
     assert not bad
     assert "health" in bad.reason.lower()
 
 
-def test_unconfigured_health_does_not_block():
+def test_an_unconfigured_health_gate_now_FAILS_CLOSED(monkeypatch):
+    """Contract change: an unset variable used to mean "no opinion" and waved work through, so the
+    gate protected nothing on a box where nobody had wired a URL. It now defaults to the local
+    /health and /readiness pair and holds when it cannot confirm both."""
+    for var in ("OCR_HEALTH_GATE", "CLIENT360_HEALTH_URLS", "CLIENT360_HEALTH_URL"):
+        monkeypatch.delenv(var, raising=False)
+    assert ocr_throttle.configured_health_urls() == ocr_throttle.DEFAULT_HEALTH_URLS
+    monkeypatch.setattr(ocr_throttle, "_probe", lambda url, t: (False, f"{url} unreachable"))
+    ok, _ = ocr_throttle.health_ok()
+    assert not ok, "with nothing configured the gate must protect, not wave work through"
+
+
+def test_an_explicit_empty_override_is_an_opt_out(monkeypatch):
+    monkeypatch.delenv("OCR_HEALTH_GATE", raising=False)
     ok, detail = ocr_throttle.health_ok("")
-    assert ok and "not configured" in detail
+    assert ok and "disabled" in detail
 
 
 def test_memory_floor_blocks_new_claims():
