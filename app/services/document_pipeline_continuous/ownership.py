@@ -68,6 +68,18 @@ REVIEWABLE_CONFIDENCE = ("MEDIUM", "AMBIGUOUS")
 _LINKABLE_CONFIDENCE = LINKABLE_CONFIDENCE
 _REVIEWABLE_CONFIDENCE = REVIEWABLE_CONFIDENCE
 
+#: Returned when a lane is outside the configured ownership scope. Distinct from "unresolved",
+#: which means the lane looked and found nothing: this one means the lane never ran.
+OUTCOME_OUT_OF_SCOPE = "out_of_scope"
+
+#: Returned when a document has NO provenance at all — no ``document_sources`` row of any kind.
+#: ``detect_lane`` answers SharePoint for these because SharePoint is its fallback, but that is the
+#: absence of an answer rather than an answer: a document carrying a ``taxdome_folder`` tag and no
+#: source row is a TaxDome document whose provenance was lost, and treating it as SharePoint
+#: evidence would let content inference decide an authoritative client. It is held instead, and
+#: named, so the ingestion gap is repairable rather than invisible.
+OUTCOME_PROVENANCE_REPAIR = "provenance_repair_required"
+
 #: Evidence and candidate lists are trimmed before they reach the review queue. The proposal engine
 #: already masks SSNs and never emits raw text; this bounds the row size as well.
 _MAX_EVIDENCE = 8
@@ -84,6 +96,13 @@ def detect_lane(conn, document_id: int) -> str:
     if TAXDOME_SOURCE in systems:
         return LANE_TAXDOME
     return LANE_SHAREPOINT
+
+
+def has_provenance(conn, document_id: int) -> bool:
+    """Does this document have ANY ``document_sources`` row? Ownership requires knowing where it came from."""
+    return bool(conn.execute(text("""
+        SELECT 1 FROM document_sources WHERE document_id = :document_id LIMIT 1
+    """), {"document_id": document_id}).scalar())
 
 
 def current_owner(conn, document_id: int) -> dict | None:
@@ -296,12 +315,30 @@ def resolve(conn, document_id: int, *, proposal=None, actor_user_id=None,
     ``proposal`` is the sanitised owner proposal the classify stage already persisted (see
     ``document_pipeline.proposal_for_document``). Passing it in is what keeps this stage cheap: the
     text was extracted once, upstream, and is never read again here."""
+    from app.config import document_pipeline_ownership_sources
     from app.services.document_pipeline_continuous import source_authority
 
     row = current_owner(conn, document_id)
     if row is None:
         return {"outcome": OUTCOME_UNRESOLVED, "lane": None, "reason_code": "document_not_found"}
+
+    # No provenance at all is not the same as SharePoint provenance. detect_lane falls back to
+    # SharePoint, which would hand an authoritative-source document to content inference, so the
+    # absence is detected here and the document is held and named instead.
+    if not has_provenance(conn, document_id):
+        return {"outcome": OUTCOME_PROVENANCE_REPAIR, "lane": None,
+                "reason_code": "no_document_source_rows",
+                "apparent_taxdome_folder": (row.get("tags") or {}).get("taxdome_folder")}
+
     lane = detect_lane(conn, document_id)
+
+    # The scope gate comes before EVERY side effect, not just before the link. A phase that excludes
+    # a lane excludes it completely: no owner, no review, no persisted mapping. Anything less and
+    # "SharePoint is off" would still mean SharePoint rows appearing in a reviewer's queue.
+    if lane not in document_pipeline_ownership_sources():
+        return {"outcome": OUTCOME_OUT_OF_SCOPE, "lane": lane,
+                "reason_code": "lane_not_in_ownership_scope"}
+
     identity = source_authority.source_identity(conn, document_id)
 
     # A VERIFIED source mapping answers before anything else looks at the document — including before
@@ -342,7 +379,18 @@ def resolve(conn, document_id: int, *, proposal=None, actor_user_id=None,
             return _review(conn, document_id, lane=lane, reason_code="ownership_conflict",
                            evidence=(proposal or {}).get("evidence") or [],
                            request_id=request_id)
-        return {"outcome": OUTCOME_ALREADY_OWNED, "lane": lane, "reason_code": "already_owned"}
+        verdict = {"outcome": OUTCOME_ALREADY_OWNED, "lane": lane, "reason_code": "already_owned"}
+        # An identity whose documents are ALREADY filed correctly is the best-established mapping
+        # there is, and it used to be the only kind never recorded — mappings were learned solely as
+        # a side effect of writing ownership. So a client filed correctly years ago kept being
+        # re-derived from filenames. Write the agreement down once; it assigns nothing.
+        if identity is not None:
+            established = source_authority.establish_mapping_from_existing_owners(
+                conn, identity, actor=str(actor_user_id or ""), request_id=request_id)
+            verdict["mapping_status"] = established["status"]
+            if established.get("mapping_id"):
+                verdict["mapping_id"] = established["mapping_id"]
+        return verdict
 
     if proposal is None:
         from app.services.document_pipeline import proposal_for_document
