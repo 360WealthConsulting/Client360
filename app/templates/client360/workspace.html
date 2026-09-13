@@ -63,6 +63,10 @@
 
 
 {# Role-aware tabs — a section is shown only where the principal has capability. #}
+{# The sections this template actually draws. Kept next to the include so the chip list and
+   the renderer chain are read together; tests/test_client_section_nav.py derives this same
+   set from the `elif active_tab ==` chain below and fails if the two drift apart. #}
+{% set rendered_sections = ["audit", "benefits", "communications", "compliance", "dashboard", "documents", "financial", "insurance", "meetings", "messages", "notes", "opportunities", "relationships", "summary", "tasks", "tax", "timeline", "vault", "work"] %}
 {% include "client360/_section_nav.html" %}
 
 {% set sec = ws.sections.get(active_tab) %}
@@ -91,7 +95,9 @@
             <span class="meta">{{ ph.sources|join(" · ") }}{% if ph.verified %} · verified{% endif %}</span></dd></div>
         {% endfor %}
       </dl>
-      {% else %}<p class="meta">No phone number recorded.</p>{% endif %}
+      {% else %}
+      <dl class="c360-facts"><div><dt>Phone</dt><dd><span class="meta">Not on file</span></dd></div></dl>
+      {% endif %}
 
       {% if prof.contact.emails %}
       <dl class="c360-facts">
@@ -102,7 +108,9 @@
             <span class="meta">{{ em.sources|join(" · ") }}{% if em.verified %} · verified{% endif %}</span></dd></div>
         {% endfor %}
       </dl>
-      {% else %}<p class="meta">No email address recorded.</p>{% endif %}
+      {% else %}
+      <dl class="c360-facts"><div><dt>Email</dt><dd><span class="meta">Not on file</span></dd></div></dl>
+      {% endif %}
 
       <dl class="c360-facts">
         <div><dt>Mailing address</dt><dd>
@@ -111,7 +119,21 @@
           {{ prof.contact.address.city }}{% if prof.contact.address.city and prof.contact.address.state %}, {% endif %}
           {{ prof.contact.address.state }} {{ prof.contact.address.postal_code or "" }}
           <span class="meta">{{ prof.contact.address.source }}</span>
-        {% else %}<span class="meta">No mailing address recorded.</span>{% endif %}
+        {% else %}<span class="meta">Not on file</span>{% endif %}
+        </dd></div>
+
+        {# Recorded on the portal account, never inferred from message traffic. #}
+        <div><dt>Preferred contact</dt><dd>
+        {% if prof.contact.preferred_contact_method %}{{ prof.contact.preferred_contact_method|capitalize }}
+        {% else %}<span class="meta">Not on file</span>{% endif %}
+        </dd></div>
+
+        {# Shown here rather than under Identity so the same fact is not stated twice on one screen. #}
+        <div><dt>Household</dt><dd>
+        {% if prof.contact.household %}
+          <a href="/client/household/{{ prof.contact.household.id }}">{{ prof.contact.household.name }}</a>
+          <span class="meta">{{ prof.contact.household.member_count }} member{{ "" if prof.contact.household.member_count == 1 else "s" }}</span>
+        {% else %}<span class="meta">Not on file</span>{% endif %}
         </dd></div>
       </dl>
     </article>
@@ -131,11 +153,9 @@
             <span class="c360-ssn">***-**-{{ prof.identity.ssn_last4 }}</span>
           {% elif prof.identity.ssn_on_file %}<span class="meta">SSN on file</span>
           {% else %}<span class="meta">Not available</span>{% endif %}</dd></div>
-        <div><dt>Household</dt><dd>
-          {% if prof.identity.household %}
-            <a href="/client/household/{{ prof.identity.household.id }}">{{ prof.identity.household.name }}</a>
-            <span class="meta">{{ prof.identity.household.member_count }} member{{ "" if prof.identity.household.member_count == 1 else "s" }}</span>
-          {% else %}<span class="meta">No household.</span>{% endif %}</dd></div>
+        {# Household moved to the Contact card — "who else is on this record" is a contact question,
+           and showing it in both cards stated the same fact twice on one screen. identity_block
+           still returns it for callers that read the service directly. #}
         <div><dt>Dependents</dt><dd>
           {# Deliberately not "0": nothing in the schema records dependents, and a confident zero
              on a client with three children is worse than an honest blank. #}
@@ -698,7 +718,10 @@
     <div class="detail-row"><span class="subtle">Plan detail (401k/HSA/FSA)</span><span class="subtle">Opens on the Benefits surface</span></div></article>
 
 {% else %}
-  {% call ui.empty("Section", "No renderer for this section.") %}{% endcall %}
+  {# Unreachable from the tab bar: a chip is only offered for a section this template draws
+     (see `rendered_sections` above). Kept as a guard for a hand-typed ?tab=, and worded as
+     something a reader can act on rather than "No renderer for this section." #}
+  {% call ui.empty("Section unavailable", "This section is not available on this record.") %}{% endcall %}
 {% endif %}
 </section>
 {% endblock %}

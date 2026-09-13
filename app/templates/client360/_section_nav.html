@@ -53,11 +53,25 @@
                     "Internal": " c360-tab--aud c360-tab--internal"} %}
 {% set gk = namespace(all=[]) %}
 {% for _l, keys in groups_def %}{% for k in keys %}{% set _ = gk.all.append(k) %}{% endfor %}{% endfor %}
+{# A chip is offered only for a section this workspace can actually DRAW.
+
+   The services compose more sections than either template renders. Every ungrouped key fell into
+   "More", so More advertised chips that opened onto "No renderer for this section." — a tab whose
+   only content is an apology that it has none. On an ordinary client record that was `knowledge`
+   and `recommendations`; on records carrying more composed sections it was worse.
+
+   The including template declares `rendered_sections`: the keys its own `{% raw %}{% elif active_tab == … %}{% endraw %}`
+   chain handles. The two workspaces render different sets, which is why this is passed in rather
+   than hard-coded here, and `tests/test_client_section_nav.py` derives each set from the template
+   itself so a new renderer cannot be added without the chip appearing, or removed without it going.
+
+   A template that declares nothing keeps the old behaviour rather than losing its whole nav. #}
+{% set drawable = rendered_sections if rendered_sections is defined else ws.section_keys %}
 {% set nav = namespace(groups=[], active_group="", active_subs=[]) %}
 {% for lbl, keys in groups_def %}
   {% set vg = namespace(items=[]) %}
-  {% for k in keys %}{% if k in ws.section_keys %}{% set _ = vg.items.append(k) %}{% endif %}{% endfor %}
-  {% if lbl == "More" %}{% for k in ws.section_keys %}{% if k not in gk.all %}{% set _ = vg.items.append(k) %}{% endif %}{% endfor %}{% endif %}
+  {% for k in keys %}{% if k in ws.section_keys and k in drawable %}{% set _ = vg.items.append(k) %}{% endif %}{% endfor %}
+  {% if lbl == "More" %}{% for k in ws.section_keys %}{% if k not in gk.all and k in drawable %}{% set _ = vg.items.append(k) %}{% endif %}{% endfor %}{% endif %}
   {% if vg.items %}{% set _ = nav.groups.append((lbl, vg.items)) %}{% endif %}
 {% endfor %}
 {% if nav.groups %}{% set nav.active_group = nav.groups[0][0] %}{% set nav.active_subs = nav.groups[0][1] %}{% endif %}
