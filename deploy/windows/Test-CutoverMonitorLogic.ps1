@@ -224,6 +224,74 @@ T "empty generation (nothing spawned yet) terminates nothing and does not throw"
     @($gen).Count -eq 0
 }
 
+Write-Host "`n=== deployment target: no hard-coded SHA, approval is the guard ===" -ForegroundColor Cyan
+
+$DeployScript = Join-Path $PSScriptRoot 'Deploy-OcrSupervisorCutover.ps1'
+
+T "the script contains NO hard-coded 40-character commit SHA" {
+    # The whole point: a baked-in release SHA goes stale at the next release and could silently
+    # target a superseded - or older - release.
+    -not (Select-String -Path $DeployScript -Pattern '[0-9a-f]{40}' -Quiet)
+}
+T "-TargetSha is MANDATORY with no default" {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($DeployScript, [ref]$null, [ref]$null)
+    $p = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'TargetSha' }
+    $mand = $p.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' } |
+            ForEach-Object { $_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' } }
+    ($null -ne $mand) -and ($null -eq $p.DefaultValue)
+}
+T "-ApprovedPullRequests is MANDATORY with no default" {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($DeployScript, [ref]$null, [ref]$null)
+    $p = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'ApprovedPullRequests' }
+    $mand = $p.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' } |
+            ForEach-Object { $_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' } }
+    ($null -ne $mand) -and ($null -eq $p.DefaultValue)
+}
+T "-TargetSha only accepts a full 40-hex SHA" {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($DeployScript, [ref]$null, [ref]$null)
+    $p = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'TargetSha' }
+    ($p.Attributes | Where-Object { $_.TypeName.Name -eq 'ValidatePattern' }).Count -eq 1
+}
+T "the stale pinned range constants are gone" {
+    -not (Select-String -Path $DeployScript -Pattern '\$EXPECTED_(PRS|COMMITS|FILES|INSERTIONS|DELETIONS|PATHS)' -Quiet)
+}
+T "target containment against the release ref is enforced" {
+    (Select-String -Path $DeployScript -Pattern 'is NOT contained in' -Quiet) -and
+    (Select-String -Path $DeployScript -Pattern 'merge-base --is-ancestor \$TargetSha \$ReleaseRef' -Quiet)
+}
+
+# The approval gate itself, as a pure function of the two sets.
+function Test-ApprovalGate([int[]]$InRange, [int[]]$Approved) {
+    $a = @($InRange  | Sort-Object -Unique)
+    $b = @($Approved | Sort-Object -Unique)
+    if (($a -join ',') -eq ($b -join ',')) { return 'ALLOWED' }
+    $extra  = @($a | Where-Object { $b -notcontains $_ })
+    if ($extra.Count) { return 'REFUSED_UNAPPROVED_PR' }
+    return 'REFUSED_APPROVED_PR_ABSENT'
+}
+T "exact match is allowed" { (Test-ApprovalGate @(309) @(309)) -eq 'ALLOWED' }
+T "an EXTRA pr landing after approval is refused (the unapproved-release case)" {
+    (Test-ApprovalGate @(309,310) @(309)) -eq 'REFUSED_UNAPPROVED_PR'
+}
+T "an approved pr absent from the range is refused" {
+    (Test-ApprovalGate @(309) @(309,310)) -eq 'REFUSED_APPROVED_PR_ABSENT'
+}
+T "ordering and duplicates do not affect the comparison" {
+    (Test-ApprovalGate @(310,309,309) @(309,310)) -eq 'ALLOWED'
+}
+T "an empty range with approvals outstanding is refused" {
+    (Test-ApprovalGate @() @(309)) -eq 'REFUSED_APPROVED_PR_ABSENT'
+}
+
+# Optional delta pins: zero means report-only, non-zero enforces.
+function Test-DeltaPin([int]$Actual, [int]$Pin) {
+    if ($Pin -gt 0 -and $Actual -ne $Pin) { return 'REFUSED' }
+    return 'ALLOWED'
+}
+T "delta pin of 0 is report-only" { (Test-DeltaPin 7 0) -eq 'ALLOWED' }
+T "delta pin enforces when supplied"  { (Test-DeltaPin 8 7) -eq 'REFUSED' }
+T "delta pin passes on an exact match" { (Test-DeltaPin 7 7) -eq 'ALLOWED' }
+
 Write-Host "`n=== rollback silence gate: reached-and-sustained, not never-seen ===" -ForegroundColor Cyan
 
 # Mirrors the loop in Restore-Legacy. $Samples are heartbeat counts per 30s window; $AliveAt is the
