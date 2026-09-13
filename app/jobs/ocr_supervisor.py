@@ -27,11 +27,48 @@ recovery, no duplicate processing), admission goes through ``ocr_throttle`` (fai
 memory floor, CPU ceiling), and the database remains the only checkpoint — every pass recomputes the
 outstanding set, so a kill at any instant resumes correctly.
 
-Single instance
----------------
-A session-level advisory lock held for the supervisor's whole life, on its own key. A second copy
-exits immediately rather than queueing, and the lock is released by PostgreSQL when the process
-dies, so a crash needs no cleanup.
+Single instance, and exclusion of the in-app sweep
+-------------------------------------------------
+The supervisor holds TWO session-level advisory locks for its whole life, on one session it owns:
+
+``SUPERVISOR_LOCK_KEY`` (511005888)
+    "A supervisor is running." A second copy exits immediately rather than queueing.
+
+``SWEEP_LOCK_KEY`` (511005002)
+    ``ocr_runner.run_sweep``'s per-batch lock, held here for the supervisor's LIFETIME.
+
+The second one is not decoration, and the reason is worth stating because the code used to argue the
+opposite. ``ocr_parallel`` deliberately does not take 511005002, on the grounds that "per-document
+claiming is a strictly stronger guarantee". That is true only among claim PARTICIPANTS. The
+application's own ``ocr-incremental-sweep`` job is not one: it runs ``ocr_runner.run_sweep`` ->
+``document_ocr.run_ocr`` and never reads, writes or consults ``ocr_document_claims`` at all. Its
+candidate predicate — ``document_ocr.document_id IS NULL OR status IN ('pending','processing')`` — is
+the same population this supervisor's initial lane sweeps.
+
+Against a non-participant, per-document claiming is strictly WEAKER than the coarse lock, because a
+claim only excludes someone who looks at claims. The legacy ``worker.py`` was accidentally safe: it
+performs its OCR THROUGH ``run_sweep``, so it took 511005002 per chunk and the two serialised. A
+parallel runner that calls ``run_ocr`` directly takes that lock never — so without this, every 30
+minutes the scheduled sweep would OCR documents the workers were mid-claim on, double-bumping
+``attempts`` and spawning extraction subprocesses outside ``ocr_throttle``'s admission control. No
+duplicate-claim check can see it, because the sweep takes no claim to duplicate.
+
+Holding 511005002 here restores the exclusion the legacy worker had, with no external process, no
+configuration change and no change to the scheduler.
+
+Lock order
+----------
+IDENTITY BEFORE RESOURCE: 511005888 first, then 511005002, and released in reverse.
+
+Deadlock is already impossible — both are ``pg_try_advisory_lock``, which never waits — but the order
+is fixed and documented so it STAYS impossible if either ever becomes a blocking acquisition. The
+order is also the one that keeps diagnostics honest: taking 511005002 first would make a second
+supervisor fail on the sweep lock and report a sweep conflict, when the truth is that a supervisor is
+already running. It additionally minimises the window in which a process that is not going to be the
+supervisor holds the lock the in-app sweep needs.
+
+Both locks live on the same NullPool session, so ``close()`` is a real disconnect and PostgreSQL frees
+both if the process dies. A crash still needs no cleanup.
 """
 from __future__ import annotations
 
@@ -53,6 +90,14 @@ log = logging.getLogger(__name__)
 #: Distinct from worker.py's 511005777 and from the per-batch 511005002: this one says "a supervisor
 #: is running", and is what a second supervisor collides with.
 SUPERVISOR_LOCK_KEY = 511_005_888
+
+#: ``ocr_runner._OCR_LOCK_KEY``. The application's ocr-incremental-sweep job takes this around every
+#: batch and does NOT participate in ocr_document_claims, so it is the only thing that excludes it.
+#: Held for the supervisor's lifetime rather than per batch — see the module docstring.
+SWEEP_LOCK_KEY = 511_005_002
+
+#: Acquisition order: identity before resource. Released in reverse. See the module docstring.
+LIFETIME_LOCK_ORDER = (SUPERVISOR_LOCK_KEY, SWEEP_LOCK_KEY)
 
 #: Classification batch size, identical to worker.py's CLASSIFY_BATCH. Not a new policy.
 CLASSIFY_BATCH = 200
@@ -126,6 +171,68 @@ def _lock_url(engine) -> str:
     return engine.url.render_as_string(hide_password=False)
 
 
+def try_lock(conn, key) -> bool:
+    """Take one session-level advisory lock on ``conn``. False when someone else holds it.
+
+    ``pg_try_advisory_lock`` never waits, which is what makes the two-lock acquisition deadlock-free
+    regardless of who else is contending.
+    """
+    return bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": key}).scalar())
+
+
+def unlock(conn, key) -> None:
+    """Release one advisory lock. Never raises: a failed release must not mask the real error, and
+    the session dying releases it anyway."""
+    try:
+        conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+    except Exception:  # noqa: BLE001
+        log.debug("advisory unlock %s failed; session teardown will release it", key, exc_info=True)
+
+
+def acquire_lifetime_locks(conn) -> tuple[bool, list, str | None]:
+    """Take every lifetime lock in :data:`LIFETIME_LOCK_ORDER`, all-or-nothing.
+
+    Returns ``(ok, held, failed_key_name)``. On failure the locks already taken are released in
+    reverse order before returning, so a refusal never leaves the sweep lock stranded on a supervisor
+    that is not going to run.
+    """
+    held = []
+    for key in LIFETIME_LOCK_ORDER:
+        if try_lock(conn, key):
+            held.append(key)
+            continue
+        for taken in reversed(held):                 # reverse of acquisition order
+            unlock(conn, taken)
+        return False, [], _LOCK_NAMES[key]
+    return True, held, None
+
+
+def release_lifetime_locks(conn, held) -> None:
+    """Release the lifetime locks in REVERSE acquisition order. Safe to call more than once."""
+    for key in reversed(list(held)):
+        unlock(conn, key)
+
+
+_LOCK_NAMES = {SUPERVISOR_LOCK_KEY: "supervisor", SWEEP_LOCK_KEY: "sweep"}
+
+
+def sweep_lock_held(engine) -> bool:
+    """True if something already owns the in-app sweep lock (511005002) right now.
+
+    Probes on its own NullPool session, for the same reason :func:`supervisor_running` does: a trial
+    acquisition left behind on a pooled connection would make the next real run refuse itself.
+    """
+    probe = create_engine(_lock_url(engine), poolclass=NullPool)
+    try:
+        with probe.connect() as conn:
+            if try_lock(conn, SWEEP_LOCK_KEY):
+                unlock(conn, SWEEP_LOCK_KEY)
+                return False
+            return True
+    finally:
+        probe.dispose()
+
+
 def supervisor_running(engine) -> bool:
     """True if another supervisor holds the lock right now.
 
@@ -135,10 +242,8 @@ def supervisor_running(engine) -> bool:
     probe = create_engine(_lock_url(engine), poolclass=NullPool)
     try:
         with probe.connect() as conn:
-            got = conn.execute(text("SELECT pg_try_advisory_lock(:k)"),
-                               {"k": SUPERVISOR_LOCK_KEY}).scalar()
-            if got:
-                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SUPERVISOR_LOCK_KEY})
+            if try_lock(conn, SUPERVISOR_LOCK_KEY):
+                unlock(conn, SUPERVISOR_LOCK_KEY)
                 return False
             return True
     finally:
@@ -231,13 +336,23 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
     # means close() really disconnects, and PostgreSQL then frees the lock even if the process dies.
     lock_engine = create_engine(_lock_url(engine), poolclass=NullPool)
     conn = lock_engine.connect()
-    got = conn.execute(text("SELECT pg_try_advisory_lock(:k)"),
-                       {"k": SUPERVISOR_LOCK_KEY}).scalar()
-    if not got:
+    # BOTH lifetime locks are taken here, before a single worker process is spawned. A supervisor that
+    # cannot hold them starts nothing at all rather than running degraded beside whoever does.
+    ok, held, blocked_by = acquire_lifetime_locks(conn)
+    if not ok:
         conn.close()
         lock_engine.dispose()
-        log.info("another supervisor already holds the lock; exiting without doing anything")
-        return {"status": "already_running", "workers": workers, "passes": 0}
+        if blocked_by == "supervisor":
+            log.info("another supervisor already holds lock %s; exiting without doing anything",
+                     SUPERVISOR_LOCK_KEY)
+            return {"status": "already_running", "workers": workers, "passes": 0}
+        # The sweep lock is held by the in-app ocr-incremental-sweep or the legacy worker's chunk.
+        # Starting anyway is exactly the concurrent-OCR defect this lock exists to prevent.
+        log.error("the in-app OCR sweep (or the legacy worker) holds lock %s; refusing to start "
+                  "workers beside it", SWEEP_LOCK_KEY)
+        return {"status": "sweep_lock_unavailable", "workers": workers, "passes": 0,
+                "error": (f"lock {SWEEP_LOCK_KEY} is held by another OCR run "
+                          f"(ocr-incremental-sweep or the legacy worker); refusing to start")}
 
     run = {"status": "completed", "workers": workers, "passes": 0, "initial_completed": 0,
            "retry_completed": 0, "classified": 0, "failed": 0, "timed_out": 0, "skipped": 0,
@@ -248,7 +363,13 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
         log.info("SUPERVISOR START pid=%s workers=%s | active=%s complete=%s backlog=%s classified=%s",
                  os.getpid(), workers, start["active"], start["ocr_complete"],
                  start["ocr_backlog"], start["classified"])
-        pub.beat("starting", {"workers": workers, "start_totals": start})
+        # Named explicitly so an operator reading the log can see the in-app ocr-incremental-sweep is
+        # excluded for as long as this process lives, rather than having to infer it.
+        log.info("holding lifetime locks %s (single supervisor) and %s (in-app OCR sweep excluded)",
+                 SUPERVISOR_LOCK_KEY, SWEEP_LOCK_KEY)
+        pub.beat("starting", {"workers": workers, "start_totals": start,
+                              "lifetime_locks": list(held),
+                              "sweep_lock_held": SWEEP_LOCK_KEY in held})
 
         while max_passes is None or run["passes"] < max_passes:
             # Admission is checked BEFORE any lane claims work. A hold never interrupts a document
@@ -337,13 +458,12 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
         pub.beat("crashed", {"error": run["error"]})
         return run
     finally:
-        try:
-            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SUPERVISOR_LOCK_KEY})
-        except Exception:  # noqa: BLE001
-            pass
+        # Every path — drained, blocked, refused, crashed — releases both, in reverse acquisition
+        # order. release_lifetime_locks never raises, so a failed unlock cannot mask the real error.
+        release_lifetime_locks(conn, held)
         try:
             conn.close()
-            lock_engine.dispose()        # a real disconnect: the lock cannot outlive this call
+            lock_engine.dispose()        # a real disconnect: neither lock can outlive this call
         except Exception:  # noqa: BLE001
             pass
 
