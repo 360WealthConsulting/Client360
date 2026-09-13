@@ -50,6 +50,72 @@ $python = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path $python)) { throw "Project venv not found: $python" }
 if (-not (Test-Path $ProjectRoot)) { throw "Project root not found: $ProjectRoot" }
 
+# --- 0. S4U viability preflight -------------------------------------------------------------------
+# An S4U task runs without the user's logon session. Two things can break that are fine under an
+# Interactive task: credentials for NETWORK resources, and per-session MAPPED DRIVES. Both are
+# checked here, and a failure STOPS rather than registering a task that silently cannot read.
+Write-Host "== S4U viability preflight =="
+
+# (a) PostgreSQL. Password auth over loopback does not depend on the Windows identity, so the check
+#     is simply: can this interpreter connect and read?
+$dbProbe = @'
+import os, sys
+from urllib.parse import urlsplit
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+load_dotenv("app/.env")
+url = os.getenv("DATABASE_URL")
+if not url:
+    print("FAIL no DATABASE_URL"); sys.exit(1)
+s = urlsplit(url)
+if not s.password:
+    print("WARN connection has no password: integrated auth may not survive S4U")
+try:
+    e = create_engine(url, connect_args={"options": "-c default_transaction_read_only=on"})
+    with e.connect() as c:
+        c.execute(text("SELECT 1"))
+    print(f"OK database reachable at {s.hostname}:{s.port or 5432} (password auth={bool(s.password)})")
+except Exception as exc:
+    print(f"FAIL database unreachable: {type(exc).__name__}: {exc}"); sys.exit(1)
+'@
+Push-Location $ProjectRoot
+$dbResult = $dbProbe | & $python -
+$dbExit = $LASTEXITCODE
+Pop-Location
+Write-Host "  $dbResult"
+if ($dbExit -ne 0) { throw "S4U preflight failed: PostgreSQL is not reachable from this context." }
+
+# (b) Storage. Every drive holding OCR sources must be a LOCAL disk (DriveType 3). A network drive
+#     (4) or a drive that is absent entirely is invisible to an S4U task.
+$required = @('C', 'D', 'T')
+$volumes = Get-CimInstance Win32_LogicalDisk | Group-Object -AsHashTable -Property DeviceID
+$storageProblems = @()
+foreach ($letter in $required) {
+    $vol = $volumes["${letter}:"]
+    if (-not $vol) { $storageProblems += "${letter}: is not present on this host"; continue }
+    $type = @($vol)[0].DriveType
+    if ($type -ne 3) {
+        $storageProblems += "${letter}: is DriveType $type (not a local disk); an S4U task cannot reach it"
+    } else {
+        Write-Host "  OK ${letter}: local disk"
+    }
+}
+if ($storageProblems.Count -gt 0) {
+    $storageProblems | ForEach-Object { Write-Warning "  $_" }
+    throw "S4U preflight failed: one or more OCR source drives are not local. Stopping."
+}
+
+# (c) Known exception: documents stored on a mapped Z: drive. They are already unreadable whenever
+#     that mapping is absent, under ANY task type, so they are reported rather than treated as a
+#     blocker. They remain recoverable failures; nothing here claims full source compatibility.
+if (-not $volumes['Z:']) {
+    Write-Host "  NOTE Z: is not mapped. Documents stored under Z: are unreadable today and will"
+    Write-Host "       remain recoverable OCR failures under S4U. This is not a regression: a"
+    Write-Host "       mapped drive belongs to an interactive logon session and never survives S4U."
+}
+Write-Host "== preflight passed =="
+Write-Host ""
+
 # --- 1. reversible backup of the CURRENT task definitions ---------------------------------------
 New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

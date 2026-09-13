@@ -78,8 +78,8 @@ never truncate OCR or leave a half-written result. Three independent gates:
 - **Client360 health — fail closed, on by default.** Both `http://127.0.0.1:8360/health` and
   `/readiness` must answer 200 with a healthy status; unreachable, non-200, or a body reporting
   anything else pauses claiming, and recovery resumes it with no operator action. This needs no
-  configuration to be correct. `CLIENT360_HEALTH_URLS` overrides the pair; an explicit empty value
-  opts out, and `OCR_HEALTH_GATE=0` disables the gate for tests only.
+  configuration to be correct. `CLIENT360_HEALTH_URLS` redirects the pair at another port or a test
+  double; it cannot switch the gate off, and an empty value falls back to the defaults,.
 - **Memory floor** — `OCR_MIN_FREE_MB`, default 2048, mirroring `worker.py`.
 - **CPU ceiling** — `OCR_MAX_CPU_PERCENT`, default 85.
 

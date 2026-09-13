@@ -13,16 +13,22 @@ from sqlalchemy import delete, select, text
 from app.db import document_ocr, documents, engine
 from app.jobs import ocr_claims, ocr_parallel, ocr_throttle
 from app.services import document_ocr as ocr_service
+from tests.health_double import HealthDouble
 
 _TAG = "OCRPAR"
 
 
 @pytest.fixture(autouse=True)
-def _health_gate_off(monkeypatch):
-    """No Client360 listens during the suite and the health gate fails closed by design, so opt out
-    the supported way. Spawned workers inherit os.environ, so this reaches them too. Tests that are
-    ABOUT the gate delete this variable themselves."""
-    monkeypatch.setenv("OCR_HEALTH_GATE", "0")
+def _healthy_endpoints(monkeypatch):
+    """Point the fail-closed admission gate at a real, healthy loopback double.
+
+    The gate has no off switch by design, so tests give it something healthy to talk to rather than
+    disabling it. Real HTTP, because the workers are spawned processes: they inherit the env var and
+    reach the port, which a monkeypatched function could never do.
+    """
+    with HealthDouble() as health:
+        monkeypatch.setenv("CLIENT360_HEALTH_URLS", health.urls_csv)
+        yield health
 
 
 @pytest.fixture(autouse=True)
@@ -348,41 +354,42 @@ def test_global_totals_reconcile():
 
 # --- admission control ---------------------------------------------------------------------------
 
-def test_health_gate_blocks_new_claims_when_configured_and_failing(monkeypatch):
-    monkeypatch.delenv("OCR_HEALTH_GATE", raising=False)      # this test is ABOUT the gate
-    bad = ocr_throttle.may_claim(health_url="http://127.0.0.1:9/health", min_free_mb=0,
+def test_health_gate_blocks_new_claims_when_an_endpoint_is_unreachable():
+    bad = ocr_throttle.may_claim(health_urls=["http://127.0.0.1:9/health"], min_free_mb=0,
                                  max_cpu_percent=100.0)
     assert not bad
     assert "health" in bad.reason.lower()
 
 
-def test_an_unconfigured_health_gate_now_FAILS_CLOSED(monkeypatch):
-    """Contract change: an unset variable used to mean "no opinion" and waved work through, so the
-    gate protected nothing on a box where nobody had wired a URL. It now defaults to the local
-    /health and /readiness pair and holds when it cannot confirm both."""
-    for var in ("OCR_HEALTH_GATE", "CLIENT360_HEALTH_URLS", "CLIENT360_HEALTH_URL"):
+def test_a_healthy_double_admits_claims(_healthy_endpoints):
+    ok = ocr_throttle.may_claim(health_urls=_healthy_endpoints.urls, min_free_mb=0,
+                                max_cpu_percent=100.0)
+    assert ok, ok.reason
+
+
+def test_an_unconfigured_health_gate_FAILS_CLOSED(monkeypatch):
+    """Contract: an unset variable used to mean "no opinion" and waved work through, so the gate
+    protected nothing on a box where nobody had wired a URL. It now defaults to the local /health
+    and /readiness pair and holds when it cannot confirm both, and there is no way to disable it."""
+    for var in ("CLIENT360_HEALTH_URLS", "CLIENT360_HEALTH_URL"):
         monkeypatch.delenv(var, raising=False)
     assert ocr_throttle.configured_health_urls() == ocr_throttle.DEFAULT_HEALTH_URLS
     monkeypatch.setattr(ocr_throttle, "_probe", lambda url, t: (False, f"{url} unreachable"))
-    ok, _ = ocr_throttle.health_ok()
-    assert not ok, "with nothing configured the gate must protect, not wave work through"
+    assert not ocr_throttle.health_ok()[0]
+    assert not ocr_throttle.health_ok("")[0], "an empty override must not disable the gate"
+    assert not ocr_throttle.health_ok([])[0]
 
 
-def test_an_explicit_empty_override_is_an_opt_out(monkeypatch):
-    monkeypatch.delenv("OCR_HEALTH_GATE", raising=False)
-    ok, detail = ocr_throttle.health_ok("")
-    assert ok and "disabled" in detail
-
-
-def test_memory_floor_blocks_new_claims():
-    blocked = ocr_throttle.may_claim(min_free_mb=1 << 30, max_cpu_percent=100.0, health_url="")
+def test_memory_floor_blocks_new_claims(_healthy_endpoints):
+    blocked = ocr_throttle.may_claim(min_free_mb=1 << 30, max_cpu_percent=100.0,
+                                     health_urls=_healthy_endpoints.urls)
     assert not blocked
     assert "memory" in blocked.reason.lower()
 
 
-def test_cpu_ceiling_blocks_new_claims():
-    blocked = ocr_throttle.may_claim(min_free_mb=0, max_cpu_percent=-1.0, health_url="",
-                                     sample_seconds=0.05)
+def test_cpu_ceiling_blocks_new_claims(_healthy_endpoints):
+    blocked = ocr_throttle.may_claim(min_free_mb=0, max_cpu_percent=-1.0,
+                                     health_urls=_healthy_endpoints.urls, sample_seconds=0.05)
     assert not blocked
     assert "cpu" in blocked.reason.lower()
 

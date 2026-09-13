@@ -122,30 +122,21 @@ def cpu_percent(sample_seconds: float = 0.25) -> float:
     return 0.0 if total <= 0 else max(0.0, min(100.0, 100.0 * busy / total))
 
 
-def health_gate_enabled() -> bool:
-    """The gate is ON unless deliberately switched off.
-
-    ``OCR_HEALTH_GATE=0`` exists for test environments and for a diagnostic run against a host with
-    no application listening. It is NOT a production setting: switching it off removes the only
-    thing that stops OCR claiming work while Client360 is unhealthy.
-    """
-    return os.getenv("OCR_HEALTH_GATE", "1").strip().lower() not in {"0", "false", "no", "off"}
-
-
 def configured_health_urls():
-    """The endpoints to probe. Defaults are production-correct with nothing set.
+    """The endpoints to probe. There is NO way to end up probing nothing.
 
-    ``CLIENT360_HEALTH_URLS`` (comma separated) overrides the pair for a deployment on another
-    port. An EXPLICIT empty value is an explicit opt-out and is honoured as such — unlike an unset
-    variable, which yields the protective defaults.
+    ``CLIENT360_HEALTH_URLS`` (comma separated) REDIRECTS the pair at a deployment on another port,
+    or at a test double. It cannot switch the gate off: an empty or whitespace value falls back to
+    the defaults rather than disabling the check, and there is deliberately no "disable" flag for
+    production to find. A caller that wants different endpoints must name endpoints.
     """
-    raw = os.getenv("CLIENT360_HEALTH_URLS")
-    if raw is None:
-        legacy = os.getenv("CLIENT360_HEALTH_URL")          # single-URL form, still honoured
-        if legacy is not None:
-            return tuple(u for u in [legacy.strip()] if u)
-        return DEFAULT_HEALTH_URLS
-    return tuple(u.strip() for u in raw.split(",") if u.strip())
+    for var in ("CLIENT360_HEALTH_URLS", "CLIENT360_HEALTH_URL"):
+        raw = os.getenv(var)
+        if raw and raw.strip():
+            urls = tuple(u.strip() for u in raw.split(",") if u.strip())
+            if urls:
+                return urls
+    return DEFAULT_HEALTH_URLS
 
 
 def _probe(url, timeout):
@@ -156,6 +147,9 @@ def _probe(url, timeout):
             if not 200 <= code < 300:
                 return False, f"{url} returned {code}"
             body = resp.read(8192).decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        # An HTTP error response IS an answer: report the code, which is what an operator needs.
+        return False, f"{url} returned {exc.code}"
     except urllib.error.URLError as exc:
         return False, f"{url} unreachable: {exc.reason}"
     except Exception as exc:  # noqa: BLE001 — any failure to CONFIRM health is a reason to hold
@@ -177,16 +171,14 @@ def _probe(url, timeout):
 def health_ok(urls=None, timeout=DEFAULT_HEALTH_TIMEOUT):
     """(ok, detail). FAIL CLOSED: every endpoint must answer 200 with a healthy status.
 
-    ``urls=None`` uses the configured/default pair. An explicit empty sequence disables the check.
+    ``urls=None`` uses the configured/default pair. Passing an empty sequence does NOT disable the
+    check — it falls back to the defaults — so no caller, test or otherwise, can accidentally ship a
+    configuration that claims work while Client360 is unhealthy. Tests point this at a local double
+    (see ``tests/health_double.py``) rather than switching it off.
     """
-    if not health_gate_enabled():
-        return True, "health gate disabled (OCR_HEALTH_GATE=0)"
-    if urls is None:
-        urls = configured_health_urls()
-    elif isinstance(urls, str):
-        urls = tuple(u for u in [urls.strip()] if u)
-    if not urls:
-        return True, "health check explicitly disabled (no URLs)"
+    if isinstance(urls, str):
+        urls = tuple(u.strip() for u in urls.split(",") if u.strip())
+    urls = tuple(urls) if urls else configured_health_urls()
 
     details = []
     for url in urls:

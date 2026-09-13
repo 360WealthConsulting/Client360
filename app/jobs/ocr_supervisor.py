@@ -43,7 +43,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 from app.jobs import ocr_parallel, ocr_throttle
 
@@ -115,15 +116,33 @@ def totals(engine) -> dict:
 
 # --- single instance ----------------------------------------------------------------------------
 
+def _lock_url(engine) -> str:
+    """The engine's URL WITH its password.
+
+    ``str(url)`` masks the password as ``***`` — safe for logs, useless for connecting. Anything
+    building a second engine from an existing one has to render it explicitly, or it fails
+    authentication at the worst possible moment.
+    """
+    return engine.url.render_as_string(hide_password=False)
+
+
 def supervisor_running(engine) -> bool:
-    """True if another supervisor holds the lock right now."""
-    with engine.connect() as conn:
-        got = conn.execute(text("SELECT pg_try_advisory_lock(:k)"),
-                           {"k": SUPERVISOR_LOCK_KEY}).scalar()
-        if got:
-            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SUPERVISOR_LOCK_KEY})
-            return False
-        return True
+    """True if another supervisor holds the lock right now.
+
+    Probes on its own NullPool session so the trial acquisition cannot be left behind on a pooled
+    connection and make the next real run believe a supervisor is already running.
+    """
+    probe = create_engine(_lock_url(engine), poolclass=NullPool)
+    try:
+        with probe.connect() as conn:
+            got = conn.execute(text("SELECT pg_try_advisory_lock(:k)"),
+                               {"k": SUPERVISOR_LOCK_KEY}).scalar()
+            if got:
+                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SUPERVISOR_LOCK_KEY})
+                return False
+            return True
+    finally:
+        probe.dispose()
 
 
 # --- observability ------------------------------------------------------------------------------
@@ -156,7 +175,8 @@ class _Publisher:
 
 # --- classification -------------------------------------------------------------------------------
 
-def classify(engine, *, limit_batches=None, batch_size=CLASSIFY_BATCH, pipeline=None) -> int:
+def classify(engine, *, limit_batches=None, batch_size=CLASSIFY_BATCH, pipeline=None,
+             document_ids=None) -> int:
     """Classification catch-up, with worker.py's exact semantics: sequential, one batch at a time.
 
     Deliberately NOT parallel — see the module docstring.
@@ -164,8 +184,12 @@ def classify(engine, *, limit_batches=None, batch_size=CLASSIFY_BATCH, pipeline=
     if pipeline is None:
         from app.services.knowledge_pipeline import run_knowledge_pipeline as pipeline
     done = batches = 0
+    scope = set(document_ids) if document_ids is not None else None
     while True:
-        ids = _read_ids(engine, SQL_UNCLASSIFIED)[:batch_size]
+        candidates = _read_ids(engine, SQL_UNCLASSIFIED)
+        if scope is not None:
+            candidates = [i for i in candidates if i in scope]
+        ids = candidates[:batch_size]
         if not ids:
             break
         summary = pipeline(document_ids=ids, mode="incremental", batch_size=len(ids))
@@ -184,10 +208,15 @@ def classify(engine, *, limit_batches=None, batch_size=CLASSIFY_BATCH, pipeline=
 def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DEFAULT_IDLE_SLEEP,
                    batch=DEFAULT_BATCH, max_attempts=3, stop_when_drained=True,
                    factory_ref=ocr_parallel._PRODUCTION_FACTORY, extractor=None,
-                   pipeline=None, allow_beside_legacy=False, health_urls=None) -> dict:
+                   pipeline=None, allow_beside_legacy=False, health_urls=None,
+                   document_ids=None, min_free_mb=None, max_cpu_percent=None) -> dict:
     """Run the initial -> retry -> classify cycle until every lane is empty.
 
     Returns accumulated counters. ``max_passes`` bounds the loop for tests.
+
+    ``document_ids`` confines every lane to an explicit set. Production leaves it None and sweeps
+    the whole corpus; tests pass their own documents so a corpus-wide sweep cannot reach into
+    another module's rows, which is otherwise a real source of cross-test interference.
     """
     from app.db import engine
 
@@ -195,11 +224,18 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
         1, min(ocr_throttle.DEFAULT_MAX_WORKERS, int(workers)))
     pub = _Publisher(ops_dir or os.getenv("OCR_SUPERVISOR_DIR") or DEFAULT_OPS_DIR)
 
-    conn = engine.connect()
+    # The lock is SESSION level, so it must live on a session this function actually owns. A pooled
+    # connection is the wrong home: close() returns it to the pool rather than disconnecting, so the
+    # lock's release depends entirely on the explicit unlock running — and a pooled connection handed
+    # back with the lock still held makes every later run report "already_running". A NullPool engine
+    # means close() really disconnects, and PostgreSQL then frees the lock even if the process dies.
+    lock_engine = create_engine(_lock_url(engine), poolclass=NullPool)
+    conn = lock_engine.connect()
     got = conn.execute(text("SELECT pg_try_advisory_lock(:k)"),
                        {"k": SUPERVISOR_LOCK_KEY}).scalar()
     if not got:
         conn.close()
+        lock_engine.dispose()
         log.info("another supervisor already holds the lock; exiting without doing anything")
         return {"status": "already_running", "workers": workers, "passes": 0}
 
@@ -217,7 +253,9 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
         while max_passes is None or run["passes"] < max_passes:
             # Admission is checked BEFORE any lane claims work. A hold never interrupts a document
             # already in flight; it only stops the next claim.
-            admission = ocr_throttle.may_claim(health_urls=health_urls)
+            admission = ocr_throttle.may_claim(health_urls=health_urls,
+                                               min_free_mb=min_free_mb,
+                                               max_cpu_percent=max_cpu_percent)
             if not admission:
                 run["throttled_waits"] += 1
                 log.info("holding: %s", admission.reason)
@@ -228,9 +266,14 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
                 time.sleep(DEFAULT_THROTTLE_SLEEP)
                 continue
 
+            scope = set(document_ids) if document_ids is not None else None
             never = _read_ids(engine, SQL_NEVER_ATTEMPTED)
             retry = _read_ids(engine, SQL_RETRYABLE, max_attempts=max_attempts)
             pending = _read_ids(engine, SQL_UNCLASSIFIED)
+            if scope is not None:
+                never = [i for i in never if i in scope]
+                retry = [i for i in retry if i in scope]
+                pending = [i for i in pending if i in scope]
             log.info("PASS %d: never_attempted=%d retryable=%d unclassified=%d",
                      run["passes"] + 1, len(never), len(retry), len(pending))
             pub.beat("pass_start", {"never_attempted": len(never), "retryable": len(retry),
@@ -253,7 +296,9 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
                 result = ocr_parallel.run_parallel(
                     workers=workers, mode=lane, batch=batch, document_ids=ids,
                     factory_ref=factory_ref, extractor=extractor,
-                    max_attempts=max_attempts, allow_beside_legacy=allow_beside_legacy)
+                    max_attempts=max_attempts, allow_beside_legacy=allow_beside_legacy,
+                    min_free_mb=min_free_mb, max_cpu_percent=max_cpu_percent,
+                    health_urls=health_urls)
                 if result.get("status") == "refused":
                     log.error("STOPPING: %s", result.get("error"))
                     run["status"] = "refused"
@@ -267,7 +312,7 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
                          result.get("failed"))
 
             pub.beat("classify")
-            run["classified"] += classify(engine, pipeline=pipeline)
+            run["classified"] += classify(engine, pipeline=pipeline, document_ids=document_ids)
 
             after = totals(engine)
             run["passes"] += 1
@@ -294,7 +339,11 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
     finally:
         try:
             conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SUPERVISOR_LOCK_KEY})
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             conn.close()
+            lock_engine.dispose()        # a real disconnect: the lock cannot outlive this call
         except Exception:  # noqa: BLE001
             pass
 

@@ -18,17 +18,23 @@ from sqlalchemy import delete, select, text
 
 from app.db import document_ocr, documents, engine
 from app.jobs import ocr_claims, ocr_parallel
+from tests.health_double import HealthDouble
 
 _TAG = "OCRPARINT"
 _DBL = "tests.ocr_doubles"
 
 
 @pytest.fixture(autouse=True)
-def _health_gate_off(monkeypatch):
-    """No Client360 listens during the suite and the health gate fails closed by design, so opt out
-    the supported way. Spawned workers inherit os.environ, so this reaches them too. Tests that are
-    ABOUT the gate delete this variable themselves."""
-    monkeypatch.setenv("OCR_HEALTH_GATE", "0")
+def _healthy_endpoints(monkeypatch):
+    """Point the fail-closed admission gate at a real, healthy loopback double.
+
+    The gate has no off switch by design, so tests give it something healthy to talk to rather than
+    disabling it. Real HTTP, because the workers are spawned processes: they inherit the env var and
+    reach the port, which a monkeypatched function could never do.
+    """
+    with HealthDouble() as health:
+        monkeypatch.setenv("CLIENT360_HEALTH_URLS", health.urls_csv)
+        yield health
 
 
 @pytest.fixture(autouse=True)
@@ -77,8 +83,26 @@ def _ocr_rows(ids):
 
 
 def _run(workers, ids, *, factory=f"{_DBL}.ok_factory", batch=3, mode="initial"):
-    return ocr_parallel.run_parallel(workers=workers, mode=mode, batch=batch,
-                                     factory_ref=factory, document_ids=list(ids))
+    """Run the real spawned-process path and REFUSE to let a failure look like an empty lane.
+
+    Every run is checked for child crashes, non-zero exits, workers that never exited, and
+    admission stalls, so a zero-work run reports its cause instead of surfacing later as a
+    confusing count mismatch.
+    """
+    result = ocr_parallel.run_parallel(workers=workers, mode=mode, batch=batch,
+                                       factory_ref=factory, document_ids=list(ids),
+                                       max_throttle_waits=2, throttle_sleep=0.5,
+                                       # Resource thresholds pinned so ambient load cannot decide
+                                       # the result; the health gate still probes the live double.
+                                       min_free_mb=0, max_cpu_percent=100.0)
+    assert not result.get("child_errors"), f"a child worker crashed: {result['child_errors']}"
+    assert not result.get("workers_still_running"), (
+        f"a worker never exited: {result['workers_still_running']}")
+    bad = {pid: code for pid, code in (result.get("child_exitcodes") or {}).items() if code != 0}
+    assert not bad, f"non-zero child exit codes: {bad}"
+    assert "throttled" not in (result.get("stop_reasons") or []), (
+        f"admission stalled, so no work was claimed: {result.get('admission_reasons')}")
+    return result
 
 
 # --- the main end-to-end, at 1, 2 and 4 workers ---------------------------------------------------
@@ -317,7 +341,7 @@ def test_one_slow_document_does_not_block_the_other_workers(monkeypatch):
 def test_ocr_writes_stay_idempotent_across_repeated_parallel_runs():
     pool = _docs(10)
     first = _run(2, pool)
-    assert first["completed"] == 10
+    assert first["completed"] == 10, first
 
     rows_before = {r["document_id"]: r["text"] for r in _ocr_rows(pool)}
 

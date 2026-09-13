@@ -107,7 +107,9 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
                 lease_seconds=ocr_claims.DEFAULT_LEASE_SECONDS,
                 heartbeat_seconds=ocr_claims.DEFAULT_HEARTBEAT_SECONDS,
                 max_attempts=3, max_batches=None, extractor=None, factory_ref=_PRODUCTION_FACTORY,
-                stop_when_empty=True, on_batch=None, document_ids=None) -> dict:
+                stop_when_empty=True, on_batch=None, document_ids=None,
+                max_throttle_waits=None, throttle_sleep=DEFAULT_THROTTLE_SLEEP,
+                min_free_mb=None, max_cpu_percent=None, health_urls=None) -> dict:
     """One worker: claim, OCR, complete, repeat until the lane is empty.
 
     Returns accumulated counts. Tests inject ``extractor`` with ``factory_ref=None`` to stay
@@ -115,6 +117,11 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
 
     ``document_ids`` confines the worker to an explicit set — a targeted run over a manifest rather
     than a corpus sweep. Omitted, the worker claims whatever is next across the whole lane.
+
+    ``min_free_mb`` / ``max_cpu_percent`` / ``health_urls`` override the admission thresholds for one
+    run. All default to None, meaning the environment's values and then the production defaults, so
+    omitting them changes nothing. They exist so a caller can be explicit about the resource bounds
+    instead of inheriting whatever the box happens to be doing.
     """
     from app.db import engine
     from app.services import document_ocr
@@ -123,15 +130,27 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
     worker_id = worker_id or ocr_claims.new_worker_id()
     totals = {"worker_id": worker_id, "batches": 0, "claimed": 0, "completed": 0, "failed": 0,
               "timed_out": 0, "skipped": 0, "unsupported": 0, "encrypted": 0, "lost_claims": 0,
-              "throttled_waits": 0, "chars_extracted": 0}
+              "throttled_waits": 0, "chars_extracted": 0,
+              # Why a worker stopped, always recorded. A worker that does nothing must say so:
+              # a silent zero is indistinguishable from "the lane was empty", and that ambiguity
+              # turned an admission stall into a confusing count mismatch instead of a clear stop.
+              "stopped_because": None, "last_admission_reason": None}
     keeper = _LeaseKeeper(engine, worker_id, lease_seconds, heartbeat_seconds)
 
     while max_batches is None or totals["batches"] < max_batches:
-        admission = ocr_throttle.may_claim()
+        admission = ocr_throttle.may_claim(min_free_mb=min_free_mb,
+                                           max_cpu_percent=max_cpu_percent,
+                                           health_urls=health_urls)
+        totals["last_admission_reason"] = admission.reason
         if not admission:
             totals["throttled_waits"] += 1
             log.info("worker %s holding: %s", worker_id, admission.reason)
-            time.sleep(DEFAULT_THROTTLE_SLEEP)
+            if max_throttle_waits is not None and totals["throttled_waits"] >= max_throttle_waits:
+                # Bounded rather than endless, so a stalled gate surfaces as a reported stop
+                # instead of a worker that appears to be running but never claims anything.
+                totals["stopped_because"] = "throttled"
+                break
+            time.sleep(throttle_sleep)
             continue
 
         with engine.begin() as conn:
@@ -141,6 +160,7 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
                                             document_ids=document_ids)
         if not claims:
             if stop_when_empty:
+                totals["stopped_because"] = "lane_empty"
                 break
             time.sleep(DEFAULT_IDLE_SLEEP)
             continue
@@ -182,20 +202,28 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
         if on_batch is not None:
             on_batch(dict(totals))
 
+    if totals["stopped_because"] is None:
+        totals["stopped_because"] = "max_batches"
     with engine.begin() as conn:
         ocr_claims.release(conn, worker_id=worker_id, document_ids=[])
     return totals
 
 
 def _worker_entry(kwargs, out_q):
+    """Always put exactly one result, even on a crash: a missing result would hang the parent."""
     try:
         out_q.put(worker_loop(**kwargs))
-    except Exception as exc:  # noqa: BLE001 — a dead worker must not hang the pool
-        out_q.put({"worker_id": kwargs.get("worker_id"), "error": f"{type(exc).__name__}: {exc}"})
+    except BaseException as exc:  # noqa: BLE001 — including KeyboardInterrupt/SystemExit
+        import traceback
+        out_q.put({"worker_id": kwargs.get("worker_id"),
+                   "error": f"{type(exc).__name__}: {exc}",
+                   "traceback": traceback.format_exc()[-3000:],
+                   "stopped_because": "crashed"})
 
 
 def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batches=None,
-                 allow_beside_legacy=False, **kw) -> dict:
+                 allow_beside_legacy=False, child_result_timeout=900,
+                 child_join_timeout=60, **kw) -> dict:
     """Start ``workers`` processes and wait for them. Refuses to run beside the legacy worker."""
     from app.db import engine
 
@@ -218,13 +246,32 @@ def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batch
         p.start()
         procs.append(p)
 
-    results = [out_q.get() for _ in procs]
+    # Drain BEFORE joining: a child blocked writing to a full pipe can never exit, so joining
+    # first would deadlock. Each child puts exactly one result, including on a crash.
+    results = []
+    for _ in procs:
+        results.append(out_q.get(timeout=child_result_timeout))
     for p in procs:
-        p.join()
+        p.join(timeout=child_join_timeout)
+
+    exitcodes = {p.pid: p.exitcode for p in procs}
+    stragglers = [pid for pid, code in exitcodes.items() if code is None]
+    errors = [r for r in results if isinstance(r, dict) and r.get("error")]
 
     elapsed = (datetime.now(UTC) - started).total_seconds()
     agg = {"status": "completed", "workers": workers, "mode": mode,
-           "elapsed_seconds": round(elapsed, 2), "per_worker": results}
+           "elapsed_seconds": round(elapsed, 2), "per_worker": results,
+           # Reported on EVERY run so a failure cannot vanish: non-zero or None exit codes, child
+           # exceptions, and why each worker stopped.
+           "child_exitcodes": exitcodes, "child_errors": errors,
+           "workers_still_running": stragglers,
+           "stop_reasons": [r.get("stopped_because") for r in results if isinstance(r, dict)],
+           "throttled": any((r.get("throttled_waits") or 0) for r in results
+                            if isinstance(r, dict)),
+           "admission_reasons": sorted({r.get("last_admission_reason") for r in results
+                                        if isinstance(r, dict) and r.get("last_admission_reason")})}
+    if errors or stragglers:
+        agg["status"] = "completed_with_errors"
     for key in ("claimed", "completed", "failed", "timed_out", "skipped", "unsupported",
                 "encrypted", "lost_claims", "chars_extracted", "batches"):
         agg[key] = sum(r.get(key, 0) for r in results if isinstance(r, dict))
