@@ -53,6 +53,10 @@
   {{ ui.signal("Compliance items", s.compliance_items, "warn") }}
 </section>
 
+{# The sections this template actually draws. Kept next to the include so the chip list and
+   the renderer chain are read together; tests/test_client_section_nav.py derives this same
+   set from the `elif active_tab ==` chain below and fails if the two drift apart. #}
+{% set rendered_sections = ["audit", "benefits", "communications", "compliance", "documents", "financial", "insurance", "meetings", "members", "notes", "opportunities", "relationships", "summary", "tasks", "tax", "timeline", "work"] %}
 {% include "client360/_section_nav.html" %}
 
 {% set sec = ws.sections.get(active_tab) %}
@@ -262,7 +266,10 @@
   {% include "client360/_communications_feed.html" %}
 
 {% else %}
-  {% call ui.empty("Section", "No renderer for this section.") %}{% endcall %}
+  {# Unreachable from the tab bar: a chip is only offered for a section this template draws
+     (see `rendered_sections` above). Kept as a guard for a hand-typed ?tab=, and worded as
+     something a reader can act on rather than "No renderer for this section." #}
+  {% call ui.empty("Section unavailable", "This section is not available on this record.") %}{% endcall %}
 {% endif %}
 </section>
 {% endblock %}

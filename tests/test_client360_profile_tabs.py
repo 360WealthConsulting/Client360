@@ -231,7 +231,14 @@ def test_unknown_entity_type_falls_back_to_the_narrow_single_entity_read():
 
 def test_sections_are_gated_and_an_ungranted_section_is_absent_not_403():
     # The nav renders only keys present in ws.section_keys, which the service gates by capability.
-    assert "{% if k in ws.section_keys %}" in SECTION_NAV
+    #
+    # The condition now also requires the section to be one this template can DRAW, so the literal
+    # it used to match is no longer present verbatim. The gate itself is unchanged and is what this
+    # asserts: membership of ws.section_keys is still required in both the grouped branch and the
+    # "More" catch-all. A narrower condition cannot show a section capability would have hidden —
+    # only the reverse would be a regression, which is why both branches are checked.
+    assert "k in ws.section_keys and k in drawable" in SECTION_NAV
+    assert "k not in gk.all and k in drawable" in SECTION_NAV
     assert "You do not have access to this section." in WORKSPACE
 
 
