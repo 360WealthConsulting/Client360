@@ -38,6 +38,15 @@ def _clean():
 
 
 @pytest.fixture(autouse=True)
+def _ops_dir_is_temporary(tmp_path, monkeypatch):
+    """Keep every heartbeat/state write inside the test's own directory.
+
+    The supervisor's default ops dir is a real production path. A test that passed ops_dir=None
+    would create and write it, which is not the suite's to touch."""
+    monkeypatch.setenv("OCR_SUPERVISOR_DIR", str(tmp_path / "ops"))
+
+
+@pytest.fixture(autouse=True)
 def _no_health_server(monkeypatch):
     """No Client360 is listening in the suite, and the gate fails closed by design. Tests that care
     about the gate assert on it explicitly; everything else opts out the supported way."""
@@ -96,6 +105,12 @@ class _RecordingPipeline:
                 "status": "completed"}
 
 
+def _completed(ids):
+    """How many of OUR documents are OCR-completed. The supervisor is corpus-wide by design, so its
+    global counters also include documents other test modules left behind; assert on ours."""
+    return sum(1 for r in _ocr_rows(ids) if r["status"] == "completed")
+
+
 def _run(**kw):
     kw.setdefault("factory_ref", f"{_DBL}.ok_factory")
     kw.setdefault("workers", 2)
@@ -112,11 +127,12 @@ def test_a_pass_runs_initial_then_retry_then_classification():
     _fail_all(stale)
     pipeline = _RecordingPipeline()
 
-    run = _run(pipeline=pipeline, ops_dir=None, max_passes=2)
+    run = _run(pipeline=pipeline, max_passes=2)
 
     assert run["status"] in ("drained", "completed", "blocked"), run
-    assert run["initial_completed"] == 6, "the initial lane must drain"
-    assert run["retry_completed"] == 4, "the retry lane must drain in the SAME pass"
+    assert _completed(fresh) == 6, "the initial lane must drain"
+    assert _completed(stale) == 4, "the retry lane must drain in the SAME pass"
+    assert run["initial_completed"] >= 6 and run["retry_completed"] >= 4
     assert run["classified"] >= 10, "classification must run after OCR, not be skipped"
 
     rows = _ocr_rows(fresh + stale)
@@ -157,20 +173,21 @@ def test_the_retry_lane_drains_on_its_own():
     stale = _docs(5, marker="retry ")
     _fail_all(stale)
     run = _run(pipeline=_RecordingPipeline(), max_passes=2)
-    assert run["retry_completed"] == 5
+    assert _completed(stale) == 5
+    assert run["retry_completed"] >= 5
     assert {r["status"] for r in _ocr_rows(stale)} == {"completed"}
 
 
 def test_repeat_does_not_reprocess_completed_documents():
     fresh = _docs(6)
     pipeline = _RecordingPipeline()
-    first = _run(pipeline=pipeline, max_passes=2)
-    assert first["initial_completed"] == 6
+    _run(pipeline=pipeline, max_passes=2)
+    assert _completed(fresh) == 6
 
     before = {r["document_id"]: (r["text"], r["attempts"]) for r in _ocr_rows(fresh)}
-    second = _run(pipeline=_RecordingPipeline(), max_passes=2)
+    _run(pipeline=_RecordingPipeline(), max_passes=2)
 
-    assert second["initial_completed"] == 0, "a second pass must not redo completed documents"
+    assert _completed(fresh) == 6, "the documents stay completed"
     after = {r["document_id"]: (r["text"], r["attempts"]) for r in _ocr_rows(fresh)}
     assert after == before, "completed rows must be untouched by a later pass"
 
@@ -233,8 +250,8 @@ def test_recovery_resumes_automatically_once_both_endpoints_are_healthy(monkeypa
     assert ocr_throttle.health_ok()[0], "recovery must need no operator action"
 
     docs = _docs(4)
-    run = _run(pipeline=_RecordingPipeline(), max_passes=2)
-    assert run["initial_completed"] == 4
+    _run(pipeline=_RecordingPipeline(), max_passes=2)
+    assert _completed(docs) == 4, "work resumes automatically once both endpoints recover"
     assert {r["status"] for r in _ocr_rows(docs)} == {"completed"}
 
 
@@ -299,8 +316,8 @@ def test_a_second_supervisor_refuses_to_run():
 
 def test_a_restart_loses_no_completed_work():
     docs = _docs(10)
-    first = _run(pipeline=_RecordingPipeline(), max_passes=1, batch=3)
-    completed_first = first["initial_completed"]
+    _run(pipeline=_RecordingPipeline(), max_passes=1, batch=3)
+    completed_first = _completed(docs)
     assert completed_first > 0
 
     done_before = {r["document_id"] for r in _ocr_rows(docs) if r["status"] == "completed"}
@@ -310,7 +327,10 @@ def test_a_restart_loses_no_completed_work():
 
     assert done_before <= done_after, "a restart must never un-complete work"
     assert done_after == set(docs), "the restart must finish the remainder"
-    assert second["initial_completed"] == len(docs) - completed_first
+    assert second["status"] in ("drained", "completed", "blocked"), second
+    # A third invocation has nothing left and must exit immediately rather than redo anything.
+    third = _run(pipeline=_RecordingPipeline(), max_passes=2)
+    assert third["initial_completed"] == 0 and third["retry_completed"] == 0
 
 
 def test_heartbeat_and_state_are_published(tmp_path):
@@ -325,7 +345,7 @@ def test_heartbeat_and_state_are_published(tmp_path):
     assert st.exists(), "no state/counters file was published"
     state = json.loads(st.read_text(encoding="utf-8"))
     assert "db_totals" in state and "run_totals" in state
-    assert state["run_totals"]["initial_completed"] == 3
+    assert state["run_totals"]["initial_completed"] >= 3
 
 
 # --- the scheduled-task installer ----------------------------------------------------------------------
