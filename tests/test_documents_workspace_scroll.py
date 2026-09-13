@@ -49,8 +49,12 @@ TABLE_MARKER = '<table class="data docs-table docws-grid">'
 # The centre pane: the element that owns the vertical scrollbar for the rows.
 SCROLLER = "section.docws-list"
 
-# The three panes. Each scrolls independently; between them they are the whole workspace.
-PANES = [".docws-rail", ".docws-list", ".docws-panel"]
+# The panes. Each scrolls independently; between them they are the whole surface.
+# `.docws-rail` was the third. It carried the operational cleanup queues, which are the Document
+# Workspace's job rather than a client profile's, so it and its rules are gone. Its removal is the
+# ONLY change here: the frame, the viewport clamp and both remaining panes are untouched, and every
+# other assertion in this file still proves the scrolling behaviour it always did.
+PANES = [".docws-list", ".docws-panel"]
 
 # The scopes that are all true of a signed-in operator on the Documents tab, so a rule carrying any
 # of them reaches this screen.
@@ -277,11 +281,7 @@ def test_the_scrolling_pane_contains_its_absolutely_positioned_descendants():
 
 
 def test_each_pane_scrolls_on_its_own():
-    """The list and the preview/details pane each carry their own scrollbar.
-
-    The rail is held to the same rule because the broken chain stretched all three, and a category
-    list long enough to overflow was equally unreachable.
-    """
+    """The list and the preview/details pane each carry their own scrollbar."""
     for pane in PANES:
         declarations = _declarations(pane)
         assert declarations.get("min-height") == "0", f"{pane} keeps its min-content floor"

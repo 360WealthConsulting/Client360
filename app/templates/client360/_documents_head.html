@@ -35,6 +35,13 @@
     {# The Documents workspace hides the client section strip, so this is the way back to the
        rest of the client record. It is the workspace URL the tabs already pointed at. #}
     <a class="dw-btn" href="{{ base }}">Client Profile <span aria-hidden="true">↗</span></a>
+    {# Detailed metadata cleanup — incomplete fields, proposal counts, source and OCR failures —
+       lives in the Document Workspace. That surface is firm-wide and built for the work; a client's
+       own profile shows their file, not the queue of what is wrong with it. Gated on the capability
+       /document-library itself enforces, so nobody is shown a link that answers 403. #}
+    {% if principal and principal.can("documents.view") %}
+      <a class="dw-btn" href="/document-library">Open in Document Workspace <span aria-hidden="true">↗</span></a>
+    {% endif %}
     {% if principal and principal.can("documents.edit") %}
       {# The ONE upload affordance on this workspace. It targets the #doc-upload form the enclosing
          template renders; that form stays hidden until this button reveals it. #}
