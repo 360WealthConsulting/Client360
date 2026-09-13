@@ -278,6 +278,48 @@ class _Publisher:
                       "heartbeat_utc": datetime.now(UTC).isoformat(), **(extra or {})})
 
 
+# --- lane diagnostics -------------------------------------------------------------------------------
+
+def _publish_lane_diagnostics(pub, lane, workers, result) -> None:
+    """Record WHY each worker of a lane stopped, and its child exit code.
+
+    ``run_parallel`` already returns ``per_worker`` (each worker's ``stopped_because`` and counters)
+    and ``child_exitcodes``; until now the supervisor discarded both. When lane ocr1 retired early on
+    2026-09-13 the string ``"lane_empty"`` existed in memory and was thrown away, so the cause had to
+    be reconstructed from the claims table and the process tree hours later.
+
+    The scheduled task does not redirect stdout, so logging alone is not durable. This also writes
+    ``supervisor_lanes.json`` into the ops directory through the existing atomic publisher. Never
+    raises: losing observability must not stop OCR.
+    """
+    try:
+        per_worker = list(result.get("per_worker") or [])
+        exitcodes = dict(result.get("child_exitcodes") or {})
+        for w in per_worker:
+            log.info("lane %s worker %s stopped_because=%s claimed=%s completed=%s failed=%s "
+                     "empty_retries=%s throttled_waits=%s",
+                     lane, w.get("worker_id"), w.get("stopped_because"), w.get("claimed"),
+                     w.get("completed"), w.get("failed"), w.get("empty_retries"),
+                     w.get("throttled_waits"))
+        log.info("lane %s child exit codes: %s", lane, exitcodes)
+        early = [w for w in per_worker if w.get("stopped_because") not in (None, "lane_empty")]
+        if early:
+            log.warning("lane %s: %d worker(s) stopped for a reason other than an empty lane: %s",
+                        lane, len(early),
+                        [(w.get("worker_id"), w.get("stopped_because")) for w in early])
+        pub.publish("supervisor_lanes.json",
+                    {"lane": lane, "workers_requested": workers,
+                     "workers_reported": len(per_worker),
+                     "status": result.get("status"),
+                     "elapsed_seconds": result.get("elapsed_seconds"),
+                     "child_exitcodes": exitcodes,
+                     "child_errors": result.get("child_errors"),
+                     "per_worker": per_worker,
+                     "published_utc": datetime.now(UTC).isoformat()})
+    except Exception:  # noqa: BLE001 — diagnostics must never break a sweep
+        log.debug("could not publish lane diagnostics", exc_info=True)
+
+
 # --- classification -------------------------------------------------------------------------------
 
 def classify(engine, *, limit_batches=None, batch_size=CLASSIFY_BATCH, pipeline=None,
@@ -419,7 +461,12 @@ def run_supervisor(*, workers=None, ops_dir=None, max_passes=None, idle_sleep=DE
                     factory_ref=factory_ref, extractor=extractor,
                     max_attempts=max_attempts, allow_beside_legacy=allow_beside_legacy,
                     min_free_mb=min_free_mb, max_cpu_percent=max_cpu_percent,
-                    health_urls=health_urls)
+                    health_urls=health_urls,
+                    # A corpus lane is swept by several workers at once, so an empty claim batch is
+                    # far more often lost contention than a drained lane. Without this the first
+                    # zero-win batch retires a worker permanently and the lane finishes short-handed.
+                    empty_batch_retries=ocr_parallel.LANE_EMPTY_RETRIES)
+                _publish_lane_diagnostics(pub, lane, workers, result)
                 if result.get("status") == "refused":
                     log.error("STOPPING: %s", result.get("error"))
                     run["status"] = "refused"
