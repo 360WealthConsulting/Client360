@@ -75,8 +75,11 @@ strictly stronger guarantee, and keeping the coarse lock would serialise the wor
 `ocr_throttle.may_claim()` is consulted before each claim and never mid-document, so throttling can
 never truncate OCR or leave a half-written result. Three independent gates:
 
-- **Client360 health** — `CLIENT360_HEALTH_URL`. Configured but failing pauses claiming (fail
-  closed). Not configured means no opinion (fail open).
+- **Client360 health — fail closed, on by default.** Both `http://127.0.0.1:8360/health` and
+  `/readiness` must answer 200 with a healthy status; unreachable, non-200, or a body reporting
+  anything else pauses claiming, and recovery resumes it with no operator action. This needs no
+  configuration to be correct. `CLIENT360_HEALTH_URLS` redirects the pair at another port or a test
+  double; it cannot switch the gate off, and an empty value falls back to the defaults,.
 - **Memory floor** — `OCR_MIN_FREE_MB`, default 2048, mirroring `worker.py`.
 - **CPU ceiling** — `OCR_MAX_CPU_PERCENT`, default 85.
 
@@ -86,11 +89,30 @@ never truncate OCR or leave a half-written result. Three independent gates:
 race the old one by accident. `--allow-beside-legacy` exists for controlled testing and is marked
 dangerous.
 
-## Operating it
+## The supervisor is the service; the runner is one lane
+
+`ocr_parallel` drains a single lane and exits. It is not a replacement for `worker.py`, which loops
+over initial OCR, then retry OCR, then classification catch-up, forever. Swapping one for the other
+would silently stop classification and never touch the retry lane.
+
+`app.jobs.ocr_supervisor` is that service. Per pass it drains initial OCR with N workers, drains
+retry OCR with the same claim system, runs classification catch-up **sequentially at the existing
+batch size of 200**, publishes heartbeat and counters, then repeats. Classification is deliberately
+not parallelised: `run_knowledge_pipeline` has no claim system and nothing establishes that
+concurrent invocations are safe, so it keeps exactly the behaviour it had.
+
+A second supervisor exits immediately on its own advisory lock (`511005888`), which PostgreSQL
+releases when the process dies, so a crash needs no cleanup.
 
 ```bash
-python -m app.jobs.ocr_parallel --workers 3 --mode initial
-python -m app.jobs.ocr_parallel --workers 3 --mode retry
+python -m app.jobs.ocr_supervisor --workers 4 --keep-running
+python -m app.jobs.ocr_parallel   --workers 4 --mode initial   # one lane, for diagnostics
+```
+
+Install the production task (exports a restorable backup first, and changes no existing task):
+
+```powershell
+deploy\windows\install_ocr_supervisor_task.ps1 -Workers 4 -WhatIf
 ```
 
 Claim-table health:
