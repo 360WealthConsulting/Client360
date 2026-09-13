@@ -150,10 +150,16 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
         try:
             # The one call that does the actual work. Same entry point, same semantics, same audit
             # granularity as the single-worker chunk.
+            #
+            # `isolate` is OMITTED when there is a factory_ref, never passed as None. run_ocr's
+            # isolation decision is fail-closed on a sentinel: omitted + factory_ref means isolated,
+            # while an explicit None is falsy and resolves to the IN-PROCESS path, which then falls
+            # back to default_extractor and fails every document with "No OCR engine configured".
+            isolation = {} if factory_ref else {"isolate": False}
             summary = document_ocr.run_ocr(document_ids=ids, mode=mode, extractor=extractor,
                                            factory_ref=factory_ref,
-                                           isolate=None if factory_ref else False,
-                                           batch_size=len(ids), max_attempts=max_attempts)
+                                           batch_size=len(ids), max_attempts=max_attempts,
+                                           **isolation)
         finally:
             keeper.stop()
 

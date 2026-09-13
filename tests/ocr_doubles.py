@@ -84,6 +84,21 @@ def encrypted_pdf_factory():
     return extractor
 
 
+def slow_marked_factory():
+    """Slow ONLY for documents whose name contains 'SLOW'; every other document returns immediately.
+
+    Drives the parallel-runner property that one slow document occupies exactly one worker: with a
+    batch size of 1, the worker holding the slow document completes far fewer documents than its
+    peers, which keep claiming and finishing throughout.
+    """
+    def extractor(row, path):
+        name = row.get("original_name") or ""
+        if "SLOW" in name.upper():
+            time.sleep(float(os.environ.get("OCR_TEST_SLOW_SECONDS", "3")))
+        return {"text": f"ok:{name}", "engine": "fake", "page_count": 1}
+    return extractor
+
+
 def selective_factory():
     """Hangs on documents whose name contains 'HANG' (hard-cap killed), succeeds otherwise — drives the
     full run_ocr loop: one document times out, the next completes."""
