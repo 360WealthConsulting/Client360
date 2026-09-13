@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 # Session-level advisory lock key (arbitrary, namespaced to OCR). Guards against concurrent sweeps.
 _OCR_LOCK_KEY = 511_005_002
 _ACCUM = ("candidates", "completed", "failed", "timed_out", "skipped", "unsupported", "encrypted",
-          "chars_extracted")
+          "chars_extracted", "failed_unrecorded")
 
 # The production extraction backend as a picklable dotted reference, so the per-document child process
 # builds it itself (spawn-safe; the child never imports app.db).
@@ -165,7 +165,9 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
                                          observer=tracker)
                 totals["batches"] += 1
                 for k in _ACCUM:
-                    totals[k] += s[k]
+                    # .get: a caller-supplied summary (an injected fake, an older caller) need not
+                    # carry every counter, and a missing one must not abort a live sweep.
+                    totals[k] += s.get(k, 0)
                 totals["errors"] += len(s["errors"])
                 log.info("OCR %s batch %d: candidates=%d completed=%d failed=%d timed_out=%d "
                          "encrypted=%d skipped=%d", mode, totals["batches"], s["candidates"],
@@ -177,6 +179,17 @@ def run_sweep(mode="incremental", *, document_ids=None, extractor=None, batch_si
                 # timed documents out IS progress (each gets a timed_out row, excluded next pass) — it
                 # must NOT halt the sweep, or pathological documents would strand every document after them.
                 if not loop or s["candidates"] == 0:
+                    break
+                # A batch whose ONLY failures were unrecorded wrote nothing at all, so the next
+                # batch would re-select the very same documents and fail them again at the same
+                # rate — a hot loop that burns the OCR engine and never advances. Stop, loudly.
+                unrecorded = s.get("failed_unrecorded", 0)
+                if (s["completed"] == 0 and s["unsupported"] == 0 and s["timed_out"] == 0
+                        and s["failed"] == unrecorded and unrecorded > 0):
+                    log.error("OCR %s: %d document(s) failed without writing any state; the batch "
+                              "made no progress and would repeat unchanged. Stopping this sweep. "
+                              "First error: %s", mode, unrecorded,
+                              (s["errors"] or ["<none>"])[0])
                     break
                 if (s["completed"] == 0 and s["failed"] == 0 and s["unsupported"] == 0
                         and s["timed_out"] == 0):

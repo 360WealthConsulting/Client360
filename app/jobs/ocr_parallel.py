@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import logging
 import multiprocessing as mp
+import queue as _queue
 import threading
 import time
 from datetime import UTC, datetime
@@ -130,7 +131,8 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
     worker_id = worker_id or ocr_claims.new_worker_id()
     totals = {"worker_id": worker_id, "batches": 0, "claimed": 0, "completed": 0, "failed": 0,
               "timed_out": 0, "skipped": 0, "unsupported": 0, "encrypted": 0, "lost_claims": 0,
-              "throttled_waits": 0, "chars_extracted": 0,
+              "throttled_waits": 0, "chars_extracted": 0, "failed_unrecorded": 0,
+              "startup_failures": 0,
               # Why a worker stopped, always recorded. A worker that does nothing must say so:
               # a silent zero is indistinguishable from "the lane was empty", and that ambiguity
               # turned an admission stall into a confusing count mismatch instead of a clear stop.
@@ -185,7 +187,7 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
             keeper.stop()
 
         for key in ("completed", "failed", "timed_out", "skipped", "unsupported", "encrypted",
-                    "chars_extracted"):
+                    "chars_extracted", "failed_unrecorded"):
             totals[key] += summary.get(key, 0)
 
         with engine.begin() as conn:
@@ -247,12 +249,44 @@ def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batch
         procs.append(p)
 
     # Drain BEFORE joining: a child blocked writing to a full pipe can never exit, so joining
-    # first would deadlock. Each child puts exactly one result, including on a crash.
+    # first would deadlock. _worker_entry puts exactly one result, including on a crash — but it
+    # only runs once the child has imported this module. A child that dies BEFORE that (a bad
+    # interpreter, a broken import, an OOM kill at startup) puts nothing, and waiting the full
+    # child_result_timeout for a message that can never arrive would stall the supervisor for
+    # fifteen minutes per pass. So poll, and once every child is dead and the queue is drained,
+    # synthesise the missing results instead of waiting them out.
     results = []
-    for _ in procs:
-        results.append(out_q.get(timeout=child_result_timeout))
+    deadline = time.monotonic() + child_result_timeout
+    while len(results) < len(procs):
+        try:
+            results.append(out_q.get(timeout=1.0))
+            continue
+        except _queue.Empty:
+            pass
+        if time.monotonic() > deadline:
+            break
+        if not any(p.is_alive() for p in procs):
+            try:                       # one last look: a result may have landed as the child exited
+                results.append(out_q.get(timeout=1.0))
+                continue
+            except _queue.Empty:
+                break
     for p in procs:
         p.join(timeout=child_join_timeout)
+
+    missing = len(procs) - len(results)
+    if missing > 0:
+        dead = [p for p in procs if p.exitcode not in (0, None)]
+        log.error("%d OCR worker process(es) produced no result; exit codes %s. A child that dies "
+                  "before reporting has failed to start (interpreter, import or startup fault) — "
+                  "counting it as a failed worker rather than reporting an empty success.",
+                  missing, [p.exitcode for p in procs])
+        for i in range(missing):
+            code = dead[i].exitcode if i < len(dead) else None
+            results.append({"worker_id": None, "stopped_because": "startup_failed",
+                            "error": f"worker process exited with code {code} before reporting; "
+                                     f"no OCR work was performed",
+                            "startup_failures": 1})
 
     exitcodes = {p.pid: p.exitcode for p in procs}
     stragglers = [pid for pid, code in exitcodes.items() if code is None]
@@ -273,7 +307,8 @@ def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batch
     if errors or stragglers:
         agg["status"] = "completed_with_errors"
     for key in ("claimed", "completed", "failed", "timed_out", "skipped", "unsupported",
-                "encrypted", "lost_claims", "chars_extracted", "batches"):
+                "encrypted", "lost_claims", "chars_extracted", "batches",
+                "failed_unrecorded", "startup_failures"):
         agg[key] = sum(r.get(key, 0) for r in results if isinstance(r, dict))
     agg["documents_per_minute"] = (round(agg["completed"] / (elapsed / 60.0), 2)
                                    if elapsed > 0 else 0.0)

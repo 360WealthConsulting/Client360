@@ -255,9 +255,13 @@ def count_candidates(*, mode="incremental", document_ids=None, max_attempts=3) -
 
 
 def _new_summary(mode, dry_run):
+    # ``failed_unrecorded`` counts documents whose exception escaped _ocr_one, so NO document_ocr row
+    # was written for them. They are failures like any other, but they are also the only kind that
+    # leaves the document exactly as the batch found it — which is what lets a sweep re-select them
+    # forever. run_sweep reads this to stop instead of looping on a batch that cannot make progress.
     return {"mode": mode, "candidates": 0, "completed": 0, "failed": 0, "timed_out": 0, "skipped": 0,
-            "unsupported": 0, "encrypted": 0, "chars_extracted": 0, "errors": [], "dry_run": dry_run,
-            "status": "started"}
+            "unsupported": 0, "encrypted": 0, "chars_extracted": 0, "failed_unrecorded": 0,
+            "errors": [], "dry_run": dry_run, "status": "started"}
 
 
 # OCR summary counter -> ProgressReporter outcome bucket (skipped == already-completed == reused).
@@ -326,7 +330,16 @@ def run_ocr(*, document_ids=None, extractor=None, mode="incremental", actor_user
             outcome = next((_OCR_TELEMETRY_BUCKET[k] for k in _OCR_TELEMETRY_BUCKET
                             if summary[k] > before[k]), None)
         except Exception as exc:      # noqa: BLE001 — record & continue (never blocks the batch)
+            # Count it. This used to set the outcome label without touching a counter, so a batch in
+            # which EVERY document raised still returned completed=0 failed=0 — indistinguishable
+            # from "nothing to do". A corpus run reported clean zero-work batches for hours while
+            # writing no rows at all. A failure that is not counted is a failure nobody can see.
             summary["errors"].append(f"doc {row['id']}: {exc}")
+            summary["failed"] += 1
+            summary["failed_unrecorded"] += 1
+            _log.error("OCR failed for document %s (%s): %s: %s — no document_ocr row was written, "
+                       "so it stays in the backlog and will be retried",
+                       row["id"], row["original_name"], type(exc).__name__, exc)
             outcome = "failed"
         _observe(observer, "on_document_result", row["id"], row["original_name"], outcome)
         if rep is not None:
@@ -446,10 +459,41 @@ def _ocr_one(row, extractor, force, dry_run, summary, *, isolate=False, factory_
     summary["chars_extracted"] += len(clean_text)
 
 
+_NUL = "\x00"
+
+
+def _pg_text(value, *, doc_id=None, field="text"):
+    """Strip NUL from a string bound for a PostgreSQL ``text`` column.
+
+    PostgreSQL cannot store U+0000 in ``text`` at all, and the driver refuses the parameter outright
+    ("A string literal cannot contain NUL (0x00) characters") — so a single stray NUL anywhere in an
+    extracted document makes the whole write raise. OCR output really does contain them: scanned PDFs
+    routinely yield a handful of NULs among tens of thousands of otherwise perfect characters, and
+    the caller had no way to know a 41,000-character extraction would be rejected over four bytes.
+
+    Dropping them is the only faithful option. They carry no textual meaning, the alternative is
+    discarding a good extraction, and the previous behaviour was worse than either: the exception
+    escaped before any row was written, so the document kept its un-attempted state and was
+    re-selected, re-OCR'd and re-rejected on every pass, forever.
+    """
+    if not value or _NUL not in value:
+        return value
+    cleaned = value.replace(_NUL, "")
+    _log.info("document %s: removed %d NUL character(s) from %s before persisting "
+              "(PostgreSQL text cannot store them)", doc_id, value.count(_NUL), field)
+    return cleaned
+
+
 def _write_state(doc_id, *, status, text=None, engine_name=None, page_count=None,
                  source_hash=None, last_error=None, bump_attempt=False, completed=False):
     """Upsert the document_ocr row and mirror the status onto documents.ocr_status (idempotent —
-    one document_ocr row per canonical document, enforced by uq_document_ocr_document)."""
+    one document_ocr row per canonical document, enforced by uq_document_ocr_document).
+
+    Text and error strings are NUL-stripped here rather than at the call sites: this is the single
+    choke point every OCR state write passes through, so one guard covers the OCR path, the native
+    text-layer path, the reuse path and the unsupported/failure paths alike."""
+    text = _pg_text(text, doc_id=doc_id, field="text")
+    last_error = _pg_text(last_error, doc_id=doc_id, field="last_error")
     now = datetime.now(UTC)
     with engine.begin() as conn:
         existing = conn.execute(select(document_ocr.c.id, document_ocr.c.attempts).where(
