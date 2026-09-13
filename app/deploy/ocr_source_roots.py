@@ -319,11 +319,11 @@ def database_roots(rows, *, project_root=None) -> list[RequiredRoot]:
     roots = []
     for norm, count in sorted(counts.items()):
         anchor = display[norm]
-        noun = "document" if count == 1 else "documents"
+        phrase = ("1 outstanding document references this root" if count == 1
+                  else f"{count} outstanding documents reference this root")
         roots.append(RequiredRoot(
             path=anchor if is_unc(anchor) else f"{anchor}\\",
-            anchor=anchor, origin="database",
-            detail=f"{count} outstanding {noun} reference this root"))
+            anchor=anchor, origin="database", detail=phrase))
     return roots
 
 
