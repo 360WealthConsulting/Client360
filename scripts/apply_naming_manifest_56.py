@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import bindparam, func, select, text
+from sqlalchemy import bindparam, select, text
 
 from app.db import documents, engine, users
 from app.security.audit import write_audit_event
