@@ -133,9 +133,9 @@ def test_existing_owner_name_collision_refuses_case_insensitively():
 @pytest.mark.parametrize(
     ("preview", "message"),
     [
-        ({"bucket": "REVIEW", "collision": False, "proposed_name": "approved"}, "not SAFE"),
-        ({"bucket": "SAFE", "collision": True, "proposed_name": "approved"}, "resolver collision"),
-        ({"bucket": "SAFE", "collision": False, "proposed_name": "changed"}, "proposed name changed"),
+        ({"bucket": "REVIEW", "collision": False, "proposed_display_name": "approved"}, "not SAFE"),
+        ({"bucket": "SAFE", "collision": True, "proposed_display_name": "approved"}, "resolver collision"),
+        ({"bucket": "SAFE", "collision": False, "proposed_display_name": "changed"}, "proposed name changed"),
     ],
 )
 def test_live_preview_refuses_changed_evidence(monkeypatch, preview, message):
