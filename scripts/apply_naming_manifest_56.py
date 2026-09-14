@@ -11,7 +11,7 @@ import hashlib
 import json
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import bindparam, select, text
@@ -164,11 +164,11 @@ def _check_collisions(collision_rows, approvals, owners):
 
 
 def _write_rollback_snapshot(root, current, approvals, owners):
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = root / f"naming-rollback-56-{stamp}.json"
     payload = {
         "schema": "client360.naming-rollback.v1",
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "approval_payload_sha256": EXPECTED_PINNED_PAYLOAD,
         "rows": [
             {
@@ -344,4 +344,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Refused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
