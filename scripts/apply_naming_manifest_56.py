@@ -117,7 +117,7 @@ def _check_live_preview(approvals):
 
 
 def _check_locked_rows(rows, approvals, owners):
-    if len(rows) != 56:
+    if len(rows) != len(approvals):
         found = {int(row["id"]) for row in rows}
         raise Refused(f"missing documents: {sorted(set(approvals) - found)}")
     current = {int(row["id"]): row for row in rows}
