@@ -183,8 +183,16 @@ def test_source_contract_is_one_transaction_and_one_commit_path():
 def test_update_statement_changes_only_display_name():
     source = Path(runner.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
-    values_calls = [
+    update_assignment = next(
         node for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "update_name"
+            for target in node.targets
+        )
+    )
+    values_calls = [
+        node for node in ast.walk(update_assignment.value)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "values"
