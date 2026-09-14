@@ -54,6 +54,20 @@ _PRODUCTION_FACTORY = "app.services.ocr_backend.build_production_extractor"
 DEFAULT_BATCH = 10
 DEFAULT_IDLE_SLEEP = 5.0
 
+#: How long a LIVE worker may emit nothing before the generation is declared hung.
+#:
+#: This replaces an absolute ``child_result_timeout`` of 900s, which capped TOTAL GENERATION RUNTIME.
+#: That was the wrong measure: a worker reports once, when its lane ends, so elapsed time says
+#: nothing about health. Every corpus lane on a real backlog runs longer than fifteen minutes, so the
+#: cap fired every time - abandoning healthy workers mid-lane and letting the supervisor start the
+#: next lane beside them (eight concurrent workers against a configured four, 2026-09-13).
+#:
+#: Progress is now measured PER WORKER from its own last batch ping. 1800s is safe because
+#: ``ocr_isolation.run_document`` already enforces a per-document hard cap and stall cap and kills the
+#: process tree, so no single document can keep a healthy worker silent for thirty minutes. A worker
+#: that silent really is wedged, and the whole generation is terminated before run_parallel returns.
+DEFAULT_WORKER_STALL_TIMEOUT = 1800.0
+
 #: Consecutive empty claim batches a corpus lane tolerates before declaring itself drained, and the
 #: pause between those attempts.
 #:
@@ -259,19 +273,37 @@ def worker_loop(*, worker_id=None, mode="initial", batch=DEFAULT_BATCH,
 
 
 def _worker_entry(kwargs, out_q):
-    """Always put exactly one result, even on a crash: a missing result would hang the parent."""
+    """Always put exactly one RESULT, even on a crash: a missing result would hang the parent.
+
+    Also emits a PROGRESS message after every batch. The parent needs a liveness signal it can see:
+    a worker reports its result only when the lane ends, so "time since start" says nothing about
+    whether a worker is healthy — which is precisely what made the old absolute deadline abandon
+    working lanes. ``on_batch`` is installed HERE, inside the child, so the callback never has to
+    survive pickling across the spawn boundary.
+    """
+    def _progress(totals):
+        try:
+            out_q.put({"kind": "progress", "worker_id": totals.get("worker_id"),
+                       "batches": totals.get("batches"), "completed": totals.get("completed"),
+                       "claimed": totals.get("claimed")})
+        except Exception:  # noqa: BLE001 — a lost ping must never stop OCR
+            pass
+
     try:
-        out_q.put(worker_loop(**kwargs))
+        kwargs = dict(kwargs, on_batch=_progress)
+        totals = worker_loop(**kwargs)
+        out_q.put({"kind": "result", **totals})
     except BaseException as exc:  # noqa: BLE001 — including KeyboardInterrupt/SystemExit
         import traceback
-        out_q.put({"worker_id": kwargs.get("worker_id"),
+        out_q.put({"kind": "result",
+                   "worker_id": kwargs.get("worker_id"),
                    "error": f"{type(exc).__name__}: {exc}",
                    "traceback": traceback.format_exc()[-3000:],
                    "stopped_because": "crashed"})
 
 
 def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batches=None,
-                 allow_beside_legacy=False, child_result_timeout=900,
+                 allow_beside_legacy=False, worker_stall_timeout=DEFAULT_WORKER_STALL_TIMEOUT,
                  child_join_timeout=60, **kw) -> dict:
     """Start ``workers`` processes and wait for them. Refuses to run beside the legacy worker."""
     from app.db import engine
@@ -288,52 +320,169 @@ def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batch
     ctx = mp.get_context("spawn")
     out_q = ctx.Queue()
     procs = []
+    worker_ids = []
+    started_ok = set()
     for i in range(workers):
-        kwargs = dict(kw, mode=mode, batch=batch, max_batches=max_batches,
-                      worker_id=ocr_claims.new_worker_id(f"ocr{i}"))
+        wid = ocr_claims.new_worker_id(f"ocr{i}")
+        kwargs = dict(kw, mode=mode, batch=batch, max_batches=max_batches, worker_id=wid)
         p = ctx.Process(target=_worker_entry, args=(kwargs, out_q), daemon=False)
         p.start()
+        worker_ids.append(wid)
         procs.append(p)
+        # Observed alive at least once => it started. Only a worker that was NEVER alive and left a
+        # non-zero exit code can honestly be called startup_failed.
+        if p.is_alive() or p.exitcode == 0:
+            started_ok.add(wid)
 
-    # Drain BEFORE joining: a child blocked writing to a full pipe can never exit, so joining
-    # first would deadlock. _worker_entry puts exactly one result, including on a crash — but it
-    # only runs once the child has imported this module. A child that dies BEFORE that (a bad
-    # interpreter, a broken import, an OOM kill at startup) puts nothing, and waiting the full
-    # child_result_timeout for a message that can never arrive would stall the supervisor for
-    # fifteen minutes per pass. So poll, and once every child is dead and the queue is drained,
-    # synthesise the missing results instead of waiting them out.
+    # Drain BEFORE joining: a child blocked writing to a full pipe can never exit, so joining first
+    # would deadlock. _worker_entry puts exactly one RESULT (including on a crash) plus a PROGRESS
+    # ping per batch — but only once the child has imported this module. A child that dies BEFORE
+    # that (a bad interpreter, a broken import, an OOM kill at startup) puts nothing, so the loop
+    # also watches liveness and stops once every child is dead and the queue is drained.
+    #
+    # THE INVARIANT: this function does not return while any worker of this generation is alive.
+    # The old code capped TOTAL RUNTIME at child_result_timeout and `break`-ed out when it expired,
+    # abandoning healthy workers mid-lane; the supervisor then started the next lane beside them. On
+    # 2026-09-13 that produced eight concurrent workers against a configured four, and the abandoned
+    # ones were reported as "startup_failed / exitcode None" while they were still OCR'ing.
+    #
+    # Total runtime is the wrong measure: a worker reports once, when the lane ends, so elapsed time
+    # says nothing about health. PER-WORKER PROGRESS is the right measure. A worker that has emitted
+    # nothing for worker_stall_timeout while still alive is genuinely wedged — ocr_isolation already
+    # enforces a per-document hard cap and stall cap with _kill_tree, so no single document can hold
+    # a healthy worker silent that long.
     results = []
-    deadline = time.monotonic() + child_result_timeout
-    while len(results) < len(procs):
+    reported = set()
+    now = time.monotonic()
+    last_progress = {wid: now for wid in worker_ids}
+    stalled = []
+
+    def _record(msg):
+        """Return True when the message was a final result."""
+        if not isinstance(msg, dict):
+            return False
+        wid = msg.get("worker_id")
+        if wid:
+            last_progress[wid] = time.monotonic()
+        # An untagged dict is a result from an older child build; treat it as one rather than lose it.
+        if msg.get("kind") == "progress":
+            return False
+        results.append({k: v for k, v in msg.items() if k != "kind"})
+        if wid:
+            reported.add(wid)
+        return True
+
+    while True:
         try:
-            results.append(out_q.get(timeout=1.0))
+            _record(out_q.get(timeout=1.0))
             continue
         except _queue.Empty:
             pass
-        if time.monotonic() > deadline:
+
+        alive = [p for p in procs if p.is_alive()]
+        if not alive:
+            # Every child has exited. Drain whatever is still queued, then stop.
+            while True:
+                try:
+                    _record(out_q.get(timeout=1.0))
+                except _queue.Empty:
+                    break
             break
-        if not any(p.is_alive() for p in procs):
-            try:                       # one last look: a result may have landed as the child exited
-                results.append(out_q.get(timeout=1.0))
-                continue
-            except _queue.Empty:
+        if len(results) >= len(procs):
+            # Everyone reported; wait only for the processes themselves to go away.
+            if all(not p.is_alive() for p in procs):
                 break
+            continue
+
+        # Stall detection, per worker, from ITS OWN last progress - never from generation start, and
+        # only for workers that are still ALIVE. A worker that has already exited is not stalled: it
+        # is dead, and its exit code says why. Conflating the two would report "runtime_timeout" for
+        # a process that failed to start.
+        now = time.monotonic()
+        alive_ids = {worker_ids[i] for i, p in enumerate(procs)
+                     if i < len(worker_ids) and p.is_alive()}
+        stalled = [wid for wid, seen in last_progress.items()
+                   if wid in alive_ids and wid not in reported
+                   and (now - seen) > worker_stall_timeout]
+        if stalled:
+            log.error("OCR worker(s) %s made no progress for %.0fs; terminating the WHOLE generation "
+                      "before returning, so the supervisor cannot start another lane beside them.",
+                      stalled, worker_stall_timeout)
+            break
+
+    # Nothing below may leave a live child behind. Terminate, escalate, and join - in that order.
+    def _still_alive():
+        return [p for p in procs if p.is_alive()]
+
+    for p in _still_alive():
+        try:
+            p.terminate()
+        except Exception:  # noqa: BLE001
+            pass
     for p in procs:
         p.join(timeout=child_join_timeout)
+    survivors = _still_alive()
+    if survivors:
+        log.error("%d OCR worker(s) ignored terminate(); escalating to kill()", len(survivors))
+        for p in survivors:
+            try:
+                p.kill()
+            except Exception:  # noqa: BLE001
+                pass
+        for p in procs:
+            p.join(timeout=child_join_timeout)
+    survivors = _still_alive()
+    if survivors:
+        # Refusing to return is the point: a returned result would let the supervisor advance to the
+        # next lane while these are still claiming documents.
+        raise RuntimeError(
+            "refusing to return from run_parallel: worker PID(s) "
+            f"{[p.pid for p in survivors]} survived terminate() and kill(). "
+            "The supervisor must NOT start another lane beside them.")
+    # A worker may have posted its result as it was being torn down.
+    while True:
+        try:
+            _record(out_q.get(timeout=1.0))
+        except _queue.Empty:
+            break
 
+    # Classify each worker that produced no result by what ACTUALLY happened to its process. The old
+    # code called every one of them "startup_failed" with exitcode None, which was wrong in the only
+    # case that mattered: a worker abandoned mid-lane was alive, had done thousands of documents, and
+    # was reported as having failed to start and performed no work. By the time we get here nothing
+    # is alive, so exitcode is authoritative.
     missing = len(procs) - len(results)
     if missing > 0:
-        dead = [p for p in procs if p.exitcode not in (0, None)]
-        log.error("%d OCR worker process(es) produced no result; exit codes %s. A child that dies "
-                  "before reporting has failed to start (interpreter, import or startup fault) — "
-                  "counting it as a failed worker rather than reporting an empty success.",
-                  missing, [p.exitcode for p in procs])
-        for i in range(missing):
-            code = dead[i].exitcode if i < len(dead) else None
-            results.append({"worker_id": None, "stopped_because": "startup_failed",
-                            "error": f"worker process exited with code {code} before reporting; "
-                                     f"no OCR work was performed",
-                            "startup_failures": 1})
+        log.error("%d OCR worker process(es) produced no result; exit codes %s",
+                  missing, {p.pid: p.exitcode for p in procs})
+        for i, p in enumerate(procs):
+            wid = worker_ids[i] if i < len(worker_ids) else None
+            if wid in reported:
+                continue
+            code = p.exitcode
+            if wid in stalled:
+                because = "runtime_timeout"
+                detail = (f"made no progress for {worker_stall_timeout:.0f}s while alive; the whole "
+                          f"generation was terminated before returning (exit code {code})")
+            elif code is None:
+                # Unreachable in practice - we refuse to return with a live child - but never guess.
+                because = "unknown"
+                detail = "process state could not be determined after termination"
+            elif code == 0:
+                because = "exited_without_result"
+                detail = "process exited cleanly but never reported its totals"
+            else:
+                because = "abnormal_exit"
+                detail = f"process exited with code {code} without reporting"
+            entry = {"worker_id": wid, "stopped_because": because,
+                     "error": detail, "exitcode": code}
+            # Only a process that was NEVER alive and left a non-zero code is a genuine start failure.
+            if because == "abnormal_exit" and wid not in started_ok:
+                entry["stopped_because"] = "startup_failed"
+                entry["startup_failures"] = 1
+                entry["error"] = (f"worker process exited with code {code} before reporting; "
+                                  f"no OCR work was performed")
+            results.append(entry)
 
     exitcodes = {p.pid: p.exitcode for p in procs}
     stragglers = [pid for pid, code in exitcodes.items() if code is None]
@@ -345,6 +494,7 @@ def run_parallel(*, workers=None, mode="initial", batch=DEFAULT_BATCH, max_batch
            # Reported on EVERY run so a failure cannot vanish: non-zero or None exit codes, child
            # exceptions, and why each worker stopped.
            "child_exitcodes": exitcodes, "child_errors": errors,
+           "stalled_workers": list(stalled),
            "workers_still_running": stragglers,
            "stop_reasons": [r.get("stopped_because") for r in results if isinstance(r, dict)],
            "throttled": any((r.get("throttled_waits") or 0) for r in results
