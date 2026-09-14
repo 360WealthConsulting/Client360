@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import bindparam, select, text
+from sqlalchemy import bindparam, func, select, text
 
 from app.db import documents, engine, users
 from app.security.audit import write_audit_event
@@ -112,6 +112,8 @@ def _check_live_preview(approvals):
             )
         if row.get("collision"):
             raise Refused(f"document {document_id} has a live resolver collision")
+        if row.get("proposed_name") != approvals[document_id]["approved_display_name"]:
+            raise Refused(f"document {document_id} live proposed name changed")
 
 
 def _check_locked_rows(rows, approvals, owners):
@@ -206,7 +208,9 @@ def main(argv=None) -> int:
     _check_live_preview(approvals)
 
     ids = sorted(approvals)
-    names = sorted({row["approved_display_name"] for row in approvals.values()})
+    names = sorted(
+        {row["approved_display_name"].lower() for row in approvals.values()}
+    )
     select_ids = text(
         """
         SELECT id, display_name, person_id, household_id, organization_id
@@ -216,7 +220,7 @@ def main(argv=None) -> int:
     select_names = text(
         """
         SELECT id, display_name, person_id, household_id, organization_id
-        FROM documents WHERE display_name IN :names
+        FROM documents WHERE lower(display_name) IN :names
         """
     ).bindparams(bindparam("names", expanding=True))
     update_name = (
