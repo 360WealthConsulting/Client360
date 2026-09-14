@@ -43,6 +43,9 @@ class FakeProc:
         self.terminated = False
         self.killed = False
         self.joined = 0
+        #: Ordered log of lifecycle calls. Counts alone cannot show that cleanup happened BEFORE the
+        #: raise, or that the second join followed the kill rather than preceding it.
+        self.events = []
         self._dies_on_terminate = dies_on_terminate
         self._dies_on_kill = dies_on_kill
 
@@ -51,6 +54,7 @@ class FakeProc:
 
     def terminate(self):
         self.terminated = True
+        self.events.append("terminate")
         if self._dies_on_terminate:
             self._alive = False
             if self.exitcode is None:
@@ -58,6 +62,7 @@ class FakeProc:
 
     def kill(self):
         self.killed = True
+        self.events.append("kill")
         if self._dies_on_kill:
             self._alive = False
             if self.exitcode is None:
@@ -65,6 +70,7 @@ class FakeProc:
 
     def join(self, timeout=None):
         self.joined += 1
+        self.events.append("join")
 
     def start(self):
         pass
@@ -243,11 +249,42 @@ def test_terminate_escalates_to_kill_and_still_joins(monkeypatch):
 
 
 def test_a_worker_that_survives_kill_makes_run_parallel_REFUSE_to_return(monkeypatch):
-    """The last line of defence: returning would let the supervisor start a lane beside it."""
-    procs = [FakeProc(500, alive=True, dies_on_terminate=False, dies_on_kill=False)]
+    """The last line of defence: returning would let the supervisor start a lane beside it.
+
+    Proving the raise is not enough. The whole point of the cleanup block is that the FULL escalation
+    runs BEFORE giving up, so a future reordering that raised first - leaving a live worker
+    untouched - must fail here. Everything asserted below was recorded before the exception
+    propagated, because the raise ends the function.
+    """
+    procs = [FakeProc(500, alive=True, dies_on_terminate=False, dies_on_kill=False),
+             FakeProc(501, alive=True, dies_on_terminate=False, dies_on_kill=False)]
+    t = iter([0.0, 1.0] + [9999.0] * 60)
+    with pytest.raises(RuntimeError, match="refusing to return") as excinfo:
+        _run(procs, [], clock=lambda: next(t), stall=60.0, monkeypatch=monkeypatch)
+
+    for p in procs:
+        assert p.terminated, f"pid {p.pid} was not terminated before the raise"
+        assert p.killed, f"pid {p.pid} was not escalated to kill() before the raise"
+        assert p.joined >= 2, f"pid {p.pid} was not joined after BOTH terminate and kill"
+        # Exact escalation order: terminate -> join -> kill -> join, all before the raise.
+        assert p.events[:4] == ["terminate", "join", "kill", "join"], \
+            f"pid {p.pid} cleanup ran out of order: {p.events}"
+    # The refusal must name the survivors, so an operator knows what is still running.
+    msg = str(excinfo.value)
+    for p in procs:
+        assert str(p.pid) in msg, f"pid {p.pid} missing from the refusal message: {msg}"
+
+
+def test_the_whole_generation_is_cleaned_up_before_the_raise_not_just_the_stalled_worker(monkeypatch):
+    """A sibling that is merely slow must still be torn down before run_parallel gives up."""
+    stuck = FakeProc(510, alive=True, dies_on_terminate=False, dies_on_kill=False)
+    sibling = FakeProc(511, alive=True, dies_on_terminate=True)
     t = iter([0.0, 1.0] + [9999.0] * 60)
     with pytest.raises(RuntimeError, match="refusing to return"):
-        _run(procs, [], clock=lambda: next(t), stall=60.0, monkeypatch=monkeypatch)
+        _run([stuck, sibling], [], clock=lambda: next(t), stall=60.0, monkeypatch=monkeypatch)
+    assert sibling.terminated and not sibling.is_alive(), "the sibling was left running"
+    assert sibling.joined >= 1, "the sibling was never joined"
+    assert stuck.events[:4] == ["terminate", "join", "kill", "join"]
 
 
 # --- accurate diagnostics ----------------------------------------------------------------------------
