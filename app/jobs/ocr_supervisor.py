@@ -307,11 +307,22 @@ def _publish_lane_diagnostics(pub, lane, workers, result) -> None:
             log.warning("lane %s: %d worker(s) stopped for a reason other than an empty lane: %s",
                         lane, len(early),
                         [(w.get("worker_id"), w.get("stopped_because")) for w in early])
+        # Group by outcome so an operator can tell a start failure from an abnormal exit from a
+        # runtime stall at a glance. Before this, every non-reporting worker was "startup_failed".
+        outcomes = {}
+        for w in per_worker:
+            outcomes.setdefault(w.get("stopped_because") or "reported", []).append(w.get("worker_id"))
+        if outcomes:
+            log.info("lane %s outcomes: %s", lane,
+                     {k: len(v) for k, v in outcomes.items()})
         pub.publish("supervisor_lanes.json",
                     {"lane": lane, "workers_requested": workers,
                      "workers_reported": len(per_worker),
                      "status": result.get("status"),
                      "elapsed_seconds": result.get("elapsed_seconds"),
+                     "outcomes": {k: len(v) for k, v in outcomes.items()},
+                     "outcome_workers": outcomes,
+                     "stalled_workers": result.get("stalled_workers"),
                      "child_exitcodes": exitcodes,
                      "child_errors": result.get("child_errors"),
                      "per_worker": per_worker,
