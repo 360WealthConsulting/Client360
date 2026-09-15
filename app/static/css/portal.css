@@ -438,3 +438,25 @@ body.portal-auth-page .subtle {
         width: 100%;
     }
 }
+/* --- client upload compactness ------------------------------------------ */
+/* Presentation only. Upload field names and POST behavior remain unchanged. */
+.portal-upload-form {
+    padding: 1rem 1.1rem;
+}
+
+.portal-upload-form .field {
+    gap: 0.2rem;
+    margin-bottom: 0.75rem;
+}
+
+.portal-upload-form .field .hint {
+    line-height: 1.25;
+}
+
+.portal-upload-form .field select {
+    max-width: 18rem;
+}
+
+.portal-upload-form .form-actions {
+    margin-top: 0.15rem;
+}
