@@ -101,13 +101,14 @@ def test_the_action_carries_this_requests_id_and_no_other(gates):
     assert ids == sorted([first, second])
 
 
-def test_the_action_matches_the_route_the_documents_page_already_uses():
-    """One upload mechanism, not two: the same href shape as the existing client surfaces."""
+def test_request_specific_upload_is_not_duplicated_in_documents_vault():
+    """Request-specific upload stays available without duplicating it in Vault."""
     import pathlib
     thread = pathlib.Path("app/templates/portal/message_thread.html").read_text(encoding="utf-8")
     documents = pathlib.Path("app/templates/portal/documents.html").read_text(encoding="utf-8")
     assert "/portal/upload?request_id={{ r.id }}" in thread
-    assert "/portal/upload?request_id={{ req.id }}" in documents
+    assert "/portal/upload?request_id={{ req.id }}" not in documents
+    assert 'href="/portal/upload"' in documents
 
 
 # --- 3. the link is not authorization ----------------------------------------
