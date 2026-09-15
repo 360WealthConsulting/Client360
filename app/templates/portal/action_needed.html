@@ -28,13 +28,19 @@
 </article>
 {% endfor %}
 
-{% if tasks %}<h2>Tasks</h2>{% endif %}
-{% for row in tasks %}
-<article class="portal-card">
-  <h3>{{ row.name }}</h3>
-  <p class="meta">{{ row.workflow_name }} · <span class="pill pending">{{ row.status|title }}</span></p>
-</article>
-{% endfor %}
+{% if tasks %}
+<details class="portal-card portal-action-tasks">
+  <summary><strong>Tasks</strong> <span class="meta">({{ tasks|length }})</span></summary>
+  <div class="portal-action-task-list">
+    {% for row in tasks %}
+    <div class="portal-action-task-row">
+      <strong>{{ row.name }}</strong>
+      <span class="meta">{{ row.workflow_name }} · <span class="pill pending">{{ row.status|title }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
 
 {% if not action_items and not document_requests and not tasks %}
 <div class="empty-state">
