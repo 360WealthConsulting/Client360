@@ -460,3 +460,23 @@ body.portal-auth-page .subtle {
 .portal-upload-form .form-actions {
     margin-top: 0.15rem;
 }
+
+/* --- document requests -------------------------------------------------- */
+/* Scoped to the Document Requests page. The request title is what a client
+   scans for, so it outranks the status row. A completed request keeps its green
+   status pill and gains a plain-language note INSTEAD of a primary action. */
+.request-title {
+    font-size: 1.12rem;
+    font-weight: 700;
+    margin: 0 0 0.4rem;
+}
+.request-facts        { margin: 0 0 0.4rem; }
+.request-instructions { margin: 0 0 0.7rem; }
+.request-action       { margin: 0.7rem 0 0; }
+.request-done-note {
+    margin: 0.7rem 0 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #166534;
+}
+.request-card--done { border-left: 3px solid #bbf7d0; }
