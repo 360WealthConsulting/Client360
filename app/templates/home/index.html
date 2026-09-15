@@ -56,6 +56,11 @@
   {% else %}{% call ui.empty("You're caught up", "No priority work right now.") %}{% endcall %}{% endif %}
 </article>
 
+<details class="workspace-category home-dashboard-section">
+<summary>
+  <span>Waiting &amp; blocked / Reviews</span>
+</summary>
+<div class="home-dashboard-section-body">
 <div class="cols-2 even">
 {# 2. Waiting & Blocked #}
 <article class="card">
@@ -87,9 +92,16 @@
   {% else %}{% call ui.empty("No reviews are waiting for you") %}{% endcall %}{% endif %}
 </article>
 </div>
+</div>
+</details>
 
-{# 4. Client Portal activity — three peer panels; `.cols-3` collapses on its own. #}
+{# 4. Client Portal activity — compact/collapsible on staff home. #}
 {% if h.can.portal %}
+<details class="workspace-category home-dashboard-section">
+<summary>
+  <span>Client portal activity</span>
+</summary>
+<div class="home-dashboard-section-body">
 <article class="card">
   {{ ui.card_head("Client portal activity") }}
   <div class="cols-3">
@@ -105,7 +117,7 @@
       {% else %}{% call ui.empty("No pending uploads") %}{% endcall %}{% endif %}
     </div>
     <div>
-      {{ ui.card_head("Open document requests", level="h3") }}
+      {{ ui.card_head("Documents requested from clients", level="h3") }}
       {% if h.portal_activity.open_requests %}
       <div class="table-wrap"><table class="data"><thead><tr><th>Request</th><th>Client</th><th>Due</th></tr></thead><tbody>
         {% for rq in h.portal_activity.open_requests %}
@@ -126,10 +138,17 @@
     </div>
   </div>
 </article>
+</div>
+</details>
 {% endif %}
 
 {# 5. Recent client activity — same feed component as the firm dashboard, so the two
    overview surfaces read the same way. #}
+<details class="workspace-category home-dashboard-section">
+<summary>
+  <span>Recent client activity</span>
+</summary>
+<div class="home-dashboard-section-body">
 <article class="card">
   {{ ui.card_head("Recent client activity", "/activities") }}
   {% if h.recent_activity %}
@@ -148,16 +167,10 @@
   </div>
   {% else %}{% call ui.empty("No recent activity", "Recent client activity will appear here.") %}{% endcall %}{% endif %}
 </article>
+</div>
+</details>
 
-{# 6. Quick actions #}
-{% if h.quick_actions %}
-<article class="card">
-  {{ ui.card_head("Quick actions") }}
-  <nav class="row" aria-label="Quick actions">
-    {% for a in h.quick_actions %}<a class="btn sm secondary" href="{{ a.href }}">{{ a.label }}</a>{% endfor %}
-  </nav>
-</article>
-{% endif %}
+{# Quick actions are already present in the page header/canonical work surfaces. #}
 
 </div>
 {% endblock %}
