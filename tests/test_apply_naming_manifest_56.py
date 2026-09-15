@@ -135,13 +135,29 @@ def test_existing_owner_name_collision_refuses_case_insensitively():
     [
         ({"bucket": "REVIEW", "collision": False, "proposed_display_name": "approved"}, "not SAFE"),
         ({"bucket": "SAFE", "collision": True, "proposed_display_name": "approved"}, "resolver collision"),
-        ({"bucket": "SAFE", "collision": False, "proposed_display_name": "changed"}, "proposed name changed"),
     ],
 )
 def test_live_preview_refuses_changed_evidence(monkeypatch, preview, message):
     row = {"document_id": 1, **preview}
     monkeypatch.setattr(runner, "build_preview", lambda: {"rows": [row]})
     with pytest.raises(runner.Refused, match=message):
+        runner._check_live_preview({1: _approval(1, "approved")})
+
+
+def test_live_preview_allows_safe_noncolliding_human_reviewed_name(monkeypatch):
+    row = {
+        "document_id": 1,
+        "bucket": "SAFE",
+        "collision": False,
+        "proposed_display_name": "automatic suggestion differs",
+    }
+    monkeypatch.setattr(runner, "build_preview", lambda: {"rows": [row]})
+    runner._check_live_preview({1: _approval(1, "human reviewed approved name")})
+
+
+def test_live_preview_refuses_missing_document(monkeypatch):
+    monkeypatch.setattr(runner, "build_preview", lambda: {"rows": []})
+    with pytest.raises(runner.Refused, match="absent from the live naming preview"):
         runner._check_live_preview({1: _approval(1, "approved")})
 
 
