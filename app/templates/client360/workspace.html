@@ -203,8 +203,8 @@
   {# FINANCIAL SNAPSHOT — investments and the tax position. Hidden when the client has neither,
      rather than two large cards both reporting nothing. #}
   {% if prof and (prof.investments.custodians or prof.tax.tax_year) %}
-  <section class="c360-overview-block">
-    <h2 class="section-title">Financial snapshot</h2>
+  <details class="c360-overview-block c360-overview-collapsible">
+    <summary class="section-title">Financial snapshot</summary>
   <div class="c360-profile">
     <article class="card c360-profile-investments">
       <h2 class="section-title">Investments</h2>
@@ -253,14 +253,14 @@
       {% else %}<p class="meta">No Drake return linked to this client.</p>{% endif %}
     </article>
   </div>
-  </section>
+  </details>
   {% endif %}
 
   {# RECENT DOCUMENTS — five, then the tab that holds them all. #}
   {% if sec.recent_documents %}
-  <section class="c360-overview-block">
+  <details class="c360-overview-block c360-overview-collapsible">
+    <summary class="section-title">Recent documents</summary>
     <div class="c360-block-head">
-      <h2 class="section-title">Recent documents</h2>
       <a class="btn sm secondary" href="{{ base }}?tab=documents">View all</a>
     </div>
     <article class="card">
@@ -269,14 +269,14 @@
           <span class="subtle">{{ d.created_at | datefmt("%b %-d, %Y") if d.created_at else d.storage_provider }}</span></div>
       {% endfor %}
     </article>
-  </section>
+  </details>
   {% endif %}
 
   {# RECENT ACTIVITY — same shape. The timeline tab carries the full history. #}
   {% if sec.recent_activity %}
-  <section class="c360-overview-block">
+  <details class="c360-overview-block c360-overview-collapsible">
+    <summary class="section-title">Recent activity</summary>
     <div class="c360-block-head">
-      <h2 class="section-title">Recent activity</h2>
       <a class="btn sm secondary" href="{{ base }}?tab=timeline">View all</a>
     </div>
     <article class="card">
@@ -285,7 +285,7 @@
           <span class="subtle">{{ (a.occurred_at or a.event_time) | datefmt("%b %-d, %Y") if (a.occurred_at or a.event_time) else "" }}</span></div>
       {% endfor %}
     </article>
-  </section>
+  </details>
   {% endif %}
 
 {% elif active_tab == "summary" %}
