@@ -33,16 +33,22 @@
 <p><a href="/portal/benefits/action-needed">Benefits — Action Needed{% if portal.employer_action_items %} ({{ portal.employer_action_items|length }}){% endif %}</a></p>
 {% endif %}
 
-<h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem;">Your progress</h2>
-{% for row in portal.workflow_progress %}
-<article class="portal-card">
-  <h3>{{ row.name }}</h3>
-  <p class="meta">{{ row.step }} · <span class="pill review">{{ row.status|title }}</span></p>
-</article>
+{% if portal.workflow_progress %}
+<details class="portal-card portal-progress">
+  <summary><strong>Your progress</strong> <span class="meta">({{ portal.workflow_progress|length }})</span></summary>
+  <div class="portal-progress-list">
+    {% for row in portal.workflow_progress %}
+    <div class="portal-progress-row">
+      <strong>{{ row.name }}</strong>
+      <span class="meta">{{ row.step }} · <span class="pill review">{{ row.status|title }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
 {% else %}
 <div class="empty-state">
   <h3>You're all caught up</h3>
   <p>No actions are pending right now. We'll let you know when something needs you.</p>
 </div>
-{% endfor %}
+{% endif %}
 {% endblock %}
