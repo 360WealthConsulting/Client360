@@ -1,20 +1,26 @@
 {% extends "portal/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<h1>Portal Settings</h1>
-<p class="portal-lead">How your account is secured and how we reach you.</p>
-<article class="portal-card">
-  <h3>Signing in</h3>
-  <p class="meta">You sign in with a one-time code emailed to the address on your account. Each code
-    can be used once and expires shortly after it is sent. Your active sessions are recorded for your
-    protection — you can review them on your <a href="/portal/security">security page</a>.</p>
-</article>
-<article class="portal-card">
-  <h3>Contact preferences</h3>
-  <p class="meta">Update your email, phone, and preferred contact method on your <a href="/portal/profile">profile</a>.</p>
-</article>
-<article class="portal-card">
-  <h3>Notifications</h3>
-  <p class="meta">Notifications from your advisory team appear in this portal.</p>
-</article>
+
+<h1>Settings</h1>
+<p class="meta">Manage your account information, communication preferences, and security.</p>
+
+<div class="portal-card">
+  <h3>Profile</h3>
+  <p class="meta">Update your email, phone, mailing address, and preferred contact method.</p>
+  <p><a class="btn secondary" href="/portal/profile">Manage profile</a></p>
+</div>
+
+<div class="portal-card">
+  <h3>Communication preferences</h3>
+  <p class="meta">Review your communication and electronic-delivery preferences and agreements.</p>
+  <p><a class="btn secondary" href="/portal/preferences">Manage preferences</a></p>
+</div>
+
+<div class="portal-card">
+  <h3>Security</h3>
+  <p class="meta">Review active sessions and security information for your account.</p>
+  <p><a class="btn secondary" href="/portal/security">Security center</a></p>
+</div>
+
 {% endblock %}
