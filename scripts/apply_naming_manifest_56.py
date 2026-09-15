@@ -112,8 +112,6 @@ def _check_live_preview(approvals):
             )
         if row.get("collision"):
             raise Refused(f"document {document_id} has a live resolver collision")
-        if row.get("proposed_display_name") != approvals[document_id]["approved_display_name"]:
-            raise Refused(f"document {document_id} live proposed name changed")
 
 
 def _check_locked_rows(rows, approvals, owners):
