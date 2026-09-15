@@ -18,8 +18,8 @@
     </tbody>
   </table>
 </section>
-<section aria-labelledby="consents-heading">
-  <h2 id="consents-heading">Agreements on file</h2>
+<details class="portal-card portal-security-agreements">
+  <summary><strong>Agreements on file</strong> <span class="meta">({{ consents|length }})</span></summary>
   <ul>
   {% for c in consents %}
     <li>{{ c.consent_type.replace('_', ' ') | title }} ({{ c.version }}) — {{ c.state | title }}</li>
@@ -27,7 +27,7 @@
     <li class="empty">No agreements on file yet.</li>
   {% endfor %}
   </ul>
-</section>
+</details>
 <p class="fine-print">If you see a session you don't recognise, contact your advisor immediately. Your
 account requires multi-factor authentication for every sign-in.</p>
 {% endblock %}
