@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/static/css/portal.css">
 <link rel="stylesheet" href="/static/css/conversations.css">
 </head>
-<body class="portal">
+<body class="portal{% if not principal %} portal-auth-page{% endif %}>
 {% set path = request.url.path if request else '' %}
 <header class="portal-header">
   <a class="portal-brand" href="/portal/">
