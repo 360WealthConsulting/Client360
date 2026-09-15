@@ -5,9 +5,8 @@ The old person `vault` renderer remains in the template for bookmarked legacy
 URLs, but the grouped navigation must not advertise it as a second document tab.
 """
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 NAV = ROOT / "app/templates/client360/_section_nav.html"
