@@ -4,7 +4,6 @@
 {% block content %}
 <div class="conversation-page-head"><div><h1>Messages</h1><p class="portal-lead">Secure conversations with your advisory team.</p></div><a class="btn secondary" href="/portal/messages">All messages</a></div>
 <div class="conversation-shell portal-conversation-shell has-selection">
-  <aside class="conversation-channels" aria-label="Message channels"><strong>Conversations</strong><a class="active" href="/portal/messages"><span aria-hidden="true">◯</span> Messages <span class="conversation-count">{{ threads|length }}</span></a>{% if portal_can(principal, '/portal/upload') %}<a href="/portal/upload"><span aria-hidden="true">↥</span> Upload to Vault</a>{% endif %}</aside>
   <section class="conversation-list" aria-label="Your conversations"><div class="conversation-list-head"><strong>All messages</strong><span>{{ threads|length }}</span></div>
     {% for t in threads %}<a class="conversation-row{{ ' active' if t.id == thread_id else '' }}{{ ' is-unread' if t.unread else '' }}" href="/portal/messages/{{ t.id }}"><span class="conversation-avatar">{{ (t.subject or 'M')[0]|upper }}</span><span class="conversation-row-body"><strong>{{ t.subject }}</strong><small>{% if t.topic %}{{ t.topic|title }} · {% endif %}{{ t.status|title }}</small><span>Updated {{ t.updated_at.strftime('%b %d, %Y') if t.updated_at else '' }}</span></span>{% if t.unread %}<span class="conversation-unread"></span>{% endif %}</a>{% endfor %}
   </section>
