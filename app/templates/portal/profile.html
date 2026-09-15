@@ -31,7 +31,10 @@
   </div>
 
   <div class="field">
-    <label for="address">Street address</label>
+    <details class="portal-card portal-profile-address">
+    <summary><strong>Mailing address</strong> <span class="meta">View or edit</span></summary>
+    <div class="portal-profile-address-fields">
+  <label for="address">Street address</label>
     <input id="address" name="address" type="text" value="{{ profile.address_line_1 or '' }}" maxlength="255">
   </div>
 
@@ -51,7 +54,10 @@
   </div>
 
   <div class="field">
-    <label for="preferred_contact_method">Preferred contact method</label>
+      </div>
+  </details>
+
+  <label for="preferred_contact_method">Preferred contact method</label>
     <select id="preferred_contact_method" name="preferred_contact_method">
       {% set current = profile.preferred_contact_method or '' %}
       <option value=""{% if not current %} selected{% endif %}>No preference</option>
