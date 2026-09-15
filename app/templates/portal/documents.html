@@ -17,23 +17,6 @@
   {% endif %}
 </div>
 
-{% if requests %}
-<h2 style="font-size:1.1rem;margin:0 0 .75rem;">Requested from you</h2>
-{% for req in requests %}
-<article class="portal-card">
-  <h3>{{ req.title }}</h3>
-  {% if req.description %}<p class="meta">{{ req.description }}</p>{% endif %}
-  <p class="meta">
-    <span class="pill pending">{{ req.status|title }}</span>
-    {% if req.due_date %} · Due {{ req.due_date }}{% endif %}
-  </p>
-  {% if portal_can(principal, '/portal/upload') %}
-  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/portal/upload?request_id={{ req.id }}">Upload for this request</a></p>
-  {% endif %}
-</article>
-{% endfor %}
-{% endif %}
-
 <h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem;">Shared &amp; uploaded</h2>
 {% for doc in documents %}
 <article class="portal-card">
