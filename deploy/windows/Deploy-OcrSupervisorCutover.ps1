@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Guarded deployment of release 5adfb55 + four-worker OCR supervisor cutover.
+    Guarded deployment of an APPROVED release + four-worker OCR supervisor cutover.
 
 .DESCRIPTION
     ONE script for the entire authorized sequence, because a partial unelevated deployment is worse
@@ -27,16 +27,65 @@
     Client360, does not stop or disable any task, does not update the checkout, does not register a
     task, and alters no production data. Use this first.
 
+.PARAMETER TargetSha
+    The release commit to deploy. MANDATORY and unvalidated by any default: a baked-in SHA is stale
+    the moment the next release merges, and a stale default could silently deploy a superseded - or
+    older - release. It must be a full 40-character SHA and must be contained in -ReleaseRef.
+
+.PARAMETER ApprovedPullRequests
+    The PR numbers reviewed and approved for this deployment. The merge commits between the start
+    point and the target must match this set EXACTLY. An extra PR landing on the release branch after
+    approval, or an approved PR missing from the range, stops the run - which is what makes deploying
+    an unapproved release impossible rather than merely unlikely.
+
 .EXAMPLE
-    .\Deploy-OcrSupervisorCutover.ps1 -DryRun
-    .\Deploy-OcrSupervisorCutover.ps1
+    # Always dry-run first. Both arguments are required in both modes.
+    .\Deploy-OcrSupervisorCutover.ps1 -DryRun `
+        -TargetSha <40-hex release commit> -ApprovedPullRequests 309
+
+.EXAMPLE
+    # Optionally pin the delta as well, when it is known in advance from the PR.
+    .\Deploy-OcrSupervisorCutover.ps1 `
+        -TargetSha <40-hex release commit> -ApprovedPullRequests 309 `
+        -ExpectedFiles 7 -ExpectedInsertions 2340 -ExpectedDeletions 6
 #>
 [CmdletBinding()]
 param(
     [switch] $DryRun,
     [string] $ProjectRoot     = 'C:\Client360',
-    [string] $TargetSha       = '5adfb55f9fec884a8b223d26dbd69666ed70d0df',
-    [string] $ExpectedFrom    = 'bc6b20c8f6a58ecadd7330cbfc1fdb7b514d56e9',
+
+    # NO DEFAULT, ON PURPOSE. A baked-in release SHA is stale the moment the next release merges, and
+    # a stale default is dangerous in a way a missing one is not: running the script bare would
+    # silently target a release nobody asked for - possibly an OLDER one. The operator must say what
+    # they are deploying, every time.
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9a-f]{40}$')]
+    [string] $TargetSha,
+
+    # The PR numbers the operator has reviewed and approved for this deployment. The range's merge
+    # commits must match this set EXACTLY - not a subset, not a superset. This is what makes it
+    # impossible to deploy an unapproved release: an extra PR landing on the release branch between
+    # approval and execution changes the merge set and stops the run.
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [int[]] $ApprovedPullRequests,
+
+    # The release branch the target must be contained in. A commit that is not an ancestor of this
+    # ref is not a released commit - it could be an unmerged branch tip or an arbitrary object - and
+    # is refused.
+    [string] $ReleaseRef      = 'origin/release/0.13.0',
+
+    # Where the deployment starts from. Empty means "derive from the live checkout", which is the
+    # normal case: the current production HEAD is a FACT about the machine, not a policy choice, so
+    # there is nothing to pin. Supply it only to assert a specific expected starting point.
+    [string] $ExpectedFrom    = '',
+
+    # Optional belt-and-braces pins on the computed range. Zero means "report, do not enforce". They
+    # are parameters rather than constants so they cannot rot in the file between releases.
+    [int]    $ExpectedFiles      = 0,
+    [int]    $ExpectedInsertions = 0,
+    [int]    $ExpectedDeletions  = 0,
+
     [string] $ExpectedAlembic = 'ocrclaim01',
     [string] $ServiceName     = 'Client360',
     [string] $LegacyTask      = 'Client360 OCR Full Corpus',
@@ -50,46 +99,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# --- DERIVED, NOT GUESSED -------------------------------------------------------------------------
-# Every value below was computed from the real repository for the exact range
-# bc6b20c8f6a58ecadd7330cbfc1fdb7b514d56e9..5adfb55f9fec884a8b223d26dbd69666ed70d0df and is pinned
-# here. The script recomputes each one at run time and refuses if any differs, so an unexpected
-# commit arriving on the release branch is a hard stop rather than a surprise in production.
-$EXPECTED_PRS        = @(303, 306, 307, 308)
-$EXPECTED_COMMITS    = 10
-$EXPECTED_FILES      = 28
-$EXPECTED_INSERTIONS = 3664
-$EXPECTED_DELETIONS  = 176
-$EXPECTED_PATHS = @(
-    'CHANGELOG.md',
-    'app/deploy/ocr_source_roots.py',
-    'app/jobs/ocr_supervisor.py',
-    'app/routes/person_edit.py',
-    'app/services/client360/profile_overview.py',
-    'app/services/client360/registry.py',
-    'app/services/client360/sections.py',
-    'app/services/people.py',
-    'app/static/css/client360.css',
-    'app/templates/client360/_section_nav.html',
-    'app/templates/client360/household.html',
-    'app/templates/client360/workspace.html',
-    'app/templates/people/edit.html',
-    'app/templating.py',
-    'deploy/windows/install_ocr_supervisor_task.ps1',
-    'docs/OCR_PARALLEL_RUNNER.md',
-    'tests/test_client360_profile_tabs.py',
-    'tests/test_client_contact_visibility.py',
-    'tests/test_client_overview_layout.py',
-    'tests/test_client_section_nav.py',
-    'tests/test_client_workspace_dashboard.py',
-    'tests/test_ocr_source_roots.py',
-    'tests/test_ocr_supervisor.py',
-    'tests/test_ocr_supervisor_sweep_lock.py',
-    'tests/test_person_profile_edit_authorization.py',
-    'tests/test_person_profile_editing.py',
-    'tests/test_task_dashboard_client_filter.py',
-    'tests/test_ui_stabilization.py'
-)
+# --- RANGE AUTHORITY -------------------------------------------------------------------------------
+# There are deliberately NO pinned release constants here any more. They were derived by hand for one
+# release and then went stale: after 5adfb55 shipped, this file still named bc6b20c..5adfb55 and a
+# 28-file delta that no longer existed, so running it unmodified would have targeted a superseded
+# release. Baking today's SHA in instead would simply restage the same failure for next time.
+#
+# The authority is now the OPERATOR'S APPROVAL, supplied per run:
+#   * -TargetSha            mandatory, 40-hex, no default;
+#   * -ApprovedPullRequests mandatory, and the range's merge set must equal it EXACTLY;
+#   * -ReleaseRef           the target must be contained in this release branch;
+#   * the start point is DERIVED from the live checkout unless -ExpectedFrom asserts one.
+#
+# Everything else about the range - commit count, file count, line delta, paths - is computed at run
+# time and REPORTED. -ExpectedFiles / -ExpectedInsertions / -ExpectedDeletions optionally pin those
+# numbers for a run whose delta is known in advance; left at zero they are reported, not enforced.
+# Forbidden file classes (migrations, env, secrets, data, inventory, ownership) are always refused.
 
 #: The supervisor's two LIFETIME advisory locks (PR #308). It owns both itself, on one backend.
 $LOCK_SUPERVISOR = 511005888
@@ -803,6 +828,13 @@ $dirty  = @(& git status --porcelain --untracked-files=no)
 $branch = (& git rev-parse --abbrev-ref HEAD).Trim()
 Pop-Location
 if ($dirty.Count -gt 0) { Fail "$ProjectRoot has $($dirty.Count) modified tracked file(s): $($dirty -join '; ')" }
+# The starting point is a FACT about this machine, so derive it unless the operator asserted one.
+if ([string]::IsNullOrWhiteSpace($ExpectedFrom)) {
+    $ExpectedFrom = $head
+    Say "  start point DERIVED from the live checkout: $ExpectedFrom" 'Yellow'
+} elseif ($ExpectedFrom -notmatch '^[0-9a-f]{40}$') {
+    Fail "-ExpectedFrom must be a full 40-character SHA, got '$ExpectedFrom'"
+}
 switch ($head) {
     $ExpectedFrom { $script:AlreadyDeployed = $false }
     $TargetSha    { $script:AlreadyDeployed = $true  }
@@ -819,6 +851,15 @@ if ($script:AlreadyDeployed) {
 Push-Location $ProjectRoot
 $type = (& git cat-file -t $TargetSha 2>&1).Trim()
 if ($type -ne 'commit') { Pop-Location; Fail "target $TargetSha is not a local commit object (got '$type'). Run 'git fetch origin' as the repo owner first." }
+# CONTAINMENT: the target must be an ancestor of the release branch, i.e. actually released. Without
+# this, any local commit object - an unmerged branch tip, a stray cherry-pick - would be deployable
+# simply by naming its SHA. Being merged into the release branch is what makes a commit approved.
+& git merge-base --is-ancestor $TargetSha $ReleaseRef
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    Fail "target $TargetSha is NOT contained in $ReleaseRef - it is not a released commit. Refusing."
+}
+Say "  OK target $TargetSha is contained in $ReleaseRef" 'Green'
 if (-not $script:AlreadyDeployed) {
     & git merge-base --is-ancestor $head $TargetSha
     if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "$head is not an ancestor of $TargetSha - refusing (not fast-forwardable)" }
@@ -845,27 +886,44 @@ foreach ($m in $merges) {
     if ($m -match 'Merge pull request #(\d+) ') { $prs += [int]$Matches[1] }
     else { Fail "non-PR merge commit in range: $m" }
 }
-$prsSorted = ($prs | Sort-Object)
-$expSorted = ($EXPECTED_PRS | Sort-Object)
+$prsSorted = @($prs | Sort-Object -Unique)
+$expSorted = @($ApprovedPullRequests | Sort-Object -Unique)
+# EXACT set equality, both directions. A subset means an approved PR is missing; a superset means
+# something landed on the release branch after approval. Either way the operator approved a different
+# release from the one in front of us, so neither is acceptable.
 if (($prsSorted -join ',') -ne ($expSorted -join ',')) {
-    Fail "range contains PRs [$($prsSorted -join ',')], expected exactly [$($expSorted -join ',')]"
+    $extra   = @($prsSorted | Where-Object { $expSorted -notcontains $_ })
+    $absent  = @($expSorted | Where-Object { $prsSorted -notcontains $_ })
+    $detail  = @()
+    if ($extra.Count)  { $detail += "UNAPPROVED PR(s) present: $($extra -join ', ')" }
+    if ($absent.Count) { $detail += "approved PR(s) absent: $($absent -join ', ')" }
+    Fail ("range contains PRs [$($prsSorted -join ',')] but [$($expSorted -join ',')] were approved - " +
+          ($detail -join '; '))
 }
-if ($commits -ne $EXPECTED_COMMITS) { Fail "range has $commits commits, expected $EXPECTED_COMMITS" }
-if ($paths.Count -ne $EXPECTED_FILES) { Fail "range changes $($paths.Count) files, expected $EXPECTED_FILES" }
-$unexpected = @($paths | Where-Object { $EXPECTED_PATHS -notcontains $_ })
-$missing    = @($EXPECTED_PATHS | Where-Object { $paths -notcontains $_ })
-if ($unexpected.Count -gt 0) { Fail "unexpected path(s) in range: $($unexpected -join ', ')" }
-if ($missing.Count -gt 0)    { Fail "expected path(s) absent from range: $($missing -join ', ')" }
 if ($stat -notmatch "(\d+) insertion.*?(\d+) deletion") { Fail "could not parse diff stat: $stat" }
 $ins = [int]$Matches[1]; $del = [int]$Matches[2]
-if ($ins -ne $EXPECTED_INSERTIONS -or $del -ne $EXPECTED_DELETIONS) {
-    Fail "range delta is +$ins/-$del, expected +$EXPECTED_INSERTIONS/-$EXPECTED_DELETIONS"
-}
+
+# Optional pins. Zero means report-only, so these can never rot the way the old constants did.
+if ($ExpectedFiles      -gt 0 -and $paths.Count -ne $ExpectedFiles) {
+    Fail "range changes $($paths.Count) files, -ExpectedFiles said $ExpectedFiles" }
+if ($ExpectedInsertions -gt 0 -and $ins -ne $ExpectedInsertions) {
+    Fail "range has +$ins, -ExpectedInsertions said +$ExpectedInsertions" }
+if ($ExpectedDeletions  -gt 0 -and $del -ne $ExpectedDeletions) {
+    Fail "range has -$del, -ExpectedDeletions said -$ExpectedDeletions" }
+
 $bad = @($paths | Where-Object {
     $_ -match '(?i)^migrations/|alembic|\.env|secret|credential|\.pem$|\.key$|\.pfx$|inventory|\.csv$|\.xlsx$|\.sql$|ownership|relink' })
 if ($bad.Count -gt 0) { Fail "forbidden file class in range: $($bad -join ', ')" }
-Say "  OK range - PRs $($prsSorted -join ', ') | $commits commits | $($paths.Count) files | +$ins/-$del" 'Green'
+Say "  OK range - PRs $($prsSorted -join ', ') (exactly as approved) | $commits commits | $($paths.Count) files | +$ins/-$del" 'Green'
 Say "            no migration / env / secret / data / inventory / ownership file" 'Green'
+$pinNote = @()
+if ($ExpectedFiles -gt 0)      { $pinNote += "files=$ExpectedFiles" }
+if ($ExpectedInsertions -gt 0) { $pinNote += "+$ExpectedInsertions" }
+if ($ExpectedDeletions -gt 0)  { $pinNote += "-$ExpectedDeletions" }
+Say ("            optional delta pins: " + $(if ($pinNote.Count) { ($pinNote -join ' ') + ' (enforced)' }
+                                             else { 'none supplied - delta reported, not enforced' }))
+Say "            changed paths:"
+$paths | ForEach-Object { Say "              $_" }
 
 # G4 database single head
 $ver = Invoke-DbJson -Label 'alembic-head' -Body 'print(json.dumps(q("SELECT version_num FROM alembic_version")))'
