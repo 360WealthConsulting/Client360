@@ -2,23 +2,38 @@
 {% block title %}Document Requests{% endblock %}
 {% block content %}
 <h1>Document Requests</h1>
-<p class="portal-lead">Items your advisor has asked you to provide. Upload a file to complete each one.</p>
+<p class="portal-lead">Documents your 360 team has asked you for. You can upload each one directly
+  from this page, and your team is notified as soon as it arrives.</p>
+
+{# The page query (app/portal/service.py) returns only status 'open' and 'uploaded', so those are the
+   only two states rendered here. No new status semantics are introduced. #}
 {% for row in portal.document_requests %}
-<article class="portal-card">
-  <h3>{{ row.title }}</h3>
-  {% if row.description %}<p class="meta">{{ row.description }}</p>{% endif %}
-  <p class="meta">
-    <span class="pill {{ 'ok' if row.status == 'uploaded' else 'pending' }}">{{ row.status|title }}</span>
+{% set uploaded = row.status == 'uploaded' %}
+<article class="portal-card request-card{% if uploaded %} request-card--done{% endif %}">
+  <h3 class="request-title">{{ row.title }}</h3>
+
+  <p class="meta request-facts">
+    <span class="pill {{ 'ok' if uploaded else 'pending' }}">{{ row.status|title }}</span>
     {% if row.due_date %} · Due {{ row.due_date }}{% endif %}
   </p>
-  {% if row.status != 'uploaded' and portal_can(principal, '/portal/upload') %}
-  <p style="margin:.6rem 0 0;"><a class="btn secondary" href="/portal/upload?request_id={{ row.id }}">Upload for this request</a></p>
+
+  {% if row.description %}
+  <p class="meta request-instructions">{{ row.description }}</p>
+  {% endif %}
+
+  {% if uploaded %}
+  {# Completed: state the outcome plainly and offer NO primary upload call to action. #}
+  <p class="request-done-note">Received - no further action needed.</p>
+  {% elif portal_can(principal, '/portal/upload') %}
+  {# Open: one prominent action, preserving the exact request-specific destination. #}
+  <p class="request-action"><a class="btn" href="/portal/upload?request_id={{ row.id }}">Upload document</a></p>
   {% endif %}
 </article>
 {% else %}
 <div class="empty-state">
-  <h3>Nothing requested</h3>
-  <p>You have no outstanding document requests. Anything your advisor needs will appear here.</p>
+  <h3>No document requests</h3>
+  <p>You have no outstanding document requests right now. If your 360 team needs a document from
+    you, it will appear here and you can upload it straight from this page.</p>
 </div>
 {% endfor %}
 {% endblock %}
