@@ -25,15 +25,18 @@
    fall through to "No renderer for this section", so they stay in "More". Eleven of
    them were reachable as subtabs of a real tab before this - `knowledge` and
    `document_intelligence` under Documents, `recommendations` and `automation_history`
-   under Tasks, `risk_controls` and `evidence_readiness` under Compliance, and so on -
-   which is how a Documents tab came to offer four sub-sections where only two open
-   onto anything. Nothing is hidden: More still lists them all. #}
+   under Tasks, `risk_controls` and `evidence_readiness` under Compliance, and so on.
+
+   The legacy `vault` renderer intentionally remains implemented for old bookmarked
+   `?tab=vault` URLs, but it is no longer advertised as a second document operating
+   surface. `documents` is the canonical visible document workspace. Nothing else is
+   hidden: More still lists drawable ungrouped sections. #}
 {% set groups_def = [
     ("Overview",   ["dashboard","summary"]),
     ("People",     ["members","relationships"]),
     ("Wealth",     ["financial","insurance","benefits","opportunities"]),
     ("Tax",        ["tax","work"]),
-    ("Documents",  ["documents","vault"]),
+    ("Documents",  ["documents"]),
     ("Work",       ["tasks","meetings"]),
     ("Messages",   ["communications","messages"]),
     ("Internal",   ["notes"]),
