@@ -122,17 +122,19 @@ invitation link and any signed-in sessions no longer work.</div>{% endif %}
       <button type="button" class="btn secondary" id="add-client-button">Add New Client</button>
     </div>
 
-    <div class="portal-invite-full">
-      <span>Portal access</span>
-      {% for code, label, help in access_choices %}
-      <label class="portal-access-option">
-        <input type="radio" name="access_type" value="{{ code }}"{% if loop.first %} checked{% endif %}>
-        <b>{{ label }}</b> &mdash; <span class="subtle">{{ help }}</span>
-      </label>
-      {% endfor %}
-      <p class="subtle" id="sel-household"></p>
-      <p class="subtle">{{ rep_notice }}</p>
-    </div>
+    <details class="portal-invite-full portal-access-details">
+      <summary>Portal access</summary>
+      <div class="portal-access-options">
+        {% for code, label, help in access_choices %}
+        <label class="portal-access-option">
+          <input type="radio" name="access_type" value="{{ code }}"{% if loop.first %} checked{% endif %}>
+          <b>{{ label }}</b> &mdash; <span class="subtle">{{ help }}</span>
+        </label>
+        {% endfor %}
+        <p class="subtle" id="sel-household"></p>
+        <p class="subtle">{{ rep_notice }}</p>
+      </div>
+    </details>
     <div class="portal-invite-full">
       <button type="submit">Send portal invitation</button>
       <span class="portal-invite-error" id="invite-error" role="alert" hidden></span>
